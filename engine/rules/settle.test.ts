@@ -400,3 +400,29 @@ test('the log\'s rounding is shared the same way every time, and a line that rou
   assert.equal(amountOf(r, 'ann-fan', 'x'), 1);
   assert.deepEqual(r.details.filter((d) => d.reason === 'x').map((d) => [d.act, d.amount]), [['a', 1]], 'the tie goes to the first key; the others round to nothing and are not shown');
 });
+
+test('a reply at exactly the window\'s end is the next window\'s, and only posts are posts', () => {
+  const { rules, inputs } = recorder();
+  const b = base();
+  const input: SettlementInput = {
+    ...b,
+    acts: [
+      ...b.acts,
+      { id: 's1', character: 'cat-1', kind: 'spin', at: FROM + H, thread: 'spun', target: 'q1' },
+      post('r1', 'dee-1', FROM + 2 * H, 'spun'),
+      post('r2', 'ann-quiet', TO, 'spun'),
+      { id: 'k1', character: 'bob-1', kind: 'card', at: FROM + 5 * H, thread: 't1', target: 'p1', card: 'splat' },
+    ],
+  };
+  settle(input, withClasses(rules));
+  assert.equal(inputs.flatMap((i) => i.threadsSpun).find((t) => t.act === 's1')?.repliersNow, 1);
+  const bobPosts = inputs.filter((i) => i.character === 'bob-1').flatMap((i) => i.posts.map((p) => p.act));
+  const catPosts = inputs.filter((i) => i.character === 'cat-1').flatMap((i) => i.posts.map((p) => p.act));
+  assert.deepEqual(bobPosts, ['q1'], 'a card is not a post');
+  assert.deepEqual(catPosts, [], 'a spin is not a post');
+});
+
+test('what each class earned is rounded like an entry', () => {
+  const thirds: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'x', amount: 1 / 3 }, { reason: 'y', amount: 1 / 3 }] : []) };
+  assert.equal(settle(base(), withClasses(thirds)).byClass.fan, 1);
+});
