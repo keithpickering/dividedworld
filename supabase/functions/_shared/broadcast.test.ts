@@ -20,3 +20,24 @@ test('nothing to broadcast sends nothing; a failed broadcast is retried once and
   assert.equal(await b.send([{ topic: 'thread:t', event: 'act', payload: {} }]), false);
   assert.equal(n, 2);
 });
+
+test('a fetch that throws is retried and never thrown; a transport failure then a success is a success', async () => {
+  let n = 0;
+  const throwing = (async () => { n++; throw new TypeError('connection reset'); }) as unknown as typeof globalThis.fetch;
+  assert.equal(await broadcaster({ url: 'https://p.example', key: 'k', fetch: throwing, sleep: async () => {} }).send([{ topic: 'thread:t', event: 'act', payload: {} }]), false);
+  assert.equal(n, 2);
+  const waits: number[] = [];
+  let m = 0;
+  const flaky = (async () => (++m === 1 ? new Response('busy', { status: 429 }) : new Response('{}', { status: 202 }))) as unknown as typeof globalThis.fetch;
+  assert.equal(await broadcaster({ url: 'https://p.example', key: 'k', fetch: flaky, sleep: async (ms) => { waits.push(ms); } }).send([{ topic: 'thread:t', event: 'act', payload: {} }]), true);
+  assert.deepEqual(waits, [250]);
+});
+
+test('a refusal that will not change (a 401, a 413) is not retried', async () => {
+  for (const status of [401, 413]) {
+    let n = 0;
+    const refusing = (async () => { n++; return new Response('no', { status }); }) as unknown as typeof globalThis.fetch;
+    assert.equal(await broadcaster({ url: 'https://p.example', key: 'k', fetch: refusing, sleep: async () => {} }).send([{ topic: 'thread:t', event: 'act', payload: {} }]), false);
+    assert.equal(n, 1, String(status));
+  }
+});

@@ -105,3 +105,4 @@ $$;
 grant usage on schema realtime to anon, authenticated, service_role;
 -- As on a project: the API roles may read it, and row-level security decides what they hear.
 grant select on realtime.messages to anon, authenticated;
+alter table realtime.messages enable row level security;

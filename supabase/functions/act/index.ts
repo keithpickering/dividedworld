@@ -29,7 +29,13 @@ Deno.serve(async (request) => {
   if (tooLong) return answer(413, { error: 'that request is too long' });
   const dbs = { player: postgrest({ url: env.url, key: anon, bearer: session }), service: postgrest({ url: env.url, key: env.key }) };
   const out = await runAction(dbs, chooseInstance(Deno.env.get('KAYFABB_PROFILE')), body);
-  // After the write committed: a reader who misses this sees the change on their next load.
-  if (out.broadcasts?.length) await broadcaster({ url: env.url, key: env.key }).send(out.broadcasts);
+  // After the write committed, and after the answer where the runtime lets work outlive it: a
+  // reader who misses this sees the change on their next load, and a slow Realtime never holds
+  // up a player's answer.
+  if (out.broadcasts?.length) {
+    const sending = broadcaster({ url: env.url, key: env.key }).send(out.broadcasts).catch((e) => console.error('broadcast threw', e));
+    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime) EdgeRuntime.waitUntil(sending);
+    else await sending;
+  }
   return answer(out.status, out.body);
 });

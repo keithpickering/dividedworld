@@ -33,6 +33,12 @@ const thread = (t: unknown): Broadcast[] => (t && typeof t === 'object' && (t as
  * What each SQL function's answer sends live. Each is the public projection the function
  * returned, never more; a purchase, which is the player's alone, sends nothing, and so does a
  * silent Turn, which returns no Act.
+ *
+ * Broadcasts can arrive out of order or twice (a retry after a timeout may repeat one Realtime
+ * took), so each carries what a client needs to converge: an Act its id and seq; a tally the
+ * counts, which only ever grow, so a client keeps each kind's largest; a saved effect only its
+ * play and saved_at, never the state, which can be 256 KB and every reader fetches once, newest
+ * saved_at wins.
  */
 const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   post: (a) => act(a),
@@ -42,7 +48,7 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   spin: (a) => [...thread(a.thread), ...act(a.act)],
   turn: (a) => [...thread(a.thread), ...act(a.act)],
   react: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
-  save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, state: a.state } }] : []),
+  save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   buy_card: () => [],
 };
 const live = (rpc: string, answer: unknown): Broadcast[] =>

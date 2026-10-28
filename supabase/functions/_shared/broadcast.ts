@@ -4,8 +4,11 @@
  * published instead). Every channel is private, so only a signed-in player hears it.
  *
  * A broadcast is sent after its write has committed and is best effort: a reader who misses one
- * sees the change on their next load, so a failure is retried once and then logged, never
- * thrown into the answer of an action that succeeded.
+ * sees the change on their next load, so a transport failure (no answer, a 5xx, a 429) is
+ * retried once and then logged, and any other refusal (a 401, a 413) is logged at once, since
+ * it will not change. Nothing is ever thrown into the answer of an action that succeeded. A
+ * retry after a timeout may repeat a message Realtime took; act/core.ts says how each event
+ * converges anyway.
  */
 
 export interface Broadcast {
@@ -30,7 +33,9 @@ export function broadcaster(options: { url: string; key: string; fetch?: typeof 
             body,
             signal: AbortSignal.timeout(5_000),
           });
+          await response.body?.cancel();
           if (response.ok) return true;
+          if (response.status < 500 && response.status !== 429) break;
         } catch { /* no answer: once more, then give up */ }
       }
       console.error('broadcast failed', messages.map((m) => `${m.topic}/${m.event}`).join(', '));

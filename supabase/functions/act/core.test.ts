@@ -112,8 +112,14 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'turn', character: id, class: 'heel', loudness: 'announced' }, { turn: { turned: true, thread: { id: thread, board }, act: { id: 'a', thread } } },
       [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
     [{ action: 'buyCard', card: 'whoops' }, { whoami: id, buy_card: { card: 'whoops', balance: 0, held: 1 } }, []],
-    [{ action: 'saveEffect', play: id, character: id, state: { strokes: [] } }, { whoami: id, card_of_play: 'whoops', save_effect_state: { play: id, thread, state: { strokes: [] } } },
-      [{ topic: `thread:${thread}`, event: 'effect', payload: { play: id, state: { strokes: [] } } }]],
+    [{ action: 'saveEffect', play: id, character: id, state: { strokes: [] } }, { whoami: id, card_of_play: 'whoops', save_effect_state: { play: id, thread, state: { strokes: [] }, saved_at: 't1' } },
+      [{ topic: `thread:${thread}`, event: 'effect', payload: { play: id, saved_at: 't1' } }]],
+    [{ action: 'edit', post: id, character: id, body: 'y' }, { edit_post: { id: 'e', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'e', thread } }]],
+    [{ action: 'spin', origin: id, character: id, title: 't', body: '' }, { spin: { thread: { id: thread, board }, act: { id: 's', thread } } },
+      [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 's', thread } }]],
+    [{ action: 'playCard', card: 'whoops', character: id, target: id, config: { color: 'red' } },
+      { whoami: id, card_target: { act: id, kind: 'post', length: 10, effects: [] }, play_card: { id: 'c', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread } }]],
+    [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread: null, tally: {} } }, []],
   ];
   for (const [request, answers, broadcasts] of cases) {
     const { dbs } = pair(answers);
@@ -121,4 +127,16 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     assert.equal(out.status, 200, JSON.stringify(request));
     assert.deepEqual(out.broadcasts ?? [], broadcasts, JSON.stringify(request));
   }
+});
+
+test('a refused or failed action sends nothing live', async () => {
+  const refusal = new DatabaseError('post: no', 'P0001', 400, 'no', REFUSAL_HINT);
+  const failing: Db = { rpc: async () => { throw refusal; } };
+  const broken: Db = { rpc: async () => { throw new DatabaseError('post: x', '42P01', 500); } };
+  for (const player of [failing, broken]) {
+    const out = await runAction({ player, service: player }, instance, { action: 'post', thread: id, character: id, body: 'x' });
+    assert.notEqual(out.status, 200);
+    assert.equal(out.broadcasts, undefined);
+  }
+  assert.equal((await runAction(pair({}).dbs, instance, { action: 'post', thread: id, character: id, body: '' })).broadcasts, undefined);
 });

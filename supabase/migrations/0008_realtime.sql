@@ -10,12 +10,12 @@
 --
 -- The channels are private: a client listening needs a signed-in session, so a visitor with no
 -- account reads nothing live, as it reads nothing else. On a project, Realtime authorizes a
--- private channel's listeners against realtime.messages' row-level security.
+-- private channel's listeners against realtime.messages' row-level security, which Supabase
+-- enables on that table and owns; this adds only the policy, which is what its own guide does.
 
 do $$ begin
   if exists (select 1 from pg_namespace where nspname = 'realtime')
      and exists (select 1 from information_schema.tables where table_schema = 'realtime' and table_name = 'messages') then
-    execute 'alter table realtime.messages enable row level security';
     execute $p$create policy "signed-in players hear the board" on realtime.messages for select to authenticated
       using (extension = 'broadcast' and (realtime.topic() like 'thread:%' or realtime.topic() like 'board:%'))$p$;
   end if;

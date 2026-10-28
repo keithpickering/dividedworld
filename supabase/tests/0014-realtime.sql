@@ -48,4 +48,12 @@ begin
   select count(*) into n from realtime.messages;
   perform tests.unbecome();
   if n <> 0 then raise exception 'a channel that is not a thread''s or a board''s was heard'; end if;
+  insert into realtime.messages (topic, payload, event) values ('board:00000000-0000-4000-8000-000000000000', '{}', 'thread');
+  insert into realtime.messages (topic, payload, event, extension) values ('board:00000000-0000-4000-8000-000000000000', '{}', 'x', 'presence');
+  perform set_config('realtime.topic', 'board:00000000-0000-4000-8000-000000000000', true);
+  perform tests.become(tests.account('listener-3'));
+  if not exists (select 1 from realtime.messages) then raise exception 'a signed-in player should hear a board''s channel'; end if;
+  select count(*) into n from realtime.messages where extension <> 'broadcast';
+  perform tests.unbecome();
+  if n <> 0 then raise exception 'a player heard something on a channel that is not a broadcast'; end if;
 end $$;

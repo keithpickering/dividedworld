@@ -7,3 +7,5 @@ declare const Deno: {
   readonly env: { get(name: string): string | undefined };
   serve(handler: (request: Request) => Response | Promise<Response>): unknown;
 };
+/** Supabase's Edge Runtime: work that runs on after the answer has gone. */
+declare const EdgeRuntime: { waitUntil(work: Promise<unknown>): void } | undefined;
