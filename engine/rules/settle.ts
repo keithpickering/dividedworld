@@ -21,6 +21,8 @@
  *   every reaction up to the window's end; a tie is no direction. Reactions after the
  *   settlement do not reach back: a window is settled once.
  * - A card "outdraws" its target when it drew more votes in the window than the target did.
+ *   A vote total is the shares, unhalved: the halving prices a character's further Acts to the
+ *   character, and a card and its target are judged on how many players each drew.
  * - A spun thread's repliers are the distinct other players who posted in it, counted before
  *   the window and by its end, so a class can pay the window in which a threshold is crossed.
  * - A character that Turned inside the window is settled under each class it held, each for
@@ -44,7 +46,7 @@ export interface LedgerEntry {
   readonly amount: number;
 }
 
-/** What the owner's log shows of an entry: which Act, which quadrant, how much. */
+/** What the owner's log shows of an entry: which Act, which quadrant, how much, in whole hundredths that add up to the entry. */
 export interface Detail {
   readonly player: string;
   readonly character: string;
@@ -157,8 +159,17 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     return out;
   };
 
-  /* ---- what each character did and received, by time ---- */
+  /* ---- what each character did and received, by time; every list indexed once, so the
+     work grows with the rows read, not with their product ---- */
   const windowActs = [...acts.values()].filter((a) => inWindow(a.at));
+  const group = <T, K>(xs: Iterable<T>, keyOf: (x: T) => K) => {
+    const out = new Map<K, T[]>();
+    for (const x of xs) { const k = keyOf(x); const list = out.get(k); if (list) list.push(x); else out.set(k, [x]); }
+    return out;
+  };
+  const windowActsBy = group(windowActs, (a) => a.character);
+  const windowVotesOn = group(windowVotes, (v) => v.act);
+  const postsIn = group([...acts.values()].filter((a) => a.kind === 'post'), (a) => a.thread);
   const received = new Map<string, ReceivedReaction[]>();
   for (const v of windowVotes) {
     const target = actOf(v.act);
@@ -179,7 +190,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     const target = actOf(a.target);
     const player = playerOf(a.character);
     const after: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
-    for (const v of windowVotes) if (v.act === target.id && v.at > a.at && v.player !== player) after[v.quadrant] += v.share;
+    for (const v of windowVotesOn.get(target.id) ?? []) if (v.at > a.at && v.player !== player) after[v.quadrant] += v.share;
     const alignment = alignmentOf.get(a.card!)!;
     const onOthers = playerOf(target.character) !== player;
     const list = played.get(a.character) ?? [];
@@ -195,8 +206,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
   for (const s of [...acts.values()].filter((a) => a.kind === 'spin')) {
     const spinner = playerOf(s.character);
     const firstReply = new Map<string, number>();
-    for (const a of acts.values()) {
-      if (a.kind !== 'post' || a.thread !== s.thread) continue;
+    for (const a of postsIn.get(s.thread) ?? []) {
       const p = playerOf(a.character);
       if (p !== spinner && !firstReply.has(p)) firstReply.set(p, a.at);
     }
@@ -221,7 +231,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
         character: c.id,
         from: stretch.from,
         to: stretch.to,
-        posts: inside(windowActs.filter((a) => a.character === c.id && a.kind === 'post')).map((a) => ({ act: a.id, at: a.at })),
+        posts: inside((windowActsBy.get(c.id) ?? []).filter((a) => a.kind === 'post')).map((a) => ({ act: a.id, at: a.at })),
         received: inside(received.get(c.id)).sort(byTime),
         given: inside(given.get(c.id)).sort(byTime),
         cardsPlayed: inside(played.get(c.id)).sort(byTime),
@@ -251,12 +261,35 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
   const entries: LedgerEntry[] = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}`)
     .map(([, { first, amount }]) => ({ window: window.id, player: first.player, character: first.character, reason: first.reason, amount: round(amount) }))
     .filter((e) => e.amount !== 0);
-  const details: Detail[] = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}\u0000${c.act ?? ''}\u0000${c.quadrant ?? ''}`)
-    .map(([, { first, amount }]) => ({
-      player: first.player, character: first.character, reason: first.reason,
-      ...(first.act ? { act: first.act } : {}), ...(first.quadrant ? { quadrant: first.quadrant } : {}), amount: tidy(amount),
-    }))
-    .filter((d) => d.amount !== 0);
+  /* Each entry's detail, in whole hundredths that add up to the entry exactly: the log names
+     which Act moved how much, and its lines never disagree with the ledger ("The fiction may
+     lie; the log never does"). The rounding is shared by largest remainder, ties by key. */
+  const lines = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}\u0000${c.act ?? ''}\u0000${c.quadrant ?? ''}`);
+  const linesOf = new Map<string, { key: string; first: Contribution; amount: number }[]>();
+  for (const [key, { first, amount }] of lines) {
+    const k = `${first.player}\u0000${first.character}\u0000${first.reason}`;
+    const list = linesOf.get(k) ?? [];
+    list.push({ key, first, amount: tidy(amount) });
+    linesOf.set(k, list);
+  }
+  const details: Detail[] = [];
+  for (const [k, list] of [...linesOf].sort((a, b) => cmp(a[0], b[0]))) {
+    const target = round(list.reduce((s, l) => s + l.amount, 0));
+    const whole = list.map((l) => Math.floor(l.amount));
+    let short = target - whole.reduce((s, w) => s + w, 0);
+    const byRemainder = list.map((l, i) => ({ i, rem: l.amount - Math.floor(l.amount), key: l.key }))
+      .sort((a, b) => b.rem - a.rem || cmp(a.key, b.key));
+    for (let j = 0; short > 0; j = (j + 1) % byRemainder.length, short--) whole[byRemainder[j]!.i]! += 1;
+    for (let j = byRemainder.length - 1; short < 0; j = (j - 1 + byRemainder.length) % byRemainder.length, short++) whole[byRemainder[j]!.i]! -= 1;
+    list.forEach((l, i) => {
+      if (whole[i] === 0) return;
+      details.push({
+        player: l.first.player, character: l.first.character, reason: l.first.reason,
+        ...(l.first.act ? { act: l.first.act } : {}), ...(l.first.quadrant ? { quadrant: l.first.quadrant } : {}), amount: whole[i]!,
+      });
+    });
+    void k;
+  }
   const standing = new Map<string, number>();
   for (const e of entries) standing.set(e.character, (standing.get(e.character) ?? 0) + e.amount);
   const byClass: Record<string, number> = {};
@@ -281,7 +314,8 @@ export function applyCap(balance: number, entries: readonly { readonly amount: n
 
 /**
  * The owner's live view: the settlement computed on the window so far, for one player's own
- * characters only. Nothing about another player leaves this function.
+ * characters only. Nothing about another player leaves this function. It runs on the server,
+ * never in the browser, because it reads every player's reactions to compute one player's.
  */
 export function previewForOwner(openWindow: SettlementInput, instance: Instance, account: string) {
   const s = settle(openWindow, instance);

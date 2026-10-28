@@ -78,9 +78,10 @@ export const STEPS = [
 /**
  * The steps that run alone, after the pool, in STEPS order: a step that writes a tree the
  * steps after it read, and every step whose file asserts an absolute wall-clock bound, which a
- * loaded pool could trip. A subset of STEPS, checked by `problems()`. None yet.
+ * loaded pool could trip. A subset of STEPS, checked by `problems()`. test:engine times the
+ * settlement at a busy instance's scale (engine/rules/settle.scale.test.ts).
  */
-export const SERIAL = new Set([]);
+export const SERIAL = new Set(['npm run test:engine']);
 
 /**
  * `check-*.mjs` and `test-*.mjs` files in tools/ that are deliberately not in STEPS, each

@@ -195,5 +195,93 @@ test('the owner\'s live preview is the settlement so far, for their own characte
   // Its details say which Act, which quadrant and how much, and add up to the entries.
   const love = preview.details.filter((d) => d.reason === 'fan.love');
   assert.ok(love.every((d) => d.act === 'p1' && d.quadrant === 'excitedPositive'));
-  assert.equal(Math.round(love.reduce((s, d) => s + d.amount, 0)), amountOf(settled, 'ann-fan', 'fan.love'));
+  assert.equal(love.reduce((s, d) => s + d.amount, 0), amountOf(settled, 'ann-fan', 'fan.love'));
+});
+
+test('a reaction\'s share counts its player\'s earlier reactions on the Act, and the window pays only its own', () => {
+  const b = base();
+  const later: SettlementInput = { ...b, reactions: [...b.reactions, react('q1', 'dee', 'dee-1', 'zzz', FROM - 1), react('p2', 'dee', 'dee-1', 'zzz', FROM - 1), react('p2', 'dee', 'dee-1', 'fire', FROM + 7 * H)] };
+  // Dee's zzz on p2 came in an earlier window and is not paid here; her fire here is half her vote.
+  assert.equal(amountOf(settle(later, instance), 'ann-fan', 'fan.love'), 25);
+  assert.equal(amountOf(settle(later, instance), 'ann-fan', 'fan.groan'), -5);
+});
+
+test('the log\'s lines are whole hundredths that add up to their entry exactly', () => {
+  const b = base();
+  // Three players each split a vote three ways on p1: love comes in thirds of a vote, which do not round evenly.
+  const thirds: SettlementInput = {
+    ...b,
+    acts: [...b.acts, post('p3', 'ann-fan', FROM + 3 * H), post('p4', 'ann-fan', FROM + 3 * H + 1)],
+    reactions: ['p1', 'p3', 'p4'].flatMap((act) => ['fire', 'tea', 'tomato'].map((kind) => react(act, 'dee', 'dee-1', kind, FROM + 8 * H))),
+  };
+  const r = settle(thirds, instance);
+  for (const e of r.entries) {
+    const lines = r.details.filter((d) => d.character === e.character && d.reason === e.reason);
+    assert.ok(lines.every((d) => Number.isInteger(d.amount)), 'whole hundredths');
+    assert.equal(lines.reduce((s, d) => s + d.amount, 0), e.amount, `${e.character} ${e.reason}`);
+  }
+  assert.ok(r.details.filter((d) => d.reason === 'fan.love').length === 3);
+});
+
+test('a hostile reaction settled against an empty wallet leaves it at zero, and the standing goes negative', () => {
+  const b = base();
+  const groan: SettlementInput = { ...b, reactions: [react('p1', 'bob', 'bob-1', 'zzz', FROM + 4 * H)] };
+  const r = settle(groan, instance);
+  const ann = r.entries.filter((e) => e.player === 'ann');
+  assert.deepEqual(ann.map((e) => e.amount), [-10]);
+  assert.equal(applyCap(0, ann, 600).balance, 0);
+  assert.equal(r.standings.find((s) => s.character === 'ann-fan')?.amount, -10);
+});
+
+test('cards and spun threads reach a class as the plan reads them', () => {
+  seen.length = 0;
+  const b = base();
+  const input: SettlementInput = {
+    ...b,
+    acts: [
+      ...b.acts,
+      // Bob splats Ann's p1, and his own q1, which lands on nobody else.
+      { id: 'k1', character: 'bob-1', kind: 'card', at: FROM + 4 * H + 10, thread: 't1', target: 'p1', card: 'splat' },
+      { id: 'k2', character: 'bob-1', kind: 'card', at: FROM + 4 * H + 20, thread: 't1', target: 'q1', card: 'splat' },
+      // Cat spins a thread from Ann's p2 before the window; Bob replied before it, Dee and Ann reply in it.
+      { id: 's1', character: 'cat-1', kind: 'spin', at: FROM - 3 * H, thread: 'spun', target: 'p2' },
+      post('r1', 'bob-1', FROM - 2 * H, 'spun'),
+      post('r2', 'dee-1', FROM + 9 * H, 'spun'),
+      post('r3', 'ann-quiet', FROM + 10 * H, 'spun'),
+      post('r4', 'cat-1', FROM + 11 * H, 'spun'),
+    ],
+    reactions: [
+      ...b.reactions,
+      react('k1', 'cat', 'cat-1', 'fire', FROM + 12 * H),
+      react('k1', 'dee', 'dee-1', 'fire', FROM + 12 * H),
+      // On the target after the card: Dee's heart, and Bob's own, which never counts toward his card.
+      react('p1', 'dee', 'dee-1', 'heart', FROM + 13 * H),
+      react('p1', 'bob', 'bob-1', 'heart', FROM + 13 * H),
+    ],
+  };
+  settle(input, instance);
+  const bob = seen.filter((s) => s.character === 'bob-1').flatMap((s) => s.cardsPlayed);
+  assert.equal(bob.length, 2);
+  const k1 = bob.find((c) => c.act === 'k1')!;
+  assert.equal(k1.alignment, 'salty');
+  assert.equal(k1.onOthers, true);
+  assert.equal(k1.votes, 2, 'Cat and Dee on the card');
+  assert.equal(k1.targetVotes, 3, 'Bob, Cat and Dee on p1 in the window');
+  assert.deepEqual(k1.targetAfter, { excitedPositive: 1.5, excitedNegative: 0, calmPositive: 0, boredNegative: 0.5 },
+    'after the card: Cat\'s split vote and Dee\'s heart; Bob\'s fire came before it and his heart is his own');
+  const k2 = bob.find((c) => c.act === 'k2')!;
+  assert.equal(k2.onOthers, false, 'a card on the player\'s own post lands on nobody else');
+  const landedOnBob = seen.filter((s) => s.character === 'bob-1').flatMap((s) => s.cardsLanded);
+  assert.deepEqual(landedOnBob, [], 'a player\'s own card never lands on them');
+  seen.length = 0;
+  settle({ ...input, characters: input.characters.map((c) => (c.id === 'ann-fan' ? { ...c, classes: [{ class: 'quiet', from: 0 }] } : c)) }, instance);
+  const landedOnAnn = seen.filter((s) => s.character === 'ann-fan').flatMap((s) => s.cardsLanded);
+  assert.deepEqual(landedOnAnn, [{ act: 'k1', card: 'splat', alignment: 'salty', at: FROM + 4 * H + 10, on: 'p1' }]);
+  seen.length = 0;
+  settle(input, instance);
+  const spunByCat = seen.filter((s) => s.character === 'cat-1').flatMap((s) => s.threadsSpun);
+  assert.equal(spunByCat.length, 1);
+  assert.deepEqual({ ...spunByCat[0], at: undefined }, { act: 's1', thread: 'spun', at: undefined, fromOthers: true, repliersBefore: 1, repliersNow: 3 },
+    'Bob before; Dee and Ann in the window; Cat\'s own reply is not counted');
+  assert.equal(spunByCat[0]!.at, FROM + 10 * H, 'placed when its count reached its total');
 });

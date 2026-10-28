@@ -7,7 +7,8 @@
  *
  * - The shared vote: a player's reactions on one Act share one vote. One reaction carries the
  *   whole vote; three carry a third each.
- * - Halving across Acts: within a settlement window, a player's vote on a character's first
+ * - Halving across Acts: within a settlement window (the caller passes only the window's
+ *   votes), a player's vote on a character's first
  *   Act counts in full, and each further Act by that character counts half the one before.
  *   "First" is the order the Acts were made, so the weight never depends on the order a
  *   player happened to react in; Acts made at the same instant are ordered by id.
@@ -31,6 +32,7 @@ export function halveAcrossActs<R extends { readonly act: string; readonly playe
   halving: number,
 ): (R & { votes: number })[] {
   const actsBy = new Map<string, Set<string>>();
+  /* Keys join ids with NUL, which a Postgres text id cannot hold. */
   const pair = (player: string, character: string) => `${player}\u0000${character}`;
   for (const v of votes) {
     const k = pair(v.player, actOf(v.act).character);
@@ -44,7 +46,7 @@ export function halveAcrossActs<R extends { readonly act: string; readonly playe
     ordered.forEach((act, i) => rank.set(`${k}\u0000${act}`, i));
   }
   return votes.map((v) => {
-    const i = rank.get(`${pair(v.player, actOf(v.act).character)}\u0000${v.act}`) ?? 0;
+    const i = rank.get(`${pair(v.player, actOf(v.act).character)}\u0000${v.act}`)!;
     return { ...v, votes: v.share * halving ** i };
   });
 }

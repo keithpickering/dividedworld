@@ -90,3 +90,23 @@ test('Acts made at the same instant are ordered by id, so the result never depen
   assert.deepEqual(key(one), key(two));
   assert.equal(one.find((v) => v.act === 'k')?.votes, 1);
 });
+
+test('the halving is the setting\'s, not a fixed half', () => {
+  const quarter = halveAcrossActs(shareVotes(['a1', 'a2', 'a3'].map((a) => r(a, 'p1'))), actOf, 0.25);
+  assert.deepEqual(quarter.map((v) => v.votes), [1, 0.25, 0.0625]);
+  const none = halveAcrossActs(shareVotes(['a1', 'a2', 'a3'].map((a) => r(a, 'p1'))), actOf, 1);
+  assert.deepEqual(none.map((v) => v.votes), [1, 1, 1]);
+});
+
+test('only the Acts a player voted on count toward their halving: votes on a character\'s first and fourth Acts weigh 1 and ½', () => {
+  const votes = halveAcrossActs(shareVotes([r('a1', 'p1'), r('a4', 'p1')]), actOf, 0.5);
+  assert.equal(votes.find((v) => v.act === 'a4')?.votes, 0.5);
+});
+
+test('no votes are no votes', () => {
+  assert.deepEqual(halveAcrossActs(shareVotes([]), actOf, 0.5), []);
+});
+
+test('a vote on an Act the caller cannot place is an error, not a whole vote', () => {
+  assert.throws(() => halveAcrossActs(shareVotes([r('nowhere', 'p1')]), actOf, 0.5), /no act nowhere/);
+});
