@@ -49,6 +49,7 @@ const testsDir = path.join(repoRoot, 'supabase/tests');
 const shim = path.join(testsDir, 'setup/auth-shim.sql');
 
 export const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const SAFE_PARAMETERS = new Set(['sslmode', 'connect_timeout', 'application_name']);
 
 /**
  * Why a DATABASE_URL may not be used, or null when it may: unset, not a URL, or a host
@@ -57,9 +58,16 @@ export const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
  */
 export function refusal(url) {
   if (!url) return 'DATABASE_URL is not set (postgres://postgres:pg@localhost:5432/postgres)';
-  let host;
-  try { host = new URL(url).hostname; } catch { return 'DATABASE_URL is not a valid URL'; }
+  let parsed;
+  try { parsed = new URL(url); } catch { return 'DATABASE_URL is not a valid URL'; }
+  const host = parsed.hostname;
   if (!LOCAL_HOSTS.has(host)) return `refusing DATABASE_URL on host "${host}": this harness creates and drops databases, and reads only Postgres on localhost`;
+  /* libpq reads connection parameters from the query string too, and `host`, `hostaddr` and
+     `service` there override the host above, so only parameters that cannot move the
+     connection are let through. */
+  for (const key of parsed.searchParams.keys()) {
+    if (!SAFE_PARAMETERS.has(key)) return `refusing DATABASE_URL with the parameter "${key}": only ${[...SAFE_PARAMETERS].join(', ')} are allowed, since others can point libpq at another host`;
+  }
   return null;
 }
 
@@ -75,6 +83,9 @@ function psql(url, sql) {
     return (err.stderr || err.stdout || String(err)).trim();
   }
 }
+
+/** SQL with its `--` and block comments blanked, so a comment cannot stand in for code. */
+const withoutComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
 
 /** Assertion files: four digits, a hyphen, a name. Ordered by number, then name. */
 export const ASSERTION_FILE = /^(\d{4})-[\w.-]+\.sql$/;
@@ -92,6 +103,9 @@ function main() {
     if (err) failed++;
     return !err;
   };
+
+  /* A signal skips `finally`, so the scratch database is dropped on one too. */
+  for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, () => { psql(url, `drop database if exists ${scratch} with (force);`); process.exit(130); });
 
   console.log(`\nsql: scratch database ${scratch}`);
   if (!step('create', psql(url, `create database ${scratch};`))) process.exit(1);
@@ -115,7 +129,9 @@ function main() {
     for (const t of files) {
       if (!ASSERTION_FILE.test(t)) { step(t, 'an .sql file in supabase/tests/ that is not NNNN-*.sql would never run; rename it or move it under setup/'); continue; }
       const sql = fs.readFileSync(path.join(testsDir, t), 'utf8');
-      if (!/raise\s+exception/i.test(sql)) { step(t, 'asserts nothing: no `raise exception` in this file'); continue; }
+      const code = withoutComments(sql);
+      if (!/raise\s+exception/i.test(code)) { step(t, 'asserts nothing: no `raise exception` outside a comment in this file'); continue; }
+      if (/^\s*(commit|end|rollback)\s*(transaction|work)?\s*;/im.test(code)) { step(t, 'ends its own transaction, which would escape the rollback around it'); continue; }
       ran++;
       step(t, psql(target, `begin;\n${sql}\nrollback;\n`));
     }

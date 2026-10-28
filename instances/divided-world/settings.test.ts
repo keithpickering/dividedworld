@@ -44,6 +44,8 @@ test('the playtest overrides are separate values, not edits of the defaults', ()
   assert.deepEqual(playtest.turnCooldown, { unit: 'day', count: 7 });
   assert.notEqual(playtest, defaults);
   assert.ok(Object.isFrozen(defaults), 'the defaults cannot be edited in place');
+  assert.ok(Object.isFrozen(defaults.seasonLength) && Object.isFrozen(defaults.turnCooldown), 'not even their spans');
+  assert.throws(() => { (defaults.seasonLength as { count: number }).count = 99; }, TypeError);
   const { seasonLength: _s, turnCooldown: _t, ...restPlaytest } = playtest;
   const { seasonLength: _s2, turnCooldown: _t2, ...restDefaults } = defaults;
   assert.deepEqual(restPlaytest, restDefaults, 'the playtest changes only what it overrides');

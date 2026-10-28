@@ -12,9 +12,11 @@
  *
  * Every way one file can name another is read from the TypeScript AST, not a regex: a static
  * import (type-only included: the engine may not know an instance's types either), a
- * re-export, a side-effect import, `import()`, an `import('…')` type, `require()`. A relative
- * specifier is resolved against its file; a bare one that names `instances` (a package.json
- * "imports" alias, a path mapping) fires as it stands. A dynamic import in engine/ whose
+ * re-export, a side-effect import, `import()`, an `import('…')` type, `require()`,
+ * `import.meta.resolve()` and a triple-slash reference. A relative
+ * specifier is resolved against its file; a bare or absolute one is read as it stands, so one
+ * that names `instances` (a package.json "imports" alias, a path mapping) fires in the engine,
+ * and one that names another instance fires in an instance. A dynamic import in engine/ whose
  * argument is not a plain string fires too, since it could name anything and the guard
  * cannot say it does not. Comments and strings are not imports, and the AST knows that
  * without help.
@@ -27,8 +29,10 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** The files the guard reads. */
 export const SOURCE = /^(engine|instances)\/.*\.(ts|mts|cts|tsx|js|mjs|cjs)$/;
@@ -53,12 +57,16 @@ function specifiers(file, text) {
       out.push({ spec: literal(node.arguments[0]), line: lineOf(node) });
     } else if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require' && node.arguments.length) {
       out.push({ spec: literal(node.arguments[0]), line: lineOf(node) });
+    } else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'resolve'
+      && ts.isMetaProperty(node.expression.expression) && node.expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword) {
+      out.push({ spec: literal(node.arguments[0]), line: lineOf(node) });
     } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
       out.push({ spec: literal(node.argument.literal), line: lineOf(node) });
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
+  for (const ref of source.referencedFiles) out.push({ spec: ref.fileName.startsWith('.') ? ref.fileName : `./${ref.fileName}`, line: source.getLineAndCharacterOfPosition(ref.pos).line + 1 });
   return out;
 }
 
@@ -82,12 +90,14 @@ export function boundaryFaults(files) {
       }
       const relative = spec.startsWith('./') || spec.startsWith('../');
       const target = relative ? path.posix.normalize(path.posix.join(path.posix.dirname(file), spec)) : null;
+      /* A bare or absolute specifier is read as it stands: the instance it names, if any. */
+      const named = target === null ? spec.match(/(?:^|[/#@])instances(?:\/([^/]+)|$)/) : null;
       if (inEngine) {
         if (target !== null && instanceOf(target) !== null) out.push({ file, line, spec, target, why: 'the engine imports an instance' });
-        else if (target === null && /(^|[/#@])instances(\/|$)/.test(spec)) out.push({ file, line, spec, target: spec, why: 'the engine names instances/ through a bare specifier' });
-      } else if (home !== null && target !== null) {
-        const other = instanceOf(target);
-        if (other !== null && other !== home) out.push({ file, line, spec, target, why: `instance ${home} imports instance ${other}` });
+        else if (named) out.push({ file, line, spec, target: spec, why: 'the engine names instances/ through a bare or absolute specifier' });
+      } else if (home !== null) {
+        const other = target !== null ? instanceOf(target) : (named?.[1] ?? null);
+        if (other !== null && other !== home) out.push({ file, line, spec, target: target ?? spec, why: `instance ${home} imports instance ${other}` });
       }
     }
   }
@@ -96,15 +106,20 @@ export function boundaryFaults(files) {
 
 /** The tracked engine and instance sources, read from disk. */
 export function treeFiles() {
-  const tree = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+  const tree = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', cwd: repoRoot }).split('\0').filter(Boolean);
   /** @type {Record<string, string>} */
   const files = {};
-  for (const p of tree) if (SOURCE.test(p) && fs.existsSync(p)) files[p] = fs.readFileSync(p, 'utf8');
+  for (const p of tree) if (SOURCE.test(p) && fs.existsSync(path.join(repoRoot, p))) files[p] = fs.readFileSync(path.join(repoRoot, p), 'utf8');
   return files;
 }
 
 function main() {
   const files = treeFiles();
+  /* A guard reading nothing would pass; the engine is never empty, so an empty read is a broken read. */
+  if (!Object.keys(files).some((f) => f.startsWith('engine/'))) {
+    console.error('  engine-boundary: no engine file was read, which cannot be right; refusing to report a pass on nothing');
+    process.exit(1);
+  }
   const faults = boundaryFaults(files);
   if (faults.length) {
     console.error(`  engine-boundary: ${faults.length} import(s) cross the line between the engine and an instance:`);

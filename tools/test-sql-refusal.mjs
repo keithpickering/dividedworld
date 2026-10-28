@@ -45,6 +45,10 @@ for (const [name, url] of [
   ['a host that merely starts with localhost', 'postgres://postgres:pg@localhost.example.com:5432/postgres'],
   ['an address on the network', 'postgres://postgres:pg@10.0.0.5:5432/postgres'],
   ['a string that is not a URL', 'not a url'],
+  ['localhost with a host parameter, which libpq lets override it', 'postgres://postgres:pg@localhost:5432/postgres?host=db.abcdefgh.supabase.co'],
+  ['localhost with a hostaddr parameter', 'postgres://postgres:pg@localhost:5432/postgres?hostaddr=10.0.0.5'],
+  ['localhost with a service parameter, whose file can name any host', 'postgres://postgres:pg@localhost:5432/postgres?service=prod'],
+  ['a URL with no host, which libpq fills from PGHOST', 'postgres:///postgres'],
   ['DATABASE_URL unset', undefined],
 ]) {
   const r = suite(url);
@@ -55,6 +59,9 @@ for (const [name, url] of [
 check('localhost is allowed', refusal('postgres://postgres:pg@localhost:5432/postgres') === null);
 check('127.0.0.1 is allowed', refusal('postgres://postgres:pg@127.0.0.1:5432/postgres') === null);
 check('::1 is allowed', refusal('postgres://postgres:pg@[::1]:5432/postgres') === null);
+check('localhost with sslmode is allowed', refusal('postgres://postgres:pg@localhost:5432/postgres?sslmode=disable') === null);
+/* The recording psql succeeds at everything, so this case shows only that the refusal is not
+   what stopped the cases above; the suite's real flow is shown by running it on Postgres. */
 {
   const r = suite('postgres://postgres:pg@localhost:5432/postgres');
   check('and an allowed URL does reach psql, so the cases above are not refused for some other reason', r.psqlRan, `status ${r.status}: ${r.stderr}`);

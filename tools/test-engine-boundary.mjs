@@ -54,6 +54,9 @@ check('a bare specifier naming instances/ fires (a package.json "imports" alias,
   const r = fires(`const name = 'divided-world';\nconst m = await import('../../instances/' + name + '/index.ts');`);
   check('a dynamic import the guard cannot read fires in engine/, since it could name anything', r.length === 1 && /cannot read/.test(r[0]?.why ?? ''), JSON.stringify(r));
 }
+check('a triple-slash reference fires', fires(`/// <reference path="../../instances/divided-world/index.ts" />\nexport {};`).length === 1);
+check('import.meta.resolve fires', fires(`export const u = import.meta.resolve('../../instances/divided-world/index.ts');`).length === 1);
+check('an absolute path into instances/ fires', fires(`import x from '/srv/app/instances/divided-world/index.ts';`).length === 1);
 check('a file in a subdirectory of engine/ is held to the same line',
   fires(`import x from '../../../instances/divided-world/index.ts';`, 'engine/rules/classes/x.ts').length === 1);
 check('a .mjs file in engine/ is held to the same line',
@@ -62,6 +65,12 @@ check('a .mjs file in engine/ is held to the same line',
 /* ---- one instance importing another ---- */
 check('an instance importing another instance fires',
   fires(`import x from '../other-world/index.ts';`, 'instances/divided-world/index.ts').length === 1);
+check('an instance importing another through a bare path fires',
+  fires(`import x from 'instances/other-world/index.ts';`, 'instances/divided-world/index.ts').length === 1);
+check('an instance importing another through an absolute path fires',
+  fires(`import x from '/srv/app/instances/other-world/index.ts';`, 'instances/divided-world/index.ts').length === 1);
+check('an instance\'s triple-slash reference to another fires',
+  fires(`/// <reference path="../other-world/index.ts" />\nexport {};`, 'instances/divided-world/index.ts').length === 1);
 check('an instance importing the engine is clean, which is the direction the boundary allows',
   fires(`import type { Instance } from '../../engine/rules/types.ts';`, 'instances/divided-world/index.ts').length === 0);
 check('an instance importing its own files is clean',

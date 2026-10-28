@@ -69,10 +69,30 @@ test('settings out of range are problems', () => {
   assert.match(settingsProblems({ ...settings, vote: 2.5 }).join('\n'), /vote/);
   assert.match(settingsProblems({ ...settings, halving: 1.5 }).join('\n'), /halving/);
   assert.match(settingsProblems({ ...settings, reactionCap: 0 }).join('\n'), /reactionCap/);
-  assert.match(settingsProblems({ ...settings, settlementCron: 'daily' }).join('\n'), /settlementCron/);
+  for (const cron of ['daily', '* * * * * *', '99 99 * * *', '60 * * * *', '* 24 * * *', '* * 0 * *', '* * * 13 *', '* * * * 8', '*/0 * * * *', '5-1 * * * *', 'MON * * * *', ''])
+    assert.match(settingsProblems({ ...settings, settlementCron: cron }).join('\n'), /settlementCron/, `cron ${JSON.stringify(cron)}`);
+  for (const cron of ['17 8 * * *', '*/15 0-6 * * 1-5', '0 0 1,15 * 0', '0 12 * * 7'])
+    assert.deepEqual(settingsProblems({ ...settings, settlementCron: cron }), [], `cron ${JSON.stringify(cron)}`);
+  assert.match(settingsProblems({ ...settings, walletCap: 1e300 }).join('\n'), /walletCap/);
   assert.match(settingsProblems({ ...settings, seasonLength: { unit: 'year', count: 1 } as never }).join('\n'), /seasonLength/);
   assert.match(settingsProblems({ ...settings, turnCooldown: { unit: 'day', count: 0 } }).join('\n'), /turnCooldown/);
   assert.match(settingsProblems({ ...settings, registrationMode: 'closed' as never }).join('\n'), /registrationMode/);
+});
+
+test('settings that are not an object are a problem, not a crash', () => {
+  assert.match(settingsProblems(null as unknown as Settings).join('\n'), /settings are missing/);
+  assert.match(instanceProblems({ ...good, settings: undefined } as unknown as Instance).join('\n'), /settings are missing/);
+});
+
+test('an instance missing a list is a problem, not a crash', () => {
+  for (const key of ['classes', 'cards', 'reactions', 'boards'] as const) {
+    const { [key]: _gone, ...rest } = good;
+    assert.match(instanceProblems(rest as Instance).join('\n'), new RegExp(`no ${key} list`), key);
+  }
+});
+
+test('an override left undefined keeps the default', () => {
+  assert.deepEqual(withOverrides(settings, { vote: undefined }).vote, settings.vote);
 });
 
 test('overrides make a new settings object and leave the defaults as they were', () => {
@@ -82,4 +102,5 @@ test('overrides make a new settings object and leave the defaults as they were',
   assert.equal(playtest.walletCap, settings.walletCap);
   assert.equal(JSON.stringify(settings), before);
   assert.ok(Object.isFrozen(playtest));
+  assert.ok(Object.isFrozen(playtest.turnCooldown) && Object.isFrozen(playtest.seasonLength), 'frozen all the way down');
 });

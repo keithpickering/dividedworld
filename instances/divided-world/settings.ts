@@ -3,11 +3,11 @@
  * (docs/plans/2026-10-28-core-loop-design.md), in hundredths of an orb. Every number is a
  * starting point the season review replaces with what the cast does.
  */
-import { withOverrides } from '../../engine/rules/instance.ts';
+import { deepFreeze, withOverrides } from '../../engine/rules/instance.ts';
 import type { Settings } from '../../engine/rules/types.ts';
 
 /** What the engine reads. */
-export const defaults: Settings = Object.freeze<Settings>({
+export const defaults: Settings = deepFreeze<Settings>({
   walletCap: 600,
   vote: 10,
   halving: 0.5,
@@ -21,7 +21,7 @@ export const defaults: Settings = Object.freeze<Settings>({
 });
 
 /** The playtest's shorter season and cooldown, kept apart from the defaults they replace. */
-export const playtestOverrides: Partial<Settings> = Object.freeze<Partial<Settings>>({
+export const playtestOverrides: Partial<Settings> = deepFreeze<Partial<Settings>>({
   seasonLength: { unit: 'week', count: 3 },
   turnCooldown: { unit: 'day', count: 7 },
 });
@@ -29,7 +29,7 @@ export const playtestOverrides: Partial<Settings> = Object.freeze<Partial<Settin
 export const playtest: Settings = withOverrides(defaults, playtestOverrides);
 
 /** What the classes and cards read: their own numbers from the same table. */
-export const economy = Object.freeze({
+export const economy = deepFreeze({
   lurker: {
     /** "Early" is among this many first players to react to a post. */
     earlyPlayers: 3,
