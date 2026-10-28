@@ -49,8 +49,8 @@
  * indistinguishable from one that was.
  *
  * Copied from currents (docs/plans/port-manifest.md) with its product steps left behind. The
- * Docs workflow's `--docs` subset and the SQL workflow's `--e2e` checks come back with the
- * stage and the database that need them.
+ * Docs workflow's `--docs` subset comes back with the stage that needs it. The SQL suite is
+ * outside this list (OUTSIDE_THE_BUILD) and runs in its own workflow, which has the database.
  */
 
 import fs from 'node:fs';
@@ -69,6 +69,10 @@ export const STEPS = [
   'node tools/check-working-rules.mjs',
   'node tools/test-doc-references.mjs',
   'node tools/check-doc-references.mjs',
+  'node tools/test-sql-refusal.mjs',
+  'node tools/test-engine-boundary.mjs',
+  'node tools/check-engine-boundary.mjs',
+  'npm run test:engine',
 ];
 
 /**
@@ -86,7 +90,9 @@ export const SERIAL = new Set([]);
  * problems() says so. Each excuse arrives with its file.
  */
 /** @type {Record<string, string>} */
-export const OUTSIDE_THE_BUILD = {};
+export const OUTSIDE_THE_BUILD = {
+  'tools/test-sql.mjs': 'needs Postgres, which the build does not have; it runs in .github/workflows/sql.yml against a Postgres service, and its refusal of any database but localhost is driven red in the build by tools/test-sql-refusal.mjs',
+};
 
 /** What package.json's two build scripts must be, exactly. */
 export const SCRIPTS = {
