@@ -104,9 +104,6 @@ function main() {
     return !err;
   };
 
-  /* A signal skips `finally`, so the scratch database is dropped on one too. */
-  for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, () => { psql(url, `drop database if exists ${scratch} with (force);`); process.exit(130); });
-
   console.log(`\nsql: scratch database ${scratch}`);
   if (!step('create', psql(url, `create database ${scratch};`))) process.exit(1);
   try {
@@ -131,7 +128,7 @@ function main() {
       const sql = fs.readFileSync(path.join(testsDir, t), 'utf8');
       const code = withoutComments(sql);
       if (!/raise\s+exception/i.test(code)) { step(t, 'asserts nothing: no `raise exception` outside a comment in this file'); continue; }
-      if (/^\s*(commit|end|rollback)\s*(transaction|work)?\s*;/im.test(code)) { step(t, 'ends its own transaction, which would escape the rollback around it'); continue; }
+      if (/(^|;)\s*(commit|rollback(?!\s+to\b))\b/im.test(code)) { step(t, 'ends its own transaction, which would escape the rollback around it'); continue; }
       ran++;
       step(t, psql(target, `begin;\n${sql}\nrollback;\n`));
     }

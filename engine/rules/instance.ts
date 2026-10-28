@@ -87,9 +87,10 @@ export function instanceProblems(instance: Instance): string[] {
 }
 
 /** An object frozen all the way down. */
-export function deepFreeze<T>(value: T): T {
-  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
-    for (const v of Object.values(value)) deepFreeze(v);
+export function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
+  if (typeof value === 'object' && value !== null && !seen.has(value)) {
+    seen.add(value);
+    for (const v of Object.values(value)) deepFreeze(v, seen);
     Object.freeze(value);
   }
   return value;

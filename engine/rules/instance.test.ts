@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { instanceProblems, settingsProblems, withOverrides } from './instance.ts';
+import { deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
 import type { Instance, Settings } from './types.ts';
 
 const settings: Settings = {
@@ -103,4 +103,14 @@ test('overrides make a new settings object and leave the defaults as they were',
   assert.equal(JSON.stringify(settings), before);
   assert.ok(Object.isFrozen(playtest));
   assert.ok(Object.isFrozen(playtest.turnCooldown) && Object.isFrozen(playtest.seasonLength), 'frozen all the way down');
+});
+
+test('deepFreeze reaches inside an object already frozen at the top, and survives a cycle', () => {
+  const shallow = Object.freeze({ a: { b: 1 } });
+  deepFreeze(shallow);
+  assert.ok(Object.isFrozen(shallow.a));
+  const loop: { self?: unknown } = {};
+  loop.self = loop;
+  assert.doesNotThrow(() => deepFreeze(loop));
+  assert.ok(Object.isFrozen(loop));
 });
