@@ -60,3 +60,10 @@ test('retries wait longer each time', async () => {
   assert.equal(waits.length, 2);
   assert.ok(waits[1]! > waits[0]!);
 });
+
+test('an error that is not PostgREST\'s JSON is still a database error, with its status', async () => {
+  const { fetch, calls } = scripted(new Response('<html>Internal error</html>', { status: 500 }));
+  const db = postgrest({ url: 'https://p.example', key: 'k', fetch, sleep: noWait });
+  await assert.rejects(db.rpc('f', {}), (e: unknown) => e instanceof DatabaseError && e.status === 500 && /HTTP 500/.test(e.message));
+  assert.equal(calls.length, 1);
+});

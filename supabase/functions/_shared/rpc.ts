@@ -68,7 +68,12 @@ export function postgrest(options: PostgrestOptions): Db {
           continue;
         }
         const text = await response.text();
-        const body: unknown = text ? JSON.parse(text) : null;
+        let body: unknown = null;
+        try { body = text ? JSON.parse(text) : null; } catch {
+          // Not PostgREST's JSON (a proxy's page): an error with the status, or a reply nothing can read.
+          if (!response.ok) throw new DatabaseError(`${fn}: HTTP ${response.status} ${text.slice(0, 200)}`, '', response.status);
+          throw new DatabaseError(`${fn}: an answer that is not JSON`, '', response.status);
+        }
         if (!response.ok) {
           const b = (body ?? {}) as { code?: string; message?: string; details?: string };
           throw new DatabaseError(`${fn}: ${b.message ?? `HTTP ${response.status}`}${b.details ? ` (${b.details})` : ''}`, b.code ?? '', response.status);
