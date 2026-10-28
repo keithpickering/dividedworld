@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_DEPTH, parse, safeHref, safeImageSrc } from './parse.ts';
+import { MAX_DEPTH, MAX_TAG, MAX_URL_LENGTH, parse, safeHref, safeImageSrc } from './parse.ts';
 import type { BbNode } from './parse.ts';
 
 const text = (t: string): BbNode => ({ type: 'text', text: t });
@@ -116,8 +116,8 @@ test('url with a javascript target becomes text, however it is dressed', () => {
     '',
     'https://a.example/"onmouseover="alert(1)',
     'https://a.example/<b>',
-    'https://a.example/​x',
-    'https://a.example/‮x',
+    'https://a.example/\u200bx',
+    'https://a.example/\u202ex',
   ];
   assertLiteral(targets.map((t) => `[url=${t}]click[/url]`));
   assertLiteral(targets.map((t) => `[url="${t}"]click[/url]`));
@@ -237,7 +237,7 @@ test('an unclosed bare url tag falls back to its words', () => {
 });
 
 test('a closing tag with nothing open is text', () => {
-  assertLiteral(['x[/b]y'.replace(/^/, ''), '[/quote]', '[/img]', '[/code]']);
+  assertLiteral(['x[/b]y', '[/quote]', '[/img]', '[/code]']);
   assert.deepEqual(parse('a[/b]b'), [text('a[/b]b')]);
 });
 
@@ -312,4 +312,172 @@ test('safeHref and safeImageSrc return the checked address or null', () => {
   assert.equal(safeImageSrc('https://example.com/a.png'), 'https://example.com/a.png');
   assert.equal(safeImageSrc('/a.png'), null);
   assert.equal(safeImageSrc('mailto:a@b.co'), null);
+});
+
+const BAD_AUTHORITIES = [
+  'https://mfgg.net@evil.example/',
+  'https://user:pw@x.example/',
+  'https://@',
+  'https://@x.example/',
+  'https://:80',
+  'https://:80/path',
+  'https://x.example:/',
+  'https://x.example:port/',
+  'https://x.example:123456/',
+  'https://\u0430pple.com/',
+  'https://apple.\u0441om/',
+  'https://%61.example/',
+  'https://a_b.example/',
+  'https://-a.example/',
+  'https://a.example./x'.replace('./x', '..'),
+];
+
+test('a link or image whose authority holds credentials, no host or a non-ASCII host is text', () => {
+  assertLiteral(BAD_AUTHORITIES.map((t) => `[url=${t}]mfgg.net[/url]`));
+  assertLiteral(BAD_AUTHORITIES.map((t) => `[img]${t}[/img]`));
+  for (const t of BAD_AUTHORITIES) {
+    assert.equal(safeHref(t), null, t);
+    assert.equal(safeImageSrc(t), null, t);
+  }
+});
+
+test('ordinary hosts, ports, punycode and an @ in the path are accepted', () => {
+  for (const ok of [
+    'https://xn--80ak6aa92e.com/',
+    'https://a.example:8080/p',
+    'http://localhost',
+    'https://1.2.3.4/x',
+    'https://a.example/@user',
+    'https://a.example/?e=a@b.co',
+    'https://a.example/\u00e9t\u00e9',
+  ]) {
+    assert.equal(safeHref(ok), ok);
+    assert.equal(safeImageSrc(ok), ok);
+  }
+});
+
+test('invisible characters in an address make it text', () => {
+  const chars = ['\u3164', '\u2800', '\u00ad', '\u180e', '\ufff9', '\ufffa', '\ufffb', '\u200b', '\u034f', '\u115f', '\u1160', '\uffa0', '\u2062', '\ufeff'];
+  for (const c of chars) {
+    const code = `U+${c.codePointAt(0)?.toString(16)}`;
+    assert.equal(safeHref(`https://a.example/${c}x`), null, code);
+    assert.equal(safeHref(`https://a${c}.example/`), null, code);
+    assert.equal(safeImageSrc(`https://a.example/${c}x.png`), null, code);
+    assertLiteral([`[url=https://a.example/${c}x]t[/url]`]);
+  }
+});
+
+test('an address of exactly the maximum length is a link and one longer is text', () => {
+  const base = 'https://a.example/';
+  const ok = base + 'a'.repeat(MAX_URL_LENGTH - base.length);
+  const tooLong = ok + 'a';
+  assert.equal(ok.length, MAX_URL_LENGTH);
+  assert.deepEqual(parse(`[url=${ok}]t[/url]`), [{ type: 'url', href: ok, children: [text('t')] }]);
+  assert.deepEqual(parse(`[url="${ok}"]t[/url]`), [{ type: 'url', href: ok, children: [text('t')] }]);
+  assertLiteral([`[url=${tooLong}]t[/url]`, `[img]${tooLong}[/img]`]);
+  assert.deepEqual(parse(`[img]${ok}[/img]`), [{ type: 'img', src: ok }]);
+  assert.equal(safeHref(tooLong), null);
+  assert.equal(safeImageSrc(tooLong), null);
+});
+
+test('a long URL that fits the maximum is a link, not text', () => {
+  const href = 'https://a.example/' + 'q'.repeat(400);
+  assert.deepEqual(parse(`[url=${href}]t[/url]`), [{ type: 'url', href, children: [text('t')] }]);
+});
+
+test('a tag longer than the tag limit is text and does not capture a later closer', () => {
+  const long = 'x'.repeat(MAX_TAG + 1);
+  assert.deepEqual(parse(`[b][b=${long}][/b]y`), [
+    { type: 'bold', children: [text(`[b=${long}]`)] },
+    text('y'),
+  ]);
+  assert.deepEqual(parse(`[b][b=x][/b]y`), [{ type: 'bold', children: [text('[b=x][/b]y')] }]);
+});
+
+test('a bad img gives up only its own opener, and what follows still parses', () => {
+  assert.deepEqual(parse('[img]oops [b]b[/b] [img]https://a.b/c.png[/img]'), [
+    text('[img]oops '),
+    { type: 'bold', children: [text('b')] },
+    text(' '),
+    { type: 'img', src: 'https://a.b/c.png' },
+  ]);
+  assert.deepEqual(parse('[img]data:x[/img] [b]k[/b]'), [text('[img]data:x[/img] '), { type: 'bold', children: [text('k')] }]);
+});
+
+test('a code or img tag with an attribute is text and parsing resumes after it', () => {
+  assert.deepEqual(parse('[code=x]a[/code]'), [text('[code=x]a[/code]')]);
+  assert.deepEqual(parse('[img=x]https://a.b/c.png[/img]'), [text('[img=x]https://a.b/c.png[/img]')]);
+  assert.deepEqual(parse('[code=x][b]a[/b][/code]'), [text('[code=x]'), { type: 'bold', children: [text('a')] }, text('[/code]')]);
+});
+
+test('a link inside a link is text with its closer; an image inside a link is fine', () => {
+  assert.deepEqual(parse('[url=https://a.example/1]x [url=https://b.example/2]y[/url] z[/url]'), [
+    { type: 'url', href: 'https://a.example/1', children: [text('x [url=https://b.example/2]y[/url] z')] },
+  ]);
+  assert.deepEqual(parse('[url=https://a.example/][url]https://b.example[/url][/url]'), [
+    { type: 'url', href: 'https://a.example/', children: [text('[url]https://b.example[/url]')] },
+  ]);
+  assert.deepEqual(parse('[url=https://a.example/][img]https://a.example/i.png[/img][/url]'), [
+    { type: 'url', href: 'https://a.example/', children: [{ type: 'img', src: 'https://a.example/i.png' }] },
+  ]);
+  assert.deepEqual(parse('[url=https://a.example/]x[/url][url=https://b.example/]y[/url]'), [
+    { type: 'url', href: 'https://a.example/', children: [text('x')] },
+    { type: 'url', href: 'https://b.example/', children: [text('y')] },
+  ]);
+});
+
+test('a color must be a whole hex value or name, with nothing around it', () => {
+  assertLiteral(['[color=#fffffff]x[/color]', '[color=#fffxyz]x[/color]', '[color=a#fff]x[/color]', '[color=#ffff]x[/color]', '[color=#fff ]x[/color]']);
+});
+
+test('a quote id must be a whole UUID, with nothing around it', () => {
+  assertLiteral([`[quote=zz${ACT}]x[/quote]`, `[quote=${ACT}zz]x[/quote]`]);
+});
+
+test('a code or img tag with an attribute never reads its contents raw', () => {
+  assertLiteral(['[img=x]a[/img]', '[code=x]a[/code]']);
+});
+
+function rng(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+test('across generated malformed input, every word a player wrote survives in order', () => {
+  /* Words are capitals, and every tag, attribute and address is lowercase or a symbol, so the
+     capitals of an input are exactly the player's words. They must all appear, in order, in the
+     text of the tree. */
+  const inner = '1b4e28ba-2fa1-11d2-883f-0016d3cca427';
+  const parts = [
+    '[b]', '[/b]', '[i]', '[/i]', '[u]', '[/s]', '[url=https://a.b/c]', '[url=javascript:x]', '[url]', '[/url]',
+    '[img]https://a.b/c.png[/img]', '[img]data:x[/img]', '[img]', '[/img]', '[code]', '[/code]', '[code=x]',
+    `[quote=${ACT}]`, `[quote=${inner}]`, '[quote=zz]', '[/quote]', '[list]', '[list=1]', '[list=a]', '[*]', '[/list]',
+    '[color=red]', '[color=zz]', '[/color]', '[size=3]', '[size=99]', '[/size]', '[', ']', '[[', ']]', '[=', ' ', '\n',
+    'AB', 'CD', 'EF', 'GHL', 'JK', 'MN',
+  ];
+  const next = rng(20261028);
+  for (let n = 0; n < 500; n++) {
+    let input = '';
+    const len = 1 + Math.floor(next() * 25);
+    for (let k = 0; k < len; k++) input += parts[Math.floor(next() * parts.length)];
+    const tree = parse(input);
+    const want = input.match(/[A-Z]/g) ?? [];
+    const got = allText(tree).match(/[A-Z]/g) ?? [];
+    let at = 0;
+    for (const c of got) if (at < want.length && want[at] === c) at++;
+    assert.equal(at, want.length, `words lost or reordered in ${JSON.stringify(input)}`);
+    assert.ok(depthOf(tree) <= MAX_DEPTH);
+  }
+});
+
+test('many bad img openers before one closer parse in bounded time', () => {
+  const started = performance.now();
+  const tree = parse('[img]x'.repeat(100_000) + '[/img]');
+  assert.ok(performance.now() - started < 3000);
+  assert.equal(allText(tree), '[img]x'.repeat(100_000) + '[/img]');
 });

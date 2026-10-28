@@ -21,8 +21,11 @@
  * - A closer closes the nearest matching opener and, with it, anything opened inside that was
  *   never closed. `[b][i]x[/b]y[/i]` is bold italic `x`, then the text `y[/i]`. A closer with
  *   nothing open to close is text.
- * - `[code]` and `[img]` take their contents raw up to the closing tag. With no closing tag
- *   they are text, and what follows parses as usual.
+ * - `[code]` and `[img]` take their contents raw up to the closing tag. With no closing tag,
+ *   an attribute, or (for an image) contents that are not an http or https address, only the
+ *   opening tag is text, and what follows parses as usual.
+ * - A link inside a link is text, with its closer, since a nested anchor is not valid markup.
+ *   An image inside a link is fine: it is a node of its own with a checked source.
  * - A list's `[*]` is an item marker only directly inside `[list]`; elsewhere it is text.
  *   Blank space before the first item is layout and is not kept; words before it become an
  *   item of their own.
@@ -48,10 +51,10 @@ export type BbNode =
 
 /** Deepest nesting of tags; past it a tag is text. Deep enough for quotes of quotes, shallow enough to render by recursion. */
 export const MAX_DEPTH = 32;
-/** Longest tag, brackets excluded; a longer one is text. */
-export const MAX_TAG = 300;
 /** Longest address accepted. */
 export const MAX_URL_LENGTH = 2048;
+/** Longest tag, brackets excluded; a longer one is text. Room for an address at its limit, with quotes and the tag name. */
+export const MAX_TAG = MAX_URL_LENGTH + 16;
 /**
  * `[size=n]` takes a whole number from 1 to 7, a fixed scale the renderer maps to its own
  * sizes. A free number would let a post hide its words at a pixel or fill the screen with one.
@@ -68,9 +71,21 @@ export const NAMED_COLORS: ReadonlySet<string> = new Set([
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
-/* Whitespace, C0 and C1 controls, quotes, angle brackets, backticks, backslash, and the invisible
-   or direction-changing characters that disguise an address. */
-const BAD_URL_CHAR = /[\s\u0000-\u001f\u007f-\u009f"'<>`\\\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/;
+/* Whitespace, C0 and C1 controls, quotes, angle brackets, backticks, backslash, every format
+   character (zero-width, direction, soft hyphen, annotation anchors), and the blank-looking
+   fillers that are not formats (Hangul fillers, braille blank, combining grapheme joiner). */
+const BAD_URL_CHAR = /[\s\u0000-\u001f\u007f-\u009f"'<>`\\\p{Cf}\u034f\u115f\u1160\u2800\u3164\uffa0\u2028\u2029]/u;
+const HOST = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i;
+
+/* The authority of an http(s) address: no credentials, a real ASCII host (an international
+   name arrives as punycode, `xn--`), and a port that is digits. `https://mfgg.net@evil.example/`
+   is a link to evil.example, so any `@` here is a refusal. */
+function goodAuthority(authority: string): boolean {
+  const colon = authority.indexOf(':');
+  const host = colon < 0 ? authority : authority.slice(0, colon);
+  if (colon >= 0 && !/^[0-9]{1,5}$/.test(authority.slice(colon + 1))) return false;
+  return HOST.test(host) && !host.includes('..');
+}
 
 function checkedUrl(raw: string, schemes: readonly string[], allowRelative: boolean): string | null {
   const s = raw.trim();
@@ -85,7 +100,8 @@ function checkedUrl(raw: string, schemes: readonly string[], allowRelative: bool
     /* The scheme comes back lowercase; the rest is the player's. */
     const normalized = name + ':' + rest;
     if (name === 'mailto') return rest.length > 0 ? normalized : null;
-    return /^\/\/[^/?#]+/.test(rest) ? normalized : null;
+    const authority = /^\/\/([^/?#]*)/.exec(rest);
+    return authority && goodAuthority(authority[1] ?? '') ? normalized : null;
   }
   if (allowRelative && s.startsWith('/') && !s.startsWith('//')) return s;
   return null;
@@ -236,9 +252,9 @@ export function parse(input: string): BbNode[] {
     return nextClose;
   };
 
-  const rawEnds: Record<string, { re: RegExp; missing: boolean }> = {
-    code: { re: /\[\/code\]/gi, missing: false },
-    img: { re: /\[\/img\]/gi, missing: false },
+  const rawEnds: Record<string, { re: RegExp; missing: boolean; at: number }> = {
+    code: { re: /\[\/code\]/gi, missing: false, at: -1 },
+    img: { re: /\[\/img\]/gi, missing: false, at: -1 },
   };
 
   let pos = 0;
@@ -287,27 +303,32 @@ export function parse(input: string): BbNode[] {
         pushText(home.out, raw);
       }
     } else if (name === 'code' || name === 'img') {
-      const end = rawEnds[name] as { re: RegExp; missing: boolean };
+      const end = rawEnds[name] as { re: RegExp; missing: boolean; at: number };
       const home = top().home;
-      let m: RegExpExecArray | null = null;
+      let found = -1;
       if (value === undefined && !end.missing) {
-        end.re.lastIndex = close + 1;
-        m = end.re.exec(input);
-        if (!m) end.missing = true;
-      }
-      if (!m) {
-        pushText(home.out, raw);
-      } else {
-        const content = input.slice(close + 1, m.index);
-        const after = m.index + m[0].length;
-        if (name === 'code') {
-          home.out.push({ type: 'code', text: content });
-        } else {
-          const src = safeImageSrc(content);
-          if (src !== null) home.out.push({ type: 'img', src });
-          else pushText(home.out, input.slice(i, after));
+        /* The first closer after a point stays the first closer for every later opener up to
+           it, so it is looked up again only once the parser has passed it. */
+        if (end.at < close + 1) {
+          end.re.lastIndex = close + 1;
+          const m = end.re.exec(input);
+          if (m) end.at = m.index;
+          else end.missing = true;
         }
-        textStart = pos = after;
+        if (!end.missing) found = end.at;
+      }
+      if (found < 0) {
+        pushText(home.out, raw);
+      } else if (name === 'code') {
+        home.out.push({ type: 'code', text: input.slice(close + 1, found) });
+        textStart = pos = found + '[/code]'.length;
+      } else if (found - close - 1 <= MAX_URL_LENGTH + 64 && safeImageSrc(input.slice(close + 1, found)) !== null) {
+        home.out.push({ type: 'img', src: safeImageSrc(input.slice(close + 1, found)) as string });
+        textStart = pos = found + '[/img]'.length;
+      } else {
+        /* Only the opener is text; what follows is parsed as usual, so a bad image cannot
+           swallow the words and tags between it and some later closer. */
+        pushText(home.out, raw);
       }
     } else if (name in SIMPLE) {
       const type = SIMPLE[name] as 'bold' | 'italic' | 'underline' | 'strike';
@@ -324,10 +345,12 @@ export function parse(input: string): BbNode[] {
         openReal(name, raw, 'simple', { build: (children) => ({ type: 'size', size: n, children }) });
       } else literalOpen(name, raw);
     } else if (name === 'url') {
-      if (value === undefined) {
+      if ((open.get('url') ?? 0) > 0) {
+        literalOpen(name, raw);
+      } else if (value === undefined) {
         openReal(name, raw, 'bareurl', {});
       } else {
-        const href = safeHref(value);
+        const href = (open.get('url') ?? 0) === 0 ? safeHref(value) : null;
         if (href !== null) openReal(name, raw, 'simple', { build: (children) => ({ type: 'url', href, children }) });
         else literalOpen(name, raw);
       }
