@@ -285,3 +285,118 @@ test('cards and spun threads reach a class as the plan reads them', () => {
     'Bob before; Dee and Ann in the window; Cat\'s own reply is not counted');
   assert.equal(spunByCat[0]!.at, FROM + 10 * H, 'placed when its count reached its total');
 });
+
+/* ---- the edges: each case below is a boundary a one-character change would move ---- */
+
+const recorder = (): { rules: ClassRules; inputs: ClassInput[] } => {
+  const inputs: ClassInput[] = [];
+  return { inputs, rules: { key: 'quiet', name: 'Quiet', earn: (i) => { inputs.push(i); return i.posts.map((p) => ({ reason: 'quiet.post', amount: 7, act: p.act })); } } };
+};
+const withClasses = (...extra: ClassRules[]): Instance => ({ ...instance, classes: [...instance.classes.filter((c) => !extra.some((e) => e.key === c.key)), ...extra] });
+
+test('a reaction at exactly the window\'s start is paid, and an Act at exactly its end is not read', () => {
+  const b = base();
+  const edge: SettlementInput = { ...b, acts: [...b.acts, post('end', 'bob-1', TO)], reactions: [...b.reactions, react('p1', 'dee', 'dee-1', 'fire', FROM)] };
+  const r = settle(edge, instance);
+  assert.equal(amountOf(r, 'ann-fan', 'fan.love'), 30, 'Dee\'s fire at the start is a whole vote');
+  assert.equal(amountOf(r, 'bob-1', 'quiet.post'), 7, 'Bob\'s post at the end is the next window\'s');
+});
+
+test('a Turn at the window\'s start covers the whole window; one at its end covers none of it; a reaction at the Turn\'s instant is the new class\'s', () => {
+  const b = base();
+  const at = (from: number) => ({ ...b, characters: b.characters.map((c) => (c.id === 'ann-fan' ? { ...c, classes: [{ class: 'fan', from: 0 }, { class: 'quiet', from }] } : c)) });
+  assert.equal(amountOf(settle(at(FROM), instance), 'ann-fan', 'fan.love'), 0);
+  assert.equal(amountOf(settle(at(TO), instance), 'ann-fan', 'fan.love'), 20);
+  assert.equal(amountOf(settle(at(FROM + 4 * H), instance), 'ann-fan', 'fan.love'), 0, 'Bob\'s fire lands at the Turn\'s instant, under the new class');
+});
+
+test('a character whose first class starts inside the window is settled from then', () => {
+  const b = base();
+  const late = { ...b, characters: b.characters.map((c) => (c.id === 'ann-fan' ? { ...c, classes: [{ class: 'fan', from: FROM + 5 * H }] } : c)) };
+  assert.equal(amountOf(settle(late, instance), 'ann-fan', 'fan.love'), 10, 'only Cat\'s half and Bob\'s heart, after it existed');
+});
+
+test('two classes from the same instant are refused, rather than settled by whichever came first', () => {
+  const b = base();
+  const twice = { ...b, characters: b.characters.map((c) => (c.id === 'ann-fan' ? { ...c, classes: [{ class: 'fan', from: 0 }, { class: 'quiet', from: 0 }] } : c)) };
+  assert.throws(() => settle(twice, instance), /two classes from the same instant/);
+});
+
+test('rounding is half away from zero, in both directions', () => {
+  const halves: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'up', amount: 2.5 }, { reason: 'down', amount: -2.5 }] : []) };
+  const r = settle(base(), withClasses(halves));
+  assert.equal(amountOf(r, 'ann-fan', 'up'), 3);
+  assert.equal(amountOf(r, 'ann-fan', 'down'), -3);
+});
+
+test('a class that returns a number that is not one is refused, and a zero is no entry', () => {
+  const broken: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'x', amount: Number.NaN }] : []) };
+  assert.throws(() => settle(base(), withClasses(broken)), /returned NaN/);
+  const zero: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'nothing', amount: 0, act: 'p1' }] : []) };
+  const r = settle(base(), withClasses(zero));
+  assert.ok(!r.entries.some((e) => e.reason === 'nothing') && !r.details.some((d) => d.reason === 'nothing'));
+});
+
+test('a reacting player\'s rank and where a post ends up reach the class, with ties settled the same way every time', () => {
+  const { rules, inputs } = recorder();
+  const b = base();
+  const tie: SettlementInput = {
+    ...b,
+    acts: [...b.acts, post('t1p', 'ann-quiet', FROM + H)],
+    reactions: [
+      ...b.reactions,
+      // Dee and Cat react at the same instant: Cat, the lower id, comes first. Their votes tie, so t1p has no direction.
+      react('t1p', 'dee', 'dee-1', 'zzz', FROM + 2 * H),
+      react('t1p', 'cat', 'cat-1', 'fire', FROM + 2 * H),
+    ],
+  };
+  settle(tie, withClasses(rules));
+  const given = inputs.flatMap((i) => i.given.map((g) => ({ ...g, by: i.character })));
+  assert.deepEqual(given.filter((g) => g.act === 't1p').map((g) => [g.by, g.rank, g.endsUp]).sort(), [['cat-1', 1, null], ['dee-1', 2, null]]);
+  // p1: Bob first (rank 1), Cat second; Bob's whole fire and Cat's half fire outweigh Cat's half zzz.
+  assert.deepEqual(given.filter((g) => g.act === 'p1').map((g) => [g.by, g.rank, g.endsUp]).sort(),
+    [['bob-1', 1, 'excitedPositive'], ['cat-1', 2, 'excitedPositive'], ['cat-1', 2, 'excitedPositive']]);
+});
+
+test('a reaction at the very instant a card is played is not "after" it; a reply at the window\'s start is in the window', () => {
+  const { rules, inputs } = recorder();
+  const b = base();
+  const input: SettlementInput = {
+    ...b,
+    acts: [
+      ...b.acts,
+      { id: 'k1', character: 'bob-1', kind: 'card', at: FROM + 5 * H, thread: 't1', target: 'p1', card: 'splat' },
+      { id: 's1', character: 'cat-1', kind: 'spin', at: FROM - 3 * H, thread: 'spun', target: 'q1' },
+      { id: 's2', character: 'cat-1', kind: 'spin', at: FROM - 3 * H, thread: 'spun2', target: 'q1' },
+      post('r1', 'dee-1', FROM, 'spun'),
+      post('r2', 'cat-1', FROM + H, 'spun2'),
+      { id: 's3', character: 'dee-1', kind: 'spin', at: FROM + H, thread: 'spun3', target: 'q1' },
+    ],
+  };
+  settle(input, withClasses(rules));
+  const k1 = inputs.flatMap((i) => i.cardsPlayed).find((c) => c.act === 'k1')!;
+  assert.equal(k1.targetAfter.excitedPositive, 0, 'Cat\'s fire on p1 lands at the card\'s instant');
+  const spun = inputs.flatMap((i) => i.threadsSpun);
+  assert.deepEqual(spun.find((t) => t.act === 's1') && { b: spun.find((t) => t.act === 's1')!.repliersBefore, n: spun.find((t) => t.act === 's1')!.repliersNow }, { b: 0, n: 1 });
+  assert.equal(spun.find((t) => t.act === 's1')!.fromOthers, true);
+  assert.equal(spun.some((t) => t.act === 's2'), false, 'spun before the window and nothing new: not given');
+  assert.deepEqual(spun.find((t) => t.act === 's3') && [spun.find((t) => t.act === 's3')!.repliersNow, spun.find((t) => t.act === 's3')!.fromOthers], [0, true], 'spun in the window: given, with none yet');
+  const own = settle({ ...input, acts: [...input.acts, { id: 's4', character: 'bob-1', kind: 'spin', at: FROM + H, thread: 'spun4', target: 'q1' }] }, withClasses(rules));
+  void own;
+  assert.equal(inputs.flatMap((i) => i.threadsSpun).find((t) => t.act === 's4')?.fromOthers, false, 'spun from its own player\'s Act');
+});
+
+test('a card whose target is not in the input is refused, and a card retired from the instance only matters inside the window', () => {
+  const b = base();
+  assert.throws(() => settle({ ...b, acts: [...b.acts, { id: 'k9', character: 'bob-1', kind: 'card', at: FROM + H, thread: 't1', target: 'gone', card: 'splat' }] }, instance), /Act gone is not in the input/);
+  const old = { ...b, acts: [...b.acts, { id: 'k0', character: 'bob-1', kind: 'card' as const, at: FROM - H, thread: 't1', target: 'p1', card: 'retired' }] };
+  assert.doesNotThrow(() => settle(old, instance));
+  assert.throws(() => settle({ ...b, acts: [...b.acts, { id: 'k8', character: 'bob-1', kind: 'card', at: FROM + H, thread: 't1', target: 'p1', card: 'retired' }] }, instance), /"retired"/);
+});
+
+test('the log\'s rounding is shared the same way every time, and a line that rounds to nothing is not shown', () => {
+  const thirds: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'x', amount: 1 / 3, act: 'b' }, { reason: 'x', amount: 1 / 3, act: 'a' }, { reason: 'x', amount: 1 / 3, act: 'c' }] : []) };
+  const r = settle(base(), withClasses(thirds));
+  assert.equal(amountOf(r, 'ann-fan', 'x'), 1);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'x').map((d) => [d.act, d.amount]), [['a', 1]], 'the tie goes to the first key; the others round to nothing and are not shown');
+});

@@ -84,6 +84,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
   const characters = new Map<string, InputCharacter>();
   for (const c of [...input.characters].sort((a, b) => cmp(a.id, b.id))) {
     for (const k of c.classes) if (!classOf.has(k.class)) throw new Error(`settle: character ${c.id} holds class "${k.class}", which the instance does not have`);
+    if (new Set(c.classes.map((k) => k.from)).size !== c.classes.length) throw new Error(`settle: character ${c.id} has two classes from the same instant`);
     characters.set(c.id, c);
   }
   const playerOf = (character: string) => {
@@ -94,7 +95,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
   const acts = new Map<string, InputAct>();
   for (const a of [...input.acts].filter((a) => a.at < window.to).sort((a, b) => a.at - b.at || cmp(a.id, b.id))) {
     playerOf(a.character);
-    if (a.kind === 'card' && (!a.card || !alignmentOf.has(a.card))) throw new Error(`settle: card Act ${a.id} plays "${a.card}", which the instance does not have`);
+    if (a.kind === 'card' && a.at >= window.from && (!a.card || !alignmentOf.has(a.card))) throw new Error(`settle: card Act ${a.id} plays "${a.card}", which the instance does not have`);
     acts.set(a.id, a);
   }
   const actOf = (id: string) => {
@@ -273,12 +274,16 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     linesOf.set(k, list);
   }
   const details: Detail[] = [];
-  for (const [, list] of [...linesOf].sort((a, b) => cmp(a[0], b[0]))) {
-    const target = round(list.reduce((s, l) => s + l.amount, 0));
+  const entryAmount = new Map(entries.map((e) => [`${e.player}\u0000${e.character}\u0000${e.reason}`, e.amount]));
+  for (const [k, list] of [...linesOf].sort((a, b) => cmp(a[0], b[0]))) {
+    const target = entryAmount.get(k) ?? 0;
     const whole = list.map((l) => Math.floor(l.amount));
     let short = target - whole.reduce((s, w) => s + w, 0);
     const byRemainder = list.map((l, i) => ({ i, rem: l.amount - Math.floor(l.amount), key: l.key }))
       .sort((a, b) => b.rem - a.rem || cmp(a.key, b.key));
+    /* The target is the rounded sum of the lines and each line is floored, so `short` is
+       between 0 and the number of lines and no line gets two. Only floating dust across many
+       lines could push it a step past either end, and the modulo keeps that bounded too. */
     for (let j = 0; short > 0; j = (j + 1) % byRemainder.length, short--) whole[byRemainder[j]!.i]! += 1;
     for (let j = byRemainder.length - 1; short < 0; j = (j - 1 + byRemainder.length) % byRemainder.length, short++) whole[byRemainder[j]!.i]! -= 1;
     list.forEach((l, i) => {

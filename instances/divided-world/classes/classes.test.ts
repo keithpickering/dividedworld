@@ -170,3 +170,26 @@ test('a Lurker\'s fourth post costs', () => {
   const posts: SettlementInput = { ...b, acts: [...b.acts, ...[1, 2, 3, 4].map((n) => ({ id: `lp${n}`, character: 'lu', kind: 'post' as const, at: (5 + n) * H, thread: 't' }))] };
   assert.equal(settle(posts, world).entries.find((e) => e.reason === 'lurker.overPosting')?.amount, -10);
 });
+
+test('reactions to a card count for the card\'s player under whichever class they hold', () => {
+  const asHeel = settle(board('heel'), world);
+  // The card's player is now a Heel: the fire and the zzz on its card are not heat and pay nothing,
+  // but its Salty card drew two votes to its target's one, which a Heel is paid for.
+  assert.deepEqual(asHeel.entries.filter((e) => e.character === 'lu').map((e) => [e.reason, e.amount]), [['heel.stoleThunder', 20]]);
+  const b = board('heel');
+  const heated: SettlementInput = { ...b, reactions: [...b.reactions, { act: 'k1', player: 'pf', character: 'fa', kind: 'tomato', at: 5 * H }] };
+  assert.equal(sum(settle(heated, world), 'lu'), 25, 'and the Face\'s player\'s tomato on the card is half their vote, of heat');
+});
+
+test('a Lurker\'s spun thread is not a post', () => {
+  const b = board();
+  const spins: SettlementInput = {
+    ...b,
+    acts: [
+      ...b.acts,
+      ...[1, 2, 3].map((n) => ({ id: `lp${n}`, character: 'lu', kind: 'post' as const, at: (5 + n) * H, thread: 't' })),
+      { id: 'ls', character: 'lu', kind: 'spin' as const, at: 10 * H, thread: 'spun', target: 'p1' },
+    ],
+  };
+  assert.equal(settle(spins, world).entries.filter((e) => e.reason === 'lurker.overPosting').length, 0);
+});

@@ -65,5 +65,10 @@ test('one window with 500 players, 3,000 characters, 20,000 Acts and 100,000 rea
   const ms = performance.now() - start;
   console.log(`  settled ${input.reactions.length} reactions on ${input.acts.length} Acts into ${r.entries.length} entries in ${Math.round(ms)} ms`);
   assert.ok(r.entries.length > 1000);
+  const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
+  assert.equal(sum(r.standings.map((x) => x.amount)), sum(r.entries.map((e) => e.amount)), 'the standings are the entries');
+  for (const e of r.entries.slice(0, 500)) {
+    assert.equal(sum(r.details.filter((d) => d.character === e.character && d.reason === e.reason).map((d) => d.amount)), e.amount, 'the log adds up');
+  }
   assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
 });
