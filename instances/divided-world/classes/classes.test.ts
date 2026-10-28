@@ -50,6 +50,7 @@ test('Face\'s weakness: bored-negative reactions on its Acts', () => {
 test('Face\'s weakness: its card outdrawing the post it landed on', () => {
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'sweet', votes: 3, targetVotes: 2 })] })), -20);
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'sweet', votes: 2, targetVotes: 2 })] })), 0, 'a tie is not outdrawing');
+  assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'sweet', votes: 3, targetVotes: 1, onOthers: false })] })), 0, 'not on its own player\'s post');
 });
 test('Face is unmoved by the quadrants it does not read', () => {
   assert.equal(total(face, input({ received: [got('excitedNegative'), got('calmPositive')] })), 0);
@@ -162,13 +163,13 @@ test('a Lurker\'s cards and reactions never count as posting', () => {
     reactions: [...b.reactions, ...['fire', 'tea'].map((kind) => ({ act: 'p1', player: 'pl', character: 'lu', kind, at: 5 * H }))],
   };
   const r = settle(many, world);
-  assert.equal(r.entries.filter((e) => e.reason === 'lurker.overPosting').length, 0);
+  assert.equal(r.entries.filter((e) => e.reason === 'lurker.postedTooMuch').length, 0);
 });
 
 test('a Lurker\'s fourth post costs', () => {
   const b = board();
   const posts: SettlementInput = { ...b, acts: [...b.acts, ...[1, 2, 3, 4].map((n) => ({ id: `lp${n}`, character: 'lu', kind: 'post' as const, at: (5 + n) * H, thread: 't' }))] };
-  assert.equal(settle(posts, world).entries.find((e) => e.reason === 'lurker.overPosting')?.amount, -10);
+  assert.equal(settle(posts, world).entries.find((e) => e.reason === 'lurker.postedTooMuch')?.amount, -10);
 });
 
 test('reactions to a card count for the card\'s player under whichever class they hold', () => {
@@ -191,5 +192,28 @@ test('a Lurker\'s spun thread is not a post', () => {
       { id: 'ls', character: 'lu', kind: 'spin' as const, at: 10 * H, thread: 'spun', target: 'p1' },
     ],
   };
-  assert.equal(settle(spins, world).entries.filter((e) => e.reason === 'lurker.overPosting').length, 0);
+  assert.equal(settle(spins, world).entries.filter((e) => e.reason === 'lurker.postedTooMuch').length, 0);
+});
+
+test('each class names what it paid in its own words, with the Act and the quadrant, for the player\'s log', () => {
+  const all = input({
+    posts: [1, 2, 3, 4].map((n) => ({ act: `p${n}`, at: n })),
+    received: [got('excitedPositive', 1, 'post', 'p1'), got('excitedNegative', 1, 'post', 'p2'), got('calmPositive', 1, 'post', 'p3'), got('boredNegative', 1, 'card', 'k1')],
+    given: [gave({ act: 'x1' })],
+    cardsPlayed: [card({ act: 'k1', alignment: 'salty', votes: 3, targetVotes: 1 }), card({ act: 'k2', alignment: 'sweet', targetAfter: { ...none, excitedPositive: 1 } })],
+    cardsLanded: [landed('salty')],
+    threadsSpun: [spin({ act: 's1' })],
+  });
+  const shape = (rules: ClassRules) => rules.earn(all, settings).map((e) => [e.reason, e.act, e.quadrant ?? null]);
+  assert.deepEqual(shape(face), [
+    ['face.cheered', 'p1', 'excitedPositive'], ['face.liftedAPost', 'k2', 'excitedPositive'],
+    ['face.boredTheRoom', 'k1', 'boredNegative'], ['face.stoleThunder', 'k1', null],
+  ]);
+  assert.deepEqual(shape(heel), [['heel.drewHeat', 'p2', 'excitedNegative'], ['heel.stoleThunder', 'k1', null], ['heel.shrugged', 'p3', 'calmPositive']]);
+  assert.deepEqual(shape(lurker), [['lurker.calledIt', 'x1', 'excitedPositive'], ['lurker.spunAThread', 's1', null], ['lurker.cardDrew', 'k1', 'boredNegative'], ['lurker.postedTooMuch', 'p4', null]]);
+  assert.deepEqual(shape(jabroni), [['jabroni.drewTheGroan', 'k1', 'boredNegative'], ['jabroni.soldTheL', 'k1', null], ['jabroni.takenSincerely', 'p1', 'excitedPositive']]);
+});
+
+test('a Lurker is never paid for a reaction with no rank', () => {
+  assert.equal(total(lurker, input({ given: [gave({ rank: 0 })] })), 0);
 });
