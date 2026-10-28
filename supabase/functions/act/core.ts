@@ -16,11 +16,37 @@ import { decide } from '../../../engine/rules/actions.ts';
 import { decidePlay, type CardEffect, type CardTarget } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
+import type { Broadcast } from '../_shared/broadcast.ts';
 
 export interface ActionAnswer {
   readonly status: number;
   readonly body: unknown;
+  /** What the write sends live, once it has committed: public projections only. */
+  readonly broadcasts?: readonly Broadcast[];
 }
+
+type Row = Record<string, unknown>;
+const act = (a: unknown): Broadcast[] => (a && typeof a === 'object' && (a as Row).thread ? [{ topic: `thread:${(a as Row).thread}`, event: 'act', payload: a }] : []);
+const thread = (t: unknown): Broadcast[] => (t && typeof t === 'object' && (t as Row).board ? [{ topic: `board:${(t as Row).board}`, event: 'thread', payload: t }] : []);
+
+/**
+ * What each SQL function's answer sends live. Each is the public projection the function
+ * returned, never more; a purchase, which is the player's alone, sends nothing, and so does a
+ * silent Turn, which returns no Act.
+ */
+const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
+  post: (a) => act(a),
+  edit_post: (a) => act(a),
+  play_card: (a) => act(a),
+  start_thread: (a) => [...thread(a.thread), ...act(a.act)],
+  spin: (a) => [...thread(a.thread), ...act(a.act)],
+  turn: (a) => act(a.act),
+  react: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
+  save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, state: a.state } }] : []),
+  buy_card: () => [],
+};
+const live = (rpc: string, answer: unknown): Broadcast[] =>
+  answer && typeof answer === 'object' ? (BROADCASTS[rpc]?.(answer as Row) ?? []) : [];
 
 /** The hint every refusal the action functions raise carries, so their words alone reach a player. */
 export const REFUSAL_HINT = 'kayfabb.refusal';
@@ -31,7 +57,10 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
   const decision = decide(request, instance);
   if (!decision.ok) return refused(decision.field, decision.why);
   try {
-    if (!decision.asService) return { status: 200, body: await dbs.player.rpc<unknown>(decision.rpc, decision.args) };
+    if (!decision.asService) {
+      const body = await dbs.player.rpc<unknown>(decision.rpc, decision.args);
+      return { status: 200, body, broadcasts: live(decision.rpc, body) };
+    }
 
     const who = await dbs.player.rpc<string | null>('whoami', {});
     if (!who) return { status: 401, body: { error: 'sign in to act' } };
@@ -53,7 +82,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       if (!state.ok) return refused('state', state.why);
       args = { ...args, state: state.value };
     }
-    return { status: 200, body: await dbs.service.rpc<unknown>(decision.rpc, args) };
+    const body = await dbs.service.rpc<unknown>(decision.rpc, args);
+    return { status: 200, body, broadcasts: live(decision.rpc, body) };
   } catch (e) {
     if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) return { status: e.status >= 400 && e.status < 500 ? e.status : 400, body: { error: e.reason, code: e.code } };
     if (e instanceof DatabaseError && e.status === 401 && e.message.startsWith('whoami:')) return { status: 401, body: { error: 'sign in to act' } };

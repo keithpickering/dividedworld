@@ -69,9 +69,14 @@ begin
   if loudness = 'silent' then return jsonb_build_object('turned', true, 'loudness', 'silent'); end if;
 
   select * into open_season from seasons where ends_at is null for no key update;
+  if open_season.id is null then
+    -- Unreachable once an instance is seeded (seed_instance() opens the first season, and the
+    -- reveal opens each next one at once); said rather than filed under no season.
+    raise exception 'no season is open to announce a Turn in' using hint = 'kayfabb.refusal', errcode = 'P0002';
+  end if;
   in_thread := open_season.turns_thread;
   if in_thread is null then
-    insert into threads (board, title) values (system_board(), copy_of('turnsThreadTitle', coalesce(open_season.number, 0))) returning id into in_thread;
+    insert into threads (board, title) values (system_board(), copy_of('turnsThreadTitle', open_season.number)) returning id into in_thread;
     update seasons set turns_thread = in_thread where id = open_season.id;
   end if;
   insert into acts (character, kind, thread, payload)

@@ -83,3 +83,25 @@ begin
 end $$;
 create schema if not exists vault;
 create table if not exists vault.decrypted_secrets (name text primary key, decrypted_secret text);
+
+-- Realtime's stand-ins, so 0008 runs its real SQL here: the publication Supabase makes at a
+-- project's start, and the table its private channels authorize against.
+do $$ begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then create publication supabase_realtime; end if;
+end $$;
+create schema if not exists realtime;
+create table if not exists realtime.messages (
+  id bigint generated always as identity primary key,
+  topic text not null,
+  extension text not null default 'broadcast',
+  payload jsonb,
+  event text,
+  private boolean default true,
+  inserted_at timestamptz not null default now()
+);
+create or replace function realtime.topic() returns text language sql stable as $$
+  select nullif(current_setting('realtime.topic', true), '')
+$$;
+grant usage on schema realtime to anon, authenticated, service_role;
+-- As on a project: the API roles may read it, and row-level security decides what they hear.
+grant select on realtime.messages to anon, authenticated;

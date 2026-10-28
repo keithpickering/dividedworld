@@ -20,7 +20,7 @@ function pair(answers: Record<string, unknown>) {
 test('a decided action calls its SQL function as the player and answers with what it returned', async () => {
   const { db, calls } = recording({ id, kind: 'post' });
   const out = await runAction({ player: db, service: db }, instance, { action: 'post', thread: id, character: id, body: 'Hello.' });
-  assert.deepEqual(out, { status: 200, body: { id, kind: 'post' } });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 200, body: { id, kind: 'post' } });
   assert.deepEqual(calls, [{ fn: 'post', args: { in_thread: id, through: id, body: 'Hello.', quoting: null } }]);
 });
 
@@ -58,7 +58,7 @@ const whoami = '33333333-3333-4333-8333-333333333333';
 test('a play asks the post, prices it by the card\'s own rules, and is written by the service for the caller', async () => {
   const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 1200, effects: [] }, play_card: { id: 'k', kind: 'card' } });
   const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'Red' } });
-  assert.deepEqual(out, { status: 200, body: { id: 'k', kind: 'card' } });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 200, body: { id: 'k', kind: 'card' } });
   assert.deepEqual(calls, [
     `player:whoami:{}`,
     `player:card_target:{"target":"${target}"}`,
@@ -97,4 +97,26 @@ test('strokes are checked by the card that was played, and saved by the service'
   const none = pair({ whoami, card_of_play: 'stick-around' });
   const stateless = await runAction(none.dbs, instance, { action: 'saveEffect', play: target, character: id, state: {} });
   assert.equal(stateless.status, 400, 'Stick Around keeps no state');
+});
+
+test('what an action wrote is broadcast as its public projection, on its thread\'s or board\'s channel; a purchase never is', async () => {
+  const thread = '44444444-4444-4444-8444-444444444444';
+  const board = '55555555-5555-4555-8555-555555555555';
+  const cases: [unknown, Record<string, unknown>, unknown][] = [
+    [{ action: 'post', thread: id, character: id, body: 'x' }, { post: { id: 'a', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
+    [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread, tally: { fire: 1 } } }, [{ topic: `thread:${thread}`, event: 'tally', payload: { act: id, tally: { fire: 1 } } }]],
+    [{ action: 'startThread', board: 'general', character: id, title: 't', body: 'b' }, { start_thread: { thread: { id: thread, board }, act: { id: 'a', thread } } },
+      [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
+    [{ action: 'turn', character: id, class: 'heel', loudness: 'silent' }, { turn: { turned: true, loudness: 'silent' } }, []],
+    [{ action: 'turn', character: id, class: 'heel', loudness: 'announced' }, { turn: { turned: true, act: { id: 'a', thread } } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
+    [{ action: 'buyCard', card: 'whoops' }, { whoami: id, buy_card: { card: 'whoops', balance: 0, held: 1 } }, []],
+    [{ action: 'saveEffect', play: id, character: id, state: { strokes: [] } }, { whoami: id, card_of_play: 'whoops', save_effect_state: { play: id, thread, state: { strokes: [] } } },
+      [{ topic: `thread:${thread}`, event: 'effect', payload: { play: id, state: { strokes: [] } } }]],
+  ];
+  for (const [request, answers, broadcasts] of cases) {
+    const { dbs } = pair(answers);
+    const out = await runAction(dbs, instance, request);
+    assert.equal(out.status, 200, JSON.stringify(request));
+    assert.deepEqual(out.broadcasts ?? [], broadcasts, JSON.stringify(request));
+  }
 });

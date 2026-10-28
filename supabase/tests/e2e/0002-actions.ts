@@ -42,7 +42,8 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   assert.equal((spun.body as { thread: { origin_act_id: string } }).thread.origin_act_id, act.id);
 
   const reacted = await runAction(asBob, instance, { action: 'react', act: act.id, character: bob.character, kind: 'tomato' });
-  assert.deepEqual(reacted, { status: 200, body: { tomato: 1 } });
+  assert.deepEqual({ status: reacted.status, body: reacted.body }, { status: 200, body: { act: act.id, thread: thread.id, tally: { tomato: 1 } } });
+  assert.deepEqual(reacted.broadcasts, [{ topic: `thread:${thread.id}`, event: 'tally', payload: { act: act.id, tally: { tomato: 1 } } }]);
 
   // The database's refusal, in its own words: Ann's characters cannot react to her own post.
   const own = await runAction(asAnn, instance, { action: 'react', act: act.id, character: ann.character, kind: 'fire' });
@@ -71,7 +72,7 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   assert.equal(turned.status, 200, JSON.stringify(turned));
   assert.deepEqual((turned.body as { act: { payload: unknown } }).act.payload, {});
 
-  // Nothing any action answered names a player.
+  // Nothing any action answered, or sent live, names a player.
   for (const answer of [started, replied, edited, spun, reacted, own, bought, played, caster, notAuthor, again, turned]) {
     assert.ok(!JSON.stringify(answer).includes(ann.account) && !JSON.stringify(answer).includes(bob.account), 'an answer carried an account');
   }

@@ -152,7 +152,8 @@ begin
   if author <> through then raise exception 'only the post''s author saves what is on it' using hint = 'kayfabb.refusal', errcode = '42501'; end if;
   insert into effect_state as e (play, state, saved_by) values (on_play, state, through)
   on conflict on constraint effect_state_pkey do update set state = excluded.state, saved_by = excluded.saved_by, saved_at = now();
-  return (select jsonb_build_object('play', e.play, 'state', e.state, 'saved_at', e.saved_at) from effect_state e where e.play = on_play);
+  return (select jsonb_build_object('play', e.play, 'thread', (select thread from acts where id = on_play), 'state', e.state, 'saved_at', e.saved_at)
+          from effect_state e where e.play = on_play);
 end $$;
 
 alter table card_ledger enable row level security;

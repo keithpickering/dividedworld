@@ -44,7 +44,8 @@ revoke all on reactions, reaction_tallies from anon, authenticated;
 grant select on reaction_tallies to authenticated;
 create policy read on reaction_tallies for select to authenticated using (true);
 
--- React to an Act through one of the caller's characters. Returns the Act's public tally.
+-- React to an Act through one of the caller's characters. Returns the Act, its thread and its
+-- public tally: what a live update carries to the thread's readers.
 create function react(target uuid, through uuid, reaction text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -97,7 +98,8 @@ begin
   insert into reaction_tallies (act, kind, count) values (target, reaction, 1)
   on conflict (act, kind) do update set count = reaction_tallies.count + 1;
 
-  return (select coalesce(jsonb_object_agg(t.kind, t.count order by t.kind), '{}') from reaction_tallies t where t.act = target);
+  return jsonb_build_object('act', target, 'thread', (select thread from acts where id = target),
+    'tally', (select coalesce(jsonb_object_agg(t.kind, t.count order by t.kind), '{}') from reaction_tallies t where t.act = target));
 end $$;
 
 revoke execute on function react(uuid, uuid, text) from public, anon;

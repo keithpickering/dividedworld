@@ -29,6 +29,7 @@ declare
   own1 text;
   own2 text;
   tally jsonb;
+  said jsonb;
   n integer;
   cap text := setting('reactionCap');
 begin
@@ -56,7 +57,9 @@ begin
   if pg_temp.refusal(gen_random_uuid(), a1, 'up') is null then raise exception 'a reaction to nothing went through'; end if;
 
   -- Three kinds from one player, between two characters; the same kind twice, and a fourth, refused.
-  tally := react(pb, a1, 'up');
+  said := react(pb, a1, 'up');
+  tally := said -> 'tally';
+  if (said ->> 'thread')::uuid <> t or (said ->> 'act')::uuid <> pb then raise exception 'react() says the Act and its thread, for its live update: %', said; end if;
   if tally <> '{"up": 1}' then raise exception 'the tally after one reaction: %', tally; end if;
   perform react(pb, a2, 'boo');
   why := pg_temp.refusal(pb, a2, 'up');
@@ -74,7 +77,7 @@ begin
 
   -- Another player is held to their own three.
   perform tests.become(cat);
-  tally := react(pb, c1, 'up');
+  tally := react(pb, c1, 'up') -> 'tally';
   if tally <> '{"up": 2, "boo": 1, "calm": 1}' then raise exception 'the tally: %', tally; end if;
   perform tests.unbecome();
 
