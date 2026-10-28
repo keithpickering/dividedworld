@@ -7,8 +7,9 @@
  * Each run creates a database of its own on the server DATABASE_URL names
  * (`kayfabb_scratch_<pid>_<time>`), applies supabase/tests/setup/auth-shim.sql (a stand-in for
  * what Supabase provides before any migration: the API roles, `auth.uid()` read from the
- * claims a test sets), then every supabase/migrations/*.sql in name order, then each
- * supabase/tests/NNNN-*.sql in number order, and drops the database at the end, pass or fail.
+ * claims a test sets), then every supabase/migrations/*.sql in name order, then
+ * supabase/tests/setup/fixtures.sql (a test instance's vocabulary and helpers that make
+ * players, characters and posts), then each supabase/tests/NNNN-*.sql in number order, and drops the database at the end, pass or fail.
  * A scratch database rather than a scratch schema, because the migrations are written for
  * Supabase's own `public` and `auth` and must run here exactly as they will there; the
  * database DATABASE_URL names is only where the scratch one is created from, and nothing in it
@@ -47,6 +48,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const migrationsDir = path.join(repoRoot, 'supabase/migrations');
 const testsDir = path.join(repoRoot, 'supabase/tests');
 const shim = path.join(testsDir, 'setup/auth-shim.sql');
+const fixtures = path.join(testsDir, 'setup/fixtures.sql');
 
 export const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const SAFE_PARAMETERS = new Set(['sslmode', 'connect_timeout', 'application_name']);
@@ -117,6 +119,8 @@ function main() {
         return 1;
       }
     }
+
+    if (!step('setup/fixtures.sql', psql(target, fs.readFileSync(fixtures, 'utf8')))) return 1;
 
     console.log('\nsql: assertions');
     const numberOf = (f) => Number(ASSERTION_FILE.exec(f)?.[1] ?? Number.NaN);
