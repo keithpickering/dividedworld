@@ -79,3 +79,48 @@ begin
 end $$;
 
 grant execute on all functions in schema tests to anon, authenticated, service_role;
+
+-- ---- Races ----
+-- A race test needs two sessions at once, which one assertion file cannot be: it opens two
+-- connections to the scratch database (dblink, which Supabase also offers), parks both on an
+-- advisory lock this session holds, and lets them go together. Rows they read must be committed,
+-- so a race test sets up through tests.commit(), which runs its SQL on a connection of its own
+-- and commits it; the scratch database is dropped at the end of the run, so nothing is left.
+create extension if not exists dblink with schema extensions;
+
+create function tests.commit(statements text) returns void language plpgsql as $$
+begin
+  perform extensions.dblink_connect('tests_setup', current_setting('kayfabb.scratch_url'));
+  perform extensions.dblink_exec('tests_setup', statements);
+  perform extensions.dblink_disconnect('tests_setup');
+end $$;
+
+-- Runs two transactions at the same instant, each as a player, and returns what each said: null
+-- for success, else the error. Each is `select ...` SQL run after tests.become(account).
+create function tests.race(account_a uuid, sql_a text, account_b uuid, sql_b text) returns text[] language plpgsql as $$
+declare
+  url text := current_setting('kayfabb.scratch_url');
+  out text[] := '{}';
+  conn text;
+  wrap text := 'begin; select pg_advisory_xact_lock_shared(4242); select tests.become(%L); %s; commit;';
+begin
+  perform pg_advisory_lock(4242);
+  perform extensions.dblink_connect('race_a', url);
+  perform extensions.dblink_connect('race_b', url);
+  perform extensions.dblink_send_query('race_a', format(wrap, account_a, sql_a));
+  perform extensions.dblink_send_query('race_b', format(wrap, account_b, sql_b));
+  perform pg_sleep(0.05);
+  perform pg_advisory_unlock(4242);
+  foreach conn in array array['race_a', 'race_b'] loop
+    begin
+      perform * from extensions.dblink_get_result(conn) as r(x text);
+      out := out || null::text;
+    exception when others then
+      out := out || sqlerrm;
+    end;
+    perform * from extensions.dblink_get_result(conn, false) as r(x text);
+    perform extensions.dblink_disconnect(conn);
+  end loop;
+  return out;
+end $$;
+grant execute on all functions in schema tests to anon, authenticated, service_role;

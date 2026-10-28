@@ -89,6 +89,11 @@ function psql(url, sql) {
 /** SQL with its `--` and block comments blanked, so a comment cannot stand in for code. */
 const withoutComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
 
+/* SQL with every dollar-quoted body blanked: a `commit` inside a `do` block or a function body
+   cannot end the file's transaction (Postgres refuses it there), and one inside a string sent
+   to another connection is that connection's; only one at the top level escapes the wrap. */
+const withoutDollarQuotes = (sql) => sql.replace(/\$([A-Za-z_]\w*)?\$[\s\S]*?\$\1\$/g, ' ');
+
 /** Assertion files: four digits, a hyphen, a name. Ordered by number, then name. */
 export const ASSERTION_FILE = /^(\d{4})-[\w.-]+\.sql$/;
 
@@ -108,6 +113,9 @@ function main() {
 
   console.log(`\nsql: scratch database ${scratch}`);
   if (!step('create', psql(url, `create database ${scratch};`))) process.exit(1);
+  /* A race test opens connections of its own to the scratch database (dblink), so it is told
+     where that is; the URL is this machine's and the database is dropped with it. */
+  if (!step('scratch_url', psql(url, `alter database ${scratch} set kayfabb.scratch_url to '${target.replaceAll("'", "''")}';`))) process.exit(1);
   try {
     if (!step('setup/auth-shim.sql', psql(target, fs.readFileSync(shim, 'utf8')))) return 1;
 
@@ -132,7 +140,7 @@ function main() {
       const sql = fs.readFileSync(path.join(testsDir, t), 'utf8');
       const code = withoutComments(sql);
       if (!/raise\s+exception/i.test(code)) { step(t, 'asserts nothing: no `raise exception` outside a comment in this file'); continue; }
-      if (/(^|;)\s*(commit|rollback(?!\s+to\b))\b/im.test(code)) { step(t, 'ends its own transaction, which would escape the rollback around it'); continue; }
+      if (/(^|;)\s*(commit|rollback(?!\s+to\b))\b/im.test(withoutDollarQuotes(code))) { step(t, 'ends its own transaction, which would escape the rollback around it'); continue; }
       ran++;
       step(t, psql(target, `begin;\n${sql}\nrollback;\n`));
     }
