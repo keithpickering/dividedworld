@@ -144,7 +144,23 @@ function main() {
       ran++;
       step(t, psql(target, `begin;\n${sql}\nrollback;\n`));
     }
-    console.log(`\n  sql: ${migrations.length} migration(s); ${ran} assertion file(s); ${failed} failed`);
+    /* End to end: TypeScript that runs the Edge Functions' own core against this scratch
+       database (supabase/tests/e2e/NNNN-*.ts, Node's test runner), so the contract between the
+       engine and the SQL is read where both meet. */
+    console.log('\nsql: end to end');
+    const e2eDir = path.join(testsDir, 'e2e');
+    const e2e = fs.existsSync(e2eDir) ? fs.readdirSync(e2eDir).filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f)).sort() : [];
+    for (const f of e2e) {
+      try {
+        execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', '--test', path.join(e2eDir, f)], {
+          env: { ...process.env, KAYFABB_SCRATCH_URL: target }, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8',
+        });
+        step(`e2e/${f}`, null);
+      } catch (err) {
+        step(`e2e/${f}`, String(err.stdout || '') + String(err.stderr || ''));
+      }
+    }
+    console.log(`\n  sql: ${migrations.length} migration(s); ${ran} assertion file(s); ${e2e.length} end-to-end file(s); ${failed} failed`);
     return failed ? 1 : 0;
   } finally {
     const err = psql(url, `drop database if exists ${scratch} with (force);`);

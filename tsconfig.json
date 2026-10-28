@@ -16,6 +16,7 @@
   "include": [
     "engine/**/*.ts",
     "instances/**/*.ts",
-    "supabase/functions/**/*.ts"
+    "supabase/functions/**/*.ts",
+    "supabase/tests/**/*.ts"
   ]
 }

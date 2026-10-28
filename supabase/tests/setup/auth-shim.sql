@@ -55,3 +55,31 @@ $$;
 alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated, service_role;
 alter default privileges for role postgres in schema public grant all on sequences to anon, authenticated, service_role;
+
+-- pg_cron, pg_net and Vault stand-ins, so 0004 runs its real SQL here. Bare Postgres has none of
+-- the three; a Supabase project has all three. They record what a job would do rather than
+-- doing it, and supabase/tests/0008-schedule.sql reads the record. Carried from currents.
+create schema if not exists cron;
+create table if not exists cron.job (jobid bigint generated always as identity primary key, jobname text unique, schedule text, command text, active boolean default true);
+create or replace function cron.schedule(job_name text, schedule text, command text) returns bigint language plpgsql as $$
+declare v bigint;
+begin
+  insert into cron.job (jobname, schedule, command) values (job_name, schedule, command)
+  on conflict (jobname) do update set schedule = excluded.schedule, command = excluded.command returning jobid into v;
+  return v;
+end $$;
+-- url is `not null` on the real extension's queue, so a call with a missing secret fails here
+-- the way it fails there.
+create schema if not exists net;
+create table if not exists net.http_request_queue (
+  id bigint generated always as identity primary key,
+  method text not null default 'POST', url text not null, headers jsonb, body jsonb, timeout_milliseconds integer
+);
+create or replace function net.http_post(url text, body jsonb default '{}'::jsonb, params jsonb default '{}'::jsonb, headers jsonb default '{}'::jsonb, timeout_milliseconds integer default 2000) returns bigint language plpgsql as $$
+declare v bigint;
+begin
+  insert into net.http_request_queue (url, headers, body, timeout_milliseconds) values (url, headers, body, timeout_milliseconds) returning id into v;
+  return v;
+end $$;
+create schema if not exists vault;
+create table if not exists vault.decrypted_secrets (name text primary key, decrypted_secret text);

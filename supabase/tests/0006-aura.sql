@@ -119,5 +119,3 @@ begin
     raise exception 'a reaction moved a standing before any settlement';
   end if;
 end $$;
-
-
