@@ -45,8 +45,11 @@ export function psqlDb(as?: string): Db {
           select coalesce(to_jsonb(public.${fn}(${named.join(', ')})), 'null'::jsonb)::text;`, { args: JSON.stringify(args), claims });
         return JSON.parse(out) as T;
       } catch (e) {
+        // psql's own report of the error: its message, and the hint it was raised with.
         const stderr = String((e as { stderr?: string }).stderr ?? e);
-        throw new DatabaseError(`${fn}: ${stderr.trim()}`, '', 400);
+        const message = /ERROR:\s+(.*)/.exec(stderr)?.[1]?.trim() ?? stderr.trim();
+        const hint = /HINT:\s+(.*)/.exec(stderr)?.[1]?.trim() ?? '';
+        throw new DatabaseError(`${fn}: ${message}`, '', 400, message, hint);
       }
     },
   };

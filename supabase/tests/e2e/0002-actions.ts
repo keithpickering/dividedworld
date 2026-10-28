@@ -21,8 +21,9 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   };
   const ann = make('act-e2e-ann', 'Wrenchwork');
   const bob = make('act-e2e-bob', 'Cogsworth');
-  const asAnn = psqlDb(ann.account);
-  const asBob = psqlDb(bob.account);
+  const service = psqlDb();
+  const asAnn = { player: psqlDb(ann.account), service };
+  const asBob = { player: psqlDb(bob.account), service };
 
   const started = await runAction(asAnn, instance, { action: 'startThread', board: 'general', character: ann.character, title: 'Hot take', body: 'Pineapple.' });
   assert.equal(started.status, 200, JSON.stringify(started));
@@ -48,8 +49,25 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   assert.equal(own.status, 400);
   assert.match(String((own.body as { error: string }).error), /your characters cannot react/);
 
+  // The Vending Machine, a play priced by its post, and the author washing the ink away.
+  sql(`insert into wallets (account, balance) values ('${ann.account}', 300) on conflict (account) do update set balance = 300`);
+  const bought = await runAction(asAnn, instance, { action: 'buyCard', card: 'whoops' });
+  assert.equal(bought.status, 200, JSON.stringify(bought));
+  const played = await runAction(asAnn, instance, { action: 'playCard', card: 'whoops', character: ann.character, target: act.id, config: { color: 'Teal' } });
+  assert.equal(played.status, 200, JSON.stringify(played));
+  assert.deepEqual((played.body as { payload: unknown }).payload, { card: 'whoops', config: { color: 'teal' } });
+  const k = (played.body as { id: string }).id;
+  assert.equal(Number(sql(`select balance from wallets where account = '${ann.account}'`)), 200, 'a short post: the play costs nothing more');
+  const caster = await runAction(asAnn, instance, { action: 'saveEffect', play: k, character: ann.character, state: { strokes: [] } });
+  assert.equal(caster.status, 200, 'Ann wrote the post she splatted, so she is its author here');
+  const notAuthor = await runAction(asBob, instance, { action: 'saveEffect', play: k, character: bob.character, state: { strokes: [] } });
+  assert.ok(notAuthor.status >= 400 && notAuthor.status < 500, 'a refusal (psql has no HTTP status to give)');
+  assert.match(String((notAuthor.body as { error: string }).error), /only the post's author/);
+  const again = await runAction(asAnn, instance, { action: 'playCard', card: 'whoops', character: ann.character, target: act.id, config: { color: 'red' } });
+  assert.equal(again.status, 400, 'no card left, and the post carries one already');
+
   // Nothing any action answered names a player.
-  for (const answer of [started, replied, edited, spun, reacted, own]) {
+  for (const answer of [started, replied, edited, spun, reacted, own, bought, played, caster, notAuthor, again]) {
     assert.ok(!JSON.stringify(answer).includes(ann.account) && !JSON.stringify(answer).includes(bob.account), 'an answer carried an account');
   }
 });

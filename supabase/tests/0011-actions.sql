@@ -34,6 +34,11 @@ begin
   if pg_temp.refusal(format('select start_thread(%L, %L, %L, %L)', 'general', a, '   ', 'First.')) is null then raise exception 'an empty title went through'; end if;
   if pg_temp.refusal(format('select start_thread(%L, %L, %L, %L)', 'general', a, long_title, 'First.')) is null then raise exception 'a title past the limit went through'; end if;
   if pg_temp.refusal(format('select start_thread(%L, %L, %L, %L)', 'general', a, 'Hello', '')) is null then raise exception 'an empty post went through'; end if;
+  -- Blank as decide() reads it: a newline and a tab, a no-break space, zero-width spaces, an ideographic space.
+  for why in select unnest(array[E'\n\t', U&'\00A0', U&'\200B\200B', U&'\3000\FEFF']) loop
+    if pg_temp.refusal(format('select start_thread(%L, %L, %L, %L)', 'general', a, 'Hello', why)) is null then raise exception 'a blank post went through: %', to_json(why); end if;
+    if pg_temp.refusal(format('select start_thread(%L, %L, %L, %L)', 'general', a, why, 'First.')) is null then raise exception 'a blank title went through: %', to_json(why); end if;
+  end loop;
   if pg_temp.refusal(format('select start_thread(%L, %L, %L, %L)', 'general', a, 'Hello', long_body)) is null then raise exception 'a post past the limit went through'; end if;
   if pg_temp.refusal(format('select start_thread(%L, %L, %L, %L)', 'nowhere', a, 'Hello', 'First.')) is null then raise exception 'a thread on no board went through'; end if;
 

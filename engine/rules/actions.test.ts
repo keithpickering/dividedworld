@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { decide } from './actions.ts';
 import type { Instance } from './types.ts';
 
+const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, basePrice: 100, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
 const instance: Instance = {
-  key: 'test-world', name: 'Test World', classes: [{ key: 'a', name: 'A', earn: () => [] }], cards: [],
+  key: 'test-world', name: 'Test World', classes: [{ key: 'a', name: 'A', earn: () => [] }], cards: [splat],
   reactions: [{ key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' }],
   settings: {
     walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *',
@@ -45,7 +46,9 @@ test('ids that are not ids are refused, by the field they were given in', () => 
 });
 
 test('a post\'s text is something, and no longer than the instance allows, counted in characters', () => {
-  assert.match(refusal({ action: 'post', thread: other, character: id, body: '   ' }) ?? '', /^body:.*empty/);
+  for (const blank of ['   ', '\n\t', '\u00a0', '\u200b\u200b', '\u3000\ufeff']) {
+    assert.match(refusal({ action: 'post', thread: other, character: id, body: blank }) ?? '', /^body:.*empty/, JSON.stringify(blank));
+  }
   assert.match(refusal({ action: 'post', thread: other, character: id, body: 'x'.repeat(51) }) ?? '', /^body:.*50/);
   assert.equal(refusal({ action: 'post', thread: other, character: id, body: 'x'.repeat(50) }), null);
   // Fifty emoji are fifty characters, though a hundred UTF-16 units: SQL's char_length counts the same way.
@@ -67,4 +70,22 @@ test('a spin\'s own words may be empty, and are bounded like a post\'s', () => {
 
 test('a reaction the instance does not have is refused', () => {
   assert.match(refusal({ action: 'react', act: other, character: id, kind: 'shrug' }) ?? '', /^kind:.*shrug/);
+});
+
+test('a card is bought at the Vending Machine\'s price, by the service, for the caller', () => {
+  assert.deepEqual(decide({ action: 'buyCard', card: 'splat' }, instance), { ok: true, rpc: 'buy_card', args: { card: 'splat', price: 100 }, asService: true });
+  assert.match(refusal({ action: 'buyCard', card: 'nothing' }) ?? '', /^card:/);
+});
+
+test('a play names the card, the character, the post and the caster\'s configuration; its price waits on the post', () => {
+  assert.deepEqual(decide({ action: 'playCard', card: 'splat', character: id, target: other, config: { color: 'red' } }, instance),
+    { ok: true, rpc: 'play_card', args: { card: 'splat', through: id, target: other, config: { color: 'red' } }, asService: true, needsTarget: true });
+  assert.match(refusal({ action: 'playCard', card: 'nothing', character: id, target: other }) ?? '', /^card:/);
+  assert.match(refusal({ action: 'playCard', card: 'splat', character: id, target: 'x' }) ?? '', /^target:/);
+});
+
+test('saving an effect\'s state names the play, the character and the state', () => {
+  assert.deepEqual(decide({ action: 'saveEffect', play: other, character: id, state: { strokes: [] } }, instance),
+    { ok: true, rpc: 'save_effect_state', args: { through: id, on_play: other, state: { strokes: [] } }, asService: true, needsCardOfPlay: true });
+  assert.match(refusal({ action: 'saveEffect', play: other, character: id }) ?? '', /^state:/);
 });

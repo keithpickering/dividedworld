@@ -33,3 +33,22 @@ export const json = (status: number, body: unknown) =>
 export function serviceDb(env: { url: string; key: string }): Db {
   return postgrest({ url: env.url, key: env.key });
 }
+
+/**
+ * The headers a browser needs to call a function from the site: any origin, since the session
+ * travels in the Authorization header and never a cookie, so another origin gains nothing.
+ */
+export const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+} as const;
+
+/** A request's JSON body, or null when it is not JSON or longer than `most` bytes. */
+export async function boundedJson(request: Request, most: number): Promise<{ tooLong: boolean; body: unknown }> {
+  const declared = Number(request.headers.get('Content-Length') ?? '0');
+  if (declared > most) return { tooLong: true, body: null };
+  const text = await request.text();
+  if (new TextEncoder().encode(text).length > most) return { tooLong: true, body: null };
+  try { return { tooLong: false, body: JSON.parse(text) }; } catch { return { tooLong: false, body: null }; }
+}

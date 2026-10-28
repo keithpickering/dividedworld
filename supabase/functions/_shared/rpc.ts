@@ -17,13 +17,16 @@ export class TransportError extends Error {}
 export class DatabaseError extends Error {
   readonly code: string;
   readonly status: number;
-  /** The SQL function's own words, without PostgREST's detail or hint, which can carry a row's values. */
+  /** The SQL function's own words, without PostgREST's detail, which can carry a row's values. */
   readonly reason: string;
-  constructor(message: string, code: string, status: number, reason = message) {
+  /** The hint the SQL function raised with, if any: what marks a refusal meant for a player. */
+  readonly hint: string;
+  constructor(message: string, code: string, status: number, reason = message, hint = '') {
     super(message);
     this.code = code;
     this.status = status;
     this.reason = reason;
+    this.hint = hint;
   }
 }
 
@@ -81,8 +84,8 @@ export function postgrest(options: PostgrestOptions): Db {
           throw new DatabaseError(`${fn}: an answer that is not JSON`, '', response.status);
         }
         if (!response.ok) {
-          const b = (body ?? {}) as { code?: string; message?: string; details?: string };
-          throw new DatabaseError(`${fn}: ${b.message ?? `HTTP ${response.status}`}${b.details ? ` (${b.details})` : ''}`, b.code ?? '', response.status, b.message ?? `HTTP ${response.status}`);
+          const b = (body ?? {}) as { code?: string; message?: string; details?: string; hint?: string };
+          throw new DatabaseError(`${fn}: ${b.message ?? `HTTP ${response.status}`}${b.details ? ` (${b.details})` : ''}`, b.code ?? '', response.status, b.message ?? `HTTP ${response.status}`, b.hint ?? '');
         }
         return body as T;
       }

@@ -10,9 +10,10 @@ declare
   -- What the API roles are granted, on purpose; a new grant joins this list with its migration.
   readable text[] := array['class_kinds', 'reaction_kinds', 'card_kinds', 'boards', 'threads', 'acts',
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
-                           'seasons', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events'];
+                           'seasons', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
+                           'card_ledger', 'my_cards', 'effect_state'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text)', 'post(uuid,uuid,text,uuid)',
-                           'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text)'];
+                           'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)'];
 begin
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind = 'S'

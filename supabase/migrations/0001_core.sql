@@ -99,7 +99,7 @@ begin
   perform 1 from accounts where id = new.owner for no key update;
   select count(*) into held from characters where owner = new.owner;
   if held >= cap then
-    raise exception 'a player runs at most % characters', cap using errcode = 'P0001';
+    raise exception 'a player runs at most % characters', cap using hint = 'kayfabb.refusal', errcode = 'P0001';
   end if;
   return new;
 end $$;
@@ -120,7 +120,7 @@ create table threads (
   id uuid primary key default gen_random_uuid(),
   board uuid not null references boards (id),
   -- How long a title may be is a setting (titleMaxLength), held by the action that writes it.
-  title text not null check (btrim(title) <> ''),
+  title text not null check (title !~ '^[\s   -‍    ⁠　﻿]*$'),
   -- For a thread spun from an Act: the Act it came from.
   origin_act_id uuid,
   created_at timestamptz not null default now(),
@@ -167,13 +167,13 @@ begin
   if new.target_act_id is null then return new; end if;
   select * into t from acts where id = new.target_act_id;
   if new.kind = 'edit' and (t.kind <> 'post' or t.character <> new.character or t.thread <> new.thread) then
-    raise exception 'an edit is of its own author''s post, in its thread' using errcode = '23514';
+    raise exception 'an edit is of its own author''s post, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
   end if;
   if new.kind = 'card' and t.kind <> 'post' then
-    raise exception 'a card lands on a post' using errcode = '23514';
+    raise exception 'a card lands on a post' using hint = 'kayfabb.refusal', errcode = '23514';
   end if;
   if new.kind <> 'edit' and t.kind = 'edit' then
-    raise exception 'an edit is not answered; answer the post' using errcode = '23514';
+    raise exception 'an edit is not answered; answer the post' using hint = 'kayfabb.refusal', errcode = '23514';
   end if;
   return new;
 end $$;

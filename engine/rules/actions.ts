@@ -14,13 +14,29 @@
  */
 import type { Instance } from './types.ts';
 
+/**
+ * A decided action. Most are written as the player, whose session the database reads. A card's
+ * are written by the service for the caller (`asService`), since a play's price and
+ * configuration are its card's own rules, which SQL cannot run: the caller adds `who`, and for a
+ * play reads the post first (`needsTarget`) for the card to price, and for saved state reads
+ * which card was played (`needsCardOfPlay`) for it to check.
+ */
 export type Decision =
-  | { readonly ok: true; readonly rpc: string; readonly args: Readonly<Record<string, unknown>> }
+  | {
+    readonly ok: true;
+    readonly rpc: string;
+    readonly args: Readonly<Record<string, unknown>>;
+    readonly asService?: true;
+    readonly needsTarget?: true;
+    readonly needsCardOfPlay?: true;
+  }
   | { readonly ok: false; readonly field: string; readonly why: string };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
 const length = (s: string) => [...s].length;
+/** Blank: JavaScript's whitespace and line terminators, and the zero-width characters; the SQL's own set is the same (supabase/migrations/0005_actions.sql). */
+const BLANK = /^[\s\u200b-\u200d\u2060]*$/u;
 
 class Refused extends Error {
   readonly field: string;
@@ -37,13 +53,21 @@ const optionalId = (r: Fields, field: string): string | null => (r[field] === un
 const text = (r: Fields, field: string, most: number, { mayBeEmpty = false } = {}): string => {
   const v = r[field] ?? (mayBeEmpty ? '' : undefined);
   if (typeof v !== 'string') throw new Refused(field, 'is not text');
-  if (!mayBeEmpty && v.trim() === '') throw new Refused(field, 'is empty');
+  if (!mayBeEmpty && BLANK.test(v)) throw new Refused(field, 'is empty');
   if (length(v) > most) throw new Refused(field, `is longer than ${most} characters`);
   return v;
 };
 
+const card = (r: Fields, instance: Instance): string => {
+  const key = r.card;
+  if (typeof key !== 'string' || !instance.cards.some((c) => c.key === key)) throw new Refused('card', `the Vending Machine has no card ${JSON.stringify(key)}`);
+  return key;
+};
+
+type Decided = Omit<Extract<Decision, { ok: true }>, 'ok'>;
+
 /** Each action: the SQL function that writes it, and its arguments from the request. */
-const ACTIONS: Record<string, (r: Fields, instance: Instance) => { rpc: string; args: Record<string, unknown> }> = {
+const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   startThread: (r, { settings }) => {
     const board = r.board;
     if (typeof board !== 'string' || !SLUG.test(board)) throw new Refused('board', 'is not a board');
@@ -66,6 +90,20 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => { rpc: string; 
     if (typeof kind !== 'string' || !reactions.some((k) => k.key === kind)) throw new Refused('kind', `there is no reaction ${JSON.stringify(kind)}`);
     return { rpc: 'react', args: { target: id(r, 'act'), through: id(r, 'character'), reaction: kind } };
   },
+  buyCard: (r, instance) => {
+    const key = card(r, instance);
+    return { rpc: 'buy_card', args: { card: key, price: instance.cards.find((c) => c.key === key)!.basePrice }, asService: true };
+  },
+  playCard: (r, instance) => ({
+    rpc: 'play_card',
+    args: { card: card(r, instance), through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {} },
+    asService: true,
+    needsTarget: true,
+  }),
+  saveEffect: (r) => {
+    if (typeof r.state !== 'object' || r.state === null) throw new Refused('state', 'is the effect\'s state, an object');
+    return { rpc: 'save_effect_state', args: { through: id(r, 'character'), on_play: id(r, 'play'), state: r.state }, asService: true, needsCardOfPlay: true };
+  },
 };
 
 /** The names of the actions decide() knows. */
@@ -77,8 +115,7 @@ export function decide(request: unknown, instance: Instance): Decision {
   const action = typeof r.action === 'string' ? ACTIONS[r.action] : undefined;
   if (!action) return { ok: false, field: 'action', why: `the actions are ${ACTION_NAMES.join(', ')}` };
   try {
-    const { rpc, args } = action(r, instance);
-    return { ok: true, rpc, args };
+    return { ok: true, ...action(r, instance) };
   } catch (e) {
     if (e instanceof Refused) return { ok: false, field: e.field, why: e.message };
     throw e;

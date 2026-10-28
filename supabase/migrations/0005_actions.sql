@@ -13,9 +13,9 @@ create function acting(through uuid) returns uuid
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare caller uuid := auth.uid();
 begin
-  if caller is null then raise exception 'sign in to act' using errcode = '28000'; end if;
+  if caller is null then raise exception 'sign in to act' using hint = 'kayfabb.refusal', errcode = '28000'; end if;
   if not exists (select 1 from characters c where c.id = through and c.owner = caller) then
-    raise exception 'you do not play that character' using errcode = '42501';
+    raise exception 'you do not play that character' using hint = 'kayfabb.refusal', errcode = '42501';
   end if;
   return caller;
 end $$;
@@ -25,14 +25,23 @@ create function within(field text, value text, limit_setting text, may_be_empty 
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare most integer := (setting(limit_setting))::integer;
 begin
-  if value is null or (not may_be_empty and btrim(value) = '') then raise exception '% is empty', field using errcode = '22023'; end if;
-  if char_length(value) > most then raise exception '% is longer than % characters', field, most using errcode = '22001'; end if;
+  -- Blank is the same set of characters engine/rules/actions.ts calls blank: JavaScript's
+  -- whitespace and line terminators, and the zero-width ones.
+  if value is null or (not may_be_empty and value ~ '^[\s   -‍    ⁠　﻿]*$') then raise exception '% is empty', field using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if char_length(value) > most then raise exception '% is longer than % characters', field, most using hint = 'kayfabb.refusal', errcode = '22001'; end if;
   return value;
 end $$;
 
 create function act_projection(written uuid) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select to_jsonb(a) from acts_public a where a.id = written
+$$;
+
+-- A thread, by the columns that are public, named: a column added later is not shown by accident.
+create function thread_projection(made uuid) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object('id', t.id, 'board', t.board, 'title', t.title, 'origin_act_id', t.origin_act_id, 'created_at', t.created_at)
+  from threads t where t.id = made
 $$;
 
 create function start_thread(board_slug text, through uuid, title text, body text) returns jsonb
@@ -46,10 +55,10 @@ begin
   perform within('title', title, 'titleMaxLength');
   perform within('body', body, 'postMaxLength');
   select id into on_board from boards where slug = board_slug;
-  if on_board is null then raise exception 'there is no such board' using errcode = 'P0002'; end if;
+  if on_board is null then raise exception 'there is no such board' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   insert into threads (board, title) values (on_board, title) returning id into made;
   insert into acts (character, kind, thread, payload) values (through, 'post', made, jsonb_build_object('body', body)) returning id into written;
-  return jsonb_build_object('thread', (select to_jsonb(t) - 'next_seq' from threads t where t.id = made), 'act', act_projection(written));
+  return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
 end $$;
 
 create function post(in_thread uuid, through uuid, body text, quoting uuid default null) returns jsonb
@@ -58,8 +67,8 @@ declare written uuid;
 begin
   perform acting(through);
   perform within('body', body, 'postMaxLength');
-  if not exists (select 1 from threads where id = in_thread) then raise exception 'there is no such thread' using errcode = 'P0002'; end if;
-  if quoting is not null and not exists (select 1 from acts where id = quoting) then raise exception 'there is no such Act to quote' using errcode = 'P0002'; end if;
+  if not exists (select 1 from threads where id = in_thread) then raise exception 'there is no such thread' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if quoting is not null and not exists (select 1 from acts where id = quoting) then raise exception 'there is no such Act to quote' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   insert into acts (character, kind, thread, target_act_id, payload)
   values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id into written;
   return act_projection(written);
@@ -75,7 +84,7 @@ begin
   perform acting(through);
   perform within('body', body, 'postMaxLength');
   select thread into in_thread from acts where id = target and kind = 'post' and character = through;
-  if in_thread is null then raise exception 'that is not a post of this character''s' using errcode = '42501'; end if;
+  if in_thread is null then raise exception 'that is not a post of this character''s' using hint = 'kayfabb.refusal', errcode = '42501'; end if;
   insert into acts (character, kind, thread, target_act_id, payload) values (through, 'edit', in_thread, target, jsonb_build_object('body', body));
   return act_projection(target);
 end $$;
@@ -93,14 +102,14 @@ begin
   perform within('title', title, 'titleMaxLength');
   perform within('body', coalesce(body, ''), 'postMaxLength', true);
   select t.board into on_board from acts a join threads t on t.id = a.thread where a.id = origin and a.kind <> 'edit';
-  if on_board is null then raise exception 'there is no such Act to spin from' using errcode = 'P0002'; end if;
+  if on_board is null then raise exception 'there is no such Act to spin from' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   insert into threads (board, title, origin_act_id) values (on_board, title, origin) returning id into made;
   insert into acts (character, kind, thread, target_act_id, payload)
   values (through, 'spin', made, origin, jsonb_build_object('title', title, 'body', coalesce(body, ''))) returning id into written;
-  return jsonb_build_object('thread', (select to_jsonb(t) - 'next_seq' from threads t where t.id = made), 'act', act_projection(written));
+  return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
 end $$;
 
-revoke execute on function acting(uuid), within(text, text, text, boolean), act_projection(uuid) from public, anon, authenticated;
+revoke execute on function acting(uuid), within(text, text, text, boolean), act_projection(uuid), thread_projection(uuid) from public, anon, authenticated;
 revoke execute on function start_thread(text, uuid, text, text), post(uuid, uuid, text, uuid), edit_post(uuid, uuid, text), spin(uuid, uuid, text, text)
   from public, anon;
 grant execute on function start_thread(text, uuid, text, text), post(uuid, uuid, text, uuid), edit_post(uuid, uuid, text), spin(uuid, uuid, text, text)

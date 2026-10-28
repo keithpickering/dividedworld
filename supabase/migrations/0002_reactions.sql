@@ -55,22 +55,22 @@ declare
   held text[];
   free_slot integer;
 begin
-  if caller is null then raise exception 'sign in to react' using errcode = '28000'; end if;
+  if caller is null then raise exception 'sign in to react' using hint = 'kayfabb.refusal', errcode = '28000'; end if;
   if not exists (select 1 from characters c where c.id = through and c.owner = caller) then
     -- The same words whether the character is another player's or does not exist.
-    raise exception 'you do not play that character' using errcode = '42501';
+    raise exception 'you do not play that character' using hint = 'kayfabb.refusal', errcode = '42501';
   end if;
   if not exists (select 1 from reaction_kinds k where k.key = reaction) then
-    raise exception 'there is no reaction "%"', reaction using errcode = '22023';
+    raise exception 'there is no reaction "%"', reaction using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   select a.kind, c.owner into target_kind, author_owner
   from acts a join characters c on c.id = a.character where a.id = target;
-  if target_kind is null then raise exception 'there is no such Act' using errcode = 'P0002'; end if;
-  if target_kind = 'edit' then raise exception 'an edit is not reacted to; react to the post' using errcode = '22023'; end if;
+  if target_kind is null then raise exception 'there is no such Act' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if target_kind = 'edit' then raise exception 'an edit is not reacted to; react to the post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   -- The author's owner now: a character changing hands is not in this slice, and the session
   -- that adds it decides what becomes of reactions between its old and new owner's characters.
   if author_owner = caller then
-    raise exception 'your characters cannot react to each other' using errcode = '42501';
+    raise exception 'your characters cannot react to each other' using hint = 'kayfabb.refusal', errcode = '42501';
   end if;
 
   select coalesce(array_agg(r.kind order by r.slot), '{}') into held
@@ -81,10 +81,10 @@ begin
   select min(g) into free_slot from generate_series(1, cardinality(held) + 1) g
   where not exists (select 1 from reactions r where r.act = target and r.reactor_account = caller and r.slot = g);
   if reaction = any (held) then
-    raise exception 'you have already left that reaction here' using errcode = '23505';
+    raise exception 'you have already left that reaction here' using hint = 'kayfabb.refusal', errcode = '23505';
   end if;
   if cardinality(held) >= cap then
-    raise exception 'you have left % reactions here, the most there are', cap using errcode = '23514';
+    raise exception 'you have left % reactions here, the most there are', cap using hint = 'kayfabb.refusal', errcode = '23514';
   end if;
 
   begin
@@ -92,7 +92,7 @@ begin
     values (target, through, caller, reaction, free_slot);
   exception when unique_violation then
     -- Another reaction of this player's landed between the read above and this write.
-    raise exception 'you reacted here twice at once; try again' using errcode = '40001';
+    raise exception 'you reacted here twice at once; try again' using hint = 'kayfabb.refusal', errcode = '40001';
   end;
   insert into reaction_tallies (act, kind, count) values (target, reaction, 1)
   on conflict (act, kind) do update set count = reaction_tallies.count + 1;
