@@ -273,7 +273,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     linesOf.set(k, list);
   }
   const details: Detail[] = [];
-  for (const [k, list] of [...linesOf].sort((a, b) => cmp(a[0], b[0]))) {
+  for (const [, list] of [...linesOf].sort((a, b) => cmp(a[0], b[0]))) {
     const target = round(list.reduce((s, l) => s + l.amount, 0));
     const whole = list.map((l) => Math.floor(l.amount));
     let short = target - whole.reduce((s, w) => s + w, 0);
@@ -288,7 +288,6 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
         ...(l.first.act ? { act: l.first.act } : {}), ...(l.first.quadrant ? { quadrant: l.first.quadrant } : {}), amount: whole[i]!,
       });
     });
-    void k;
   }
   const standing = new Map<string, number>();
   for (const e of entries) standing.set(e.character, (standing.get(e.character) ?? 0) + e.amount);
