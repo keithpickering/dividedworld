@@ -135,8 +135,8 @@ export interface GivenReaction {
   readonly at: number;
   /** This reaction's share of its player's one vote on the Act. */
   readonly share: number;
-  /** Its player was among the first players to react to the Act. */
-  readonly early: boolean;
+  /** Where its player came among the players who reacted to the Act, by first reaction: 1 is first. */
+  readonly rank: number;
   /** The Act's dominant quadrant by vote weight at this settlement; null on a tie or none. */
   readonly endsUp: Quadrant | null;
 }
