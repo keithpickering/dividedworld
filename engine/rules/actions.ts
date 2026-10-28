@@ -90,6 +90,13 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (typeof kind !== 'string' || !reactions.some((k) => k.key === kind)) throw new Refused('kind', `there is no reaction ${JSON.stringify(kind)}`);
     return { rpc: 'react', args: { target: id(r, 'act'), through: id(r, 'character'), reaction: kind } };
   },
+  turn: (r, instance) => {
+    const to = r.class;
+    if (typeof to !== 'string' || !instance.classes.some((c) => c.key === to)) throw new Refused('class', `there is no class ${JSON.stringify(to)}`);
+    const loudness = r.loudness;
+    if (loudness !== 'silent' && loudness !== 'announced' && loudness !== 'revealed') throw new Refused('loudness', 'a Turn is silent, announced, or revealed');
+    return { rpc: 'turn', args: { through: id(r, 'character'), to_class: to, loudness } };
+  },
   buyCard: (r, instance) => {
     const key = card(r, instance);
     return { rpc: 'buy_card', args: { card: key, price: instance.cards.find((c) => c.key === key)!.basePrice }, asService: true };

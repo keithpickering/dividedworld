@@ -110,7 +110,6 @@ function checkedUrl(raw: string, schemes: readonly string[], allowRelative: bool
   return null;
 }
 
-/** The address of a link, or null: http, https, mailto, or a path on this site. */
 /**
  * A color, lowercased, or null: a named one from NAMED_COLORS, or #rgb or #rrggbb. The one check
  * for a color anywhere in the engine, so a post's [color] and a card's ink read the same list.
@@ -120,6 +119,7 @@ export function safeColor(raw: string): string | null {
   return NAMED_COLORS.has(v) || HEX_COLOR.test(v) ? v : null;
 }
 
+/** The address of a link, or null: http, https, mailto, or a path on this site. */
 export function safeHref(raw: string): string | null {
   return checkedUrl(raw, ['http', 'https', 'mailto'], true);
 }

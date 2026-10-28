@@ -24,6 +24,7 @@ const counting: ClassRules = {
 const kinds = ['fire', 'tomato', 'tea', 'zzz'] as const;
 const instance: Instance = {
   key: 'busy', name: 'Busy', classes: [counting], boards: [{ slug: 'b', name: 'B', description: '' }],
+  copy: { turnsThreadTitle: 'S{season} Turns', revealTitle: 'S{season} Reveal', revealBody: 'All.' },
   cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', basePrice: 100, playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
   reactions: [
     { key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' }, { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },

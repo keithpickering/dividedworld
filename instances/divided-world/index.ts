@@ -14,7 +14,14 @@ const boards = deepFreeze([
   { slug: 'general', name: 'General', description: 'Anything and everything. The System is watching.' },
 ]);
 
-export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', classes, cards, reactions, settings: defaults, boards });
+/** The System's words, in its own voice. */
+const copy = deepFreeze({
+  turnsThreadTitle: 'Season {season}: Who Turned',
+  revealTitle: 'Season {season}: The System Remembers Everything',
+  revealBody: 'Every mask, every class, every Turn, the quiet ones too. Who wore them, The System keeps to itself.',
+});
+
+export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, reactions, settings: defaults, boards });
 
 /** The same instance on the playtest's shorter season and Turn cooldown. */
 export const playtestInstance: Instance = Object.freeze({ ...instance, settings: playtest });

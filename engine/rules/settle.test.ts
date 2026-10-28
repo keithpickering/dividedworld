@@ -38,6 +38,7 @@ const instance: Instance = {
     seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120,
   },
   boards: [{ slug: 'general', name: 'General', description: '' }],
+  copy: { turnsThreadTitle: 'S{season} Turns', revealTitle: 'S{season} Reveal', revealBody: 'All.' },
 };
 
 const H = 3_600_000;

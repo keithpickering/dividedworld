@@ -84,6 +84,11 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
+  for (const key of ['turnsThreadTitle', 'revealTitle', 'revealBody'] as const) {
+    const words = instance.copy?.[key];
+    if (typeof words !== 'string' || words.trim() === '') out.push(`the instance has no copy for ${key}`);
+    else if (key !== 'revealBody' && !words.includes('{season}')) out.push(`the copy for ${key} does not say which season ({season})`);
+  }
   out.push(...settingsProblems(instance.settings));
   return out;
 }

@@ -219,9 +219,22 @@ export interface ClassRules {
 
 /* ------------------------------------------------------------------- the instance ---- */
 
+/**
+ * The words The System says in the instance's own voice, each with `{season}` where the season's
+ * number goes. In character, so they may bluff ("The fiction may lie; the log never does").
+ */
+export interface Copy {
+  /** The thread a season's announced Turns are posted in. */
+  readonly turnsThreadTitle: string;
+  /** The thread The System posts a season's reveal in, and what it says there. */
+  readonly revealTitle: string;
+  readonly revealBody: string;
+}
+
 export interface Instance {
   readonly key: string;
   readonly name: string;
+  readonly copy: Copy;
   readonly classes: readonly ClassRules[];
   readonly cards: readonly CardRules[];
   readonly reactions: readonly ReactionKind[];

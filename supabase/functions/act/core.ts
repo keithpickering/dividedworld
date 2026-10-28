@@ -56,7 +56,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     return { status: 200, body: await dbs.service.rpc<unknown>(decision.rpc, args) };
   } catch (e) {
     if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) return { status: e.status >= 400 && e.status < 500 ? e.status : 400, body: { error: e.reason, code: e.code } };
-    if (e instanceof DatabaseError && e.status === 401) return { status: 401, body: { error: 'sign in to act' } };
+    if (e instanceof DatabaseError && e.status === 401 && e.message.startsWith('whoami:')) return { status: 401, body: { error: 'sign in to act' } };
     console.error('act failed', decision.rpc, e);
     return { status: 500, body: { error: 'the action could not be completed; try again' } };
   }

@@ -13,6 +13,7 @@ const instance: Instance = {
     postMaxLength: 50, titleMaxLength: 10,
   },
   boards: [{ slug: 'general', name: 'General', description: '' }],
+  copy: { turnsThreadTitle: 'S{season} Turns', revealTitle: 'S{season} Reveal', revealBody: 'All.' },
 };
 const id = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
@@ -88,4 +89,11 @@ test('saving an effect\'s state names the play, the character and the state', ()
   assert.deepEqual(decide({ action: 'saveEffect', play: other, character: id, state: { strokes: [] } }, instance),
     { ok: true, rpc: 'save_effect_state', args: { through: id, on_play: other, state: { strokes: [] } }, asService: true, needsCardOfPlay: true });
   assert.match(refusal({ action: 'saveEffect', play: other, character: id }) ?? '', /^state:/);
+});
+
+test('a Turn names the character, a class the instance has, and how loud it is', () => {
+  assert.deepEqual(decide({ action: 'turn', character: id, class: 'a', loudness: 'silent' }, instance),
+    { ok: true, rpc: 'turn', args: { through: id, to_class: 'a', loudness: 'silent' } });
+  assert.match(refusal({ action: 'turn', character: id, class: 'ghost', loudness: 'silent' }) ?? '', /^class:/);
+  assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'whispered' }) ?? '', /^loudness:/);
 });

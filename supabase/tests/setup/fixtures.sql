@@ -17,7 +17,8 @@ insert into settings (key, value) values
   ('turnCooldown', '{"unit": "day", "count": 30}'),
   ('registrationMode', '"invite"'),
   ('postMaxLength', '20000'),
-  ('titleMaxLength', '120');
+  ('titleMaxLength', '120'),
+  ('copy', '{"turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
 insert into class_kinds (key, name) values ('alpha', 'Alpha'), ('beta', 'Beta');
 insert into reaction_kinds (key, emoji, quadrant) values
   ('up', '⬆️', 'excitedPositive'), ('boo', '👻', 'excitedNegative'),

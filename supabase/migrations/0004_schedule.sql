@@ -123,7 +123,8 @@ end $$;
 create function settlement_input(window_start timestamptz, window_end timestamptz) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   with
-  win_acts as (select * from acts a where a.created_at >= window_start and a.created_at < window_end),
+  -- The System's own Acts (the reveal) are no character's, and nobody's to settle.
+  win_acts as (select * from acts a where a.created_at >= window_start and a.created_at < window_end and a.character is not null),
   win_reactions as (select * from reactions r where r.created_at >= window_start and r.created_at < window_end),
   reacted as (select distinct act from win_reactions),
   earlier_reactions as (select r.* from reactions r join reacted x on x.act = r.act where r.created_at < window_start),
@@ -143,7 +144,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     union select id from spins union select target_act_id from spins where target_act_id is not null
     union select id from first_posts
   ),
-  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end),
+  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null),
   all_reactions as (select * from win_reactions union all select * from earlier_reactions),
   named as (select character as id from all_acts union select reactor_character from all_reactions),
   ms as (select 1)

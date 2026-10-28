@@ -28,6 +28,7 @@ const good: Instance = {
   ],
   settings,
   boards: [{ slug: 'general', name: 'General', description: 'Anything.' }],
+  copy: { turnsThreadTitle: 'Season {season}: Turns', revealTitle: 'Season {season}: The Reveal', revealBody: 'All of it.' },
 };
 
 test('a whole instance has no problems', () => {
@@ -115,4 +116,10 @@ test('deepFreeze reaches inside an object already frozen at the top, and survive
   loop.self = loop;
   assert.doesNotThrow(() => deepFreeze(loop));
   assert.ok(Object.isFrozen(loop));
+});
+
+test('an instance says The System\'s words, each title naming its season', () => {
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, revealBody: ' ' } }).join('\n'), /no copy for revealBody/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, revealTitle: 'The Reveal' } }).join('\n'), /revealTitle does not say which season/);
+  assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for turnsThreadTitle/);
 });

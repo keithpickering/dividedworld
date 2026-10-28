@@ -133,8 +133,9 @@ create index threads_board on threads (board, created_at);
 
 create table acts (
   id uuid primary key default gen_random_uuid(),
-  character uuid not null references characters (id),
-  kind text not null check (kind in ('post', 'spin', 'card', 'edit', 'turn')),
+  -- Null only for The System's own Acts (the season's reveal): The System plays no mask.
+  character uuid references characters (id),
+  kind text not null check (kind in ('post', 'spin', 'card', 'edit', 'turn', 'reveal')),
   thread uuid not null references threads (id),
   -- A quote's quoted Act, a spin's origin, a card's target post, an edit's post.
   target_act_id uuid references acts (id),
@@ -144,7 +145,8 @@ create table acts (
   created_at timestamptz not null default now(),
   unique (thread, seq),
   check ((kind = 'edit') = (seq is null)),
-  check (kind = 'post' or kind = 'turn' or target_act_id is not null)
+  check (kind in ('post', 'turn', 'reveal') or target_act_id is not null),
+  check ((character is null) = (kind = 'reveal'))
 );
 -- A thread's page is read by the unique (thread, seq) index.
 create index acts_character on acts (character, created_at);

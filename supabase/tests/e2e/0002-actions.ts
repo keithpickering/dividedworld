@@ -66,8 +66,13 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   const again = await runAction(asAnn, instance, { action: 'playCard', card: 'whoops', character: ann.character, target: act.id, config: { color: 'red' } });
   assert.equal(again.status, 400, 'no card left, and the post carries one already');
 
+  // A Turn, announced: a public Act that says nothing of either class.
+  const turned = await runAction(asBob, instance, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'announced' });
+  assert.equal(turned.status, 200, JSON.stringify(turned));
+  assert.deepEqual((turned.body as { act: { payload: unknown } }).act.payload, {});
+
   // Nothing any action answered names a player.
-  for (const answer of [started, replied, edited, spun, reacted, own, bought, played, caster, notAuthor, again]) {
+  for (const answer of [started, replied, edited, spun, reacted, own, bought, played, caster, notAuthor, again, turned]) {
     assert.ok(!JSON.stringify(answer).includes(ann.account) && !JSON.stringify(answer).includes(bob.account), 'an answer carried an account');
   }
 });

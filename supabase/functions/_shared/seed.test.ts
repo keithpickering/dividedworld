@@ -5,7 +5,8 @@ import { chooseInstance, instance } from './instance.ts';
 
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance);
-  assert.deepEqual(Object.keys(seed.settings).sort(), Object.keys(instance.settings).sort());
+  assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy'].sort());
+  assert.deepEqual(seed.settings.copy, instance.copy);
   assert.deepEqual(seed.settings.seasonLength, instance.settings.seasonLength);
   assert.deepEqual(seed.classes, instance.classes.map((c) => ({ key: c.key, name: c.name })));
   assert.deepEqual(seed.reactions, instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })));

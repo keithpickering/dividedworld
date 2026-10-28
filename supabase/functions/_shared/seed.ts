@@ -7,7 +7,8 @@ import type { Instance } from '../../../engine/rules/types.ts';
 
 export function instanceSeed(instance: Instance) {
   return {
-    settings: { ...instance.settings } as Record<string, unknown>,
+    // The System's words travel as one setting, read by the SQL that posts them (0007).
+    settings: { ...instance.settings, copy: instance.copy } as Record<string, unknown>,
     classes: instance.classes.map((c) => ({ key: c.key, name: c.name })),
     reactions: instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })),
     cards: instance.cards.map((c) => ({ key: c.key, name: c.name, alignment: c.alignment, basePrice: c.basePrice })),
