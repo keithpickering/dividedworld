@@ -15,10 +15,10 @@ const counting: ClassRules = {
   key: 'counting',
   name: 'Counting',
   earn: (i) => [
-    ...i.received.map((r) => ({ reason: 'received', amount: r.votes, act: r.act, quadrant: r.quadrant })),
-    ...i.given.map((g) => ({ reason: 'given', amount: g.rank <= 3 ? 1 : 0, act: g.act })),
-    ...i.cardsPlayed.map((c) => ({ reason: 'card', amount: c.votes - c.targetVotes, act: c.act })),
-    ...i.threadsSpun.map((t) => ({ reason: 'spun', amount: t.repliersNow - t.repliersBefore, act: t.act })),
+    ...i.received.map((r) => ({ reason: 'busy.received', amount: r.votes, act: r.act, quadrant: r.quadrant })),
+    ...i.given.map((g) => ({ reason: 'busy.given', amount: g.rank <= 3 ? 1 : 0, act: g.act })),
+    ...i.cardsPlayed.map((c) => ({ reason: 'busy.card', amount: c.votes - c.targetVotes, act: c.act })),
+    ...i.threadsSpun.map((t) => ({ reason: 'busy.spun', amount: t.repliersNow - t.repliersBefore, act: t.act })),
   ],
 };
 const kinds = ['fire', 'tomato', 'tea', 'zzz'] as const;

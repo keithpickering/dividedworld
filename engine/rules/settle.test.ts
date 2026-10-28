@@ -323,18 +323,18 @@ test('two classes from the same instant are refused, rather than settled by whic
 });
 
 test('rounding is half away from zero, in both directions', () => {
-  const halves: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'up', amount: 2.5 }, { reason: 'down', amount: -2.5 }] : []) };
+  const halves: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'fan.up', amount: 2.5 }, { reason: 'fan.down', amount: -2.5 }] : []) };
   const r = settle(base(), withClasses(halves));
-  assert.equal(amountOf(r, 'ann-fan', 'up'), 3);
-  assert.equal(amountOf(r, 'ann-fan', 'down'), -3);
+  assert.equal(amountOf(r, 'ann-fan', 'fan.up'), 3);
+  assert.equal(amountOf(r, 'ann-fan', 'fan.down'), -3);
 });
 
 test('a class that returns a number that is not one is refused, and a zero is no entry', () => {
-  const broken: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'x', amount: Number.NaN }] : []) };
+  const broken: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'fan.x', amount: Number.NaN }] : []) };
   assert.throws(() => settle(base(), withClasses(broken)), /returned NaN/);
-  const zero: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'nothing', amount: 0, act: 'p1' }] : []) };
+  const zero: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'fan.nothing', amount: 0, act: 'p1' }] : []) };
   const r = settle(base(), withClasses(zero));
-  assert.ok(!r.entries.some((e) => e.reason === 'nothing') && !r.details.some((d) => d.reason === 'nothing'));
+  assert.ok(!r.entries.some((e) => e.reason === 'fan.nothing') && !r.details.some((d) => d.reason === 'fan.nothing'));
 });
 
 test('a reacting player\'s rank and where a post ends up reach the class, with ties settled the same way every time', () => {
@@ -395,10 +395,10 @@ test('a card whose target is not in the input is refused, and a card retired fro
 });
 
 test('the log\'s rounding is shared the same way every time, and a line that rounds to nothing is not shown', () => {
-  const thirds: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'x', amount: 1 / 3, act: 'b' }, { reason: 'x', amount: 1 / 3, act: 'a' }, { reason: 'x', amount: 1 / 3, act: 'c' }] : []) };
+  const thirds: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'fan.x', amount: 1 / 3, act: 'b' }, { reason: 'fan.x', amount: 1 / 3, act: 'a' }, { reason: 'fan.x', amount: 1 / 3, act: 'c' }] : []) };
   const r = settle(base(), withClasses(thirds));
-  assert.equal(amountOf(r, 'ann-fan', 'x'), 1);
-  assert.deepEqual(r.details.filter((d) => d.reason === 'x').map((d) => [d.act, d.amount]), [['a', 1]], 'the tie goes to the first key; the others round to nothing and are not shown');
+  assert.equal(amountOf(r, 'ann-fan', 'fan.x'), 1);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'fan.x').map((d) => [d.act, d.amount]), [['a', 1]], 'the tie goes to the first key; the others round to nothing and are not shown');
 });
 
 test('a reply at exactly the window\'s end is the next window\'s, and only posts are posts', () => {
@@ -423,6 +423,13 @@ test('a reply at exactly the window\'s end is the next window\'s, and only posts
 });
 
 test('what each class earned is rounded like an entry', () => {
-  const thirds: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'x', amount: 1 / 3 }, { reason: 'y', amount: 1 / 3 }] : []) };
+  const thirds: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason: 'fan.x', amount: 1 / 3 }, { reason: 'fan.y', amount: 1 / 3 }] : []) };
   assert.equal(settle(base(), withClasses(thirds)).byClass.fan, 1);
+});
+
+test('a reason that is not the class contract\'s shape is refused before anything is written', () => {
+  for (const reason of ['cheered', 'Fan.love', 'fan.', 'fan love', 'fan.love!']) {
+    const bad: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason, amount: 1 }] : []) };
+    assert.throws(() => settle(base(), withClasses(bad)), /reason/, reason);
+  }
 });

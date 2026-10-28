@@ -155,13 +155,19 @@ begin
   where not exists (select 1 from characters c where c.id = (e ->> 'character')::uuid and c.owner = (e ->> 'player')::uuid)
      or jsonb_typeof(e -> 'amount') <> 'number' or (e ->> 'amount')::numeric <> trunc((e ->> 'amount')::numeric);
   if bad > 0 then raise exception '% entries name a character their player does not play, or an amount that is not whole', bad using errcode = '22023'; end if;
+  if jsonb_typeof(coalesce(class_totals, '{}')) <> 'object' or exists (
+    select 1 from jsonb_each(coalesce(class_totals, '{}')) t
+    where jsonb_typeof(t.value) <> 'number' or (t.value #>> '{}')::numeric <> trunc((t.value #>> '{}')::numeric)
+       or not exists (select 1 from class_kinds k where k.key = t.key)) then
+    raise exception 'class totals are whole amounts keyed by a class the instance has' using errcode = '22023';
+  end if;
 
   insert into settlements (starts_at, ends_at, season) values (window_start, window_end, open_season) returning id into settled;
   insert into ledger (settlement, account, character, reason, amount)
   select settled, (e ->> 'player')::uuid, (e ->> 'character')::uuid, e ->> 'reason', (e ->> 'amount')::integer
   from jsonb_array_elements(entries) e where (e ->> 'amount')::integer <> 0;
 
-  for r in select account, sum(amount)::integer as total from ledger where settlement = settled group by account order by account loop
+  for r in select account, sum(amount)::integer as total from ledger where settlement = settled group by account having sum(amount) <> 0 order by account loop
     perform wallet_move(r.account, r.total, 'settlement', settled, null);
   end loop;
 

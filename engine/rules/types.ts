@@ -196,7 +196,8 @@ export interface ClassInput {
 
 /**
  * One thing a class's rules paid or charged. `amount` is in hundredths and may be fractional;
- * the settlement sums and rounds. `reason` is the class's own key for the rule.
+ * the settlement sums and rounds. `reason` is the class's own key for the rule: dot-separated
+ * words, each starting lowercase (`face.cheered`), as the ledger stores it.
  */
 export interface Earning {
   readonly reason: string;

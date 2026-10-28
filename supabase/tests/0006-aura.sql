@@ -59,6 +59,14 @@ begin
   begin perform apply_settlement(w3, w4, jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.cheered', 'amount', 1.5)));
   exception when invalid_parameter_value then refused := true; end;
   if not refused then raise exception 'a fractional amount was applied'; end if;
+  refused := false;
+  begin perform apply_settlement(w3, w4, '[]', '{"alpha": 2.5}');
+  exception when invalid_parameter_value then refused := true; end;
+  if not refused then raise exception 'a fractional class total was applied'; end if;
+  refused := false;
+  begin perform apply_settlement(w3, w4, '[]', '{"ghost": 2}');
+  exception when invalid_parameter_value then refused := true; end;
+  if not refused then raise exception 'a class total for no class was applied'; end if;
   if exists (select 1 from settlements where starts_at = w3) then raise exception 'a refused window left a settlement row'; end if;
 
   -- A wallet cannot be set past its bounds even by hand.

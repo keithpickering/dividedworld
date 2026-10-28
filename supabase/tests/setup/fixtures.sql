@@ -84,9 +84,10 @@ grant execute on all functions in schema tests to anon, authenticated, service_r
 -- ---- Races ----
 -- A race test needs two sessions at once, which one assertion file cannot be: it opens two
 -- connections to the scratch database (dblink, which Supabase also offers), parks both on an
--- advisory lock this session holds until both are seen waiting on it, and lets them go together. Rows they read must be committed,
--- so a race test sets up through tests.commit(), which runs its SQL on a connection of its own
--- and commits it; the scratch database is dropped at the end of the run, so nothing is left.
+-- advisory lock this session holds until both are seen waiting on it, and lets them go
+-- together. Rows they read must be committed, so a race test sets up through tests.commit(),
+-- which runs its SQL on a connection of its own and commits it; the scratch database is dropped
+-- at the end of the run, so nothing is left.
 create extension if not exists dblink with schema extensions;
 
 create function tests.commit(statements text) returns void language plpgsql as $$
@@ -149,9 +150,14 @@ begin
   end;
   perform pg_advisory_unlock(4242);
   foreach conn in array array['race_a', 'race_b'] loop
-    select r.said into said from extensions.dblink_get_result(conn) as r(said text);
-    out := out || said;
-    perform * from extensions.dblink_get_result(conn) as r(said text);
+    begin
+      select r.said into said from extensions.dblink_get_result(conn) as r(said text);
+      out := out || said;
+      perform * from extensions.dblink_get_result(conn) as r(said text);
+    exception when others then
+      perform extensions.dblink_disconnect(conn);
+      raise;
+    end;
     perform extensions.dblink_disconnect(conn);
   end loop;
   return out;

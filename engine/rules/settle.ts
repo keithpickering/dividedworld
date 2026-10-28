@@ -65,6 +65,9 @@ export interface Settlement {
   readonly byClass: Readonly<Record<string, number>>;
 }
 
+/** A reason's shape, as the ledger holds it (supabase/migrations/0003_aura.sql): `class.what`. */
+export const REASON = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)+$/;
+
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /** Whole hundredths, half away from zero, after the floating dust of summing shares is swept. */
 const round = (x: number) => { const y = Math.round(Math.abs(x) * 1e6) / 1e6; return Math.sign(x) * Math.round(y) || 0; };
@@ -244,6 +247,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
       if (empty) continue;
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
+        if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
         contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}) });
       }
     }
