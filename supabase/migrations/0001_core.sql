@@ -140,6 +140,29 @@ create index acts_created on acts (created_at);
 
 alter table threads add constraint threads_origin_act foreign key (origin_act_id) references acts (id);
 
+-- What each kind of Act may point at, held on the table so no writer can get it wrong: an edit
+-- is its own author's, of their own post, in that post's thread (so the view never shows another
+-- character's words as a post's current text); a card lands on a post; a quote, a card and a
+-- spin never point at an edit, which is a layer of a post and not an Act to answer.
+create function acts_well_formed() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare t acts%rowtype;
+begin
+  if new.target_act_id is null then return new; end if;
+  select * into t from acts where id = new.target_act_id;
+  if new.kind = 'edit' and (t.kind <> 'post' or t.character <> new.character or t.thread <> new.thread) then
+    raise exception 'an edit is of its own author''s post, in its thread' using errcode = '23514';
+  end if;
+  if new.kind = 'card' and t.kind <> 'post' then
+    raise exception 'a card lands on a post' using errcode = '23514';
+  end if;
+  if new.kind <> 'edit' and t.kind = 'edit' then
+    raise exception 'an edit is not answered; answer the post' using errcode = '23514';
+  end if;
+  return new;
+end $$;
+create trigger acts_well_formed before insert on acts for each row execute function acts_well_formed();
+
 -- The sequence number, from the thread's counter. The update locks the thread's row, so two
 -- Acts posted to one thread at once take two numbers, in order.
 create function acts_take_seq() returns trigger
@@ -196,7 +219,7 @@ alter table acts enable row level security;
 revoke all on settings, class_kinds, reaction_kinds, card_kinds, accounts, characters, class_history, boards, threads, acts
   from anon, authenticated;
 revoke all on characters_public, acts_public from anon, authenticated;
-revoke execute on function setting(text), characters_within_cap(), acts_take_seq(), acts_append_only() from public, anon, authenticated;
+revoke execute on function setting(text), characters_within_cap(), acts_well_formed(), acts_take_seq(), acts_append_only() from public, anon, authenticated;
 
 -- The vocabulary and the public tables: any signed-in player reads them.
 grant select on class_kinds, reaction_kinds, card_kinds, boards, threads, acts to authenticated;

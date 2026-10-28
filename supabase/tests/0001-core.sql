@@ -53,6 +53,57 @@ begin
   if leaks <> '' then raise exception 'a private column is readable outside row security:%', leaks; end if;
 end $$;
 
+-- ---- No view a caller can read draws on a private column, under any name ----
+-- A view can rename a column, so the names above are not enough: the catalog says which table
+-- columns each view reads. A view that must read one (to filter to the caller's own rows, say)
+-- is named here with its reason.
+do $$
+declare
+  leaks text := '';
+  r record;
+begin
+  for r in
+    select u.view_name, u.table_name, u.column_name
+    from information_schema.view_column_usage u
+    where u.view_schema = 'public'
+      and (has_table_privilege('authenticated', format('public.%I', u.view_name), 'select') or has_table_privilege('anon', format('public.%I', u.view_name), 'select'))
+      and (u.table_name, u.column_name) in (('characters', 'owner'), ('class_history', 'class_key'), ('accounts', 'id'),
+                                            ('reactions', 'reactor_account'), ('reactions', 'reactor_character'))
+  loop
+    leaks := leaks || format(' %s reads %s.%s;', r.view_name, r.table_name, r.column_name);
+  end loop;
+  if leaks <> '' then raise exception 'a view callers can read draws on a private column:%', leaks; end if;
+end $$;
+
+-- ---- An edit is its own author's, of their own post, in its thread ----
+do $$
+declare
+  ann uuid := tests.account('ida');
+  bob uuid := tests.account('jon');
+  a uuid := tests.character(ann, 'Wrench');
+  b uuid := tests.character(bob, 'Bolt');
+  t uuid := tests.thread();
+  p uuid := tests.post(a, t, 'Mine.');
+  refused boolean;
+begin
+  refused := false;
+  begin perform tests.act(b, 'edit', t, '{"body": "Yours now."}', p);
+  exception when check_violation then refused := true; end;
+  if not refused then raise exception 'another character''s edit of a post was written'; end if;
+  refused := false;
+  begin perform tests.act(a, 'edit', tests.thread(), '{"body": "Elsewhere."}', p);
+  exception when check_violation then refused := true; end;
+  if not refused then raise exception 'an edit in another thread was written'; end if;
+  refused := false;
+  begin perform tests.act(a, 'edit', t, '{"body": "Again."}', tests.act(a, 'edit', t, '{"body": "Once."}', p));
+  exception when check_violation then refused := true; end;
+  if not refused then raise exception 'an edit of an edit was written'; end if;
+  refused := false;
+  begin perform tests.act(a, 'card', t, '{}', tests.act(a, 'edit', t, '{"body": "x"}', p));
+  exception when check_violation then refused := true; end;
+  if not refused then raise exception 'a card was played on an edit'; end if;
+end $$;
+
 -- ---- A visitor with no session reads nothing ----
 do $$
 declare ok boolean := false;
