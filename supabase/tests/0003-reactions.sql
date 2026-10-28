@@ -30,6 +30,7 @@ declare
   own2 text;
   tally jsonb;
   n integer;
+  cap text := setting('reactionCap');
 begin
   -- Nobody signed in.
   if pg_temp.refusal(pb, a1, 'up') is null then raise exception 'a reaction with no session went through'; end if;
@@ -63,8 +64,13 @@ begin
   perform react(pb, a1, 'calm');
   why := pg_temp.refusal(pb, a2, 'meh');
   if why is null then raise exception 'a fourth kind from one player went through'; end if;
-  if why not like '%3 reactions%' then raise exception 'the cap''s refusal should say the cap: %', why; end if;
+  if why not like format('%%%s reactions%%', cap) then raise exception 'the cap''s refusal should say the cap: %', why; end if;
   perform tests.unbecome();
+
+  -- Nothing refused above wrote a row or moved a tally.
+  if (select count(*) from reactions) <> 3 or (select sum(count) from reaction_tallies) <> 3 then
+    raise exception 'a refused reaction left a row or a count behind';
+  end if;
 
   -- Another player is held to their own three.
   perform tests.become(cat);
@@ -105,5 +111,20 @@ begin
   if not refused then raise exception 'the reacted-to player read who reacted'; end if;
   select count into n from reaction_tallies where act = p and kind = 'up';
   if n <> 1 then raise exception 'the tally should be public'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- A visitor with no session can neither read who reacted nor react ----
+do $$
+declare
+  p uuid := tests.post(tests.character(tests.account('anon-target'), 'Anvil Two'), tests.thread());
+  refused boolean := false;
+begin
+  perform tests.become_anon();
+  begin perform 1 from reactions; exception when insufficient_privilege then refused := true; end;
+  if not refused then raise exception 'anon read the reactions table'; end if;
+  refused := false;
+  begin perform react(p, gen_random_uuid(), 'up'); exception when insufficient_privilege then refused := true; end;
+  if not refused then raise exception 'anon called react()'; end if;
   perform tests.unbecome();
 end $$;
