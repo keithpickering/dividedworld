@@ -53,7 +53,8 @@ export interface Settings {
   readonly settlementCron: string;
   readonly seasonLength: Span;
   readonly turnCooldown: Span;
-  readonly registrationMode: 'invite' | 'open';
+  /** Who may open an account: anyone, someone with an invite, or nobody new. */
+  readonly registrationMode: 'open' | 'invite' | 'closed';
   /** The longest a post's text may be, in characters (code points). */
   readonly postMaxLength: number;
   /** The longest a thread's title may be, in characters. */

@@ -50,6 +50,12 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   react: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   buy_card: () => [],
+  // A player's own: a character appears on the next load of who is here, and an invite or an
+  // account is nobody else's to hear of.
+  create_character: () => [],
+  create_invite: () => [],
+  reissue_invite: () => [],
+  open_account: () => [],
 };
 const live = (rpc: string, answer: unknown): Broadcast[] =>
   answer && typeof answer === 'object' ? (BROADCASTS[rpc]?.(answer as Row) ?? []) : [];

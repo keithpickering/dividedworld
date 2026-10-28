@@ -42,7 +42,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   settlementCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   seasonLength: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count of at least 1'),
   turnCooldown: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count of at least 1'),
-  registrationMode: (v) => (v === 'invite' || v === 'open' ? null : '"invite" or "open"'),
+  registrationMode: (v) => (v === 'open' || v === 'invite' || v === 'closed' ? null : '"open", "invite" or "closed"'),
   postMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
 };

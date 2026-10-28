@@ -38,6 +38,9 @@ const length = (s: string) => [...s].length;
 /** Blank: JavaScript's whitespace and line terminators, and the zero-width characters; the SQL's own set is the same (supabase/migrations/0005_actions.sql). */
 const BLANK = /^[\s\u200b-\u200d\u2060]*$/u;
 
+/** The longest a character's name may be, as the characters table holds it (supabase/migrations/0001_core.sql). */
+export const NAME_MAX_LENGTH = 40;
+
 class Refused extends Error {
   readonly field: string;
   constructor(field: string, why: string) { super(why); this.field = field; }
@@ -107,6 +110,21 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     asService: true,
     needsTarget: true,
   }),
+  createCharacter: (r, instance) => {
+    const kind = r.class;
+    if (typeof kind !== 'string' || !instance.classes.some((c) => c.key === kind)) throw new Refused('class', `there is no class ${JSON.stringify(kind)}`);
+    return { rpc: 'create_character', args: { name: text(r, 'name', NAME_MAX_LENGTH), class: kind } };
+  },
+  createInvite: () => ({ rpc: 'create_invite', args: {} }),
+  reissueInvite: (r) => {
+    if (typeof r.invite !== 'number' || !Number.isSafeInteger(r.invite) || r.invite < 1) throw new Refused('invite', 'is not an invite');
+    return { rpc: 'reissue_invite', args: { invite: r.invite } };
+  },
+  openAccount: (r) => {
+    const code = r.invite ?? null;
+    if (code !== null && (typeof code !== 'string' || code.length > 64)) throw new Refused('invite', 'is not an invite code');
+    return { rpc: 'open_account', args: { code } };
+  },
   saveEffect: (r) => {
     if (typeof r.state !== 'object' || r.state === null) throw new Refused('state', 'is the effect\'s state, an object');
     return { rpc: 'save_effect_state', args: { through: id(r, 'character'), on_play: id(r, 'play'), state: r.state }, asService: true, needsCardOfPlay: true };

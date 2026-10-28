@@ -97,3 +97,18 @@ test('a Turn names the character, a class the instance has, and how loud it is',
   assert.match(refusal({ action: 'turn', character: id, class: 'ghost', loudness: 'silent' }) ?? '', /^class:/);
   assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'whispered' }) ?? '', /^loudness:/);
 });
+
+test('a character is made with a name and one of the instance\'s classes; invites are made, sent again and spent', () => {
+  assert.deepEqual(decide({ action: 'createCharacter', name: 'Masked One', class: 'a' }, instance),
+    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a' } });
+  assert.match(refusal({ action: 'createCharacter', name: 'Masked One', class: 'z' }) ?? '', /^class:/);
+  assert.match(refusal({ action: 'createCharacter', name: ' \u200b ', class: 'a' }) ?? '', /^name: is empty/);
+  assert.match(refusal({ action: 'createCharacter', name: 'n'.repeat(41), class: 'a' }) ?? '', /^name: is longer than 40/);
+  assert.deepEqual(decide({ action: 'createInvite' }, instance), { ok: true, rpc: 'create_invite', args: {} });
+  assert.deepEqual(decide({ action: 'reissueInvite', invite: 7 }, instance), { ok: true, rpc: 'reissue_invite', args: { invite: 7 } });
+  assert.match(refusal({ action: 'reissueInvite', invite: '7' }) ?? '', /^invite:/);
+  assert.match(refusal({ action: 'reissueInvite', invite: 1.5 }) ?? '', /^invite:/);
+  assert.deepEqual(decide({ action: 'openAccount', invite: 'abc' }, instance), { ok: true, rpc: 'open_account', args: { code: 'abc' } });
+  assert.deepEqual(decide({ action: 'openAccount' }, instance), { ok: true, rpc: 'open_account', args: { code: null } });
+  assert.match(refusal({ action: 'openAccount', invite: 'x'.repeat(200) }) ?? '', /^invite:/);
+});

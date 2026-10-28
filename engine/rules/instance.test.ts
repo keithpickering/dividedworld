@@ -79,7 +79,8 @@ test('settings out of range are problems', () => {
   assert.match(settingsProblems({ ...settings, walletCap: 1e300 }).join('\n'), /walletCap/);
   assert.match(settingsProblems({ ...settings, seasonLength: { unit: 'year', count: 1 } as never }).join('\n'), /seasonLength/);
   assert.match(settingsProblems({ ...settings, turnCooldown: { unit: 'day', count: 0 } }).join('\n'), /turnCooldown/);
-  assert.match(settingsProblems({ ...settings, registrationMode: 'closed' as never }).join('\n'), /registrationMode/);
+  assert.match(settingsProblems({ ...settings, registrationMode: 'shut' as never }).join('\n'), /registrationMode/);
+  for (const mode of ['open', 'invite', 'closed'] as const) assert.deepEqual(settingsProblems({ ...settings, registrationMode: mode }), [], mode);
 });
 
 test('settings that are not an object are a problem, not a crash', () => {
