@@ -69,7 +69,9 @@ begin
   if why is distinct from 'only the post''s author saves what is on it' then raise exception 'the caster saved strokes: %', why; end if;
   if pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', ann, b, the_play, '{"strokes": []}')) is null then raise exception 'strokes were saved through another''s character'; end if;
   if (save_effect_state(bob, b, the_play, '{"strokes": [{"color": "red", "width": 4, "points": [[0.1, 0.1]]}]}') -> 'state' -> 'strokes') is null then raise exception 'the author saves'; end if;
+  perform pg_sleep(0.01);
   perform save_effect_state(bob, b, the_play, '{"strokes": []}');
+  if (select saved_at from effect_state where effect_state.play = the_play) <= now() then raise exception 'a save is timed from its transaction''s start'; end if;
   if (select state from effect_state where effect_state.play = the_play) <> '{"strokes": []}' then raise exception 'the author washes it clean'; end if;
   if pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', bob, b, the_play, jsonb_build_object('strokes', repeat('x', 300000)))) is null then
     raise exception 'an oversize state was saved';

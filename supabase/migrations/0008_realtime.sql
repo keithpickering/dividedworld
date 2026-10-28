@@ -16,6 +16,10 @@
 do $$ begin
   if exists (select 1 from pg_namespace where nspname = 'realtime')
      and exists (select 1 from information_schema.tables where table_schema = 'realtime' and table_name = 'messages') then
+    -- Fail closed: without row-level security the policy would hold nobody back.
+    if not (select relrowsecurity from pg_class where oid = 'realtime.messages'::regclass) then
+      raise exception 'realtime.messages has no row-level security, so private channels would be open to every listener';
+    end if;
     execute $p$create policy "signed-in players hear the board" on realtime.messages for select to authenticated
       using (extension = 'broadcast' and (realtime.topic() like 'thread:%' or realtime.topic() like 'board:%'))$p$;
   end if;

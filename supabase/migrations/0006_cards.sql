@@ -150,8 +150,9 @@ begin
   select t.character into author from acts k join acts t on t.id = k.target_act_id where k.id = on_play and k.kind = 'card';
   if author is null then raise exception 'there is no such card on a post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   if author <> through then raise exception 'only the post''s author saves what is on it' using hint = 'kayfabb.refusal', errcode = '42501'; end if;
-  insert into effect_state as e (play, state, saved_by) values (on_play, state, through)
-  on conflict on constraint effect_state_pkey do update set state = excluded.state, saved_by = excluded.saved_by, saved_at = now();
+  -- Timed when written, after any save it waited on, so the newest saved_at is the state kept.
+  insert into effect_state as e (play, state, saved_by, saved_at) values (on_play, state, through, clock_timestamp())
+  on conflict on constraint effect_state_pkey do update set state = excluded.state, saved_by = excluded.saved_by, saved_at = clock_timestamp();
   return (select jsonb_build_object('play', e.play, 'thread', (select thread from acts where id = on_play), 'state', e.state, 'saved_at', e.saved_at)
           from effect_state e where e.play = on_play);
 end $$;
