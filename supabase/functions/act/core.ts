@@ -40,7 +40,7 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   play_card: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
   spin: (a) => [...thread(a.thread), ...act(a.act)],
-  turn: (a) => act(a.act),
+  turn: (a) => [...thread(a.thread), ...act(a.act)],
   react: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, state: a.state } }] : []),
   buy_card: () => [],

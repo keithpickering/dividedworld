@@ -45,6 +45,8 @@ begin
   said := turn(b, 'beta', 'announced');
   if said -> 'act' ->> 'kind' <> 'turn' or said -> 'act' -> 'payload' <> '{}' then raise exception 'an announced Turn says nothing of either class: %', said; end if;
   if said::text like '%beta%' or said::text like '%alpha%' then raise exception 'an announced Turn named a class'; end if;
+  -- The season's first announced Turn opens its Turns thread, and says so for its board.
+  if said -> 'thread' ->> 'id' is distinct from said -> 'act' ->> 'thread' then raise exception 'the Turn that opens the Turns thread returns it: %', said; end if;
   perform tests.unbecome();
 
   -- A Turn inside the cooldown is refused, and the refusal says when it can be made.
@@ -65,6 +67,7 @@ begin
   if pg_temp.refusal(format('select turn(%L, %L, %L)', a, 'alpha', 'shouted')) is null then raise exception 'a Turn of no loudness'; end if;
   -- Revealed: the class it Turned from, and since when.
   said := turn(a, 'alpha', 'revealed');
+  if said ? 'thread' then raise exception 'a Turn into a Turns thread already open returned it again'; end if;
   if said -> 'act' -> 'payload' ->> 'was' <> 'beta' or said -> 'act' -> 'payload' ->> 'since' is null then raise exception 'a revealed Turn names what it was: %', said; end if;
   if said::text like '%"alpha"%' then raise exception 'a revealed Turn said what it Turned to'; end if;
   perform tests.unbecome();
@@ -85,12 +88,19 @@ begin
   if said is null then raise exception 'a season past its length should be revealed'; end if;
   if said -> 'act' ->> 'kind' <> 'reveal' or said -> 'act' ->> 'character' is not null then raise exception 'the reveal is The System''s own Act: %', said -> 'act'; end if;
   if said -> 'thread' ->> 'title' not like 'Season % The Reveal' then raise exception 'the reveal''s thread is titled in the instance''s words: %', said -> 'thread'; end if;
-  select e into entry from jsonb_array_elements(said -> 'act' -> 'payload' -> 'characters') e where e ->> 'character' = a::text;
-  if entry is null then raise exception 'the reveal should hold every character'; end if;
+  -- One Act per character after the reveal's own, so no row grows with the cast.
+  if (said -> 'act' -> 'payload' ->> 'characters')::integer <> (select count(*) from characters) then raise exception 'the reveal counts the cast: %', said -> 'act'; end if;
+  if (select count(*) from acts where thread = (said -> 'thread' ->> 'id')::uuid and kind = 'reveal') <> 1 + (select count(*) from characters) then
+    raise exception 'the reveal should hold every character, one Act each';
+  end if;
+  select payload into entry from acts where thread = (said -> 'thread' ->> 'id')::uuid and payload ->> 'character' = a::text;
   if (select jsonb_agg(c ->> 'class') from jsonb_array_elements(entry -> 'classes') c) <> '["alpha", "beta"]' then
     raise exception 'the reveal should show the class held at the start and the silent Turn: %', entry;
   end if;
-  if said::text like '%' || ann || '%' then raise exception 'the reveal named a player'; end if;
+  -- The class held as the season began counts from the season's start: the Turn before it was
+  -- an earlier season's to reveal.
+  if (entry -> 'classes' -> 0 ->> 'from')::timestamptz <> now() - interval '100 days' then raise exception 'the first class should count from the season''s start: %', entry; end if;
+  if exists (select 1 from acts where thread = (said -> 'thread' ->> 'id')::uuid and payload::text like '%' || ann || '%') then raise exception 'the reveal named a player'; end if;
   -- The next season is open, from the instant the last ended, and nothing is due yet.
   if (select count(*) from seasons where ends_at is null) <> 1 then raise exception 'one season is open after the reveal'; end if;
   if (select starts_at from seasons where ends_at is null) <> (select max(ends_at) from seasons) then raise exception 'the next season opens as the last ends'; end if;
@@ -106,4 +116,17 @@ begin
   begin perform reveal_season(); exception when insufficient_privilege then refused := true; end;
   perform tests.unbecome();
   if not refused then raise exception 'a player called reveal_season()'; end if;
+end $$;
+
+-- ---- The words The System needs cannot be lost, and their absence is said, not a null title ----
+do $$
+declare why text;
+begin
+  why := pg_temp.refusal($q$update settings set value = value - 'revealTitle' where key = 'copy'$q$);
+  if why is null or why not like '%revealTitle%' then raise exception 'copy lost a key: %', why; end if;
+  if pg_temp.refusal($q$delete from settings where key = 'copy'$q$) is null then raise exception 'copy was deleted'; end if;
+  alter table settings disable trigger settings_copy_kept;
+  delete from settings where key = 'copy';
+  why := pg_temp.refusal('select copy_of(''revealTitle'', 1)');
+  if why is null or why not like '%copy.revealTitle%' then raise exception 'missing words should be named: %', why; end if;
 end $$;

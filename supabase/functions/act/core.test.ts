@@ -109,6 +109,8 @@ test('what an action wrote is broadcast as its public projection, on its thread\
       [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
     [{ action: 'turn', character: id, class: 'heel', loudness: 'silent' }, { turn: { turned: true, loudness: 'silent' } }, []],
     [{ action: 'turn', character: id, class: 'heel', loudness: 'announced' }, { turn: { turned: true, act: { id: 'a', thread } } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
+    [{ action: 'turn', character: id, class: 'heel', loudness: 'announced' }, { turn: { turned: true, thread: { id: thread, board }, act: { id: 'a', thread } } },
+      [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
     [{ action: 'buyCard', card: 'whoops' }, { whoami: id, buy_card: { card: 'whoops', balance: 0, held: 1 } }, []],
     [{ action: 'saveEffect', play: id, character: id, state: { strokes: [] } }, { whoami: id, card_of_play: 'whoops', save_effect_state: { play: id, thread, state: { strokes: [] } } },
       [{ topic: `thread:${thread}`, event: 'effect', payload: { play: id, state: { strokes: [] } } }]],
