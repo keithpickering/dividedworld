@@ -13,8 +13,17 @@
 -- a table grant.
 --
 -- An Act is never edited in place ("Append-only"): a trigger refuses every UPDATE, DELETE and
--- TRUNCATE on acts, whoever runs it. An edit is a new Act whose target is the post, and a
+-- TRUNCATE on acts, whoever runs it and in every replication mode. An edit is a new Act whose target is the post, and a
 -- post's current text is the latest edit's, read through acts_public.
+
+-- Nothing the API roles can reach unless a migration grants it: Supabase gives anon and
+-- authenticated every privilege on every table, sequence and function postgres makes in public,
+-- and a sequence alone is a clock (an id counter moving says when a row was written). So every
+-- default is taken back here, for this migration and every one after it, and each grant below
+-- is made on purpose. supabase/tests/0005-default-deny.sql holds the result.
+alter default privileges for role postgres in schema public revoke all on tables from anon, authenticated;
+alter default privileges for role postgres in schema public revoke all on sequences from anon, authenticated;
+alter default privileges for role postgres in schema public revoke execute on functions from public, anon, authenticated;
 
 -- ---------------------------------------------------------------- the instance's data ----
 
@@ -53,6 +62,9 @@ end $$;
 
 -- ----------------------------------------------------------------------- the players ----
 
+-- An account is never deleted: its characters' Acts are the forum's record. A player who leaves
+-- has their export, and the account closes without removing what was written (registration,
+-- Task 14, and the screens that follow).
 create table accounts (
   id uuid primary key references auth.users (id),
   created_at timestamptz not null default now()
@@ -84,7 +96,7 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare cap integer := (setting('charactersPerPlayer'))::integer;
 declare held integer;
 begin
-  perform 1 from accounts where id = new.owner for update;
+  perform 1 from accounts where id = new.owner for no key update;
   select count(*) into held from characters where owner = new.owner;
   if held >= cap then
     raise exception 'a player runs at most % characters', cap using errcode = 'P0001';
@@ -133,12 +145,15 @@ create table acts (
   check ((kind = 'edit') = (seq is null)),
   check (kind = 'post' or kind = 'turn' or target_act_id is not null)
 );
-create index acts_thread on acts (thread, seq);
+-- A thread's page is read by the unique (thread, seq) index.
 create index acts_character on acts (character, created_at);
-create index acts_target on acts (target_act_id);
+create index acts_target on acts (target_act_id) where kind <> 'edit';
+-- A post's latest edit, for acts_public.
+create index acts_edits on acts (target_act_id, created_at desc, id desc) where kind = 'edit';
 create index acts_created on acts (created_at);
 
 alter table threads add constraint threads_origin_act foreign key (origin_act_id) references acts (id);
+create index threads_origin on threads (origin_act_id) where origin_act_id is not null;
 
 -- What each kind of Act may point at, held on the table so no writer can get it wrong: an edit
 -- is its own author's, of their own post, in that post's thread (so the view never shows another
@@ -184,6 +199,9 @@ begin
 end $$;
 create trigger acts_no_update before update or delete on acts for each row execute function acts_append_only();
 create trigger acts_no_truncate before truncate on acts for each statement execute function acts_append_only();
+-- Always: a session in replica mode, as a restore with triggers disabled runs, fires them too.
+alter table acts enable always trigger acts_no_update;
+alter table acts enable always trigger acts_no_truncate;
 
 -- ------------------------------------------------------------------ public projections ----
 
@@ -219,6 +237,7 @@ alter table acts enable row level security;
 revoke all on settings, class_kinds, reaction_kinds, card_kinds, accounts, characters, class_history, boards, threads, acts
   from anon, authenticated;
 revoke all on characters_public, acts_public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
 revoke execute on function setting(text), characters_within_cap(), acts_well_formed(), acts_take_seq(), acts_append_only() from public, anon, authenticated;
 
 -- The vocabulary and the public tables: any signed-in player reads them.
