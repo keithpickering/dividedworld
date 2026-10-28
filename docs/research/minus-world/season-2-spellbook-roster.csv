@@ -1,0 +1,13 @@
+,Minus World - New Spells,,,,,,SEASON 2
+,,,,,,,
+,Name,Alignment,Cost,Description,Notes,Assigned To,Status
+,Make A Point,Sweet,100,"Add a flashing ""THIS"" arrow pointing toward this post, ensuring it doesn't go unnoticed.","First arrow is ""THIS"", additional arrows may say things like ""This guy gets it"", ""+!"", etc",Spritey,Not started
+,Jimmy Wails,Sweet,200,Type a sob story about why this post should get more love. Adds a Good Sh*t donation drive below the post; anyone who clicks the button receives 1EX.,Select from a random pool of Jimmy Wales background images,Spritey,DONE (unmerged)
+,Heads Will Roll,Pepperoni,300,"Make all of this post's reactions float around the boundaries of the post, their size determined by their number of clicks.","If Overreaction is also cast, double the size of Overreacted emoji(s)",Spritey,"- Spell portrait done
+- JS in progress"
+,Picture Switcher,Pepperoni,400,Replace every occurance of a given image in thie post with an image of your choice.,,,- Spell portrait done
+,Tune It Out,Salty,500,Replace this post with TV static. Anyone wishing to view it must adjust a knob until they reach the correct frequency.,"Should have a few short clips to shuffle between while looking for the ""correct frequency""",,Not started
+,AdFlock Minus,Salty,500,Cover this post with a random assortment of pop-up ads on each page load.,,,Not started
+,Console Slog,Salty,600,Replace this post with an empty command prompt window. Anyone wishing to read the post must mash keys to reveal it character-by-character.,Images should ideally be ASCII-ized,,Not started
+,Present For You,Pepperoni,700+,"Leave a wrapped gift on this user's post. Inside you can choose to place either an item from your inventory, or another Spell to be cast upon opening.","- This one is kind of complicated so we might not get it done in time
+- Cost is at least 700, or higher if the chosen Spell costs more than 700 (if applicable)",,Not started

@@ -103,6 +103,17 @@ the log names which Act did a thing, what it changed and how much Aura moved, in
 what is hidden: who reacted, or anyone's class. Settings, the account, errors and anything about real moderation are
 written plainly and honestly, for a player's understanding, never in character.
 
+## An accessible path costs what the obstacle costs
+
+**The forum itself is fully accessible; a game obstacle's accessible path gives every player the same challenge,
+never a way around it.**
+
+A website aims at no friction; a game balances usability against difficulty, and a standard written for websites,
+followed to the letter, leads a game to no difficulty at all. So reading, posting, navigating, settings and the log
+meet the usual standards: contrast, focus, keyboard and labels. A card or a game effect that is meant to be tough to
+get through has an accessible path that takes about as long and costs about as much as the one it replaces: Whoops!'s
+wash control is timed like a scrub, and reduced motion makes Stick Around's snap-back instant, but it still snaps back.
+
 ## A response never varies with a private fact
 
 **No page, payload, Realtime event, presence update or timing may differ with a private fact; who owns a character,
