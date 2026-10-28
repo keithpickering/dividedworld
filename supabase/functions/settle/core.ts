@@ -4,9 +4,10 @@
  * supabase/functions/settle/index.ts is the thin Edge Function around it; this file is what
  * Node tests (core.test.ts) and Deno both run.
  *
- * A run is safe to repeat. `until` is the minute the schedule fired, so a retried firing asks
- * for the same window and finds it settled (`nothing to settle`); two runs at once both compute
- * the window and apply_settlement() writes it once (`already settled`). A database error is
+ * A run is safe to repeat. The same `until` sent again asks for a window already settled
+ * (`nothing to settle`); two runs at once with the same `until` both compute the window and
+ * apply_settlement() writes it once (`already settled`); two that overlap with different ones
+ * leave the later failing on the window's start, and the next firing settles from there. A database error is
  * thrown, never swallowed: the window stays unsettled, and the next firing settles from where
  * the last settled window ended, so nothing is lost and nothing is counted twice.
  */

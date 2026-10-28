@@ -148,7 +148,11 @@ begin
     return jsonb_build_object('applied', false, 'reason', 'already settled');
   end if;
   select max(ends_at) into last_end from settlements;
-  if last_end is not null and window_start <> last_end then
+  -- Windows follow one another; the one gap allowed is between two seasons, where no season
+  -- holds the last window's end and this one starts at the next season's start.
+  if last_end is not null and window_start <> last_end and not (
+       not exists (select 1 from seasons where starts_at <= last_end and (ends_at is null or ends_at > last_end))
+       and window_start = (select min(starts_at) from seasons where starts_at > last_end)) then
     raise exception 'this window starts at %, but the last settled window ended at %', window_start, last_end using errcode = '22023';
   end if;
   select id into open_season from seasons where starts_at <= window_start and (ends_at is null or ends_at >= window_end);

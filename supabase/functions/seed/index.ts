@@ -15,6 +15,6 @@ Deno.serve(async (request) => {
     return json(200, await serviceDb(env).rpc('seed_instance', { payload: instanceSeed(instance) }));
   } catch (e) {
     console.error('seed failed', e);
-    return json(500, { error: e instanceof Error ? e.message : String(e) });
+    return json(500, { error: 'seeding failed; see the function log' });
   }
 });

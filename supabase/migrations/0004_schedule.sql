@@ -12,6 +12,8 @@
 -- stops the migration. The function's URL and the key it is called with live in Vault, never in
 -- this file; until both secrets exist the job sends nothing rather than a request with no URL.
 
+create index acts_thread_posts on acts (thread, character, created_at, id) where kind = 'post';
+
 do $$ begin
   execute 'create extension if not exists pg_cron';
 exception when feature_not_supported or undefined_file then
@@ -51,9 +53,12 @@ end $$;
 
 -- ------------------------------------------------------------------------ the schedule ----
 
--- (Re)schedule the job at the instance's settlementCron. The body carries the minute the job
--- fired, so a retried firing settles the same window, which apply_settlement() then finds
--- settled.
+-- (Re)schedule the job at the instance's settlementCron. The body carries the minute before
+-- the one the job fired in: a window closes a minute before the job reads it, so an Act or a
+-- reaction whose transaction began just before the boundary and committed just after (its
+-- created_at is its transaction's start) is in the window it is stamped in, not one already
+-- read. The same `until` sent again (a call retried by hand) asks for a window already settled,
+-- and is a no-op.
 create function schedule_settlement() returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
@@ -61,7 +66,7 @@ begin
     select net.http_post(
       url := s.base || '/functions/v1/settle',
       headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || s.secret),
-      body := jsonb_build_object('until', date_trunc('minute', now())),
+      body := jsonb_build_object('until', date_trunc('minute', now()) - interval '1 minute'),
       timeout_milliseconds := 60000
     )
     from (
@@ -85,8 +90,8 @@ create trigger settings_reschedule after insert or update on settings
 
 -- The next window to settle, up to `until`: from where the last settled window ended (or the
 -- first season's start), to `until` or its season's end, whichever is sooner, so no window
--- ever straddles two seasons. Null when there is nothing to settle yet; a window that would
--- start outside every season waits for the next season to open (the reveal opens it, 0006).
+-- ever straddles two seasons. Where no season holds that instant (a gap between two seasons),
+-- the window starts at the next season's start; null when there is nothing to settle yet.
 create function next_settlement_window(until timestamptz) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -99,7 +104,10 @@ begin
   if start_at is null then return null; end if;
   select true, s.ends_at into found, season_end from seasons s
   where s.starts_at <= start_at and (s.ends_at is null or s.ends_at > start_at);
-  if not coalesce(found, false) then return null; end if;
+  if not coalesce(found, false) then
+    select s.starts_at, s.ends_at into start_at, season_end from seasons s where s.starts_at > start_at order by s.starts_at limit 1;
+    if start_at is null then return null; end if;
+  end if;
   end_at := least(until, coalesce(season_end, until));
   if end_at <= start_at then return null; end if;
   return jsonb_build_object('start', start_at, 'end', end_at);
@@ -122,8 +130,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
   active_spun as (select distinct t.id from threads t join win_acts a on a.thread = t.id where t.origin_act_id is not null),
   spins as (select a.* from acts a join active_spun t on t.id = a.thread where a.kind = 'spin'),
   first_posts as (
-    select distinct on (a.thread, a.character) a.* from acts a join active_spun t on t.id = a.thread
-    where a.kind = 'post' and a.created_at < window_end order by a.thread, a.character, a.created_at, a.id
+    -- Each character's first post in the thread, read through acts_thread_posts, one per
+    -- character rather than a sort of the whole thread.
+    select f.* from active_spun t
+    cross join lateral (select distinct a.character from acts a where a.thread = t.id and a.kind = 'post' and a.created_at < window_end) w
+    cross join lateral (select a.* from acts a where a.thread = t.id and a.character = w.character and a.kind = 'post' and a.created_at < window_end
+                        order by a.created_at, a.id limit 1) f
   ),
   touched as (
     select id from win_acts union select act from reacted

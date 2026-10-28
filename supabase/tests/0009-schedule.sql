@@ -55,7 +55,9 @@ begin
   select * into q from net.http_request_queue;
   if q.url <> 'https://project.example/functions/v1/settle' then raise exception 'the job called %', q.url; end if;
   if q.headers ->> 'Authorization' <> 'Bearer not-a-real-key' then raise exception 'the job should carry the service key'; end if;
-  if (q.body ->> 'until')::timestamptz <> date_trunc('minute', now()) then raise exception 'the body should carry the minute the job fired: %', q.body; end if;
+  if (q.body ->> 'until')::timestamptz <> date_trunc('minute', now()) - interval '1 minute' then
+    raise exception 'the body should carry the minute before the one the job fired in: %', q.body;
+  end if;
 end $$;
 
 -- ---- The next window: from the last settled end, to now or the season's end ----
