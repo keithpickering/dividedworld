@@ -24,8 +24,11 @@
  * - `[code]` and `[img]` take their contents raw up to the closing tag. With no closing tag,
  *   an attribute, or (for an image) contents that are not an http or https address, only the
  *   opening tag is text, and what follows parses as usual.
- * - A link inside a link is text, with its closer, since a nested anchor is not valid markup.
- *   An image inside a link is fine: it is a node of its own with a checked source.
+ * - A link opened while another link is open closes the open one first, with whatever was
+ *   opened inside it, so no anchor nests (that is not valid markup). Nothing is lost: a forgotten
+ *   `[/url]` costs nothing, and a properly nested pair costs only the outer link's stray closer,
+ *   which stays text. A link that is text (bad target) is not a link and blocks nothing. An image
+ *   inside a link is fine: it is a node of its own with a checked source.
  * - A list's `[*]` is an item marker only directly inside `[list]`; elsewhere it is text.
  *   Blank space before the first item is layout and is not kept; words before it become an
  *   item of their own.
@@ -199,9 +202,13 @@ export function parse(input: string): BbNode[] {
     }
   };
 
+  /** Links that are open and real, which is what a new link must not nest inside. */
+  let openUrls = 0;
+
   const pop = (): Frame => {
     const f = stack.pop() as Frame;
     open.set(f.name, (open.get(f.name) ?? 1) - 1);
+    if (f.kind !== 'literal' && f.name === 'url') openUrls--;
     return f;
   };
 
@@ -226,6 +233,18 @@ export function parse(input: string): BbNode[] {
     const f: Frame = { kind, name, raw, home: null as never, parent: home, depth: home.depth + 1, out: [], ...extra };
     f.home = f;
     push(f);
+    if (name === 'url') openUrls++;
+  };
+
+  /* A new link while a real one is open closes the open one first (with whatever was opened
+     inside it and never closed), so no link nests in another. That turns the fewest words and
+     tags into text: a forgotten closer costs nothing, and a properly nested pair costs only the
+     outer link's stray closer. */
+  const closeOpenLink = (): void => {
+    while (openUrls > 0) {
+      const f = pop();
+      if (f.kind !== 'literal') finish(f, null);
+    }
   };
 
   const closeTag = (name: string, raw: string): void => {
@@ -322,7 +341,12 @@ export function parse(input: string): BbNode[] {
       } else if (name === 'code') {
         home.out.push({ type: 'code', text: input.slice(close + 1, found) });
         textStart = pos = found + '[/code]'.length;
-      } else if (found - close - 1 <= MAX_URL_LENGTH + 64 && safeImageSrc(input.slice(close + 1, found)) !== null) {
+      } else if (
+        /* A bound on work, not on meaning, so no test can see it: contents this much longer than
+           the longest address cannot be one (surrounding blanks are trimmed), and checking them
+           would rescan the same long stretch for every opener in front of one closer. */
+        found - close - 1 <= MAX_URL_LENGTH + 64 && safeImageSrc(input.slice(close + 1, found)) !== null
+      ) {
         home.out.push({ type: 'img', src: safeImageSrc(input.slice(close + 1, found)) as string });
         textStart = pos = found + '[/img]'.length;
       } else {
@@ -345,14 +369,15 @@ export function parse(input: string): BbNode[] {
         openReal(name, raw, 'simple', { build: (children) => ({ type: 'size', size: n, children }) });
       } else literalOpen(name, raw);
     } else if (name === 'url') {
-      if ((open.get('url') ?? 0) > 0) {
-        literalOpen(name, raw);
-      } else if (value === undefined) {
+      if (value === undefined) {
+        closeOpenLink();
         openReal(name, raw, 'bareurl', {});
       } else {
-        const href = (open.get('url') ?? 0) === 0 ? safeHref(value) : null;
-        if (href !== null) openReal(name, raw, 'simple', { build: (children) => ({ type: 'url', href, children }) });
-        else literalOpen(name, raw);
+        const href = safeHref(value);
+        if (href !== null) {
+          closeOpenLink();
+          openReal(name, raw, 'simple', { build: (children) => ({ type: 'url', href, children }) });
+        } else literalOpen(name, raw);
       }
     } else if (name === 'quote') {
       if (value !== undefined && UUID.test(value)) {

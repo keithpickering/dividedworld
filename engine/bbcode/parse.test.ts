@@ -329,6 +329,7 @@ const BAD_AUTHORITIES = [
   'https://%61.example/',
   'https://a_b.example/',
   'https://-a.example/',
+  'https://a..b/',
   'https://a.example./x'.replace('./x', '..'),
 ];
 
@@ -410,13 +411,46 @@ test('a code or img tag with an attribute is text and parsing resumes after it',
   assert.deepEqual(parse('[code=x][b]a[/b][/code]'), [text('[code=x]'), { type: 'bold', children: [text('a')] }, text('[/code]')]);
 });
 
-test('a link inside a link is text with its closer; an image inside a link is fine', () => {
+test('a link opened inside a link closes the outer one there, so no anchor nests', () => {
   assert.deepEqual(parse('[url=https://a.example/1]x [url=https://b.example/2]y[/url] z[/url]'), [
-    { type: 'url', href: 'https://a.example/1', children: [text('x [url=https://b.example/2]y[/url] z')] },
+    { type: 'url', href: 'https://a.example/1', children: [text('x ')] },
+    { type: 'url', href: 'https://b.example/2', children: [text('y')] },
+    text(' z[/url]'),
   ]);
-  assert.deepEqual(parse('[url=https://a.example/][url]https://b.example[/url][/url]'), [
-    { type: 'url', href: 'https://a.example/', children: [text('[url]https://b.example[/url]')] },
+  assert.deepEqual(parse('[url=https://a.example/][b]x[url=https://b.example/]y[/url]'), [
+    { type: 'url', href: 'https://a.example/', children: [{ type: 'bold', children: [text('x')] }] },
+    { type: 'url', href: 'https://b.example/', children: [text('y')] },
   ]);
+});
+
+test('a forgotten closing tag does not turn the links after it into text', () => {
+  assert.deepEqual(parse('[url=https://a.example]forgot [url=https://b.example]later[/url] and [url=https://c.example]more[/url]'), [
+    { type: 'url', href: 'https://a.example', children: [text('forgot ')] },
+    { type: 'url', href: 'https://b.example', children: [text('later')] },
+    text(' and '),
+    { type: 'url', href: 'https://c.example', children: [text('more')] },
+  ]);
+});
+
+test('a link that is text, or a bare link left open, does not block a link inside it', () => {
+  assert.deepEqual(parse('[url=bad]a[url=https://ok.example]b[/url][/url]'), [
+    text('[url=bad]a'),
+    { type: 'url', href: 'https://ok.example', children: [text('b')] },
+    text('[/url]'),
+  ]);
+  assert.deepEqual(parse('[url]a [url=https://ok.example]b[/url]'), [
+    text('[url]a '),
+    { type: 'url', href: 'https://ok.example', children: [text('b')] },
+  ]);
+});
+
+test('an inner link whose target is bad is text and leaves the outer link open', () => {
+  assert.deepEqual(parse('[url=https://a.example/]x [url=javascript:y]z[/url][/url]'), [
+    { type: 'url', href: 'https://a.example/', children: [text('x [url=javascript:y]z[/url]')] },
+  ]);
+});
+
+test('an image inside a link is fine', () => {
   assert.deepEqual(parse('[url=https://a.example/][img]https://a.example/i.png[/img][/url]'), [
     { type: 'url', href: 'https://a.example/', children: [{ type: 'img', src: 'https://a.example/i.png' }] },
   ]);
