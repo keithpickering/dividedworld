@@ -34,9 +34,12 @@ begin
   before := pg_temp.public_view();
   perform tests.unbecome();
   perform tests.become(ann);
+  perform pg_sleep(0.01);
   said := turn(a, 'beta', 'silent');
   if said <> '{"turned": true, "loudness": "silent"}' then raise exception 'a silent Turn: %', said; end if;
   if (select class_key from class_history where character = a order by started_at desc limit 1) <> 'beta' then raise exception 'the Turn is in the class history'; end if;
+  -- Timed when it was made, after any reveal it waited on, never from the transaction's start.
+  if (select max(started_at) from class_history where character = a) <= now() then raise exception 'a Turn is timed from its transaction''s start'; end if;
   perform tests.unbecome();
   perform tests.become(bob);
   if pg_temp.public_view() <> before then raise exception 'a silent Turn changed what another player can read'; end if;

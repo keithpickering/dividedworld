@@ -96,7 +96,9 @@ begin
     raise exception 'this character can Turn again at %', to_char(next_allowed at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
       using hint = 'kayfabb.refusal', errcode = 'P0001';
   end if;
-  insert into class_history (character, class_key) values (through, to_class);
+  -- Timed from now, after the lock, never from the transaction's start: a Turn that waited out
+  -- a reveal falls in the season the reveal opened, not the one it closed.
+  insert into class_history (character, class_key, started_at) values (through, to_class, clock_timestamp());
   if loudness = 'silent' then return jsonb_build_object('turned', true, 'loudness', 'silent'); end if;
 
   select * into open_season from seasons where ends_at is null for no key update;
