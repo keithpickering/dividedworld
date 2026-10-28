@@ -112,7 +112,7 @@ begin
     raise exception 'you do not play that character' using hint = 'kayfabb.refusal', errcode = '42501';
   end if;
   if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
-  if price < 0 or price > (setting('walletCap'))::integer then raise exception 'a play costs between 0 and the wallet''s cap' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if price is null or price < 0 or price > (setting('walletCap'))::integer then raise exception 'a play costs between 0 and the wallet''s cap' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   -- One player's plays at a time, so two at once cannot both spend the last card.
   perform 1 from accounts where id = who for no key update;
   select count(*) filter (where kind = 'bought') - count(*) filter (where kind = 'played') into held
@@ -124,9 +124,15 @@ begin
   if exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = target and k.payload ->> 'card' = card) then
     raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505';
   end if;
-  perform wallet_spend(who, price, 'play', null);
-  insert into acts (character, kind, thread, target_act_id, payload)
-  values (through, 'card', in_thread, target, jsonb_build_object('card', card, 'config', coalesce(config, '{}'))) returning id into written;
+  begin
+    insert into acts (character, kind, thread, target_act_id, payload)
+    values (through, 'card', in_thread, target, jsonb_build_object('card', card, 'config', coalesce(config, '{}'))) returning id into written;
+  exception when unique_violation then
+    -- Another player's play of the same card landed on the post between the check and this write.
+    raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505';
+  end;
+  -- After the Act, so the wallet's record names what the Aura went on.
+  perform wallet_spend(who, price, 'play', written);
   insert into card_ledger (account, card, kind, act, price) values (who, card, 'played', written, price);
   return act_projection(written);
 end $$;

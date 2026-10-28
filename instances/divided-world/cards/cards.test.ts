@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { stickAround } from './stick-around.ts';
-import { whoops } from './whoops.ts';
+import { STROKES, whoops } from './whoops.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
 import { decidePlay } from '../../../engine/rules/cards.ts';
@@ -36,7 +36,8 @@ test('Stick Around costs nothing more to play', () => {
 
 test('Whoops!\'s ink is a color, and only a color', () => {
   assert.deepEqual(whoops.validateConfig({ color: '#FF00AA' }), { ok: true, value: { color: '#ff00aa' } });
-  assert.deepEqual(whoops.validateConfig({ color: 'rebeccapurple' }), { ok: true, value: { color: 'rebeccapurple' } });
+  assert.deepEqual(whoops.validateConfig({ color: 'Teal' }), { ok: true, value: { color: 'teal' } });
+  assert.deepEqual(whoops.validateConfig({ color: 'beige' }), { ok: true, value: { color: 'beige' } }, 'the same list as a post\'s [color]');
   for (const color of ['url(javascript:alert(1))', 'red; background: x', '#ff00a', 'notacolor', '', 7, null]) {
     assert.equal(whoops.validateConfig({ color }).ok, false, String(color));
   }
@@ -75,6 +76,25 @@ test('Whoops! strokes are paths, bounded in count and size, in the post\'s own c
   assert.equal(whoops.validateState!({ strokes: [{ ...stroke, color: 'url(x)' }] }).ok, false, 'not a color');
   assert.equal(whoops.validateState!({ strokes: [{ ...stroke, points: [[0.1, Number.NaN]] }] }).ok, false);
   assert.equal(whoops.validateState!({ strokes: 'all of them' }).ok, false);
+});
+
+test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writes them', () => {
+  // Every stroke at its longest, every point at its longest, until the total runs out.
+  const point = [0.123456789, 0.987654321];
+  const strokes = [];
+  let left = STROKES.totalPoints;
+  while (left > 0) { const n = Math.min(STROKES.points, left); strokes.push({ color: '#abcdef', width: STROKES.widest, points: Array(n).fill(point) }); left -= n; }
+  const saved = whoops.validateState!({ strokes });
+  assert.equal(saved.ok, true);
+  // jsonb's text puts a space after every comma and colon.
+  const asPostgres = JSON.stringify(saved.ok && saved.value).replace(/([,:])/g, '$1 ');
+  assert.ok(Buffer.byteLength(asPostgres) <= 262_144, `${Buffer.byteLength(asPostgres)} bytes`);
+  assert.equal(whoops.validateState!({ strokes: [...strokes, { color: 'red', width: 1, points: [[0, 0]] }] }).ok, false, 'one point past the total');
+});
+
+test('a stroke\'s points are kept to a thousandth of the post', () => {
+  const saved = whoops.validateState!({ strokes: [{ color: 'red', width: 2, points: [[0.123456, 0.98765]] }] });
+  assert.deepEqual(saved.ok && saved.value, { strokes: [{ color: 'red', width: 2, points: [[0.123, 0.988]] }] });
 });
 
 test('Stick Around holds no state to save', () => {

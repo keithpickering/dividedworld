@@ -9,6 +9,7 @@
  * function re-checks what it can.
  */
 import type { ActKind, Alignment, Hundredths } from './types.ts';
+import { safeColor } from '../bbcode/parse.ts';
 
 /** The post a card is played on, as its rules see it. */
 export interface CardTarget {
@@ -48,6 +49,10 @@ export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
  * A card played on a target, decided by its own rules: whether it lands there given the
  * effects already on it, whether the caster's configuration is one it accepts, and what it
  * costs from the wallet. The SQL function that writes the play holds what it can again.
+ *
+ * The price is read from the post as it stands when the play is decided. A post edited longer
+ * or shorter in the moment before the play lands costs the caster what it would have a moment
+ * earlier: the caster pays what they were shown, and nobody else is touched.
  */
 export function decidePlay(rules: CardRules, target: CardTarget, effects: readonly CardEffect[], config: unknown): Verdict<{ price: Hundredths; config: unknown }> {
   const lands = rules.canApply(target, effects);
@@ -66,12 +71,7 @@ export function landsOncePerPost(key: string, target: CardTarget, effects: reado
   return ok(undefined);
 }
 
-/** A named color or #rgb/#rrggbb, lowercased; anything else is not a color. */
-const NAMED = new Set(['black', 'white', 'red', 'green', 'blue', 'yellow', 'orange', 'purple', 'pink', 'brown', 'gray', 'grey',
-  'cyan', 'magenta', 'lime', 'navy', 'teal', 'maroon', 'olive', 'silver', 'gold', 'indigo', 'violet', 'crimson', 'coral',
-  'salmon', 'khaki', 'turquoise', 'tomato', 'orchid', 'plum', 'rebeccapurple']);
+/** A color as a post's [color] tag reads one (engine/bbcode/parse.ts), surrounding spaces aside. */
 export function color(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const v = value.trim().toLowerCase();
-  return NAMED.has(v) || /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(v) ? v : null;
+  return typeof value === 'string' ? safeColor(value.trim()) : null;
 }

@@ -111,6 +111,15 @@ function checkedUrl(raw: string, schemes: readonly string[], allowRelative: bool
 }
 
 /** The address of a link, or null: http, https, mailto, or a path on this site. */
+/**
+ * A color, lowercased, or null: a named one from NAMED_COLORS, or #rgb or #rrggbb. The one check
+ * for a color anywhere in the engine, so a post's [color] and a card's ink read the same list.
+ */
+export function safeColor(raw: string): string | null {
+  const v = raw.toLowerCase();
+  return NAMED_COLORS.has(v) || HEX_COLOR.test(v) ? v : null;
+}
+
 export function safeHref(raw: string): string | null {
   return checkedUrl(raw, ['http', 'https', 'mailto'], true);
 }
@@ -359,8 +368,8 @@ export function parse(input: string): BbNode[] {
       if (value === undefined) openReal(name, raw, 'simple', { build: (children) => ({ type, children }) });
       else literalOpen(name, raw);
     } else if (name === 'color') {
-      const v = value?.toLowerCase();
-      if (v !== undefined && (NAMED_COLORS.has(v) || HEX_COLOR.test(v))) {
+      const v = value === undefined ? null : safeColor(value);
+      if (v !== null) {
         openReal(name, raw, 'simple', { build: (children) => ({ type: 'color', color: v, children }) });
       } else literalOpen(name, raw);
     } else if (name === 'size') {

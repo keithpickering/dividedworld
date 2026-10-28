@@ -56,10 +56,13 @@ begin
   why := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, p, '{}', 0));
   if why is null then raise exception 'a post took the same card twice'; end if;
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, the_play, '{}', 0)) is null then raise exception 'a card was played on a card'; end if;
-  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, q, repeat('{"x": 1}', 1), 0)) is not null then raise exception 'a card on another post should land'; end if;
-  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'sweetie', a, q, jsonb_build_object('sentence', repeat('x', 5000)), 0)) is null then
+  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, q, '{}', 0)) is not null then raise exception 'a card on another post should land'; end if;
+  if (select ref from wallet_events where account = ann and kind = 'play' order by id limit 1) <> the_play then raise exception 'a play''s wallet event names the card''s Act'; end if;
+  perform buy_card(ann, 'sweetie', 100);
+  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'sweetie', a, q, jsonb_build_object('sentence', repeat('x', 5000)), 0)) not like '%4 KB%' then
     raise exception 'an oversize configuration was stored';
   end if;
+  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, null)', ann, 'sweetie', a, q, '{}')) is null then raise exception 'a play with no price went through'; end if;
 
   -- Only the post's author saves an effect's state; the caster cannot, nor anyone through another's character.
   why := pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', ann, a, the_play, '{"strokes": []}'));
@@ -86,4 +89,29 @@ begin
   if exists (select 1 from card_ledger where account = ann) or exists (select 1 from my_cards) then raise exception 'another player read whose cards are whose'; end if;
   if not exists (select 1 from effect_state where effect_state.play = the_play) then raise exception 'every reader loads the author''s version'; end if;
   perform tests.unbecome();
+end $$;
+
+-- ---- Two plays of one card on one post at once: one lands, the other is refused in words ----
+do $$
+declare
+  ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid(); cat uuid := gen_random_uuid();
+  a uuid := gen_random_uuid(); b uuid := gen_random_uuid(); c uuid := gen_random_uuid();
+  t uuid := gen_random_uuid(); p uuid := gen_random_uuid();
+  said text[];
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'race-card-a@test.invalid'), (%2$L, 'race-card-b@test.invalid'), (%3$L, 'race-card-c@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L), (%3$L);
+    insert into characters (id, owner, name) values (%4$L, %1$L, 'Race Card A'), (%5$L, %2$L, 'Race Card B'), (%6$L, %3$L, 'Race Card C');
+    insert into class_history (character, class_key) values (%4$L, 'alpha'), (%5$L, 'alpha'), (%6$L, 'alpha');
+    insert into threads (id, board, title) select %7$L, id, 'Race card' from boards where slug = 'general';
+    insert into acts (id, character, kind, thread) values (%8$L, %6$L, 'post', %7$L);
+    insert into wallets (account, balance) values (%1$L, 100), (%2$L, 100);
+    insert into card_ledger (account, card, kind, price) values (%1$L, 'splat', 'bought', 100), (%2$L, 'splat', 'bought', 100);
+  $sql$, ann, bob, cat, a, b, c, t, p));
+  said := tests.race_service(format('select play_card(%L, %L, %L, %L, %L, 0)', ann, 'splat', a, p, '{}'), format('select play_card(%L, %L, %L, %L, %L, 0)', bob, 'splat', b, p, '{}'));
+  if (select count(*) from acts where kind = 'card' and target_act_id = p) <> 1 then raise exception 'one card of a kind landed twice: %', said; end if;
+  if (said[1] is null) = (said[2] is null) then raise exception 'exactly one play should be refused: %', said; end if;
+  if coalesce(said[1], said[2]) <> 'this post already carries that card' then raise exception 'the loser should be refused in words: %', said; end if;
+  if (select count(*) from card_ledger where card = 'splat' and kind = 'played' and account in (ann, bob)) <> 1 then raise exception 'the refused play kept its card'; end if;
 end $$;
