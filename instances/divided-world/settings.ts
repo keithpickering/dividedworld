@@ -18,6 +18,9 @@ export const defaults: Settings = deepFreeze<Settings>({
   seasonLength: { unit: 'month', count: 3 },
   turnCooldown: { unit: 'day', count: 30 },
   registrationMode: 'invite',
+  /** Long enough for an effortpost; short enough that one post is never a page of its own. */
+  postMaxLength: 20_000,
+  titleMaxLength: 120,
 });
 
 /** The playtest's shorter season and cooldown, kept apart from the defaults they replace. */

@@ -54,6 +54,10 @@ export interface Settings {
   readonly seasonLength: Span;
   readonly turnCooldown: Span;
   readonly registrationMode: 'invite' | 'open';
+  /** The longest a post's text may be, in characters (code points). */
+  readonly postMaxLength: number;
+  /** The longest a thread's title may be, in characters. */
+  readonly titleMaxLength: number;
 }
 
 /** The kinds of Act the settlement reads. */

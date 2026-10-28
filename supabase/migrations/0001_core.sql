@@ -119,7 +119,8 @@ create table boards (
 create table threads (
   id uuid primary key default gen_random_uuid(),
   board uuid not null references boards (id),
-  title text not null check (length(btrim(title)) between 1 and 120),
+  -- How long a title may be is a setting (titleMaxLength), held by the action that writes it.
+  title text not null check (btrim(title) <> ''),
   -- For a thread spun from an Act: the Act it came from.
   origin_act_id uuid,
   created_at timestamptz not null default now(),

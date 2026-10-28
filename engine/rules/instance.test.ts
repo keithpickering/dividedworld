@@ -13,6 +13,8 @@ const settings: Settings = {
   seasonLength: { unit: 'month', count: 3 },
   turnCooldown: { unit: 'day', count: 30 },
   registrationMode: 'invite',
+  postMaxLength: 20000,
+  titleMaxLength: 120,
 };
 
 const good: Instance = {

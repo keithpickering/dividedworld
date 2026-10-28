@@ -1,6 +1,6 @@
 /**
  * A Db (supabase/functions/_shared/rpc.ts) that calls the SQL functions through psql, as the
- * service role, on the scratch database tools/test-sql.mjs made: so an end-to-end test runs
+ * service role or as a player, on the scratch database tools/test-sql.mjs made: so an end-to-end test runs
  * the Edge Functions' own core against the real migrations with no PostgREST in between. The
  * arguments are passed as one JSON value and each is cast to the type pg_proc says its
  * parameter takes, by name, as PostgREST does.
@@ -24,7 +24,10 @@ export function sql(text: string, vars: Record<string, string> = {}): string {
   return execFileSync('psql', args, { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 }
 
-export function psqlDb(): Db {
+/** As the service role, or, given an account, as that player, as their session would be. */
+export function psqlDb(as?: string): Db {
+  const role = as ? 'authenticated' : 'service_role';
+  const claims = JSON.stringify(as ? { sub: as, role } : { role });
   return {
     async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
       const params = sql(`select string_agg(n || ':' || format_type(t, null), ',' order by i)
@@ -37,9 +40,9 @@ export function psqlDb(): Db {
         return type === 'jsonb' || type === 'json' ? `${k} => (:'args'::jsonb -> '${k}')::${type}` : `${k} => (:'args'::jsonb ->> '${k}')::${type}`;
       });
       try {
-        const out = sql(`set role service_role;
-          select set_config('request.jwt.claims', '{"role": "service_role"}', false) \\g /dev/null
-          select coalesce(to_jsonb(public.${fn}(${named.join(', ')})), 'null'::jsonb)::text;`, { args: JSON.stringify(args) });
+        const out = sql(`set role ${role};
+          select set_config('request.jwt.claims', :'claims', false) \\g /dev/null
+          select coalesce(to_jsonb(public.${fn}(${named.join(', ')})), 'null'::jsonb)::text;`, { args: JSON.stringify(args), claims });
         return JSON.parse(out) as T;
       } catch (e) {
         const stderr = String((e as { stderr?: string }).stderr ?? e);

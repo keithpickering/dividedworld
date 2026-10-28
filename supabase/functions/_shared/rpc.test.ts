@@ -67,3 +67,17 @@ test('an error that is not PostgREST\'s JSON is still a database error, with its
   await assert.rejects(db.rpc('f', {}), (e: unknown) => e instanceof DatabaseError && e.status === 500 && /HTTP 500/.test(e.message));
   assert.equal(calls.length, 1);
 });
+
+test('a player\'s call carries their own session as its bearer, beside the project\'s key', async () => {
+  const { fetch, calls } = scripted(json(200, 1));
+  await postgrest({ url: 'https://p.example', key: 'anon', bearer: 'player-jwt', fetch, sleep: noWait }).rpc('post', {});
+  const headers = new Headers(calls[0]?.init.headers);
+  assert.equal(headers.get('apikey'), 'anon');
+  assert.equal(headers.get('Authorization'), 'Bearer player-jwt');
+});
+
+test('a database error keeps the function\'s own words apart from PostgREST\'s detail', async () => {
+  const { fetch } = scripted(json(409, { code: '23505', message: 'duplicate key', details: 'Key (owner)=(secret) already exists.' }));
+  const db = postgrest({ url: 'https://p.example', key: 'k', fetch, sleep: noWait });
+  await assert.rejects(db.rpc('f', {}), (e: unknown) => e instanceof DatabaseError && e.reason === 'duplicate key' && !e.reason.includes('secret'));
+});

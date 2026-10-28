@@ -15,7 +15,9 @@ insert into settings (key, value) values
   ('settlementCron', '"17 8 * * *"'),
   ('seasonLength', '{"unit": "month", "count": 3}'),
   ('turnCooldown', '{"unit": "day", "count": 30}'),
-  ('registrationMode', '"invite"');
+  ('registrationMode', '"invite"'),
+  ('postMaxLength', '20000'),
+  ('titleMaxLength', '120');
 insert into class_kinds (key, name) values ('alpha', 'Alpha'), ('beta', 'Beta');
 insert into reaction_kinds (key, emoji, quadrant) values
   ('up', '⬆️', 'excitedPositive'), ('boo', '👻', 'excitedNegative'),

@@ -1,0 +1,86 @@
+/**
+ * The actions a player takes, decided before the database is asked.
+ *
+ * Invariants in SQL; judgment in TypeScript (design, section 12). An Edge Function hands each
+ * request to decide(), which reads it against the instance's rules and returns the SQL function
+ * that writes it, with that function's arguments, or the field that is wrong and why. The SQL
+ * function then checks again everything it can (who plays the character, a cap, a length) and
+ * writes in one transaction, so a check missed here cannot get through there
+ * (supabase/tests/0011-actions.sql calls each one directly with what decide() refuses). What
+ * only the database knows (who owns a character, what already exists) is decided only there.
+ *
+ * Lengths are counted in characters, code points, as Postgres's char_length counts them, so
+ * the two never disagree on an emoji.
+ */
+import type { Instance } from './types.ts';
+
+export type Decision =
+  | { readonly ok: true; readonly rpc: string; readonly args: Readonly<Record<string, unknown>> }
+  | { readonly ok: false; readonly field: string; readonly why: string };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SLUG = /^[a-z0-9][a-z0-9-]*$/;
+const length = (s: string) => [...s].length;
+
+class Refused extends Error {
+  readonly field: string;
+  constructor(field: string, why: string) { super(why); this.field = field; }
+}
+
+type Fields = Record<string, unknown>;
+const id = (r: Fields, field: string): string => {
+  const v = r[field];
+  if (typeof v !== 'string' || !UUID.test(v)) throw new Refused(field, 'is not an id');
+  return v;
+};
+const optionalId = (r: Fields, field: string): string | null => (r[field] === undefined || r[field] === null ? null : id(r, field));
+const text = (r: Fields, field: string, most: number, { mayBeEmpty = false } = {}): string => {
+  const v = r[field] ?? (mayBeEmpty ? '' : undefined);
+  if (typeof v !== 'string') throw new Refused(field, 'is not text');
+  if (!mayBeEmpty && v.trim() === '') throw new Refused(field, 'is empty');
+  if (length(v) > most) throw new Refused(field, `is longer than ${most} characters`);
+  return v;
+};
+
+/** Each action: the SQL function that writes it, and its arguments from the request. */
+const ACTIONS: Record<string, (r: Fields, instance: Instance) => { rpc: string; args: Record<string, unknown> }> = {
+  startThread: (r, { settings }) => {
+    const board = r.board;
+    if (typeof board !== 'string' || !SLUG.test(board)) throw new Refused('board', 'is not a board');
+    return { rpc: 'start_thread', args: { board_slug: board, through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength) } };
+  },
+  post: (r, { settings }) => ({
+    rpc: 'post',
+    args: { in_thread: id(r, 'thread'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength), quoting: optionalId(r, 'quote') },
+  }),
+  edit: (r, { settings }) => ({
+    rpc: 'edit_post',
+    args: { target: id(r, 'post'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength) },
+  }),
+  spin: (r, { settings }) => ({
+    rpc: 'spin',
+    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }) },
+  }),
+  react: (r, { reactions }) => {
+    const kind = r.kind;
+    if (typeof kind !== 'string' || !reactions.some((k) => k.key === kind)) throw new Refused('kind', `there is no reaction ${JSON.stringify(kind)}`);
+    return { rpc: 'react', args: { target: id(r, 'act'), through: id(r, 'character'), reaction: kind } };
+  },
+};
+
+/** The names of the actions decide() knows. */
+export const ACTION_NAMES: readonly string[] = Object.keys(ACTIONS);
+
+export function decide(request: unknown, instance: Instance): Decision {
+  if (typeof request !== 'object' || request === null) return { ok: false, field: 'action', why: 'a request is an object naming its action' };
+  const r = request as Fields;
+  const action = typeof r.action === 'string' ? ACTIONS[r.action] : undefined;
+  if (!action) return { ok: false, field: 'action', why: `the actions are ${ACTION_NAMES.join(', ')}` };
+  try {
+    const { rpc, args } = action(r, instance);
+    return { ok: true, rpc, args };
+  } catch (e) {
+    if (e instanceof Refused) return { ok: false, field: e.field, why: e.message };
+    throw e;
+  }
+}

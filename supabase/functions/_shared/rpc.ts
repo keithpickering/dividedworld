@@ -17,10 +17,13 @@ export class TransportError extends Error {}
 export class DatabaseError extends Error {
   readonly code: string;
   readonly status: number;
-  constructor(message: string, code: string, status: number) {
+  /** The SQL function's own words, without PostgREST's detail or hint, which can carry a row's values. */
+  readonly reason: string;
+  constructor(message: string, code: string, status: number, reason = message) {
     super(message);
     this.code = code;
     this.status = status;
+    this.reason = reason;
   }
 }
 
@@ -30,7 +33,10 @@ export interface Db {
 
 export interface PostgrestOptions {
   readonly url: string;
+  /** The project's API key: the service key for a job, the anon key for a player's request. */
   readonly key: string;
+  /** Who the call is made as: the player's own session token; the key itself when unset. */
+  readonly bearer?: string;
   readonly fetch?: typeof globalThis.fetch;
   readonly sleep?: (ms: number) => Promise<void>;
   /** How many times a request is sent before a transport failure is thrown. */
@@ -55,7 +61,7 @@ export function postgrest(options: PostgrestOptions): Db {
         try {
           response = await send(`${options.url}/rest/v1/rpc/${fn}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: options.key, Authorization: `Bearer ${options.key}` },
+            headers: { 'Content-Type': 'application/json', apikey: options.key, Authorization: `Bearer ${options.bearer ?? options.key}` },
             body: JSON.stringify(args),
             signal: AbortSignal.timeout(timeoutMs),
           });
@@ -76,7 +82,7 @@ export function postgrest(options: PostgrestOptions): Db {
         }
         if (!response.ok) {
           const b = (body ?? {}) as { code?: string; message?: string; details?: string };
-          throw new DatabaseError(`${fn}: ${b.message ?? `HTTP ${response.status}`}${b.details ? ` (${b.details})` : ''}`, b.code ?? '', response.status);
+          throw new DatabaseError(`${fn}: ${b.message ?? `HTTP ${response.status}`}${b.details ? ` (${b.details})` : ''}`, b.code ?? '', response.status, b.message ?? `HTTP ${response.status}`);
         }
         return body as T;
       }

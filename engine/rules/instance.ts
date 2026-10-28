@@ -43,6 +43,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   seasonLength: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count of at least 1'),
   turnCooldown: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count of at least 1'),
   registrationMode: (v) => (v === 'invite' || v === 'open' ? null : '"invite" or "open"'),
+  postMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
+  titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
 };
 
 export function settingsProblems(settings: Settings): string[] {

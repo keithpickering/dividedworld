@@ -22,6 +22,8 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
   assert.deepEqual(defaults.seasonLength, { unit: 'month', count: 3 });
   assert.deepEqual(defaults.turnCooldown, { unit: 'day', count: 30 });
   assert.equal(defaults.registrationMode, 'invite');
+  assert.equal(defaults.postMaxLength, 20_000);
+  assert.equal(defaults.titleMaxLength, 120);
   assert.match(defaults.settlementCron, /^\d+ \d+ \* \* \*$/, 'daily');
 });
 
