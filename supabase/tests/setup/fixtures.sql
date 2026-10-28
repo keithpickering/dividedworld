@@ -22,6 +22,7 @@ insert into reaction_kinds (key, emoji, quadrant) values
   ('calm', '🌊', 'calmPositive'), ('meh', '😑', 'boredNegative'), ('wow', '🎆', 'excitedPositive');
 insert into card_kinds (key, name, alignment, base_price) values ('sweetie', 'Sweetie', 'sweet', 100), ('splat', 'Splat', 'salty', 100);
 insert into boards (slug, name) values ('general', 'General');
+insert into seasons (number, starts_at) values (1, '2000-01-01T00:00:00Z');
 
 create schema tests;
 grant usage on schema tests to anon, authenticated, service_role;
@@ -83,7 +84,7 @@ grant execute on all functions in schema tests to anon, authenticated, service_r
 -- ---- Races ----
 -- A race test needs two sessions at once, which one assertion file cannot be: it opens two
 -- connections to the scratch database (dblink, which Supabase also offers), parks both on an
--- advisory lock this session holds, and lets them go together. Rows they read must be committed,
+-- advisory lock this session holds until both are seen waiting on it, and lets them go together. Rows they read must be committed,
 -- so a race test sets up through tests.commit(), which runs its SQL on a connection of its own
 -- and commits it; the scratch database is dropped at the end of the run, so nothing is left.
 create extension if not exists dblink with schema extensions;
@@ -95,32 +96,81 @@ begin
   perform extensions.dblink_disconnect('tests_setup');
 end $$;
 
--- Runs two transactions at the same instant, each as a player, and returns what each said: null
--- for success, else the error. Each is `select ...` SQL run after tests.become(account).
-create function tests.race(account_a uuid, sql_a text, account_b uuid, sql_b text) returns text[] language plpgsql as $$
+-- One racer: waits at the barrier, becomes `who` (an account, or null for the service role),
+-- runs one statement, and returns null, or the error it raised. One statement on the wire, so
+-- dblink returns this function's answer and nothing of the racer's is lost.
+create function tests.raced(who uuid, stmt text) returns text language plpgsql as $$
+begin
+  -- A lock the racers wait on that the test's own transaction holds would hang both; this
+  -- makes that a failure with a name.
+  perform set_config('lock_timeout', '20s', true);
+  perform pg_advisory_xact_lock_shared(4242);
+  if who is null then
+    perform set_config('request.jwt.claims', '{"role": "service_role"}', true);
+    perform set_config('role', 'service_role', true);
+  else
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', who, 'role', 'authenticated')::text, true);
+    perform set_config('role', 'authenticated', true);
+  end if;
+  execute stmt;
+  return null;
+exception when others then
+  return sqlerrm;
+end $$;
+
+-- Runs two racers at the same instant and returns what each said.
+create function tests.race_as(who_a uuid, stmt_a text, who_b uuid, stmt_b text) returns text[] language plpgsql as $$
 declare
   url text := current_setting('kayfabb.scratch_url');
   out text[] := '{}';
+  said text;
   conn text;
-  wrap text := 'begin; select pg_advisory_xact_lock_shared(4242); select tests.become(%L); %s; commit;';
+  waiting integer;
+  tries integer := 0;
 begin
   perform pg_advisory_lock(4242);
-  perform extensions.dblink_connect('race_a', url);
-  perform extensions.dblink_connect('race_b', url);
-  perform extensions.dblink_send_query('race_a', format(wrap, account_a, sql_a));
-  perform extensions.dblink_send_query('race_b', format(wrap, account_b, sql_b));
-  perform pg_sleep(0.05);
+  begin
+    perform extensions.dblink_connect('race_a', url);
+    perform extensions.dblink_connect('race_b', url);
+    perform extensions.dblink_send_query('race_a', format('select tests.raced(%L, %L)', who_a, stmt_a));
+    perform extensions.dblink_send_query('race_b', format('select tests.raced(%L, %L)', who_b, stmt_b));
+    -- Both parked on the barrier before it lifts, or the race is a sequence and proves nothing.
+    loop
+      select count(*) into waiting from pg_locks l
+      where l.locktype = 'advisory' and l.objid = 4242 and not l.granted and l.database = (select oid from pg_database where datname = current_database());
+      exit when waiting >= 2;
+      tries := tries + 1;
+      if tries > 400 then raise exception 'tests.race: the two sessions never both reached the barrier'; end if;
+      perform pg_sleep(0.025);
+    end loop;
+  exception when others then
+    perform pg_advisory_unlock(4242);
+    raise;
+  end;
   perform pg_advisory_unlock(4242);
   foreach conn in array array['race_a', 'race_b'] loop
-    begin
-      perform * from extensions.dblink_get_result(conn) as r(x text);
-      out := out || null::text;
-    exception when others then
-      out := out || sqlerrm;
-    end;
-    perform * from extensions.dblink_get_result(conn, false) as r(x text);
+    select r.said into said from extensions.dblink_get_result(conn) as r(said text);
+    out := out || said;
+    perform * from extensions.dblink_get_result(conn) as r(said text);
     perform extensions.dblink_disconnect(conn);
   end loop;
   return out;
+end $$;
+
+-- Two players' statements at once.
+create function tests.race(account_a uuid, stmt_a text, account_b uuid, stmt_b text) returns text[] language sql as $$
+  select tests.race_as(account_a, stmt_a, account_b, stmt_b)
+$$;
+
+-- Two of the service role's statements at once, as two Edge Function runs.
+create function tests.race_service(stmt_a text, stmt_b text) returns text[] language sql as $$
+  select tests.race_as(null, stmt_a, null, stmt_b)
+$$;
+
+-- Be the service role, as an Edge Function holding the service key is.
+create function tests.become_service() returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims', '{"role": "service_role"}', true);
+  perform set_config('role', 'service_role', true);
 end $$;
 grant execute on all functions in schema tests to anon, authenticated, service_role;

@@ -9,7 +9,8 @@ declare
   r record;
   -- What the API roles are granted, on purpose; a new grant joins this list with its migration.
   readable text[] := array['class_kinds', 'reaction_kinds', 'card_kinds', 'boards', 'threads', 'acts',
-                           'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies'];
+                           'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
+                           'seasons', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events'];
   callable text[] := array['react(uuid,uuid,text)'];
 begin
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace

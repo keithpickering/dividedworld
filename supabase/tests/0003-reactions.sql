@@ -128,3 +128,23 @@ begin
   if not refused then raise exception 'anon called react()'; end if;
   perform tests.unbecome();
 end $$;
+
+-- ---- A slot given back is taken again ----
+-- No action removes a reaction yet; when one does, the player's next reaction must not collide
+-- with the slot after the last for ever. Removed here by hand, as that action will.
+do $$
+declare
+  ann uuid := tests.account('slot-ann');
+  a uuid := tests.character(ann, 'Slotter');
+  b uuid := tests.character(tests.account('slot-bob'), 'Slotted');
+  p uuid := tests.post(b, tests.thread());
+begin
+  perform tests.become(ann);
+  perform react(p, a, 'up'); perform react(p, a, 'boo'); perform react(p, a, 'calm');
+  perform tests.unbecome();
+  delete from reactions where act = p and kind = 'up';
+  perform tests.become(ann);
+  perform react(p, a, 'meh');
+  perform tests.unbecome();
+  if (select slot from reactions where act = p and kind = 'meh') <> 1 then raise exception 'the freed slot was not taken again'; end if;
+end $$;

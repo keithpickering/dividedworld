@@ -53,6 +53,7 @@ declare
   target_kind text;
   author_owner uuid;
   held text[];
+  free_slot integer;
 begin
   if caller is null then raise exception 'sign in to react' using errcode = '28000'; end if;
   if not exists (select 1 from characters c where c.id = through and c.owner = caller) then
@@ -66,12 +67,19 @@ begin
   from acts a join characters c on c.id = a.character where a.id = target;
   if target_kind is null then raise exception 'there is no such Act' using errcode = 'P0002'; end if;
   if target_kind = 'edit' then raise exception 'an edit is not reacted to; react to the post' using errcode = '22023'; end if;
+  -- The author's owner now: a character changing hands is not in this slice, and the session
+  -- that adds it decides what becomes of reactions between its old and new owner's characters.
   if author_owner = caller then
     raise exception 'your characters cannot react to each other' using errcode = '42501';
   end if;
 
   select coalesce(array_agg(r.kind order by r.slot), '{}') into held
   from reactions r where r.act = target and r.reactor_account = caller;
+  -- The lowest free slot, so a slot given back (a reaction removed, later) is taken again rather
+  -- than colliding for ever. The slot only makes two reactions at once collide; the cap is held
+  -- by the count above, so lowering reactionCap later leaves existing reactions as they are.
+  select min(g) into free_slot from generate_series(1, cardinality(held) + 1) g
+  where not exists (select 1 from reactions r where r.act = target and r.reactor_account = caller and r.slot = g);
   if reaction = any (held) then
     raise exception 'you have already left that reaction here' using errcode = '23505';
   end if;
@@ -81,7 +89,7 @@ begin
 
   begin
     insert into reactions (act, reactor_character, reactor_account, kind, slot)
-    values (target, through, caller, reaction, cardinality(held) + 1);
+    values (target, through, caller, reaction, free_slot);
   exception when unique_violation then
     -- Another reaction of this player's landed between the read above and this write.
     raise exception 'you reacted here twice at once; try again' using errcode = '40001';
