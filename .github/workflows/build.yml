@@ -1,0 +1,30 @@
+# The guard chain on a pull request once it is ready, and by hand.
+# The type check is its own step ahead of build:ci, not `npm run build`: the same two
+# commands as `--check`, but a type error fails in the first minute and shows as its own step.
+#
+# A draft's push shows a skipped Build (the job's `if:`), and a PR is built when it is marked ready.
+# paths-ignore is narrow on purpose: a record under docs/plans/ can never fail the build
+# (check-doc-references.mjs reports a record's dead references and gates only on current
+# documents). specs/, CLAUDE.md, README.md and the rest of docs/ stay covered:
+# check-working-rules reads CLAUDE.md and docs/working-rules/ directly.
+name: Build
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ['docs/plans/**']
+  workflow_dispatch:
+concurrency:
+  group: build-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build:ci
