@@ -1,0 +1,5 @@
+# The System acts; it never destroys what a player wrote
+
+Incident. Rewritten in the design session of 2026-10-28 (docs/plans/2026-10-28-kit-step-1-design.md) from currents' rule "The AI proposes; a person signs" (carried at f6aa96d). Followed to the letter, that rule would have a person sign every ruling The System makes, which would end the arbitrariness the game is built on; the owner chose instead to bound The System in code, keep every player's words, and preview only the weekly board list.
+
+The owner's words. "You have correctly identified that the arbitrary nature of a model response encouraged to be unreasonable is essentially the RNG that powers the game. Ideally it's 'irony-aware RNG', something similar to the Director in Left 4 Dead, where the decisions don't just feel like coin flips: they can feel rewarding or punishing in ways that are informed by the overall game state. Previewing the planned board list is nice because it gives admins the opportunity to override things if necessary while maintaining the illusion" (the owner, 2026-10-28).

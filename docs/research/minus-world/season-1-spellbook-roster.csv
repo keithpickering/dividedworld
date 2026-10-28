@@ -1,0 +1,29 @@
+,Minus World Spellbook,,,,,,SEASON 1
+,,,,,,,
+,Name,Alignment,Cost,Description,Notes,Done?,Work remaining
+,Feelin' Fab,Sweet,100,Unchanged,Duration extended to 1 week,X,
+,Size Matters,Salty,100,Unchanged,Duration extended to 1 week,X,
+,Autocorrect,Pepperoni,100,Unchanged,,X,
+,Give a Sh*t,Sweet,200,Double the amount of EX earned from each Good Sh*t received on this post.,,,"Need Good Sh*t system working with several auto-updating levels (Good/Great/Excellent/Wonderful), after that salvaging the Great Sh*t spell will be easy"
+,Whoops!,Salty,200,Unchanged,,X,
+,Overreaction,Pepperoni,200,Pick a single reaction smiley to be made gigantic on this post.,,,Unstarted - this one will be easy
+,Bling It On,Sweet,300,Cover this post with a randomized assortment of bling and dank memes.,,,Unstarted - trickier and we're not quite sure how it should work yet.
+,Vertigo,Salty,300,Unchanged,,X,
+,Hot Box,Pepperoni,300,Unchanged,Maybe add option for smoke color,X,
+,Stick Around,Sweet,400,Impede users from scrolling past this post unless they give it a Good Sh*t.,Allow scrolling past if they try vigorously enough,,"Unstarted, not too difficult"
+,SALT-CAM,Salty,400,View this post through the SALT-CAM with your custom special report.,,,Unstarted
+,The Big Reveal,Pepperoni,400,Hide this post behind a red curtain which will open dramatically when clicked.,,,"Unstarted, mostly just CSS"
+,Whodunnit?,Salty,500,Unchanged,"Alter Spell behavior to change post UID to a predetermined ""Anonymous"" account, thus actually hiding the OP's identity",,Need to fix spell behavior (see Notes)
+,Autoplay,Pepperoni,700,Play a custom audio file which will become louder the closer this post is scrolled to.,Includes mute button. On mobile the mute button will be replaced by a play/pause button,,Unstarted
+,Frame That Sh*t,Sweet,1000,Unchanged,Price increase - add Gallery of Good Sh*t to view all FTS posts,,Need to make gallery
+,Outta Sight,Salty,"1 per char, min 100",Unchanged,,X,
+,Linguistic Fire,Pepperoni,"1 per char, min 100","Translate this post to a language of your choice, or a random one.",,,Yoshin in progress
+,,,,,,,
+,,,,,,,
+,Spell Combinations,,,,,,
+,Spell 1,Spell 2,Spell 3,Effect,,Done?,
+,Give a Sh*t,Frame That Sh*t,Any Sweet,Good/Great/Excellent/Wonderful Sh*t button becomes LEGENDARY SH*T button which can be mashed to give huge EXP amounts,,,
+,SALT-CAM,Whodunnit?,N/A,"Extra message added: ""This member has reached salt levels never before recorded. They could not be reached for contact.""",,,
+,Outta SIght,Linguistic Fire,N/A,Linguistic Fire applied first so the translated language is converted to Braille,,,
+,Whodunnit?,Linguistic Fire,N/A,"Replace ""Anonymous"" name with random spam email address",,,
+,The Big Reveal,Any Salty,N/A,Play sad trombone noise when opening curtain,,,
