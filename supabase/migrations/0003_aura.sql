@@ -17,7 +17,9 @@ create table seasons (
   number integer not null unique check (number >= 1),
   starts_at timestamptz not null,
   ends_at timestamptz,
-  check (ends_at is null or ends_at > starts_at)
+  check (ends_at is null or ends_at > starts_at),
+  -- Seasons never overlap, so every instant has at most one season.
+  exclude using gist (tstzrange(starts_at, coalesce(ends_at, 'infinity'::timestamptz)) with &&)
 );
 -- One season open at a time.
 create unique index seasons_one_open on seasons ((true)) where ends_at is null;
@@ -49,6 +51,7 @@ create table ledger (
   amount integer not null check (amount <> 0)
 );
 create index ledger_account on ledger (account, settlement);
+create index ledger_settlement on ledger (settlement);
 
 create table wallets (
   account uuid primary key references accounts (id),
@@ -105,18 +108,19 @@ alter table wallet_events enable always trigger wallet_events_no_truncate;
 
 -- Credit or debit one wallet, inside the caller's transaction: the floor and the cap applied,
 -- the row locked, and the change recorded. Returns the new balance.
-create function wallet_move(who uuid, delta integer, what text, settled bigint, about uuid) returns integer
+create function wallet_move(who uuid, delta bigint, what text, settled bigint, about uuid) returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   cap integer := (setting('walletCap'))::integer;
   was integer;
-  raw integer;
+  raw bigint;
   now_is integer;
 begin
+  if delta is null then raise exception 'a wallet move needs an amount' using errcode = '22004'; end if;
   insert into wallets (account) values (who) on conflict (account) do nothing;
   select balance into was from wallets where account = who for update;
-  raw := was + delta;
-  now_is := least(cap, greatest(0, raw));
+  raw := was::bigint + delta;
+  now_is := least(cap, greatest(0, raw))::integer;
   update wallets set balance = now_is where account = who;
   insert into wallet_events (account, settlement, kind, change, overflow, floored, balance_after, ref)
   values (who, settled, what, now_is - was, greatest(0, raw - cap), greatest(0, -raw), now_is, about);
@@ -151,32 +155,35 @@ begin
   if open_season is null then raise exception 'no season holds the window from % to %', window_start, window_end using errcode = 'P0002'; end if;
 
   if jsonb_typeof(entries) <> 'array' then raise exception 'entries are a list' using errcode = '22023'; end if;
+  -- CASE, so the type is read before the cast; the range is an integer's.
   select count(*) into bad from jsonb_array_elements(entries) e
   where not exists (select 1 from characters c where c.id = (e ->> 'character')::uuid and c.owner = (e ->> 'player')::uuid)
-     or jsonb_typeof(e -> 'amount') <> 'number' or (e ->> 'amount')::numeric <> trunc((e ->> 'amount')::numeric);
+     or case when jsonb_typeof(e -> 'amount') <> 'number' then true
+             else (e ->> 'amount')::numeric <> trunc((e ->> 'amount')::numeric) or abs((e ->> 'amount')::numeric) > 2147483647 end;
   if bad > 0 then raise exception '% entries name a character their player does not play, or an amount that is not whole', bad using errcode = '22023'; end if;
   if jsonb_typeof(coalesce(class_totals, '{}')) <> 'object' or exists (
     select 1 from jsonb_each(coalesce(class_totals, '{}')) t
-    where jsonb_typeof(t.value) <> 'number' or (t.value #>> '{}')::numeric <> trunc((t.value #>> '{}')::numeric)
+    where case when jsonb_typeof(t.value) <> 'number' then true
+               else (t.value #>> '{}')::numeric <> trunc((t.value #>> '{}')::numeric) or abs((t.value #>> '{}')::numeric) > 2147483647 end
        or not exists (select 1 from class_kinds k where k.key = t.key)) then
     raise exception 'class totals are whole amounts keyed by a class the instance has' using errcode = '22023';
   end if;
 
   insert into settlements (starts_at, ends_at, season) values (window_start, window_end, open_season) returning id into settled;
   insert into ledger (settlement, account, character, reason, amount)
-  select settled, (e ->> 'player')::uuid, (e ->> 'character')::uuid, e ->> 'reason', (e ->> 'amount')::integer
-  from jsonb_array_elements(entries) e where (e ->> 'amount')::integer <> 0;
+  select settled, (e ->> 'player')::uuid, (e ->> 'character')::uuid, e ->> 'reason', (e ->> 'amount')::numeric::integer
+  from jsonb_array_elements(entries) e where (e ->> 'amount')::numeric <> 0;
 
-  for r in select account, sum(amount)::integer as total from ledger where settlement = settled group by account having sum(amount) <> 0 order by account loop
+  for r in select account, sum(amount) as total from ledger where settlement = settled group by account having sum(amount) <> 0 order by account loop
     perform wallet_move(r.account, r.total, 'settlement', settled, null);
   end loop;
 
   insert into standings (character, season, amount)
-  select character, open_season, sum(amount) from ledger where settlement = settled group by character
+  select character, open_season, sum(amount)::integer from ledger where settlement = settled group by character
   on conflict (season, character) do update set amount = standings.amount + excluded.amount;
 
   insert into settlement_class_totals (settlement, class_key, amount)
-  select settled, key, (value)::integer from jsonb_each_text(coalesce(class_totals, '{}'));
+  select settled, key, (value)::numeric::integer from jsonb_each_text(coalesce(class_totals, '{}'));
 
   return jsonb_build_object('applied', true, 'settlement', settled,
     'entries', (select count(*) from ledger where settlement = settled));
@@ -204,6 +211,6 @@ create policy own on ledger for select to authenticated using (account = auth.ui
 create policy own on wallets for select to authenticated using (account = auth.uid());
 create policy own on wallet_events for select to authenticated using (account = auth.uid());
 
-revoke execute on function wallets_within_cap(), ledger_append_only(), wallet_move(uuid, integer, text, bigint, uuid),
+revoke execute on function wallets_within_cap(), ledger_append_only(), wallet_move(uuid, bigint, text, bigint, uuid),
   apply_settlement(timestamptz, timestamptz, jsonb, jsonb) from public, anon, authenticated;
 grant execute on function apply_settlement(timestamptz, timestamptz, jsonb, jsonb) to service_role;

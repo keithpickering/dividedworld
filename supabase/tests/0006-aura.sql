@@ -24,7 +24,8 @@ begin
   if not (said ->> 'applied')::boolean then raise exception 'the first application should apply: %', said; end if;
   said := apply_settlement(w1, w2, jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.cheered', 'amount', 350)));
   if (said ->> 'applied')::boolean then raise exception 'a window was applied twice'; end if;
-  if (select count(*) from ledger) <> 3 or (select count(*) from settlements) <> 1 then raise exception 'the second application wrote something'; end if;
+  if (select count(*) from ledger l join settlements x on x.id = l.settlement where x.starts_at = w1) <> 3
+     or (select count(*) from settlements where starts_at = w1) <> 1 then raise exception 'the second application wrote something'; end if;
 
   -- The wallet caps at 600 and the standing keeps all of it; a hostile entry floors at zero.
   select balance into bal from wallets where account = ann;
@@ -118,4 +119,5 @@ begin
     raise exception 'a reaction moved a standing before any settlement';
   end if;
 end $$;
+
 
