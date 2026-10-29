@@ -24,6 +24,18 @@ announced Turns and debuts appear in The System's tally. Tasks 9, 10 and 11 say 
   twice as tall) and a square cut from inside it, and no original; a recrop of the square cuts it from the stored
   portrait and sends the square alone.
 
+**Amended 2026-10-29, after the class reveal design** (`docs/plans/2026-10-29-class-reveal-design.md`, built by
+`docs/plans/2026-10-29-class-reveal-plan.md`, which this plan also starts after):
+
+- Task 5's postbit and Task 10's profile show a character's latest public statement of its class, from
+  `class_reveals`: "Revealed: Heel (Oct 3)", and "Has Turned since (Oct 20)" when a later announced Turn came after
+  it; the profile's public record lists every reveal.
+- Task 9: a Reveal action on My characters and in the composer's menu names the class it will show and asks to
+  confirm ("this can't be taken back"), with an optional line of the character's words; New character and the Turn
+  modal gain "with its class" and "name the new class" in their previews of what everyone will see.
+- Task 10: the season's reveal shows each character's place, rank and standing, and only what its player made public
+  (`shown`); no class timeline.
+
 The mockups each screen follows are in `docs/research/2026-10-29-screens/`; the design's sections say what was decided
 and why. Where a mockup and the design disagree, the design wins. impeccable is installed (`.claude/skills/impeccable/`)
 with its product record (`PRODUCT.md`); a builder runs `.claude/skills/impeccable/scripts/impeccable context` once, then

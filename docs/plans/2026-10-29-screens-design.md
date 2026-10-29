@@ -336,3 +336,10 @@ owner deciding, changed these:
 - Section 7: the estimate's lines are each reaction's own, exact; none is apportioned.
 - Section 8, and the amendment after PR #7: a new character either drops at once or debuts at the next tally, each
   silent or announced.
+
+## Amended 2026-10-29: after the class reveal design
+
+`docs/plans/2026-10-29-class-reveal-design.md` (#14): a player may reveal a character's class at any time, as its own
+Act, and the postbit and profile show it as a dated fact. Section 13's reveal no longer shows a timeline of every
+character's classes: each character's post carries its place, rank and standing and only what its player made public,
+and class secrets roll over into the next season.

@@ -129,6 +129,9 @@ see, a refusal or a delay that differs with who owns the target. Before a respon
 is computed from a private fact, and who could trigger it and watch. A clue the game would rather not give is a design
 choice, never this rule's duty.
 
+A player may make one of their own private facts public: a character's class, by a reveal or a Turn announced with its
+old class. From then that fact, as of its date, is public, and nothing else about it is.
+
 The one exception is The System's own scoring: it reads who reacted and who owns what to settle, and shows only each
 settled window's sums. In a very quiet stretch a sum can still be read; that is accepted, with no noise added. Nothing
 live, and nothing else, is computed from a private fact.
