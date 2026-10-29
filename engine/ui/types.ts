@@ -55,10 +55,12 @@ export interface InstanceUi {
   /** Each class's look, by the class's key. */
   readonly classLooks: Readonly<Record<string, ClassLook>>;
   /**
-   * A ledger reason and its details, as one plain sentence for the player's own log: which Act,
-   * which quadrant and how much, never who reacted.
+   * A ledger reason (a class's `face.cheered`) as one plain sentence for the player's own log,
+   * saying what the character did or drew. The log prints the amount, and where a line has them
+   * the Act and the quadrant, beside it; a settled ledger row holds nothing more than its reason
+   * (supabase/migrations/0003_aura.sql), so the sentence never depends on more. Never who reacted.
    */
-  readonly reasonWords: (reason: string, details: Readonly<Record<string, unknown>>) => string;
+  readonly reasonWords: (reason: string) => string;
   readonly copy: UiCopy;
   /** Each pip style's images, by key; `default` is always there. */
   readonly pips: Readonly<Record<string, PipImages>>;

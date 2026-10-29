@@ -18,6 +18,6 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('every reason a class pays reads as a sentence of its own', () => {
     const reasons = ['face.cheered', 'face.liftedAPost', 'face.boredTheRoom', 'face.stoleThunder', 'heel.drewHeat', 'heel.stoleThunder', 'heel.shrugged',
       'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch'];
-    for (const r of reasons) expect(instanceUi.reasonWords(r, {}), r).not.toMatch(/^Settled under/);
+    for (const r of reasons) expect(instanceUi.reasonWords(r), r).not.toMatch(/^Settled under/);
   });
 });
