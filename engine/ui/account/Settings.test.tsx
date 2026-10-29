@@ -1,6 +1,7 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import type { Answer, Preferences } from '../data/api.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { SettingsScreen } from './Settings.tsx';
 
@@ -64,6 +65,41 @@ describe('Settings', () => {
     await userEvent.click(await screen.findByRole('radio', { name: /^Stacked/u }));
     expect(await screen.findByRole('alert')).toHaveTextContent('the postbit is side or stacked');
     expect(screen.getByRole('radio', { name: /^Side/u, checked: true })).toBeInTheDocument();
+  });
+
+  test('a save that gets no answer puts the choice back and says so', async () => {
+    const w = world();
+    w.fake.setPreferences = () => Promise.reject(new Error('offline'));
+    open(w.fake);
+    await userEvent.click(await screen.findByRole('radio', { name: /^Dark/u }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No answer came back/u);
+    expect(within(screen.getByRole('group', { name: 'Theme' })).getByRole('radio', { name: /^Device/u, checked: true })).toBeInTheDocument();
+    expect(document.documentElement.hasAttribute('data-kb-mode')).toBe(false);
+  });
+
+  test('saves go one at a time, and a refusal puts back only its own choice', async () => {
+    const w = world();
+    const calls: { patch: Partial<Preferences>; settle: (a: Answer<Preferences>) => void }[] = [];
+    w.fake.setPreferences = (patch) => new Promise((settle) => { calls.push({ patch, settle }); });
+    open(w.fake);
+    await userEvent.click(await screen.findByRole('radio', { name: /^Dark/u }));
+    await userEvent.click(screen.getByRole('radio', { name: /^Reduce/u }));
+    expect(calls).toHaveLength(1);
+    calls[0]!.settle({ ok: false, error: 'a theme is named in lowercase words joined by hyphens' });
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1]!.patch).toEqual({ motion: 'reduce' });
+    calls[1]!.settle({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'reduce' } });
+    await screen.findByText('Saved to your account.');
+    expect(within(screen.getByRole('group', { name: 'Theme' })).getByRole('radio', { name: /^Device/u, checked: true })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /^Reduce/u, checked: true })).toBeInTheDocument();
+    expect(document.documentElement.getAttribute('data-kb-motion')).toBe('reduce');
+    expect(document.documentElement.hasAttribute('data-kb-mode')).toBe(false);
+  });
+
+  test('"Saved to your account." is said in a region that is on the page before anything is saved', async () => {
+    open(world().fake);
+    await screen.findByRole('group', { name: 'Theme' });
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
   test('signing out ends the session and leaves for the index', async () => {

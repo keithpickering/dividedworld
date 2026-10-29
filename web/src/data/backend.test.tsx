@@ -59,3 +59,23 @@ describe('createBackend', () => {
     expect(await api.boards()).not.toHaveLength(0);
   });
 });
+
+/* A bundle that talks to Supabase must not carry the demo world (its seed, its kept preferences). */
+describe('createBackend and the demo', () => {
+  it('loads the demo module only for the fake, never when it gives Supabase', async () => {
+    vi.resetModules();
+    const loaded: string[] = [];
+    vi.doMock('../demo.ts', () => { loaded.push('demo'); return { seedDemo: () => ({}), recordAvatarUploads: () => undefined }; });
+    vi.stubEnv('PROD', true);
+    vi.stubEnv('MODE', 'production');
+    vi.stubEnv('VITE_SUPABASE_URL', URL_);
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon');
+    const { createBackend: fresh } = await import('./backend.ts');
+    await fresh();
+    expect(loaded).toEqual([]);
+    vi.stubEnv('MODE', 'e2e');
+    await fresh();
+    expect(loaded).toEqual(['demo']);
+    vi.doUnmock('../demo.ts');
+  });
+});

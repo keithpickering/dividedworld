@@ -12,3 +12,4 @@ export function useSession(api: KayfaApi): Session | null {
   }, [api]);
   return session;
 }
+export function clearWhy(): void { /* stub */ }

@@ -65,6 +65,52 @@ describe('Invites', () => {
     expect((screen.getByLabelText('Invite link') as HTMLInputElement).value).not.toBe(first);
   });
 
+  test('moves focus to the new link after making and after reissuing', async () => {
+    open(world());
+    await userEvent.click(await screen.findByRole('button', { name: 'Make an invite' }));
+    expect(await screen.findByLabelText('Invite link')).toHaveFocus();
+    (document.activeElement as HTMLElement).blur();
+    await userEvent.click(await screen.findByRole('button', { name: /Reissue/u }));
+    await screen.findByText(/new code/iu);
+    expect(screen.getByLabelText('Invite link')).toHaveFocus();
+  });
+
+  test('where copying is not available it says so, and the link is selected', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) }, configurable: true });
+    open(world());
+    await userEvent.click(await screen.findByRole('button', { name: 'Make an invite' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy the link' }));
+    expect(await screen.findByText('Copy is not available here: the link is selected; copy it by hand.')).toBeInTheDocument();
+    const link = screen.getByLabelText('Invite link') as HTMLInputElement;
+    expect(link).toHaveFocus();
+    expect([link.selectionStart, link.selectionEnd]).toEqual([0, link.value.length]);
+  });
+
+  test('the notes "Copied." and the like are said in a region that is on the page before anything is', async () => {
+    open(world());
+    await screen.findByRole('button', { name: 'Make an invite' });
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+
+  test('a make that gets no answer ends the wait and says so', async () => {
+    const w = world();
+    w.fake.createInvite = () => Promise.reject(new Error('offline'));
+    open(w);
+    await userEvent.click(await screen.findByRole('button', { name: 'Make an invite' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No answer came back/u);
+    expect(screen.getByRole('button', { name: 'Make an invite' })).toBeEnabled();
+  });
+
+  test('an expired invite says Expired once in its row', async () => {
+    const w = world();
+    await w.fake.createInvite();
+    w.fake.clock.advance(8 * 86_400_000);
+    open(w);
+    const row = await screen.findByRole('row', { name: /Expired/u });
+    expect((row.textContent ?? '').match(/Expired/gu)).toHaveLength(1);
+    expect(within(row).getByRole('button', { name: /Reissue/u })).toBeInTheDocument();
+  });
+
   test('an admin holds any number, and the page says so instead of a cap', async () => {
     open(world(true));
     expect(await screen.findByText(/any number of invites/u)).toBeInTheDocument();
