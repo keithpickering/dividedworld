@@ -20,7 +20,7 @@ const psqlOn = (url: string, text: string) =>
 
 /** Every table of ours and the logins beside them, each as one sorted JSON value. */
 const contents = (url: string): Map<string, string> => {
-  const tables = psqlOn(url, `select format('%I.%I', schemaname, tablename) from pg_tables where schemaname = 'public' union all select 'auth.users' order by 1`).split('\n');
+  const tables = psqlOn(url, `select format('%I.%I', schemaname, tablename) from pg_tables where schemaname = 'public' union all select 'auth.users' union all select 'auth.identities' where to_regclass('auth.identities') is not null order by 1`).split('\n');
   return new Map(tables.map((t) => [t, psqlOn(url, `select coalesce(jsonb_agg(x order by x::text), '[]')::text from (select to_jsonb(t) x from ${t} t) s`)]));
 };
 
@@ -48,7 +48,11 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
       update seasons set starts_at = least(starts_at, now() - interval '200 days') where ends_at is null;
       perform reveal_season();
-    end $$;`);
+    end $$;
+    -- A table holding what the instance's own do not yet: a type whose name has a comma, an
+    -- array, an astral character. Made here and in the fresh database alike.
+    create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);
+    insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   for (const t of ['public.accounts', 'public.characters', 'public.class_history', 'public.acts', 'public.reactions', 'public.card_ledger', 'public.effect_state',
     'public.invites', 'public.settlements', 'public.ledger', 'public.wallet_events', 'public.seasons', 'auth.users']) {
@@ -72,6 +76,20 @@ test('an instance exported and imported into a fresh database is the same instan
     const steered = run('export-instance.mjs', ['--from', `${from}?host=elsewhere`, '--to', path.join(dir, 'nowhere')]);
     assert.notEqual(steered.status, 0);
     assert.match(steered.stderr, /host/);
+    // A password never reaches the terminal, even one libpq would quote back, nor psql's command line.
+    const secret = new URL(from);
+    secret.password = 'sEcReT%zz';
+    const leaked = run('export-instance.mjs', ['--from', secret.toString(), '--to', path.join(dir, 'nowhere')]);
+    assert.notEqual(leaked.status, 0);
+    assert.doesNotMatch(leaked.stdout + leaked.stderr, /sEcReT/);
+    const wrong = new URL(from);
+    wrong.password = 'sEcReTwrong';
+    wrong.username = 'nobody_here';
+    const refusedLogin = run('export-instance.mjs', ['--from', wrong.toString(), '--to', path.join(dir, 'nowhere')]);
+    assert.notEqual(refusedLogin.status, 0);
+    assert.doesNotMatch(refusedLogin.stdout + refusedLogin.stderr, /sEcReT/);
+    assert.match(run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'back\\slash')]).stderr, /backslash/);
+    fs.rmSync(path.join(dir, 'nowhere'), { recursive: true, force: true });
 
     const exported = run('export-instance.mjs', ['--from', from, '--to', dir]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
@@ -85,6 +103,34 @@ test('an instance exported and imported into a fresh database is the same instan
     // The fresh instance: the shim and the migrations, nothing seeded.
     psqlOn(fresh.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
     for (const m of fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort()) psqlOn(fresh.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    psqlOn(fresh.toString(), 'create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);');
+
+    // The export is as private as the database: no file in it is readable by anyone else.
+    for (const f of fs.readdirSync(dir)) assert.equal(fs.statSync(path.join(dir, f)).mode & 0o077, 0, `${f} is readable by others`);
+
+    // A short file is refused, naming the table, and leaves the database as it was.
+    const short = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-short-'));
+    for (const f of fs.readdirSync(dir)) fs.copyFileSync(path.join(dir, f), path.join(short, f));
+    fs.writeFileSync(path.join(short, 'public.invites.jsonl'), '');
+    const shorted = run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]);
+    assert.notEqual(shorted.status, 0);
+    assert.match(shorted.stderr, /public\.invites/);
+    // A row whose account is not in the export (a lost line, the manifest's count made to agree) is refused by its foreign key.
+    const accounts = fs.readFileSync(path.join(dir, 'public.accounts.jsonl'), 'utf8').split('\n').filter(Boolean);
+    fs.writeFileSync(path.join(short, 'public.invites.jsonl'), fs.readFileSync(path.join(dir, 'public.invites.jsonl')));
+    fs.writeFileSync(path.join(short, 'public.accounts.jsonl'), accounts.slice(1).join('\n') + '\n');
+    const manifest = JSON.parse(fs.readFileSync(path.join(short, 'manifest.json'), 'utf8'));
+    manifest.tables.find((t: { name: string }) => t.name === 'public.accounts').rows -= 1;
+    fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));
+    const orphaned = run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]);
+    assert.notEqual(orphaned.status, 0);
+    assert.match(orphaned.stderr, /references a row the export does not hold/);
+    // A file the manifest names outside the export is refused.
+    manifest.tables.find((t: { name: string }) => t.name === 'public.accounts').file = '../elsewhere.jsonl';
+    fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));
+    assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /names a file/);
+    fs.rmSync(short, { recursive: true, force: true });
+    assert.equal(psqlOn(fresh.toString(), 'select count(*) from public.accounts'), '0', 'a refused import left rows behind');
 
     const imported = run('import-instance.mjs', ['--from', dir, '--to', fresh.toString()]);
     assert.equal(imported.status, 0, imported.stderr + imported.stdout);

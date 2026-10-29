@@ -14,76 +14,88 @@
  * The rows go in one transaction, as a replica writes them (session_replication_role), so the
  * triggers that number an Act, cap a player's characters or check a card's words do not run
  * again over rows they already ran over; the append-only guards fire on updates and deletes,
- * and an import makes neither. Then each identity's next value is set past its rows, and the
- * settlement's job is scheduled from the imported settings, as the trigger the replica skipped
- * would have scheduled it (supabase/migrations/0004_schedule.sql).
+ * and an import makes neither. Since a replica checks no foreign key either, the import checks
+ * them all itself once every row is in, and a file shorter or longer than the manifest says is
+ * refused by name: a lost line never imports quietly. Then each identity's next value is set past
+ * its rows, and the settlement's job is scheduled from the imported settings, as the trigger the
+ * replica skipped would have scheduled it (supabase/migrations/0004_schedule.sql). Any failure
+ * rolls all of it back.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { spawn } from 'node:child_process';
-import { FORMAT, NOT_EXPORTED, answered, args, named, psql, tables } from './instance-files.mjs';
+import { FORMAT, NOT_EXPORTED, answered, args, connection, fail, fileOf, psql, psqlStream, scrub, tables } from './instance-files.mjs';
 
 const usage = 'usage: node tools/import-instance.mjs --from <export directory> --to postgres://…';
 
 /** One line of COPY's text format: a JSON line has no raw tab or newline, only backslashes to double. */
 const copyLine = (json) => json.replace(/\\/g, '\\\\');
+const literal = (s) => `'${s.replace(/'/g, "''")}'`;
 
-function check(to, manifest) {
+function check(db, manifest) {
   if (manifest.format !== FORMAT) throw new Error(`the export is ${manifest.format ?? 'not one of ours'}, not ${FORMAT}`);
-  const here = new Map(tables(to).map((t) => [t.name, t]));
+  const here = new Map(tables(db).map((t) => [t.name, t]));
   const theirs = new Map(manifest.tables.map((t) => [t.name, t]));
   for (const t of manifest.tables) {
+    if (t.file !== fileOf(t.name)) throw new Error(`the manifest names a file for ${t.name} other than ${fileOf(t.name)}`);
+    if (!Number.isSafeInteger(t.rows) || t.rows < 0) throw new Error(`the manifest's row count for ${t.name} is not a count`);
     const mine = here.get(t.name);
     if (!mine) throw new Error(`the export has ${t.name}, which this database does not: apply the migrations the export was made with`);
     if (JSON.stringify(mine.columns) !== JSON.stringify(t.columns)) throw new Error(`${t.name}'s columns differ from the export's: apply the migrations the export was made with`);
   }
   for (const name of here.keys()) {
-    if (name.startsWith('public.') && !theirs.has(name)) throw new Error(`this database has ${name}, which the export does not: the export is from other migrations`);
+    if (!theirs.has(name)) throw new Error(`this database has ${name}, which the export does not: the export is from other migrations or another Auth`);
   }
-  const held = psql(to, manifest.tables.map((t) => `select '${t.name}' where exists (select 1 from ${t.name});`).join('\n'));
+  const held = psql(db, manifest.tables.map((t) => `select ${literal(t.name)} where exists (select 1 from ${t.name});`).join('\n'));
   if (held) throw new Error(`the database is not empty (${held.split('\n').join(', ')}); an import goes into a fresh instance`);
 }
 
-/** The tables in an order that writes each row after the rows it references. */
-function ordered(to, manifest) {
-  const edges = psql(to, `
-    select format('%I.%I', cn.nspname, c.relname), format('%I.%I', fn.nspname, f.relname)
-    from pg_constraint k join pg_class c on c.oid = k.conrelid join pg_namespace cn on cn.oid = c.relnamespace
-      join pg_class f on f.oid = k.confrelid join pg_namespace fn on fn.oid = f.relnamespace
-    where k.contype = 'f' and k.conrelid <> k.confrelid`).split('\n').filter(Boolean).map((l) => l.split('|'));
-  const names = manifest.tables.map((t) => t.name);
-  const after = new Map(names.map((n) => [n, new Set()]));
-  for (const [table, references] of edges) if (after.has(table) && after.has(references)) after.get(table).add(references);
-  const out = [];
-  const seen = new Set();
-  const visit = (n, path = new Set()) => {
-    if (seen.has(n) || path.has(n)) return;
-    path.add(n);
-    for (const r of after.get(n)) visit(r, path);
-    seen.add(n);
-    out.push(n);
-  };
-  for (const n of names) visit(n);
-  return out.map((n) => manifest.tables.find((t) => t.name === n));
-}
+/** Every foreign key out of an imported table, checked once all the rows are in. */
+const foreignKeys = (names) => `do $$ declare k record; orphaned boolean; begin
+  for k in
+    select format('%I.%I', ns.nspname, cl.relname) as child, con.confrelid::regclass::text as parent, con.conname,
+      (select string_agg(format('c.%I', a.attname), ', ' order by u.i) from unnest(con.conkey) with ordinality u(n, i) join pg_attribute a on a.attrelid = con.conrelid and a.attnum = u.n) as child_cols,
+      (select string_agg(format('p.%I', a.attname), ', ' order by u.i) from unnest(con.confkey) with ordinality u(n, i) join pg_attribute a on a.attrelid = con.confrelid and a.attnum = u.n) as parent_cols,
+      (select string_agg(format('c.%I is not null', a.attname), ' and ' order by u.i) from unnest(con.conkey) with ordinality u(n, i) join pg_attribute a on a.attrelid = con.conrelid and a.attnum = u.n) as present
+    from pg_constraint con join pg_class cl on cl.oid = con.conrelid join pg_namespace ns on ns.oid = cl.relnamespace
+    where con.contype = 'f' and format('%I.%I', ns.nspname, cl.relname) = any (array[${names.map(literal).join(', ')}]::text[])
+  loop
+    execute format('select exists (select 1 from %s c where %s and not exists (select 1 from %s p where (%s) = (%s)))', k.child, k.present, k.parent, k.parent_cols, k.child_cols) into orphaned;
+    if orphaned then raise exception '% (%) references a row the export does not hold, in %', k.child, k.conname, k.parent; end if;
+  end loop;
+end $$;\n`;
 
-async function load(to, dir, order) {
-  const child = spawn('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', to, '-f', '-'], { stdio: ['pipe', 'pipe', 'pipe'] });
+async function load(db, dir, manifest) {
+  const child = psqlStream(db);
   let stderr = '';
+  let exited = false;
   child.stderr.on('data', (d) => { stderr += d; });
   child.stdout.resume();
-  const done = new Promise((resolve) => child.on('close', resolve));
-  const write = async (text) => { if (!child.stdin.write(text)) await new Promise((r) => child.stdin.once('drain', r)); };
+  // psql stopping on an error closes its input: the write that meets it is dropped, and the
+  // error that stopped it is the one reported.
+  child.stdin.on('error', () => {});
+  const done = new Promise((resolve) => child.on('close', (code) => { exited = true; resolve(code); }));
+  const write = async (text) => {
+    if (exited) return;
+    if (!child.stdin.write(text)) await Promise.race([new Promise((r) => child.stdin.once('drain', r)), done]);
+  };
   await write('begin;\nset local session_replication_role = replica;\ncreate temp table import_rows (j jsonb) on commit drop;\n');
-  for (const t of order) {
+  for (const t of manifest.tables) {
+    if (exited) break;
     const columns = t.columns.map(([c]) => c).join(', ');
     await write('truncate import_rows;\ncopy import_rows from stdin;\n');
     const lines = readline.createInterface({ input: fs.createReadStream(path.join(dir, t.file), 'utf8'), crlfDelay: Infinity });
-    for await (const line of lines) if (line) await write(copyLine(line) + '\n');
+    for await (const line of lines) {
+      if (exited) break;
+      if (line) await write(copyLine(line) + '\n');
+    }
     await write('\\.\n');
+    await write(`do $$ declare n bigint := (select count(*) from import_rows); begin
+      if n <> ${t.rows} then raise exception '%: the export says % row(s), and its file holds %', ${literal(t.name)}, ${t.rows}, n; end if;
+    end $$;\n`);
     await write(`insert into ${t.name} (${columns}) overriding system value select ${t.columns.map(([c]) => `r.${c}`).join(', ')} from import_rows, jsonb_populate_record(null::${t.name}, import_rows.j) r;\n`);
   }
+  await write(foreignKeys(manifest.tables.map((t) => t.name)));
   // Each identity and serial column's next value past its rows.
   await write(`do $$ declare s record; most bigint; begin
     for s in select format('%I.%I', n.nspname, c.relname) as tbl, a.attname as col, pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) as seq
@@ -98,22 +110,20 @@ async function load(to, dir, order) {
   set local session_replication_role = origin;
   select schedule_settlement() where exists (select 1 from settings where key = 'settlementCron');
   commit;\n`);
-  child.stdin.end();
+  if (!exited) child.stdin.end();
   const code = await done;
-  if (code !== 0) throw new Error(stderr.trim() || `psql exited ${code}`);
+  if (code !== 0) throw new Error(scrub(stderr.trim()) || `psql exited ${code}`);
 }
 
 async function main() {
   const { from, to } = args(process.argv.slice(2), usage);
   const manifest = JSON.parse(fs.readFileSync(path.join(from, 'manifest.json'), 'utf8'));
-  console.log(`importing into ${named(to)}; the server says it is ${answered(to)}; from the export of ${manifest.from} made ${manifest.exportedAt}`);
-  check(to, manifest);
-  await load(to, from, ordered(to, manifest));
-  for (const t of manifest.tables) console.log(`  ${t.name}: ${t.rows} row(s)`);
+  const db = connection(to);
+  console.log(`importing into ${db.named}; the server says it is ${answered(db)}; from the export of ${manifest.from} made ${manifest.exportedAt}`);
+  check(db, manifest);
+  await load(db, from, manifest);
+  for (const t of manifest.tables) console.log(`  ${t.name}: ${t.rows} row(s), each counted as it went in`);
   console.log(`still to do, since an export does not carry them:\n${NOT_EXPORTED.map((n) => `  - ${n}`).join('\n')}`);
 }
 
-main().catch((e) => {
-  console.error(String(e.stderr || e.message || e).trim());
-  process.exit(1);
-});
+main().catch(fail);

@@ -5,10 +5,13 @@
  * An instance is every table in the public schema, private ones included, and the logins beside
  * them in Supabase Auth (auth.users, and auth.identities where Auth keeps one), so that an
  * imported instance's players sign in as before. What is not exported is said where it is left
- * out: the schedule's service key in Vault, which is a secret and is seeded again, and Auth's
- * sessions, which end, so players sign in once more.
+ * out (NOT_EXPORTED): the two Vault secrets, and Auth's sessions, which end.
+ *
+ * A connection's password never reaches psql's command line, where any user's `ps` reads it, nor
+ * the terminal: the URL is taken apart here and handed to psql as libpq's variables, and every
+ * message a tool prints passes through scrub() first.
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
 export const FORMAT = 'kayfabb-export/1';
 
@@ -24,55 +27,104 @@ export function args(argv, usage) {
   return out;
 }
 
-/** The query parameters a URL may carry: none of them can send psql to another database. */
-const HARMLESS = new Set(['sslmode', 'sslrootcert', 'connect_timeout', 'application_name']);
+/** The query parameters a URL may carry, as the libpq variable each sets: none can send psql elsewhere. */
+const HARMLESS = { sslmode: 'PGSSLMODE', sslrootcert: 'PGSSLROOTCERT', connect_timeout: 'PGCONNECT_TIMEOUT', application_name: 'PGAPPNAME' };
+
+/** Every secret a tool has been handed, so that scrub() can take each out of what it prints. */
+const secrets = new Set();
+
+/** A message with every password a tool was given, raw or encoded, replaced. */
+export function scrub(text) {
+  let out = String(text);
+  for (const s of secrets) if (s) out = out.split(s).join('<password>');
+  return out;
+}
 
 /**
- * Which database a URL names, as host:port/database, with no user or password in it. A URL that
- * names no database, or carries a parameter that could connect somewhere else than it says (a
- * host, a database, a service), is refused, and so is a PG* variable that would fill a part the
- * URL leaves out.
+ * A URL taken apart: the database it names, as host:port/database with no user or password, and
+ * the libpq variables that connect to it. A URL that names no host or database, carries a
+ * parameter that could connect somewhere else than it says, or meets a PG* variable that could,
+ * is refused.
  */
-export function named(url) {
-  const u = new URL(url);
+export function connection(url) {
+  let u;
+  try { u = new URL(url); } catch { throw new Error('the database is a postgres:// URL'); }
+  if (u.password) secrets.add(u.password);
   if (!/^postgres(ql)?:$/.test(u.protocol)) throw new Error('the database is a postgres:// URL');
   if (!u.hostname) throw new Error('the URL names no host');
   if (u.pathname.length < 2) throw new Error('the URL names no database');
-  for (const key of u.searchParams.keys()) if (!HARMLESS.has(key)) throw new Error(`the URL's ${key} parameter could connect somewhere it does not say`);
+  const env = {};
+  for (const [key, value] of u.searchParams) {
+    if (!(key in HARMLESS)) throw new Error(`the URL's ${key} parameter could connect somewhere it does not say`);
+    env[HARMLESS[key]] = value;
+  }
   for (const key of ['PGSERVICE', 'PGSERVICEFILE', 'PGHOSTADDR', 'PGOPTIONS']) if (process.env[key]) throw new Error(`${key} is set, and could connect somewhere the URL does not say`);
-  return `${u.hostname}:${u.port || '5432'}${u.pathname}`;
+  const decode = (part, what) => {
+    try { return decodeURIComponent(part); } catch { throw new Error(`the URL's ${what} is not percent-encoded`); }
+  };
+  const password = decode(u.password, 'password');
+  secrets.add(password);
+  const host = u.hostname.replace(/^\[(.*)\]$/, '$1');
+  return {
+    named: `${u.hostname}:${u.port || '5432'}${u.pathname}`,
+    env: { PGHOST: host, PGPORT: u.port || '5432', PGDATABASE: decode(u.pathname.slice(1), 'database'), PGUSER: decode(u.username, 'user') || 'postgres', PGPASSWORD: password, ...env },
+  };
+}
+
+const psqlEnv = (c) => {
+  const env = { ...process.env, ...c.env };
+  for (const key of Object.keys(env)) if (key.startsWith('PG') && !(key in c.env)) delete env[key];
+  return env;
+};
+const PSQL = ['-v', 'ON_ERROR_STOP=1', '-qtAX', '-f', '-'];
+
+/** Runs a script through psql and returns its unaligned output; an error carries psql's own words, scrubbed. */
+export function psql(c, script) {
+  try {
+    return execFileSync('psql', PSQL, { input: script, env: psqlEnv(c), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 1 << 28 }).trim();
+  } catch (e) {
+    throw new Error(scrub(String(e.stderr || '').trim() || `psql exited ${e.status ?? 'without a status'}`));
+  }
+}
+
+/** psql reading a script streamed to it, for a load too large to hold. */
+export function psqlStream(c) {
+  return spawn('psql', PSQL, { env: psqlEnv(c), stdio: ['pipe', 'pipe', 'pipe'] });
 }
 
 /** The database as the server itself names it, once connected. */
-export function answered(url) {
-  return psql(url, `select format('%s on port %s', current_database(), coalesce(inet_server_port()::text, 'the local socket'))`);
-}
-
-/** Runs a script through psql and returns its unaligned output. */
-export function psql(url, script) {
-  return execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: script, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 1 << 28 }).trim();
+export function answered(c) {
+  return psql(c, `select format('%s on port %s', current_database(), coalesce(inet_server_port()::text, 'the local socket'))`);
 }
 
 /**
  * The instance's tables, each with its columns (stored generated columns aside, which are
- * computed again) and the order its rows are written in.
+ * computed again) and the order its rows are written in, read as JSON so that no name or type
+ * (numeric(10,2)) can be cut at a delimiter.
  */
-export function tables(url) {
-  const rows = psql(url, `
-    select format('%I.%I', n.nspname, c.relname),
-      (select string_agg(format('%s %s', quote_ident(a.attname), format_type(a.atttypid, a.atttypmod)), ',' order by a.attnum)
-         from pg_attribute a where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped and a.attgenerated = ''),
-      coalesce((select string_agg(quote_ident(a.attname), ', ' order by array_position(i.indkey, a.attnum))
-         from pg_index i join pg_attribute a on a.attrelid = i.indrelid and a.attnum = any(i.indkey)
-         where i.indrelid = c.oid and i.indisprimary), 'ctid')
-    from pg_class c join pg_namespace n on n.oid = c.relnamespace
-    where c.relkind in ('r', 'p') and not c.relispartition
-      and (n.nspname = 'public' or (n.nspname = 'auth' and c.relname in ('users', 'identities')))
-    order by 1`);
-  return rows.split('\n').filter(Boolean).map((line) => {
-    const [name, columns, order] = line.split('|');
-    return { name, columns: columns.split(',').map((c) => { const at = c.indexOf(' '); return [c.slice(0, at), c.slice(at + 1)]; }), order };
-  });
+export function tables(c) {
+  return JSON.parse(psql(c, `
+    select coalesce(json_agg(json_build_object('name', t.name, 'columns', t.columns, 'order', t.ord) order by t.name), '[]')
+    from (
+      select format('%I.%I', n.nspname, c.relname) as name,
+        (select json_agg(json_build_array(quote_ident(a.attname), format_type(a.atttypid, a.atttypmod)) order by a.attnum)
+           from pg_attribute a where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped and a.attgenerated = '') as columns,
+        coalesce((select string_agg(quote_ident(a.attname), ', ' order by array_position(i.indkey, a.attnum))
+           from pg_index i join pg_attribute a on a.attrelid = i.indrelid and a.attnum = any(i.indkey)
+           where i.indrelid = c.oid and i.indisprimary), 'ctid') as ord
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where c.relkind in ('r', 'p') and not c.relispartition
+        and (n.nspname = 'public' or (n.nspname = 'auth' and c.relname in ('users', 'identities')))
+    ) t`));
+}
+
+/** The one file name a table's rows are kept in. */
+export const fileOf = (name) => `${name}.jsonl`;
+
+/** Prints a tool's failure, scrubbed, and exits. */
+export function fail(e) {
+  console.error(scrub(e?.message ?? e));
+  process.exit(1);
 }
 
 export const NOT_EXPORTED = [
