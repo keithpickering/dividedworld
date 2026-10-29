@@ -43,3 +43,12 @@ describe('the index', () => {
     expect(screen.queryByRole('table')).toBeNull();
   });
 });
+
+describe('the index table keeps its roles in the phone layout', () => {
+  test('rows and cells carry explicit roles', async () => {
+    renderInWorld(<IndexScreen />, { seed: (f) => { f.signInAs(f.seed.account('me')); } });
+    const row = (await screen.findByRole('link', { name: 'General' })).closest('tr')!;
+    expect(row).toHaveAttribute('role', 'row');
+    expect(row.querySelector('td')).toHaveAttribute('role', 'cell');
+  });
+});

@@ -1,8 +1,9 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
+import { useLocation } from '../router.tsx';
 import { BoardScreen } from './Board.tsx';
 
 const DAY = 86_400_000;
@@ -27,6 +28,11 @@ function replies(fake: Fake, thread: string, by: string, n: number, at = T0 + 3 
   for (let i = 0; i < n; i++) fake.seed.post(thread, by, `reply ${i + 1}`, { at: at + i * 3_600_000 });
 }
 
+function Switch() {
+  const { path } = useLocation();
+  return <BoardScreen slug={path.split('/').pop()!} />;
+}
+
 const rowOf = (title: string) => screen.getByRole('link', { name: title }).closest('tr')!;
 
 beforeEach(() => localStorage.clear());
@@ -40,7 +46,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
     expect(within(row).getByText('NEW')).toBeInTheDocument();
-    expect(within(row).getByRole('link', { name: 'first unread' })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1#post-3`);
+    expect(within(row).getByRole('link', { name: /^First unread post in / })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1#post-3`);
   });
 
   test('no NEW when the player has read to the last post', async () => {
@@ -51,7 +57,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
     expect(within(row).queryByText('NEW')).toBeNull();
-    expect(within(row).queryByRole('link', { name: 'first unread' })).toBeNull();
+    expect(within(row).queryByRole('link', { name: /^First unread post in / })).toBeNull();
   });
 
   test('first unread is on the page that holds the post', async () => {
@@ -61,7 +67,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
     });
     fake.markRead(seeded.ids[0]!, 4, null);
     await screen.findByRole('link', { name: 'Thread 001' });
-    expect(within(rowOf('Thread 001')).getByRole('link', { name: 'first unread' })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=3#post-5`);
+    expect(within(rowOf('Thread 001')).getByRole('link', { name: /^First unread post in / })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=3#post-5`);
   });
 
   test('a thread the player has never read is NEW from its first post', async () => {
@@ -69,7 +75,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
     expect(within(row).getByText('NEW')).toBeInTheDocument();
-    expect(within(row).getByRole('link', { name: 'first unread' })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1#post-1`);
+    expect(within(row).getByRole('link', { name: /^First unread post in / })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1#post-1`);
   });
 
   test('a thread is never marked as the player\'s own', async () => {
@@ -84,8 +90,12 @@ describe('NEW comes from the player\'s own reading rows', () => {
 describe('the row', () => {
   test('HOT at the instance\'s replies-this-week setting, replies, hourly views and the spin', async () => {
     const fake = buildWorld();
-    const w = world(fake, { threads: 2 });
-    replies(fake, w.ids[1]!, w.spritey, 3, Date.UTC(2026, 9, 28, 1));
+    const w = world(fake, { threads: 4 });
+    /* The backend stamps a player's post with its clock, so the old replies come first and the clock then moves on. */
+    replies(fake, w.ids[3]!, w.spritey, 5); /* plenty, but they will be older than seven days */
+    fake.clock.advance(8 * DAY);
+    replies(fake, w.ids[2]!, w.spritey, 2); /* one short of hotReplies (3) */
+    replies(fake, w.ids[1]!, w.spritey, 3);
     fake.seed.views(w.ids[1]!, 44);
     const origin = fake.seed.post(w.ids[0]!, w.spritey, 'a line to spin from', { at: T0 + 2 * DAY });
     const spun = await fake.spin(origin, w.mine!, 'Spun thread', 'x');
@@ -97,6 +107,8 @@ describe('the row', () => {
     expect(hot).toHaveTextContent('44');
     expect(within(hot).getByText('3', { selector: '.kb-thread-replies .kb-num' })).toBeInTheDocument();
     expect(within(rowOf('Thread 001')).queryByText('HOT')).toBeNull();
+    expect(within(rowOf('Thread 003')).queryByText('HOT')).toBeNull();
+    expect(within(rowOf('Thread 004')).queryByText('HOT')).toBeNull();
     const row = rowOf('Spun thread');
     expect(row).toHaveTextContent('spun from');
     expect(within(row).getByRole('link', { name: /Thread 001/ })).toHaveAttribute('href', `/t/${w.ids[0]}?page=1#post-2`);
@@ -112,7 +124,7 @@ describe('the row', () => {
     expect(row).toHaveTextContent('Spritey');
     const last = within(row).getByRole('link', { name: /Pipewrench/ });
     expect(last).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=3#post-5`);
-    expect(within(row).getByRole('link', { name: '2' })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=2`);
+    expect(within(row).getByRole('link', { name: 'Page 2 of Thread 001' })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=2`);
   });
 });
 
@@ -155,7 +167,7 @@ describe('a list of 0, 1 and 200 threads', () => {
     expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(21);
     expect(screen.getByRole('link', { name: 'Thread 181' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Thread 180' })).toBeNull();
-    const pages = screen.getAllByRole('navigation', { name: 'Pages' })[0]!;
+    const pages = screen.getByRole('navigation', { name: 'Pages, top' });
     expect(pages).toHaveTextContent('Page 1 of 10');
     expect(within(pages).getByRole('link', { name: 'Next' })).toHaveAttribute('href', '/b/general?page=2');
   });
@@ -164,13 +176,13 @@ describe('a list of 0, 1 and 200 threads', () => {
     renderInWorld(<BoardScreen slug="general" />, { path: '/b/general?page=3', seed: (f) => world(f, { threads: 200 }) });
     await screen.findByRole('link', { name: 'Thread 160' });
     expect(screen.getByRole('link', { name: 'Thread 141' })).toBeInTheDocument();
-    expect(screen.getAllByRole('navigation', { name: 'Pages' })[0]).toHaveTextContent('Page 3 of 10');
+    expect(screen.getByRole('navigation', { name: 'Pages, top' })).toHaveTextContent('Page 3 of 10');
   });
 
   test('a page past the end shows the last page', async () => {
     renderInWorld(<BoardScreen slug="general" />, { path: '/b/general?page=99', seed: (f) => world(f, { threads: 41 }) });
     await screen.findByRole('link', { name: 'Thread 001' });
-    expect(screen.getAllByRole('navigation', { name: 'Pages' })[0]).toHaveTextContent('Page 3 of 3');
+    expect(screen.getByRole('navigation', { name: 'Pages, top' })).toHaveTextContent('Page 3 of 3');
   });
 });
 
@@ -225,5 +237,41 @@ describe('a board that is not there', () => {
     renderInWorld(<BoardScreen slug="nowhere" />, { seed: (f) => world(f) });
     expect(await screen.findByText(/There is no such board/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Back to the index' })).toHaveAttribute('href', '/');
+  });
+});
+
+describe('moving between boards', () => {
+  test('the old rows and the draft do not follow the player to the other board', async () => {
+    renderInWorld(<Switch />, { path: '/b/general', seed: (f) => { const w = world(f); f.seed.thread('off-topic', w.spritey, 'Elsewhere thread', 'x', { at: T0 }); return w; } });
+    const form = await screen.findByRole('form', { name: 'Start a thread' });
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'Draft for general');
+    act(() => { window.history.pushState(null, '', '/b/off-topic'); window.dispatchEvent(new PopStateEvent('popstate')); });
+    expect(screen.queryByRole('link', { name: 'Thread 001' })).toBeNull();
+    await screen.findByRole('link', { name: 'Elsewhere thread' });
+    const next = await screen.findByRole('form', { name: 'Start a thread' });
+    await waitFor(() => expect(within(next).getByText('Pipewrench')).toBeInTheDocument());
+    expect(within(next).getByRole('textbox', { name: 'Title' })).toHaveValue('');
+  });
+});
+
+describe('accessible names', () => {
+  test('the pagers are told apart, and the views column says what it counts in text', async () => {
+    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 41 }) });
+    await screen.findByRole('link', { name: 'Thread 041' });
+    expect(screen.getByRole('navigation', { name: 'Pages, top' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Pages, bottom' })).toBeInTheDocument();
+    const views = screen.getByRole('columnheader', { name: /Views/ });
+    expect(views).toHaveTextContent('Characters that have read it, counted hourly');
+  });
+
+  test('the table keeps its roles where the phone layout drops the native ones', async () => {
+    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const table = screen.getByRole('table');
+    expect(table).toHaveAttribute('role', 'table');
+    expect(within(table).getAllByRole('row')[1]).toHaveAttribute('role', 'row');
+    expect(within(table).getAllByRole('cell').length).toBeGreaterThan(0);
+    expect(within(table).getAllByRole('cell')[0]).toHaveAttribute('role', 'cell');
   });
 });

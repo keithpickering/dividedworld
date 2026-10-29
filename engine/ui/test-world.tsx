@@ -35,6 +35,7 @@ export const testInstance: Instance = {
   settings,
   boards: [
     { slug: 'general', name: 'General', description: 'Anything.' },
+    { slug: 'off-topic', name: 'Off Topic', description: 'Elsewhere.' },
     { slug: 'the-system', name: 'The System', description: 'Its words.', system: true },
   ],
   ranks: [{ name: 'Jobber', from: 0 }],

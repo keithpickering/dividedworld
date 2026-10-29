@@ -43,28 +43,28 @@ export function IndexScreen() {
   return (
     <div className="kb-index">
       <h1 className="kb-heading">Index</h1>
-      <table className="kb-table kb-board-list">
+      <table className="kb-table kb-board-list" role="table">
         <caption className="kb-visually-hidden">Boards</caption>
-        <thead>
-          <tr>
-            <th scope="col">Board</th>
-            <th scope="col">Threads</th>
-            <th scope="col">Last post</th>
+        <thead role="rowgroup">
+          <tr role="row">
+            <th role="columnheader" scope="col">Board</th>
+            <th role="columnheader" scope="col">Threads</th>
+            <th role="columnheader" scope="col">Last post</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {state.boards.map((b) => {
             const who = b.lastCharacter ? state.characters.get(b.lastCharacter) : undefined;
             return (
-              <tr key={b.id} className="kb-board-row" data-kb-system={b.isSystem ? '' : undefined}>
-                <td className="kb-board-main">
+              <tr key={b.id} role="row" className="kb-board-row" data-kb-system={b.isSystem ? '' : undefined}>
+                <td role="cell" className="kb-board-main">
                   <Link to={`/b/${b.slug}`} className="kb-board-link"><b>{b.name}</b></Link>
                   {b.isSystem && <> <span className="kb-readonly-tag">The System posts; you react and spin</span></>}
                   <br />
                   <span className="kb-small kb-muted">{b.description}</span>
                 </td>
-                <td className="kb-board-threads kb-num"><span className="kb-num">{b.threadCount}</span><span className="kb-board-unit"> threads</span></td>
-                <td className="kb-board-last kb-small">
+                <td role="cell" className="kb-board-threads kb-num"><span className="kb-num">{b.threadCount}</span><span className="kb-board-unit"> threads</span></td>
+                <td role="cell" className="kb-board-last kb-small">
                   {b.lastAt === null ? <span className="kb-muted">None yet</span> : (
                     <>
                       <span className="kb-board-last-label">last: </span>

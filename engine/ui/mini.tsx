@@ -30,8 +30,8 @@ export function ago(iso: string, nowMs = Date.now()): string {
   return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-export function Ago({ at }: { readonly at: string }) {
-  return <time dateTime={at} title={new Date(at).toLocaleString('en-US')}>{ago(at)}</time>;
+export function Ago({ at, now }: { readonly at: string; readonly now?: number }) {
+  return <time dateTime={at} title={new Date(at).toLocaleString('en-US')}>{ago(at, now)}</time>;
 }
 
 /** Whether the visitor is signed in: null until the session is known. */
