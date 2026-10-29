@@ -32,14 +32,19 @@ const run = (args: string[]) => new Promise<{ status: number | null; stdout: str
 /** Supabase Storage's list and remove endpoints for one bucket, in memory, each file with when it was written. */
 async function fakeStorage() {
   const objects = new Map<string, string>();
+  /** What the next requests meet first: a 503. */
+  const trouble: 'unavailable'[] = [];
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
+      if (trouble.shift() === 'unavailable') { res.writeHead(503).end(); return; }
       if (req.headers.authorization !== `Bearer ${STORAGE_KEY}`) { res.writeHead(403).end(); return; }
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null;
       if (req.method === 'POST' && req.url === '/storage/v1/object/list/avatars') {
-        const all = [...objects].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, at]) => ({ name, id: `id-${name}`, created_at: at, updated_at: at }));
+        // As Storage lists a bucket: a folder among the files, with no id and no times.
+        const all = [...objects, ['a-folder', null] as const].sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([name, at]) => (at === null ? { name, id: null, created_at: null, updated_at: null } : { name, id: `id-${name}`, created_at: at, updated_at: at }));
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(all.slice(body.offset, body.offset + body.limit)));
         return;
       }
@@ -53,7 +58,7 @@ async function fakeStorage() {
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
   const { port } = server.address() as { port: number };
-  return { url: `http://127.0.0.1:${port}`, objects, close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }) };
+  return { url: `http://127.0.0.1:${port}`, objects, trouble, close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }) };
 }
 
 test('the sweep removes each file no profile names that was written over an hour ago, the originals 0025 listed first, and keeps the rest', async () => {
@@ -74,10 +79,14 @@ test('the sweep removes each file no profile names that was written over an hour
   store.objects.set('new.webp', new Date(Date.now() - 5 * 60 * 1000).toISOString());
   // Just under the hour is kept; an original is removed whatever its age.
   store.objects.set('nearly.webp', new Date(Date.now() - HOUR + 60 * 1000).toISOString());
+  // More than a page of a listing, each old and unnamed; and Storage unavailable once, at first.
+  for (let i = 0; i < 1005; i++) store.objects.set(`bulk-${String(i).padStart(4, '0')}.webp`, old);
+  store.trouble.push('unavailable');
   try {
     const out = await run(['--from', scratchUrl(), '--storage', store.url]);
     assert.equal(out.status, 0, out.stderr + out.stdout);
-    assert.match(out.stdout, /sweeping avatars named by localhost:\d+\/kayfabb_scratch/);
+    assert.match(out.stdout, /sweeping avatars in http:\/\/127\.0\.0\.1:\d+, named by localhost:\d+\/kayfabb_scratch/);
+    assert.ok(![...store.objects.keys()].some((k) => k.startsWith('bulk-')), 'every page of the listing is swept');
     assert.ok(!(out.stdout + out.stderr).includes(STORAGE_KEY), 'the sweep printed the Storage key');
     assert.ok(!store.objects.has('stale.webp'), 'a file no row names, older than an hour, is removed');
     assert.ok(!store.objects.has('original.webp'), 'an original 0025 listed is removed');
@@ -96,7 +105,7 @@ test('the sweep removes each file no profile names that was written over an hour
   }
 });
 
-test('0025 on a database holding profiles with an original lists each original for the sweep, and keeps each profile\'s crops', () => {
+test('0025 on a database holding profiles with an original lists each original for the sweep, and keeps each profile\'s crops; a sweep from a database naming no avatar is refused', async () => {
   const from = new URL(scratchUrl());
   const name = `${from.pathname.slice(1)}_avatars`;
   const server = new URL(from);
@@ -126,6 +135,18 @@ test('0025 on a database holding profiles with an original lists each original f
     assert.equal(psqlOn(db.toString(), `select string_agg(key, ',' order by key) from avatar_orphans`), 'src-1.webp,src-2.webp', 'each original is listed for the sweep');
     assert.equal(psqlOn(db.toString(), `select string_agg(concat_ws('/', avatar_square, avatar_portrait), ',' order by avatar_square) from character_profiles`), 'sq-1.webp/pt-1.webp,sq-2.webp', 'each profile keeps its crops');
     assert.equal(psqlOn(db.toString(), `select count(*) from information_schema.columns where table_name = 'character_profiles' and column_name = 'avatar_source'`), '0', 'no profile names an original');
+    // The same database emptied, beside a bucket holding old files: not this bucket's database.
+    psqlOn(db.toString(), `delete from character_profiles; delete from avatar_orphans;`);
+    const store = await fakeStorage();
+    store.objects.set('sq-1.webp', new Date(Date.now() - 2 * HOUR).toISOString());
+    try {
+      const refused = await run(['--from', db.toString(), '--storage', store.url]);
+      assert.notEqual(refused.status, 0);
+      assert.match(refused.stderr, /names no avatar, and .* holds 1 file\(s\) over an hour old: is this the instance's own database\? Nothing was removed/);
+      assert.ok(store.objects.has('sq-1.webp'), 'nothing is removed on the word of a database that names no avatar');
+    } finally {
+      await store.close();
+    }
   } finally {
     psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
   }

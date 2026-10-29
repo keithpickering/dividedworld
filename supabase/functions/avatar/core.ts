@@ -142,6 +142,7 @@ export async function runAvatar(dbs: { player: Db; service: Db }, storage: Stora
   if (!request.frames || typeof request.frames.square !== 'object' || request.frames.square === null || typeof request.frames.portrait !== 'object'
       || (request.frames.portrait === null) !== (request.portrait === null)) return refused('frames', 'are a square and a portrait frame');
   if (!inside(request.frames.square)) return refused('frames', 'the square is cut from inside the portrait');
+  if (request.frames.portrait !== null && !inside(request.frames.portrait)) return refused('frames', 'the portrait is cut from inside your picture');
   for (const field of ['square', 'portrait'] as const) {
     const bytes = request[field];
     if (bytes === null && field === 'portrait') continue;

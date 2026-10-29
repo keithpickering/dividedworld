@@ -135,6 +135,14 @@ test('the square is cut from inside the portrait: a frame outside it is refused'
   }
 });
 
+test('the portrait is cut from inside the player\'s picture: a frame outside it is refused before anything is stored', async () => {
+  const w = world({ whoami: me });
+  const out = await runAvatar(w.dbs, w.storage, request({ frames: { square: frames.square, portrait: { x: 0.6, y: 0, w: 0.5, h: 1 } } }), w.name);
+  assert.deepEqual(out, { status: 400, body: { field: 'frames', error: 'the portrait is cut from inside your picture' } });
+  assert.equal(w.calls.length, 0);
+  assert.equal(w.stored.size, 0);
+});
+
 test('a store that fails part way, or a write that fails, removes what was stored; a removal that fails after the write still answers the avatar', async () => {
   const halfway = world({ whoami: me, putFails: 2 });
   assert.equal((await runAvatar(halfway.dbs, halfway.storage, request(), halfway.name)).status, 500);

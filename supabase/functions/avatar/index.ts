@@ -2,8 +2,9 @@
  * A character's avatar, one entry point: the work is core.ts; this is the edge: the session, which
  * whoami() reads as the player; the service key, for the bucket and the write; a bound on the body
  * before it is read; and the multipart form the browser sends (character, frames as JSON, and the
- * files square and portrait, portrait left out for a recrop). A form carrying a source is passed on
- * as carrying one, for core.ts to refuse: the original stays with the player.
+ * files square and portrait, portrait left out for a recrop). The original stays with the player:
+ * a form carrying a source is passed on as carrying one, for core.ts to refuse in its words, and
+ * one whose source makes it longer than the two crops can be is refused by its length first.
  */
 import { LIMITS, runAvatar } from './core.ts';
 import { postgrest } from '../_shared/rpc.ts';
