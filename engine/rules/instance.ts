@@ -7,11 +7,13 @@ import type { EconomyRead, Instance, Settings, Span } from './types.ts';
 import { INT4_MAX } from './cards.ts';
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
+/** A grace may be minutes long (editGrace); nothing else is. */
+const GRACE_UNITS: readonly Span['unit'][] = ['minute', ...SPAN_UNITS];
 /** The most of a unit a span counts, as settings_spans_hold (0007) holds it: past any instance's life, inside span_interval's integer. */
 export const SPAN_MOST = 1000;
 const isWhole = (n: unknown, min: number): n is number => Number.isSafeInteger(n) && (n as number) >= min;
-const isSpan = (s: unknown): s is Span =>
-  typeof s === 'object' && s !== null && SPAN_UNITS.includes((s as Span).unit) && isWhole((s as Span).count, 1) && (s as Span).count <= SPAN_MOST;
+const isSpan = (s: unknown, units: readonly Span['unit'][] = SPAN_UNITS): s is Span =>
+  typeof s === 'object' && s !== null && units.includes((s as Span).unit) && isWhole((s as Span).count, 1) && (s as Span).count <= SPAN_MOST;
 /**
  * Five fields of numbers, `*`, ranges, lists and steps, each inside its own range (minute,
  * hour, day of month, month, day of week with 0 and 7 both Sunday): what pg_cron and every
@@ -43,10 +45,14 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   reactionCap: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   charactersPerPlayer: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   settlementCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
+  viewCountCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   settlementLength: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
   seasonLength: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
   turnCooldown: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
   registrationMode: (v) => (v === 'open' || v === 'invite' || v === 'closed' ? null : '"open", "invite" or "closed"'),
+  invitesPerPlayer: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
+  inviteLifetime: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
+  editGrace: (v) => (isSpan(v, GRACE_UNITS) ? null : 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000'),
   postMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   economy: (v) => {
@@ -80,7 +86,7 @@ function duplicates<T>(items: readonly T[], key: (t: T) => string): string[] {
 
 export function instanceProblems(instance: Instance): string[] {
   const out: string[] = [];
-  const lists = ['classes', 'cards', 'reactions', 'boards'] as const;
+  const lists = ['classes', 'cards', 'reactions', 'boards', 'ranks', 'pipStyles'] as const;
   for (const key of lists) if (!Array.isArray(instance[key])) out.push(`the instance has no ${key} list`);
   if (out.length) return [...out, ...settingsProblems(instance.settings)];
   for (const k of duplicates(instance.reactions, (r) => r.key)) out.push(`reaction key "${k}" is used twice`);
@@ -91,8 +97,28 @@ export function instanceProblems(instance: Instance): string[] {
   if (!instance.classes.length) out.push('the instance has no class');
   for (const k of duplicates(instance.classes, (c) => c.key)) out.push(`class key "${k}" is used twice`);
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
+  for (const c of instance.cards) {
+    if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
+  }
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
+  const systems = instance.boards.filter((b) => b.system === true);
+  if (!systems.length) out.push('no board is The System\'s: exactly one board sets system: true, where The System posts');
+  if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
+  if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
+  if (!instance.ranks.length) out.push('the instance has no rank');
+  instance.ranks.forEach((r, i) => {
+    if (typeof r.name !== 'string' || r.name.trim() === '') out.push('a rank has no name');
+    if (!Number.isSafeInteger(r.from)) out.push(`rank "${r.name}" is from ${r.from}; a rank is from a whole number of hundredths`);
+    else if (i === 0 && r.from !== 0) out.push(`the first rank is from 0, not ${r.from}`);
+    else if (i > 0 && !(r.from > instance.ranks[i - 1]!.from)) out.push(`rank "${r.name}" is from ${r.from}, not above the rank before it`);
+  });
+  for (const k of duplicates(instance.pipStyles, (p) => p.key)) out.push(`pip style "${k}" is used twice`);
+  if (!instance.pipStyles.some((p) => p.key === 'default')) out.push('there is no pip style "default", every character\'s until its player picks another');
+  for (const p of instance.pipStyles) {
+    if (typeof p.key !== 'string' || !/^[a-z][a-z0-9-]*$/.test(p.key)) out.push(`pip style key "${p.key}" is not lowercase words joined by hyphens`);
+    for (const part of ['name', 'full', 'empty'] as const) if (typeof p[part] !== 'string' || p[part].trim() === '') out.push(`pip style "${p.key}" has no ${part}`);
+  }
   for (const key of ['turnsThreadTitle', 'revealTitle', 'revealBody'] as const) {
     const words = instance.copy?.[key];
     if (typeof words !== 'string' || words.trim() === '') out.push(`the instance has no copy for ${key}`);

@@ -13,22 +13,29 @@ insert into settings (key, value) values
   ('vote', '10'),
   ('halving', '0.5'),
   ('settlementCron', '"17 8 * * *"'),
+  ('viewCountCron', '"41 * * * *"'),
   ('settlementLength', '{"unit": "day", "count": 1}'),
   -- Long enough that no file's settlement ends the season by chance; a file that reveals one sets its own.
   ('seasonLength', '{"unit": "month", "count": 1000}'),
   ('turnCooldown', '{"unit": "day", "count": 30}'),
   ('registrationMode', '"invite"'),
+  ('invitesPerPlayer', '3'),
+  ('inviteLifetime', '{"unit": "day", "count": 7}'),
+  ('editGrace', '{"unit": "minute", "count": 2}'),
   ('postMaxLength', '20000'),
   ('titleMaxLength', '120'),
-  ('economy', '{"sweetie.price": 100, "splat.price": 100}'),
+  ('economy', '{"sweetie.price": 100, "splat.price": 100, "blot.price": 100}'),
   ('copy', '{"turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
 insert into class_kinds (key, name) values ('alpha', 'Alpha'), ('beta', 'Beta');
 insert into reaction_kinds (key, emoji, quadrant) values
   ('up', '⬆️', 'excitedPositive'), ('boo', '👻', 'excitedNegative'),
   ('calm', '🌊', 'calmPositive'), ('meh', '😑', 'boredNegative'), ('wow', '🎆', 'excitedPositive');
 insert into card_kinds (key, name, alignment, price_setting) values ('sweetie', 'Sweetie', 'sweet', 'sweetie.price'), ('splat', 'Splat', 'salty', 'splat.price');
-insert into boards (slug, name) values ('general', 'General');
+-- A card that stacks three to a post, each play drawn from a seed the server chooses.
+insert into card_kinds (key, name, alignment, price_setting, stack, seeded) values ('blot', 'Blot', 'salty', 'blot.price', 3, true);
+insert into boards (slug, name, is_system) values ('general', 'General', false), ('the-system', 'The System', true);
 insert into seasons (number, starts_at) values (1, '2000-01-01T00:00:00Z');
+insert into pip_styles (key, name, full_image, empty_image) values ('default', 'Default', 'full.svg', 'empty.svg'), ('stars', 'Stars', 'star.svg', 'hollow.svg');
 
 create schema tests;
 grant usage on schema tests to anon, authenticated, service_role;

@@ -10,6 +10,10 @@ const settings: Settings = {
   reactionCap: 3,
   charactersPerPlayer: 6,
   settlementCron: '17 8 * * *',
+  viewCountCron: '41 * * * *',
+  invitesPerPlayer: 3,
+  inviteLifetime: { unit: 'day', count: 7 },
+  editGrace: { unit: 'minute', count: 2 },
   seasonLength: { unit: 'month', count: 3 },
   turnCooldown: { unit: 'day', count: 30 },
   registrationMode: 'invite',
@@ -29,12 +33,65 @@ const good: Instance = {
     { key: 'zzz', emoji: '💤', quadrant: 'boredNegative' },
   ],
   settings,
-  boards: [{ slug: 'general', name: 'General', description: 'Anything.' }],
+  boards: [{ slug: 'general', name: 'General', description: 'Anything.' }, { slug: 'the-system', name: 'The System', description: 'Its own.', system: true }],
+  ranks: [{ name: 'Rookie', from: 0 }, { name: 'Regular', from: 100 }, { name: 'Legend', from: 1000 }],
+  pipStyles: [{ key: 'default', name: 'Default', full: 'pip-full.svg', empty: 'pip-empty.svg' }],
   copy: { turnsThreadTitle: 'Season {season}: Turns', revealTitle: 'Season {season}: The Reveal', revealBody: 'All of it.' },
 };
 
 test('a whole instance has no problems', () => {
   assert.deepEqual(instanceProblems(good), []);
+});
+
+test('exactly one board is The System\'s, and at least one is not', () => {
+  const ordinary = good.boards.filter((b) => !b.system);
+  assert.match(instanceProblems({ ...good, boards: ordinary }).join('\n'), /no board is The System's/);
+  const twice = [...good.boards, { slug: 'also-system', name: 'Also', description: '', system: true }];
+  assert.match(instanceProblems({ ...good, boards: twice }).join('\n'), /2 boards are The System's \(the-system, also-system\); exactly one is/);
+  const onlySystem = good.boards.filter((b) => b.system);
+  assert.match(instanceProblems({ ...good, boards: onlySystem }).join('\n'), /no board for players/);
+});
+
+test('a card\'s stack is a whole number, at least 1', () => {
+  const card = (stack: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', stack, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  assert.deepEqual(instanceProblems(card(3)), []);
+  assert.deepEqual(instanceProblems(card(undefined)), []);
+  for (const bad of [0, 1.5, '3', -1]) assert.match(instanceProblems(card(bad)).join('\n'), /card "splat" stacks .*; a stack is a whole number, at least 1/, String(bad));
+});
+
+test('the view counts are recounted on a cron of their own', () => {
+  const { viewCountCron: _gone, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "viewCountCron" is missing/);
+  assert.match(settingsProblems({ ...settings, viewCountCron: 'hourly' }).join('\n'), /viewCountCron/);
+});
+
+test('ranks start at 0 and rise, each named', () => {
+  assert.match(instanceProblems({ ...good, ranks: [] }).join('\n'), /no rank/);
+  assert.match(instanceProblems({ ...good, ranks: [{ name: 'Late', from: 50 }] }).join('\n'), /the first rank is from 0/);
+  assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: 'B', from: 100 }, { name: 'C', from: 100 }] }).join('\n'), /rank "C" is from 100, not above the rank before it/);
+  assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: ' ', from: 10 }] }).join('\n'), /a rank has no name/);
+  assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: 'B', from: 1.5 }] }).join('\n'), /rank "B" is from 1.5/);
+});
+
+test('pip styles hold a default, each with a key, a name and a full and an empty', () => {
+  assert.match(instanceProblems({ ...good, pipStyles: [{ key: 'gold', name: 'Gold', full: 'g', empty: 'e' }] }).join('\n'), /no pip style "default"/);
+  assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'default', name: 'Again', full: 'f', empty: 'e' }] }).join('\n'), /pip style "default" is used twice/);
+  assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'Bad Key', name: 'Bad', full: 'f', empty: 'e' }] }).join('\n'), /pip style key "Bad Key"/);
+  assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'blank', name: 'Blank', full: '', empty: 'e' }] }).join('\n'), /pip style "blank" has no full/);
+});
+
+test('a player holds a whole number of open invites, each open for a span', () => {
+  assert.match(settingsProblems({ ...settings, invitesPerPlayer: 0 }).join('\n'), /invitesPerPlayer/);
+  assert.match(settingsProblems({ ...settings, invitesPerPlayer: 2.5 }).join('\n'), /invitesPerPlayer/);
+  assert.match(settingsProblems({ ...settings, inviteLifetime: { unit: 'day', count: 0 } }).join('\n'), /inviteLifetime/);
+  assert.deepEqual(settingsProblems({ ...settings, invitesPerPlayer: 1, inviteLifetime: { unit: 'week', count: 2 } }), []);
+});
+
+test('an edit\'s grace is a span that may count minutes; the windows, seasons and cooldowns never do', () => {
+  assert.deepEqual(settingsProblems({ ...settings, editGrace: { unit: 'minute', count: 2 } }), []);
+  assert.deepEqual(settingsProblems({ ...settings, editGrace: { unit: 'day', count: 1 } }), []);
+  assert.match(settingsProblems({ ...settings, editGrace: { unit: 'second', count: 90 } } as unknown as Settings).join('\n'), /editGrace/);
+  assert.match(settingsProblems({ ...settings, settlementLength: { unit: 'minute', count: 5 } }).join('\n'), /settlementLength/);
 });
 
 test('two reactions with one key are a problem', () => {
@@ -91,7 +148,7 @@ test('settings that are not an object are a problem, not a crash', () => {
 });
 
 test('an instance missing a list is a problem, not a crash', () => {
-  for (const key of ['classes', 'cards', 'reactions', 'boards'] as const) {
+  for (const key of ['classes', 'cards', 'reactions', 'boards', 'ranks', 'pipStyles'] as const) {
     const { [key]: _gone, ...rest } = good;
     assert.match(instanceProblems(rest as Instance).join('\n'), new RegExp(`no ${key} list`), key);
   }

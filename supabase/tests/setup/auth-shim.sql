@@ -108,3 +108,14 @@ grant usage on schema realtime to anon, authenticated, service_role;
 -- As on a project: the API roles may read it, and row-level security decides what they hear.
 grant select on realtime.messages to anon, authenticated;
 alter table realtime.messages enable row level security;
+
+-- Storage's bucket table, as much of it as 0019_profiles.sql writes, so the avatars bucket it makes
+-- is made here too and supabase/tests/e2e/0006-avatar-bucket.ts holds it to what it should be.
+create schema if not exists storage;
+create table if not exists storage.buckets (
+  id text primary key,
+  name text not null,
+  public boolean default false,
+  file_size_limit bigint,
+  allowed_mime_types text[]
+);

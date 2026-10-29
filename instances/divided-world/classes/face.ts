@@ -15,7 +15,7 @@ export const face: ClassRules = {
     ...perVote(input, settings, 'excitedPositive', 1, 'face.cheered'),
     ...input.cardsPlayed
       .filter((c) => c.alignment === 'sweet' && c.onOthers && c.targetAfter.excitedPositive > 0)
-      .map((c): Earning => ({ reason: 'face.liftedAPost', amount: settings.vote * c.targetAfter.excitedPositive, act: c.act, quadrant: 'excitedPositive' })),
+      .map((c): Earning => ({ reason: 'face.liftedAPost', amount: settings.vote * c.targetAfter.excitedPositive, act: c.act, quadrant: 'excitedPositive', valuing: { act: c.target, from: c.at } })),
     ...perVote(input, settings, 'boredNegative', -1, 'face.boredTheRoom'),
     ...input.cardsPlayed
       .filter((c) => c.onOthers && outdraws(c))

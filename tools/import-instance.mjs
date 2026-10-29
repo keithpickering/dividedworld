@@ -4,7 +4,12 @@
  * numbers and times included, so the imported forum is the same forum
  * ("Portable by construction"; supabase/tests/e2e/0003-export.ts holds the round trip).
  *
- *   node tools/import-instance.mjs --from <export directory> --to postgres://…
+ *   node tools/import-instance.mjs --from <export directory> --to postgres://… [--storage https://<project>]
+ *
+ * The files the export carries (every avatar) are put back in Storage under their names, each
+ * checked against its hash first, before any row goes in: a file nobody names is harmless, and a
+ * row naming a file that is not there is a broken avatar. They need --storage and the new
+ * project's service key in KAYFABB_STORAGE_KEY.
  *
  * It says which database it writes before it writes, never prints the URL's credentials, and
  * refuses, naming the table, a database that is not fresh (a table holding any row) or whose
@@ -18,15 +23,15 @@
  * them all itself once every row is in, and a file shorter or longer than the manifest says is
  * refused by name: a lost line never imports quietly. Then each identity's next value is set past
  * its rows, and the settlement's job is scheduled from the imported settings, as the trigger the
- * replica skipped would have scheduled it (supabase/migrations/0004_schedule.sql). Any failure
- * rolls all of it back.
+ * replica skipped would have scheduled it (supabase/migrations/0004_schedule.sql), and so is the
+ * view count's (0018_reading.sql). Any failure rolls all of it back.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { FORMAT, NOT_EXPORTED, answered, args, connection, fail, fileOf, nameFolds, psql, psqlStream, scrub, tables } from './instance-files.mjs';
+import { BUCKETS, FORMAT, NOT_EXPORTED, answered, args, connection, fail, fileOf, filesNamed, nameFolds, psql, psqlStream, scrub, sha256, storage, tables } from './instance-files.mjs';
 
-const usage = 'usage: node tools/import-instance.mjs --from <export directory> --to postgres://…';
+const usage = 'usage: node tools/import-instance.mjs --from <export directory> --to postgres://… [--storage https://<project>]';
 
 /** One line of COPY's text format: a JSON line has no raw tab or newline, only backslashes to double. */
 const copyLine = (json) => json.replace(/\\/g, '\\\\');
@@ -122,18 +127,42 @@ async function load(db, dir, manifest) {
   end $$;
   set local session_replication_role = origin;
   select schedule_settlement() where exists (select 1 from settings where key = 'settlementCron');
+  select schedule_view_counts() where exists (select 1 from settings where key = 'viewCountCron');
   commit;\n`);
   if (!exited) child.stdin.end();
   const code = await done;
   if (code !== 0) throw new Error(scrub(stderr.trim()) || `psql exited ${code}`);
 }
 
+/**
+ * The files the export carries, each the one its manifest names and hashes, and together every file
+ * its rows name: a file missing, changed, or named by nobody is refused before anything is written.
+ */
+async function checkFiles(dir, manifest) {
+  const files = manifest.files ?? [];
+  const carried = new Set(files.map((f) => `${f.bucket}/${f.name}`));
+  const named = new Set((await filesNamed(dir)).map((f) => `${f.bucket}/${f.name}`));
+  for (const f of named) if (!carried.has(f)) throw new Error(`a row names ${f}, which the export does not carry`);
+  for (const f of files) {
+    if (!BUCKETS.some((b) => b.bucket === f.bucket) || !named.has(`${f.bucket}/${f.name}`)) throw new Error(`the export carries ${f.bucket}/${f.name}, which no row names`);
+    const bytes = fs.readFileSync(path.join(dir, 'files', f.bucket, f.name));
+    if (bytes.length !== f.bytes || sha256(bytes) !== f.sha256) throw new Error(`${f.bucket}/${f.name} is not the file the export made`);
+  }
+  return files;
+}
+
 async function main() {
-  const { from, to } = args(process.argv.slice(2), usage);
+  const { from, to, storage: storageUrl } = args(process.argv.slice(2), usage);
   const manifest = JSON.parse(fs.readFileSync(path.join(from, 'manifest.json'), 'utf8'));
   const db = connection(to);
   console.log(`importing into ${db.named}; the server says it is ${answered(db)}; from the export of ${manifest.from} made ${manifest.exportedAt}`);
   check(db, manifest);
+  const files = await checkFiles(from, manifest);
+  if (files.length) {
+    const store = storage(storageUrl);
+    console.log(`putting ${files.length} file(s) into ${store.named}`);
+    for (const f of files) await store.put(f.bucket, f.name, fs.readFileSync(path.join(from, 'files', f.bucket, f.name)), BUCKETS.find((b) => b.bucket === f.bucket).contentType);
+  }
   await load(db, from, manifest);
   for (const t of manifest.tables) console.log(`  ${t.name}: ${t.rows} row(s), each counted as it went in`);
   console.log(`still to do, since an export does not carry them:\n${NOT_EXPORTED.map((n) => `  - ${n}`).join('\n')}`);

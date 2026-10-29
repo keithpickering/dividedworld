@@ -6,7 +6,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -28,9 +29,51 @@ const contents = (url: string): Map<string, string> => {
   return new Map(tables.map((t) => [t, psqlOn(url, `select coalesce(jsonb_agg(x order by x::text), '[]')::text from (select to_jsonb(t) x from ${t} t) s`)]));
 };
 
-const run = (tool: string, args: string[]) => spawnSync(process.execPath, [path.join(root, 'tools', tool), ...args], { encoding: 'utf8' });
+/** The service key a tool calls Storage with: in its environment, never on its command line, and never printed. */
+const STORAGE_KEY = 'sErViCe-kEy-for-storage';
+/** A tool, run as an admin runs it; spawned, not run synchronously, so the fake Storage below answers it. */
+const run = (tool: string, args: string[]) => new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+  const child = spawn(process.execPath, [path.join(root, 'tools', tool), ...args], { env: { ...process.env, KAYFABB_STORAGE_KEY: STORAGE_KEY, KAYFABB_STORAGE_TIMEOUT_MS: '500' } });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (d) => { stdout += d; });
+  child.stderr.on('data', (d) => { stderr += d; });
+  child.on('close', (status) => resolve({ status, stdout, stderr }));
+});
 
-test('an instance exported and imported into a fresh database is the same instance, table by table', () => {
+/** Supabase Storage's two object endpoints, in memory: each server is one project's buckets. */
+async function fakeStorage() {
+  const objects = new Map<string, Buffer>();
+  const seen: string[] = [];
+  /** What the next requests meet first: a 503, or no answer at all. */
+  const trouble: ('unavailable' | 'silent')[] = [];
+  const server = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      seen.push(`${req.method} ${req.url} ${req.headers.authorization === `Bearer ${STORAGE_KEY}` ? 'keyed' : 'unkeyed'}`);
+      const next = trouble.shift();
+      if (next === 'unavailable') { res.writeHead(503).end(); return; }
+      if (next === 'silent') return;
+      const m = /^\/storage\/v1\/object\/([^/]+)\/(.+)$/.exec(req.url ?? '');
+      if (!m || req.headers.authorization !== `Bearer ${STORAGE_KEY}`) { res.writeHead(403).end(); return; }
+      const key = `${m[1]}/${decodeURIComponent(m[2]!)}`;
+      if (req.method === 'GET') { const o = objects.get(key); if (!o) { res.writeHead(400).end('{"error":"not_found"}'); return; } res.writeHead(200).end(o); return; }
+      if (req.method === 'POST') {
+        // As Storage: never over a file unless asked to, and a name taken is a 400 with its word.
+        if (req.headers['x-upsert'] !== 'false' || req.headers['content-type'] !== 'image/webp') { res.writeHead(422).end(); return; }
+        if (objects.has(key)) { res.writeHead(400).end('{"error":"Duplicate"}'); return; }
+        objects.set(key, Buffer.concat(chunks)); res.writeHead(200).end('{}'); return;
+      }
+      res.writeHead(405).end();
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const { port } = server.address() as { port: number };
+  return { url: `http://127.0.0.1:${port}`, objects, seen, trouble, close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }) };
+}
+
+test('an instance exported and imported into a fresh database is the same instance, table by table', async () => {
   const from = scratchUrl();
   // A cast with every kind of thing in it: players, characters, Acts, reactions, cards and
   // their state, invites, a settlement (e2e/0001 settled), and a reveal.
@@ -50,6 +93,20 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into invites (code_hash, inviter) values (invite_hash('exported'), ann);
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "splat", "config": {"color": "red"}}') returning id into play;
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
+      -- What the screens keep: a release, reading, view counts, preferences, a profile with an
+      -- avatar, and an admin.
+      insert into effect_releases (account, play) values (bob, play);
+      insert into reading (account, thread, furthest_seq, first_character) values (bob, t, 1, b);
+      perform count_thread_views();
+      insert into account_preferences (account, theme, postbit, motion) values (ann, 'dark', 'stacked', 'reduce');
+      insert into character_profiles (character, title, signature, avatar_source, avatar_square, avatar_portrait, square_frame, portrait_frame)
+      values (a, 'Exported', '[b]sig[/b]', 'exp-src.webp', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
+      insert into admins (account) values (ann);
+      -- A kept estimate, a waiting Turn, a standing, and a class's total in e2e/0001's settlement.
+      insert into estimates (account, made_at, window_from, answer) values (ann, now(), now(), '{"entries": [], "lines": [], "asOf": null, "freshAfter": null}');
+      insert into pending_turns (character, class_key, loudness) values (b, 'heel', 'silent');
+      insert into standings (character, season, amount) values (a, (select max(id) from seasons), 10) on conflict do nothing;
+      insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
     end $$;
@@ -58,10 +115,11 @@ test('an instance exported and imported into a fresh database is the same instan
     create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
-  for (const t of ['public.accounts', 'public.characters', 'public.class_history', 'public.acts', 'public.reactions', 'public.card_ledger', 'public.effect_state',
-    'public.invites', 'public.settlements', 'public.paid_votes', 'public.ledger', 'public.wallet_events', 'public.seasons', 'auth.users']) {
-    assert.notEqual(before.get(t), '[]', `${t} should hold something to carry across`);
-  }
+  // Every table of ours holds a row to carry across, read from the database rather than listed
+  // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
+  // must agree are one list"); the migrations' own data is held to a fresh database below.
+  const empty = [...before].filter(([t, rows]) => rows === '[]' && !MIGRATION_DATA.includes(t)).map(([t]) => t);
+  assert.deepEqual(empty, [], 'each table should hold something to carry across');
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-export-'));
   const fresh = new URL(from);
@@ -70,39 +128,63 @@ test('an instance exported and imported into a fresh database is the same instan
   server.pathname = '/postgres';
   fresh.pathname = `/${name}`;
   psqlOn(server.toString(), `create database ${name};`);
+  // The old project's Storage holds the avatar's three files; the new project's starts empty.
+  const oldStore = await fakeStorage();
+  const newStore = await fakeStorage();
+  const avatar = { 'avatars/exp-src.webp': Buffer.from('RIFF-src'), 'avatars/exp-sq.webp': Buffer.from('RIFF-sq'), 'avatars/exp-pt.webp': Buffer.from('RIFF-pt') };
+  for (const [k, v] of Object.entries(avatar)) oldStore.objects.set(k, v);
   try {
     // Each tool names the database it touches and refuses one a URL does not name.
     const unnamed = new URL(from);
     unnamed.pathname = '';
-    const nowhere = run('export-instance.mjs', ['--from', unnamed.toString(), '--to', path.join(dir, 'nowhere')]);
+    const nowhere = await run('export-instance.mjs', ['--from', unnamed.toString(), '--to', path.join(dir, 'nowhere')]);
     assert.notEqual(nowhere.status, 0);
     assert.match(nowhere.stderr, /names no database/);
-    const steered = run('export-instance.mjs', ['--from', `${from}?host=elsewhere`, '--to', path.join(dir, 'nowhere')]);
+    const steered = await run('export-instance.mjs', ['--from', `${from}?host=elsewhere`, '--to', path.join(dir, 'nowhere')]);
     assert.notEqual(steered.status, 0);
     assert.match(steered.stderr, /host/);
     // A password never reaches the terminal, even one libpq would quote back, nor psql's command line.
     const secret = new URL(from);
     secret.password = 'sEcReT%zz';
-    const leaked = run('export-instance.mjs', ['--from', secret.toString(), '--to', path.join(dir, 'nowhere')]);
+    const leaked = await run('export-instance.mjs', ['--from', secret.toString(), '--to', path.join(dir, 'nowhere')]);
     assert.notEqual(leaked.status, 0);
     assert.doesNotMatch(leaked.stdout + leaked.stderr, /sEcReT/);
     const wrong = new URL(from);
     wrong.password = 'sEcReTwrong';
     wrong.username = 'nobody_here';
-    const refusedLogin = run('export-instance.mjs', ['--from', wrong.toString(), '--to', path.join(dir, 'nowhere')]);
+    const refusedLogin = await run('export-instance.mjs', ['--from', wrong.toString(), '--to', path.join(dir, 'nowhere')]);
     assert.notEqual(refusedLogin.status, 0);
     assert.doesNotMatch(refusedLogin.stdout + refusedLogin.stderr, /sEcReT/);
-    assert.match(run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'back\\slash')]).stderr, /backslash/);
+    assert.match((await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'back\\slash')])).stderr, /backslash/);
     fs.rmSync(path.join(dir, 'nowhere'), { recursive: true, force: true });
 
-    const exported = run('export-instance.mjs', ['--from', from, '--to', dir]);
+    // An instance holding files is not exported without them.
+    const without = await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'without')]);
+    assert.notEqual(without.status, 0);
+    assert.match(without.stderr, /holds files: give --storage/);
+    assert.equal(fs.existsSync(path.join(dir, 'without')), false, 'refused before anything was written');
+    // A Storage URL with credentials in it, or one in clear to another machine, is refused.
+    assert.match((await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'without'), '--storage', 'https://admin:hunter22@project.test'])).stderr, /carries credentials/);
+    assert.match((await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'without'), '--storage', 'http://project.test'])).stderr, /is https, unless it is this machine/);
+    // A file a row names that Storage no longer holds says so, and how to go on.
+    const kept = oldStore.objects.get('avatars/exp-pt.webp')!;
+    oldStore.objects.delete('avatars/exp-pt.webp');
+    assert.match((await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'gone'), '--storage', oldStore.url])).stderr, /exp-pt\.webp, which a row names, is not there: it was replaced or removed/);
+    oldStore.objects.set('avatars/exp-pt.webp', kept);
+    fs.rmSync(path.join(dir, 'gone'), { recursive: true, force: true });
+    // Storage that is down a moment, and then silent a moment, is asked again.
+    oldStore.trouble.push('unavailable', 'silent');
+    const exported = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
     assert.match(exported.stdout, /exporting from localhost:\d+\/kayfabb_scratch/);
     assert.match(exported.stdout, /the server says it is kayfabb_scratch\w+ on port \d+/);
     assert.match(exported.stdout, /kayfabb_functions_url.*kayfabb_service_key/s, 'both Vault secrets are named as not exported');
-    const again = run('export-instance.mjs', ['--from', from, '--to', dir]);
+    const again = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.notEqual(again.status, 0, 'an export into a directory that is not empty');
     assert.doesNotMatch(exported.stdout + exported.stderr, /pg@|password/i, 'the export printed a secret');
+    assert.ok(!(exported.stdout + exported.stderr).includes(STORAGE_KEY), 'the export printed the Storage key');
+    for (const [k, v] of Object.entries(avatar)) assert.deepEqual(fs.readFileSync(path.join(dir, 'files', k)), v, `${k} is carried`);
+    assert.ok(oldStore.seen.every((r) => r.startsWith('GET') && r.endsWith(' keyed')), oldStore.seen.join('\n'));
 
     // The fresh instance: the shim and the migrations, nothing seeded.
     psqlOn(fresh.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
@@ -115,13 +197,13 @@ test('an instance exported and imported into a fresh database is the same instan
     psqlOn(fresh.toString(), 'create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);');
 
     // The export is as private as the database: no file in it is readable by anyone else.
-    for (const f of fs.readdirSync(dir)) assert.equal(fs.statSync(path.join(dir, f)).mode & 0o077, 0, `${f} is readable by others`);
+    for (const f of fs.readdirSync(dir, { recursive: true }) as string[]) assert.equal(fs.statSync(path.join(dir, f)).mode & 0o077, 0, `${f} is readable by others`);
 
     // A short file is refused, naming the table, and leaves the database as it was.
     const short = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-short-'));
-    for (const f of fs.readdirSync(dir)) fs.copyFileSync(path.join(dir, f), path.join(short, f));
+    fs.cpSync(dir, short, { recursive: true });
     fs.writeFileSync(path.join(short, 'public.invites.jsonl'), '');
-    const shorted = run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]);
+    const shorted = await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.notEqual(shorted.status, 0);
     assert.match(shorted.stderr, /public\.invites/);
     // A row whose account is not in the export (a lost line, the manifest's count made to agree) is refused by its foreign key.
@@ -131,13 +213,13 @@ test('an instance exported and imported into a fresh database is the same instan
     const manifest = JSON.parse(fs.readFileSync(path.join(short, 'manifest.json'), 'utf8'));
     manifest.tables.find((t: { name: string }) => t.name === 'public.accounts').rows -= 1;
     fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));
-    const orphaned = run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]);
+    const orphaned = await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.notEqual(orphaned.status, 0);
     assert.match(orphaned.stderr, /references a row the export does not hold/);
     // A file the manifest names outside the export is refused.
     manifest.tables.find((t: { name: string }) => t.name === 'public.accounts').file = '../elsewhere.jsonl';
     fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));
-    assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /names a file/);
+    assert.match((await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /names a file/);
     // An export made at another release of the name folds is refused: its characters' name keys
     // are that release's (supabase/migrations/0010_name_folds.sql). The folds themselves are the
     // migrations', not the instance's, and are not carried.
@@ -147,10 +229,10 @@ test('an instance exported and imported into a fresh database is the same instan
     const folds = manifest.nameFolds;
     manifest.nameFolds = { ...folds, confusables: { ...folds.confusables, version: '1.0.0' } };
     fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));
-    assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /name folds/);
+    assert.match((await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /name folds/);
     manifest.nameFolds = { ...folds, confusables: { ...folds.confusables, sha256: '0'.repeat(64) } };
     fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));
-    assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /name folds/, 'the same release from other files is another release');
+    assert.match((await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /name folds/, 'the same release from other files is another release');
     // A character whose carried key is not its name's is refused: an import keys every name again.
     // From a clean copy of the export, but for that one row.
     for (const f of ['manifest.json', 'public.accounts.jsonl']) fs.copyFileSync(path.join(dir, f), path.join(short, f));
@@ -159,23 +241,46 @@ test('an instance exported and imported into a fresh database is the same instan
       const forged = JSON.parse(characters[0]!);
       forged[key] = 'not its name';
       fs.writeFileSync(path.join(short, 'public.characters.jsonl'), [JSON.stringify(forged), ...characters.slice(1)].join('\n') + '\n');
-      assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /edited after it was made/, key);
+      assert.match((await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /edited after it was made/, key);
     }
     // An export from before the folds were carried names none, and is told so plainly.
     const none = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
     delete none.nameFolds;
     fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(none));
-    assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /names no release of the name folds/);
+    assert.match((await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /names no release of the name folds/);
     fs.copyFileSync(path.join(dir, 'manifest.json'), path.join(short, 'manifest.json'));
     fs.writeFileSync(path.join(short, 'public.characters.jsonl'), characters.join('\n') + '\n');
     fs.rmSync(short, { recursive: true, force: true });
     assert.equal(psqlOn(fresh.toString(), 'select count(*) from public.accounts'), '0', 'a refused import left rows behind');
 
-    const imported = run('import-instance.mjs', ['--from', dir, '--to', fresh.toString()]);
+    // A carried file that is not the one exported, and one no row names, are refused before anything is written.
+    const tampered = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-tampered-'));
+    fs.cpSync(dir, tampered, { recursive: true });
+    fs.writeFileSync(path.join(tampered, 'files', 'avatars', 'exp-sq.webp'), 'RIFF-other');
+    assert.match((await run('import-instance.mjs', ['--from', tampered, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /exp-sq\.webp is not the file the export made/);
+    // A carried file no row names, and a row naming a file the export does not carry.
+    fs.writeFileSync(path.join(tampered, 'files', 'avatars', 'exp-sq.webp'), avatar['avatars/exp-sq.webp']);
+    const carried = JSON.parse(fs.readFileSync(path.join(tampered, 'manifest.json'), 'utf8'));
+    fs.writeFileSync(path.join(tampered, 'files', 'avatars', 'stray.webp'), 'RIFF-stray');
+    fs.writeFileSync(path.join(tampered, 'manifest.json'), JSON.stringify({ ...carried, files: [...carried.files, { bucket: 'avatars', name: 'stray.webp', bytes: 10, sha256: 'x' }] }));
+    assert.match((await run('import-instance.mjs', ['--from', tampered, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /carries avatars\/stray\.webp, which no row names/);
+    fs.writeFileSync(path.join(tampered, 'manifest.json'), JSON.stringify({ ...carried, files: carried.files.filter((f: { name: string }) => f.name !== 'exp-pt.webp') }));
+    assert.match((await run('import-instance.mjs', ['--from', tampered, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /a row names avatars\/exp-pt\.webp, which the export does not carry/);
+    fs.rmSync(tampered, { recursive: true, force: true });
+    // A file already in the new project under a name the export carries, with other bytes, is refused.
+    newStore.objects.set('avatars/exp-src.webp', Buffer.from('RIFF-someone-else'));
+    assert.match((await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /exp-src\.webp is already there, and is another file/);
+    // The refused imports above put some files in already; the same files again are the same files.
+    newStore.objects.delete('avatars/exp-src.webp');
+    newStore.trouble.push('unavailable');
+    const imported = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.equal(imported.status, 0, imported.stderr + imported.stdout);
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
+    // And every file its rows name is in the new project's Storage, byte for byte.
+    assert.deepEqual(new Map(newStore.objects), new Map(Object.entries(avatar)));
+    assert.ok(!(imported.stdout + imported.stderr).includes(STORAGE_KEY), 'the import printed the Storage key');
 
     // The imported instance goes on: each identity column's next value is past every row it holds.
     const identities = psqlOn(fresh.toString(), `
@@ -188,15 +293,17 @@ test('an instance exported and imported into a fresh database is the same instan
       .map(([table, column]) => `${table}.${column}`).join(', ');
     assert.equal(behind, '', `identity columns behind their rows: ${behind}`);
 
-    // The jobs that run the instance are there: the reveal's from its migration, the
-    // settlement's from the imported settings.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-settle');
+    // The jobs that run the instance are there, each scheduled from the imported settings: the
+    // settlement's and the view count's.
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-settle,kayfabb-view-counts');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
-    const twice = run('import-instance.mjs', ['--from', dir, '--to', fresh.toString()]);
+    const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.notEqual(twice.status, 0);
     assert.match(twice.stderr, /not empty/);
   } finally {
+    await oldStore.close();
+    await newStore.close();
     psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -33,7 +33,8 @@ export type Hundredths = number;
 
 /** A length of time in calendar units, so "3 months" stays three months in SQL too. */
 export interface Span {
-  readonly unit: 'day' | 'week' | 'month';
+  /** Minutes only where a setting says it takes them (editGrace); a window, a season and a cooldown count days or more. */
+  readonly unit: 'minute' | 'day' | 'week' | 'month';
   readonly count: number;
 }
 
@@ -52,6 +53,11 @@ export interface Settings {
   /** When The System settles, as a five-field cron expression in UTC. */
   readonly settlementCron: string;
   /**
+   * When each thread's view count is recounted, as a five-field cron expression in UTC: hourly by
+   * default, never live, since a live count says whether a new poster's player had already read.
+   */
+  readonly viewCountCron: string;
+  /**
    * How long one settlement window is: a day for a daily settlement. The cron says when a run
    * comes; this says how finely it settles, each missed length its own window, a window settled
    * once its whole length has passed. A season's first window, where it did not begin at a
@@ -62,6 +68,15 @@ export interface Settings {
   readonly turnCooldown: Span;
   /** Who may open an account: anyone, someone with an invite, or nobody new. */
   readonly registrationMode: 'open' | 'invite' | 'closed';
+  /** The most unused, unexpired invites a player holds at once; an admin holds any number. */
+  readonly invitesPerPlayer: number;
+  /** How long an invite opens an account for, from when it was made or last reissued. */
+  readonly inviteLifetime: Span;
+  /**
+   * How long after a post is made an edit records a version without setting "Last edited", so a
+   * typo fixed at once is not a confession. Every edit is still a public Act in the post's history.
+   */
+  readonly editGrace: Span;
   /** The longest a post's text may be, in characters (code points). */
   readonly postMaxLength: number;
   /** The longest a thread's title may be, in characters. */
@@ -77,11 +92,16 @@ export interface Settings {
 /** The kinds of Act the settlement reads. */
 export type ActKind = 'post' | 'spin' | 'card' | 'edit';
 
-/** A board the instance starts with. */
+/**
+ * A board the instance starts with. Exactly one is The System's (`system`): only The System posts
+ * there (a settlement's tally, the season's reveal), and players react to it and spin threads
+ * from it onto a board of their own.
+ */
 export interface BoardSeed {
   readonly slug: string;
   readonly name: string;
   readonly description: string;
+  readonly system?: boolean;
 }
 
 /* ------------------------------------------------------------ the settlement's input ---- */
@@ -133,9 +153,9 @@ export interface SettlementInput {
   readonly acts: readonly InputAct[];
   readonly reactions: readonly InputReaction[];
   /**
-   * The System's own Acts (a season's reveal) that an input Act points at: no character's, so
-   * nobody's to settle, but a player may spin a thread from one, and that spin is from someone
-   * else's Act.
+   * The System's own Acts (a tally, a season's reveal) that an input Act or reaction points at: no
+   * character's, so nobody's to settle. A player may spin a thread from one, and that spin is from
+   * someone else's Act; a player may react to one, and that reaction moves nobody's Aura.
    */
   readonly systemActs?: readonly string[];
   /**
@@ -261,6 +281,13 @@ export interface Earning {
   readonly amount: number;
   readonly act?: string;
   readonly quadrant?: Quadrant;
+  /**
+   * The reactions it pays for, where they are not on `act`: on this Act, after this time (a card's
+   * lift is the votes on its target after it). The live estimate hangs its lines on them, and
+   * without it on the reactions to `act` in `quadrant`: an earning paid for another Act's reactions
+   * names them here, or its lines hang on the wrong ones.
+   */
+  readonly valuing?: { readonly act: string; readonly from: number };
 }
 
 /** A class: a playstyle, and the rules that turn what a character did and received into Aura. */
@@ -289,6 +316,26 @@ export interface Copy {
   readonly revealBody: string;
 }
 
+/**
+ * A member rank, as a 2003 postbit shows one: its name, from a settled season standing up.
+ * Ranks are listed ascending, the first from 0; a standing below 0 holds the first.
+ */
+export interface Rank {
+  readonly name: string;
+  readonly from: Hundredths;
+}
+
+/**
+ * A style of pips, the row a postbit draws beside a rank: a full and an empty image, named for the
+ * screens to draw. The instance's `default` is every character's until its player picks another.
+ */
+export interface PipStyle {
+  readonly key: string;
+  readonly name: string;
+  readonly full: string;
+  readonly empty: string;
+}
+
 export interface Instance {
   readonly key: string;
   readonly name: string;
@@ -298,4 +345,6 @@ export interface Instance {
   readonly reactions: readonly ReactionKind[];
   readonly settings: Settings;
   readonly boards: readonly BoardSeed[];
+  readonly ranks: readonly Rank[];
+  readonly pipStyles: readonly PipStyle[];
 }

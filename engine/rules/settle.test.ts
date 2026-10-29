@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyCap, previewForOwner, settle } from './settle.ts';
+import { applyCap, estimateForOwner, settle } from './settle.ts';
 import type { ClassInput, ClassRules, Earning, Instance, InputAct, InputReaction, SettlementInput } from './types.ts';
 
 /* Two fake classes. "fan" earns a vote per whole excited-positive vote and loses one per bored-negative
@@ -34,10 +34,10 @@ const instance: Instance = {
     { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },
   ],
   settings: {
-    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *',
+    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 },
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120, economy: { 'splat.price': 100 },
   },
-  boards: [{ slug: 'general', name: 'General', description: '' }],
+  ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { turnsThreadTitle: 'S{season} Turns', revealTitle: 'S{season} Reveal', revealBody: 'All.' },
 };
 
@@ -185,21 +185,6 @@ test('a wallet inside its bounds moves by the sum of the entries', () => {
   assert.deepEqual(applyCap(100, [{ amount: 30 }, { amount: -20 }], 600), { balance: 110, change: 10, overflow: 0, floored: 0 });
 });
 
-test('the owner\'s live preview is the settlement so far, for their own characters only', () => {
-  const b = base();
-  const open: SettlementInput = { ...b, window: { id: 'open', from: FROM, to: FROM + 5 * H + 2 } };
-  const preview = previewForOwner(open, instance, 'ann');
-  const settled = settle(open, instance);
-  assert.deepEqual(preview.entries, settled.entries.filter((e) => e.player === 'ann'));
-  assert.ok(preview.entries.length > 0);
-  assert.ok(preview.details.every((d) => d.character.startsWith('ann-')));
-  assert.ok(!JSON.stringify(preview).includes('"bob"') && !JSON.stringify(preview).includes('"cat"'), 'no other player reaches the preview');
-  // Its details say which Act, which quadrant and how much, and add up to the entries.
-  const love = preview.details.filter((d) => d.reason === 'fan.love');
-  assert.ok(love.every((d) => d.act === 'p1' && d.quadrant === 'excitedPositive'));
-  assert.equal(love.reduce((s, d) => s + d.amount, 0), amountOf(settled, 'ann-fan', 'fan.love'));
-});
-
 /* ---- one player, one vote per Act, across windows (the owner's answer 2) ---- */
 const W1 = { id: 'mon', from: FROM, to: TO };
 const W2 = { id: 'tue', from: TO, to: TO + 24 * H };
@@ -342,6 +327,20 @@ test('a spin from one of The System\'s own Acts settles, as a spin from someone 
   const spun = inputs.flatMap((i) => i.threadsSpun).find((x) => x.act === 's9');
   assert.equal(spun?.fromOthers, true);
   assert.throws(() => settle({ ...fromTheSystem, systemActs: [] }, instance), /not in the input/);
+});
+
+test('a reaction to one of The System\'s own Acts settles and moves nobody\'s Aura, the reactor\'s included', () => {
+  const b = base();
+  const { rules, inputs } = recorder();
+  const onTheSystem: SettlementInput = {
+    ...b,
+    systemActs: ['tally-1'],
+    reactions: [...b.reactions, react('tally-1', 'bob', 'bob-1', 'fire', FROM + 7 * H), react('tally-1', 'ann', 'ann-fan', 'zzz', FROM + 8 * H)],
+  };
+  const r = settle(onTheSystem, withClasses(rules));
+  assert.deepEqual(r.entries, settle(b, withClasses(recorder().rules)).entries, 'the same entries as with no reaction to it');
+  assert.equal(r.paid.some((p) => p.act === 'tally-1'), false, 'no vote on it is paid, nor held to be moved later');
+  assert.equal(inputs.some((i) => [...i.given, ...i.received, ...i.held].some((x) => x.act === 'tally-1')), false, 'no class is given it');
 });
 
 test('two Sweet cards from one player on one post pay what one would: each vote counts once, for the earlier card', () => {
@@ -587,4 +586,98 @@ test('a reason that is not the class contract\'s shape is refused before anythin
     const bad: ClassRules = { key: 'fan', name: 'Fan', earn: (i) => (i.received.length ? [{ reason, amount: 1 }] : []) };
     assert.throws(() => settle(base(), withClasses(bad)), /reason/, reason);
   }
+});
+
+/* ---- the live estimate (the screens' design, section 7) ---- */
+
+/** A class that pays, for each vote it holds, how many others had reacted to the Act by now. */
+const counter: ClassRules = {
+  key: 'counter', name: 'Counter',
+  earn: (input) => input.held.map((h) => ({ reason: 'counter.crowd', amount: h.othersNow * 100 + h.rank, act: h.act, quadrant: h.quadrant })),
+};
+const counting = (b: SettlementInput): SettlementInput => ({ ...b, characters: b.characters.map((c) => (c.id === 'ann-quiet' ? { ...c, classes: [{ class: 'counter', from: 0 }] } : c)) });
+
+test('the options\' defaults are the exact settlement', () => {
+  const b = base();
+  // As settle() read this window before it had options (b7ad22d), pinned.
+  assert.deepEqual({ entries: settle(b, instance).entries, details: settle(b, instance).details }, {
+    entries: [
+      { window: 'w1', player: 'ann', character: 'ann-fan', reason: 'fan.groan', amount: -5 },
+      { window: 'w1', player: 'ann', character: 'ann-fan', reason: 'fan.love', amount: 20 },
+      { window: 'w1', player: 'bob', character: 'bob-1', reason: 'quiet.post', amount: 7 },
+    ],
+    details: [
+      { player: 'ann', character: 'ann-fan', reason: 'fan.groan', act: 'p1', quadrant: 'boredNegative', amount: -5 },
+      { player: 'ann', character: 'ann-fan', reason: 'fan.love', act: 'p1', quadrant: 'excitedPositive', amount: 15 },
+      { player: 'ann', character: 'ann-fan', reason: 'fan.love', act: 'p2', quadrant: 'excitedPositive', amount: 5 },
+      { player: 'bob', character: 'bob-1', reason: 'quiet.post', act: 'q1', amount: 7 },
+    ],
+  });
+  assert.deepEqual(settle(b, instance, { sharedVote: true, halving: true }), settle(b, instance));
+  assert.deepEqual(settle(b, instance, {}), settle(b, instance));
+});
+
+test('the estimate values each reaction as a whole vote alone: before the shared vote and the halving', () => {
+  const e = estimateForOwner(base(), instance, 'ann');
+  const love = e.lines.filter((l) => l.reason === 'fan.love');
+  // Bob's fire and Cat's fire on p1, and Bob's heart on p2, each a whole vote: the exact settlement pays 10, 5 and 5.
+  assert.deepEqual(love.map((l) => [l.act, l.at, l.amount]), [['p1', FROM + 4 * H, 10], ['p1', FROM + 5 * H, 10], ['p2', FROM + 6 * H, 10]]);
+  assert.deepEqual(e.lines.filter((l) => l.reason === 'fan.groan').map((l) => [l.act, l.quadrant, l.at, l.amount]), [['p1', 'boredNegative', FROM + 5 * H + 1, -10]]);
+  assert.equal(settle(base(), instance).entries.find((x) => x.reason === 'fan.love')?.amount, 20, 'the exact settlement is unchanged');
+});
+
+test('with the shared vote off, a second reaction from one player never changes the first\'s amount', () => {
+  const b = base();
+  const one = { ...b, reactions: b.reactions.filter((r) => !(r.player === 'cat' && r.kind === 'zzz')) };
+  const first = (i: SettlementInput) => estimateForOwner(i, instance, 'ann').lines.find((l) => l.act === 'p1' && l.at === FROM + 5 * H);
+  assert.deepEqual(first(b), first(one));
+  assert.equal(first(b)?.amount, 10);
+});
+
+test('with the halving off, a third post\'s reaction counts whole', () => {
+  const b = base();
+  const three = { ...b, acts: [...b.acts, post('p3', 'ann-fan', FROM + 2 * H + 1)], reactions: [...b.reactions, react('p3', 'bob', 'bob-1', 'fire', FROM + 7 * H)] };
+  assert.equal(estimateForOwner(three, instance, 'ann').lines.find((l) => l.act === 'p3')?.amount, 10);
+  assert.equal(settle(three, instance).entries.length > 0, true);
+});
+
+test('the estimate for one player is the same whoever else reacted, and through how many characters', () => {
+  const b = counting(base());
+  const world = withClasses(counter);
+  // Ann's quiet mask reacts to Bob's q1, which Cat then reacts to twice.
+  const spread: SettlementInput = { ...b, reactions: [...b.reactions, react('q1', 'ann', 'ann-quiet', 'fire', FROM + 3 * H + 1), react('q1', 'cat', 'cat-1', 'tea', FROM + 9 * H), react('q1', 'cat', 'cat-1', 'zzz', FROM + 9 * H + 1)] };
+  // The same reactions, the second from Dee: two players, not one.
+  const two: SettlementInput = { ...spread, reactions: spread.reactions.map((r) => (r.act === 'q1' && r.kind === 'zzz' ? { ...r, player: 'dee', character: 'dee-1' } : r)) };
+  // And Cat's two from two masks of Cat's.
+  const masks: SettlementInput = { ...spread, characters: [...spread.characters, { id: 'cat-2', player: 'cat', classes: [{ class: 'quiet', from: 0 }] }], reactions: spread.reactions.map((r) => (r.act === 'q1' && r.kind === 'zzz' ? { ...r, character: 'cat-2' } : r)) };
+  const of = (i: SettlementInput) => estimateForOwner(i, world, 'ann');
+  assert.ok(of(spread).lines.some((l) => l.reason === 'counter.crowd'), 'the class reads its held vote');
+  assert.deepEqual(of(two), of(spread));
+  assert.deepEqual(of(masks), of(spread));
+  // The same is not true of the exact settlement, which counts players: the estimate is what changed.
+  assert.notDeepEqual(settle(two, world).entries.filter((x) => x.player === 'ann'), settle(spread, world).entries.filter((x) => x.player === 'ann'));
+});
+
+test('the estimate carries the caller\'s own characters only, never who reacted, and its lines add up to its entries', () => {
+  const e = estimateForOwner(base(), instance, 'ann');
+  assert.ok(e.entries.length > 0);
+  assert.ok([...e.entries, ...e.lines].every((x) => x.character.startsWith('ann-')));
+  const said = JSON.stringify(e);
+  for (const who of ['bob', 'cat', 'dee']) assert.ok(!said.includes(who), `${who} reached the estimate`);
+  assert.ok(!said.includes('player'), 'no line names a player');
+  for (const entry of e.entries) {
+    const sum = e.lines.filter((l) => l.character === entry.character && l.reason === entry.reason).reduce((t, l) => t + l.amount, 0);
+    assert.equal(sum, entry.amount, `${entry.character} ${entry.reason}`);
+  }
+});
+
+test('the estimate ranks reactions at the same instant alike, whatever keys their reactors are given', () => {
+  const b = counting(base());
+  const world = withClasses(counter);
+  const tied: SettlementInput = { ...b, reactions: [...b.reactions, react('q1', 'ann', 'ann-quiet', 'fire', FROM + 9 * H), react('q1', 'cat', 'cat-1', 'tea', FROM + 9 * H), react('q1', 'dee', 'dee-1', 'zzz', FROM + 10 * H)] };
+  // Cat's key sorts after Ann's; renamed, before it.
+  const renamed: SettlementInput = { ...tied, characters: tied.characters.map((c) => (c.player === 'cat' ? { ...c, player: 'aaa' } : c)), reactions: tied.reactions.map((r) => (r.player === 'cat' ? { ...r, player: 'aaa' } : r)) };
+  const crowd = (i: SettlementInput) => estimateForOwner(i, world, 'ann').lines.filter((l) => l.reason === 'counter.crowd');
+  assert.ok(crowd(tied).length > 0);
+  assert.deepEqual(crowd(renamed), crowd(tied));
 });

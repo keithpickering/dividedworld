@@ -36,8 +36,9 @@
  * (scripts/setup-container.sh, .claude/hooks/session-start.sh).
  *
  * Carried from currents (docs/plans/port-manifest.md): its reset of a shared `public` became a
- * scratch database, and its stand-ins for storage, pg_net and Vault stay behind until a
- * migration here needs them.
+ * scratch database, and its stand-ins for storage, pg_net and Vault stayed behind until a
+ * migration here needed them: pg_net and Vault arrived with 0004, and Storage's bucket table
+ * with 0019, each in supabase/tests/setup/auth-shim.sql.
  */
 import fs from 'node:fs';
 import path from 'node:path';

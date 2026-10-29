@@ -114,7 +114,8 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   },
   playCard: (r, instance) => ({
     rpc: 'play_card',
-    args: { card: card(r, instance), through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {} },
+    // The message is the card's rules' to read (decidePlay), with the post they price.
+    args: { card: card(r, instance), through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {}, message: r.message ?? '' },
     asService: true,
     needsTarget: true,
   }),

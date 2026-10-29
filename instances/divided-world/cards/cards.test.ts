@@ -64,49 +64,80 @@ test('Stick Around\'s release is the caster\'s own sentence, bounded, with the d
   assert.equal(stickAround.validateConfig({ sentence: 7 }).ok, false);
 });
 
-test('a card lands on a post, once: not twice on the same post, not on an edit', () => {
+test('a card lands on a post up to its stack: Stick Around once, Whoops! three times, never on an edit', () => {
+  const w = (n: number) => Array.from({ length: n }, (_, i) => ({ card: 'whoops', act: `k${i}` }));
   assert.equal(whoops.canApply(post(10), []).ok, true);
   assert.equal(whoops.canApply(post(10), [{ card: 'stick-around', act: 'k0' }]).ok, true, 'the two combine');
-  assert.equal(whoops.canApply(post(10), [{ card: 'whoops', act: 'k0' }]).ok, false);
+  assert.equal(whoops.canApply(post(10), w(2)).ok, true, 'a third Whoops! lands');
+  assert.deepEqual(whoops.canApply(post(10), w(3)), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
+  assert.equal(whoops.canApply(post(10), [...w(2), { card: 'stick-around', act: 's' }]).ok, true, 'another card is not counted');
+  assert.deepEqual(stickAround.canApply(post(10), [{ card: 'stick-around', act: 's' }]), { ok: false, why: 'this post already carries that card' });
   assert.equal(stickAround.canApply({ act: 'p1', kind: 'edit', length: 10 }, []).ok, false);
+  assert.equal(whoops.stack, 3);
+  assert.equal(whoops.seeded, true, 'each splat is drawn from a seed the server chooses');
+  assert.equal(stickAround.stack ?? 1, 1);
+  assert.equal(stickAround.seeded ?? false, false);
+});
+
+test('a play carries the caster\'s message: plain text, at most 200 characters, and may be empty', () => {
+  assert.deepEqual(decidePlay(whoops, settings, post(10), [], { color: 'red' }, '  A riposte.  '), { ok: true, value: { price: 0, config: { color: 'red' }, message: 'A riposte.' } });
+  assert.equal((decidePlay(whoops, settings, post(10), [], { color: 'red' }, '') as { value: { message: string } }).value.message, '');
+  assert.equal((decidePlay(whoops, settings, post(10), [], { color: 'red' }, undefined) as { value: { message: string } }).value.message, '', 'no message is an empty one');
+  assert.equal(decidePlay(whoops, settings, post(10), [], { color: 'red' }, '🔥'.repeat(200)).ok, true, 'counted in characters');
+  assert.deepEqual(decidePlay(whoops, settings, post(10), [], { color: 'red' }, 'x'.repeat(201)), { ok: false, why: 'the message is at most 200 characters' });
+  assert.deepEqual(decidePlay(whoops, settings, post(10), [], { color: 'red' }, 7), { ok: false, why: 'the message is text' });
+});
+
+test('the seed is the server\'s: one in the caster\'s configuration is never kept', () => {
+  assert.deepEqual(whoops.validateConfig({ color: 'red', seed: 12345 }), { ok: true, value: { color: 'red' } });
 });
 
 test('a play is decided by the card\'s own rules: its price, whether it lands, its configuration', () => {
-  assert.deepEqual(decidePlay(whoops, settings, post(1200), [], { color: 'red' }), { ok: true, value: { price: 50, config: { color: 'red' } } });
-  assert.match(String((decidePlay(whoops, settings, post(1200), [], { color: 'nope' }) as { why: string }).why), /color/);
-  assert.match(String((decidePlay(whoops, settings, post(1200), [{ card: 'whoops', act: 'k' }], { color: 'red' }) as { why: string }).why), /already/);
+  assert.deepEqual(decidePlay(whoops, settings, post(1200), [], { color: 'red' }, ''), { ok: true, value: { price: 50, config: { color: 'red' }, message: '' } });
+  assert.match(String((decidePlay(whoops, settings, post(1200), [], { color: 'nope' }, '') as { why: string }).why), /color/);
+  assert.match(String((decidePlay(whoops, settings, post(1200), [1, 2, 3].map((i) => ({ card: 'whoops', act: `k${i}` })), { color: 'red' }, '') as { why: string }).why), /already/);
 });
 
-test('Whoops! strokes are paths, bounded in count and size, in the post\'s own coordinates', () => {
-  const stroke = { color: '#000000', width: 4, points: [[0.1, 0.2], [0.3, 0.4]] };
-  assert.equal(whoops.validateState!({ strokes: [stroke] }).ok, true);
-  assert.equal(whoops.validateState!({ strokes: [] }).ok, true, 'washed clean');
-  assert.equal(whoops.validateState!({ strokes: Array(201).fill(stroke) }).ok, false, 'too many strokes');
-  assert.equal(whoops.validateState!({ strokes: [{ ...stroke, points: Array(501).fill([0.5, 0.5]) }] }).ok, false, 'too many points');
-  assert.equal(whoops.validateState!({ strokes: [{ ...stroke, points: [[1.5, 0]] }] }).ok, false, 'off the post');
-  assert.equal(whoops.validateState!({ strokes: [{ ...stroke, width: 500 }] }).ok, false, 'too wide');
-  assert.equal(whoops.validateState!({ strokes: [{ ...stroke, color: 'url(x)' }] }).ok, false, 'not a color');
-  assert.equal(whoops.validateState!({ strokes: [{ ...stroke, points: [[0.1, Number.NaN]] }] }).ok, false);
+test('Whoops! strokes wash or ink, in widths of the fixed layout: across 0 to 1, down 0 to 64', () => {
+  const ink = { tool: 'ink', color: '#000000', width: 4, points: [[0.1, 0.2], [0.3, 40]] };
+  const wash = { tool: 'wash', width: 30, points: [[0.5, 0.5]] };
+  assert.equal(whoops.validateState!({ strokes: [ink, wash] }).ok, true);
+  assert.equal(whoops.validateState!({ strokes: [] }).ok, true, 'nothing saved yet');
+  assert.deepEqual(whoops.validateState!({ strokes: [wash], clean: true }), { ok: true, value: { strokes: [wash], clean: true } }, 'washed clean, said by the author\'s save');
+  assert.equal(whoops.validateState!({ strokes: [], clean: 'yes' }).ok, false);
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[0.5, 64]] }] }).ok, true, 'down to 64 widths');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[0.5, 65]] }] }).ok, false, 'a down of 65');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[1.01, 0.5]] }] }).ok, false, 'an across of 1.01');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[-0.01, 0.5]] }] }).ok, false);
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, tool: 'brush' }] }).ok, false, 'a tool is wash or ink');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, color: undefined }] }).ok, false, 'ink carries a color');
+  assert.equal(whoops.validateState!({ strokes: [{ ...wash, color: 'red' }] }).ok, false, 'a wash carries none');
+  assert.equal(whoops.validateState!({ strokes: Array(201).fill(ink) }).ok, false, 'too many strokes');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: Array(501).fill([0.5, 0.5]) }] }).ok, false, 'too many points');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, width: 500 }] }).ok, false, 'too wide');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, width: 0.0004 }] }).ok, false, 'a width that keeps to nothing');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, color: 'url(x)' }] }).ok, false, 'not a color');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[0.1, Number.NaN]] }] }).ok, false);
   assert.equal(whoops.validateState!({ strokes: 'all of them' }).ok, false);
 });
 
 test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writes them', () => {
-  // Every stroke at its longest, every point at its longest, until the total runs out.
-  const point = [0.123456789, 0.987654321];
+  // Every stroke at its longest, every point at its longest (a down of two digits), until the total runs out.
+  const point = [0.123456789, 63.987654321];
   const strokes = [];
   let left = STROKES.totalPoints;
-  while (left > 0) { const n = Math.min(STROKES.points, left); strokes.push({ color: '#abcdef', width: STROKES.widest, points: Array(n).fill(point) }); left -= n; }
-  const saved = whoops.validateState!({ strokes });
+  while (left > 0) { const n = Math.min(STROKES.points, left); strokes.push({ tool: 'ink', color: '#abcdef', width: STROKES.widest - 0.0004321, points: Array(n).fill(point) }); left -= n; }
+  const saved = whoops.validateState!({ strokes, clean: false });
   assert.equal(saved.ok, true);
   // jsonb's text puts a space after every comma and colon.
   const asPostgres = JSON.stringify(saved.ok && saved.value).replace(/([,:])/g, '$1 ');
   assert.ok(Buffer.byteLength(asPostgres) <= 262_144, `${Buffer.byteLength(asPostgres)} bytes`);
-  assert.equal(whoops.validateState!({ strokes: [...strokes, { color: 'red', width: 1, points: [[0, 0]] }] }).ok, false, 'one point past the total');
+  assert.equal(whoops.validateState!({ strokes: [...strokes, { tool: 'wash', width: 1, points: [[0, 0]] }] }).ok, false, 'one point past the total');
 });
 
-test('a stroke\'s points are kept to a thousandth of the post', () => {
-  const saved = whoops.validateState!({ strokes: [{ color: 'red', width: 2, points: [[0.123456, 0.98765]] }] });
-  assert.deepEqual(saved.ok && saved.value, { strokes: [{ color: 'red', width: 2, points: [[0.123, 0.988]] }] });
+test('a stroke\'s points and width are kept to a thousandth', () => {
+  const saved = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 2.12345, points: [[0.123456, 12.98765]] }] });
+  assert.deepEqual(saved.ok && saved.value, { strokes: [{ tool: 'ink', color: 'red', width: 2.123, points: [[0.123, 12.988]] }] });
 });
 
 test('Stick Around holds no state to save', () => {

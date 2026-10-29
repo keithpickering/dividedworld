@@ -6,27 +6,139 @@
  * them in Supabase Auth (auth.users, and auth.identities where Auth keeps one), so that an
  * imported instance's players sign in as before. What is not exported is said where it is left
  * out (NOT_EXPORTED): the two Vault secrets, Auth's sessions, which end, and the tables the
- * migrations fill themselves (MIGRATION_DATA), whose release the manifest names instead.
+ * migrations fill themselves (MIGRATION_DATA), whose release the manifest names instead. The files
+ * the rows name (avatars, BUCKETS) are carried beside the rows, from Storage and back to it.
  *
  * A connection's password never reaches psql's command line, where any user's `ps` reads it, nor
  * the terminal: the URL is taken apart here and handed to psql as libpq's variables, and every
  * message a tool prints passes through scrub() first.
  */
 import { execFileSync, spawn } from 'node:child_process';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import readline from 'node:readline';
 
 export const FORMAT = 'kayfabb-export/1';
 
-/** --from and --to, both required. */
+/** --from and --to, both required; --storage, the instance's Supabase URL, where its files are. */
 export function args(argv, usage) {
   const out = {};
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i];
-    if (flag !== '--from' && flag !== '--to') throw new Error(usage);
+    if (flag !== '--from' && flag !== '--to' && flag !== '--storage') throw new Error(usage);
     out[flag.slice(2)] = argv[i + 1];
   }
   if (!out.from || !out.to) throw new Error(usage);
   return out;
 }
+
+/* ------------------------------------------------------------- the files an instance holds ---- */
+
+/**
+ * The buckets an instance keeps files in, each with the table and columns that name its files: an
+ * export carries every file a row names, and an import puts each back under its name, so the
+ * imported forum shows the same avatars (supabase/migrations/0019_profiles.sql).
+ */
+export const BUCKETS = [{ bucket: 'avatars', table: 'public.character_profiles', columns: ['avatar_source', 'avatar_square', 'avatar_portrait'], contentType: 'image/webp' }];
+
+/** The environment variable that holds the service key Storage is called with; never printed, never on a command line. */
+export const STORAGE_KEY = 'KAYFABB_STORAGE_KEY';
+
+/** A name a row gives a file: one path segment, nothing that could climb out of the export. */
+const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$/;
+
+/** Every file the exported rows name, by bucket, read from the table files the export wrote. */
+export async function filesNamed(dir) {
+  const out = [];
+  for (const b of BUCKETS) {
+    const file = path.join(dir, fileOf(b.table));
+    if (!fs.existsSync(file)) continue;
+    const names = new Set();
+    for await (const line of readline.createInterface({ input: fs.createReadStream(file, 'utf8'), crlfDelay: Infinity })) {
+      if (!line) continue;
+      const row = JSON.parse(line);
+      for (const c of b.columns) if (row[c]) names.add(row[c]);
+    }
+    for (const name of [...names].sort()) {
+      if (!FILE_NAME.test(name)) throw new Error(`${b.table} names a file "${name}" that is not one path segment`);
+      out.push({ bucket: b.bucket, name });
+    }
+  }
+  return out;
+}
+
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/**
+ * Supabase Storage at a project's URL, called with the service key from STORAGE_KEY. The URL
+ * carries no credentials, and is https unless it is this machine. Each request is retried on what
+ * says it never reached a Storage that ran it, or never answered (a timeout, a thrown fetch, a 5xx,
+ * a 429), a few times, waiting longer each time; any other answer is a fact about the request
+ * ("Three unrelated timeouts are not a poison pill"). A retried store is safe: the same bytes found
+ * there are the same file.
+ */
+export function storage(url, { timeoutMs = Number(process.env.KAYFABB_STORAGE_TIMEOUT_MS) || 30_000, attempts = 4 } = {}) {
+  const key = process.env[STORAGE_KEY];
+  if (!url) throw new Error('the instance holds files: give --storage with its Supabase URL');
+  if (!key) throw new Error(`the instance holds files: set ${STORAGE_KEY} to its service key`);
+  secrets.add(key);
+  let base;
+  try { base = new URL(url); } catch { throw new Error('--storage is the project\'s URL, https://…'); }
+  if (base.username || base.password) throw new Error('--storage carries credentials; the key goes in ' + STORAGE_KEY + ', never the URL');
+  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && LOOPBACK.has(base.hostname))) throw new Error('--storage is https, unless it is this machine: the service key never travels in clear');
+  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+  const at = (bucket, name) => new URL(`storage/v1/object/${bucket}/${encodeURIComponent(name)}`, base.href.endsWith('/') ? base.href : `${base.href}/`);
+  const request = async (where, init, what) => {
+    const seen = [];
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      if (attempt > 1) await new Promise((r) => setTimeout(r, 250 * 2 ** (attempt - 2)));
+      try {
+        const r = await fetch(where, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+        if (r.status >= 500 || r.status === 429) { seen.push(`HTTP ${r.status}`); await r.body?.cancel(); continue; }
+        return r;
+      } catch (e) {
+        seen.push(`no answer (${e?.name === 'TimeoutError' ? `none in ${timeoutMs} ms` : e?.message ?? e})`);
+      }
+    }
+    throw new Error(`storage: ${what}: no answer after ${seen.length} attempt(s): ${seen.join('; ')}`);
+  };
+  const read = async (bucket, name) => request(at(bucket, name), { headers }, `reading ${bucket}/${name}`);
+  return {
+    named: base.origin,
+    async get(bucket, name) {
+      const r = await read(bucket, name);
+      if (r.status === 404 || r.status === 400) {
+        await r.body?.cancel();
+        throw new Error(`storage: ${bucket}/${name}, which a row names, is not there: it was replaced or removed since the rows were read; export again into a new directory (this one is left as it is)`);
+      }
+      if (!r.ok) { await r.body?.cancel(); throw new Error(`storage: ${bucket}/${name} answered HTTP ${r.status}`); }
+      return new Uint8Array(await r.arrayBuffer());
+    },
+    /**
+     * Stores a file, never over another: one already there with the same bytes (an import run again
+     * after one that stopped part way) is the same file; one with other bytes is refused. Storage
+     * answers 409, or 400 with its own word for it, for a name taken; any other refusal is said as
+     * itself.
+     */
+    async put(bucket, name, bytes, contentType) {
+      const r = await request(at(bucket, name), { method: 'POST', headers: { ...headers, 'Content-Type': contentType, 'x-upsert': 'false' }, body: bytes }, `storing ${bucket}/${name}`);
+      await r.body?.cancel();
+      if (r.ok) return;
+      if (r.status === 400 || r.status === 409) {
+        const there = await read(bucket, name);
+        if (there.ok) {
+          if (sha256(new Uint8Array(await there.arrayBuffer())) === sha256(bytes)) return;
+          throw new Error(`storage: ${bucket}/${name} is already there, and is another file`);
+        }
+        await there.body?.cancel();
+      }
+      throw new Error(`storage: storing ${bucket}/${name} answered HTTP ${r.status}`);
+    },
+  };
+}
+
+export const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 
 /** The query parameters a URL may carry, as the libpq variable each sets: none can send psql elsewhere. */
 const HARMLESS = { sslmode: 'PGSSLMODE', sslrootcert: 'PGSSLROOTCERT', connect_timeout: 'PGCONNECT_TIMEOUT', application_name: 'PGAPPNAME' };
