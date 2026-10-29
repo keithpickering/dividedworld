@@ -105,6 +105,13 @@ describe('the full public record', () => {
     expect(link).toHaveAttribute('href', `/t/${sys.thread}?page=1#post-2`);
   });
 
+  test('the seasons view says it lists the latest fifty', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    open(fake, w.spritey, '?kind=seasons');
+    expect(await screen.findByText('The latest 50 season reveal posts.')).toBeInTheDocument();
+  });
+
   test('a page past the end, or a waiting character, is plain', async () => {
     const fake = buildWorld();
     const w = world(fake);
