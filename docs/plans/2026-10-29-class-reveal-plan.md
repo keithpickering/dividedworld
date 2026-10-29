@@ -25,8 +25,9 @@ words a player reads, through `Copy` and the web plan, and each class's badge lo
   - `unmask(through, in_thread, message)`, as the character's player (`played_by`, so a waiting or retired character
     is refused as everywhere): reads the character's class now (`class_now`, 0007), writes the Act, broadcasts it like
     a post. Refused on The System's board, as a post is. A message is plain text, at most 200 characters, may be empty.
-  - `class_reveals` (view, public read): every public statement of a character's class, each with its date and its
-    source: `unmask` Acts; debuts announced with their class; Turns announced with their new class. And
+  - `class_reveals` (view, public read): every `unmask` Act, with its character, class, date and how it was made
+    (`act`, `debut`, `turn`). Every reveal is an `unmask` Act (Task 2 writes the debut's and the Turn's), so this reads
+    one kind of Act. And
     `turns_announced` (view, public read): every announced Turn from the tallies, with its date and, where named, its
     old class. Both read only Acts, never `class_history`.
 - `engine/rules/actions.ts` (`unmask`) and `supabase/functions/act/core.ts`: the action, its message checked before the
@@ -49,16 +50,26 @@ words a player reads, through `Copy` and the web plan, and each class's badge lo
 - New `supabase/migrations/0028_loud_classes.sql`:
   - `characters.debut_loudness` (0024) admits `'with_class'`; `create_character()` and `set_debut()` take it; the
     tally entry of such a debut, and the drop's announcement (`post_tally()`), carry `class`.
+  - Each debut announced with its class, and each Turn with `show_to`, writes the character's `unmask` Act when it
+    takes effect, `{ class, message: '', via: 'debut' | 'turn' }`, in the season's Turns thread right after the tally
+    Act (or the drop's announcement) that names it: one shared `write_unmask(character, in_thread, via, at)` that
+    `unmask()` (Task 1), `masks_change()` and `post_tally()` all call, so they cannot drift. It is the one Act a
+    character has on The System's board, written by The System for it; `post()` and `unmask()` still refuse players
+    there. Between seasons, a drop's reveal Act waits with its announcement for the next tally.
   - `pending_turns.loudness` becomes two flags, `show_from` and `show_to`, beside `silent | announced`: `turn(through,
     to_class, loudness, show_from default false, show_to default false)`. Today's `'revealed'` rows become `announced`
     with `show_from`. `masks_change()` names `was`/`since` for `show_from` (as now) and `class` for `show_to`.
   - `turn()`'s old three-argument form is kept as a wrapper, so an older client's `'revealed'` still works.
 - `engine/rules/actions.ts` (`turn`, `createCharacter`, `setDebut`): the new options.
 - **Tests first** (`0021-pending-turns.sql`, `0031-debuts.sql`, new blocks): a debut announced with its class names it
-  in the tally and in `class_reveals`; a silent or plain announced one names none; a Turn with `show_to` names the new
-  class and is a reveal dated at the tally; with `show_from` alone it names the old class and is not a reveal; a
+  in the tally and writes the character's `unmask` Act after it, in the Turns thread, dated at the debut (a drop's at
+  once), which can be reacted to (the reaction scored for the character) and spun; a silent or plain announced one
+  writes none; a Turn with `show_to` names the new
+  class and writes an `unmask` Act dated at the tally; with `show_from` alone it names the old class and writes none; a
   pending `'revealed'` Turn from before the migration takes effect with its old class named, as asked.
 - **Poisons:** `masks_change()` naming `class` for every announced Turn → "a plain announced Turn names no class";
+  `masks_change()` naming the class in the tally without writing the Act → "a debut announced with its class writes
+  the character's unmask Act";
   the migration dropping `'revealed'` rows' meaning → the pending-Turn test.
 
 ### Task 3. The season's reveal keeps the secrets
@@ -95,6 +106,6 @@ words a player reads, through `Copy` and the web plan, and each class's badge lo
 ## Review focus
 
 - What the migration of `pending_turns.loudness` does to a Turn waiting across it, and to an older client.
-- `class_reveals` at a busy instance: a view over every tally and `unmask` Act, read for every postbit.
+- `class_reveals` at a busy instance: a view over every `unmask` Act, read for every postbit.
 - A reveal racing the tally that applies a pending Turn: the class it names, and its date against the Turn's.
 - The season's reveal: that no path still reads `class_history` for a character's public row.

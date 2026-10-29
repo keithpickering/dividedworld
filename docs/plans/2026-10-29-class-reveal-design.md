@@ -29,16 +29,26 @@ checked when the Act was made. That check is the one thing a claim in an ordinar
 reveal and a character that merely says what it is are different moves. A reveal can be reacted to and spun like any
 Act, and the reactions are scored as on any other Act (section 4).
 
-Creation and Turns gain the same choice through the tally:
+**Every reveal is a reveal Act, whenever it comes.** The owner: "we should log the reveal as an act even if it's
+revealed from the character's birth, so it can be spun off and reacted to whether they reveal it initially, 2 minutes
+after creation, 2 months, etc." So creation and Turns gain the same choice, and each writes the character's own reveal
+Act when it takes effect:
 
 - **Creating a character:** announced *with its class*, beside silent and announced (the clues design, section 4), for
   a drop or a scheduled debut alike.
 - **A Turn:** an announced Turn may name the class it Turns *to*, the class it Turns *from* (today's "revealed"), or
-  both.
+  both. Naming the class it Turns to writes a reveal Act; naming only the class it Turns from does not, since that
+  states a class the character no longer holds.
+
+A reveal made at creation or by a Turn is written when the change takes effect (at once for a drop, at the settlement
+for a scheduled debut or a Turn), in the season's Turns thread on The System's board, right after the tally or the
+drop's announcement that names it. The System writes it there on the character's behalf, since no character posts on
+that board; it is the character's Act all the same, reacted to and spun like a reveal made in any thread, and its
+reactions are scored for the character. The tally still names the class, so a reader of the tally sees it too.
 
 Only the class a character holds when the reveal is made can be revealed by a reveal Act; a class it held before is
 revealed only by a Turn announced with its old class, as today. A character waiting to debut cannot act, so its class is
-revealed through its debut's announcement. A reveal made while a Turn is pending names the class held then, which is
+revealed by the reveal Act its debut writes. A reveal made while a Turn is pending names the class held then, which is
 true on its date.
 
 Weighed: only through the tally (no in-thread moment; The System, not the character, would say it); a profile setting
@@ -51,8 +61,8 @@ and the badge does not change, because it was true and still is as a statement a
 the other players to read from the character's behavior. An announced Turn after a reveal shows "Has Turned since (Oct
 20)", because the tally said so; a Turn announced with its new class is a new reveal, and the badge shows that one.
 
-The postbit and the profile show the character's latest public statement of its class: its latest reveal (an Act, a
-debut announced with its class, or a Turn announced with its new class), and, if a later announced Turn came after it,
+The postbit and the profile show the character's latest public statement of its class: its latest reveal Act, however
+it was made, and, if a later announced Turn came after it,
 that it has Turned since. The profile's public record lists every reveal.
 
 Weighed: a badge showing the current class until the next Turn (a silent Turn after a reveal would show, so it could
