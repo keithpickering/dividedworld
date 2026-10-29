@@ -356,8 +356,8 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     .filter((e) => e.amount !== 0);
   /* Each entry's detail, in whole hundredths that add up to the entry exactly: the log names
      which Act moved how much, and its lines never disagree with the ledger ("The fiction may
-     lie; the log never does"). The rounding is shared by largest remainder, ties by key. */
-  /* A line per Act, quadrant and reaction time, so two reactions' lines never merge (Earning.at). */
+     lie; the log never does"). The rounding is shared by largest remainder, ties by key. A line
+     is one Act, quadrant and reaction time, so two reactions' lines never merge (Earning.at). */
   const lines = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}\u0000${c.act ?? ''}\u0000${c.quadrant ?? ''}\u0000${c.at ?? ''}`);
   const linesOf = new Map<string, { key: string; first: Contribution; amount: number }[]>();
   for (const [key, { first, amount }] of lines) {

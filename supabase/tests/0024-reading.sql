@@ -62,7 +62,8 @@ begin
   perform tests.unbecome();
 
   -- Each mask that read is a reader of its own; one mask reading twice is one reader; Ann's read
-  -- of bare with none on the HUD is no reader, since she has masks (below, one with none yet).
+  -- of bare with none on the HUD is no reader, since she has masks. A reader with no mask yet is
+  -- the block after this one's.
   if (select count(*) from thread_reads where thread = t) is distinct from 4::bigint then raise exception 'each mask that read t is a reader: %', (select count(*) from thread_reads where thread = t); end if;
   if (select count(*) from thread_reads where thread = bare) is distinct from 2::bigint then raise exception 'two masks that read bare are two readers: %', (select count(*) from thread_reads where thread = bare); end if;
 
