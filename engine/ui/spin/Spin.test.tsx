@@ -187,7 +187,10 @@ describe('the ORIGIN box', () => {
     const topics: string[] = [];
     w.fake.subscribeThread = (t, l) => { topics.push(t); open += 1; const un = real(t, l); return () => { open -= 1; un(); }; };
     const view = openSpun(w, spun);
-    await origin();
+    const box = await origin();
+    /* The box subscribes in an effect, which can run after its first paint; its Act's words come
+       only from that effect's read, so once they show, the effect has run. */
+    await waitFor(() => expect(box).toHaveTextContent('post 2'));
     /* One subscription to the origin's thread (the spun thread's own channel is the screen's, not the box's). */
     expect(topics.filter((t) => t === w.thread)).toHaveLength(1);
     view.unmount();

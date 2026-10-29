@@ -167,7 +167,8 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
     function Seen() { const p = usePlayer(); return <span data-testid="seen">{String(p.walletSeen)}:{String(p.wallet?.balance)}</span>; }
     render(<PlayerProvider api={api}><Seen /></PlayerProvider>);
     await waitFor(() => expect(screen.getByTestId('seen').textContent).toBe('null:240'));
-    expect(localStorage.getItem('kb-wallet-seen:acc-1')).toBe('240');
+    /* The write is an effect after the render that shows the wallet, so it is waited for, not assumed. */
+    await waitFor(() => expect(localStorage.getItem('kb-wallet-seen:acc-1')).toBe('240'));
   });
 });
 
