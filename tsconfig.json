@@ -1,15 +1,22 @@
 {
   "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
     "noEmit": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "target": "ES2022",
-    "strict": false,
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "skipLibCheck": true
   },
   "include": [
-    "tools/**/*.mjs"
+    "engine/**/*.ts",
+    "instances/**/*.ts",
+    "supabase/functions/**/*.ts",
+    "supabase/tests/**/*.ts"
   ]
 }

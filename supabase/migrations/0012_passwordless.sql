@@ -1,0 +1,32 @@
+-- Sign-in is passwordless (the owner's answer 13, on #4 and #3): a player signs in with a code
+-- or link sent by email (supabase/functions/account/core.ts), and no login holds a password.
+-- Supabase Auth has no setting that turns its password sign-in off on its own
+-- (supabase/config.toml), so this holds it off where the password would live: a login's
+-- password hash is kept empty, whoever writes one (a sign-up through Auth's own endpoint, a
+-- player setting one through Auth's /user). Password sign-in then fails for every address, and
+-- no password is checked for an address with a login. Whether Auth's failing takes the same time
+-- for an address it knows and one it does not (it may compare a dummy hash for the second, and
+-- none for an empty one), and whether its own code request answers them alike, is measured on
+-- the owner's test project, and goes on #3.
+create function auth_no_password() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  new.encrypted_password := '';
+  return new;
+end $$;
+create trigger no_password before insert or update of encrypted_password on auth.users
+  for each row execute function auth_no_password();
+
+-- A login made before this migration, through the sign-up that took a password, holds none after
+-- it: the trigger guards what is written from now on, and this clears what was written before.
+create function auth_forget_passwords() returns integer
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare cleared integer;
+begin
+  update auth.users set encrypted_password = '' where encrypted_password is distinct from '';
+  get diagnostics cleared = row_count;
+  return cleared;
+end $$;
+select auth_forget_passwords();
+
+revoke execute on function auth_no_password(), auth_forget_passwords() from public, anon, authenticated;

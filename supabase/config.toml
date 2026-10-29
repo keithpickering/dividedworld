@@ -1,0 +1,39 @@
+# Divided World's Supabase project settings that the code relies on, for the local stack and
+# `supabase config push`. A push writes the CLI's default for any setting left out: where Auth's
+# links point and what its emails say are set here for that reason; token lifetimes, rate limits
+# and SMTP are not yet, so a push before they are written here resets them. site_url is
+# production's, so links from the local stack point there too.
+project_id = "dividedworld"
+
+[auth]
+# Where Auth's sign-in links send a player.
+site_url = "https://dw.gripe"
+additional_redirect_urls = []
+# Accounts open only through open_account() (supabase/migrations/0009_registration.sql), so a
+# login made straight through Auth can do nothing; sign-up stays on for the account function,
+# which asks Auth for a code that may make a login only with an invite that opens.
+enable_signup = true
+
+[auth.email]
+# Sign-in is passwordless (the owner's answer 13, on #4): a code, and a link beside it, sent by
+# email (supabase/functions/account/core.ts). Auth has no setting that turns its password
+# sign-in off on its own, so supabase/migrations/0012_passwordless.sql keeps every login's
+# password empty, and password sign-in fails for every address. Whether Auth's own endpoints
+# answer an address it knows as they answer one it does not is measured on the owner's test
+# project (#3).
+enable_signup = true
+# A login is confirmed by its first code before it can open an account.
+enable_confirmations = true
+otp_length = 6
+otp_expiry = 3600
+
+# The emails carry the code ({{ .Token }}) as well as the link, since the account function signs
+# in with the code. Their words are plain, never in character ("The fiction may lie; the log
+# never does").
+[auth.email.template.magic_link]
+subject = "Your Divided World sign-in code"
+content_path = "./supabase/templates/sign-in.html"
+
+[auth.email.template.confirmation]
+subject = "Your Divided World sign-up code"
+content_path = "./supabase/templates/sign-up.html"

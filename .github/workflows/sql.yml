@@ -1,0 +1,40 @@
+# The SQL suite on a pull request once it is ready, and by hand: every migration replayed from
+# zero into a scratch database on a Postgres service, then every assertion file under
+# supabase/tests/ (tools/test-sql.mjs). It cannot live in build:ci, which has no database; the
+# suite's refusal of any database but localhost is in the build (tools/test-sql-refusal.mjs).
+#
+# Postgres 17 here, as Supabase runs; a session's container runs its distribution's Postgres.
+# Same trigger shape as build.yml: a draft's push shows a skipped job, and a PR is run when it
+# is marked ready. Carried from currents (docs/plans/port-manifest.md).
+name: SQL
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ['docs/**']
+  workflow_dispatch:
+concurrency:
+  group: sql-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  sql:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env: { POSTGRES_PASSWORD: pg }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      # Installed only when missing, so the day a runner image stops shipping it fails loudly here.
+      - run: command -v psql >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-client)
+      - run: psql --version
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:sql
+        env:
+          DATABASE_URL: postgres://postgres:pg@localhost:5432/postgres
