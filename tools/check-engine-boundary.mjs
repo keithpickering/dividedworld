@@ -10,6 +10,8 @@
  * name it should not, and the day it moves out it will not build. So the line is read on
  * every build rather than trusted.
  *
+ * A stylesheet (.css) is read too, for `@import` and `url()`, so a theme cannot cross by CSS.
+ *
  * Every way one file can name another is read from the TypeScript AST, not a regex: a static
  * import (type-only included: the engine may not know an instance's types either), a
  * re-export, a side-effect import, `import()`, an `import('…')` type, `require()`,
@@ -35,7 +37,28 @@ import ts from 'typescript';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** The files the guard reads. */
-export const SOURCE = /^(engine|instances)\/.*\.(ts|mts|cts|tsx|js|mjs|cjs)$/;
+export const SOURCE = /^(engine|instances)\/.*\.(ts|mts|cts|tsx|js|mjs|cjs|css)$/;
+
+/**
+ * Every specifier a stylesheet names, with its line: `@import "x"`, `@import url(x)` and every
+ * `url(x)`, comments stripped first (blanked to spaces, so lines keep their numbers). A `data:`
+ * URL names no file. A theme is a stylesheet, so a stylesheet can cross the line as an import can.
+ * @param {string} text
+ * @returns {{ spec: string | null, line: number }[]}
+ */
+function cssSpecifiers(text) {
+  const bare = text.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+  /** @type {{ spec: string | null, line: number }[]} */
+  const out = [];
+  const lineAt = (i) => bare.slice(0, i).split('\n').length;
+  const unquote = (s) => s.trim().replace(/^(['"])([\s\S]*)\1$/, '$2').trim();
+  for (const m of bare.matchAll(/url\(\s*((?:"[^"]*"|'[^']*'|[^)]*?))\s*\)/g)) {
+    const spec = unquote(m[1]);
+    if (!/^data:/i.test(spec)) out.push({ spec, line: lineAt(m.index) });
+  }
+  for (const m of bare.matchAll(/@import\s+(["'])([^"']*)\1/g)) out.push({ spec: m[2], line: lineAt(m.index) });
+  return out;
+}
 
 /**
  * Every specifier a file names, with its line, and the dynamic imports it cannot read.
@@ -83,12 +106,14 @@ export function boundaryFaults(files) {
     if (!SOURCE.test(file)) continue;
     const inEngine = file.startsWith('engine/');
     const home = instanceOf(file);
-    for (const { spec, line } of specifiers(file, text)) {
+    for (const { spec, line } of (file.endsWith('.css') ? cssSpecifiers(text) : specifiers(file, text))) {
       if (spec === null) {
         if (inEngine) out.push({ file, line, spec: null, target: null, why: 'a dynamic import or require the guard cannot read, which could name an instance' });
         continue;
       }
-      const relative = spec.startsWith('./') || spec.startsWith('../');
+      /* A stylesheet's url(x) with no ./ is relative too, as a browser reads it; a scheme or // is not a file here. */
+      const css = file.endsWith('.css');
+      const relative = spec.startsWith('./') || spec.startsWith('../') || (css && !/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(spec));
       const target = relative ? path.posix.normalize(path.posix.join(path.posix.dirname(file), spec)) : null;
       /* A bare or absolute specifier is read as it stands: the instance it names, if any. */
       const named = target === null ? spec.match(/(?:^|[/#@])instances(?:\/([^/]+)|$)/) : null;

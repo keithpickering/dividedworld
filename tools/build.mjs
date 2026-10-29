@@ -75,6 +75,8 @@ export const STEPS = [
   'node tools/test-name-folds.mjs',
   'node tools/check-name-folds.mjs',
   'npm run test:engine',
+  'npm run test:ui',
+  'npm run build:web',
 ];
 
 /**
@@ -95,6 +97,7 @@ export const SERIAL = new Set(['npm run test:engine']);
 /** @type {Record<string, string>} */
 export const OUTSIDE_THE_BUILD = {
   'tools/test-sql.mjs': 'needs Postgres, which the build does not have; it runs in .github/workflows/sql.yml against a Postgres service, and its refusal of any database but localhost is driven red in the build by tools/test-sql-refusal.mjs',
+  'tools/test-e2e.mjs': 'needs a browser, which the build does not have; the web app\'s keyboard flows run in .github/workflows/web.yml under Playwright, against vite preview of the in-memory backend',
 };
 
 /** What package.json's two build scripts must be, exactly. */

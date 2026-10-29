@@ -62,6 +62,32 @@ check('a file in a subdirectory of engine/ is held to the same line',
 check('a .mjs file in engine/ is held to the same line',
   fires(`import x from '../instances/divided-world/index.ts';`, 'engine/x.mjs').length === 1);
 
+/* ---- the screens: .tsx files and stylesheets are read too ---- */
+check('an engine/ui component importing an instance\'s theme stylesheet fires',
+  fires(`import '../../../instances/divided-world/ui/theme.css';\nexport const Frame = () => <div />;`, 'engine/ui/frame/Frame.tsx').length === 1);
+check('a .tsx re-export from engine/ui into an instance fires',
+  fires(`export { theme } from '../../../instances/divided-world/ui/index.ts';`, 'engine/ui/frame/index.tsx').length === 1);
+{
+  const r = fires(`@import "../../instances/divided-world/ui/theme.css";\n.kb-frame { color: var(--kb-fg); }`, 'engine/ui/base.css');
+  check('a CSS @import from engine/ui into an instance fires', r.length === 1 && r[0]?.target === 'instances/divided-world/ui/theme.css', JSON.stringify(r));
+}
+check('a CSS @import url() from engine/ui into an instance fires',
+  fires(`@import url('../../instances/divided-world/ui/theme.css') screen;`, 'engine/ui/base.css').length === 1);
+check('a CSS url() from engine/ui into an instance\'s image fires',
+  fires(`.kb-pip { background: url(../../instances/divided-world/ui/pip.png) no-repeat; }`, 'engine/ui/base.css').length === 1);
+check('a CSS url() inside a comment is not an import',
+  fires(`/* url(../../instances/divided-world/ui/pip.png) */\n.kb-pip { color: var(--kb-pip); }`, 'engine/ui/base.css').length === 0);
+check('a CSS data: url and an engine-relative url are clean',
+  fires(`.a { background: url("data:image/svg+xml,%3Csvg/%3E"); }\n@import "./tokens.css";`, 'engine/ui/base.css').length === 0);
+check('an instance\'s ui importing another instance\'s stylesheet fires',
+  fires(`@import "../../other-world/ui/theme.css";`, 'instances/divided-world/ui/theme.css').length === 1);
+check('an instance\'s ui .tsx importing another instance fires',
+  fires(`import { copy } from '../../other-world/ui/index.ts';`, 'instances/divided-world/ui/Badge.tsx').length === 1);
+check('an instance\'s ui importing engine/ui is clean, the direction the boundary allows',
+  fires(`import type { InstanceUi } from '../../../engine/ui/types.ts';`, 'instances/divided-world/ui/index.ts').length === 0);
+check('web/, the composition root, may import both',
+  fires(`import { instanceUi } from '../../instances/divided-world/ui/index.ts';\nimport { App } from '../../engine/ui/App.tsx';`, 'web/src/main.tsx').length === 0);
+
 /* ---- one instance importing another ---- */
 check('an instance importing another instance fires',
   fires(`import x from '../other-world/index.ts';`, 'instances/divided-world/index.ts').length === 1);
