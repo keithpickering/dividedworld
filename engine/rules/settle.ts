@@ -180,10 +180,12 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
       for (const q of QUADRANTS) without[q] = a.lean[q] - p.shares[q];
       const endsUp = direction(without);
       for (const q of QUADRANTS) {
-        if (tidy(p.shares[q]) <= 0) continue;
+        // Shares only grow, so a quadrant with none is exactly 0; the share is paid exact (k/n),
+        // never tidied, so a third of 7.5 rounds as 2.5 does.
+        if (p.shares[q] <= 0) continue;
         const character = p.voice[q]!;
         const list = held.get(character) ?? [];
-        list.push({ act, quadrant: q, at, share: tidy(p.shares[q]), rank: i + 1, othersBefore, othersNow, endsUp });
+        list.push({ act, quadrant: q, at, share: p.shares[q], rank: i + 1, othersBefore, othersNow, endsUp });
         held.set(character, list);
       }
     });
@@ -191,11 +193,11 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
 
   /* ---- each character's stretches of class inside the window ---- */
   const stretchesOf = (c: InputCharacter) => {
-    const held = [...c.classes].sort((a, b) => a.from - b.from);
+    const classes = [...c.classes].sort((a, b) => a.from - b.from);
     const out: { class: string; from: number; to: number }[] = [];
-    let current = held.filter((k) => k.from <= window.from).at(-1);
+    let current = classes.filter((k) => k.from <= window.from).at(-1);
     let start = window.from;
-    for (const k of held.filter((k) => k.from > window.from && k.from < window.to)) {
+    for (const k of classes.filter((k) => k.from > window.from && k.from < window.to)) {
       if (current && k.from > start) out.push({ class: current.class, from: start, to: k.from });
       current = k;
       start = k.from;

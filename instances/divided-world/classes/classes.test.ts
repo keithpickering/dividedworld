@@ -221,6 +221,12 @@ test('where a post ends up is read without the calling Lurker\'s own vote', () =
   assert.equal(called(settle(crowd([by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'fire', 3 * H), by('o3', 'tea', 4 * H)]), world)), 10);
 });
 
+test('a hedged call is paid its exact share: a third of 7.5 is 2.5, which rounds to 3', () => {
+  const tuned = { ...world, settings: withOverrides(world.settings, { economy: { 'lurker.earlyMatch': 7.5 } }) };
+  const hedged = [by('lu', 'fire', H), by('lu', 'tea', H + 1), by('lu', 'zzz', H + 2), by('o1', 'fire', 2 * H), by('o2', 'fire', 3 * H), by('o3', 'fire', 4 * H)];
+  assert.equal(called(settle(crowd(hedged), tuned)), 3);
+});
+
 test('a Lurker reacting first to sixty fresh posts earns nothing from them alone', () => {
   const sixty = Array.from({ length: 60 }, (_, i) => by('lu', 'fire', 2 * H + i, `p${i + 1}`));
   assert.deepEqual(settle(crowd(sixty), world).entries.filter((e) => e.character === 'lu'), []);

@@ -457,6 +457,29 @@ test('a vote a player holds reaches the class of the mask that says it, with the
   assert.deepEqual(held.filter((h) => h.act === 'p1' && h.by === 'cat-1').map((h) => h.share), [0.5, 0.5]);
 });
 
+test('a true tie is no direction, though taking a player\'s thirds out of the lean leaves dust', () => {
+  const { rules, inputs } = recorder();
+  const b = base();
+  // Without Bob, one whole excited-positive (Dee) and one whole excited-negative (Cat): a tie, though
+  // subtracting Bob's two thirds and one third leaves 0.9999999999999999 against 1.
+  const dust: SettlementInput = {
+    ...b,
+    acts: [...b.acts, post('d1', 'ann-quiet', FROM + H)],
+    reactions: [
+      ...b.reactions,
+      react('d1', 'bob', 'bob-1', 'fire', FROM + 2 * H),
+      react('d1', 'bob', 'bob-1', 'heart', FROM + 2 * H + 1),
+      react('d1', 'bob', 'bob-1', 'tomato', FROM + 2 * H + 2),
+      react('d1', 'cat', 'cat-1', 'tomato', FROM + 3 * H),
+      react('d1', 'dee', 'dee-1', 'fire', FROM + 4 * H),
+    ],
+  };
+  settle(dust, withClasses(rules));
+  const bob = inputs.filter((i) => i.character === 'bob-1').flatMap((i) => i.held).filter((h) => h.act === 'd1');
+  assert.ok(bob.length > 0);
+  assert.deepEqual([...new Set(bob.map((h) => h.endsUp))], [null]);
+});
+
 test('a vote is held out to its class only in a window another player first reacted in, said by the mask that holds the quadrant', () => {
   const { rules, inputs } = recorder();
   const b = base();
