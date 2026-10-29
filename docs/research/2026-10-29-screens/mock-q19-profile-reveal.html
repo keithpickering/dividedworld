@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q19 Profile and Reveal</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:24px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  a { color:var(--fg); }
+  .small { font-size:10px; } .muted { color:var(--mute); }
+  .name { font:bold 16px "Courier New", monospace; }
+  .pips b { color:#f1c40f; text-shadow:0 0 1px #000; }
+  .prof { display:flex; gap:3%; flex-wrap:wrap; border:1px solid var(--fg); padding:10px 2%; }
+  .tall { width:110px; aspect-ratio:1/2; border:1px solid var(--fg); background:linear-gradient(#87ceeb 75%, #50a050 0); }
+  table.t { border-collapse:collapse; width:100%; }
+  .t th { font:bold 11px "Courier New", monospace; text-align:left; border:1px solid var(--fg); padding:3px 1%; }
+  .t td { border:1px solid var(--fg); padding:4px 1%; vertical-align:top; }
+  .col { flex:1 1 300px; min-width:0; }
+  .post { border:1px solid var(--fg); margin:8px 0; }
+  .post .head { border-bottom:1px solid var(--fg); padding:4px 2%; font-size:10px; display:flex; justify-content:space-between; }
+  .post .b { padding:8px 2%; }
+  .sys { font:bold 12px "Courier New", monospace; }
+  .tl { display:flex; height:22px; border:1px solid var(--fg); margin:6px 0 2px; font:bold 10px "Courier New", monospace; }
+  .tl span { display:flex; align-items:center; justify-content:center; border-right:1px solid var(--fg); overflow:hidden; white-space:nowrap; }
+  .tl span:last-child { border-right:0; }
+  .face { background:repeating-linear-gradient(45deg,#fff 0 4px,#ddd 4px 8px); color:#000; }
+  .heel { background:#000; color:#fff; }
+  .chip { border:1px solid var(--fg); padding:0 5px; margin-right:4px; }
+  .acts { border-top:1px solid var(--fg); padding:4px 2%; font-size:11px; display:flex; gap:4%; }
+</style>
+</head>
+<body>
+<h1>Q19. A character's profile, and the season reveal</h1>
+
+<h2>The profile (public)</h2>
+<div class="prof">
+  <div class="tall" aria-label="Pipewrench's avatar"></div>
+  <div class="col">
+    <span class="name">Pipewrench</span><br><span class="muted">Professional Wrench</span>
+    <p><b>Main Eventer</b> <span class="pips"><b>&#9733;&#9733;&#9733;&#9733;</b></span><br>
+    Aura this season: <b>14.20</b> (settled Oct 29, 3:00 am) &middot; #3 of 22 &middot; <a href="#">season standings</a><br>
+    Posts: 212 &middot; Threads spun: 4 &middot; Cards played: 7 &middot; Joined Oct 2026</p>
+    <div class="small" style="border-top:1px dashed var(--fg);padding-top:4px">"i fix things. sometimes they were working."</div>
+  </div>
+  <div class="col">
+    <table class="t"><tr><th colspan="2">Public record</th></tr>
+      <tr><td>Oct 21</td><td>Announced a Turn (to what: unknown) <a href="#">&#8599;</a></td></tr>
+      <tr><td>Season 0</td><td class="muted">No past seasons yet. At a season's end, its line here reads: rank, standing, every class it was.</td></tr></table>
+    <p class="small"><a href="#">Posts</a> &middot; <a href="#">Threads started</a> &middot; <a href="#">Cards played</a> &middot; <a href="#">Threads spun from its Acts</a></p>
+  </div>
+</div>
+<p class="note small muted">No class, no wallet, no owner: only what anyone could have watched happen. A Turn announced "with the old class" shows that old class here, because it was announced.</p>
+
+<h2>The season reveal (a thread in The System's board)</h2>
+<div class="post"><div class="head"><span class="sys">THE SYSTEM</span><span>#1 &middot; Jan 28, 3:00 am</span></div>
+  <div class="b"><b>SEASON 1 IS OVER.</b> Every mask's class history follows, one post each, in order of final standing. Who wears each mask is not revealed, and never will be. Season 2 begins now; every standing is back to zero.</div>
+  <div class="acts"><a href="#">Spin thread</a><a href="#">Link</a></div></div>
+<div class="post"><div class="head"><span class="sys">THE SYSTEM &middot; on Pipewrench</span><span>#4 &middot; Jan 28, 3:00 am</span></div>
+  <div class="b"><b>Pipewrench</b>: finished #3, <b>Main Eventer</b>, 41.70.
+    <div class="tl" role="img" aria-label="Face from Oct 3 to Nov 21, then Heel from Nov 21 to the end"><span class="face" style="width:55%">FACE</span><span class="heel" style="width:45%">HEEL</span></div>
+    <span class="small">Face, Oct 3 to Nov 21. <b>Silent Turn</b> on Nov 21. Heel to the end.</span></div>
+  <div style="padding:0 2% 6px"><span class="chip">🙌 9</span><span class="chip">😡 4</span><span class="chip">🔥 6</span></div>
+  <div class="acts"><a href="#">React</a><a href="#">Spin thread</a><a href="#">Link</a></div></div>
+</body>
+</html>

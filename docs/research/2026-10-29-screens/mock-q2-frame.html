@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q2 Page Frame</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.4 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", Courier, monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", Courier, monospace; margin:28px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 10px; max-width:70em; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .desk { flex:1 1 560px; min-width:0; }
+  .phone { flex:0 0 340px; max-width:100%; }
+  .label { font:bold 11px "Courier New", monospace; margin-bottom:4px; }
+  .screen { border:1px solid var(--fg); position:relative; overflow:hidden; background:var(--bg); }
+  .phone .screen { height:520px; }
+  .desk .screen { height:420px; }
+  .banner { border-bottom:1px solid var(--fg); padding:8px 2%; display:flex; justify-content:space-between; align-items:baseline; }
+  .logo { font:bold 20px "Courier New", monospace; letter-spacing:1px; }
+  .phone .logo { font-size:15px; }
+  .bar { border-bottom:1px solid var(--fg); padding:5px 2%; display:flex; align-items:center; gap:2%; flex-wrap:wrap; }
+  .nav a { color:var(--fg); }
+  .nav { font-size:11px; }
+  select, button { font:11px Verdana, sans-serif; color:var(--fg); background:var(--bg); border:1px solid var(--fg); padding:2px 4px; }
+  .orbs { display:inline-flex; gap:4px; align-items:center; }
+  .orb { width:16px; height:16px; border-radius:50%; border:1px solid var(--fg); background:conic-gradient(var(--c) calc(var(--p)*1%), transparent 0); }
+  .orb.full { background:radial-gradient(circle at 50% 25%, #fff8 0 25%, transparent 45%), var(--c); }
+  .orbnum { font:bold 11px "Courier New", monospace; margin-left:4px; }
+  table.forum { width:96%; margin:10px 2%; border-collapse:collapse; }
+  table.forum th { font:bold 11px "Courier New", monospace; text-align:left; border:1px solid var(--fg); padding:3px 1%; }
+  table.forum td { border:1px solid var(--fg); padding:4px 1%; vertical-align:top; }
+  .crumb { margin:8px 2% 0; font-size:11px; }
+  .hud { position:absolute; left:0; right:0; bottom:0; border-top:2px solid var(--fg); background:var(--bg); padding:6px 2%; display:flex; align-items:center; gap:3%; }
+  .ava { width:28px; height:28px; border:1px solid var(--fg); display:inline-block; text-align:center; line-height:28px; font-size:9px; }
+  .menu { margin-left:auto; }
+  .muted { color:var(--mute); }
+  .composer { margin:10px 2%; border:1px solid var(--fg); }
+  .composer .head { border-bottom:1px solid var(--fg); padding:3px 1%; font:bold 11px "Courier New", monospace; display:flex; align-items:center; gap:2%; }
+  .composer textarea { box-sizing:border-box; width:100%; height:60px; border:0; font:12px Verdana; background:var(--bg); color:var(--fg); padding:4px; }
+  ul { margin:4px 0 0 18px; padding:0; }
+</style>
+</head>
+<body>
+<h1>Q2. The frame: where "posting as" and the orbs live</h1>
+<p class="note">Mockups only. Black and white; color only on the orbs (the six colors from your TTYD pen). All widths are percentages of the screen. The orbs here read 4.62 of 6.00. Only the player ever sees their own orbs.</p>
+
+<template id="orbs"><span class="orbs" role="img" aria-label="Wallet: 4.62 of 6 orbs">
+  <span class="orb full" style="--c:#9b59b6"></span><span class="orb full" style="--c:#3498db"></span><span class="orb full" style="--c:#2ecc71"></span><span class="orb full" style="--c:#f1c40f"></span><span class="orb" style="--c:#e67e22;--p:62"></span><span class="orb" style="--c:#e74c3c;--p:0"></span><span class="orbnum">4.62</span></span></template>
+
+<template id="index"><div class="crumb"><b>Divided World</b> &raquo; Index</div>
+<table class="forum"><tr><th style="width:70%">Board</th><th>Threads</th><th>Last post</th></tr>
+<tr><td><b><u>General Chaos</u></b><br><span class="muted">The one board of the first slice.</span></td><td>42</td><td>by Pipewrench<br><span class="muted">2 min ago</span></td></tr>
+<tr><td><b><u>The System</u></b><br><span class="muted">Announcements, Turns, the season reveal.</span></td><td>3</td><td>by The System<br><span class="muted">yesterday</span></td></tr></table></template>
+
+<h2>A. The classic user bar (recommended)</h2>
+<p class="note">The phpBB "Welcome back" row, turned into the game's bar: <b>Posting as [character ▾]</b>, the orbs, then the links. On a phone the bar sticks to the top and the links fold into a Menu button. The quick-swap is a plain <code>&lt;select&gt;</code>, so it works with a keyboard and a screen reader as it is.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop</div><div class="screen">
+    <div class="banner"><span class="logo">DIVIDED WORLD</span><span class="muted">dw.gripe</span></div>
+    <div class="bar">Posting as <select><option>Pipewrench</option><option>Mrs. Hooligan</option><option>Spritey</option></select> <span data-orbs></span>
+      <span class="nav menu"><a href="#">Index</a> &middot; <a href="#">Vending Machine</a> &middot; <a href="#">My log</a> &middot; <a href="#">Characters</a> &middot; <a href="#">Settings</a> &middot; <a href="#">Sign out</a></span></div>
+    <div data-index></div>
+  </div></div>
+  <div class="phone"><div class="label">Phone</div><div class="screen">
+    <div class="banner"><span class="logo">DIVIDED WORLD</span><button>Menu</button></div>
+    <div class="bar"><select><option>Pipewrench</option></select> <span data-orbs></span></div>
+    <div data-index></div>
+  </div></div>
+</div>
+
+<h2>B. A TTYD HUD docked at the bottom</h2>
+<p class="note">The forum header stays a plain 2003 banner with links; the game rides in a HUD fixed to the bottom of the screen (avatar, character, orbs), like a game's status bar. Thumb-reachable on a phone, and always on screen while reading. It costs a strip of every screen, and it is the least 2003 of the three.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop</div><div class="screen">
+    <div class="banner"><span class="logo">DIVIDED WORLD</span><span class="nav"><a href="#">Index</a> &middot; <a href="#">Vending Machine</a> &middot; <a href="#">My log</a> &middot; <a href="#">Characters</a> &middot; <a href="#">Settings</a></span></div>
+    <div data-index></div>
+    <div class="hud"><span class="ava">ava</span><select><option>Pipewrench</option></select><span data-orbs></span></div>
+  </div></div>
+  <div class="phone"><div class="label">Phone</div><div class="screen">
+    <div class="banner"><span class="logo">DIVIDED WORLD</span><button>Menu</button></div>
+    <div data-index></div>
+    <div class="hud"><span class="ava">ava</span><select><option>Pipewrench</option></select><span data-orbs></span></div>
+  </div></div>
+</div>
+
+<h2>C. Only where it is used</h2>
+<p class="note">No game bar. The character is chosen in the composer (and beside reactions and card plays); the orbs live on the Vending Machine and the log. The quietest frame, but a player can react as the wrong character because the choice was off-screen, and the orbs, the most-watched piece, are never in view.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop (a thread's reply box)</div><div class="screen">
+    <div class="banner"><span class="logo">DIVIDED WORLD</span><span class="nav"><a href="#">Index</a> &middot; <a href="#">Vending Machine</a> &middot; <a href="#">My log</a> &middot; <a href="#">Characters</a></span></div>
+    <div data-index></div>
+    <div class="composer"><div class="head">Reply as <select><option>Pipewrench</option></select></div><textarea aria-label="Reply"></textarea></div>
+  </div></div>
+</div>
+
+<script>
+  const o = document.getElementById('orbs').innerHTML, i = document.getElementById('index').innerHTML;
+  document.querySelectorAll('[data-orbs]').forEach(e => e.outerHTML = o);
+  document.querySelectorAll('[data-index]').forEach(e => e.outerHTML = i);
+</script>
+</body>
+</html>

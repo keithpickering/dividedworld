@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q5 Reactions Row</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; --q1:#e74c3c; --q2:#8e44ad; --q3:#27ae60; --q4:#7f8c8d; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:26px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .desk { flex:1 1 600px; min-width:0; }
+  .phone { flex:0 0 340px; max-width:100%; }
+  .label { font:bold 11px "Courier New", monospace; margin-bottom:4px; }
+  .post { border:1px solid var(--fg); }
+  .post .b { padding:8px 2%; }
+  .post .head { border-bottom:1px solid var(--fg); padding:4px 2%; font-size:10px; display:flex; justify-content:space-between; }
+  .name { font:bold 12px "Courier New", monospace; }
+  .rx { border-top:1px solid var(--fg); padding:5px 2%; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .chip { border:1px solid var(--fg); padding:0 5px; font-size:12px; white-space:nowrap; background:var(--bg); color:var(--fg); font-family:Verdana; }
+  .chip.mine { outline:2px solid var(--fg); outline-offset:1px; font-weight:bold; }
+  .add { border:1px dashed var(--fg); }
+  .acts { border-top:1px solid var(--fg); padding:4px 2%; font-size:11px; display:flex; flex-wrap:wrap; gap:4%; }
+  .acts a { color:var(--fg); }
+  .picker { position:relative; margin:6px 2% 8px; border:2px solid var(--fg); background:var(--bg); width:min(300px, 96%); }
+  .picker .t { font:bold 11px "Courier New", monospace; border-bottom:1px solid var(--fg); padding:3px 6px; display:flex; justify-content:space-between; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; }
+  .quad { border:1px solid var(--fg); margin:-1px 0 0 -1px; padding:4px; }
+  .quad .q { font:bold 9px "Courier New", monospace; color:var(--mute); }
+  .quad button { font-size:18px; background:none; border:1px solid transparent; padding:1px 2px; cursor:pointer; }
+  .quad button.on { border:2px solid var(--fg); }
+  .axis { font:9px "Courier New", monospace; color:var(--mute); display:flex; justify-content:space-between; padding:2px 6px; }
+  .heat { display:inline-grid; grid-template-columns:12px 12px; gap:1px; vertical-align:middle; margin-right:6px; }
+  .heat i { width:12px; height:12px; border:1px solid var(--fg); }
+  .muted { color:var(--mute); }
+  .small { font-size:10px; }
+</style>
+</head>
+<body>
+<h1>Q5. Reactions and actions under a post</h1>
+<p class="note">Everyone sees the tallies; nobody sees who reacted. Your own reactions are marked (bold, outlined), and only on your screen. You react as the character in your HUD. A post by one of your own characters shows its tallies but no react button, since the server would refuse it, and your screen already knows which characters are yours.</p>
+<template id="text">Hot take: the Situation Room should be renamed the Sitcom Room. I will be taking no questions.</template>
+
+<h2>A. Emoji chips, and a picker laid out as the four quadrants (recommended)</h2>
+<p class="note">Tallies are chips with counts, in the order they arrived. The picker is a 2&times;2 grid shaped like the circumplex: excited at the top, calm at the bottom, negative left, positive right, as the spec places them (the Heel's heat top-left, the Face's hype top-right), so the game's map is the control itself, and a new player learns the quadrants by reacting. "2 of 3 left" counts across all your characters on this post. Arrow keys move through the grid; each button's name is the emoji's name and quadrant.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop, picker open</div>
+  <div class="post"><div class="head"><span class="name">Mrs. Hooligan</span><span>#15 &middot; 11:50 pm</span></div>
+    <div class="b" data-t></div>
+    <div class="rx"><span class="chip">🔥 4</span><span class="chip mine">😡 2</span><span class="chip">🙄 3</span><span class="chip">☕ 1</span><button class="chip add" aria-expanded="true">+ React</button></div>
+    <div class="picker" role="dialog" aria-label="React as Pipewrench"><div class="t"><span>React as Pipewrench</span><span>2 of 3 left</span></div>
+      <div class="axis"><span>negative</span><span>EXCITED</span><span>positive</span></div>
+      <div class="grid">
+        <div class="quad"><div class="q">heat</div><button>🍅</button><button class="on">😡</button><button>🤬</button><button>👎</button></div>
+        <div class="quad"><div class="q">hype</div><button>🔥</button><button>❤️</button><button>🙌</button><button>🤩</button></div>
+        <div class="quad"><div class="q">groan</div><button>💤</button><button>🙄</button><button>🗑️</button><button>🥱</button></div>
+        <div class="quad"><div class="q">chill</div><button>😌</button><button>☕</button><button>🤝</button><button>🧘</button></div>
+      </div>
+      <div class="axis"><span>negative</span><span>CALM</span><span>positive</span></div></div>
+    <div class="acts"><a href="#">Quote</a><a href="#">Spin thread</a><a href="#">Play card</a><a href="#">Link</a></div></div></div>
+  <div class="phone"><div class="label">Phone</div>
+  <div class="post"><div class="head"><span class="name">Mrs. Hooligan</span><span>#15</span></div>
+    <div class="b" data-t></div>
+    <div class="rx"><span class="chip">🔥 4</span><span class="chip mine">😡 2</span><span class="chip">🙄 3</span><span class="chip">☕ 1</span><button class="chip add">+</button></div>
+    <div class="acts"><a href="#">Quote</a><a href="#">Spin</a><a href="#">Card</a><a href="#">Link</a></div></div>
+  <p class="small muted">On a phone the picker opens as a sheet from the bottom, above the HUD, with the same 2&times;2 grid at thumb size.</p></div>
+</div>
+
+<h2>B. Chips plus a quadrant heat square</h2>
+<p class="note">A as before, plus a tiny 2&times;2 square at the start of the row, shaded by each quadrant's share of the vote, so how the crowd took a post reads at a glance across a page. It is the "heatmap of how the crowd responded" from the core-loop design, drawn literally. It adds a colored game piece to every post, and its shading is the vote, which a reader could watch move when they react.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop</div>
+  <div class="post"><div class="head"><span class="name">Mrs. Hooligan</span><span>#15 &middot; 11:50 pm</span></div>
+    <div class="b" data-t></div>
+    <div class="rx"><span class="heat" role="img" aria-label="Crowd: 40% hype, 20% heat, 10% chill, 30% groan"><i style="background:rgb(142 68 173 / .2)"></i><i style="background:rgb(231 76 60 / .4)"></i><i style="background:rgb(127 140 141 / .3)"></i><i style="background:rgb(39 174 96 / .1)"></i></span>
+      <span class="chip">🔥 4</span><span class="chip mine">😡 2</span><span class="chip">🙄 3</span><span class="chip">☕ 1</span><button class="chip add">+ React</button></div>
+    <div class="acts"><a href="#">Quote</a><a href="#">Spin thread</a><a href="#">Play card</a><a href="#">Link</a></div></div></div>
+</div>
+
+<h2>C. A flat picker</h2>
+<p class="note">The same chips; the picker is one row of sixteen emoji with no quadrants shown. The plainest, and the quadrants stay something a player reads about rather than sees.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop, picker open</div>
+  <div class="post"><div class="head"><span class="name">Mrs. Hooligan</span><span>#15 &middot; 11:50 pm</span></div>
+    <div class="b" data-t></div>
+    <div class="rx"><span class="chip">🔥 4</span><span class="chip mine">😡 2</span><span class="chip">🙄 3</span><span class="chip">☕ 1</span><button class="chip add">+ React</button></div>
+    <div class="picker" style="width:min(560px,96%)"><div class="t"><span>React as Pipewrench</span><span>2 of 3 left</span></div>
+      <div style="padding:4px;font-size:18px">🔥❤️🙌🤩🍅😡🤬👎😌☕🤝🧘💤🙄🗑️🥱</div></div>
+    <div class="acts"><a href="#">Quote</a><a href="#">Spin thread</a><a href="#">Play card</a><a href="#">Link</a></div></div></div>
+</div>
+<script>const t=document.getElementById('text').innerHTML;document.querySelectorAll('[data-t]').forEach(e=>e.innerHTML=t);</script>
+</body>
+</html>

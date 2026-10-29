@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q18 Index and Threads</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:24px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .desk { flex:1 1 620px; min-width:0; } .phone { flex:0 0 340px; max-width:100%; }
+  .label { font:bold 11px "Courier New", monospace; margin:10px 0 4px; }
+  a { color:var(--fg); }
+  table.t { width:100%; border-collapse:collapse; }
+  .t th { font:bold 11px "Courier New", monospace; text-align:left; border:1px solid var(--fg); padding:3px 1%; }
+  .t td { border:1px solid var(--fg); padding:5px 1%; vertical-align:top; }
+  .t td.n { text-align:center; }
+  .ic { font:bold 11px "Courier New", monospace; border:1px solid var(--fg); padding:0 3px; white-space:nowrap; }
+  .ic.new { background:var(--fg); color:var(--bg); }
+  .mini { width:18px; height:18px; border:1px solid var(--fg); display:inline-block; vertical-align:middle; margin-right:4px; background:#ddd; }
+  .small { font-size:10px; } .muted { color:var(--mute); }
+  .sys { font:bold 11px "Courier New", monospace; }
+  .card { border:1px solid var(--fg); padding:6px 3%; }
+  .card + .card { border-top:0; }
+  .ro { font:bold 10px "Courier New", monospace; border:1px dashed var(--fg); padding:0 4px; }
+</style>
+</head>
+<body>
+<h1>Q18. The index and a board's thread list</h1>
+
+<h2>The index (option A: The System has a board of its own)</h2>
+<table class="t">
+  <tr><th style="width:62%">Board</th><th>Threads</th><th>Posts</th><th>Last post</th></tr>
+  <tr><td><span class="ic new">NEW</span> <b><u>General Chaos</u></b><br><span class="small muted">The playtest's board.</span></td><td class="n">42</td><td class="n">1,318</td><td><span class="mini"></span>Pipewrench<br><span class="small muted">2 min ago</span></td></tr>
+  <tr><td><span class="ic">&nbsp;&nbsp;&nbsp;</span> <b><u>The System</u></b> <span class="ro">The System posts; you react and spin</span><br><span class="small muted">The Bulletin (each settlement's announced Turns) and, at a season's end, the reveal.</span></td><td class="n">2</td><td class="n">19</td><td><span class="sys">THE SYSTEM</span><br><span class="small muted">today, 3:00 am</span></td></tr>
+</table>
+
+<h2>A board's thread list</h2>
+<div class="row">
+<div class="desk"><div class="label">Desktop</div>
+<table class="t">
+  <tr><th style="width:5%"></th><th style="width:47%">Thread</th><th>Replies</th><th>Views</th><th>Last post</th></tr>
+  <tr><td><span class="ic new">NEW</span></td><td><b><u>The Crimson Incident</u></b> <span class="small">&#8627; spun from <u>#16 in "Sitcom Room discourse"</u></span><br><span class="small"><span class="mini"></span>Pipewrench &middot; <a href="#">first unread</a> &middot; pages: 1 2</span></td><td class="n">24</td><td class="n">31</td><td><span class="mini"></span>Mrs. Hooligan<br><span class="small muted">2 min ago</span></td></tr>
+  <tr><td><span class="ic">HOT</span></td><td><b><u>Sitcom Room discourse</u></b><br><span class="small"><span class="mini"></span>Mrs. Hooligan &middot; pages: 1 2 3 &hellip; 9</span></td><td class="n">171</td><td class="n">44</td><td><span class="mini"></span>Spritey<br><span class="small muted">14 min ago</span></td></tr>
+  <tr><td><span class="ic">&nbsp;&nbsp;&nbsp;</span></td><td><b><u>post your desk</u></b><br><span class="small"><span class="mini"></span>Captain Gravy</span></td><td class="n">8</td><td class="n">19</td><td><span class="mini"></span>Captain Gravy<br><span class="small muted">yesterday</span></td></tr>
+</table>
+<p class="small muted">NEW = posts since you last read (your reading rows, across devices). HOT = many replies this week (an instance setting). Views are unique players, updated hourly. Sorted by last post; a new thread form sits above the list.</p></div>
+<div class="phone"><div class="label">Phone</div>
+  <div class="card"><span class="ic new">NEW</span> <b><u>The Crimson Incident</u></b><br><span class="small">&#8627; spun from #16 &middot; <span class="mini"></span>Pipewrench</span><br><span class="small muted">24 replies &middot; 31 views &middot; last: Mrs. Hooligan, 2 min</span></div>
+  <div class="card"><span class="ic">HOT</span> <b><u>Sitcom Room discourse</u></b><br><span class="small muted">171 replies &middot; 44 views &middot; last: Spritey, 14 min</span></div>
+  <div class="card"><b><u>post your desk</u></b><br><span class="small muted">8 replies &middot; 19 views &middot; last: Captain Gravy, yesterday</span></div>
+</div>
+</div>
+</body>
+</html>

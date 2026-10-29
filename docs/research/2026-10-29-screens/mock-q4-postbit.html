@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q4 The Postbit</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; --rule:#000; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; --rule:#fff; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:26px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .desk { flex:1 1 600px; min-width:0; }
+  .phone { flex:0 0 340px; max-width:100%; }
+  .label { font:bold 11px "Courier New", monospace; margin-bottom:4px; }
+  table.post { width:100%; border-collapse:collapse; border:1px solid var(--fg); }
+  .post td { border:1px solid var(--fg); vertical-align:top; padding:6px 1.5%; }
+  .post .bit { width:22%; }
+  .post .meta { font-size:10px; border-bottom:1px solid var(--fg); padding:3px 1.5%; display:flex; justify-content:space-between; }
+  .name { font:bold 13px "Courier New", monospace; }
+  .ava { width:64px; height:64px; border:1px solid var(--fg); display:block; margin:4px 0; text-align:center; line-height:64px; font-size:10px; }
+  .small { font-size:10px; }
+  .muted { color:var(--mute); }
+  .pips { letter-spacing:1px; }
+  .pips b { color:#f1c40f; text-shadow:0 0 1px #000; }
+  .gauge { display:inline-block; width:80%; height:6px; border:1px solid var(--fg); vertical-align:middle; }
+  .gauge i { display:block; height:100%; background:linear-gradient(90deg,#9b59b6,#3498db,#2ecc71,#f1c40f,#e67e22,#e74c3c); }
+  .body { min-height:70px; }
+  .sig { border-top:1px dashed var(--fg); margin-top:10px; padding-top:4px; font-size:10px; }
+  .later { font-size:10px; border:1px dashed var(--fg); padding:3px 6px; margin-top:8px; display:inline-block; }
+  /* phone: the postbit folds to a header row */
+  .ppost { border:1px solid var(--fg); }
+  .ppost .head { display:flex; gap:3%; align-items:center; border-bottom:1px solid var(--fg); padding:5px 3%; }
+  .ppost .ava { width:36px; height:36px; line-height:36px; margin:0; font-size:8px; }
+  .ppost .b { padding:6px 3%; }
+  .ppost .when { margin-left:auto; text-align:right; font-size:10px; }
+</style>
+</head>
+<body>
+<h1>Q4. The postbit: what a post shows about its character</h1>
+<p class="note">The left column of every post on a desktop; on a phone it folds into a header row above the post. Everything here is public. The question is how the character's <b>season standing</b> (its settled Aura this season) shows. The reactions and actions row is the next question, so it is only a placeholder here.</p>
+<p class="note">One mask point applies to all three: the postbit says "Joined Oct 2026" (the month, never the time), because two characters created a minute apart is a way of reading who owns them.</p>
+
+<template id="bodytext">Has anyone else noticed the board gets weirder after midnight? I am not saying it is haunted. I am saying I posted a recipe for toast and three people called me a coward.</template>
+
+<h2>A. The number, with a gauge</h2>
+<p class="note">"Aura this season: 14.20" and a thin gauge against the season's top standing. Exact, so accusation threads can cite it, and it reads like a score. The most information, and the most like a leaderboard.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop</div>
+  <table class="post"><tr><td colspan="2" style="padding:3px 1.5%"><div class="meta" style="border:0;padding:0"><span>Posted Oct 28, 2026 11:42 pm</span><span>#14</span></div></td></tr>
+  <tr><td class="bit"><span class="name">Pipewrench</span><br><span class="small muted">Professional Wrench</span><span class="ava">avatar</span>
+    <span class="small">Aura this season: <b>14.20</b></span><br><span class="gauge"><i style="width:62%"></i></span><br>
+    <span class="small muted">Posts: 212<br>Joined Oct 2026</span></td>
+  <td><div class="body" data-body></div><div class="later">reactions and actions: Q5</div><div class="sig">"i fix things. sometimes they were working."</div></td></tr></table></div>
+  <div class="phone"><div class="label">Phone</div>
+  <div class="ppost"><div class="head"><span class="ava">ava</span><div><span class="name">Pipewrench</span><br><span class="small">Aura <b>14.20</b> &middot; 212 posts</span></div><span class="when muted">11:42 pm<br>#14</span></div>
+  <div class="b"><div data-body></div><div class="later">reactions and actions: Q5</div></div></div></div>
+</div>
+
+<h2>B. A 2003 rank, with the number one click away (recommended)</h2>
+<p class="note">The old forum's member rank: a title and a row of pips, earned from the season standing (thresholds are instance settings; the season review tunes them). The exact standing is on the character's profile, so evidence is still there for anyone who digs. It is the most 2003, it reads at a glance, and coarse steps on every post are harder to watch move than a number. The pips are color on a game piece, so they keep the house style.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop</div>
+  <table class="post"><tr><td colspan="2" style="padding:3px 1.5%"><div class="meta" style="border:0;padding:0"><span>Posted Oct 28, 2026 11:42 pm</span><span>#14</span></div></td></tr>
+  <tr><td class="bit"><span class="name">Pipewrench</span><br><span class="small muted">Professional Wrench</span><span class="ava">avatar</span>
+    <span class="small"><b>Main Eventer</b></span><br><span class="pips" aria-label="Rank 4 of 6"><b>&#9733;&#9733;&#9733;&#9733;</b><span class="muted">&#9734;&#9734;</span></span><br>
+    <span class="small muted">Posts: 212<br>Joined Oct 2026</span></td>
+  <td><div class="body" data-body></div><div class="later">reactions and actions: Q5</div><div class="sig">"i fix things. sometimes they were working."</div></td></tr></table></div>
+  <div class="phone"><div class="label">Phone</div>
+  <div class="ppost"><div class="head"><span class="ava">ava</span><div><span class="name">Pipewrench</span><br><span class="small"><b>Main Eventer</b> <span class="pips"><b>&#9733;&#9733;&#9733;&#9733;</b></span></span></div><span class="when muted">11:42 pm<br>#14</span></div>
+  <div class="b"><div data-body></div><div class="later">reactions and actions: Q5</div></div></div></div>
+</div>
+
+<h2>C. Not on the postbit</h2>
+<p class="note">Name, title, avatar, posts and joined, as a plain 2003 postbit. Standing lives only on the profile and a season standings page. Quietest, but the season's race is invisible where people actually read.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop</div>
+  <table class="post"><tr><td colspan="2" style="padding:3px 1.5%"><div class="meta" style="border:0;padding:0"><span>Posted Oct 28, 2026 11:42 pm</span><span>#14</span></div></td></tr>
+  <tr><td class="bit"><span class="name">Pipewrench</span><br><span class="small muted">Professional Wrench</span><span class="ava">avatar</span>
+    <span class="small muted">Posts: 212<br>Joined Oct 2026</span></td>
+  <td><div class="body" data-body></div><div class="later">reactions and actions: Q5</div><div class="sig">"i fix things. sometimes they were working."</div></td></tr></table></div>
+</div>
+
+<p class="note" style="margin-top:20px">Rank names in B are placeholders from the wrestling card order (Jobber, Enhancement Talent, Midcarder, Main Eventer, Headliner, Legend); a rank list is instance content, so Divided World names its own.</p>
+<script>
+  const t = document.getElementById('bodytext').innerHTML;
+  document.querySelectorAll('[data-body]').forEach(e => e.innerHTML = t);
+</script>
+</body>
+</html>
