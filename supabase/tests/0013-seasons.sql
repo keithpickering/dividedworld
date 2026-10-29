@@ -49,7 +49,7 @@ begin
   perform tests.unbecome();
   perform tests.become(ann);
   said := turn(a, 'beta', 'announced');
-  if said <> '{"pending": true, "class": "beta", "loudness": "announced"}' then raise exception 'a Turn waits, and says so to its player: %', said; end if;
+  if said - 'takes_effect_at' <> '{"pending": true, "class": "beta", "loudness": "announced"}' or not said ? 'takes_effect_at' then raise exception 'a Turn waits, and says so to its player: %', said; end if;
   perform tests.unbecome();
   perform tests.become(bob);
   if pg_temp.public_view() <> before then raise exception 'a waiting Turn changed what another player can read'; end if;
