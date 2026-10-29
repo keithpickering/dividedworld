@@ -6,27 +6,104 @@
  * them in Supabase Auth (auth.users, and auth.identities where Auth keeps one), so that an
  * imported instance's players sign in as before. What is not exported is said where it is left
  * out (NOT_EXPORTED): the two Vault secrets, Auth's sessions, which end, and the tables the
- * migrations fill themselves (MIGRATION_DATA), whose release the manifest names instead.
+ * migrations fill themselves (MIGRATION_DATA), whose release the manifest names instead. The files
+ * the rows name (avatars, BUCKETS) are carried beside the rows, from Storage and back to it.
  *
  * A connection's password never reaches psql's command line, where any user's `ps` reads it, nor
  * the terminal: the URL is taken apart here and handed to psql as libpq's variables, and every
  * message a tool prints passes through scrub() first.
  */
 import { execFileSync, spawn } from 'node:child_process';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import readline from 'node:readline';
 
 export const FORMAT = 'kayfabb-export/1';
 
-/** --from and --to, both required. */
+/** --from and --to, both required; --storage, the instance's Supabase URL, where its files are. */
 export function args(argv, usage) {
   const out = {};
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i];
-    if (flag !== '--from' && flag !== '--to') throw new Error(usage);
+    if (flag !== '--from' && flag !== '--to' && flag !== '--storage') throw new Error(usage);
     out[flag.slice(2)] = argv[i + 1];
   }
   if (!out.from || !out.to) throw new Error(usage);
   return out;
 }
+
+/* ------------------------------------------------------------- the files an instance holds ---- */
+
+/**
+ * The buckets an instance keeps files in, each with the table and columns that name its files: an
+ * export carries every file a row names, and an import puts each back under its name, so the
+ * imported forum shows the same avatars (supabase/migrations/0019_profiles.sql).
+ */
+export const BUCKETS = [{ bucket: 'avatars', table: 'public.character_profiles', columns: ['avatar_source', 'avatar_square', 'avatar_portrait'], contentType: 'image/webp' }];
+
+/** The environment variable that holds the service key Storage is called with; never printed, never on a command line. */
+export const STORAGE_KEY = 'KAYFABB_STORAGE_KEY';
+
+/** A name a row gives a file: one path segment, nothing that could climb out of the export. */
+const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$/;
+
+/** Every file the exported rows name, by bucket, read from the table files the export wrote. */
+export async function filesNamed(dir) {
+  const out = [];
+  for (const b of BUCKETS) {
+    const file = path.join(dir, fileOf(b.table));
+    if (!fs.existsSync(file)) continue;
+    const names = new Set();
+    for await (const line of readline.createInterface({ input: fs.createReadStream(file, 'utf8'), crlfDelay: Infinity })) {
+      if (!line) continue;
+      const row = JSON.parse(line);
+      for (const c of b.columns) if (row[c]) names.add(row[c]);
+    }
+    for (const name of [...names].sort()) {
+      if (!FILE_NAME.test(name)) throw new Error(`${b.table} names a file "${name}" that is not one path segment`);
+      out.push({ bucket: b.bucket, name });
+    }
+  }
+  return out;
+}
+
+/** Supabase Storage at a project's URL, called with the service key from STORAGE_KEY. */
+export function storage(url) {
+  const key = process.env[STORAGE_KEY];
+  if (!url) throw new Error('the instance holds files: give --storage with its Supabase URL');
+  if (!key) throw new Error(`the instance holds files: set ${STORAGE_KEY} to its service key`);
+  secrets.add(key);
+  let base;
+  try { base = new URL(url); } catch { throw new Error('--storage is the project\'s URL, https://…'); }
+  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+  const at = (bucket, name) => new URL(`storage/v1/object/${bucket}/${encodeURIComponent(name)}`, base.href.endsWith('/') ? base.href : `${base.href}/`);
+  return {
+    named: base.origin,
+    async get(bucket, name) {
+      const r = await fetch(at(bucket, name), { headers });
+      if (!r.ok) throw new Error(`storage: ${bucket}/${name} answered HTTP ${r.status}`);
+      return new Uint8Array(await r.arrayBuffer());
+    },
+    /**
+     * Stores a file, never over another: one already there with the same bytes (an import run again
+     * after one that stopped part way) is the same file; one with other bytes is refused.
+     */
+    async put(bucket, name, bytes, contentType) {
+      const r = await fetch(at(bucket, name), { method: 'POST', headers: { ...headers, 'Content-Type': contentType, 'x-upsert': 'false' }, body: bytes });
+      await r.body?.cancel();
+      if (r.ok) return;
+      if (r.status === 400 || r.status === 409) {
+        const there = await fetch(at(bucket, name), { headers });
+        if (there.ok && sha256(new Uint8Array(await there.arrayBuffer())) === sha256(bytes)) return;
+        throw new Error(`storage: ${bucket}/${name} is already there, and is another file`);
+      }
+      throw new Error(`storage: storing ${bucket}/${name} answered HTTP ${r.status}`);
+    },
+  };
+}
+
+export const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 
 /** The query parameters a URL may carry, as the libpq variable each sets: none can send psql elsewhere. */
 const HARMLESS = { sslmode: 'PGSSLMODE', sslrootcert: 'PGSSLROOTCERT', connect_timeout: 'PGCONNECT_TIMEOUT', application_name: 'PGAPPNAME' };
