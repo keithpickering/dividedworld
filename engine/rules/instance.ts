@@ -94,8 +94,8 @@ export function instanceProblems(instance: Instance): string[] {
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
   const systems = instance.boards.filter((b) => b.system === true);
-  if (!systems.length) out.push('no board is The System\'s: one board is `system`, where The System posts');
-  if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); one is`);
+  if (!systems.length) out.push('no board is The System\'s: exactly one board sets system: true, where The System posts');
+  if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
   for (const key of ['turnsThreadTitle', 'revealTitle', 'revealBody'] as const) {
     const words = instance.copy?.[key];

@@ -40,11 +40,15 @@ end $$;
 -- flag where it is; one that flags another moves it there. Everything else as 0004 wrote it.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare flagged text := (select e ->> 'slug' from jsonb_array_elements(payload -> 'boards') e where (e ->> 'system')::boolean limit 1);
+declare
+  flags integer;
+  flagged text;
 begin
-  if (select count(*) from jsonb_array_elements(coalesce(payload -> 'boards', '[]')) e where coalesce((e ->> 'system')::boolean, false)) > 1 then
-    raise exception 'a seed flags one board as The System''s' using errcode = '22023';
-  end if;
+  select count(*), min(e ->> 'slug') into flags, flagged
+  from jsonb_array_elements(coalesce(payload -> 'boards', '[]')) e where coalesce((e ->> 'system')::boolean, false);
+  if flags > 1 then raise exception 'a seed flags one board as The System''s, not %', flags using errcode = '22023'; end if;
+  -- The economy is merged, number by number: a card kind is never removed, so the price of one
+  -- the code no longer sells stays in the row with it (settings_economy_whole, 0006).
   insert into settings (key, value) select key, value from jsonb_each(payload -> 'settings')
   on conflict (key) do update set value = case when settings.key = 'economy' then settings.value || excluded.value else excluded.value end;
   insert into class_kinds (key, name) select e ->> 'key', e ->> 'name' from jsonb_array_elements(payload -> 'classes') e
@@ -55,6 +59,8 @@ begin
   select e ->> 'key', e ->> 'name', e ->> 'alignment', e ->> 'priceSetting' from jsonb_array_elements(payload -> 'cards') e
   on conflict (key) do update set name = excluded.name, alignment = excluded.alignment, price_setting = excluded.price_setting;
   -- The flag leaves the board that held it before another takes it, so the index never sees two.
+  -- A seed naming one slug twice is refused by the upsert ("cannot affect row a second time"),
+  -- where 0004 took its first; an instance never holds one (instanceProblems).
   if flagged is not null then update boards set is_system = false where is_system and slug <> flagged; end if;
   insert into boards (slug, name, description, is_system)
   select e ->> 'slug', e ->> 'name', coalesce(e ->> 'description', ''), coalesce(e ->> 'slug' = flagged, false) from jsonb_array_elements(payload -> 'boards') e

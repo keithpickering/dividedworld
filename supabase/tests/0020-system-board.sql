@@ -104,6 +104,7 @@ declare
   old_turns uuid;
   old_post uuid;
   settled jsonb;
+  why text;
 begin
   -- As it stood: no board flagged, so The System posted on the first board.
   update boards set is_system = false;
@@ -142,4 +143,17 @@ begin
   if system_board() is distinct from (select id from boards where slug = 'side') then raise exception 'a seed flagging another board moved the flag'; end if;
   if (select name from boards where slug = 'side') is distinct from 'Side' then raise exception 'seeding the flag renamed an admin''s board'; end if;
   if (select count(*) from boards where is_system) is distinct from 1::bigint then raise exception 'two boards are The System''s'; end if;
+  -- A seed flagging a board it is adding: the new board is The System's, the old flag gone.
+  perform set_config('role', 'service_role', true);
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'boards', jsonb_build_array(jsonb_build_object('slug', 'fresh', 'name', 'Fresh', 'description', '', 'system', true))));
+  perform tests.unbecome();
+  if (select array_agg(slug) from boards where is_system) is distinct from array['fresh'] then raise exception 'a seed flagging a new board left %', (select array_agg(slug) from boards where is_system); end if;
+  -- A seed flagging two boards is refused, and changes nothing.
+  perform set_config('role', 'service_role', true);
+  why := pg_temp.refusal($q$select seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'boards', jsonb_build_array(jsonb_build_object('slug', 'general', 'name', 'General', 'system', true), jsonb_build_object('slug', 'side', 'name', 'Side', 'system', true))))$q$);
+  perform tests.unbecome();
+  if why is distinct from 'a seed flags one board as The System''s, not 2' then raise exception 'a seed flagging two boards: %', why; end if;
+  if (select array_agg(slug) from boards where is_system) is distinct from array['fresh'] then raise exception 'a refused seed moved the flag'; end if;
 end $$;
