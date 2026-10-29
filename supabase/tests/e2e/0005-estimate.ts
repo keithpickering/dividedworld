@@ -23,7 +23,7 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
     a as (insert into accounts (id) select id from u returning id)
     select json_object_agg(split_part(email, '@', 1), id) from u`));
   const masks: [string, string, string][] = [
-    ['est-ann', 'Est Face', 'face'], ['est-ann', 'Est Lurker', 'lurker'], ['est-bob', 'Est Heel', 'heel'], ['est-bob', 'Est Shadow', 'jabroni'], ['est-bob', 'Est Ghost', 'lurker'],
+    ['est-ann', 'Est Face', 'face'], ['est-ann', 'Est Lurker', 'lurker'], ['est-bob', 'Est Heel', 'heel'], ['est-bob', 'Est Shadow', 'jabroni'], ['est-bob', 'Est Ghost', 'lurker'], ['est-ann', 'Est Jab', 'jabroni'],
     ['est-cat', 'Est Cat', 'face'], ['est-dee', 'Est Dee', 'heel'],
   ];
   const c = JSON.parse(sql(`
@@ -45,6 +45,24 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
   act('Est Shadow', 3.1, 'post', 'null', '{"body": "reply"}', spunThread);
   act('Est Cat', 3.2, 'post', 'null', '{"body": "reply"}', spunThread);
   const landed = act('Est Dee', 4, 'card', p, '{"card": "whoops", "config": {"color": "red"}}');
+  // A salty card landed on Ann's Jabroni: the cards others played on her posts are read.
+  const j = act('Est Jab', 1.2);
+  act('Est Dee', 4.5, 'card', j, '{"card": "whoops", "config": {"color": "blue"}}');
+  // Before the window: a post of Bob's, a sweet card of Ann's on it, and a thread Ann's Lurker spun
+  // from it that gets its replies now. In the window Ann's Face plays a sweet card there too, so the
+  // vote after it counts for the earlier one: Ann's earlier cards on a post are read, and so is a
+  // spin's origin from before the window.
+  const qold = act('Est Heel', -40);
+  act('Est Lurker', -10, 'card', qold, '{"card": "stick-around", "config": {}, "layer": 1}');
+  const late = act('Est Face', 2.2, 'card', qold, '{"card": "stick-around", "config": {}, "layer": 2}');
+  const origin = act('Est Heel', -45);
+  const oldThread = sql(`insert into threads (board, title, origin_act_id) select id, 'Spun before', '${origin}' from boards where slug = 'general' returning id`);
+  act('Est Lurker', -20, 'spin', origin, '{"title": "Spun before", "body": ""}', oldThread);
+  act('Est Heel', 3.3, 'post', 'null', '{"body": "reply"}', oldThread);
+  act('Est Cat', 3.4, 'post', 'null', '{"body": "reply"}', oldThread);
+  act('Est Dee', 3.5, 'post', 'null', '{"body": "reply"}', oldThread);
+  // A post of Dee's that Ann's Lurker reacted to first, before a crowd: her reactions elsewhere are read.
+  const r = act('Est Dee', 1.7);
   let slot = 0;
   const react = (target: string, who: string, owner: string, kind: string, hours: number) => {
     slot += 1;
@@ -58,7 +76,9 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
   react(q, 'Est Shadow', 'est-bob', 'fire', 10);
   // On Ann's card, and on the card Dee landed.
   react(card, 'Est Cat', 'est-cat', 'fire', 11); react(landed, 'Est Cat', 'est-cat', 'fire', 12);
-  void spin;
+  react(r, 'Est Lurker', 'est-ann', 'fire', 1.8); react(r, 'Est Cat', 'est-cat', 'fire', 2); react(r, 'Est Heel', 'est-bob', 'fire', 2.2); react(r, 'Est Shadow', 'est-bob', 'heart', 2.3);
+  react(qold, 'Est Cat', 'est-cat', 'fire', 13);
+  void spin; void late;
 
   const until = at(24);
   const full = JSON.parse(sql(`select settlement_input('${start}', '${until}')`)) as SettlementInput;
@@ -66,7 +86,11 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
   const fromFull = estimateForOwner(full, instance, ids['est-ann']);
   const fromScoped = estimateForOwner(scoped, instance, scoped.player);
   assert.ok(fromFull.lines.length > 3, JSON.stringify(fromFull));
-  assert.ok(fromFull.entries.some((e) => e.reason.startsWith('lurker.')), 'the Lurker\'s spun thread and call are estimated');
+  // Every read of estimate_input's has a reason behind it here, so dropping one changes the estimate.
+  const reasons = fromFull.lines.map((l) => l.reason);
+  for (const reason of ['lurker.calledIt', 'jabroni.soldTheL', 'face.liftedAPost']) assert.ok(reasons.includes(reason), `${reason} is estimated: ${JSON.stringify(reasons)}`);
+  assert.equal(reasons.filter((x) => x === 'lurker.spunAThread').length, 2, 'both spun threads, the one spun before the window too');
+  assert.ok(!fromFull.lines.some((l) => l.reason === 'face.liftedAPost' && l.act === late), 'the vote after two sweet cards counts for the earlier one');
   assert.deepEqual(fromScoped, fromFull);
 
   // Nobody else is named: no other account, no mask that only reacted, no class but Ann's.
@@ -74,7 +98,7 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
   for (const who of ['est-bob', 'est-cat', 'est-dee']) assert.ok(!said.includes(ids[who]), `${who}'s account`);
   assert.ok(!said.includes(c['Est Ghost']), 'a mask that only reacted to Ann is named by a key made up for the request');
   const classes = scoped.characters.flatMap((x) => x.classes.map((k) => k.class));
-  assert.deepEqual([...new Set(classes)].sort(), ['face', 'lurker'], 'only Ann\'s masks carry a class');
+  assert.deepEqual([...new Set(classes)].sort(), ['face', 'jabroni', 'lurker'], 'only Ann\'s masks carry a class');
   // A second call names everyone under new keys.
   const again = JSON.parse(sql(`select estimate_input('${ids['est-ann']}', '${until}')`)) as SettlementInput & { player: string };
   const keys = (i: SettlementInput) => new Set(i.reactions.map((r) => r.player));
