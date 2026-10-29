@@ -115,7 +115,9 @@ test('a number a class reads can carry its bounds, and a price is a whole number
   assert.match(instanceProblems(bounded).join('\n'), /class "a" reads economy "a\.bonus" as 5; it must be at least 6/);
   assert.match(instanceProblems({ ...bounded, settings: { ...settings, economy: { ...settings.economy, 'a.bonus': 6.5 } } }).join('\n'), /a whole number/);
   const card = { key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
-  assert.match(instanceProblems({ ...good, cards: [card], settings: { ...settings, economy: { ...settings.economy, 'splat.price': 700 } } }).join('\n'), /more than a wallet holds/);
+  // A price above what a wallet holds is a card nobody can buy, the Vending Machine's to refuse at
+  // the purchase, never a reason to stop every settlement.
+  assert.deepEqual(instanceProblems({ ...good, cards: [card], settings: { ...settings, economy: { ...settings.economy, 'splat.price': 700 } } }), []);
   assert.match(instanceProblems({ ...good, cards: [card], settings: { ...settings, economy: { ...settings.economy, 'splat.price': 2 ** 31 } } }).join('\n'), /splat\.price/);
 });
 

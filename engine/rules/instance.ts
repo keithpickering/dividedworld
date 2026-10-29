@@ -112,7 +112,6 @@ export function instanceProblems(instance: Instance): string[] {
     for (const c of instance.cards) {
       const price = economy[c.priceKey];
       if (!Number.isSafeInteger(price) || price! <= 0 || price! > INT4_MAX) out.push(`card "${c.key}" is priced by economy "${c.priceKey}", which the settings do not hold as a whole number above 0`);
-      else if (Number.isSafeInteger(instance.settings.walletCap) && price! > instance.settings.walletCap) out.push(`card "${c.key}" costs ${price}, more than a wallet holds (${instance.settings.walletCap}), so nobody could buy it`);
       for (const r of c.reads ?? []) { const why = check(`card "${c.key}"`, r); if (why) out.push(why); }
     }
   }

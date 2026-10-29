@@ -7,21 +7,23 @@
  * An early call is paid by its share of the Lurker's player's vote on the post, so a Lurker
  * that hedges across every quadrant is paid only the part that landed.
  */
-import type { ClassRules, Earning } from '../../../engine/rules/types.ts';
+import type { ClassRules, EconomyRead, Earning } from '../../../engine/rules/types.ts';
 import { economyOf } from '../../../engine/rules/cards.ts';
 
-const KEYS = ['lurker.earlyPlayers', 'lurker.earlyMatch', 'lurker.spunThreadRepliers', 'lurker.spunThread', 'lurker.postsAllowed', 'lurker.overPosting'] as const;
+/** The Lurker's numbers, in the order its rules read them: one list, which its `reads` is too. */
+const READS: readonly EconomyRead[] = [
+  { key: 'lurker.earlyPlayers', whole: true, min: 1 }, 'lurker.earlyMatch',
+  { key: 'lurker.spunThreadRepliers', whole: true, min: 1 }, 'lurker.spunThread',
+  { key: 'lurker.postsAllowed', whole: true, min: 0 }, 'lurker.overPosting',
+];
+const keyOf = (r: EconomyRead) => (typeof r === 'string' ? r : r.key);
 
 export const lurker: ClassRules = {
   key: 'lurker',
   name: 'Lurker',
-  reads: [
-    { key: 'lurker.earlyPlayers', whole: true, min: 1 }, 'lurker.earlyMatch',
-    { key: 'lurker.spunThreadRepliers', whole: true, min: 1 }, 'lurker.spunThread',
-    { key: 'lurker.postsAllowed', whole: true, min: 0 }, 'lurker.overPosting',
-  ],
+  reads: READS,
   earn: (input, settings) => {
-    const [earlyPlayers, earlyMatch, spunThreadRepliers, spunThread, postsAllowed, overPosting] = KEYS.map((k) => economyOf(settings, k)) as [number, number, number, number, number, number];
+    const [earlyPlayers, earlyMatch, spunThreadRepliers, spunThread, postsAllowed, overPosting] = READS.map((r) => economyOf(settings, keyOf(r))) as [number, number, number, number, number, number];
     return [
     ...input.given
       .filter((g) => g.rank >= 1 && g.rank <= earlyPlayers && g.quadrant === g.endsUp)

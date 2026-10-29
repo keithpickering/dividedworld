@@ -117,6 +117,12 @@ begin
   if coalesce(pg_temp.refusal($q$update settings set value = jsonb_set(value, '{splat.price}', '2.5') where key = 'economy'$q$), '') not like '%splat.price%' then raise exception 'a price that is not whole was written'; end if;
   if coalesce(pg_temp.refusal($q$update settings set value = '[1]' where key = 'economy'$q$), '') not like '%economy%' then raise exception 'an economy that is not an object was written'; end if;
   if coalesce(pg_temp.refusal($q$insert into card_kinds (key, name, alignment, price_setting) values ('nada', 'Nada', 'sweet', 'nada.price')$q$), '') not like '%nada.price%' then raise exception 'a card with no price in the economy was added'; end if;
+  if coalesce(pg_temp.refusal($q$update settings set value = jsonb_set(value, '{splat.price}', '2147483648') where key = 'economy'$q$), '') not like '%splat.price%' then raise exception 'a price no integer holds was written'; end if;
+  if coalesce(pg_temp.refusal($q$delete from settings where key = 'economy'$q$), '') not like '%replace it%' then raise exception 'the economy, which holds the cards'' prices, was deleted'; end if;
+  -- A card the code no longer sells keeps its price when the instance is seeded again without it.
+  perform seed_instance(jsonb_build_object('settings', jsonb_build_object('economy', jsonb_build_object('sweetie.price', 100)), 'classes', '[]'::jsonb,
+    'reactions', '[]'::jsonb, 'cards', '[]'::jsonb, 'boards', '[]'::jsonb));
+  if (select value ->> 'splat.price' from settings where key = 'economy') is distinct from '20.0' then raise exception 'a reseed took a retired card''s price away'; end if;
 end $$;
 
 -- ---- Two plays of one card on one post at once: one lands, the other is refused in words ----
