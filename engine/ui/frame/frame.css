@@ -1,0 +1,151 @@
+/*
+ * The frame: the banner, the links, and the HUD docked at the bottom. The banner is the 2003
+ * board's; the HUD is the game's status bar, a 2px rule above it, always on screen while reading.
+ */
+.kb-frame {
+  --kb-hud-height: 3.4em;
+}
+
+.kb-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4em 1.2em;
+  border-bottom: 1px solid var(--kb-rule);
+  padding: 0.6em 2%;
+}
+
+.kb-logo {
+  font: bold var(--kb-size-logo) / 1.2 var(--kb-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--kb-fg);
+}
+
+.kb-nav {
+  margin-left: auto;
+  font-size: var(--kb-size-small);
+}
+
+.kb-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.4em;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.kb-nav li + li::before {
+  content: "·";
+  margin-right: 0.4em;
+}
+
+.kb-menu-button {
+  display: none;
+  margin-left: auto;
+}
+
+.kb-hud {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  background: var(--kb-hud-bg);
+  border-top: 2px solid var(--kb-rule);
+}
+
+.kb-hud-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5em 3%;
+  min-height: var(--kb-hud-height);
+  box-sizing: border-box;
+  padding: 0.4em 2%;
+}
+
+.kb-hud-avatar {
+  display: inline-block;
+  width: 2.2em;
+  height: 2.2em;
+  border: 1px solid var(--kb-rule);
+  overflow: hidden;
+  flex: none;
+}
+
+.kb-hud-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kb-hud-avatar-none {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font: bold var(--kb-size-body) var(--kb-font-mono);
+}
+
+.kb-hud-select {
+  max-width: 40%;
+}
+
+.kb-hand-button {
+  margin-left: auto;
+}
+
+.kb-hand-drawer {
+  border-bottom: 1px solid var(--kb-rule);
+  padding: 0.6em 2%;
+}
+
+.kb-hand-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em 3%;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.kb-hand-card {
+  border: 1px solid var(--kb-rule);
+  padding: 0.3em 0.8em;
+  font: bold var(--kb-size-small) var(--kb-font-mono);
+}
+
+@media (max-width: 40em) {
+  .kb-menu-button {
+    display: inline-block;
+  }
+
+  .kb-tagline {
+    display: none;
+  }
+
+  .kb-nav {
+    display: none;
+    flex-basis: 100%;
+  }
+
+  .kb-nav[data-kb-open] {
+    display: block;
+  }
+
+  .kb-nav ul {
+    flex-direction: column;
+    gap: 0.3em;
+  }
+
+  .kb-nav li + li::before {
+    content: none;
+  }
+
+  .kb-hud-select {
+    max-width: 50%;
+  }
+}
