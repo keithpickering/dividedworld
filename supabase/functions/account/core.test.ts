@@ -21,6 +21,7 @@ function world(options: { mode?: 'open' | 'invite' | 'closed' } = {}) {
   const auth: Auth = {
     signUp: async (email) => { work(email); calls.push(`signUp:${email}`); },
     recover: async (email) => { work(email); calls.push(`recover:${email}`); },
+    resend: async (email) => { work(email); calls.push(`resend:${email}`); },
     signIn: async (email, password) => { work(email); calls.push(`signIn:${email}`); return email === KNOWN && password === 'right password' ? { session } : { refused: 'credentials' }; },
   };
   const mode = options.mode ?? 'invite';
@@ -80,7 +81,7 @@ test('a login whose invite was spent signs in with no account, and is told the w
   const w = world();
   const spent = new DatabaseError('open_account: that invite opens nothing', 'P0001', 400, 'that invite opens nothing', REFUSAL_HINT);
   const out = await runAccount({
-    auth: { signUp: async () => {}, recover: async () => {}, signIn: async () => ({ session: { access_token: 't', refresh_token: 'r', expires_in: 1, user: { id: 'u', user_metadata: {} } } }) },
+    auth: { signUp: async () => {}, recover: async () => {}, resend: async () => {}, signIn: async () => ({ session: { access_token: 't', refresh_token: 'r', expires_in: 1, user: { id: 'u', user_metadata: {} } } }) },
     service: { rpc: async () => { throw new Error('unused'); } },
     player: () => ({ rpc: async () => { throw spent; } }),
     clock: w.clock,
@@ -91,18 +92,54 @@ test('a login whose invite was spent signs in with no account, and is told the w
   assert.match(body.why, /that invite opens nothing.*another invite/);
 });
 
+test('an address not yet confirmed is told its way out: a confirmation sent again, for any address alike', async () => {
+  const w = world();
+  const unconfirmed = await runAccount({
+    auth: { signUp: async () => {}, recover: async () => {}, resend: async () => {}, signIn: async () => ({ refused: 'unconfirmed' as const }) },
+    service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock: w.clock,
+  }, { action: 'signIn', email: KNOWN, password: 'right password' });
+  assert.equal(unconfirmed.status, 403);
+  assert.match((unconfirmed.body as { error: string }).error, /confirm your email first.*resend/);
+  const known = await w.answer({ action: 'resend', email: KNOWN });
+  const unknown = await w.answer({ action: 'resend', email: UNKNOWN });
+  assert.equal(known.status, 202);
+  assert.deepEqual([known.status, known.body, known.took], [unknown.status, unknown.body, unknown.took]);
+  assert.ok(!w.calls.some((c) => c.startsWith('resend')));
+  await known.later?.();
+  assert.deepEqual(w.calls.filter((c) => c.startsWith('resend')), [`resend:${KNOWN}`]);
+});
+
+test('a login with no invite in its metadata opens its account with none; a database failure is a retry-later', async () => {
+  const w = world();
+  const calls: string[] = [];
+  const session = { access_token: 't', refresh_token: 'r', expires_in: 1, user: { id: 'u' } };
+  const base = { signUp: async () => {}, recover: async () => {}, resend: async () => {}, signIn: async () => ({ session }) };
+  const out = await runAccount({ auth: base, service: { rpc: async () => null as never }, player: () => ({ rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`${fn}:${JSON.stringify(args)}`); return { opened: true } as T; } }), clock: w.clock },
+    { action: 'signIn', email: KNOWN, password: 'right password' });
+  assert.equal(out.status, 200);
+  assert.deepEqual(calls, ['open_account:{"code":null}']);
+  const broken = await runAccount({ auth: base, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => { throw new DatabaseError('open_account: boom', '42P01', 500); } }), clock: w.clock },
+    { action: 'signIn', email: KNOWN, password: 'right password' });
+  assert.deepEqual([broken.status, broken.body], [503, { error: 'signing in is not working right now; try again' }]);
+});
+
+test('a sign-up with no invite, where one is needed, says so', async () => {
+  const out = await world().answer({ action: 'signUp', email: UNKNOWN, password: 'long enough' });
+  assert.deepEqual([out.status, out.body], [400, { field: 'invite', error: 'signing up here needs an invite' }]);
+});
+
 test('a login signing in while registration is closed is told its way out is an admin\'s, not another invite', async () => {
   const w = world();
   const closed = new DatabaseError('open_account: registration is closed', 'P0001', 400, 'registration is closed', REFUSAL_HINT);
   const out = await runAccount({
-    auth: { signUp: async () => {}, recover: async () => {}, signIn: async () => ({ session: { access_token: 't', refresh_token: 'r', expires_in: 1, user: { id: 'u', user_metadata: {} } } }) },
+    auth: { signUp: async () => {}, recover: async () => {}, resend: async () => {}, signIn: async () => ({ session: { access_token: 't', refresh_token: 'r', expires_in: 1, user: { id: 'u', user_metadata: {} } } }) },
     service: { rpc: async () => { throw new Error('unused'); } },
     player: () => ({ rpc: async () => { throw closed; } }),
     clock: w.clock,
   }, { action: 'signIn', email: KNOWN, password: 'right password' });
   const body = out.body as { account: boolean; why: string };
   assert.equal(body.account, false);
-  assert.match(body.why, /registration is closed.*admin opens registration.*next sign-in/);
+  assert.match(body.why, /registration is closed; when an admin opens it again, your next sign-in opens your account/);
   assert.doesNotMatch(body.why, /another invite/);
 });
 
@@ -138,7 +175,7 @@ test('a malformed request is refused by its field, in the same time as any answe
 test('work that runs past the floor is rounded up to the next whole floor, so its length still shows nothing', async () => {
   let now = 0;
   const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
-  const slow: Auth = { signUp: async () => {}, recover: async () => {}, signIn: async () => { now += ANSWER_FLOOR_MS + 7; return { refused: 'credentials' }; } };
+  const slow: Auth = { signUp: async () => {}, recover: async () => {}, resend: async () => {}, signIn: async () => { now += ANSWER_FLOOR_MS + 7; return { refused: 'credentials' }; } };
   const out = await runAccount({ auth: slow, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, { action: 'signIn', email: KNOWN, password: 'x' });
   assert.equal(out.status, 400);
   assert.equal(now, 2 * ANSWER_FLOOR_MS);
@@ -147,7 +184,7 @@ test('work that runs past the floor is rounded up to the next whole floor, so it
 test('Auth failing to answer a sign-in is a plain retry-later, in the same time', async () => {
   let now = 0;
   const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
-  const down: Auth = { signUp: async () => {}, recover: async () => {}, signIn: async () => { throw new Error('upstream 503'); } };
+  const down: Auth = { signUp: async () => {}, recover: async () => {}, resend: async () => {}, signIn: async () => { throw new Error('upstream 503'); } };
   const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, { action: 'signIn', email: KNOWN, password: 'x' });
   assert.deepEqual([out.status, out.body, now], [503, { error: 'signing in is not working right now; try again' }, ANSWER_FLOOR_MS]);
 });

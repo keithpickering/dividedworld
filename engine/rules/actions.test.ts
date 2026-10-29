@@ -111,4 +111,11 @@ test('a character is made with a name and one of the instance\'s classes; invite
   assert.deepEqual(decide({ action: 'openAccount', invite: 'abc' }, instance), { ok: true, rpc: 'open_account', args: { code: 'abc' } });
   assert.deepEqual(decide({ action: 'openAccount' }, instance), { ok: true, rpc: 'open_account', args: { code: null } });
   assert.match(refusal({ action: 'openAccount', invite: 'x'.repeat(200) }) ?? '', /^invite:/);
+  assert.match(refusal({ action: 'openAccount', invite: 7 }) ?? '', /^invite:/);
+  // Trimmed as the database trims it, and held to the same hidden characters.
+  assert.deepEqual(decide({ action: 'createCharacter', name: ` ${'n'.repeat(40)}  `, class: 'a' }, instance),
+    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a' } });
+  for (const name of ['Mas\u200bk', 'Mask\u00a01', 'Mask  1', 'Mask\u202e1', 'Mask\t1', 'Mask\ufeff1', 'Mask\u3164']) {
+    assert.match(refusal({ action: 'createCharacter', name, class: 'a' }) ?? '', /^name: can hold/, JSON.stringify(name));
+  }
 });

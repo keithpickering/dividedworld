@@ -40,6 +40,12 @@ const BLANK = /^[\s\u200b-\u200d\u2060]*$/u;
 
 /** The longest a character's name may be, as the characters table holds it (supabase/migrations/0001_core.sql). */
 export const NAME_MAX_LENGTH = 40;
+/**
+ * What a name may not hold, so that no character's name can be made to look like another's:
+ * control, invisible, filler and direction characters, and any space but U+0020. The same set as
+ * supabase/migrations/0009_registration.sql's create_character, which holds it again.
+ */
+const NAME_HIDDEN = /[\u0001-\u001f\u007f-\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180e\u2000-\u200f\u2028-\u202f\u205f-\u206f\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff]|  /u;
 
 class Refused extends Error {
   readonly field: string;
@@ -113,7 +119,9 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   createCharacter: (r, instance) => {
     const kind = r.class;
     if (typeof kind !== 'string' || !instance.classes.some((c) => c.key === kind)) throw new Refused('class', `there is no class ${JSON.stringify(kind)}`);
-    return { rpc: 'create_character', args: { name: text(r, 'name', NAME_MAX_LENGTH), class: kind } };
+    const name = text({ name: typeof r.name === 'string' ? r.name.replace(/^ +| +$/g, '') : r.name }, 'name', NAME_MAX_LENGTH);
+    if (NAME_HIDDEN.test(name)) throw new Refused('name', 'can hold letters, marks, digits, symbols and single spaces, nothing hidden');
+    return { rpc: 'create_character', args: { name, class: kind } };
   },
   createInvite: () => ({ rpc: 'create_invite', args: {} }),
   reissueInvite: (r) => {

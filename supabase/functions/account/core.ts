@@ -36,6 +36,8 @@ export interface Auth {
   signUp(email: string, password: string, data: { invite: string | null }): Promise<void>;
   signIn(email: string, password: string): Promise<{ session: Session } | { refused: 'credentials' | 'unconfirmed' }>;
   recover(email: string): Promise<void>;
+  /** Sends a sign-up's confirmation again. */
+  resend(email: string): Promise<void>;
 }
 
 export interface Clock {
@@ -52,6 +54,7 @@ export interface AccountAnswer {
 
 const SENT_SIGN_UP = 'If this address can sign up, a link to finish is on its way to it.';
 const SENT_RESET = 'If this address has an account, a link to reset its password is on its way to it.';
+const SENT_CONFIRMATION = 'If this address signed up and is not yet confirmed, a new link to confirm it is on its way to it.';
 const NO_MATCH = 'that email and password do not match';
 
 const refused = (field: string, error: string): AccountAnswer => ({ status: 400, body: { field, error } });
@@ -81,13 +84,18 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       const code = typeof r.invite === 'string' && r.invite.length <= 64 ? r.invite : null;
       const opens = await deps.service.rpc<'opens' | 'closed' | 'nothing'>('invite_open', { code });
       if (opens === 'closed') return { status: 403, body: { error: 'registration is closed' } };
-      if (opens !== 'opens') return refused('invite', 'that invite opens nothing');
+      if (opens !== 'opens') return refused('invite', code === null ? 'signing up here needs an invite' : 'that invite opens nothing');
       return { status: 202, body: { message: SENT_SIGN_UP }, later: () => deps.auth.signUp(address, secret, { invite: code }) };
     }
     case 'reset': {
       const address = email(r);
       if (typeof address !== 'string') return address;
       return { status: 202, body: { message: SENT_RESET }, later: () => deps.auth.recover(address) };
+    }
+    case 'resend': {
+      const address = email(r);
+      if (typeof address !== 'string') return address;
+      return { status: 202, body: { message: SENT_CONFIRMATION }, later: () => deps.auth.resend(address) };
     }
     case 'signIn': {
       const address = email(r);
@@ -98,7 +106,7 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       if ('refused' in out) {
         // Only the right password reaches "unconfirmed", so saying it tells nobody anything new.
         return out.refused === 'unconfirmed'
-          ? { status: 403, body: { error: 'confirm your email first: the link is in the email sent when you signed up' } }
+          ? { status: 403, body: { error: 'confirm your email first: the link is in the email sent when you signed up, and resend sends a new one' } }
           : refused('password', NO_MATCH);
       }
       const invite = out.session.user.user_metadata?.invite;
@@ -109,14 +117,14 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
         if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) {
           // The way out, said plainly: another invite, or, while registration is closed, an
           // admin opening it, after which the next sign-in opens the account.
-          const way = /closed/.test(e.reason) ? 'it opens when an admin opens registration again, and your next sign-in opens the account' : 'open the account with another invite';
+          const way = /closed/.test(e.reason) ? 'when an admin opens it again, your next sign-in opens your account' : 'open the account with another invite';
           return { status: 200, body: { session: out.session, account: false, why: `${e.reason}; ${way}` } };
         }
         throw e;
       }
     }
     default:
-      return refused('action', 'the actions are signUp, signIn, reset');
+      return refused('action', 'the actions are signUp, signIn, reset, resend');
   }
 }
 

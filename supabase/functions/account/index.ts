@@ -38,6 +38,7 @@ Deno.serve(async (request) => {
     const work = out.later().catch((e) => console.error('account work after the answer threw', e));
     // Never awaited: the answer must not wait on what Auth does with the address.
     if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime) EdgeRuntime.waitUntil(work);
+    else console.error('no EdgeRuntime: the work after this answer may not finish');
   }
   return answer(out.status, out.body);
 });

@@ -59,7 +59,7 @@ begin
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, q, '{}', 0)) is not null then raise exception 'a card on another post should land'; end if;
   if (select ref from wallet_events where account = ann and kind = 'play' order by id limit 1) <> the_play then raise exception 'a play''s wallet event names the card''s Act'; end if;
   perform buy_card(ann, 'sweetie', 100);
-  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'sweetie', a, q, jsonb_build_object('sentence', repeat('x', 5000)), 0)) not like '%4 KB%' then
+  if coalesce(pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'sweetie', a, q, jsonb_build_object('sentence', repeat('x', 5000)), 0)), '') not like '%4 KB%' then
     raise exception 'an oversize configuration was stored';
   end if;
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, null)', ann, 'sweetie', a, q, '{}')) is null then raise exception 'a play with no price went through'; end if;

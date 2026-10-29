@@ -65,7 +65,7 @@ begin
   perform tests.unbecome();
   update class_history set started_at = started_at - interval '31 days' where character = a and class_key = 'beta';
   perform tests.become(ann);
-  if pg_temp.refusal(format('select turn(%L, %L, %L)', a, 'beta', 'silent')) not like '%already%' then raise exception 'a Turn to the class it holds'; end if;
+  if coalesce(pg_temp.refusal(format('select turn(%L, %L, %L)', a, 'beta', 'silent')), '') not like '%already%' then raise exception 'a Turn to the class it holds'; end if;
   if pg_temp.refusal(format('select turn(%L, %L, %L)', a, 'ghost', 'silent')) is null then raise exception 'a Turn to no class'; end if;
   if pg_temp.refusal(format('select turn(%L, %L, %L)', a, 'alpha', 'shouted')) is null then raise exception 'a Turn of no loudness'; end if;
   -- Revealed: the class it Turned from, and since when.

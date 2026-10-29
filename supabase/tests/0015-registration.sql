@@ -70,6 +70,21 @@ begin
   perform tests.become(newcomer);
   if exists (select 1 from invites) then raise exception 'a player read an invite that is not theirs'; end if;
   perform tests.unbecome();
+  -- Another player's unused invite is not theirs to send again.
+  perform tests.become(ann);
+  invite := (create_invite() ->> 'invite')::bigint;
+  perform tests.unbecome();
+  perform tests.become(newcomer);
+  if pg_temp.refusal(format('select reissue_invite(%s)', invite)) is null then raise exception 'a player sent another''s invite again'; end if;
+  perform tests.unbecome();
+  -- The inviter sees whether an invite is used, never who used it or when: a mask that appears
+  -- just after an invite's use would point at the friend.
+  perform tests.become(ann);
+  if pg_temp.refusal('select used_by from invites') is null then raise exception 'the inviter read who used an invite'; end if;
+  if pg_temp.refusal('select used_at from invites') is null then raise exception 'the inviter read when an invite was used'; end if;
+  if pg_temp.refusal('select code_hash from invites') is null then raise exception 'the inviter read an invite''s hash'; end if;
+  if (select count(*) from invites where used) <> 1 then raise exception 'the inviter sees which invites are used'; end if;
+  perform tests.unbecome();
 end $$;
 
 -- ---- Open registration needs no invite; closed registration opens nothing ----
@@ -79,6 +94,9 @@ declare
   shut_one uuid := pg_temp.login('reg-shut@test.invalid');
 begin
   update settings set value = '"open"' where key = 'registrationMode';
+  perform tests.become_service();
+  if invite_open(null) <> 'opens' then raise exception 'open registration opens for any code'; end if;
+  perform tests.unbecome();
   perform tests.become(open_one);
   if (open_account(null) ->> 'opened')::boolean is not true then raise exception 'open registration needs no invite'; end if;
   perform tests.unbecome();
@@ -87,7 +105,11 @@ begin
   if invite_open(null) <> 'closed' or invite_open('anything') <> 'closed' then raise exception 'closed registration opens nothing, and says so'; end if;
   perform tests.unbecome();
   perform tests.become(shut_one);
-  if pg_temp.refusal('select open_account(null)') not like '%closed%' then raise exception 'closed registration should say so'; end if;
+  if coalesce(pg_temp.refusal('select open_account(null)'), '') not like '%closed%' then raise exception 'closed registration should say so'; end if;
+  perform tests.unbecome();
+  -- A login whose account is open signs in as before while registration is closed.
+  perform tests.become(open_one);
+  if (open_account(null) ->> 'opened')::boolean is not false then raise exception 'closing registration shut out an open account'; end if;
   perform tests.unbecome();
   update settings set value = '"invite"' where key = 'registrationMode';
 end $$;
@@ -115,6 +137,11 @@ begin
   if pg_temp.refusal($q$select create_character('Nobody', 'ghost')$q$) is null then raise exception 'a character with no class'; end if;
   if pg_temp.refusal($q$select create_character('   ', 'beta')$q$) is null then raise exception 'a character with no name'; end if;
   if pg_temp.refusal(format('select create_character(%L, %L)', repeat('n', 41), 'beta')) is null then raise exception 'a name past 40 characters'; end if;
+  -- A name another's cannot be made to look like: no invisible, control or direction characters, no space but a single one.
+  foreach why in array array['Mas' || chr(8203) || 'k 1', 'Mask' || chr(160) || '1', 'Mask  1', 'Mask' || chr(8238) || '1', 'Mask' || chr(9) || '1', 'Mask' || chr(65279) || '1'] loop
+    if coalesce(pg_temp.refusal(format('select create_character(%L, %L)', why, 'beta')), '') not like '%can hold%' then raise exception 'a name with a hidden character: %', why; end if;
+  end loop;
+  if (create_character(' Spaced Name ', 'beta') ->> 'name') <> 'Spaced Name' then raise exception 'a name is trimmed'; end if;
   perform tests.unbecome();
   -- A login with no account makes no character and no invite.
   perform tests.become(pg_temp.login('reg-none@test.invalid'));
@@ -138,4 +165,20 @@ begin
   if (said[1] is null) = (said[2] is null) then raise exception 'exactly one should open: %', said; end if;
   if coalesce(said[1], said[2]) <> 'that invite opens nothing' then raise exception 'the loser should be refused in words: %', said; end if;
   if (select count(*) from accounts where id in (x, y)) <> 1 then raise exception 'one invite opened two accounts'; end if;
+end $$;
+
+-- ---- One login opening its account twice at once (a double submit): it opens once, and both say so plainly ----
+do $$
+declare
+  ann uuid := gen_random_uuid(); z uuid := gen_random_uuid();
+  said text[];
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'race-twice-a@test.invalid'), (%2$L, 'race-twice-z@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into invites (code_hash, inviter) values (invite_hash('twice-code'), %1$L);
+  $sql$, ann, z));
+  said := tests.race_as(z, 'select open_account(''twice-code'')', z, 'select open_account(''twice-code'')');
+  if said[1] is not null or said[2] is not null then raise exception 'a login opening its account twice at once was refused: %', said; end if;
+  if (select count(*) from accounts where id = z) <> 1 then raise exception 'the account is opened once'; end if;
 end $$;

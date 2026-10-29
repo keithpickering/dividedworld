@@ -44,3 +44,42 @@ test('work after the answer is retried once on a transport failure, and its refu
   await gotrue({ url: 'https://p.example', key: 'anon', fetch: taken, sleep: async () => {} }).signUp('a@b.c', 'pw', { invite: null });
   assert.equal(m, 1);
 });
+
+test('a sign-in is retried once when Auth does not answer or answers a 5xx, never on a refusal or a 429', async () => {
+  const opts = { url: 'https://p.example', key: 'anon', sleep: async () => {} };
+  const session = { access_token: 'a', refresh_token: 'r', expires_in: 1, user: { id: 'u' } };
+  let n = 0;
+  const blip = (async () => (++n === 1 ? new Response('', { status: 502 }) : new Response(JSON.stringify(session), { status: 200 }))) as unknown as typeof globalThis.fetch;
+  assert.deepEqual(await gotrue({ ...opts, fetch: blip }).signIn('a@b.c', 'pw'), { session });
+  assert.equal(n, 2);
+  let m = 0;
+  const gone = (async () => { m++; throw new TypeError('reset'); }) as unknown as typeof globalThis.fetch;
+  await assert.rejects(gotrue({ ...opts, fetch: gone }).signIn('a@b.c', 'pw'));
+  assert.equal(m, 2);
+  for (const [status, body] of [[429, {}], [400, { error_code: 'invalid_credentials' }]] as const) {
+    let k = 0;
+    const once = (async () => { k++; return new Response(JSON.stringify(body), { status }); }) as unknown as typeof globalThis.fetch;
+    await gotrue({ ...opts, fetch: once }).signIn('a@b.c', 'pw').catch(() => {});
+    assert.equal(k, 1, String(status));
+  }
+});
+
+test('a 400 that is not about the password is thrown, not told as a wrong password', async () => {
+  const fetch = (async () => new Response(JSON.stringify({ error_code: 'captcha_failed' }), { status: 400 })) as unknown as typeof globalThis.fetch;
+  await assert.rejects(gotrue({ url: 'https://p.example', key: 'anon', fetch, sleep: async () => {} }).signIn('a@b.c', 'pw'));
+});
+
+test('work after the answer: exactly two tries on a lasting failure, none again on a 429, and a resend is Auth\'s own', async () => {
+  const opts = { url: 'https://p.example', key: 'anon', sleep: async () => {} };
+  let n = 0;
+  const down = (async () => { n++; return new Response('', { status: 503 }); }) as unknown as typeof globalThis.fetch;
+  await gotrue({ ...opts, fetch: down }).recover('a@b.c');
+  assert.equal(n, 2);
+  let m = 0;
+  const limited = (async () => { m++; return new Response('', { status: 429 }); }) as unknown as typeof globalThis.fetch;
+  await gotrue({ ...opts, fetch: limited }).recover('a@b.c');
+  assert.equal(m, 1);
+  const { calls, fetch } = recorder(() => new Response('{}', { status: 200 }));
+  await gotrue({ ...opts, fetch }).resend('a@b.c');
+  assert.deepEqual(calls.map((c) => [c.url, c.body]), [['https://p.example/auth/v1/resend', { type: 'signup', email: 'a@b.c' }]]);
+});

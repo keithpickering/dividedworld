@@ -17,8 +17,8 @@
 --
 -- An invite is a random code the inviter hands to a friend themselves; only its hash is stored
 -- here, so a read of this table gives no code that opens anything. The login that signed up
--- with a code also carries it in its own Auth metadata, readable by that login alone, and spent
--- once the account opens.
+-- with a code also carries it in its own Auth metadata, readable by that login alone; it stays
+-- there after the invite is spent, when it opens nothing.
 
 create table invites (
   id bigint generated always as identity primary key,
@@ -27,6 +27,9 @@ create table invites (
   created_at timestamptz not null default now(),
   used_by uuid unique references accounts (id),
   used_at timestamptz,
+  -- What the inviter sees of an invite's use: whether, never who or when, since a mask that
+  -- appears just after an invite's use would point at the friend it was given to.
+  used boolean generated always as (used_by is not null) stored,
   check ((used_by is null) = (used_at is null))
 );
 create index invites_inviter on invites (inviter, created_at);
@@ -99,6 +102,8 @@ begin
   if caller is null or not exists (select 1 from auth.users where id = caller) then
     raise exception 'sign in first' using hint = 'kayfabb.refusal', errcode = '28000';
   end if;
+  -- One opening per login at a time, so a double submit opens it once and the second says so.
+  perform pg_advisory_xact_lock(hashtext('kayfabb.open_account'), hashtext(caller::text));
   if exists (select 1 from accounts where id = caller) then return jsonb_build_object('account', caller, 'opened', false); end if;
   if mode = 'closed' then raise exception 'registration is closed' using hint = 'kayfabb.refusal', errcode = 'P0001'; end if;
   if mode = 'invite' then
@@ -117,11 +122,17 @@ create function create_character(name text, class text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   caller uuid := signed_in_account();
-  named text := btrim(name, E' \t\n\r ​‌‍⁠');
+  named text := btrim(name, ' ');
   made uuid;
 begin
   if named is null or char_length(named) not between 1 and 40 then
     raise exception 'a name is 1 to 40 characters' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- A name nobody's can be made to look like: unique whatever its case (0001), and holding no
+  -- invisible, control or direction character and no space but a single one. The same set as
+  -- engine/rules/actions.ts's NAME_HIDDEN.
+  if named ~ '[\u0001-\u001f\u007f-\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180e\u2000-\u200f\u2028-\u202f\u205f-\u206f\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff]' or named like '%  %' then
+    raise exception 'a name can hold letters, marks, digits, symbols and single spaces, nothing hidden' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   if not exists (select 1 from class_kinds where key = class) then
     raise exception 'there is no class "%"', class using hint = 'kayfabb.refusal', errcode = '22023';
@@ -137,7 +148,7 @@ end $$;
 
 alter table invites enable row level security;
 revoke all on invites from anon, authenticated;
-grant select (id, inviter, created_at, used_at) on invites to authenticated;
+grant select (id, inviter, created_at, used) on invites to authenticated;
 create policy own on invites for select to authenticated using (inviter = auth.uid());
 
 revoke execute on function invite_hash(text), invite_code(), signed_in_account(), create_invite(), reissue_invite(bigint),

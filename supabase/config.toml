@@ -1,8 +1,12 @@
-# The Supabase project's settings that the code relies on, for `supabase config push` and the
-# local stack. Only what a guarantee here rests on is set; everything else is Supabase's default.
+# Divided World's Supabase project settings that the code relies on, for the local stack and
+# `supabase config push`. A push writes the CLI's default for any setting left out, so every Auth
+# setting a push would otherwise reset (where its links point) is set here too.
 project_id = "dividedworld"
 
 [auth]
+# Where Auth's confirmation and reset links send a player.
+site_url = "https://dw.gripe"
+additional_redirect_urls = []
 # Accounts open only through open_account() (supabase/migrations/0009_registration.sql), so a
 # login made straight through Auth can do nothing; sign-up stays on for the account function.
 enable_signup = true
