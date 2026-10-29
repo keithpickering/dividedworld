@@ -94,6 +94,27 @@ const withoutComments = (sql) => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/
    to another connection is that connection's; only one at the top level escapes the wrap. */
 const withoutDollarQuotes = (sql) => sql.replace(/\$([A-Za-z_]\w*)?\$[\s\S]*?\$\1\$/g, ' ');
 
+/**
+ * Each `if`, `or` or `and` whose condition is `(select …) <> …`: a select that finds no row is
+ * null, `null <> x` is null, and the `raise` it guards never runs, so the assertion passes over
+ * exactly the missing row it exists to catch. `is distinct from` says what was meant.
+ */
+export function nullBlind(code) {
+  const found = [];
+  const opener = /\b(if|or|and)\s+\(\s*select\b/gi;
+  for (let m; (m = opener.exec(code));) {
+    const start = m.index + m[0].indexOf('(');
+    let depth = 0;
+    let end = start;
+    for (; end < code.length; end++) {
+      if (code[end] === '(') depth++;
+      else if (code[end] === ')' && --depth === 0) break;
+    }
+    if (/^\s*<>/.test(code.slice(end + 1))) found.push(code.slice(m.index, Math.min(code.length, end + 8)).replace(/\s+/g, ' '));
+  }
+  return found;
+}
+
 /** Assertion files: four digits, a hyphen, a name. Ordered by number, then name. */
 export const ASSERTION_FILE = /^(\d{4})-[\w.-]+\.sql$/;
 
@@ -141,6 +162,8 @@ function main() {
       const code = withoutComments(sql);
       if (!/raise\s+exception/i.test(code)) { step(t, 'asserts nothing: no `raise exception` outside a comment in this file'); continue; }
       if (/(^|;)\s*(commit|rollback(?!\s+to\b))\b/im.test(withoutDollarQuotes(code))) { step(t, 'ends its own transaction, which would escape the rollback around it'); continue; }
+      const blind = nullBlind(code);
+      if (blind.length) { step(t, `passes when its select finds no row; use \`is distinct from\`:\n          ${blind.join('\n          ')}`); continue; }
       ran++;
       step(t, psql(target, `begin;\n${sql}\nrollback;\n`));
     }

@@ -4,12 +4,17 @@
  * construction"): a self-hosted Supabase, or any PostgREST in front of the same migrations,
  * answers the same requests.
  *
- * "Three unrelated timeouts are not a poison pill": a transport failure (a fetch that never
- * answered, a gateway's 502, 503 or 504) is retried on the request itself, a few times, waiting
- * longer each time; a database error is a fact about the request and is thrown at once,
- * carrying the SQLSTATE PostgREST reports. Every SQL function this calls is safe to call twice:
- * a read, or a write that finds its own earlier effect (apply_settlement's already-settled
- * window), so a retry after an answer that was lost on the way back changes nothing.
+ * "Three unrelated timeouts are not a poison pill": a transport failure is retried on the
+ * request itself, a few times, waiting longer each time; a database error is a fact about the
+ * request and is thrown at once, carrying the SQLSTATE PostgREST reports.
+ *
+ * Which transport failures are retried turns on whether the call is safe to repeat
+ * (`safeToRepeat`). A gateway's 502 or 503 says the request never reached a database that ran
+ * it, so every call is retried on those. A fetch that failed after it may have been sent, a
+ * timeout or a 504 may each follow a write that committed and an answer lost on the way back:
+ * those are retried only for a read, or a write that finds its own earlier effect
+ * (apply_settlement's already-settled window). A post or a purchase is not repeated on a guess;
+ * its failure is thrown, and the player decides whether to try again.
  */
 
 export class TransportError extends Error {}
@@ -46,15 +51,21 @@ export interface PostgrestOptions {
   readonly attempts?: number;
   /** How long one request may take before it counts as never answered. */
   readonly timeoutMs?: number;
+  /** Whether a function may be sent again after a failure that may have followed its commit; every one, unless said. */
+  readonly safeToRepeat?: (fn: string) => boolean;
 }
 
-const TRANSPORT_STATUS = new Set([502, 503, 504]);
+/** The request never reached a database that ran it. */
+const NEVER_RAN = new Set([502, 503]);
+/** It may have run, its answer lost. */
+const MAY_HAVE_RUN = new Set([504]);
 
 export function postgrest(options: PostgrestOptions): Db {
   const send = options.fetch ?? globalThis.fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const attempts = options.attempts ?? 4;
   const timeoutMs = options.timeoutMs ?? 30_000;
+  const safeToRepeat = options.safeToRepeat ?? (() => true);
   return {
     async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
       const seen: string[] = [];
@@ -70,10 +81,13 @@ export function postgrest(options: PostgrestOptions): Db {
           });
         } catch (e) {
           seen.push(`no answer (${e instanceof Error ? e.message : String(e)})`);
+          if (!safeToRepeat(fn)) break;
           continue;
         }
-        if (TRANSPORT_STATUS.has(response.status)) {
+        if (NEVER_RAN.has(response.status) || MAY_HAVE_RUN.has(response.status)) {
           seen.push(`HTTP ${response.status}`);
+          await response.body?.cancel();
+          if (MAY_HAVE_RUN.has(response.status) && !safeToRepeat(fn)) break;
           continue;
         }
         const text = await response.text();
@@ -89,7 +103,7 @@ export function postgrest(options: PostgrestOptions): Db {
         }
         return body as T;
       }
-      throw new TransportError(`${fn}: no answer after ${attempts} attempts: ${seen.join('; ')}`);
+      throw new TransportError(`${fn}: no answer after ${seen.length} attempt(s): ${seen.join('; ')}`);
     },
   };
 }

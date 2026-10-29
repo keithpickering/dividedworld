@@ -5,7 +5,7 @@
  * the call is made as the player; the service key, for a card's writes and the live updates
  * that follow each write; a bound on the body; and the headers a browser's preflight asks for.
  */
-import { runAction } from './core.ts';
+import { SAFE_TO_REPEAT, runAction } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';
 import { postgrest } from '../_shared/rpc.ts';
 import { CORS, boundedJson, environment } from '../_shared/serve.ts';
@@ -27,7 +27,10 @@ Deno.serve(async (request) => {
   if (!session) return answer(401, { error: 'sign in to act' });
   const { tooLong, body } = await boundedJson(request, MOST_BYTES);
   if (tooLong) return answer(413, { error: 'that request is too long' });
-  const dbs = { player: postgrest({ url: env.url, key: anon, bearer: session }), service: postgrest({ url: env.url, key: env.key }) };
+  const dbs = {
+    player: postgrest({ url: env.url, key: anon, bearer: session, safeToRepeat: SAFE_TO_REPEAT }),
+    service: postgrest({ url: env.url, key: env.key, safeToRepeat: SAFE_TO_REPEAT }),
+  };
   const out = await runAction(dbs, chooseInstance(Deno.env.get('KAYFABB_PROFILE')), body);
   // After the write committed, and after the answer where the runtime lets work outlive it: a
   // reader who misses this sees the change on their next load, and a slow Realtime never holds

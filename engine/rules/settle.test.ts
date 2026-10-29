@@ -287,6 +287,20 @@ test('cards and spun threads reach a class as the plan reads them', () => {
   assert.equal(spunByCat[0]!.at, FROM + 10 * H, 'placed when its count reached its total');
 });
 
+test('a spin from one of The System\'s own Acts settles, as a spin from someone else\'s; a target nobody named still throws', () => {
+  const b = base();
+  const { rules, inputs } = recorder();
+  const fromTheSystem: SettlementInput = {
+    ...b,
+    systemActs: ['reveal-1'],
+    acts: [...b.acts, { id: 's9', character: 'cat-1', kind: 'spin', at: FROM + 7 * H, thread: 'about-the-reveal', target: 'reveal-1' }, post('r9', 'bob-1', FROM + 8 * H, 'about-the-reveal')],
+  };
+  settle(fromTheSystem, withClasses(rules));
+  const spun = inputs.flatMap((i) => i.threadsSpun).find((x) => x.act === 's9');
+  assert.equal(spun?.fromOthers, true);
+  assert.throws(() => settle({ ...fromTheSystem, systemActs: [] }, instance), /not in the input/);
+});
+
 /* ---- the edges: each case below is a boundary a one-character change would move ---- */
 
 const recorder = (): { rules: ClassRules; inputs: ClassInput[] } => {

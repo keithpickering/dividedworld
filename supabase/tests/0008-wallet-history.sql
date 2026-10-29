@@ -15,15 +15,19 @@ declare
 begin
   perform apply_settlement(w1, w2, jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.cheered', 'amount', 500.0)));
   update settings set value = '300' where key = 'walletCap';
+  -- A wallet left above a lowered cap can still be spent from, down toward it.
+  perform tests.become_service();
+  if (buy_card(ann, 'splat', 100) ->> 'balance')::integer is distinct from 400 then raise exception 'a purchase from a wallet above a lowered cap'; end if;
+  perform tests.unbecome();
   perform apply_settlement(w2, w3, jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.cheered', 'amount', 10)));
-  if (select balance from wallets where account = ann) <> 300 then raise exception 'a credit after the cap was lowered should land at the new cap'; end if;
+  if (select balance from wallets where account = ann) is distinct from 300 then raise exception 'a credit after the cap was lowered should land at the new cap'; end if;
   select change, overflow into ev from wallet_events e join settlements x on x.id = e.settlement where e.account = ann and x.starts_at = w2;
-  if ev.change <> -200 or ev.overflow <> 210 then raise exception 'the event should say the balance fell by 200 and 210 overflowed: % %', ev.change, ev.overflow; end if;
+  if ev.change is distinct from -100 or ev.overflow is distinct from 110 then raise exception 'the event should say the balance fell by 100 and 110 overflowed: % %', ev.change, ev.overflow; end if;
   perform apply_settlement(w3, w4, jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.groaned', 'amount', -1000)));
-  if (select sum(change) from wallet_events where account = ann) <> (select balance from wallets where account = ann) then
+  if (select sum(change) from wallet_events where account = ann) is distinct from (select balance from wallets where account = ann) then
     raise exception 'the wallet''s history does not add up to its balance';
   end if;
-  if (select amount from standings where character = a) <> -490 then raise exception 'the standing keeps every entry'; end if;
+  if (select amount from standings where character = a) is distinct from -490 then raise exception 'the standing keeps every entry'; end if;
 end $$;
 
 -- ---- Seasons never overlap ----

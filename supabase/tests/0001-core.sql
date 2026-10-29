@@ -21,6 +21,13 @@ begin
   if n <> 0 then raise exception 'another player read an account'; end if;
   select count(*) into n from characters_public where id = mask and name = 'Pipewrench';
   if n <> 1 then raise exception 'the public projection should show the character by name'; end if;
+  -- And nothing else: a creation time to the microsecond would show which masks were made in one
+  -- sitting, which is to say whose.
+  if (select string_agg(column_name::text, ',' order by ordinal_position) from information_schema.columns
+      where table_schema = 'public' and table_name = 'characters_public') is distinct from 'id,name' then
+    raise exception 'characters_public shows more than a character''s id and name: %',
+      (select string_agg(column_name::text, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'characters_public');
+  end if;
 
   perform tests.unbecome();
   perform tests.become(ann);
@@ -28,6 +35,13 @@ begin
   if seen is distinct from ann then raise exception 'a player should read their own character''s owner'; end if;
   select count(*) into n from class_history where character = mask and class_key = 'beta';
   if n <> 1 then raise exception 'a player should read their own character''s class'; end if;
+  -- But not the row's id: the gap between two of a player's own ids counts everyone else's
+  -- class changes between them, silent Turns included.
+  begin
+    perform id from class_history where character = mask;
+    raise exception 'a player read class_history ids, a count of other players'' Turns';
+  exception when insufficient_privilege then null;
+  end;
   perform tests.unbecome();
 end $$;
 
@@ -134,7 +148,7 @@ begin
   begin delete from acts where id = p;
   exception when raise_exception then refused := true; end;
   if not refused then raise exception 'a DELETE of an Act went through'; end if;
-  if (select payload ->> 'body' from acts where id = p) <> 'First.' then raise exception 'the Act changed'; end if;
+  if (select payload ->> 'body' from acts where id = p) is distinct from 'First.' then raise exception 'the Act changed'; end if;
 end $$;
 
 do $$
@@ -163,7 +177,7 @@ begin
   if orig <> 'Frist.' then raise exception 'the original survives beside it, got %', orig; end if;
   select seq into s from acts where id = e2;
   if s is not null then raise exception 'an edit takes no place in the thread'; end if;
-  if (select count(*) from acts where target_act_id = p and kind = 'edit') <> 2 then raise exception 'both edits are kept'; end if;
+  if (select count(*) from acts where target_act_id = p and kind = 'edit') is distinct from 2 then raise exception 'both edits are kept'; end if;
   perform e1;
 end $$;
 
@@ -177,10 +191,10 @@ declare
   b uuid := tests.post(mask, t);
   other uuid := tests.post(mask, tests.thread());
 begin
-  if (select seq from acts where id = a) <> 1 or (select seq from acts where id = b) <> 2 then
+  if (select seq from acts where id = a) is distinct from 1 or (select seq from acts where id = b) is distinct from 2 then
     raise exception 'posts in a thread should be numbered 1, 2';
   end if;
-  if (select seq from acts where id = other) <> 1 then raise exception 'each thread numbers its own posts from 1'; end if;
+  if (select seq from acts where id = other) is distinct from 1 then raise exception 'each thread numbers its own posts from 1'; end if;
 end $$;
 
 -- ---- A seventh character is refused; a name is one per instance, whatever its case ----
@@ -215,5 +229,5 @@ begin
   s := tests.act(mask, 'spin', spun, '{"title": "Spun"}', p);
   if (select origin_act_id from threads where id = spun) is distinct from p then raise exception 'a spun thread should point at its origin'; end if;
   if (select target_act_id from acts where id = s) is distinct from p then raise exception 'the spin Act should point at its origin'; end if;
-  if (select seq from acts where id = s) <> 1 then raise exception 'the spin opens its thread'; end if;
+  if (select seq from acts where id = s) is distinct from 1 then raise exception 'the spin opens its thread'; end if;
 end $$;

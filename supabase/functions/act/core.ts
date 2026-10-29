@@ -60,6 +60,14 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
 const live = (rpc: string, answer: unknown): Broadcast[] =>
   answer && typeof answer === 'object' ? (BROADCASTS[rpc]?.(answer as Row) ?? []) : [];
 
+/**
+ * The calls that may be sent again after a failure that may have followed their commit
+ * (supabase/functions/_shared/rpc.ts): the reads, a saved effect's state (the same state again),
+ * and opening an account (one already open is no change). Every other write is sent once.
+ */
+const REPEATABLE = new Set(['whoami', 'card_target', 'card_of_play', 'save_effect_state', 'open_account']);
+export const SAFE_TO_REPEAT = (fn: string): boolean => REPEATABLE.has(fn);
+
 /** The hint every refusal the action functions raise carries, so their words alone reach a player. */
 export const REFUSAL_HINT = 'kayfabb.refusal';
 

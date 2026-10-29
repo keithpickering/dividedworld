@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REFUSAL_HINT, runAction } from './core.ts';
+import { REFUSAL_HINT, SAFE_TO_REPEAT, runAction } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 
@@ -139,4 +139,9 @@ test('a refused or failed action sends nothing live', async () => {
     assert.equal(out.broadcasts, undefined);
   }
   assert.equal((await runAction(pair({}).dbs, instance, { action: 'post', thread: id, character: id, body: '' })).broadcasts, undefined);
+});
+
+test('only the reads and the writes that find their own earlier effect are safe to repeat after a lost answer', () => {
+  for (const fn of ['whoami', 'card_target', 'card_of_play', 'save_effect_state', 'open_account']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
+  for (const fn of ['post', 'start_thread', 'edit_post', 'spin', 'react', 'turn', 'buy_card', 'play_card', 'create_character', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
 });

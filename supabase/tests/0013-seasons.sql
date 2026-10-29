@@ -37,7 +37,7 @@ begin
   perform pg_sleep(0.01);
   said := turn(a, 'beta', 'silent');
   if said <> '{"turned": true, "loudness": "silent"}' then raise exception 'a silent Turn: %', said; end if;
-  if (select class_key from class_history where character = a order by started_at desc limit 1) <> 'beta' then raise exception 'the Turn is in the class history'; end if;
+  if (select class_key from class_history where character = a order by started_at desc limit 1) is distinct from 'beta' then raise exception 'the Turn is in the class history'; end if;
   -- Timed when it was made, after any reveal it waited on, never from the transaction's start.
   if (select max(started_at) from class_history where character = a) <= now() then raise exception 'a Turn is timed from its transaction''s start'; end if;
   perform tests.unbecome();
@@ -81,6 +81,7 @@ do $$
 declare
   ann uuid := tests.account('rev-ann');
   a uuid := tests.character(ann, 'Revealed One', 'alpha', now() - interval '200 days');
+  m uuid := tests.character(ann, 'Made Midseason', 'beta', now() - interval '50 days');
   said jsonb;
   entry jsonb;
 begin
@@ -93,20 +94,30 @@ begin
   if said -> 'thread' ->> 'title' not like 'Season % The Reveal' then raise exception 'the reveal''s thread is titled in the instance''s words: %', said -> 'thread'; end if;
   -- One Act per character after the reveal's own, so no row grows with the cast.
   if (said -> 'act' -> 'payload' ->> 'characters')::integer <> (select count(*) from characters) then raise exception 'the reveal counts the cast: %', said -> 'act'; end if;
-  if (select count(*) from acts where thread = (said -> 'thread' ->> 'id')::uuid and kind = 'reveal') <> 1 + (select count(*) from characters) then
+  if (select count(*) from acts where thread = (said -> 'thread' ->> 'id')::uuid and kind = 'reveal') is distinct from 1 + (select count(*) from characters) then
     raise exception 'the reveal should hold every character, one Act each';
   end if;
   select payload into entry from acts where thread = (said -> 'thread' ->> 'id')::uuid and payload ->> 'character' = a::text;
-  if (select jsonb_agg(c ->> 'class') from jsonb_array_elements(entry -> 'classes') c) <> '["alpha", "beta"]' then
+  if (select jsonb_agg(c ->> 'class') from jsonb_array_elements(entry -> 'classes') c) is distinct from '["alpha", "beta"]' then
     raise exception 'the reveal should show the class held at the start and the silent Turn: %', entry;
   end if;
   -- The class held as the season began counts from the season's start: the Turn before it was
   -- an earlier season's to reveal.
   if (entry -> 'classes' -> 0 ->> 'from')::timestamptz <> now() - interval '100 days' then raise exception 'the first class should count from the season''s start: %', entry; end if;
   if exists (select 1 from acts where thread = (said -> 'thread' ->> 'id')::uuid and payload::text like '%' || ann || '%') then raise exception 'the reveal named a player'; end if;
+  -- A character made inside the season shows the season's start as its first class's, not when
+  -- it was made: masks made in one sitting would show themselves one player's.
+  select payload into entry from acts where thread = (said -> 'thread' ->> 'id')::uuid and payload ->> 'name' = 'Made Midseason';
+  if (entry -> 'classes' -> 0 ->> 'from')::timestamptz <> now() - interval '100 days' then raise exception 'the reveal showed when a character was made: %', entry; end if;
   -- The next season is open, from the instant the last ended, and nothing is due yet.
-  if (select count(*) from seasons where ends_at is null) <> 1 then raise exception 'one season is open after the reveal'; end if;
-  if (select starts_at from seasons where ends_at is null) <> (select max(ends_at) from seasons) then raise exception 'the next season opens as the last ends'; end if;
+  -- Nobody reacts to The System's own Acts, and the refusal says so plainly.
+  perform tests.become(ann);
+  if pg_temp.refusal(format('select react(%L, %L, %L)', said -> 'act' ->> 'id', a, 'up')) is distinct from 'nobody reacts to The System''s own Acts' then
+    raise exception 'reacting to the reveal: %', pg_temp.refusal(format('select react(%L, %L, %L)', said -> 'act' ->> 'id', a, 'up'));
+  end if;
+  perform tests.unbecome();
+  if (select count(*) from seasons where ends_at is null) is distinct from 1 then raise exception 'one season is open after the reveal'; end if;
+  if (select starts_at from seasons where ends_at is null) is distinct from (select max(ends_at) from seasons) then raise exception 'the next season opens as the last ends'; end if;
   if reveal_season() is not null then raise exception 'a season just opened is not due'; end if;
   if not exists (select 1 from cron.job where jobname = 'kayfabb-reveal') then raise exception 'the reveal is scheduled'; end if;
 end $$;

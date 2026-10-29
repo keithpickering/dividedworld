@@ -71,7 +71,7 @@ begin
   perform tests.unbecome();
 
   -- Nothing refused above wrote a row or moved a tally.
-  if (select count(*) from reactions) <> 3 or (select sum(count) from reaction_tallies) <> 3 then
+  if (select count(*) from reactions) is distinct from 3 or (select sum(count) from reaction_tallies) is distinct from 3 then
     raise exception 'a refused reaction left a row or a count behind';
   end if;
 
@@ -85,7 +85,7 @@ begin
   select count(*) into n from reaction_tallies t
   where t.act = pb and t.count <> (select count(*) from reactions r where r.act = pb and r.kind = t.kind);
   if n <> 0 then raise exception 'a tally does not match its rows'; end if;
-  if (select array_agg(reactor_character order by slot) from reactions where act = pb and reactor_account = ann) <> array[a1, a2, a1] then
+  if (select array_agg(reactor_character order by slot) from reactions where act = pb and reactor_account = ann) is distinct from array[a1, a2, a1] then
     raise exception 'each reaction is recorded against the character it was left through';
   end if;
 end $$;
@@ -149,5 +149,5 @@ begin
   perform tests.become(ann);
   perform react(p, a, 'meh');
   perform tests.unbecome();
-  if (select slot from reactions where act = p and kind = 'meh') <> 1 then raise exception 'the freed slot was not taken again'; end if;
+  if (select slot from reactions where act = p and kind = 'meh') is distinct from 1 then raise exception 'the freed slot was not taken again'; end if;
 end $$;

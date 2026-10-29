@@ -101,6 +101,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     if (a.kind === 'card' && a.at >= window.from && (!a.card || !alignmentOf.has(a.card))) throw new Error(`settle: card Act ${a.id} plays "${a.card}", which the instance does not have`);
     acts.set(a.id, a);
   }
+  const systemActs = new Set(input.systemActs ?? []);
   const actOf = (id: string) => {
     const a = acts.get(id);
     if (!a) throw new Error(`settle: Act ${id} is not in the input`);
@@ -219,7 +220,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     const now = times.length;
     if (!(inWindow(s.at) || now > before)) continue;
     const at = now > before ? times[now - 1]! : s.at;
-    const fromOthers = s.target !== undefined && playerOf(actOf(s.target).character) !== spinner;
+    const fromOthers = s.target !== undefined && (systemActs.has(s.target) || playerOf(actOf(s.target).character) !== spinner);
     const list = spun.get(s.character) ?? [];
     list.push({ act: s.id, thread: s.thread, at, fromOthers, repliersBefore: before, repliersNow: now });
     spun.set(s.character, list);

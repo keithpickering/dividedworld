@@ -17,7 +17,7 @@ begin
   call := format($sql$select apply_settlement('2027-01-01T00:00:00Z', '2027-01-02T00:00:00Z', %L)$sql$,
     jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.cheered', 'amount', 40))::text);
   said := tests.race_service(call, call);
-  if (select count(*) from settlements where starts_at = '2027-01-01T00:00:00Z') <> 1 then raise exception 'two runs at once: % settlements (%)', (select count(*) from settlements where starts_at = '2027-01-01T00:00:00Z'), said; end if;
-  if (select balance from wallets where account = ann) <> 40 then raise exception 'two runs at once credited % (%)', (select balance from wallets where account = ann), said; end if;
+  if (select count(*) from settlements where starts_at = '2027-01-01T00:00:00Z') is distinct from 1 then raise exception 'two runs at once: % settlements (%)', (select count(*) from settlements where starts_at = '2027-01-01T00:00:00Z'), said; end if;
+  if (select balance from wallets where account = ann) is distinct from 40 then raise exception 'two runs at once credited % (%)', (select balance from wallets where account = ann), said; end if;
   if said[1] is not null or said[2] is not null then raise exception 'one of two runs at once failed rather than finding the window settled: %', said; end if;
 end $$;

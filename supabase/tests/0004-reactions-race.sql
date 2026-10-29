@@ -35,7 +35,7 @@ begin
     if kinds > 3 then raise exception 'round %: one player left % kinds through two characters at once (%)', i, kinds, said; end if;
     if kinds < 3 then raise exception 'round %: neither raced reaction landed (%)', i, said; end if;
     if (said[1] is null) = (said[2] is null) then raise exception 'round %: exactly one of the two should be refused: %', i, said; end if;
-    if (select sum(count) from reaction_tallies where act = p) <> kinds then raise exception 'round %: the tally drifted from the rows', i; end if;
+    if (select sum(count) from reaction_tallies where act = p) is distinct from kinds then raise exception 'round %: the tally drifted from the rows', i; end if;
   end loop;
 end $$;
 
@@ -62,8 +62,8 @@ begin
     p := gen_random_uuid();
     perform tests.commit(format($sql$ insert into acts (id, character, kind, thread) values (%L, %L, 'post', %L); $sql$, p, b1, t));
     said := tests.race(ann, format('select react(%L, %L, ''up'')', p, a1), ann, format('select react(%L, %L, ''up'')', p, a2));
-    if (select count(*) from reactions where act = p) <> 1 then raise exception 'round %: one kind landed twice from one player (%)', i, said; end if;
-    if (select count from reaction_tallies where act = p and kind = 'up') <> 1 then raise exception 'round %: the tally counted it twice', i; end if;
+    if (select count(*) from reactions where act = p) is distinct from 1 then raise exception 'round %: one kind landed twice from one player (%)', i, said; end if;
+    if (select count from reaction_tallies where act = p and kind = 'up') is distinct from 1 then raise exception 'round %: the tally counted it twice', i; end if;
     if (said[1] is null) = (said[2] is null) then raise exception 'round %: exactly one of the two should be refused: %', i, said; end if;
   end loop;
 end $$;

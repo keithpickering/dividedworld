@@ -208,8 +208,10 @@ alter table acts enable always trigger acts_no_truncate;
 
 -- ------------------------------------------------------------------ public projections ----
 
+-- A character's id and name, and nothing else: not when it was made, since masks made in one
+-- sitting would show themselves one player's. A character is known by what it does.
 create view characters_public as
-  select c.id, c.name, c.created_at from characters c;
+  select c.id, c.name from characters c;
 
 -- Every Act, and for a post its current text: the latest edit's payload over the original's.
 create view acts_public as
@@ -254,7 +256,10 @@ create policy read on acts for select to authenticated using (true);
 grant select on characters_public, acts_public to authenticated;
 
 -- A player's own rows: their account, their characters, their characters' classes.
-grant select on accounts, characters, class_history to authenticated;
+grant select on accounts, characters to authenticated;
+-- Not a row's id: the gap between two of a player's own ids would count everyone else's class
+-- changes between them, silent Turns included.
+grant select (character, class_key, started_at) on class_history to authenticated;
 create policy own on accounts for select to authenticated using (id = auth.uid());
 create policy own on characters for select to authenticated using (owner = auth.uid());
 create policy own on class_history for select to authenticated

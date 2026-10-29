@@ -79,5 +79,5 @@ begin
   if pg_temp.refusal(format('select edit_post(%L, %L, %L)', p, b, 'Mine now.')) is null then raise exception 'another player edited a post'; end if;
   if pg_temp.refusal(format('select edit_post(%L, %L, %L)', p, a, 'Mine now.')) is null then raise exception 'another player edited through the author'; end if;
   perform tests.unbecome();
-  if (select current_payload ->> 'body' from acts_public where id = p) <> 'Edited.' then raise exception 'the post changed hands'; end if;
+  if (select current_payload ->> 'body' from acts_public where id = p) is distinct from 'Edited.' then raise exception 'the post changed hands'; end if;
 end $$;

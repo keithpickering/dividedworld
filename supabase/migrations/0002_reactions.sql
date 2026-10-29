@@ -66,7 +66,13 @@ begin
   end if;
   select a.kind, c.owner into target_kind, author_owner
   from acts a join characters c on c.id = a.character where a.id = target;
-  if target_kind is null then raise exception 'there is no such Act' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if target_kind is null then
+    -- The System's own Acts (the reveal) are no character's; nobody's reaction would be owed to anyone.
+    if exists (select 1 from acts where id = target and character is null) then
+      raise exception 'nobody reacts to The System''s own Acts' using hint = 'kayfabb.refusal', errcode = 'P0001';
+    end if;
+    raise exception 'there is no such Act' using hint = 'kayfabb.refusal', errcode = 'P0002';
+  end if;
   if target_kind = 'edit' then raise exception 'an edit is not reacted to; react to the post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   -- The author's owner now: a character changing hands is not in this slice, and the session
   -- that adds it decides what becomes of reactions between its old and new owner's characters.

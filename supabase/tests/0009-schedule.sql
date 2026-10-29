@@ -25,15 +25,15 @@ begin
   -- An admin's change to a seeded board stays.
   update boards set name = 'Sideboard' where slug = 'side';
   perform seed_instance(payload);
-  if (select name from boards where slug = 'side') <> 'Sideboard' then raise exception 'seeding again overwrote an admin''s board'; end if;
-  if (select count(*) from seasons) <> 1 then raise exception 'seeding opened a second season'; end if;
+  if (select name from boards where slug = 'side') is distinct from 'Sideboard' then raise exception 'seeding again overwrote an admin''s board'; end if;
+  if (select count(*) from seasons) is distinct from 1 then raise exception 'seeding opened a second season'; end if;
 
   -- The schedule follows the setting.
-  if (select schedule from cron.job where jobname = 'kayfabb-settle') <> '5 9 * * *' then
+  if (select schedule from cron.job where jobname = 'kayfabb-settle') is distinct from '5 9 * * *' then
     raise exception 'the job should run at the instance''s settlementCron, got %', (select schedule from cron.job where jobname = 'kayfabb-settle');
   end if;
   update settings set value = '"40 7 * * *"' where key = 'settlementCron';
-  if (select schedule from cron.job where jobname = 'kayfabb-settle') <> '40 7 * * *' then raise exception 'changing the setting should reschedule the job'; end if;
+  if (select schedule from cron.job where jobname = 'kayfabb-settle') is distinct from '40 7 * * *' then raise exception 'changing the setting should reschedule the job'; end if;
 end $$;
 
 -- ---- The job sends nothing until both of its secrets exist, then calls the function with the minute it fired ----
@@ -116,15 +116,15 @@ begin
   -- A spun thread active in the window brings each character's first post in it, from before
   -- the window too; with the window's own post, Bob's two, and Cat's one.
   if not ids @> jsonb_build_array(first_reply) then raise exception 'a spun thread brings its repliers'' first posts from before the window'; end if;
-  if (select count(*) from jsonb_array_elements(input -> 'acts') x where x ->> 'thread' = spun::text and x ->> 'kind' = 'post') <> 3 then
+  if (select count(*) from jsonb_array_elements(input -> 'acts') x where x ->> 'thread' = spun::text and x ->> 'kind' = 'post') is distinct from 3 then
     raise exception 'a spun thread brings each character''s first post and the window''s own, no more';
   end if;
-  if (select x ->> 'card' from jsonb_array_elements(input -> 'acts') x where x ->> 'id' = card::text) <> 'splat' then raise exception 'a card Act carries its card'; end if;
-  if (select count(*) from jsonb_array_elements(input -> 'reactions')) <> 2 then
+  if (select x ->> 'card' from jsonb_array_elements(input -> 'acts') x where x ->> 'id' = card::text) is distinct from 'splat' then raise exception 'a card Act carries its card'; end if;
+  if (select count(*) from jsonb_array_elements(input -> 'reactions')) is distinct from 2 then
     raise exception 'the input should hold the window''s reaction and the earlier one on the same Act, only: %', input -> 'reactions';
   end if;
-  if (select x ->> 'player' from jsonb_array_elements(input -> 'reactions') x where x ->> 'kind' = 'boo') <> cat::text then raise exception 'a reaction names its player'; end if;
-  if (select jsonb_array_length(x -> 'classes') from jsonb_array_elements(input -> 'characters') x where x ->> 'id' = b::text) <> 1 then
+  if (select x ->> 'player' from jsonb_array_elements(input -> 'reactions') x where x ->> 'kind' = 'boo') is distinct from cat::text then raise exception 'a reaction names its player'; end if;
+  if (select jsonb_array_length(x -> 'classes') from jsonb_array_elements(input -> 'characters') x where x ->> 'id' = b::text) is distinct from 1 then
     raise exception 'a character carries its classes';
   end if;
   if exists (select 1 from jsonb_array_elements(input -> 'characters') x where x ->> 'id' = far::text and x ->> 'player' is null) then

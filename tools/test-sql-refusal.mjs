@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { refusal } from './test-sql.mjs';
+import { nullBlind, refusal } from './test-sql.mjs';
 
 let pass = 0;
 const failures = [];
@@ -66,6 +66,14 @@ check('localhost with sslmode is allowed', refusal('postgres://postgres:pg@local
   const r = suite('postgres://postgres:pg@localhost:5432/postgres');
   check('and an allowed URL does reach psql, so the cases above are not refused for some other reason', r.psqlRan, `status ${r.status}: ${r.stderr}`);
 }
+
+/* The harness also refuses an assertion that a missing row passes: `if (select …) <> x` is null,
+   so never true, when the select finds nothing, and the test it guards stays green over a write
+   that never happened. */
+check('an `if (select …) <> x` is refused', nullBlind("if (select change from wallet_events where account = a) <> -100 then raise exception 'x'; end if;").length === 1);
+check('one after `or` or `and` too', nullBlind("if x or (select n from t) <> 1 then raise exception 'x'; end if;\nif y and (select (n) from t) <> 2 then raise exception 'y'; end if;").length === 2);
+check('`is distinct from` is not refused', nullBlind("if (select change from wallet_events) is distinct from -100 then raise exception 'x'; end if;").length === 0);
+check('a select whose comparison is not right after it is not refused', nullBlind("if exists (select 1 from t) then raise exception 'x'; end if;\nperform (select 1) + 1;").length === 0);
 
 fs.rmSync(bin, { recursive: true, force: true });
 console.log(`\n  sql-refusal: ${pass} passed, ${failures.length} failed`);

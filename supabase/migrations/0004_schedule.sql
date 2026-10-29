@@ -145,6 +145,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     union select id from first_posts
   ),
   all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null),
+  system_acts as (select a.id from acts a join touched t on t.id = a.id where a.character is null),
   all_reactions as (select * from win_reactions union all select * from earlier_reactions),
   named as (select character as id from all_acts union select reactor_character from all_reactions),
   ms as (select 1)
@@ -164,7 +165,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'reactions', coalesce((
       select jsonb_agg(jsonb_build_object('act', r.act, 'kind', r.kind, 'at', (extract(epoch from r.created_at) * 1000)::bigint,
         'player', r.reactor_account, 'character', r.reactor_character) order by r.created_at, r.id)
-      from all_reactions r), '[]'))
+      from all_reactions r), '[]'),
+    -- The System's Acts an input Act points at (a spin from the reveal): named, never settled.
+    'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'))
 $$;
 
 revoke execute on function seed_instance(jsonb), schedule_settlement(), settings_reschedule(),

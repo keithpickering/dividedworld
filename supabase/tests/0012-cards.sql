@@ -37,7 +37,7 @@ begin
   if pg_temp.refusal(format('select buy_card(%L, %L, %L)', ann, 'splat', 1)) is null then raise exception 'a card was bought at a price of the caller''s choosing'; end if;
   if pg_temp.refusal(format('select buy_card(%L, %L, %L)', ann, 'nothing', 100)) is null then raise exception 'a card that does not exist was bought'; end if;
   if (buy_card(ann, 'splat', 100) ->> 'balance')::integer <> 50 then raise exception 'buying debits the wallet'; end if;
-  if (select change from wallet_events where account = ann and kind = 'purchase') <> -100 then raise exception 'the purchase is recorded'; end if;
+  if (select change from wallet_events where account = ann and kind = 'purchase') is distinct from -100 then raise exception 'the purchase is recorded'; end if;
 
   -- Playing: a card held, through a character played, on a post, once per post, from a wallet that covers it.
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'sweetie', a, p, '{}', 0)) is null then raise exception 'a card not held was played'; end if;
@@ -47,8 +47,8 @@ begin
   played := play_card(ann, 'splat', a, p, '{"color": "red"}', 50);
   the_play := (played ->> 'id')::uuid;
   if played ->> 'kind' <> 'card' or (played ->> 'target_act_id')::uuid <> p or played -> 'payload' ->> 'card' <> 'splat' then raise exception 'a play: %', played; end if;
-  if (select balance from wallets where account = ann) <> 0 then raise exception 'the play price is debited'; end if;
-  if (select held from (select card, (count(*) filter (where kind = 'bought') - count(*) filter (where kind = 'played')) as held from card_ledger where account = ann group by card) h where card = 'splat') <> 0 then
+  if (select balance from wallets where account = ann) is distinct from 0 then raise exception 'the play price is debited'; end if;
+  if (select held from (select card, (count(*) filter (where kind = 'bought') - count(*) filter (where kind = 'played')) as held from card_ledger where account = ann group by card) h where card = 'splat') is distinct from 0 then
     raise exception 'a played card is no longer held';
   end if;
   update wallets set balance = 300 where account = ann;
@@ -57,7 +57,7 @@ begin
   if why is null then raise exception 'a post took the same card twice'; end if;
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, the_play, '{}', 0)) is null then raise exception 'a card was played on a card'; end if;
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, q, '{}', 0)) is not null then raise exception 'a card on another post should land'; end if;
-  if (select ref from wallet_events where account = ann and kind = 'play' order by id limit 1) <> the_play then raise exception 'a play''s wallet event names the card''s Act'; end if;
+  if (select ref from wallet_events where account = ann and kind = 'play' order by id limit 1) is distinct from the_play then raise exception 'a play''s wallet event names the card''s Act'; end if;
   perform buy_card(ann, 'sweetie', 100);
   if coalesce(pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'sweetie', a, q, jsonb_build_object('sentence', repeat('x', 5000)), 0)), '') not like '%4 KB%' then
     raise exception 'an oversize configuration was stored';
@@ -72,7 +72,7 @@ begin
   perform pg_sleep(0.01);
   perform save_effect_state(bob, b, the_play, '{"strokes": []}');
   if (select saved_at from effect_state where effect_state.play = the_play) <= now() then raise exception 'a save is timed from its transaction''s start'; end if;
-  if (select state from effect_state where effect_state.play = the_play) <> '{"strokes": []}' then raise exception 'the author washes it clean'; end if;
+  if (select state from effect_state where effect_state.play = the_play) is distinct from '{"strokes": []}' then raise exception 'the author washes it clean'; end if;
   if pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', bob, b, the_play, jsonb_build_object('strokes', repeat('x', 300000)))) is null then
     raise exception 'an oversize state was saved';
   end if;
@@ -80,7 +80,7 @@ begin
 
   -- A player reads their own cards; every reader reads the author's version; nobody but the service writes.
   perform tests.become(ann);
-  if (select held from my_cards where card = 'splat') <> 0 then raise exception 'my_cards: %', (select jsonb_agg(m) from my_cards m); end if;
+  if (select held from my_cards where card = 'splat') is distinct from 0 then raise exception 'my_cards: %', (select jsonb_agg(m) from my_cards m); end if;
   if pg_temp.refusal(format('select buy_card(%L, %L, %L)', ann, 'splat', 100)) is null then raise exception 'a player called buy_card directly'; end if;
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, q, '{}', 0)) is null then raise exception 'a player called play_card directly'; end if;
   if pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', ann, a, the_play, '{}')) is null then raise exception 'a player called save_effect_state directly'; end if;
@@ -112,8 +112,8 @@ begin
     insert into card_ledger (account, card, kind, price) values (%1$L, 'splat', 'bought', 100), (%2$L, 'splat', 'bought', 100);
   $sql$, ann, bob, cat, a, b, c, t, p));
   said := tests.race_service(format('select play_card(%L, %L, %L, %L, %L, 0)', ann, 'splat', a, p, '{}'), format('select play_card(%L, %L, %L, %L, %L, 0)', bob, 'splat', b, p, '{}'));
-  if (select count(*) from acts where kind = 'card' and target_act_id = p) <> 1 then raise exception 'one card of a kind landed twice: %', said; end if;
+  if (select count(*) from acts where kind = 'card' and target_act_id = p) is distinct from 1 then raise exception 'one card of a kind landed twice: %', said; end if;
   if (said[1] is null) = (said[2] is null) then raise exception 'exactly one play should be refused: %', said; end if;
   if coalesce(said[1], said[2]) <> 'this post already carries that card' then raise exception 'the loser should be refused in words: %', said; end if;
-  if (select count(*) from card_ledger where card = 'splat' and kind = 'played' and account in (ann, bob)) <> 1 then raise exception 'the refused play kept its card'; end if;
+  if (select count(*) from card_ledger where card = 'splat' and kind = 'played' and account in (ann, bob)) is distinct from 1 then raise exception 'the refused play kept its card'; end if;
 end $$;

@@ -24,20 +24,20 @@ begin
   if not (said ->> 'applied')::boolean then raise exception 'the first application should apply: %', said; end if;
   said := apply_settlement(w1, w2, jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.cheered', 'amount', 350)));
   if (said ->> 'applied')::boolean then raise exception 'a window was applied twice'; end if;
-  if (select count(*) from ledger l join settlements x on x.id = l.settlement where x.starts_at = w1) <> 3
-     or (select count(*) from settlements where starts_at = w1) <> 1 then raise exception 'the second application wrote something'; end if;
+  if (select count(*) from ledger l join settlements x on x.id = l.settlement where x.starts_at = w1) is distinct from 3
+     or (select count(*) from settlements where starts_at = w1) is distinct from 1 then raise exception 'the second application wrote something'; end if;
 
   -- The wallet caps at 600 and the standing keeps all of it; a hostile entry floors at zero.
   select balance into bal from wallets where account = ann;
   if bal <> 600 then raise exception 'ann''s wallet should cap at 600, holds %', bal; end if;
-  if (select overflow from wallet_events where account = ann) <> 150 then raise exception 'the overflow should be recorded'; end if;
-  if (select amount from standings where character = a) <> 350 or (select amount from standings where character = a2) <> 400 then
+  if (select overflow from wallet_events where account = ann) is distinct from 150 then raise exception 'the overflow should be recorded'; end if;
+  if (select amount from standings where character = a) is distinct from 350 or (select amount from standings where character = a2) is distinct from 400 then
     raise exception 'the standings should keep all of it';
   end if;
   select balance into bal from wallets where account = bob;
   if bal <> 0 then raise exception 'bob''s wallet should stay at zero, holds %', bal; end if;
-  if (select floored from wallet_events where account = bob) <> 20 then raise exception 'the floor should be recorded'; end if;
-  if (select amount from standings where character = b) <> -20 then raise exception 'the standing goes below zero; the wallet does not'; end if;
+  if (select floored from wallet_events where account = bob) is distinct from 20 then raise exception 'the floor should be recorded'; end if;
+  if (select amount from standings where character = b) is distinct from -20 then raise exception 'the standing goes below zero; the wallet does not'; end if;
 
   -- The next window follows on; a gap or an overlap is refused.
   refused := false;
@@ -49,7 +49,7 @@ begin
   exception when invalid_parameter_value then refused := true; end;
   if not refused then raise exception 'an overlapping window was applied'; end if;
   said := apply_settlement(w2, w3, jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.groaned', 'amount', -45)));
-  if (select balance from wallets where account = ann) <> 555 then raise exception 'a debit from the cap'; end if;
+  if (select balance from wallets where account = ann) is distinct from 555 then raise exception 'a debit from the cap'; end if;
 
   -- An entry for a character its player does not play, or an amount that is not whole, applies nothing.
   refused := false;
@@ -87,7 +87,7 @@ begin
      or exists (select 1 from wallet_events where account = ann) then
     raise exception 'another account read a wallet';
   end if;
-  if (select amount from standings where character = a) <> 305 then raise exception 'a standing should be public'; end if;
+  if (select amount from standings where character = a) is distinct from 305 then raise exception 'a standing should be public'; end if;
   if not exists (select 1 from wallets where account = bob) then raise exception 'a player reads their own wallet'; end if;
   refused := false;
   begin perform apply_settlement(w3, w4, '[]'); exception when insufficient_privilege then refused := true; end;
@@ -115,7 +115,7 @@ begin
   exception when insufficient_privilege then refused := true; end;
   perform tests.unbecome();
   if not refused then raise exception 'a player wrote a standing'; end if;
-  if (select coalesce(jsonb_agg(s order by s.character), '[]')::text from standings s) <> before then
+  if (select coalesce(jsonb_agg(s order by s.character), '[]')::text from standings s) is distinct from before then
     raise exception 'a reaction moved a standing before any settlement';
   end if;
 end $$;

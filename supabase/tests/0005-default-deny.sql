@@ -34,7 +34,7 @@ begin
 
   for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.acts'::regclass and t.tgname in ('acts_no_update', 'acts_no_truncate') and t.tgenabled <> 'A'
   loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
-  if (select count(*) from pg_trigger t where t.tgrelid = 'public.acts'::regclass and t.tgname in ('acts_no_update', 'acts_no_truncate')) <> 2 then
+  if (select count(*) from pg_trigger t where t.tgrelid = 'public.acts'::regclass and t.tgname in ('acts_no_update', 'acts_no_truncate')) is distinct from 2 then
     bad := bad || E'\n  an append-only trigger is missing';
   end if;
   if bad <> '' then raise exception 'acts can be changed:%', bad; end if;

@@ -144,10 +144,13 @@ begin
   values (null, 'reveal', in_thread, jsonb_build_object('season', s.number, 'from', s.starts_at, 'to', ended,
     'body', copy_of('revealBody', s.number), 'characters', (select count(*) from characters where created_at < ended))) returning id into written;
   -- The class held as the season began counts from the season's start, not from when it was
-  -- taken: an earlier season's Turn was that season's to reveal.
+  -- taken: an earlier season's Turn was that season's to reveal. So does a character's first
+  -- class, which was taken when it was made: masks made in one sitting would show themselves one
+  -- player's. Only a Turn shows its time.
   insert into acts (character, kind, thread, payload)
   select null, 'reveal', in_thread, jsonb_build_object('season', s.number, 'character', c.id, 'name', c.name, 'classes', (
-      select jsonb_agg(jsonb_build_object('class', h.class_key, 'from', greatest(h.started_at, s.starts_at)) order by h.started_at)
+      select jsonb_agg(jsonb_build_object('class', h.class_key, 'from',
+        case when h.started_at <= s.starts_at or h.started_at = (select min(started_at) from class_history f where f.character = c.id) then s.starts_at else h.started_at end) order by h.started_at)
       from class_history h
       where h.character = c.id and h.started_at < ended
         and h.started_at >= coalesce((select max(started_at) from class_history x where x.character = c.id and x.started_at <= s.starts_at), s.starts_at)

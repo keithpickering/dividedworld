@@ -31,7 +31,7 @@ begin
   code := create_invite() ->> 'code';
   if code is null or length(code) < 16 then raise exception 'an invite is a code long enough not to guess: %', code; end if;
   select id into invite from invites;
-  if (select count(*) from invites) <> 1 then raise exception 'the inviter sees their invite'; end if;
+  if (select count(*) from invites) is distinct from 1 then raise exception 'the inviter sees their invite'; end if;
   perform tests.unbecome();
   if exists (select 1 from invites where code_hash = code or code_hash like '%' || code || '%') then raise exception 'an invite''s code is stored, not its hash'; end if;
 
@@ -58,7 +58,7 @@ begin
   if (open_account(null) ->> 'opened')::boolean is not false then raise exception 'opening an account already open is no change, and no error'; end if;
   perform tests.unbecome();
   if not exists (select 1 from accounts where id = newcomer) then raise exception 'the account is opened'; end if;
-  if (select used_by from invites where id = invite) <> newcomer then raise exception 'the invite is spent'; end if;
+  if (select used_by from invites where id = invite) is distinct from newcomer then raise exception 'the invite is spent'; end if;
   perform tests.become(second);
   if pg_temp.refusal(format('select open_account(%L)', fresh)) is distinct from 'that invite opens nothing' then raise exception 'a spent invite opened a second account'; end if;
   perform tests.unbecome();
@@ -83,7 +83,7 @@ begin
   if pg_temp.refusal('select used_by from invites') is null then raise exception 'the inviter read who used an invite'; end if;
   if pg_temp.refusal('select used_at from invites') is null then raise exception 'the inviter read when an invite was used'; end if;
   if pg_temp.refusal('select code_hash from invites') is null then raise exception 'the inviter read an invite''s hash'; end if;
-  if (select count(*) from invites where used) <> 1 then raise exception 'the inviter sees which invites are used'; end if;
+  if (select count(*) from invites where used) is distinct from 1 then raise exception 'the inviter sees which invites are used'; end if;
   perform tests.unbecome();
 end $$;
 
@@ -130,8 +130,8 @@ begin
   if why is null then raise exception 'a seventh character was made'; end if;
   if why not like '%6%' then raise exception 'the refusal should say what the cap is: %', why; end if;
   perform tests.unbecome();
-  if (select count(*) from characters where owner = cat) <> 6 then raise exception 'six characters, no more'; end if;
-  if (select count(*) from class_history h join characters c on c.id = h.character where c.owner = cat) <> 6 then raise exception 'each has its first class'; end if;
+  if (select count(*) from characters where owner = cat) is distinct from 6 then raise exception 'six characters, no more'; end if;
+  if (select count(*) from class_history h join characters c on c.id = h.character where c.owner = cat) is distinct from 6 then raise exception 'each has its first class'; end if;
   perform tests.become(tests.account('reg-dan'));
   if pg_temp.refusal($q$select create_character('mask 1', 'beta')$q$) is distinct from 'that name is taken' then raise exception 'a name is one per instance, whatever its case'; end if;
   if pg_temp.refusal($q$select create_character('Nobody', 'ghost')$q$) is null then raise exception 'a character with no class'; end if;
@@ -164,7 +164,7 @@ begin
   said := tests.race_as(x, 'select open_account(''race-code'')', y, 'select open_account(''race-code'')');
   if (said[1] is null) = (said[2] is null) then raise exception 'exactly one should open: %', said; end if;
   if coalesce(said[1], said[2]) <> 'that invite opens nothing' then raise exception 'the loser should be refused in words: %', said; end if;
-  if (select count(*) from accounts where id in (x, y)) <> 1 then raise exception 'one invite opened two accounts'; end if;
+  if (select count(*) from accounts where id in (x, y)) is distinct from 1 then raise exception 'one invite opened two accounts'; end if;
 end $$;
 
 -- ---- One login opening its account twice at once (a double submit): it opens once, and both say so plainly ----
@@ -180,5 +180,5 @@ begin
   $sql$, ann, z));
   said := tests.race_as(z, 'select open_account(''twice-code'')', z, 'select open_account(''twice-code'')');
   if said[1] is not null or said[2] is not null then raise exception 'a login opening its account twice at once was refused: %', said; end if;
-  if (select count(*) from accounts where id = z) <> 1 then raise exception 'the account is opened once'; end if;
+  if (select count(*) from accounts where id = z) is distinct from 1 then raise exception 'the account is opened once'; end if;
 end $$;

@@ -81,11 +81,13 @@ create table standings (
   primary key (season, character)
 );
 
--- The cap is a setting, so it is held by a trigger rather than a check.
+-- The cap is a setting, so it is held by a trigger rather than a check. It refuses a balance
+-- rising past it; a wallet left above a cap an admin lowered can still be spent from, and the
+-- next credit brings it to the cap.
 create function wallets_within_cap() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if new.balance > (setting('walletCap'))::integer then
+  if new.balance > (setting('walletCap'))::integer and (tg_op = 'INSERT' or new.balance > old.balance) then
     raise exception 'a wallet holds at most %', setting('walletCap') using errcode = '23514';
   end if;
   return new;
