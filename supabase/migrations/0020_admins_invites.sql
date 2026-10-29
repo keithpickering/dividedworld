@@ -73,15 +73,16 @@ $$;
 
 -- The caller may hold one more open invite: an admin always, a player under the cap. The caller's
 -- account is locked, so two at once cannot both read a count under it.
-create function invite_room(caller uuid, besides bigint default null) returns void
+create function invite_room(caller uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  most integer := (setting('invitesPerPlayer'))::integer;
+  most integer;
   held integer;
 begin
   if exists (select 1 from admins where account = caller) then return; end if;
+  most := (setting('invitesPerPlayer'))::integer;
   perform 1 from accounts where id = caller for no key update;
-  select count(*) into held from invites i where i.inviter = caller and i.id is distinct from besides and invite_open_for_inviter(i.used_at, i.expires_at);
+  select count(*) into held from invites i where i.inviter = caller and invite_open_for_inviter(i.used_at, i.expires_at);
   if held >= most then
     raise exception 'you hold % open invites, the most there are: one used or expired frees one', most using hint = 'kayfabb.refusal', errcode = 'P0001';
   end if;
@@ -111,7 +112,7 @@ declare
 begin
   select * into was from invites where id = invite and inviter = caller and not invite_shown_used(used_at) for update;
   if was.id is null then raise exception 'you have no unused invite %', invite using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
-  if was.expires_at <= now() then perform invite_room(caller, invite); end if;
+  if was.expires_at <= now() then perform invite_room(caller); end if;
   update invites set code_hash = invite_hash(code), expires_at = now() + invite_lifetime() where id = invite;
   return jsonb_build_object('invite', invite, 'code', code);
 end $$;
@@ -162,6 +163,6 @@ alter table admins enable row level security;
 revoke all on admins, my_invites from anon, authenticated;
 grant select on my_invites to authenticated;
 
-revoke execute on function invite_lifetime(), invite_open_for_inviter(timestamptz, timestamptz), invite_room(uuid, bigint), settings_invites_hold() from public, anon, authenticated;
+revoke execute on function invite_lifetime(), invite_open_for_inviter(timestamptz, timestamptz), invite_room(uuid), settings_invites_hold() from public, anon, authenticated;
 revoke execute on function is_admin() from public, anon;
 grant execute on function is_admin() to authenticated;

@@ -20,6 +20,7 @@ declare
   codes text[] := '{}';
   why text;
   expired_one bigint;
+  first_used bigint;
   open_one bigint;
   fresh text;
 begin
@@ -103,6 +104,20 @@ begin
   exception when check_violation then null;
   end;
 
+  -- Used, then expired before a settlement shows it used: to its inviter, expired and never used.
+  perform tests.become(boss);
+  fresh := create_invite() ->> 'code';
+  perform tests.unbecome();
+  insert into auth.users (id, email) values (gen_random_uuid(), 'cap-quiet@test.invalid');
+  perform tests.become((select id from auth.users where email = 'cap-quiet@test.invalid'));
+  perform open_account(fresh);
+  perform tests.unbecome();
+  update invites set used_at = coalesce((select max(ends_at) from settlements), now()) + interval '1 hour', expires_at = now() - interval '1 minute' where code_hash = invite_hash(fresh);
+  first_used := (select id from invites where code_hash = invite_hash(fresh));
+  perform tests.become(boss);
+  if (select (used, expired) from my_invites where id = first_used) is distinct from (false, true) then raise exception 'a use not yet shown showed through an expiry: %', (select to_jsonb(m) from my_invites m where id = first_used); end if;
+  perform tests.unbecome();
+
   -- Who is an admin is the service's to write and the caller's own to ask.
   perform tests.become(ann);
   if is_admin() then raise exception 'a player is not an admin'; end if;
@@ -112,4 +127,21 @@ begin
   perform tests.become(boss);
   if not is_admin() then raise exception 'an admin is one'; end if;
   perform tests.unbecome();
+end $$;
+
+-- ---- Two invites made at once at one under the cap: one is made, the other refused ----
+do $$
+declare
+  ann uuid := gen_random_uuid();
+  said text[];
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'race-cap@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into invites (code_hash, inviter, expires_at) values (invite_hash('race-cap-1'), %1$L, now() + interval '7 days'), (invite_hash('race-cap-2'), %1$L, now() + interval '7 days');
+  $sql$, ann));
+  said := tests.race(ann, 'select create_invite()', ann, 'select create_invite()');
+  if (said[1] is null) = (said[2] is null) then raise exception 'exactly one of two invites at once is made: %', said; end if;
+  if coalesce(said[1], said[2]) is distinct from 'you hold 3 open invites, the most there are: one used or expired frees one' then raise exception 'the other is refused in words: %', said; end if;
+  if (select count(*) from invites where inviter = ann) is distinct from 3::bigint then raise exception 'two invites at once passed the cap'; end if;
 end $$;
