@@ -38,8 +38,8 @@ test('a day on the board settles into wallets and standings, once', async () => 
     a as (insert into accounts (id) select id from u returning id)
     select json_object_agg(split_part(email, '@', 1), id) from u`));
   const characters = JSON.parse(sql(`
-    with c as (insert into characters (owner, name, created_at) values
-      ('${ids['e2e-heel']}', 'Pipewrench', '${at(-1)}'), ('${ids['e2e-face']}', 'Sunbeam', '${at(-1)}'), ('${ids['e2e-lurk']}', 'Shadow', '${at(-1)}')
+    with c as (insert into characters (owner, name, created_at, debuted_at) values
+      ('${ids['e2e-heel']}', 'Pipewrench', '${at(-1)}', '${at(-1)}'), ('${ids['e2e-face']}', 'Sunbeam', '${at(-1)}', '${at(-1)}'), ('${ids['e2e-lurk']}', 'Shadow', '${at(-1)}', '${at(-1)}')
       returning id, name),
     h as (insert into class_history (character, class_key, started_at)
       select id, case name when 'Pipewrench' then 'heel' when 'Sunbeam' then 'face' else 'lurker' end, '${at(-1)}' from c returning 1)
@@ -72,7 +72,7 @@ test('a day on the board settles into wallets and standings, once', async () => 
   const crowd = JSON.parse(sql(`
     with u as (insert into auth.users (email) values ('e2e-crowd-1@test.invalid'), ('e2e-crowd-2@test.invalid') returning id, email),
     a as (insert into accounts (id) select id from u returning id),
-    c as (insert into characters (owner, name, created_at) select id, 'Crowd ' || split_part(email, '@', 1), '${at(-1)}' from u returning id, owner),
+    c as (insert into characters (owner, name, created_at, debuted_at) select id, 'Crowd ' || split_part(email, '@', 1), '${at(-1)}', '${at(-1)}' from u returning id, owner),
     h as (insert into class_history (character, class_key, started_at) select id, 'face', '${at(-1)}' from c returning 1)
     select json_agg(json_build_object('account', owner, 'character', id)) from c`)) as { account: string; character: string }[];
   sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
@@ -93,8 +93,8 @@ test('a spin from The System\'s reveal settles like any other, and the settlemen
     a as (insert into accounts (id) select id from u returning id)
     select json_object_agg(split_part(email, '@', 1), id) from u`));
   const characters = JSON.parse(sql(`
-    with c as (insert into characters (owner, name, created_at) values
-      ('${ids['e2e-spin-a']}', 'Spinner', '${at(-1)}'), ('${ids['e2e-spin-b']}', 'Replier', '${at(-1)}') returning id, name),
+    with c as (insert into characters (owner, name, created_at, debuted_at) values
+      ('${ids['e2e-spin-a']}', 'Spinner', '${at(-1)}', '${at(-1)}'), ('${ids['e2e-spin-b']}', 'Replier', '${at(-1)}', '${at(-1)}') returning id, name),
     h as (insert into class_history (character, class_key, started_at) select id, 'face', '${at(-1)}' from c returning 1)
     select json_object_agg(name, id) from c`));
   // The System's own Act, as the reveal writes it, then a spin from it and a reply in the spun thread.
@@ -117,8 +117,8 @@ test('a player reacting on two days is paid one vote in all, through the real mi
     a as (insert into accounts (id) select id from u returning id)
     select json_object_agg(split_part(email, '@', 1), id) from u`));
   const characters = JSON.parse(sql(`
-    with c as (insert into characters (owner, name, created_at) values
-      ('${ids['e2e-twice-heel']}', 'Twice Heel', '${at(-1)}'), ('${ids['e2e-twice-fan']}', 'Twice Fan', '${at(-1)}') returning id, name),
+    with c as (insert into characters (owner, name, created_at, debuted_at) values
+      ('${ids['e2e-twice-heel']}', 'Twice Heel', '${at(-1)}', '${at(-1)}'), ('${ids['e2e-twice-fan']}', 'Twice Fan', '${at(-1)}', '${at(-1)}') returning id, name),
     h as (insert into class_history (character, class_key, started_at)
       select id, case name when 'Twice Heel' then 'heel' else 'face' end, '${at(-1)}' from c returning 1)
     select json_object_agg(name, id) from c`));
@@ -144,8 +144,8 @@ test('two missed days settle as two windows through the real migrations, the hal
     a as (insert into accounts (id) select id from u returning id)
     select json_object_agg(split_part(email, '@', 1), id) from u`));
   const characters = JSON.parse(sql(`
-    with c as (insert into characters (owner, name, created_at) values
-      ('${ids['e2e-missed-heel']}', 'Missed Heel', '${at(-1)}'), ('${ids['e2e-missed-fan']}', 'Missed Fan', '${at(-1)}') returning id, name),
+    with c as (insert into characters (owner, name, created_at, debuted_at) values
+      ('${ids['e2e-missed-heel']}', 'Missed Heel', '${at(-1)}', '${at(-1)}'), ('${ids['e2e-missed-fan']}', 'Missed Fan', '${at(-1)}', '${at(-1)}') returning id, name),
     h as (insert into class_history (character, class_key, started_at)
       select id, case name when 'Missed Heel' then 'heel' else 'face' end, '${at(-1)}' from c returning 1)
     select json_object_agg(name, id) from c`));

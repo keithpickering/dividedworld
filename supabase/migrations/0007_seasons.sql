@@ -18,7 +18,7 @@
 --   - broadcasts_due: what The System posts, waiting to reach its readers live. The settlement
 --     writes it in the same transaction as the Acts, and the settle function sends it and clears
 --     it (due_broadcasts, broadcasts_sent), so a run that fails between the two leaves it for the
---     next run, and nothing is broadcast twice for one window.
+--     next run, and a window that is applied once queues its broadcasts once.
 -- The tally and the reveal are The System's own Acts, the only Acts with no character, since The
 -- System plays no mask. The words The System uses are the instance's (its `copy`, seeded into
 -- settings), never this file's.
@@ -99,8 +99,9 @@ create table pending_turns (
 );
 
 -- What The System posted, waiting to reach its readers live (the header says why it waits here).
--- A row a day old is dropped unsent: a live update that late is no longer live, and the Act it
--- carried is on the board for the next load.
+-- A row is kept until a send takes it, however many runs that is: the next run after a failed
+-- send comes a cron period later. Sending is at least once (a run that dies between a send and
+-- broadcasts_sent sends again), and a client keeps an Act by its id, so a repeat changes nothing.
 create table broadcasts_due (
   id bigint generated always as identity primary key,
   topic text not null,
@@ -118,7 +119,6 @@ $$;
 create function due_broadcasts(most integer default 500) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  delete from broadcasts_due where made_at < now() - interval '1 day';
   return coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'topic', b.topic, 'event', b.event, 'payload', b.payload) order by b.id)
     from (select * from broadcasts_due order by id limit greatest(most, 0)) b), '[]');
 end $$;

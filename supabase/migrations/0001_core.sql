@@ -165,7 +165,9 @@ create index acts_created on acts (created_at);
 alter table threads add constraint threads_origin_act foreign key (origin_act_id) references acts (id);
 create index threads_origin on threads (origin_act_id) where origin_act_id is not null;
 
--- What each kind of Act may point at, held on the table so no writer can get it wrong: an edit
+-- Who may write an Act, and what each kind may point at, held on the table so no writer can get
+-- it wrong: a character acts only once it has debuted (played_by holds every action to it, and
+-- this holds a writer that forgets). An edit
 -- is its own author's, of their own post, in that post's thread (so the view never shows another
 -- character's words as a post's current text); a card lands on a post; a quote, a card and a
 -- spin never point at an edit, which is a layer of a post and not an Act to answer.
@@ -173,6 +175,9 @@ create function acts_well_formed() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare t acts%rowtype;
 begin
+  if new.character is not null and exists (select 1 from characters c where c.id = new.character and c.debuted_at is null) then
+    raise exception 'that character debuts at the next settlement' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
   if new.target_act_id is null then return new; end if;
   select * into t from acts where id = new.target_act_id;
   if new.kind = 'edit' and (t.kind <> 'post' or t.character <> new.character or t.thread <> new.thread) then

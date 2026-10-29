@@ -93,12 +93,15 @@ begin
 end $$;
 
 -- Whether a code would open an account now, for the sign-up answer: 'opens', 'closed' (no code
--- opens one), or 'nothing' (this code opens nothing). Says nothing of any address.
+-- opens one), or 'nothing' (this code opens nothing). Says nothing of any address, and nothing
+-- of an invite's use before a settlement shows it (invite_shown_used), since anyone holding the
+-- code could ask by the minute; such a code is refused only at open_account(), where it would
+-- be spent.
 create function invite_open(code text) returns text
 language sql stable security definer set search_path = public, pg_temp as $$
   select case setting('registrationMode') #>> '{}'
     when 'open' then 'opens'
-    when 'invite' then case when exists (select 1 from invites where code_hash = invite_hash(coalesce(code, '')) and used_by is null) then 'opens' else 'nothing' end
+    when 'invite' then case when exists (select 1 from invites where code_hash = invite_hash(coalesce(code, '')) and not invite_shown_used(used_at)) then 'opens' else 'nothing' end
     else 'closed' end
 $$;
 

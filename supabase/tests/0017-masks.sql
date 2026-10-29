@@ -64,6 +64,13 @@ begin
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', fresh, p, '{}', 0)) is distinct from 'that character debuts at the next settlement' then
     raise exception 'a waiting character played a card';
   end if;
+  if pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', ann, fresh, gen_random_uuid(), '{}')) is distinct from 'that character debuts at the next settlement' then
+    raise exception 'a waiting character saved an effect';
+  end if;
+  -- And the table holds it, for any writer that forgets to ask.
+  if coalesce(pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, %L, %L, %L)', fresh, 'post', t, '{"body": "x"}')), '') not like '%debuts%' then
+    raise exception 'an Act by a waiting character was written past every action';
+  end if;
 
   -- The settlement after it was made debuts it, and its tally names it.
   settled := pg_temp.settle_day();
@@ -174,6 +181,8 @@ begin
   perform create_character('Outboxed', 'alpha');
   perform tests.unbecome();
   delete from broadcasts_due;
+  -- A row from a send that failed a run ago (a day, at a daily cron) is still sent.
+  insert into broadcasts_due (topic, event, payload, made_at) values ('thread:late', 'act', '{"id": "late"}', now() - interval '2 days');
   said := pg_temp.settle_day();
   tallies := (select count(*) from acts where kind = 'tally');
   perform set_config('role', 'service_role', true);
@@ -186,14 +195,11 @@ begin
     raise exception 'the tally waits to be broadcast on its thread: %', due;
   end if;
   if (select count(*) from jsonb_array_elements(due) m where m -> 'payload' ->> 'id' = said ->> 'tally') is distinct from 1 then raise exception 'the tally is broadcast once: %', due; end if;
-  -- Sent, it is gone; unsent, it waits for the next run; a day old, a live update is no longer live.
+  if not exists (select 1 from jsonb_array_elements(due) m where m -> 'payload' ->> 'id' = 'late') then raise exception 'a broadcast a failed send left was dropped before the next run sent it'; end if;
+  -- Sent, it is gone; unsent, it waits for the next run, however long that is.
   perform set_config('role', 'service_role', true);
   perform broadcasts_sent((select jsonb_agg(m -> 'id') from jsonb_array_elements(due) m));
   if jsonb_array_length(due_broadcasts()) <> 0 then raise exception 'a sent broadcast is still due'; end if;
-  perform tests.unbecome();
-  insert into broadcasts_due (topic, event, payload, made_at) values ('thread:x', 'act', '{}', now() - interval '25 hours');
-  perform set_config('role', 'service_role', true);
-  if jsonb_array_length(due_broadcasts()) <> 0 then raise exception 'a day-old broadcast was sent'; end if;
   perform tests.unbecome();
   perform tests.become(ann);
   if pg_temp.refusal('select due_broadcasts()') is null then raise exception 'a player read the outbox'; end if;
@@ -222,7 +228,16 @@ begin
   -- Sent again, it answers as any unused invite does.
   if pg_temp.refusal(format('select reissue_invite(%s)', made ->> 'invite')) is not null then raise exception 'reissuing an invite whose use is not yet shown was refused'; end if;
   perform tests.unbecome();
+  -- And the sign-up answer, which anyone holding a code can ask for, says the same: a code whose
+  -- use the settlement has not yet shown opens, as far as anyone asking can tell.
+  update invites set code_hash = invite_hash('probe-code') where id = (made ->> 'invite')::bigint;
+  perform tests.become_service();
+  if invite_open('probe-code') is distinct from 'opens' then raise exception 'the sign-up answer showed an invite''s use before a settlement ran'; end if;
+  perform tests.unbecome();
   perform pg_temp.settle_day();
+  perform tests.become_service();
+  if invite_open('probe-code') is distinct from 'nothing' then raise exception 'a spent invite still opens after the settlement shows it used'; end if;
+  perform tests.unbecome();
   perform tests.become(ann);
   if not (select used from my_invites where id = (made ->> 'invite')::bigint) then raise exception 'an invite reads as used after the settlement'; end if;
   if pg_temp.refusal(format('select reissue_invite(%s)', made ->> 'invite')) is null then raise exception 'a used invite was sent again'; end if;
@@ -268,12 +283,22 @@ begin
     raise exception 'a window running past its season''s end was applied';
   end if;
   delete from broadcasts_due;
+  -- One character made in the last window, which debuts at the reveal's own settlement, and one
+  -- still waiting: neither played in the season, and neither is in its reveal.
+  insert into characters (owner, name, created_at) values (ann, 'Debuts At The Reveal', (w ->> 'start')::timestamptz + interval '1 hour'), (ann, 'Still Waiting', 'infinity');
   perform set_config('role', 'service_role', true);
   settled := apply_settlement((w ->> 'start')::timestamptz, (w ->> 'end')::timestamptz, '[]');
   perform tests.unbecome();
   if (settled ->> 'revealed')::integer is distinct from season_no then raise exception 'the settlement of the season''s last window reveals it: %', settled; end if;
   if (select ends_at from seasons where number = season_no) is distinct from next_start + interval '1 day 12 hours' then raise exception 'the season ends where its last window does'; end if;
   if (select starts_at from seasons where ends_at is null) is distinct from next_start + interval '1 day 12 hours' then raise exception 'the next season opens as the last ends'; end if;
+  if exists (select 1 from acts where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ->> 'name' in ('Debuts At The Reveal', 'Still Waiting')) then
+    raise exception 'the reveal named a character that played no part in the season';
+  end if;
+  if (select (payload ->> 'characters')::integer from acts where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ? 'body')
+     is distinct from (select count(*) from characters where debuted_at < next_start + interval '1 day 12 hours') then
+    raise exception 'the reveal counted a character that played no part in the season';
+  end if;
   -- Two Turns made minutes apart read as two made hours apart: each is dated by its window.
   select jsonb_object_agg(payload ->> 'name', payload -> 'classes') into revealed from acts
   where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ->> 'name' like '% Pair %';

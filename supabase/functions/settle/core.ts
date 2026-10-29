@@ -16,7 +16,9 @@
  * What a settlement posts (its tally, a season's reveal) is written with it into an outbox
  * (supabase/migrations/0007_seasons.sql's broadcasts_due), and every run ends by sending what
  * waits there and clearing what was sent. A run that fails between the two, or a send that
- * fails, leaves it for the next run; a window is applied once, so nothing is queued twice.
+ * fails, leaves it for the next run; a window is applied once, so nothing is queued twice. A
+ * run that dies between a send and its clearing sends that batch again, which a client, keeping
+ * each Act by its id, takes as the same Act.
  */
 import { settle } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
