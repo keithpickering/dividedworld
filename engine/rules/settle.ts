@@ -61,6 +61,8 @@ export interface Detail {
   readonly reason: string;
   readonly act?: string;
   readonly quadrant?: Quadrant;
+  /** The reactions it pays for, where they are not on `act` (Earning.valuing). */
+  readonly valuing?: { readonly act: string; readonly from: number };
   readonly amount: number;
 }
 
@@ -332,7 +334,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
-        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}) });
+        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}) });
       }
     }
   }
@@ -378,7 +380,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       if (whole[i] === 0) return;
       details.push({
         player: l.first.player, character: l.first.character, reason: l.first.reason,
-        ...(l.first.act ? { act: l.first.act } : {}), ...(l.first.quadrant ? { quadrant: l.first.quadrant } : {}), amount: whole[i]!,
+        ...(l.first.act ? { act: l.first.act } : {}), ...(l.first.quadrant ? { quadrant: l.first.quadrant } : {}), ...(l.first.valuing ? { valuing: l.first.valuing } : {}), amount: whole[i]!,
       });
     });
   }
@@ -424,7 +426,8 @@ export interface EstimateLine {
  * settlement is exact. A line the class paid on an Act and quadrant is split into one line per
  * reaction there in the window, each with its time and an even whole-hundredths share, never who
  * left it: a reaction the character received when the Act is the character's own, one it gave
- * otherwise. Even is each reaction's own amount wherever a rule values every reaction alike, as
+ * otherwise, and for a line that values reactions on another Act (a card's lift, Earning.valuing),
+ * the reactions on that Act from that time. Even is each reaction's own amount wherever a rule values every reaction alike, as
  * a whole vote does; a rule that values a reaction by its rank or its crowd is apportioned. The
  * lines add up to the entries. Run on the server, from estimate_input()
  * (supabase/migrations/0017_estimate.sql), which reads only what this player's estimate needs.
@@ -437,10 +440,14 @@ export function estimateForOwner(input: SettlementInput, instance: Instance, pla
   const inWindow = (at: number) => at >= input.window.from && at < input.window.to;
   const lines: EstimateLine[] = [];
   for (const d of s.details.filter((x) => x.player === player)) {
-    const { player: _who, ...line } = d;
-    const own = d.act !== undefined && mine.has(authorOf.get(d.act) ?? '');
-    const times = d.act === undefined || d.quadrant === undefined ? [] : input.reactions
-      .filter((r) => r.act === d.act && quadrantOf.get(r.kind) === d.quadrant && inWindow(r.at) && (own ? r.player !== player : r.character === d.character))
+    const { player: _who, valuing, ...line } = d;
+    // The reactions a line pays for: others' on the Act it values from when it says (a card's lift),
+    // others' on the character's own Act, or the character's own on another's.
+    const on = valuing?.act ?? d.act;
+    const own = valuing !== undefined || (on !== undefined && mine.has(authorOf.get(on) ?? ''));
+    const times = on === undefined || d.quadrant === undefined ? [] : input.reactions
+      .filter((r) => r.act === on && quadrantOf.get(r.kind) === d.quadrant && inWindow(r.at) && r.at >= (valuing?.from ?? -Infinity)
+        && (own ? r.player !== player : r.character === d.character))
       .map((r) => r.at).sort((x, y) => x - y);
     if (!times.length) { lines.push(line); continue; }
     // Whole hundredths that add up to the line: the remainder to the earliest.

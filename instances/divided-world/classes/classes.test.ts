@@ -12,7 +12,7 @@ import { jabroni } from './jabroni.ts';
 import { classes } from './index.ts';
 import { instance } from '../index.ts';
 import { defaults as settings } from '../settings.ts';
-import { settle } from '../../../engine/rules/settle.ts';
+import { estimateForOwner, settle } from '../../../engine/rules/settle.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import type {
   ClassInput, ClassRules, HeldVote, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread,
@@ -293,4 +293,30 @@ test('each class names what it paid in its own words, with the Act and the quadr
 
 test('a Lurker is never paid for a reaction with no rank', () => {
   assert.equal(total(lurker, input({ held: [held({ rank: 0 })] })), 0);
+});
+
+test('the estimate hangs a lifted post on the reactions to the post, after the card, never on the card\'s own', () => {
+  const H = 3_600_000;
+  const FROM = 100 * H;
+  const lines = estimateForOwner({
+    window: { id: 'w', from: FROM, to: FROM + 24 * H },
+    characters: [
+      { id: 'ann-face', player: 'ann', classes: [{ class: 'face', from: 0 }] },
+      { id: 'bob-1', player: 'bob', classes: [{ class: 'heel', from: 0 }] },
+      { id: 'cat-1', player: 'cat', classes: [{ class: 'heel', from: 0 }] },
+      { id: 'dee-1', player: 'dee', classes: [{ class: 'heel', from: 0 }] },
+    ],
+    acts: [
+      { id: 'p', character: 'bob-1', kind: 'post', at: FROM + 1 * H, thread: 't' },
+      { id: 'card', character: 'ann-face', kind: 'card', at: FROM + 2 * H, thread: 't', target: 'p', card: 'stick-around' },
+    ],
+    reactions: [
+      // Before Ann's card, Dee's cheer on the post lifts nothing; after it, Cat's does.
+      { act: 'p', player: 'cat', character: 'cat-1', kind: 'fire', at: FROM + 3 * H },
+      { act: 'p', player: 'dee', character: 'dee-1', kind: 'fire', at: FROM + 1.5 * H },
+      // Dee also cheers Ann's card itself, which is the card's draw, not the post's lift.
+      { act: 'card', player: 'dee', character: 'dee-1', kind: 'fire', at: FROM + 9 * H },
+    ],
+  }, instance, 'ann').lines;
+  assert.deepEqual(lines.filter((l) => l.reason === 'face.liftedAPost').map((l) => [l.act, l.at, l.amount]), [['card', FROM + 3 * H, 10]]);
 });

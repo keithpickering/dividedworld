@@ -281,6 +281,11 @@ export interface Earning {
   readonly amount: number;
   readonly act?: string;
   readonly quadrant?: Quadrant;
+  /**
+   * The reactions it pays for, where they are not on `act`: on this Act, from this time (a card's
+   * lift is the votes on its target after it). The live estimate hangs its lines on them.
+   */
+  readonly valuing?: { readonly act: string; readonly from: number };
 }
 
 /** A class: a playstyle, and the rules that turn what a character did and received into Aura. */

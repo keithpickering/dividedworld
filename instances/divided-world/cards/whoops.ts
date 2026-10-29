@@ -8,11 +8,12 @@
  * 3.00 in all (the core loop's design, section 10).
  *
  * While a post is splatted its text is laid out at one fixed width and scaled as a whole, so a
- * stroke is measured in widths of that layout: across from 0 to 1, down from 0 to 64 (a post 64
- * times as tall as it is wide is longer than any post's text), kept to a thousandth. A stroke
+ * stroke is measured in widths of that layout: across from 0 to 1, down from 0 to 64, kept to a
+ * thousandth. A post laid out taller than 64 widths has text below any stroke's reach; the screens
+ * hold the splat within the first 64, and `clean` still washes the whole layer away. A stroke
  * keeps its place when an edit reflows the text under it. A stroke washes (no color) or inks
- * (the author writing back, in a color); its width is kept to a thousandth too. `clean` is the author's save saying the layer is washed
- * clean, so it fades for everyone. Counts, points and widths are bounded so the largest save
+ * (the author writing back, in a color); its width is kept to a thousandth too. `clean` is the
+ * author's save saying the layer is washed clean, so it fades for everyone. Counts, points and widths are bounded so the largest save
  * there can be fits the database's bound on it (effect_state, supabase/migrations/0006_cards.sql),
  * which cards.test.ts measures as Postgres writes it.
  */
