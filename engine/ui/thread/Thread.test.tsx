@@ -37,6 +37,8 @@ const sentinel = () => document.querySelector('[data-kb-end]');
 /* The debounce is waited out on a fake clock, so a loaded machine cannot make it late. Call before the first `see`. */
 const clock = () => vi.useFakeTimers({ shouldAdvanceTime: true });
 const debounced = () => act(() => vi.advanceTimersByTimeAsync(READ_DEBOUNCE_MS + 50));
+/* A post is observed in an effect, which can land after the post is on screen: wait for it before reporting it in view. */
+const watched = (el: Element | null) => waitFor(() => expect(MockObserver.all.some((o) => !!el && o.els.has(el))).toBe(true));
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeEach(() => {
@@ -118,6 +120,8 @@ describe('pages and permalinks', () => {
     open(w);
     await screen.findByRole('article', { name: /^Post 20 /u });
     expect(document.querySelectorAll('article.kb-act')).toHaveLength(20);
+    /* The landing scroll happens in an effect that can trail the post; let it finish before counting. */
+    await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
     (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mockClear();
     await userEvent.click(screen.getAllByRole('link', { name: 'Continue to page 2' })[0]!);
     await screen.findByRole('article', { name: /^Post 40 /u });
@@ -285,6 +289,7 @@ describe('mark_read', () => {
     const spy = vi.spyOn(w.fake, 'markRead');
     open(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    await watched(post(10));
     clock();
     see(post(3));
     see(post(5));
@@ -302,6 +307,7 @@ describe('mark_read', () => {
     const spy = vi.spyOn(w.fake, 'markRead');
     open(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    await watched(post(10));
     clock();
     see(post(8));
     await debounced();
@@ -320,6 +326,7 @@ describe('mark_read', () => {
     const spy = vi.spyOn(w.fake, 'markRead');
     open(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    await watched(post(10));
     clock();
     see(post(4));
     await debounced();
@@ -331,6 +338,7 @@ describe('mark_read', () => {
     const spy = vi.spyOn(w.fake, 'markRead');
     const { unmount } = open(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    await watched(post(10));
     see(post(7));
     unmount();
     expect(spy.mock.calls[0]!.slice(0, 2)).toEqual([w.thread, 7]);
