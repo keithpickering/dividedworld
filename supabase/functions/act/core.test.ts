@@ -150,6 +150,10 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'setDebut', character: id, timing: 'now', loudness: 'announced' },
       { set_debut: { id, waiting: false, announcement: { act: { id: 'd', thread }, thread: null } } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'd', thread } }]],
     [{ action: 'setDebut', character: id, timing: 'now', loudness: 'silent' }, { set_debut: { id, waiting: false, announcement: null } }, []],
+    // A drop with its class: the tally of one, then the character's own unmask, in that order.
+    [{ action: 'createCharacter', name: 'Dropped', class: 'heel', timing: 'now', loudness: 'with_class' },
+      { create_character: { id, waiting: false, announcement: { act: { id: 'd', thread }, thread: null, unmask: { id: 'u', thread } } } },
+      [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'd', thread } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'u', thread } }]],
     // A reveal is the character's Act in its thread, sent like a post.
     [{ action: 'unmask', character: id, thread }, { unmask: { id: 'u', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'u', thread } }]],
   ];

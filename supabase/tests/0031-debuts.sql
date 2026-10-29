@@ -137,7 +137,7 @@ begin
   -- Options outside the two are refused.
   perform tests.become(ann);
   if pg_temp.refusal('select create_character(''Odd Timing'', ''alpha'', ''later'', ''silent'')') is distinct from 'a character drops now or debuts at the tally' then raise exception 'a timing outside the two'; end if;
-  if pg_temp.refusal('select create_character(''Odd Loudness'', ''alpha'', ''now'', ''revealed'')') is distinct from 'a debut is silent or announced' then raise exception 'a loudness outside the two'; end if;
+  if pg_temp.refusal('select create_character(''Odd Loudness'', ''alpha'', ''now'', ''revealed'')') is distinct from 'a debut is silent, announced, or announced with its class' then raise exception 'a loudness outside the three'; end if;
   perform tests.unbecome();
 end $$;
 
@@ -237,6 +237,35 @@ begin
   if pg_temp.named_in(gap) is distinct from 1::bigint then raise exception 'a drop owed its announcement was named twice'; end if;
 end $$;
 
+-- ---- A drop with its class between seasons: its unmask waits with its announcement for the next tally ----
+do $$
+declare
+  ann uuid := tests.account('gap-with-class');
+  gap uuid;
+  made jsonb;
+  window_end timestamptz;
+begin
+  -- A gap between seasons: the one the block above opened, or one opened here.
+  if (select starts_at from seasons where ends_at is null) <= now() then
+    update seasons set ends_at = now() - interval '1 day' where ends_at is null;
+    insert into seasons (number, starts_at) values ((select max(number) + 1 from seasons), now() + interval '1 day');
+  end if;
+  perform tests.become(ann);
+  made := create_character('Gap Unmasked', 'beta', 'now', 'with_class');
+  perform tests.unbecome();
+  gap := (made ->> 'id')::uuid;
+  if made -> 'announcement' <> 'null'::jsonb or exists (select 1 from acts where kind = 'unmask' and character = gap) then raise exception 'a drop between seasons was unmasked in no season: %', made; end if;
+  window_end := now() + interval '2 days';
+  perform masks_change(window_end);
+  if (select (a.thread, a.created_at, a.payload ->> 'class') from acts a where a.kind = 'unmask' and a.character = gap)
+     is distinct from ((select turns_thread from seasons where ends_at is null), window_end, 'beta'::text) then
+    raise exception 'the next season''s tally unmasks it, in its Turns thread, dated at the tally';
+  end if;
+  if (select d ->> 'class' from acts a, jsonb_array_elements(a.payload -> 'debuts') d where a.kind = 'tally' and d ->> 'character' = gap::text) is distinct from 'beta' then raise exception 'the owed announcement names its class'; end if;
+  perform masks_change(now() + interval '3 days');
+  if (select count(*) from acts where kind = 'unmask' and character = gap) is distinct from 1::bigint then raise exception 'an owed unmask was written twice'; end if;
+end $$;
+
 -- ---- The season's reveal names every character, a silent drop among them ----
 do $$
 declare
@@ -251,4 +280,78 @@ begin
   ended := (select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength'));
   perform reveal_season(ended);
   if not exists (select 1 from acts where kind = 'reveal' and payload ->> 'character' = quiet::text) then raise exception 'the season''s reveal names a silently dropped character'; end if;
+end $$;
+
+-- ---- A debut announced with its class names it in the tally, and writes the character's own
+-- unmask Act right after, in the Turns thread: a drop's at once, a scheduled one's at the tally
+-- (the class reveal plan, Task 2) ----
+do $$
+declare
+  ann uuid := tests.account('with-class-ann');
+  bob uuid := tests.account('with-class-bob');
+  b uuid := tests.character(bob, 'Watches Debuts', 'alpha', now() - interval '60 days');
+  made jsonb;
+  dropped uuid;
+  sched uuid;
+  plain uuid;
+  quiet uuid;
+  tally acts%rowtype;
+  u acts%rowtype;
+  first_tally uuid;
+  window_end timestamptz := now() + interval '1 minute';
+  spun jsonb;
+begin
+  -- A drop, with its class: the tally of one names it, and its unmask follows at once.
+  perform tests.become(ann);
+  made := create_character('Drops Unmasked', 'beta', 'now', 'with_class');
+  perform tests.unbecome();
+  dropped := (made ->> 'id')::uuid;
+  if made ->> 'loudness' is distinct from 'with_class' or (made ->> 'waiting')::boolean then raise exception 'a drop with its class acts at once: %', made; end if;
+  select a.* into tally from acts a, jsonb_array_elements(a.payload -> 'debuts') d where a.kind = 'tally' and d ->> 'character' = dropped::text;
+  if tally.payload -> 'debuts' is distinct from jsonb_build_array(jsonb_build_object('character', dropped, 'name', 'Drops Unmasked', 'class', 'beta')) then
+    raise exception 'a drop announced with its class is named with it: %', tally.payload;
+  end if;
+  select * into u from acts where kind = 'unmask' and character = dropped;
+  if u.id is null or u.thread is distinct from tally.thread or u.seq is distinct from tally.seq + 1 then raise exception 'its unmask Act follows the tally in the Turns thread: %', to_jsonb(u); end if;
+  if u.payload is distinct from '{"class": "beta", "message": "", "via": "debut"}'::jsonb or u.created_at is distinct from (select created_at from characters where id = dropped) then
+    raise exception 'a drop''s unmask names its class, dated at the drop: %', to_jsonb(u);
+  end if;
+  if (made -> 'announcement' -> 'unmask' ->> 'id')::uuid is distinct from u.id then raise exception 'the answer carries the unmask Act to send live: %', made; end if;
+  -- It is the character's Act, on The System's board: reacted to, spun, and its reactions are the character's.
+  perform tests.become(bob);
+  perform react(u.id, b, 'up');
+  spun := spin(u.id, b, 'About that debut', '');
+  perform tests.unbecome();
+  if (select board from threads where id = (spun -> 'thread' ->> 'id')::uuid) is distinct from players_board() then raise exception 'a thread spun from a debut''s unmask opens on the players'' board'; end if;
+  if not exists (select 1 from jsonb_array_elements(settlement_input(now() - interval '1 hour', now() + interval '1 hour') -> 'acts') x where x ->> 'id' = u.id::text and x ->> 'character' = dropped::text)
+     or settlement_input(now() - interval '1 hour', now() + interval '1 hour') -> 'systemActs' @> to_jsonb(array[u.id]) then
+    raise exception 'a debut''s unmask is settled as its character''s Act, never The System''s';
+  end if;
+  -- Players still post nothing on The System's board, a reveal included.
+  perform tests.become(ann);
+  if pg_temp.refusal(format('select unmask(%L, %L, %L)', dropped, u.thread, '')) is distinct from 'only The System posts here; spin a thread from what it said' then raise exception 'a player unmasked on The System''s board'; end if;
+  -- Scheduled: with its class; announced plainly; silent.
+  sched := (create_character('Debuts Unmasked', 'alpha', 'tally', 'with_class') ->> 'id')::uuid;
+  plain := (create_character('Debuts Plainly', 'alpha', 'tally', 'announced') ->> 'id')::uuid;
+  quiet := (create_character('Debuts Quietly', 'alpha', 'tally', 'silent') ->> 'id')::uuid;
+  perform tests.unbecome();
+  if exists (select 1 from acts where kind = 'unmask' and character = sched) then raise exception 'a waiting character was unmasked before its debut'; end if;
+  first_tally := masks_change(window_end);
+  select * into tally from acts where id = first_tally;
+  if (select d from jsonb_array_elements(tally.payload -> 'debuts') d where d ->> 'character' = sched::text) is distinct from jsonb_build_object('character', sched, 'name', 'Debuts Unmasked', 'class', 'alpha') then
+    raise exception 'a scheduled debut with its class is named with it: %', tally.payload;
+  end if;
+  if (select d from jsonb_array_elements(tally.payload -> 'debuts') d where d ->> 'character' = plain::text) ? 'class' then raise exception 'a plain announced debut names no class: %', tally.payload; end if;
+  select * into u from acts where kind = 'unmask' and character = sched;
+  if u.id is null or u.thread is distinct from tally.thread or u.seq <= tally.seq or u.created_at is distinct from window_end or u.payload ->> 'via' is distinct from 'debut' then
+    raise exception 'a scheduled debut''s unmask follows its tally, dated at the tally: %', to_jsonb(u);
+  end if;
+  if exists (select 1 from acts where kind = 'unmask' and character in (plain, quiet)) then raise exception 'a debut not announced with its class wrote an unmask'; end if;
+  if not exists (select 1 from broadcasts_due where event = 'act' and payload ->> 'id' = u.id::text) then raise exception 'the settlement sends a debut''s unmask live, through its outbox'; end if;
+  -- A waiting character's loudness may become "with its class", and back.
+  perform tests.become(ann);
+  quiet := (create_character('Changes Its Mind', 'alpha') ->> 'id')::uuid;
+  if (set_debut(quiet, 'tally', 'with_class') ->> 'loudness') is distinct from 'with_class' then raise exception 'a waiting character may be set to debut with its class'; end if;
+  if pg_temp.refusal('select create_character(''Odd Loudness Again'', ''alpha'', ''now'', ''shouted'')') is distinct from 'a debut is silent, announced, or announced with its class' then raise exception 'a loudness outside the three'; end if;
+  perform tests.unbecome();
 end $$;

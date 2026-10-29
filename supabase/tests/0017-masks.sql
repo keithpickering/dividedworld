@@ -110,7 +110,8 @@ begin
   if not (said ->> 'pending')::boolean then raise exception 'a Turn waits for the settlement: %', said; end if;
   -- Changed before it takes effect: louder, and the change is the Turn.
   said := turn(loud, 'beta', 'revealed');
-  if (select loudness from pending_turns where character = loud) is distinct from 'revealed' then raise exception 'a waiting Turn is changed'; end if;
+  -- "revealed", from an older client, waits as announced naming the class it Turns from (0028).
+  if (select (loudness, show_from) from pending_turns where character = loud) is distinct from ('announced'::text, true) then raise exception 'a waiting Turn is changed'; end if;
   perform turn(shy, 'beta', 'silent');
   -- Nothing public moves while a Turn waits, announced or not.
   if (select class_key from class_history where character = loud order by started_at desc limit 1) is distinct from 'alpha' then raise exception 'a waiting Turn changed the class'; end if;

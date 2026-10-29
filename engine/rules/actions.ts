@@ -77,15 +77,23 @@ const card = (r: Fields, instance: Instance): string => {
 type Decided = Omit<Extract<Decision, { ok: true }>, 'ok'>;
 
 /**
- * A character's debut (supabase/migrations/0024_debuts.sql): dropped `now` or at the `tally`,
- * `silent` or `announced`; what a request leaves out is the default given, where there is one.
+ * A character's debut (supabase/migrations/0024_debuts.sql, 0028_loud_classes.sql): dropped `now`
+ * or at the `tally`, `silent`, `announced`, or announced `with_class`; what a request leaves out is
+ * the default given, where there is one.
  */
 const debut = (r: Fields, defaults?: { timing: string; loudness: string }): { timing: string; loudness: string } => {
   const timing = r.timing ?? defaults?.timing;
   if (timing !== 'now' && timing !== 'tally') throw new Refused('timing', 'a character drops now or debuts at the tally');
   const loudness = r.loudness ?? defaults?.loudness;
-  if (loudness !== 'silent' && loudness !== 'announced') throw new Refused('loudness', 'a debut is silent or announced');
+  if (loudness !== 'silent' && loudness !== 'announced' && loudness !== 'with_class') throw new Refused('loudness', 'a debut is silent, announced, or announced with its class');
   return { timing, loudness };
+};
+
+/** A flag a request may leave out, which is then false. */
+const flag = (r: Fields, field: string): boolean => {
+  const v = r[field] ?? false;
+  if (typeof v !== 'boolean') throw new Refused(field, 'is true or false');
+  return v;
 };
 
 /** Each action: the SQL function that writes it, and its arguments from the request. */
@@ -115,9 +123,16 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   turn: (r, instance) => {
     const to = r.class;
     if (typeof to !== 'string' || !instance.classes.some((c) => c.key === to)) throw new Refused('class', `there is no class ${JSON.stringify(to)}`);
+    // A Turn names the class it Turns from (`showFrom`), the one it Turns to (`showTo`), both or
+    // neither (supabase/migrations/0028_loud_classes.sql); an older client's "revealed" is
+    // announced, naming the class it Turns from.
+    if (r.loudness === 'revealed') return { rpc: 'turn', args: { through: id(r, 'character'), to_class: to, loudness: 'announced', show_from: true, show_to: false } };
     const loudness = r.loudness;
-    if (loudness !== 'silent' && loudness !== 'announced' && loudness !== 'revealed') throw new Refused('loudness', 'a Turn is silent, announced, or revealed');
-    return { rpc: 'turn', args: { through: id(r, 'character'), to_class: to, loudness } };
+    if (loudness !== 'silent' && loudness !== 'announced') throw new Refused('loudness', 'a Turn is silent or announced');
+    const showFrom = flag(r, 'showFrom');
+    const showTo = flag(r, 'showTo');
+    if (loudness === 'silent' && (showFrom || showTo)) throw new Refused(showFrom ? 'showFrom' : 'showTo', 'a silent Turn names no class');
+    return { rpc: 'turn', args: { through: id(r, 'character'), to_class: to, loudness, show_from: showFrom, show_to: showTo } };
   },
   withdrawTurn: (r) => ({ rpc: 'withdraw_turn', args: { through: id(r, 'character') } }),
   // A reveal of the character's own class (supabase/migrations/0027_unmask.sql): the class is read
