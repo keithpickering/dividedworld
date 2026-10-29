@@ -23,6 +23,7 @@ test('the instance sells the two cards, Sweet and Salty, at their prices', () =>
 test('a card\'s prices are settings: an override reaches what it sells for and what it costs to play', () => {
   const tuned = withOverrides(settings, { economy: { 'whoops.price': 150, 'whoops.perLength': 50, 'whoops.mostInAll': 400 } });
   assert.equal(basePrice(whoops, tuned), 150);
+  assert.equal(basePrice(stickAround, withOverrides(settings, { economy: { 'stickAround.price': 75 } })), 75);
   assert.equal(whoops.playPrice(tuned, post(1000), { color: 'red' }), 100);
   assert.equal(basePrice(whoops, tuned) + whoops.playPrice(tuned, post(1_000_000), { color: 'red' }), 400);
 });

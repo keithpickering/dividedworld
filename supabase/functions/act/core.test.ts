@@ -82,7 +82,7 @@ test('a purchase is the service\'s, for whoever the session is', async () => {
 });
 
 test('a card is sold and played at the prices the settings rows hold', async () => {
-  const { dbs, calls } = pair({ instance_settings: { economy: { 'whoops.price': 150, 'whoops.perLength': 50 } }, whoami, buy_card: { card: 'whoops', balance: 0 },
+  const { dbs, calls } = pair({ instance_settings: { economy: { ...instance.settings.economy, 'whoops.price': 150, 'whoops.perLength': 50 } }, whoami, buy_card: { card: 'whoops', balance: 0 },
     card_target: { act: target, kind: 'post', length: 1000, effects: [] }, play_card: { id: 'k' } });
   await runAction(dbs, instance, { action: 'buyCard', card: 'whoops' });
   assert.ok(calls.includes(`service:buy_card:${JSON.stringify({ card: 'whoops', price: 150, who: whoami })}`), calls.join('\n'));

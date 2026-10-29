@@ -123,9 +123,14 @@ export function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): 
  * The settings with some replaced: a new object, frozen all the way down; the defaults are
  * never edited. An override left undefined keeps the default rather than erasing it.
  */
-/** Settings with some replaced; the economy is replaced number by number, so one override keeps the rest. */
+/**
+ * Settings with some replaced; the economy is replaced number by number, so one override keeps
+ * the rest. An economy override that is not an object of numbers is kept as given, so the check
+ * of the settings (settingsProblems) names it rather than its being dropped in silence.
+ */
 export function withOverrides(settings: Settings, overrides: Partial<Settings>): Settings {
   const given = Object.fromEntries(Object.entries(overrides).filter(([, v]) => v !== undefined));
-  const economy = overrides.economy && typeof overrides.economy === 'object' ? { ...settings.economy, ...overrides.economy } : settings.economy;
+  const e = overrides.economy;
+  const economy = e === undefined ? settings.economy : typeof e === 'object' && e !== null && !Array.isArray(e) ? { ...settings.economy, ...e } : e;
   return deepFreeze({ ...settings, ...given, economy });
 }

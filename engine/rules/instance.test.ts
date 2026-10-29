@@ -104,6 +104,12 @@ test('the economy is a setting of named numbers, which the engine checks are num
   assert.match(settingsProblems({ ...settings, economy: [] as never }).join('\n'), /economy/);
 });
 
+test('an economy override that is not an object of numbers reaches the check, never dropped in silence', () => {
+  for (const bad of ['lots', null, [1, 2]]) {
+    assert.match(settingsProblems(withOverrides(settings, { economy: bad as never })).join('\n'), /economy/, JSON.stringify(bad));
+  }
+});
+
 test('an override of one economy number keeps the others', () => {
   const tuned = withOverrides(settings, { economy: { 'a.bonus': 9 } });
   assert.deepEqual(tuned.economy, { 'a.bonus': 9, 'splat.price': 100 });

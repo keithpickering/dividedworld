@@ -31,6 +31,9 @@ end $$;
 -- as supabase/functions/_shared/seed.ts builds it from the Instance the composition root holds.
 -- A kind is added or renamed, never removed (the rows that name it stay); a board is added once
 -- and then belongs to the instance's admins. A fresh instance's first season opens with it.
+-- Settings are written as the payload holds them, so seeding again puts back the code's numbers
+-- over any an admin tuned in a row: a retune that should outlast a deploy goes into the code's
+-- settings too.
 create function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin

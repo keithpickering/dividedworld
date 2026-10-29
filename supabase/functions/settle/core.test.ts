@@ -55,7 +55,7 @@ test('a run settles the next window: reads its input, runs the instance\'s class
   const { db, calls } = fakeDb();
   const out = await runSettlement(db, instance, new Date(TO).toISOString());
   assert.equal(out.status, 'applied');
-  assert.deepEqual(calls.map((c) => c.fn), ['instance_settings', 'next_settlement_window', 'settlement_input', 'apply_settlement']);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement']);
   const apply = calls[3]!.args;
   assert.deepEqual(apply.entries, [
     // Heat: Cat's whole vote and half of Dee's; a shrug: the other half of Dee's.
@@ -69,11 +69,23 @@ test('a run settles the next window: reads its input, runs the instance\'s class
 });
 
 test('the settings rows reach the settlement: an admin\'s tuning of a vote or a class\'s number is what pays', async () => {
-  const { db, calls } = fakeDb(day, { vote: 20, economy: { 'lurker.earlyMatch': 40 }, copy: { turnsThreadTitle: 'x' } });
+  const { db, calls } = fakeDb(day, { vote: 20, economy: { ...instance.settings.economy, 'lurker.earlyMatch': 40 }, copy: { turnsThreadTitle: 'x' } });
   await runSettlement(db, instance, new Date(TO).toISOString());
   const entries = calls.find((c) => c.fn === 'apply_settlement')!.args.entries as { reason: string; amount: number }[];
   assert.equal(entries.find((e) => e.reason === 'heel.drewHeat')?.amount, 30);
   assert.equal(entries.find((e) => e.reason === 'lurker.calledIt')?.amount, 20);
+});
+
+test('the settings row\'s economy is the whole economy, as the SQL reads it: a number it lacks is refused, not filled from the code', async () => {
+  const { db, calls } = fakeDb(day, { economy: { 'lurker.earlyMatch': 40 } });
+  await assert.rejects(runSettlement(db, instance, new Date(TO).toISOString()), /lurker\.earlyPlayers/);
+  assert.ok(!calls.some((c) => c.fn === 'apply_settlement'));
+});
+
+test('a run with nothing to settle reads no settings', async () => {
+  const { db, calls } = fakeDb();
+  await runSettlement(db, instance, new Date(FROM).toISOString());
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window']);
 });
 
 test('settings rows that would make the instance not whole are refused before anything is settled', async () => {
