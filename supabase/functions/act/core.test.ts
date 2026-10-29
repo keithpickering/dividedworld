@@ -43,7 +43,7 @@ test('the database\'s refusal is answered in its own words, never PostgREST\'s d
 });
 
 test('a database error that is not a refusal meant for a player is answered with nothing from inside', async () => {
-  for (const [code, status, message] of [['23505', 409, 'duplicate key value violates unique constraint "acts_one_card_per_post"'], ['PGRST202', 404, 'Could not find the function public.post'], ['42501', 403, 'permission denied for table characters']] as const) {
+  for (const [code, status, message] of [['23505', 409, 'duplicate key value violates unique constraint "acts_card_layers"'], ['PGRST202', 404, 'Could not find the function public.post'], ['42501', 403, 'permission denied for table characters']] as const) {
     const db: Db = { rpc: async () => { throw new DatabaseError(`post: ${message}`, code, status, message); } };
     const out = await runAction({ player: db, service: db }, instance, { action: 'post', thread: id, character: id, body: 'Hello.' });
     assert.deepEqual(out, { status: 500, body: { error: 'the action could not be completed; try again' } }, code);

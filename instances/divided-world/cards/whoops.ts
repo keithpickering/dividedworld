@@ -11,7 +11,7 @@
  * stroke is measured in widths of that layout: across from 0 to 1, down from 0 to 64 (a post 64
  * times as tall as it is wide is longer than any post's text), kept to a thousandth. A stroke
  * keeps its place when an edit reflows the text under it. A stroke washes (no color) or inks
- * (the author writing back, in a color). `clean` is the author's save saying the layer is washed
+ * (the author writing back, in a color); its width is kept to a thousandth too. `clean` is the author's save saying the layer is washed
  * clean, so it fades for everyone. Counts, points and widths are bounded so the largest save
  * there can be fits the database's bound on it (effect_state, supabase/migrations/0006_cards.sql),
  * which cards.test.ts measures as Postgres writes it.
@@ -54,7 +54,7 @@ export const whoops: CardRules<{ color: string }> = {
       const ink = tool === 'ink' ? color(c) : null;
       if (tool === 'ink' && !ink) return refuse('an ink stroke\'s color is a color');
       if (tool === 'wash' && c !== undefined) return refuse('a wash stroke has no color');
-      if (typeof width !== 'number' || !(width > 0 && width <= STROKES.widest)) return refuse(`a stroke is between 0 and ${STROKES.widest} wide`);
+      if (typeof width !== 'number' || !(thousandth(width) > 0 && width <= STROKES.widest)) return refuse(`a stroke is between 0 and ${STROKES.widest} wide`);
       if (!Array.isArray(points) || points.length < 1 || points.length > STROKES.points) return refuse(`a stroke has 1 to ${STROKES.points} points`);
       total += points.length;
       if (total > STROKES.totalPoints) return refuse(`at most ${STROKES.totalPoints} points in all`);
@@ -64,7 +64,8 @@ export const whoops: CardRules<{ color: string }> = {
         }
       }
       const kept = (points as [number, number][]).map(([x, y]): [number, number] => [thousandth(x), thousandth(y)]);
-      out.push(tool === 'ink' ? { tool, color: ink!, width, points: kept } : { tool, width, points: kept });
+      const w = thousandth(width);
+      out.push(tool === 'ink' ? { tool, color: ink!, width: w, points: kept } : { tool, width: w, points: kept });
     }
     return ok(clean === undefined ? { strokes: out } : { strokes: out, clean });
   },

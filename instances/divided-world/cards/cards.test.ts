@@ -115,6 +115,7 @@ test('Whoops! strokes wash or ink, in widths of the fixed layout: across 0 to 1,
   assert.equal(whoops.validateState!({ strokes: Array(201).fill(ink) }).ok, false, 'too many strokes');
   assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: Array(501).fill([0.5, 0.5]) }] }).ok, false, 'too many points');
   assert.equal(whoops.validateState!({ strokes: [{ ...ink, width: 500 }] }).ok, false, 'too wide');
+  assert.equal(whoops.validateState!({ strokes: [{ ...ink, width: 0.0004 }] }).ok, false, 'a width that keeps to nothing');
   assert.equal(whoops.validateState!({ strokes: [{ ...ink, color: 'url(x)' }] }).ok, false, 'not a color');
   assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[0.1, Number.NaN]] }] }).ok, false);
   assert.equal(whoops.validateState!({ strokes: 'all of them' }).ok, false);
@@ -125,7 +126,7 @@ test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writ
   const point = [0.123456789, 63.987654321];
   const strokes = [];
   let left = STROKES.totalPoints;
-  while (left > 0) { const n = Math.min(STROKES.points, left); strokes.push({ tool: 'ink', color: '#abcdef', width: STROKES.widest, points: Array(n).fill(point) }); left -= n; }
+  while (left > 0) { const n = Math.min(STROKES.points, left); strokes.push({ tool: 'ink', color: '#abcdef', width: STROKES.widest - 0.0004321, points: Array(n).fill(point) }); left -= n; }
   const saved = whoops.validateState!({ strokes, clean: false });
   assert.equal(saved.ok, true);
   // jsonb's text puts a space after every comma and colon.
@@ -134,9 +135,9 @@ test('the most strokes Whoops! saves fit the database\'s bound, as Postgres writ
   assert.equal(whoops.validateState!({ strokes: [...strokes, { tool: 'wash', width: 1, points: [[0, 0]] }] }).ok, false, 'one point past the total');
 });
 
-test('a stroke\'s points are kept to a thousandth of the layout\'s width', () => {
-  const saved = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 2, points: [[0.123456, 12.98765]] }] });
-  assert.deepEqual(saved.ok && saved.value, { strokes: [{ tool: 'ink', color: 'red', width: 2, points: [[0.123, 12.988]] }] });
+test('a stroke\'s points and width are kept to a thousandth', () => {
+  const saved = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 2.12345, points: [[0.123456, 12.98765]] }] });
+  assert.deepEqual(saved.ok && saved.value, { strokes: [{ tool: 'ink', color: 'red', width: 2.123, points: [[0.123, 12.988]] }] });
 });
 
 test('Stick Around holds no state to save', () => {
