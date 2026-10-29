@@ -12,6 +12,8 @@ export interface Location {
   readonly path: string;
   readonly query: URLSearchParams;
   readonly hash: string;
+  /** Reached by the browser's back or forward, whose own scroll restoration is left to it. */
+  readonly popped: boolean;
 }
 
 interface Router {
@@ -21,13 +23,13 @@ interface Router {
 
 const RouterContext = createContext<Router | null>(null);
 
-const read = (w: Window): Location => ({ path: w.location.pathname, query: new URLSearchParams(w.location.search), hash: w.location.hash.replace(/^#/, '') });
+const read = (w: Window, popped = false): Location => ({ path: w.location.pathname, query: new URLSearchParams(w.location.search), hash: w.location.hash.replace(/^#/, ''), popped });
 
 /** The router over the window's own history. */
 export function RouterProvider({ children, window: w = globalThis.window }: { readonly children: ReactNode; readonly window?: Window }) {
   const [location, setLocation] = useState(() => read(w));
   useEffect(() => {
-    const onPop = () => setLocation(read(w));
+    const onPop = () => setLocation(read(w, true));
     w.addEventListener('popstate', onPop);
     return () => w.removeEventListener('popstate', onPop);
   }, [w]);

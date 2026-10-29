@@ -41,4 +41,12 @@ describe('the router', () => {
     });
     expect(screen.getByTestId('path').textContent).toBe('/somewhere');
   });
+  test('a location reached by back or forward says so, and one reached by a link does not', () => {
+    function Popped() { return <span data-testid="popped">{String(useLocation().popped)}</span>; }
+    render(<RouterProvider><Where /><Popped /></RouterProvider>);
+    act(() => screen.getByText('go').click());
+    expect(screen.getByTestId('popped').textContent).toBe('false');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(screen.getByTestId('popped').textContent).toBe('true');
+  });
 });

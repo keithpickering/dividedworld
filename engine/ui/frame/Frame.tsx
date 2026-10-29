@@ -23,12 +23,12 @@ export function Frame({ links, children }: { readonly links: readonly FrameLink[
    * keyboard and a screen reader begin there, as after a load. An address with a fragment is the
    * page's to scroll to (a permalink), and a change of query alone is the same page.
    */
-  const { path, hash } = useLocation();
+  const { path, hash, popped } = useLocation();
   const main = useRef<HTMLElement>(null);
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
-    if (!hash) globalThis.scrollTo?.(0, 0);
+    if (!hash && !popped) globalThis.scrollTo?.(0, 0);
     main.current?.focus({ preventScroll: true });
   }, [path]);
   return (
