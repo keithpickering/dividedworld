@@ -127,3 +127,29 @@ end $$;
 
 revoke execute on function estimate_input(uuid, timestamptz) from public, anon, authenticated;
 grant execute on function estimate_input(uuid, timestamptz) to service_role;
+
+-- Each player's last estimate, kept for the estimate function to give again to every ask inside its
+-- hold (supabase/functions/estimate/core.ts): a post drawing a crowd of reactions is one read of the
+-- window per hold, never one per reaction. Private, the service's alone: it is the player's own
+-- estimate, never read by anyone else, and a newer one replaces it.
+create table estimates (
+  account uuid primary key references accounts (id),
+  made_at timestamptz not null,
+  answer jsonb not null
+);
+
+create function estimate_kept(account uuid, within_seconds integer) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select e.answer from estimates e where e.account = estimate_kept.account and e.made_at > clock_timestamp() - make_interval(secs => within_seconds)
+$$;
+
+create function estimate_keep(account uuid, answer jsonb) returns void
+language sql security definer set search_path = public, pg_temp as $$
+  insert into estimates (account, made_at, answer) values (account, clock_timestamp(), answer)
+  on conflict (account) do update set made_at = excluded.made_at, answer = excluded.answer
+$$;
+
+alter table estimates enable row level security;
+revoke all on estimates from anon, authenticated;
+revoke execute on function estimate_kept(uuid, integer), estimate_keep(uuid, jsonb) from public, anon, authenticated;
+grant execute on function estimate_kept(uuid, integer), estimate_keep(uuid, jsonb) to service_role;

@@ -31,3 +31,27 @@ begin
   w := estimate_input(ann, s + interval '5 days') -> 'window';
   if (w ->> 'to')::numeric is distinct from extract(epoch from s + interval '3 days') * ms then raise exception 'the window never runs past its season''s end: %', w; end if;
 end $$;
+
+-- An estimate kept is given again inside its hold, never after it, and never to another account.
+do $$
+declare
+  ann uuid := tests.account('estk-ann');
+  bob uuid := tests.account('estk-bob');
+begin
+  perform tests.become_service();
+  perform estimate_keep(ann, '{"entries": [], "lines": [{"amount": 10}]}');
+  if estimate_kept(ann, 30) is distinct from '{"entries": [], "lines": [{"amount": 10}]}'::jsonb then raise exception 'a kept estimate is given again inside its hold'; end if;
+  if estimate_kept(bob, 30) is not null then raise exception 'another account was given a kept estimate'; end if;
+  perform tests.unbecome();
+  update estimates set made_at = clock_timestamp() - interval '31 seconds' where account = ann;
+  perform tests.become_service();
+  if estimate_kept(ann, 30) is not null then raise exception 'a kept estimate past its hold was given again'; end if;
+  perform tests.unbecome();
+  perform tests.become(ann);
+  begin
+    perform 1 from estimates;
+    raise exception 'a player read the kept estimates';
+  exception when insufficient_privilege then null;
+  end;
+  perform tests.unbecome();
+end $$;

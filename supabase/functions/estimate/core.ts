@@ -7,12 +7,22 @@
  * settlement is exact; this says "up to", reaction by reaction, and never who reacted.
  *
  * Every answer is the caller's own: the caller's characters' entries and lines, and no key the
- * input used. A failure says nothing from inside.
+ * input used. An answer is kept for ESTIMATE_HOLD_SECONDS and given again to every ask in that
+ * time, so the screens cannot make the window be read once per reaction. A failure says nothing
+ * from inside.
  */
 import { estimateForOwner } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
 import { TransportError, postgrest, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
+
+/**
+ * How long an estimate is kept and given again: every ask within it is answered from the one kept,
+ * so a post drawing a crowd of reactions, each of which the screens may answer with an ask, costs
+ * one read of the window per hold, never one per reaction (the window's read is linear in the
+ * reactions it values). The estimate is an estimate; it is never more than this stale.
+ */
+export const ESTIMATE_HOLD_SECONDS = 30;
 
 export interface EstimateAnswer {
   readonly status: number;
@@ -28,10 +38,14 @@ export async function runEstimate(dbs: { player: Db; service: Db }, instance: In
   try {
     const who = await dbs.player.rpc<string | null>('whoami', {});
     if (!who) return { status: 401, body: { error: 'sign in to see your estimate' } };
+    const kept = await dbs.service.rpc<unknown>('estimate_kept', { account: who, within_seconds: ESTIMATE_HOLD_SECONDS });
+    if (kept) return { status: 200, body: kept };
     const input = await dbs.service.rpc<(SettlementInput & { player: string }) | null>('estimate_input', { account: who });
     if (!input) return { status: 200, body: { entries: [], lines: [] } };
     const tuned = await withDatabaseSettings(instance, dbs.service);
-    return { status: 200, body: estimateForOwner(input, tuned, input.player) };
+    const answer = estimateForOwner(input, tuned, input.player);
+    await dbs.service.rpc('estimate_keep', { account: who, answer });
+    return { status: 200, body: answer };
   } catch (e) {
     if (e instanceof TransportError) return { status: 503, body: { error: 'no answer came back; try again' } };
     console.error('estimate failed', e);
