@@ -150,6 +150,15 @@ test('a vote taken back from a quadrant is said by the mask that gave it there',
   assert.equal(two.votes[0]!.character, 'bob-b');
 });
 
+test('a vote taken back is said by the mask that held it before the window, though another mask reacted there since', () => {
+  const monday = payVotes([at('p1', 'excitedPositive', 10, 'bob-lurker')], W1, [], payActOf, 0.5);
+  const rs = [at('p1', 'excitedPositive', 10, 'bob-lurker'), at('p1', 'excitedPositive', 110, 'bob-third'), at('p1', 'boredNegative', 120, 'bob-other')];
+  const tuesday = payVotes(rs, W2, monday.paid, payActOf, 0.5);
+  const taken = tuesday.votes.find((v) => v.share < 0)!;
+  assert.equal(taken.character, 'bob-lurker', 'the mask paid Monday gives back what moved, not the mask that reacted Tuesday');
+  assert.equal(taken.at, 120, 'at the moment it moved');
+});
+
 test('what is paid comes back in one order whatever order the reactions came in, and nothing at the window\'s end is read', () => {
   const rs = [at('p2', 'excitedPositive', 10, 'cat-a', 'cat'), at('p1', 'excitedPositive', 11), at('p1', 'boredNegative', 100)];
   const one = payVotes(rs, W1, [], payActOf, 0.5);

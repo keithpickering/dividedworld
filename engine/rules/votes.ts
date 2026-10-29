@@ -80,7 +80,7 @@ const nothing = (x: number) => Math.abs(x) < 1e-12;
  * made where no window settled it (between seasons) is paid in full now, at this window's
  * halving, rather than stalling every settlement after it. A share added is said by the
  * player's latest reaction in its quadrant in the window; a share taken back, by the mask that
- * gave it there, so spreading reactions over days never keeps a mask's pay for a vote it moved.
+ * held it before the window, so spreading reactions over days never keeps a mask's pay for a vote it moved.
  */
 export function payVotes<R extends { readonly act: string; readonly player: string; readonly character: string; readonly quadrant: Q; readonly at: number }>(
   reactions: readonly R[],
@@ -120,8 +120,10 @@ export function payVotes<R extends { readonly act: string; readonly player: stri
     for (const { q, share } of moved) {
       if (nothing(share)) continue;
       // A share added is said by the latest reaction in its quadrant this window; one taken back,
-      // by the mask that gave it there, at the moment it was taken back.
-      const voice = share > 0 ? byTime.filter((r) => inWindow(r) && r.quadrant === q).at(-1) ?? last : { ...(byTime.filter((r) => r.quadrant === q).at(-1) ?? last), at: last.at };
+      // by the mask that held it there before the window (its latest reaction there then), at the
+      // moment it was taken back, though another mask has reacted in the quadrant since.
+      const held = byTime.filter((r) => r.quadrant === q && r.at < window.from).at(-1) ?? byTime.filter((r) => r.quadrant === q).at(-1);
+      const voice = share > 0 ? byTime.filter((r) => inWindow(r) && r.quadrant === q).at(-1) ?? last : { ...(held ?? last), at: last.at };
       votes.push({ ...voice, quadrant: q, share, votes: weight * share });
     }
     out.push({ player: rs[0]!.player, act: rs[0]!.act, weight, shares });
