@@ -52,8 +52,8 @@ const world: World = (fake, instance) => {
   const t = fake.seed.thread(general, other, TITLE, 'A post worth a thread of its own.');
   fake.seed.post(t.thread, mine, 'An answer.');
   /* The fake does its work before it answers, so the spun thread is there when the story reads. */
-  void fake.spin(t.act, mine, 'Spun from the start', 'Carrying on over here.');
   fake.signInAs(me);
+  void fake.spin(t.act, mine, 'Spun from the start', 'Carrying on over here.');
 };
 
 /** The small form under a post that starts a thread from it. */

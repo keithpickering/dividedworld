@@ -28,6 +28,10 @@ body {
   scrollbar-color: var(--kb-muted) var(--kb-bg);
 }
 
+p {
+  text-wrap: pretty;
+}
+
 a,
 .kb-link {
   color: var(--kb-link);
@@ -250,6 +254,6 @@ h1 {
 
 @media (max-width: 40em) {
   .kb-page {
-    width: 94%;
+    width: 92%;
   }
 }

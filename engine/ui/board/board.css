@@ -67,6 +67,13 @@
   overflow-wrap: anywhere;
 }
 
+.kb-thread-title,
+.kb-thread-last a {
+  /* A target of 24px at the least (WCAG 2.2, 2.5.8): the rows' links sit close together. */
+  display: inline-block;
+  padding-block: 0.3rem;
+}
+
 .kb-thread-last-label,
 .kb-thread-unit {
   display: none;

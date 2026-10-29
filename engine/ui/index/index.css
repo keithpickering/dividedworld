@@ -13,6 +13,12 @@
   overflow-wrap: anywhere;
 }
 
+.kb-board-last a {
+  /* A target of 24px at the least (WCAG 2.2, 2.5.8). */
+  display: inline-block;
+  padding-block: 0.3rem;
+}
+
 .kb-board-unit,
 .kb-board-last-label {
   display: none;
