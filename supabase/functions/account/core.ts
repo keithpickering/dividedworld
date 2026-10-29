@@ -83,10 +83,10 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       // makes none, but the code is still sent, so a returning player whose form kept an old
       // invite signs in, and the answer says what became of the invite, alike for every address.
       const given = r.invite !== undefined && r.invite !== null && r.invite !== '';
-      const code = typeof r.invite === 'string' && r.invite.trim().length > 0 && r.invite.length <= 64 ? r.invite.trim() : null;
-      const opens = await deps.service.rpc<'opens' | 'closed' | 'nothing'>('invite_open', { code: given && code === null ? '' : code });
+      const asked = typeof r.invite === 'string' && r.invite.trim().length > 0 && r.invite.length <= 64 ? r.invite.trim() : null;
+      const opens = await deps.service.rpc<'opens' | 'closed' | 'nothing'>('invite_open', { code: given && asked === null ? '' : asked });
       const create = opens === 'opens';
-      const invite = create ? code : null;
+      const invite = create ? asked : null;
       const note = !given || create ? {} : { invite: opens === 'closed' ? 'registration is closed, so no new login is made' : 'that invite opens nothing, so no new login is made with it' };
       return { status: 202, body: { message: SENT_CODE, ...note }, later: () => deps.auth.requestCode(address, { create, invite }) };
     }
