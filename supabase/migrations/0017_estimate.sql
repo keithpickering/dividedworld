@@ -101,6 +101,9 @@ begin
   )
   select jsonb_build_object(
     'player', you,
+    -- The window's start exactly, as the settlement that opened it ended: `from` is whole
+    -- milliseconds, which can fall short of it. The estimate keeps its answer with this one.
+    'windowStart', window_start,
     'window', jsonb_build_object('id', 'estimate',
       'from', (extract(epoch from window_start) * 1000)::bigint, 'to', (extract(epoch from window_end) * 1000)::bigint),
     'characters', coalesce((

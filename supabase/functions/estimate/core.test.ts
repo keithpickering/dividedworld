@@ -10,6 +10,8 @@ const H = 3_600_000;
 const input = {
   player: 'you-key',
   window: { id: 'estimate', from: 0, to: 24 * H },
+  // The window's start as the database holds it, finer than the millisecond `from` carries.
+  windowStart: '1970-01-01 00:00:00.0003+00',
   characters: [{ id: 'mine', player: 'you-key', classes: [{ class: 'face', from: 0 }] }, { id: 'k1', player: 'k1', classes: [] }],
   acts: [{ id: 'p1', character: 'mine', kind: 'post', at: H, thread: 't' }],
   reactions: [{ act: 'p1', kind: 'fire', at: 2 * H, player: 'k1', character: 'k1' }],
@@ -37,7 +39,7 @@ test('the estimate is the signed-in caller\'s, read by the service for them, val
     calls.push(`service:estimate_keep`);
     keptAnswer = args.answer;
     assert.equal(args.within_seconds, ESTIMATE_HOLD_SECONDS);
-    assert.equal(args.window_from, new Date(input.window.from).toISOString(), 'kept with the window it was read from, which a settlement ends');
+    assert.equal(args.window_from, input.windowStart, 'kept with the window it was read from, exactly, which a settlement of it ends');
     return { ...(args.answer as object), ...stamped } as T;
   };
   const out = await runEstimate(d, instance);

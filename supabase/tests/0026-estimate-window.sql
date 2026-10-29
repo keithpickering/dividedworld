@@ -75,3 +75,25 @@ begin
   end;
   perform tests.unbecome();
 end $$;
+
+-- A window opened between milliseconds: estimate_input answers its start exactly (windowStart),
+-- the estimate function keeps the answer with it unchanged (estimate/core.ts), and the settlement
+-- that opened the window never counts as one of it. A start carried as whole milliseconds would
+-- fall short of a settlement ending 0.3 ms past one, and no answer would ever be kept.
+do $$
+declare
+  ann uuid := tests.account('estk-micro');
+  -- In the open season, past whatever the earlier blocks and files settled.
+  s timestamptz := greatest((select max(ends_at) from settlements), (select starts_at from seasons where ends_at is null));
+  opened timestamptz := date_trunc('second', s) + interval '1 hour 0.0003 seconds';
+  input jsonb;
+  given jsonb;
+begin
+  insert into settlements (starts_at, ends_at, season) select s, opened, id from seasons where ends_at is null;
+  input := estimate_input(ann, opened + interval '1 minute');
+  if (input ->> 'windowStart')::timestamptz is distinct from opened then raise exception 'estimate_input answers its window''s start exactly: % against %', input ->> 'windowStart', opened; end if;
+  perform tests.become_service();
+  given := estimate_keep(ann, '{"entries": [], "lines": []}', 30, (input ->> 'windowStart')::timestamptz);
+  if estimate_kept(ann, 30) is distinct from given then raise exception 'a kept estimate is given again in a window opened between milliseconds'; end if;
+  perform tests.unbecome();
+end $$;

@@ -44,12 +44,12 @@ export async function runEstimate(dbs: { player: Db; service: Db }, instance: In
     if (!who) return { status: 401, body: { error: 'sign in to see your estimate' } };
     const kept = await dbs.service.rpc<unknown>('estimate_kept', { account: who, within_seconds: ESTIMATE_HOLD_SECONDS });
     if (kept) return { status: 200, body: kept };
-    const input = await dbs.service.rpc<(SettlementInput & { player: string }) | null>('estimate_input', { account: who });
+    const input = await dbs.service.rpc<(SettlementInput & { player: string; windowStart: string }) | null>('estimate_input', { account: who });
     if (!input) return { status: 200, body: { entries: [], lines: [], ...UNKEPT } };
     const tuned = await withDatabaseSettings(instance, dbs.service);
     const answer = estimateForOwner(input, tuned, input.player);
     // An estimate that could not be kept is still the caller's answer: the next ask reads anew.
-    const given = await dbs.service.rpc<unknown>('estimate_keep', { account: who, answer, within_seconds: ESTIMATE_HOLD_SECONDS, window_from: new Date(input.window.from).toISOString() })
+    const given = await dbs.service.rpc<unknown>('estimate_keep', { account: who, answer, within_seconds: ESTIMATE_HOLD_SECONDS, window_from: input.windowStart })
       .catch((e) => { console.error('estimate: could not keep an answer', e); return { ...answer, ...UNKEPT }; });
     return { status: 200, body: given };
   } catch (e) {
