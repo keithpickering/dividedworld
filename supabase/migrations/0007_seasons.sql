@@ -87,6 +87,12 @@ begin
   -- One Turn of a character's at a time.
   perform 1 from characters where id = through for no key update;
   select class_key, started_at into was, since from class_history where character = through order by started_at desc limit 1;
+  -- A revealed Turn says since when. For the class a character was made with, that is no closer
+  -- than the start of the season it was made in: the moment it was made would show which masks
+  -- were made in one sitting, which is to say whose (as reveal_season() below holds it too).
+  if since = (select min(started_at) from class_history where character = through) then
+    since := coalesce((select max(starts_at) from seasons where starts_at <= since), (select min(starts_at) from seasons));
+  end if;
   if was = to_class then raise exception 'this character already is one' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   -- The cooldown runs from the last Turn; a character's first class is not a Turn.
   select max(started_at) into last_turn from class_history h

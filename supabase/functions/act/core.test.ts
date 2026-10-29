@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REFUSAL_HINT, SAFE_TO_REPEAT, runAction } from './core.ts';
-import { DatabaseError, type Db } from '../_shared/rpc.ts';
+import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, runAction } from './core.ts';
+import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -142,6 +142,25 @@ test('a refused or failed action sends nothing live', async () => {
 });
 
 test('only the reads and the writes that find their own earlier effect are safe to repeat after a lost answer', () => {
-  for (const fn of ['whoami', 'card_target', 'card_of_play', 'save_effect_state', 'open_account']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
-  for (const fn of ['post', 'start_thread', 'edit_post', 'spin', 'react', 'turn', 'buy_card', 'play_card', 'create_character', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
+  for (const fn of ['whoami', 'card_target', 'card_of_play', 'open_account']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
+  // A save repeated after a newer one landed would bring back the older strokes.
+  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'react', 'turn', 'buy_card', 'play_card', 'create_character', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
+});
+
+test('a write whose answer was lost says plainly it may have gone through', async () => {
+  const lost: Db = { rpc: async () => { throw new TransportError('post: no answer after 1 attempt(s): HTTP 504'); } };
+  const out = await runAction({ player: lost, service: lost }, instance, { action: 'post', thread: id, character: id, body: 'x' });
+  assert.equal(out.status, 503);
+  assert.match((out.body as { error: string }).error, /may have gone through.*look before you try again/);
+});
+
+test('the act function\'s connections send a post once after a 504, and a read again', async () => {
+  const seen: string[] = [];
+  const fetch = (async (url: string) => { seen.push(url.split('/').pop()!); return new Response('', { status: 504 }); }) as unknown as typeof globalThis.fetch;
+  const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+  await assert.rejects(dbs.player.rpc('post', {}));
+  assert.deepEqual(seen, ['post']);
+  seen.length = 0;
+  await assert.rejects(dbs.service.rpc('whoami', {}));
+  assert.equal(seen.length, 4);
 });

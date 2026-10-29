@@ -9,9 +9,10 @@
  * request and is thrown at once, carrying the SQLSTATE PostgREST reports.
  *
  * Which transport failures are retried turns on whether the call is safe to repeat
- * (`safeToRepeat`). A gateway's 502 or 503 says the request never reached a database that ran
- * it, so every call is retried on those. A fetch that failed after it may have been sent, a
- * timeout or a 504 may each follow a write that committed and an answer lost on the way back:
+ * (`safeToRepeat`). A 503 says the request never reached a database that ran it, so every call
+ * is retried on one. A fetch that failed after it may have been sent, a timeout, a 502 (an
+ * upstream that may have committed before its answer broke) or a 504 may each follow a write
+ * that committed and an answer lost on the way back:
  * those are retried only for a read, or a write that finds its own earlier effect
  * (apply_settlement's already-settled window). A post or a purchase is not repeated on a guess;
  * its failure is thrown, and the player decides whether to try again.
@@ -56,9 +57,9 @@ export interface PostgrestOptions {
 }
 
 /** The request never reached a database that ran it. */
-const NEVER_RAN = new Set([502, 503]);
+const NEVER_RAN = new Set([503]);
 /** It may have run, its answer lost. */
-const MAY_HAVE_RUN = new Set([504]);
+const MAY_HAVE_RUN = new Set([502, 504]);
 
 export function postgrest(options: PostgrestOptions): Db {
   const send = options.fetch ?? globalThis.fetch;

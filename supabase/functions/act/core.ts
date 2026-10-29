@@ -15,7 +15,7 @@
 import { decide } from '../../../engine/rules/actions.ts';
 import { decidePlay, type CardEffect, type CardTarget } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
-import { DatabaseError, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, TransportError, postgrest, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
 
 export interface ActionAnswer {
@@ -62,11 +62,18 @@ const live = (rpc: string, answer: unknown): Broadcast[] =>
 
 /**
  * The calls that may be sent again after a failure that may have followed their commit
- * (supabase/functions/_shared/rpc.ts): the reads, a saved effect's state (the same state again),
- * and opening an account (one already open is no change). Every other write is sent once.
+ * (supabase/functions/_shared/rpc.ts): the reads, and opening an account (one already open is no
+ * change). Every other write is sent once; a saved effect's state among them, since a save
+ * repeated after a newer one landed would bring the older strokes back.
  */
-const REPEATABLE = new Set(['whoami', 'card_target', 'card_of_play', 'save_effect_state', 'open_account']);
+const REPEATABLE = new Set(['whoami', 'card_target', 'card_of_play', 'open_account']);
 export const SAFE_TO_REPEAT = (fn: string): boolean => REPEATABLE.has(fn);
+
+/** The act function's two connections: as the player, and as the service; each sends a write once. */
+export function actDbs(o: { url: string; key: string; anon: string; session: string; fetch?: typeof globalThis.fetch; sleep?: (ms: number) => Promise<void> }): { player: Db; service: Db } {
+  const common = { url: o.url, fetch: o.fetch, sleep: o.sleep, safeToRepeat: SAFE_TO_REPEAT };
+  return { player: postgrest({ ...common, key: o.anon, bearer: o.session }), service: postgrest({ ...common, key: o.key }) };
+}
 
 /** The hint every refusal the action functions raise carries, so their words alone reach a player. */
 export const REFUSAL_HINT = 'kayfabb.refusal';
@@ -107,6 +114,10 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
   } catch (e) {
     if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) return { status: e.status >= 400 && e.status < 500 ? e.status : 400, body: { error: e.reason, code: e.code } };
     if (e instanceof DatabaseError && e.status === 401 && e.message.startsWith('whoami:')) return { status: 401, body: { error: 'sign in to act' } };
+    // The answer was lost, and the write may have committed: said so, never "it failed".
+    if (e instanceof TransportError) {
+      return { status: 503, body: { error: 'no answer came back, so this may have gone through: look before you try again' } };
+    }
     console.error('act failed', decision.rpc, e);
     return { status: 500, body: { error: 'the action could not be completed; try again' } };
   }

@@ -36,15 +36,15 @@ test('a transport failure is retried on the request: a fetch that never answered
   assert.equal(calls.length, 5);
 });
 
-test('a write that is not safe to repeat is retried only where it cannot have run: a 502 or 503, never after a fetch that may have been sent, nor a 504', async () => {
+test('a write that is not safe to repeat is retried only where it cannot have run: a 503, never after a fetch that may have been sent, a 502 or a 504', async () => {
   const writes = (fn: string) => fn !== 'buy_card';
-  for (const ambiguous of [new TypeError('connection reset'), json(504, {})]) {
+  for (const ambiguous of [new TypeError('connection reset'), json(502, {}), json(504, {})]) {
     const { fetch, calls } = scripted(ambiguous, json(200, 'bought twice'));
     const db = postgrest({ url: 'https://p.example', key: 'k', fetch, sleep: noWait, safeToRepeat: writes });
     await assert.rejects(db.rpc('buy_card', {}), (e: unknown) => e instanceof TransportError);
     assert.equal(calls.length, 1, String(ambiguous));
   }
-  const { fetch, calls } = scripted(json(502, {}), json(503, {}), json(200, 'bought once'));
+  const { fetch, calls } = scripted(json(503, {}), json(503, {}), json(200, 'bought once'));
   const db = postgrest({ url: 'https://p.example', key: 'k', fetch, sleep: noWait, safeToRepeat: writes });
   assert.equal(await db.rpc('buy_card', {}), 'bought once');
   assert.equal(calls.length, 3);

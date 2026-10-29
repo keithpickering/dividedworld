@@ -25,6 +25,7 @@ declare
   bob uuid := tests.account('turn-bob');
   a uuid := tests.character(ann, 'Turncoat', 'alpha', now() - interval '60 days');
   b uuid := tests.character(bob, 'Steadfast', 'alpha', now() - interval '60 days');
+  c uuid := tests.character(bob, 'First Reveal', 'alpha', now() - interval '10 days');
   before text;
   said jsonb;
   why text;
@@ -74,6 +75,14 @@ begin
   if said -> 'act' -> 'payload' ->> 'was' <> 'beta' or said -> 'act' -> 'payload' ->> 'since' is null then raise exception 'a revealed Turn names what it was: %', said; end if;
   if said::text like '%"alpha"%' then raise exception 'a revealed Turn said what it Turned to'; end if;
   perform tests.unbecome();
+  -- A character's first revealed Turn says since when no closer than the season it was made in:
+  -- the moment it was made would show which masks were made in one sitting.
+  perform tests.become(bob);
+  said := turn(c, 'beta', 'revealed');
+  perform tests.unbecome();
+  if (said -> 'act' -> 'payload' ->> 'since')::timestamptz is distinct from (select max(starts_at) from seasons where starts_at <= (select created_at from characters where id = c)) then
+    raise exception 'a first revealed Turn showed when its character was made: % (made %)', said -> 'act' -> 'payload', (select created_at from characters where id = c);
+  end if;
 end $$;
 
 -- ---- The reveal: every character's season, silent Turns included; who plays them, never ----
@@ -108,7 +117,7 @@ begin
   -- A character made inside the season shows the season's start as its first class's, not when
   -- it was made: masks made in one sitting would show themselves one player's.
   select payload into entry from acts where thread = (said -> 'thread' ->> 'id')::uuid and payload ->> 'name' = 'Made Midseason';
-  if (entry -> 'classes' -> 0 ->> 'from')::timestamptz <> now() - interval '100 days' then raise exception 'the reveal showed when a character was made: %', entry; end if;
+  if (entry -> 'classes' -> 0 ->> 'from')::timestamptz is distinct from now() - interval '100 days' then raise exception 'the reveal showed when a character was made: %', entry; end if;
   -- The next season is open, from the instant the last ended, and nothing is due yet.
   -- Nobody reacts to The System's own Acts, and the refusal says so plainly.
   perform tests.become(ann);
