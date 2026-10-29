@@ -114,15 +114,24 @@ meet the usual standards: contrast, focus, keyboard and labels. A card or a game
 get through has an accessible path that takes about as long and costs about as much as the one it replaces: Whoops!'s
 wash control is timed like a scrub, and reduced motion makes Stick Around's snap-back instant, but it still snaps back.
 
-## A response never varies with a private fact
+## A response never proves a private fact
 
-**No page, payload, Realtime event, presence update or timing may differ with a private fact; who owns a character,
-a character's class, who reacted, and whether an address has an account are private.**
+**No page, payload, Realtime event, presence update or timing may be computed from a private fact, so nothing the
+system says proves one or lets a player measure it; who owns a character, a character's class, who reacted, and
+whether an address has an account are private.**
 
-A message that varies with a private fact is a way of reading that fact. Before a response, a status code, a
-redirect, a delay or a broadcast depends on something private, ask who else can trigger it and what they learn by
-watching. A player may work out who is behind a mask by reading and guessing; the system never tells them, and never
-lets them measure it.
+What characters do in public, and when, is play. Working out who is behind a mask from the clues it leaves ("you never
+see Superman and Clark Kent in the same room") is part of the game, and the system does not hide those clues: when a
+character posted, when its avatar file was written, a mask dropped the hour a story broke, which masks read a thread.
+What it never does is answer from the private fact itself: a count of players where it could count characters, an
+amount that changes when the same player reacts again, a quota shared across a player's masks that someone else can
+see, a refusal or a delay that differs with who owns the target. Before a response depends on anything, ask whether it
+is computed from a private fact, and who could trigger it and watch. A clue the game would rather not give is a design
+choice, never this rule's duty.
+
+The one exception is The System's own scoring: it reads who reacted and who owns what to settle, and shows only each
+settled window's sums. In a very quiet stretch a sum can still be read; that is accepted, with no noise added. Nothing
+live, and nothing else, is computed from a private fact.
 
 ## Portable by construction
 
@@ -229,7 +238,7 @@ and every other rule applies unchanged.**
 
 The premise a rule is read against is the one this file states: a kayfabe game among people who know each other, where
 The System's arbitrariness is the fun ("The System acts; it never destroys what a player wrote"), the masks hold
-("A response never varies with a private fact"), and a player can always step back and see the game ("The fiction may
+("A response never proves a private fact"), and a player can always step back and see the game ("The fiction may
 lie; the log never does").
 
 Asking is the whole of the remedy. The rule is neither followed into the worse result nor set aside: the work that

@@ -323,3 +323,16 @@ the owner left this design to follow it where the two differ:
   #4's question 16.
 - Invites: PR #7 keeps "no cap yet"; section 12's cap of three, expiring after seven days, is built on top by the
   engine plan's Task 8.
+
+## Amended 2026-10-29: after the clues design
+
+`docs/plans/2026-10-29-clues-design.md` moved the masks' rule to "A response never proves a private fact" and, the
+owner deciding, changed these:
+
+- Section 4: an avatar is two files, a portrait up to 512 wide and a square cut from it, both public; the original is
+  not kept.
+- Section 6: a thread's view count counts the characters that read it, never players, and is public; it still moves
+  hourly.
+- Section 7: the estimate's lines are each reaction's own, exact; none is apportioned.
+- Section 8, and the amendment after PR #7: a new character either drops at once or debuts at the next tally, each
+  silent or announced.

@@ -27,8 +27,8 @@ sessions ahead, and a session that takes up one of those areas starts from them.
   functions, so a gap shows in planning and not in the build.
 - **Ways out.** The plan names the way out of every state it adds that a player, a character or a post can be put in
   (CLAUDE.md, "No player is ever stuck").
-- **The masks.** The plan names every response, payload, Realtime event and timing it adds that could vary with a
-  private fact, and how it does not (CLAUDE.md, "A response never varies with a private fact").
+- **The masks.** The plan names every response, payload, Realtime event and timing it adds that could be computed from a
+  private fact, and how it is not (CLAUDE.md, "A response never proves a private fact").
 - **The layers.** The plan says, for each part, whether it is engine or instance, and which interface carries an
   instance's content into the engine (CLAUDE.md, "KayfaBB never knows which instance it runs").
 - **Screens.** A plan that adds a screen or a flow designs it with the owner inside the house style (a 2003 BBCode

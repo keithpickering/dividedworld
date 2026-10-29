@@ -75,7 +75,7 @@ order:
    |---|---|---|
    | a security definer function | it pins `search_path`, ending in `pg_temp` | |
    | a table | row-level security, and the instance export round-trips it ("Portable by construction") | |
-   | a response, payload, Realtime event, presence update or delay | the same whoever owns a character, whatever its class, whoever reacted, whether an address has an account ("A response never varies with a private fact") | |
+   | a response, payload, Realtime event, presence update or delay | computed from no private fact: not who owns a character, its class, who reacted, or whether an address has an account ("A response never proves a private fact") | |
    | a write to an Act | a new Act beside the old, never an `UPDATE` ("Append-only") | |
    | a way to destroy, hide or overwrite a post | the original survives and can come back ("The System acts; it never destroys what a player wrote") | |
    | a state a player, character or post can be put in | its way out ("No player is ever stuck") | |
