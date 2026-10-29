@@ -4,12 +4,8 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "target": "ES2022",
-    "lib": [
-      "ES2022"
-    ],
-    "types": [
-      "node"
-    ],
+    "lib": ["ES2022"],
+    "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "allowImportingTsExtensions": true,
@@ -23,8 +19,5 @@
     "supabase/functions/**/*.ts",
     "supabase/tests/**/*.ts"
   ],
-  "exclude": [
-    "engine/ui/**",
-    "instances/*/ui/**"
-  ]
+  "exclude": ["engine/ui/**", "instances/*/ui/**"]
 }
