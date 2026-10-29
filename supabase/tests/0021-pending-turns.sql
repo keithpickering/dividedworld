@@ -57,6 +57,66 @@ begin
   end if;
 end $$;
 
+-- A Turn asked at `asked`: what next_settlement_at() promised for it, and when the settlements
+-- that follow, a window at a time, actually made it take effect.
+create function pg_temp.promise_kept(who uuid, name text, asked timestamptz) returns text language plpgsql as $$
+declare
+  turner uuid := tests.character(who, name, 'alpha', now() - interval '60 days');
+  promised timestamptz;
+  s timestamptz;
+  runs integer := 0;
+begin
+  perform tests.become(who);
+  perform turn(turner, 'beta', 'silent');
+  perform tests.unbecome();
+  update pending_turns set asked_at = asked where character = turner;
+  promised := next_settlement_at(asked);
+  while exists (select 1 from pending_turns where character = turner) loop
+    runs := runs + 1;
+    if runs > 10 then return format('%s never took effect', name); end if;
+    s := (select max(ends_at) from settlements);
+    perform set_config('role', 'service_role', true);
+    perform apply_settlement(s, s + span_interval(setting('settlementLength')), '[]');
+    perform tests.unbecome();
+  end loop;
+  if (select max(started_at) from class_history where character = turner) is distinct from promised then
+    return format('%s took effect at %s, not at the %s promised', name, (select max(started_at) from class_history where character = turner), promised);
+  end if;
+  return null;
+end $$;
+
+-- Runs missed, a Turn asked on a window's very end, and a season shortened past what is settled:
+-- each promise is the settlement that applies it.
+do $$
+declare
+  ann uuid := tests.account('pend2-kept');
+  last_end timestamptz;
+  len interval := span_interval(setting('settlementLength'));
+  why text;
+begin
+  if not exists (select 1 from settlements) then
+    perform set_config('role', 'service_role', true);
+    perform apply_settlement((select min(starts_at) from seasons), now() - interval '1 hour', '[]');
+    perform tests.unbecome();
+  end if;
+  -- Three and a half windows past the last settled one, as after missed runs.
+  last_end := (select max(ends_at) from settlements);
+  why := pg_temp.promise_kept(ann, 'Kept Missed', last_end + 3 * len + len / 2);
+  if why is not null then raise exception 'after missed runs: %', why; end if;
+  -- Exactly on a window's end: that window is already closed to it.
+  last_end := (select max(ends_at) from settlements);
+  if next_settlement_at(last_end + 2 * len) is distinct from last_end + 3 * len then raise exception 'a Turn asked on a window''s end is promised %', next_settlement_at(last_end + 2 * len); end if;
+  why := pg_temp.promise_kept(ann, 'Kept Boundary', last_end + 2 * len);
+  if why is not null then raise exception 'on a window''s end: %', why; end if;
+  -- The season's length shortened past what is settled: the next window is whole, and ends it.
+  last_end := (select max(ends_at) from settlements);
+  update settings set value = '{"unit": "day", "count": 1}' where key = 'seasonLength';
+  if (select starts_at + interval '1 day' from seasons where ends_at is null) >= last_end then raise exception 'this case needs a season longer than a day settled'; end if;
+  if next_settlement_at(last_end + len / 2) is distinct from last_end + len then raise exception 'a shortened season''s next window is promised %', next_settlement_at(last_end + len / 2); end if;
+  why := pg_temp.promise_kept(ann, 'Kept Shortened', last_end + len / 2);
+  if why is not null then raise exception 'in a shortened season: %', why; end if;
+end $$;
+
 -- Where the next window is a season's first, its end is the first run's, which the cron decides:
 -- unknown, and said as unknown (null), never guessed. Past a season's end, the same.
 do $$
@@ -68,6 +128,13 @@ begin
   if not exists (select 1 from settlements) then
     perform set_config('role', 'service_role', true);
     perform apply_settlement((select min(starts_at) from seasons), now() - interval '1 hour', '[]');
+    perform tests.unbecome();
+  end if;
+  -- Inside a season: past its first window, which a block above may have just opened.
+  update settings set value = '{"unit": "month", "count": 1000}' where key = 'seasonLength';
+  if (select starts_at from seasons where ends_at is null) = (select max(ends_at) from settlements) then
+    perform set_config('role', 'service_role', true);
+    perform apply_settlement((select max(ends_at) from settlements), (select max(ends_at) from settlements) + span_interval(setting('settlementLength')), '[]');
     perform tests.unbecome();
   end if;
   last_end := (select max(ends_at) from settlements);
