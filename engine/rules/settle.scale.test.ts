@@ -25,14 +25,14 @@ const kinds = ['fire', 'tomato', 'tea', 'zzz'] as const;
 const instance: Instance = {
   key: 'busy', name: 'Busy', classes: [counting], boards: [{ slug: 'b', name: 'B', description: '' }],
   copy: { turnsThreadTitle: 'S{season} Turns', revealTitle: 'S{season} Reveal', revealBody: 'All.' },
-  cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', basePrice: 100, playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
+  cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
   reactions: [
     { key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' }, { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },
     { key: 'tea', emoji: '☕', quadrant: 'calmPositive' }, { key: 'zzz', emoji: '💤', quadrant: 'boredNegative' },
   ],
   settings: {
     walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *',
-    seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120,
+    seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120, economy: { 'splat.price': 100 },
   },
 };
 

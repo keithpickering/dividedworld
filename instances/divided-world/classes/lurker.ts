@@ -8,14 +8,17 @@
  * that hedges across every quadrant is paid only the part that landed.
  */
 import type { ClassRules, Earning } from '../../../engine/rules/types.ts';
-import { economy } from '../settings.ts';
+import { economyOf } from '../../../engine/rules/cards.ts';
 
-const { earlyPlayers, earlyMatch, spunThreadRepliers, spunThread, postsAllowed, overPosting } = economy.lurker;
+const READS = ['lurker.earlyPlayers', 'lurker.earlyMatch', 'lurker.spunThreadRepliers', 'lurker.spunThread', 'lurker.postsAllowed', 'lurker.overPosting'] as const;
 
 export const lurker: ClassRules = {
   key: 'lurker',
   name: 'Lurker',
-  earn: (input, settings) => [
+  reads: READS,
+  earn: (input, settings) => {
+    const [earlyPlayers, earlyMatch, spunThreadRepliers, spunThread, postsAllowed, overPosting] = READS.map((k) => economyOf(settings, k)) as [number, number, number, number, number, number];
+    return [
     ...input.given
       .filter((g) => g.rank >= 1 && g.rank <= earlyPlayers && g.quadrant === g.endsUp)
       .map((g): Earning => ({ reason: 'lurker.calledIt', amount: earlyMatch * g.share, act: g.act, quadrant: g.quadrant })),
@@ -28,5 +31,6 @@ export const lurker: ClassRules = {
     ...input.posts
       .slice(postsAllowed)
       .map((p): Earning => ({ reason: 'lurker.postedTooMuch', amount: overPosting, act: p.act })),
-  ],
+    ];
+  },
 };

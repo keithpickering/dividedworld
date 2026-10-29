@@ -40,9 +40,9 @@ begin
   on conflict (key) do update set name = excluded.name;
   insert into reaction_kinds (key, emoji, quadrant) select e ->> 'key', e ->> 'emoji', e ->> 'quadrant' from jsonb_array_elements(payload -> 'reactions') e
   on conflict (key) do update set emoji = excluded.emoji, quadrant = excluded.quadrant;
-  insert into card_kinds (key, name, alignment, base_price)
-  select e ->> 'key', e ->> 'name', e ->> 'alignment', (e ->> 'basePrice')::integer from jsonb_array_elements(payload -> 'cards') e
-  on conflict (key) do update set name = excluded.name, alignment = excluded.alignment, base_price = excluded.base_price;
+  insert into card_kinds (key, name, alignment, price_setting)
+  select e ->> 'key', e ->> 'name', e ->> 'alignment', e ->> 'priceSetting' from jsonb_array_elements(payload -> 'cards') e
+  on conflict (key) do update set name = excluded.name, alignment = excluded.alignment, price_setting = excluded.price_setting;
   insert into boards (slug, name, description)
   select e ->> 'slug', e ->> 'name', coalesce(e ->> 'description', '') from jsonb_array_elements(payload -> 'boards') e
   on conflict (slug) do nothing;
@@ -169,6 +169,16 @@ language sql stable security definer set search_path = public, pg_temp as $$
     -- The System's Acts an input Act points at (a spin from the reveal): named, never settled.
     'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'))
 $$;
+
+-- Every setting as the rows hold it now, for the functions that run the instance's rules, so
+-- what an admin tunes in a row reaches the settlement and the Vending Machine without a deploy.
+create function instance_settings() returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(jsonb_object_agg(key, value), '{}') from settings
+$$;
+
+revoke execute on function instance_settings() from public, anon, authenticated;
+grant execute on function instance_settings() to service_role;
 
 revoke execute on function seed_instance(jsonb), schedule_settlement(), settings_reschedule(),
   next_settlement_window(timestamptz), settlement_input(timestamptz, timestamptz) from public, anon, authenticated;

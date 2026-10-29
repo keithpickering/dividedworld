@@ -11,10 +11,8 @@
  * database's bound on it (effect_state, supabase/migrations/0006_cards.sql), which
  * cards.test.ts measures as Postgres writes it.
  */
-import { color, landsOncePerPost, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
-import { economy } from '../settings.ts';
+import { basePrice, color, economyOf, landsOncePerPost, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 
-const { price, perLength, lengthStep, mostInAll } = economy.whoops;
 export const STROKES = { most: 200, points: 500, totalPoints: 12_000, widest: 64 } as const;
 const thousandth = (n: number) => Math.round(n * 1000) / 1000;
 
@@ -22,8 +20,11 @@ export const whoops: CardRules<{ color: string }> = {
   key: 'whoops',
   name: 'Whoops!',
   alignment: 'salty',
-  basePrice: price,
-  playPrice: (target) => Math.min(perLength * Math.floor(target.length / lengthStep), mostInAll - price),
+  priceKey: 'whoops.price',
+  reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostInAll'],
+  playPrice: (settings, target) =>
+    Math.max(0, Math.min(economyOf(settings, 'whoops.perLength') * Math.floor(target.length / economyOf(settings, 'whoops.lengthStep')),
+      economyOf(settings, 'whoops.mostInAll') - basePrice(whoops, settings))),
   canApply: (target, effects) => landsOncePerPost('whoops', target, effects),
   validateConfig: (config) => {
     const ink = color(typeof config === 'object' && config !== null ? (config as { color?: unknown }).color : undefined);

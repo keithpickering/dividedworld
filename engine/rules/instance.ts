@@ -45,6 +45,11 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   registrationMode: (v) => (v === 'open' || v === 'invite' || v === 'closed' ? null : '"open", "invite" or "closed"'),
   postMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
+  economy: (v) => {
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return 'an object of named numbers';
+    const bad = Object.entries(v).filter(([, n]) => typeof n !== 'number' || !Number.isFinite(n)).map(([k]) => k);
+    return bad.length ? `an object of named numbers, and ${bad.map((k) => `"${k}"`).join(', ')} is not a number` : null;
+  },
 };
 
 export function settingsProblems(settings: Settings): string[] {
@@ -89,7 +94,18 @@ export function instanceProblems(instance: Instance): string[] {
     if (typeof words !== 'string' || words.trim() === '') out.push(`the instance has no copy for ${key}`);
     else if (key !== 'revealBody' && !words.includes('{season}')) out.push(`the copy for ${key} does not say which season ({season})`);
   }
-  out.push(...settingsProblems(instance.settings));
+  const settingsSay = settingsProblems(instance.settings);
+  out.push(...settingsSay);
+  // Every economy number a class or card reads is one the settings hold.
+  const economy = instance.settings?.economy;
+  if (economy && typeof economy === 'object') {
+    const has = (k: string) => typeof economy[k] === 'number' && Number.isFinite(economy[k]);
+    for (const c of instance.classes) for (const k of c.reads ?? []) if (!has(k)) out.push(`class "${c.key}" reads economy "${k}", which the settings do not hold`);
+    for (const c of instance.cards) {
+      if (!has(c.priceKey) || !Number.isSafeInteger(economy[c.priceKey]) || economy[c.priceKey]! <= 0) out.push(`card "${c.key}" is priced by economy "${c.priceKey}", which the settings do not hold as a whole number above 0`);
+      for (const k of c.reads ?? []) if (!has(k)) out.push(`card "${c.key}" reads economy "${k}", which the settings do not hold`);
+    }
+  }
   return out;
 }
 
@@ -107,7 +123,9 @@ export function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): 
  * The settings with some replaced: a new object, frozen all the way down; the defaults are
  * never edited. An override left undefined keeps the default rather than erasing it.
  */
+/** Settings with some replaced; the economy is replaced number by number, so one override keeps the rest. */
 export function withOverrides(settings: Settings, overrides: Partial<Settings>): Settings {
   const given = Object.fromEntries(Object.entries(overrides).filter(([, v]) => v !== undefined));
-  return deepFreeze({ ...settings, ...given });
+  const economy = overrides.economy && typeof overrides.economy === 'object' ? { ...settings.economy, ...overrides.economy } : settings.economy;
+  return deepFreeze({ ...settings, ...given, economy });
 }

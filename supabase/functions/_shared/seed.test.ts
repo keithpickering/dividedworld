@@ -10,7 +10,7 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(seed.settings.seasonLength, instance.settings.seasonLength);
   assert.deepEqual(seed.classes, instance.classes.map((c) => ({ key: c.key, name: c.name })));
   assert.deepEqual(seed.reactions, instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })));
-  assert.deepEqual(seed.cards, instance.cards.map((c) => ({ key: c.key, name: c.name, alignment: c.alignment, basePrice: c.basePrice })));
+  assert.deepEqual(seed.cards, instance.cards.map((c) => ({ key: c.key, name: c.name, alignment: c.alignment, priceSetting: c.priceKey })));
   assert.deepEqual(seed.boards, instance.boards);
   assert.equal(seed.classes.length, 4);
   assert.equal(seed.reactions.length, 16);

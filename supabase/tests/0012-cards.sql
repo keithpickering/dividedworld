@@ -93,6 +93,19 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- The price is a setting: the economy row an admin tunes is what the Vending Machine charges ----
+do $$
+declare
+  eve uuid := tests.account('card-eve');
+begin
+  insert into wallets (account, balance) values (eve, 100);
+  update settings set value = jsonb_set(value, '{splat.price}', '40') where key = 'economy';
+  perform tests.become_service();
+  if pg_temp.refusal(format('select buy_card(%L, %L, %L)', eve, 'splat', 100)) is null then raise exception 'a card was bought at a price the settings no longer hold'; end if;
+  if (buy_card(eve, 'splat', 40) ->> 'balance')::integer is distinct from 60 then raise exception 'a card is bought at the price its setting holds'; end if;
+  perform tests.unbecome();
+end $$;
+
 -- ---- Two plays of one card on one post at once: one lands, the other is refused in words ----
 do $$
 declare

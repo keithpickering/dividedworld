@@ -9,7 +9,7 @@ declare
     'settings', jsonb_build_object('reactionCap', 3, 'settlementCron', '5 9 * * *'),
     'classes', jsonb_build_array(jsonb_build_object('key', 'gamma', 'name', 'Gamma')),
     'reactions', jsonb_build_array(jsonb_build_object('key', 'zap', 'emoji', '⚡', 'quadrant', 'excitedPositive')),
-    'cards', jsonb_build_array(jsonb_build_object('key', 'zing', 'name', 'Zing', 'alignment', 'pepperoni', 'basePrice', 150)),
+    'cards', jsonb_build_array(jsonb_build_object('key', 'zing', 'name', 'Zing', 'alignment', 'pepperoni', 'priceSetting', 'zing.price')),
     'boards', jsonb_build_array(jsonb_build_object('slug', 'side', 'name', 'Side', 'description', 'Off to one side.')));
   first jsonb;
   second jsonb;
@@ -18,7 +18,7 @@ begin
   second := seed_instance(payload);
   if first <> second then raise exception 'seeding twice changed something: % then %', first, second; end if;
   if not exists (select 1 from class_kinds where key = 'gamma') or not exists (select 1 from reaction_kinds where key = 'zap')
-     or not exists (select 1 from card_kinds where key = 'zing' and base_price = 150) or not exists (select 1 from boards where slug = 'side') then
+     or not exists (select 1 from card_kinds where key = 'zing' and price_setting = 'zing.price') or not exists (select 1 from boards where slug = 'side') then
     raise exception 'the instance''s vocabulary did not arrive';
   end if;
   if not exists (select 1 from class_kinds where key = 'alpha') then raise exception 'a kind the payload no longer names was removed'; end if;

@@ -61,23 +61,33 @@ test('a play asks the post, prices it by the card\'s own rules, and is written b
   assert.deepEqual({ status: out.status, body: out.body }, { status: 200, body: { id: 'k', kind: 'card' } });
   assert.deepEqual(calls, [
     `player:whoami:{}`,
+    `service:instance_settings:{}`,
     `player:card_target:{"target":"${target}"}`,
     `service:play_card:${JSON.stringify({ card: 'whoops', through: id, target, config: { color: 'red' }, who: whoami, price: 50 })}`,
   ]);
 });
 
-test('a play its card refuses never reaches the service', async () => {
+test('a play its card refuses is never written by the service', async () => {
   const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [{ card: 'whoops', act: 'k0' }] } });
   const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } });
   assert.equal(out.status, 400);
   assert.match(String((out.body as { error: string }).error), /already/);
-  assert.ok(!calls.some((c) => c.startsWith('service:')));
+  assert.ok(!calls.some((c) => c.startsWith('service:') && !c.startsWith('service:instance_settings:')), calls.join('\n'));
 });
 
 test('a purchase is the service\'s, for whoever the session is', async () => {
   const { dbs, calls } = pair({ whoami, buy_card: { card: 'whoops', balance: 0 } });
   await runAction(dbs, instance, { action: 'buyCard', card: 'whoops' });
-  assert.equal(calls[1], `service:buy_card:${JSON.stringify({ card: 'whoops', price: 100, who: whoami })}`);
+  assert.ok(calls.includes(`service:buy_card:${JSON.stringify({ card: 'whoops', price: 100, who: whoami })}`), calls.join('\n'));
+});
+
+test('a card is sold and played at the prices the settings rows hold', async () => {
+  const { dbs, calls } = pair({ instance_settings: { economy: { 'whoops.price': 150, 'whoops.perLength': 50 } }, whoami, buy_card: { card: 'whoops', balance: 0 },
+    card_target: { act: target, kind: 'post', length: 1000, effects: [] }, play_card: { id: 'k' } });
+  await runAction(dbs, instance, { action: 'buyCard', card: 'whoops' });
+  assert.ok(calls.includes(`service:buy_card:${JSON.stringify({ card: 'whoops', price: 150, who: whoami })}`), calls.join('\n'));
+  await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } });
+  assert.ok(calls.some((c) => c.startsWith('service:play_card:') && c.includes('"price":100')), calls.join('\n'));
 });
 
 test('a session with no account behind it acts as nobody', async () => {

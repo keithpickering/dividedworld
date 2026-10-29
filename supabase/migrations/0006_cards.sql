@@ -91,8 +91,10 @@ declare
   listed integer;
   left_over integer;
 begin
-  select base_price into listed from card_kinds where key = card;
-  if listed is null then raise exception 'the Vending Machine has no card "%"', card using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if not exists (select 1 from card_kinds where key = card) then raise exception 'the Vending Machine has no card "%"', card using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- Its price is the economy setting the card names: what the settings rows hold now.
+  select (setting('economy') ->> k.price_setting)::integer into listed from card_kinds k where k.key = card;
+  if listed is null or listed <= 0 then raise exception 'the settings give "%" no price', card using errcode = 'P0002'; end if;
   if price is distinct from listed then raise exception 'the price is %, not %', listed, price using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   left_over := wallet_spend(who, listed, 'purchase', null);
   insert into card_ledger (account, card, kind, price) values (who, card, 'bought', listed);

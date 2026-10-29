@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { settingsProblems } from '../../engine/rules/instance.ts';
-import { defaults, economy, playtest, playtestOverrides } from './settings.ts';
+import { defaults, playtest, playtestOverrides } from './settings.ts';
 import { reactions } from './reactions.ts';
 import { QUADRANTS } from '../../engine/rules/types.ts';
 
@@ -27,15 +27,17 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
   assert.match(defaults.settlementCron, /^\d+ \d+ \* \* \*$/, 'daily');
 });
 
-test('the classes\' and cards\' numbers are the table\'s', () => {
-  assert.deepEqual(economy, {
-    lurker: { earlyPlayers: 3, earlyMatch: 10, spunThreadRepliers: 3, spunThread: 20, postsAllowed: 3, overPosting: -10 },
-    heel: { saltyOutdraws: 20 },
-    face: { cardOutdraws: -20 },
-    jabroni: { saltyLanded: 20 },
-    stickAround: { price: 100 },
-    whoops: { price: 100, perLength: 25, lengthStep: 500, mostInAll: 300 },
+test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
+  assert.deepEqual(defaults.economy, {
+    'lurker.earlyPlayers': 3, 'lurker.earlyMatch': 10, 'lurker.spunThreadRepliers': 3, 'lurker.spunThread': 20,
+    'lurker.postsAllowed': 3, 'lurker.overPosting': -10,
+    'heel.saltyOutdraws': 20,
+    'face.cardOutdraws': -20,
+    'jabroni.saltyLanded': 20,
+    'stickAround.price': 100,
+    'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostInAll': 300,
   });
+  assert.ok(Object.isFrozen(defaults.economy));
 });
 
 test('the playtest overrides are separate values, not edits of the defaults', () => {

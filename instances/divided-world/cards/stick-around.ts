@@ -6,7 +6,6 @@
  * the reader's own device, never the server.
  */
 import { landsOncePerPost, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
-import { economy } from '../settings.ts';
 
 const DEFAULT_SENTENCE = 'I legally certify that I have read this post in full and thought about it contemplatively';
 const MOST = 200;
@@ -15,7 +14,7 @@ export const stickAround: CardRules<{ sentence: string }> = {
   key: 'stick-around',
   name: 'Stick Around',
   alignment: 'sweet',
-  basePrice: economy.stickAround.price,
+  priceKey: 'stickAround.price',
   playPrice: () => 0,
   canApply: (target, effects) => landsOncePerPost('stick-around', target, effects),
   validateConfig: (config) => {

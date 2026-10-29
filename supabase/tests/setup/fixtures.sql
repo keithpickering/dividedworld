@@ -18,12 +18,13 @@ insert into settings (key, value) values
   ('registrationMode', '"invite"'),
   ('postMaxLength', '20000'),
   ('titleMaxLength', '120'),
+  ('economy', '{"sweetie.price": 100, "splat.price": 100}'),
   ('copy', '{"turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
 insert into class_kinds (key, name) values ('alpha', 'Alpha'), ('beta', 'Beta');
 insert into reaction_kinds (key, emoji, quadrant) values
   ('up', '⬆️', 'excitedPositive'), ('boo', '👻', 'excitedNegative'),
   ('calm', '🌊', 'calmPositive'), ('meh', '😑', 'boredNegative'), ('wow', '🎆', 'excitedPositive');
-insert into card_kinds (key, name, alignment, base_price) values ('sweetie', 'Sweetie', 'sweet', 100), ('splat', 'Splat', 'salty', 100);
+insert into card_kinds (key, name, alignment, price_setting) values ('sweetie', 'Sweetie', 'sweet', 'sweetie.price'), ('splat', 'Splat', 'salty', 'splat.price');
 insert into boards (slug, name) values ('general', 'General');
 insert into seasons (number, starts_at) values (1, '2000-01-01T00:00:00Z');
 

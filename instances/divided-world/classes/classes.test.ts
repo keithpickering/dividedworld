@@ -13,7 +13,7 @@ import { classes } from './index.ts';
 import { instance } from '../index.ts';
 import { defaults as settings } from '../settings.ts';
 import { settle } from '../../../engine/rules/settle.ts';
-import { instanceProblems } from '../../../engine/rules/instance.ts';
+import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import type {
   ClassInput, ClassRules, GivenReaction, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread,
 } from '../../../engine/rules/types.ts';
@@ -85,6 +85,15 @@ test('Lurker earns from reacting early in the direction a post ends up', () => {
   assert.equal(total(lurker, input({ given: [gave({ endsUp: 'boredNegative' })] })), 0, 'the wrong direction pays nothing');
   assert.equal(total(lurker, input({ given: [gave({ endsUp: null })] })), 0, 'a post with no direction pays nothing');
 });
+test('an override of the Lurker\'s call changes what a call pays, and the class reads every number it uses from settings', () => {
+  const tuned = withOverrides(settings, { economy: { 'lurker.earlyMatch': 30, 'heel.saltyOutdraws': 50, 'face.cardOutdraws': -70, 'jabroni.saltyLanded': 40 } });
+  assert.equal(lurker.earn(input({ given: [gave({ rank: 1 })] }), tuned).reduce((s, e) => s + e.amount, 0), 30);
+  assert.equal(heel.earn(input({ cardsPlayed: [card({ votes: 2, targetVotes: 1 })] }), tuned).find((e) => e.reason === 'heel.stoleThunder')?.amount, 50);
+  assert.equal(face.earn(input({ cardsPlayed: [card({ votes: 2, targetVotes: 1 })] }), tuned).find((e) => e.reason === 'face.stoleThunder')?.amount, -70);
+  assert.equal(jabroni.earn(input({ cardsLanded: [{ act: 'k', card: 'whoops', alignment: 'salty', at: 1, on: 'p' }] }), tuned)[0]?.amount, 40);
+  for (const c of classes) for (const key of c.reads ?? []) assert.ok(key in settings.economy, `${c.key} reads ${key}`);
+});
+
 test('Lurker\'s early call is paid by its share, so hedging across quadrants pays a part', () => {
   const hedged = [gave({ share: 1 / 3 }), gave({ quadrant: 'boredNegative', share: 1 / 3 }), gave({ quadrant: 'calmPositive', share: 1 / 3 })];
   assert.ok(Math.abs(total(lurker, input({ given: hedged })) - 10 / 3) < 1e-9);
@@ -125,7 +134,7 @@ test('Jabroni is unmoved by the quadrants it does not read', () => {
 
 /* ---- through the settlement ---- */
 /* A Salty card of the test's own, so these cases need no card of the instance's. */
-const world = { ...instance, cards: [{ key: 'whoops', name: 'Whoops!', alignment: 'salty' as const, basePrice: 100, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] };
+const world = { ...instance, cards: [{ key: 'whoops', name: 'Whoops!', alignment: 'salty' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] };
 const H = 3_600_000;
 function board(lurkerClass = 'lurker'): SettlementInput {
   return {

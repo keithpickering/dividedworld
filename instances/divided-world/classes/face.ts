@@ -4,12 +4,13 @@
  * costs, because upstaging is unbecoming. Design, section 6.
  */
 import type { ClassRules, Earning } from '../../../engine/rules/types.ts';
-import { economy } from '../settings.ts';
+import { economyOf } from '../../../engine/rules/cards.ts';
 import { outdraws, perVote } from './shared.ts';
 
 export const face: ClassRules = {
   key: 'face',
   name: 'Face',
+  reads: ['face.cardOutdraws'],
   earn: (input, settings) => [
     ...perVote(input, settings, 'excitedPositive', 1, 'face.cheered'),
     ...input.cardsPlayed
@@ -18,6 +19,6 @@ export const face: ClassRules = {
     ...perVote(input, settings, 'boredNegative', -1, 'face.boredTheRoom'),
     ...input.cardsPlayed
       .filter((c) => c.onOthers && outdraws(c))
-      .map((c): Earning => ({ reason: 'face.stoleThunder', amount: economy.face.cardOutdraws, act: c.act })),
+      .map((c): Earning => ({ reason: 'face.stoleThunder', amount: economyOf(settings, 'face.cardOutdraws'), act: c.act })),
   ],
 };

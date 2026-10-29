@@ -47,7 +47,9 @@ create table card_kinds (
   key text primary key check (key ~ '^[a-z][a-z0-9-]*$'),
   name text not null,
   alignment text not null check (alignment in ('sweet', 'salty', 'pepperoni')),
-  base_price integer not null check (base_price > 0)
+  -- The economy setting that holds its base price (the instance's own key, such as
+  -- "whoops.price"), so the season review retunes a price with a settings row, never a deploy.
+  price_setting text not null check (price_setting <> '')
 );
 
 -- A setting the engine reads, or an error naming it: a missing number is never guessed at.

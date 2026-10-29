@@ -14,6 +14,7 @@
 import { settle } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
 import type { Db } from '../_shared/rpc.ts';
+import { withDatabaseSettings } from '../_shared/settings.ts';
 
 export type SettlementOutcome =
   | { readonly status: 'nothing to settle'; readonly until: string }
@@ -21,10 +22,11 @@ export type SettlementOutcome =
 
 export async function runSettlement(db: Db, instance: Instance, until: string): Promise<SettlementOutcome> {
   if (Number.isNaN(Date.parse(until))) throw new Error(`settle: until is not a time: ${JSON.stringify(until)}`);
+  const tuned = await withDatabaseSettings(instance, db);
   const window = await db.rpc<{ start: string; end: string } | null>('next_settlement_window', { until });
   if (!window) return { status: 'nothing to settle', until };
   const input = await db.rpc<SettlementInput>('settlement_input', { window_start: window.start, window_end: window.end });
-  const result = settle(input, instance);
+  const result = settle(input, tuned);
   const applied = await db.rpc<{ applied: boolean }>('apply_settlement', {
     window_start: window.start,
     window_end: window.end,

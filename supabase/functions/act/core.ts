@@ -13,10 +13,11 @@
  * PostgREST's detail, which can quote a row, nor a constraint's or a table's name.
  */
 import { decide } from '../../../engine/rules/actions.ts';
-import { decidePlay, type CardEffect, type CardTarget } from '../../../engine/rules/cards.ts';
+import { basePrice, decidePlay, type CardEffect, type CardTarget } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, postgrest, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
+import { withDatabaseSettings } from '../_shared/settings.ts';
 
 export interface ActionAnswer {
   readonly status: number;
@@ -92,11 +93,14 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     const who = await dbs.player.rpc<string | null>('whoami', {});
     if (!who) return { status: 401, body: { error: 'sign in to act' } };
     let args: Record<string, unknown> = { ...decision.args, who };
+    // A card's prices are settings: read as the rows hold them now, not as the code was deployed.
+    const tuned = decision.rpc === 'buy_card' || decision.needsTarget ? await withDatabaseSettings(instance, dbs.service) : instance;
+    if (decision.rpc === 'buy_card') args = { ...args, price: basePrice(tuned.cards.find((c) => c.key === decision.args.card)!, tuned.settings) };
     if (decision.needsTarget) {
       const target = await dbs.player.rpc<(CardTarget & { effects: CardEffect[] }) | null>('card_target', { target: decision.args.target });
       if (!target) return refused('target', 'there is no such post');
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
-      const play = decidePlay(rules, target, target.effects, decision.args.config);
+      const play = decidePlay(rules, tuned.settings, target, target.effects, decision.args.config);
       if (!play.ok) return refused('config', play.why);
       args = { ...args, config: play.value.config, price: play.value.price };
     }

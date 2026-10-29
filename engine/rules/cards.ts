@@ -8,7 +8,7 @@
  * accepts. The browser runs these to preview; the server runs them to decide; the SQL
  * function re-checks what it can.
  */
-import type { ActKind, Alignment, Hundredths } from './types.ts';
+import type { ActKind, Alignment, Hundredths, Settings } from './types.ts';
 import { safeColor } from '../bbcode/parse.ts';
 
 /** The post a card is played on, as its rules see it. */
@@ -31,15 +31,31 @@ export interface CardRules<Config = unknown> {
   readonly key: string;
   readonly name: string;
   readonly alignment: Alignment;
-  /** What the Vending Machine sells it for. */
-  readonly basePrice: Hundredths;
+  /** The economy setting that holds what the Vending Machine sells it for. */
+  readonly priceKey: string;
+  /** The economy numbers its rules read beside its price. */
+  readonly reads?: readonly string[];
   /** What playing it on this target costs from the wallet, on top of the base price already paid. */
-  playPrice(target: CardTarget, config: Config): Hundredths;
+  playPrice(settings: Settings, target: CardTarget, config: Config): Hundredths;
   canApply(target: CardTarget, effectsOnTarget: readonly CardEffect[]): Verdict;
   /** Checks a caster's configuration and returns it in the card's own shape. */
   validateConfig(config: unknown): Verdict<Config>;
   /** For a card whose effect holds state (Whoops!'s strokes): checks a state to be saved. */
   validateState?(state: unknown): Verdict<unknown>;
+}
+
+/** What the Vending Machine sells a card for, under these settings. */
+export function basePrice(rules: CardRules, settings: Settings): Hundredths {
+  const price = settings.economy[rules.priceKey];
+  if (!Number.isSafeInteger(price) || price! <= 0) throw new Error(`card ${rules.key}'s price, economy "${rules.priceKey}", is ${price}`);
+  return price!;
+}
+
+/** One of the instance's economy numbers, which an instance must hold (instanceProblems). */
+export function economyOf(settings: Settings, key: string): number {
+  const n = settings.economy[key];
+  if (typeof n !== 'number' || !Number.isFinite(n)) throw new Error(`economy "${key}" is not set`);
+  return n;
 }
 
 export const ok = <T>(value: T): Verdict<T> => ({ ok: true, value });
@@ -54,12 +70,12 @@ export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
  * or shorter in the moment before the play lands costs the caster what it would have a moment
  * earlier: the caster pays what they were shown, and nobody else is touched.
  */
-export function decidePlay(rules: CardRules, target: CardTarget, effects: readonly CardEffect[], config: unknown): Verdict<{ price: Hundredths; config: unknown }> {
+export function decidePlay(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown): Verdict<{ price: Hundredths; config: unknown }> {
   const lands = rules.canApply(target, effects);
   if (!lands.ok) return lands;
   const checked = rules.validateConfig(config);
   if (!checked.ok) return checked;
-  const price = rules.playPrice(target, checked.value);
+  const price = rules.playPrice(settings, target, checked.value);
   if (!Number.isSafeInteger(price) || price < 0) throw new Error(`card ${rules.key} priced a play at ${price}`);
   return ok({ price, config: checked.value });
 }

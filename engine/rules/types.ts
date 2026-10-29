@@ -59,6 +59,12 @@ export interface Settings {
   readonly postMaxLength: number;
   /** The longest a thread's title may be, in characters. */
   readonly titleMaxLength: number;
+  /**
+   * The instance's own numbers (a class's bonus, a card's price), each named by the instance
+   * ("lurker.earlyMatch"). The engine checks each is a number and never reads one; the classes
+   * and cards that name them do, so an override or a settings row retunes them without a deploy.
+   */
+  readonly economy: Readonly<Record<string, number>>;
 }
 
 /** The kinds of Act the settlement reads. */
@@ -221,6 +227,8 @@ export interface Earning {
 export interface ClassRules {
   readonly key: string;
   readonly name: string;
+  /** The economy numbers its rules read, so an instance missing one is refused before it settles. */
+  readonly reads?: readonly string[];
   earn(input: ClassInput, settings: Settings): readonly Earning[];
 }
 

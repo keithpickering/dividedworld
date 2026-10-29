@@ -15,6 +15,7 @@ const settings: Settings = {
   registrationMode: 'invite',
   postMaxLength: 20000,
   titleMaxLength: 120,
+  economy: { 'a.bonus': 5, 'splat.price': 100 },
 };
 
 const good: Instance = {
@@ -93,6 +94,28 @@ test('an instance missing a list is a problem, not a crash', () => {
     const { [key]: _gone, ...rest } = good;
     assert.match(instanceProblems(rest as Instance).join('\n'), new RegExp(`no ${key} list`), key);
   }
+});
+
+test('the economy is a setting of named numbers, which the engine checks are numbers and never reads', () => {
+  const { economy: _, ...none } = settings;
+  assert.match(settingsProblems(none as Settings).join('\n'), /economy/);
+  assert.match(settingsProblems({ ...settings, economy: { 'a.bonus': 'five' } as never }).join('\n'), /a\.bonus/);
+  assert.match(settingsProblems({ ...settings, economy: { 'a.bonus': Number.NaN } }).join('\n'), /a\.bonus/);
+  assert.match(settingsProblems({ ...settings, economy: [] as never }).join('\n'), /economy/);
+});
+
+test('an override of one economy number keeps the others', () => {
+  const tuned = withOverrides(settings, { economy: { 'a.bonus': 9 } });
+  assert.deepEqual(tuned.economy, { 'a.bonus': 9, 'splat.price': 100 });
+  assert.deepEqual(settings.economy, { 'a.bonus': 5, 'splat.price': 100 });
+});
+
+test('a class or card reading an economy number the settings lack is a problem', () => {
+  const reads = { ...good, classes: [{ key: 'a', name: 'A', reads: ['a.bonus', 'a.missing'], earn: () => [] }] };
+  assert.match(instanceProblems(reads).join('\n'), /class "a" reads economy "a\.missing"/);
+  const card = { key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.cost', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  assert.match(instanceProblems({ ...good, cards: [card] }).join('\n'), /card "splat" is priced by economy "splat\.cost"/);
+  assert.deepEqual(instanceProblems({ ...good, cards: [{ ...card, priceKey: 'splat.price' }] }), []);
 });
 
 test('an override left undefined keeps the default', () => {

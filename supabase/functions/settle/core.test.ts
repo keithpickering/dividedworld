@@ -25,7 +25,7 @@ const day: SettlementInput = {
 };
 
 /** A database that holds what has been settled, as apply_settlement() does. */
-function fakeDb(input: SettlementInput = day) {
+function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = {}) {
   const settled = new Set<string>();
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
   let lastEnd: string | null = null;
@@ -37,6 +37,7 @@ function fakeDb(input: SettlementInput = day) {
         return (Date.parse(String(args.until)) > Date.parse(start) ? { start, end: String(args.until) } : null) as T;
       }
       if (fn === 'settlement_input') return input as T;
+      if (fn === 'instance_settings') return databaseSettings as T;
       if (fn === 'apply_settlement') {
         const key = `${args.window_start}/${args.window_end}`;
         if (settled.has(key)) return { applied: false, reason: 'already settled' } as T;
@@ -54,8 +55,8 @@ test('a run settles the next window: reads its input, runs the instance\'s class
   const { db, calls } = fakeDb();
   const out = await runSettlement(db, instance, new Date(TO).toISOString());
   assert.equal(out.status, 'applied');
-  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'settlement_input', 'apply_settlement']);
-  const apply = calls[2]!.args;
+  assert.deepEqual(calls.map((c) => c.fn), ['instance_settings', 'next_settlement_window', 'settlement_input', 'apply_settlement']);
+  const apply = calls[3]!.args;
   assert.deepEqual(apply.entries, [
     // Heat: Cat's whole vote and half of Dee's; a shrug: the other half of Dee's.
     { player: 'bob', character: 'he', reason: 'heel.drewHeat', amount: 15 },
@@ -65,6 +66,20 @@ test('a run settles the next window: reads its input, runs the instance\'s class
   ]);
   assert.deepEqual(apply.class_totals, { heel: 10, lurker: 5 });
   assert.equal(apply.window_start, new Date(FROM).toISOString());
+});
+
+test('the settings rows reach the settlement: an admin\'s tuning of a vote or a class\'s number is what pays', async () => {
+  const { db, calls } = fakeDb(day, { vote: 20, economy: { 'lurker.earlyMatch': 40 }, copy: { turnsThreadTitle: 'x' } });
+  await runSettlement(db, instance, new Date(TO).toISOString());
+  const entries = calls.find((c) => c.fn === 'apply_settlement')!.args.entries as { reason: string; amount: number }[];
+  assert.equal(entries.find((e) => e.reason === 'heel.drewHeat')?.amount, 30);
+  assert.equal(entries.find((e) => e.reason === 'lurker.calledIt')?.amount, 20);
+});
+
+test('settings rows that would make the instance not whole are refused before anything is settled', async () => {
+  const { db, calls } = fakeDb(day, { economy: { 'lurker.earlyMatch': 'lots' } });
+  await assert.rejects(runSettlement(db, instance, new Date(TO).toISOString()), /lurker\.earlyMatch/);
+  assert.ok(!calls.some((c) => c.fn === 'apply_settlement'));
 });
 
 test('a second run of the same firing is a no-op', async () => {

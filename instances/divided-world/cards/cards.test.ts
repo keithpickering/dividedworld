@@ -7,31 +7,39 @@ import { stickAround } from './stick-around.ts';
 import { STROKES, whoops } from './whoops.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { decidePlay } from '../../../engine/rules/cards.ts';
-import { instanceProblems } from '../../../engine/rules/instance.ts';
+import { basePrice, decidePlay } from '../../../engine/rules/cards.ts';
+import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
+import { defaults as settings } from '../settings.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
 
 const post = (length: number): CardTarget => ({ act: 'p1', kind: 'post', length });
 
 test('the instance sells the two cards, Sweet and Salty, at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, c.basePrice]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
 
+test('a card\'s prices are settings: an override reaches what it sells for and what it costs to play', () => {
+  const tuned = withOverrides(settings, { economy: { 'whoops.price': 150, 'whoops.perLength': 50, 'whoops.mostInAll': 400 } });
+  assert.equal(basePrice(whoops, tuned), 150);
+  assert.equal(whoops.playPrice(tuned, post(1000), { color: 'red' }), 100);
+  assert.equal(basePrice(whoops, tuned) + whoops.playPrice(tuned, post(1_000_000), { color: 'red' }), 400);
+});
+
 test('Whoops! costs 0.25 more per 500 characters of its target, at most 3.00 in all', () => {
   const config = { color: '#ff00aa' };
-  assert.equal(whoops.playPrice(post(499), config), 0);
-  assert.equal(whoops.playPrice(post(500), config), 25);
-  assert.equal(whoops.playPrice(post(999), config), 25);
-  assert.equal(whoops.playPrice(post(1000), config), 50);
-  assert.equal(whoops.playPrice(post(6000), config), 200, 'twelve steps would be 3.00 on top; with the 1.00 paid, 3.00 is all');
-  assert.equal(whoops.basePrice + whoops.playPrice(post(6000), config), 300);
-  assert.equal(whoops.basePrice + whoops.playPrice(post(1_000_000), config), 300);
+  assert.equal(whoops.playPrice(settings, post(499), config), 0);
+  assert.equal(whoops.playPrice(settings, post(500), config), 25);
+  assert.equal(whoops.playPrice(settings, post(999), config), 25);
+  assert.equal(whoops.playPrice(settings, post(1000), config), 50);
+  assert.equal(whoops.playPrice(settings, post(6000), config), 200, 'twelve steps would be 3.00 on top; with the 1.00 paid, 3.00 is all');
+  assert.equal(basePrice(whoops, settings) + whoops.playPrice(settings, post(6000), config), 300);
+  assert.equal(basePrice(whoops, settings) + whoops.playPrice(settings, post(1_000_000), config), 300);
 });
 
 test('Stick Around costs nothing more to play', () => {
-  assert.equal(stickAround.playPrice(post(6000), { sentence: 'Read it.' }), 0);
+  assert.equal(stickAround.playPrice(settings, post(6000), { sentence: 'Read it.' }), 0);
 });
 
 test('Whoops!\'s ink is a color, and only a color', () => {
@@ -60,9 +68,9 @@ test('a card lands on a post, once: not twice on the same post, not on an edit',
 });
 
 test('a play is decided by the card\'s own rules: its price, whether it lands, its configuration', () => {
-  assert.deepEqual(decidePlay(whoops, post(1200), [], { color: 'red' }), { ok: true, value: { price: 50, config: { color: 'red' } } });
-  assert.match(String((decidePlay(whoops, post(1200), [], { color: 'nope' }) as { why: string }).why), /color/);
-  assert.match(String((decidePlay(whoops, post(1200), [{ card: 'whoops', act: 'k' }], { color: 'red' }) as { why: string }).why), /already/);
+  assert.deepEqual(decidePlay(whoops, settings, post(1200), [], { color: 'red' }), { ok: true, value: { price: 50, config: { color: 'red' } } });
+  assert.match(String((decidePlay(whoops, settings, post(1200), [], { color: 'nope' }) as { why: string }).why), /color/);
+  assert.match(String((decidePlay(whoops, settings, post(1200), [{ card: 'whoops', act: 'k' }], { color: 'red' }) as { why: string }).why), /already/);
 });
 
 test('Whoops! strokes are paths, bounded in count and size, in the post\'s own coordinates', () => {
