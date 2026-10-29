@@ -103,7 +103,7 @@ test('an instance exported and imported into a fresh database is the same instan
       values (a, 'Exported', '[b]sig[/b]', 'exp-src.webp', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
       insert into admins (account) values (ann);
       -- A kept estimate, a waiting Turn, a standing, and a class's total in e2e/0001's settlement.
-      insert into estimates (account, made_at, answer) values (ann, now(), '{"entries": [], "lines": [], "asOf": null, "freshAfter": null}');
+      insert into estimates (account, made_at, window_from, answer) values (ann, now(), now(), '{"entries": [], "lines": [], "asOf": null, "freshAfter": null}');
       insert into pending_turns (character, class_key, loudness) values (b, 'heel', 'silent');
       insert into standings (character, season, amount) values (a, (select max(id) from seasons), 10) on conflict do nothing;
       insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;

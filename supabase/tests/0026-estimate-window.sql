@@ -42,7 +42,7 @@ declare
   given jsonb;
 begin
   perform tests.become_service();
-  given := estimate_keep(ann, '{"entries": [], "lines": [{"amount": 10}]}', 30);
+  given := estimate_keep(ann, '{"entries": [], "lines": [{"amount": 10}]}', 30, '3000-01-01');
   if given - 'asOf' - 'freshAfter' is distinct from '{"entries": [], "lines": [{"amount": 10}]}'::jsonb
      or (given ->> 'freshAfter')::timestamptz is distinct from (given ->> 'asOf')::timestamptz + interval '30 seconds'
      or (given ->> 'asOf')::timestamptz is distinct from (select made_at from estimates where account = ann) then
@@ -51,11 +51,18 @@ begin
   if estimate_kept(ann, 30) is distinct from given then raise exception 'a kept estimate is given again inside its hold, as it was given'; end if;
   if estimate_kept(bob, 30) is not null then raise exception 'another account was given a kept estimate'; end if;
   perform tests.unbecome();
+  -- A settlement of an earlier window leaves it be.
   insert into settlements (starts_at, ends_at, season, applied_at) values ('2999-01-01', '2999-01-02', (select min(id) from seasons), clock_timestamp());
   perform tests.become_service();
-  if estimate_kept(ann, 30) is not null then raise exception 'a kept estimate was given again after a settlement'; end if;
+  if estimate_kept(ann, 30) is distinct from given then raise exception 'a settlement of an earlier window took a kept estimate'; end if;
   perform tests.unbecome();
-  delete from settlements where starts_at = '2999-01-01';
+  -- A settlement of the kept answer's window ends it, even one whose transaction began before the
+  -- answer was kept and committed after it.
+  insert into settlements (starts_at, ends_at, season, applied_at) values ('3000-01-01', '3000-01-02', (select min(id) from seasons), clock_timestamp() - interval '1 second');
+  perform tests.become_service();
+  if estimate_kept(ann, 30) is not null then raise exception 'a kept estimate read before a settlement of its window committed was given again after it'; end if;
+  perform tests.unbecome();
+  delete from settlements where starts_at in ('2999-01-01', '3000-01-01');
   update estimates set made_at = clock_timestamp() - interval '31 seconds' where account = ann;
   perform tests.become_service();
   if estimate_kept(ann, 30) is not null then raise exception 'a kept estimate past its hold was given again'; end if;

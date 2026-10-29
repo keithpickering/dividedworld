@@ -90,3 +90,30 @@ begin
   if (select (name, full_image) from pip_styles where key = 'default') is distinct from ('Plain'::text, 'f.svg'::text) then raise exception 'a seeded pip style is written'; end if;
   if not exists (select 1 from pip_styles where key = 'hearts') or not exists (select 1 from pip_styles where key = 'stars') then raise exception 'a new style is added, and one the seed no longer names is kept'; end if;
 end $$;
+
+-- ---- A waiting character's profile is read by nobody, its own player included, until it debuts ----
+-- No action writes one (set_profile and set_avatar refuse a character still waiting), so the row
+-- is written here as the owner, as an import or an admin's repair might.
+do $$
+declare
+  ann uuid := tests.account('wait-prof-ann');
+  bob uuid := tests.account('wait-prof-bob');
+  waiting uuid;
+  seen bigint;
+begin
+  insert into characters (owner, name) values (ann, 'Waiting Profile') returning id into waiting;
+  insert into character_profiles (character, title) values (waiting, 'Not yet');
+  perform tests.become(bob);
+  select count(*) into seen from character_profiles where character = waiting;
+  perform tests.unbecome();
+  if seen <> 0 then raise exception 'another player read a waiting character''s profile'; end if;
+  perform tests.become(ann);
+  select count(*) into seen from character_profiles where character = waiting;
+  perform tests.unbecome();
+  if seen <> 0 then raise exception 'a waiting character''s profile was read before its debut'; end if;
+  update characters set debuted_at = now() where id = waiting;
+  perform tests.become(bob);
+  select count(*) into seen from character_profiles where character = waiting;
+  perform tests.unbecome();
+  if seen <> 1 then raise exception 'a debuted character''s profile is read by every player'; end if;
+end $$;

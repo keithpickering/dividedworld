@@ -37,6 +37,7 @@ test('the estimate is the signed-in caller\'s, read by the service for them, val
     calls.push(`service:estimate_keep`);
     keptAnswer = args.answer;
     assert.equal(args.within_seconds, ESTIMATE_HOLD_SECONDS);
+    assert.equal(args.window_from, new Date(input.window.from).toISOString(), 'kept with the window it was read from, which a settlement ends');
     return { ...(args.answer as object), ...stamped } as T;
   };
   const out = await runEstimate(d, instance);

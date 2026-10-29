@@ -49,7 +49,7 @@ export async function runEstimate(dbs: { player: Db; service: Db }, instance: In
     const tuned = await withDatabaseSettings(instance, dbs.service);
     const answer = estimateForOwner(input, tuned, input.player);
     // An estimate that could not be kept is still the caller's answer: the next ask reads anew.
-    const given = await dbs.service.rpc<unknown>('estimate_keep', { account: who, answer, within_seconds: ESTIMATE_HOLD_SECONDS })
+    const given = await dbs.service.rpc<unknown>('estimate_keep', { account: who, answer, within_seconds: ESTIMATE_HOLD_SECONDS, window_from: new Date(input.window.from).toISOString() })
       .catch((e) => { console.error('estimate: could not keep an answer', e); return { ...answer, ...UNKEPT }; });
     return { status: 200, body: given };
   } catch (e) {

@@ -135,31 +135,34 @@ grant execute on function estimate_input(uuid, timestamptz) to service_role;
 create table estimates (
   account uuid primary key references accounts (id),
   made_at timestamptz not null,
+  -- Where the window it was read from opens: a settlement of that window ends the answer.
+  window_from timestamptz not null,
   answer jsonb not null
 );
 
--- The kept answer, inside its hold and only while no settlement has been applied since it was
--- made: a settled window's lines are never shown as still to come.
+-- The kept answer, inside its hold and only while its window is unsettled: a settled window's
+-- lines are never shown as still to come. Read from the window, not the clock, so a settlement
+-- whose transaction began before the answer was kept and committed after it ends it too.
 create function estimate_kept(account uuid, within_seconds integer) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select e.answer from estimates e
   where e.account = estimate_kept.account and e.made_at > clock_timestamp() - make_interval(secs => within_seconds)
-    and not exists (select 1 from settlements s where s.applied_at >= e.made_at)
+    and not exists (select 1 from settlements s where s.ends_at > e.window_from)
 $$;
 
 -- Keeps an answer, and gives it back as every ask in its hold will be given it: with asOf, when
 -- it was made, and freshAfter, when an ask is answered anew. The screens ask again at freshAfter
 -- when a reaction landed while they held it (supabase/functions/estimate/index.ts).
-create function estimate_keep(account uuid, answer jsonb, within_seconds integer) returns jsonb
+create function estimate_keep(account uuid, answer jsonb, within_seconds integer, window_from timestamptz) returns jsonb
 language sql security definer set search_path = public, pg_temp as $$
-  insert into estimates as e (account, made_at, answer)
-  select account, t.at, answer || jsonb_build_object('asOf', t.at, 'freshAfter', t.at + make_interval(secs => within_seconds))
+  insert into estimates as e (account, made_at, window_from, answer)
+  select account, t.at, window_from, answer || jsonb_build_object('asOf', t.at, 'freshAfter', t.at + make_interval(secs => within_seconds))
   from (select clock_timestamp() as at) t
-  on conflict (account) do update set made_at = excluded.made_at, answer = excluded.answer
+  on conflict (account) do update set made_at = excluded.made_at, window_from = excluded.window_from, answer = excluded.answer
   returning e.answer
 $$;
 
 alter table estimates enable row level security;
 revoke all on estimates from anon, authenticated;
-revoke execute on function estimate_kept(uuid, integer), estimate_keep(uuid, jsonb, integer) from public, anon, authenticated;
-grant execute on function estimate_kept(uuid, integer), estimate_keep(uuid, jsonb, integer) to service_role;
+revoke execute on function estimate_kept(uuid, integer), estimate_keep(uuid, jsonb, integer, timestamptz) from public, anon, authenticated;
+grant execute on function estimate_kept(uuid, integer), estimate_keep(uuid, jsonb, integer, timestamptz) to service_role;

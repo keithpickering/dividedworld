@@ -171,11 +171,13 @@ end $$;
 -- answered: Storage answers a public file's read with Last-Modified, when it was written, so two
 -- masks' avatars set a minute apart would show themselves one player's, which updated_at is
 -- withheld to hide. It takes WebP alone, no larger than the avatar function's largest file
--- (LIMITS in its core.ts).
+-- (LIMITS in its core.ts; supabase/tests/e2e/0006-avatar-bucket.ts holds the two together). A
+-- bucket of that name already there is held to the same.
 do $$ begin
   if to_regclass('storage.buckets') is not null then
     execute $b$insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-      values ('avatars', 'avatars', false, 1500000, array['image/webp']) on conflict (id) do nothing$b$;
+      values ('avatars', 'avatars', false, 1500000, array['image/webp'])
+      on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types$b$;
   end if;
 end $$;
 
