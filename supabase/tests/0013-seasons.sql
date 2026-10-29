@@ -102,13 +102,22 @@ begin
   update settings set value = '{"unit": "month", "count": 3}' where key = 'seasonLength';
   update seasons set starts_at = season_start where ends_at is null;
   insert into class_history (character, class_key, started_at) values (a, 'beta', next_start - interval '10 days');
-  -- Bob's character reveals itself, then Turns, announced with the class it left.
+  -- Bob's character reveals itself in the season, then Turns, announced naming both classes, which
+  -- writes its unmask at the tally's instant, after the tally.
+  unmasked := write_unmask(says, t, 'act', season_start + interval '1 day', 'Alpha, and proud.');
   perform tests.become(bob);
-  unmasked := unmask(says, t, 'Alpha, and proud.');
-  perform turn(says, 'beta', 'announced', true, false);
+  perform turn(says, 'beta', 'announced', true, true);
   perform tests.unbecome();
   update pending_turns set asked_at = told_at - interval '1 hour' where character = says;
   tally := masks_change(told_at);
+  -- Outside the season, and so in no part of its reveal: a reveal and an announced Turn before it
+  -- began, and a reveal and a tally at the very instant it ends, which are the next season's.
+  perform write_unmask(says, t, 'act', season_start - interval '1 day', 'Before.');
+  insert into acts (character, kind, thread, payload, created_at)
+  select null, 'tally', in_season.turns_thread, jsonb_build_object('season', in_season.number, 'part', 1, 'of', 1, 'debuts', '[]'::jsonb,
+      'turns', jsonb_build_array(jsonb_build_object('character', says, 'name', 'Says It All', 'loudness', 'announced', 'was', 'gamma', 'since', season_start))), x.at
+  from seasons in_season, (values (season_start - interval '1 day'), (next_start + interval '1 day')) x(at) where in_season.ends_at is null;
+  perform write_unmask(says, t, 'act', next_start + interval '1 day', 'At the end.');
   -- Final standings: Made Midseason first, then Says It All, then Revealed One.
   insert into standings (character, season, amount) select x.c, s.id, x.amount from seasons s, (values (m, 30), (says, 20), (a, 10)) x(c, amount)
   where s.ends_at is null on conflict (season, character) do update set amount = excluded.amount;
@@ -147,10 +156,12 @@ begin
   if entry -> 'shown' is distinct from '[]'::jsonb or entry ? 'classes' then raise exception 'a character made mid-season with nothing public shows nothing: %', entry; end if;
   -- What its player made public, dated, in order: the reveal, then the Turn announced with its old class.
   select payload into entry from acts where thread = in_thread and payload ->> 'character' = says::text;
+  -- At one instant, the Turn's tally before the unmask it wrote, as they stand in the thread.
   if entry -> 'shown' is distinct from jsonb_build_array(
-       jsonb_build_object('kind', 'reveal', 'act', unmasked ->> 'id', 'at', (unmasked ->> 'created_at')::timestamptz, 'class', 'alpha', 'via', 'act'),
-       jsonb_build_object('kind', 'turn', 'act', tally, 'at', told_at, 'was', 'alpha', 'since', season_start)) then
-    raise exception 'the reveal shows what its player made public, dated: %', entry -> 'shown';
+       jsonb_build_object('kind', 'reveal', 'act', unmasked ->> 'id', 'at', season_start + interval '1 day', 'class', 'alpha', 'via', 'act'),
+       jsonb_build_object('kind', 'turn', 'act', tally, 'at', told_at, 'was', 'alpha', 'since', season_start),
+       jsonb_build_object('kind', 'reveal', 'act', (select id from acts where kind = 'unmask' and character = says and payload ->> 'via' = 'turn'), 'at', told_at, 'class', 'beta', 'via', 'turn')) then
+    raise exception 'the reveal shows what its player made public in the season, dated, in order: %', entry -> 'shown';
   end if;
   if exists (select 1 from acts where thread = in_thread and (payload::text like '%' || ann || '%' or payload::text like '%' || bob || '%')) then raise exception 'the reveal named a player'; end if;
   -- The reveal is reacted to like any Act (0015).

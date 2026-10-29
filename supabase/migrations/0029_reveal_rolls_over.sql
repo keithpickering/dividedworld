@@ -35,16 +35,17 @@ begin
   -- each left where the Turn named it, in order. Read from class_reveals and turns_announced (0027),
   -- which read Acts alone, so no unrevealed class and no silent Turn is in it: they roll over into
   -- the next season, a clue rather than a stated fact (the class reveal design, section 5). A Turn
-  -- that took effect at this very end is the next season's, as before.
+  -- that took effect at this very end is the next season's, as before. At one instant a Turn comes
+  -- before the reveal it wrote (0028), as its tally stands before it in the thread.
   insert into acts (character, kind, thread, payload, created_at)
     select null, 'reveal', in_thread, jsonb_build_object('season', s.number, 'character', c.id, 'name', c.name,
         'place', rank() over (order by coalesce(st.amount, 0) desc), 'standing', coalesce(st.amount, 0),
         'shown', coalesce((
-          select jsonb_agg(x.entry order by x.at, x.act) from (
-            select r.at, r.act, jsonb_build_object('kind', 'reveal', 'act', r.act, 'at', r.at, 'class', r.class, 'via', r.via) as entry
+          select jsonb_agg(x.entry order by x.at, x.after, x.act) from (
+            select r.at, 1 as after, r.act, jsonb_build_object('kind', 'reveal', 'act', r.act, 'at', r.at, 'class', r.class, 'via', r.via) as entry
             from class_reveals r where r.character = c.id and r.at >= s.starts_at and r.at < ended
             union all
-            select t.at, t.act, jsonb_build_object('kind', 'turn', 'act', t.act, 'at', t.at)
+            select t.at, 0, t.act, jsonb_build_object('kind', 'turn', 'act', t.act, 'at', t.at)
               || case when t.was is null then '{}'::jsonb else jsonb_build_object('was', t.was, 'since', t.since) end
             from turns_announced t where t.character = c.id and t.at >= s.starts_at and t.at < ended
           ) x), '[]'::jsonb)), ended
