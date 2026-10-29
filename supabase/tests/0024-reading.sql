@@ -21,6 +21,7 @@ declare
   b uuid := tests.character(bob, 'Read Writer');
   t uuid := tests.thread('Read me');
   quiet uuid := tests.thread('Read before');
+  bare uuid := tests.thread('Read bare');
   said jsonb;
   counted timestamptz;
 begin
@@ -43,6 +44,12 @@ begin
   if pg_temp.refusal(format('select mark_read(%L, 1, %L)', t, b)) is distinct from 'you do not play that character' then raise exception 'a read through another''s mask'; end if;
   if pg_temp.refusal(format('select mark_read(%L, 1, %L)', gen_random_uuid(), a1)) is distinct from 'there is no such thread' then raise exception 'a read of no thread'; end if;
   perform mark_read(quiet, 1, a1);
+  -- A first read with no character on the HUD: the first read through one is recorded.
+  perform mark_read(bare, 0, null);
+  perform mark_read(bare, 0, a2);
+  if (select first_character from reading where thread = bare) is distinct from a2 then raise exception 'the first read through a character is recorded after one with none'; end if;
+  perform mark_read(bare, 0, a3);
+  if (select first_character from reading where thread = bare) is distinct from a2 then raise exception 'a later character replaced the first'; end if;
   perform tests.unbecome();
 
   -- Nobody else reads it.
@@ -61,16 +68,19 @@ begin
   perform tests.become(bob);
   perform mark_read(t, 3, b);
   perform tests.unbecome();
-  update reading set read_at = read_at - interval '2 hours' where thread = quiet;
+  -- Both threads' readers first came before the last run.
+  update reading set first_read_at = first_read_at - interval '2 hours' where thread in (quiet, t);
   update view_count_runs set ran_at = ran_at - interval '1 hour';
   perform count_thread_views();
-  if (select counted_at from thread_view_counts where thread = quiet) is distinct from counted then raise exception 'a thread nobody read since was recounted'; end if;
+  if (select counted_at from thread_view_counts where thread = quiet) is distinct from counted then raise exception 'a thread no new reader came to was recounted'; end if;
+  -- Bob's re-read of t is no new reader: t is not recounted either.
+  if (select counted_at from thread_view_counts where thread = t) is distinct from counted then raise exception 'a re-read recounted its thread'; end if;
   -- A read whose transaction began just before the last run, and committed after it, is counted
   -- at the next: its read_at is its transaction's start, a moment before the run it missed.
   perform tests.become(bob);
   perform mark_read(quiet, 1, b);
   perform tests.unbecome();
-  update reading set read_at = (select ran_at from view_count_runs) - interval '5 minutes' where thread = quiet and account = bob;
+  update reading set first_read_at = (select ran_at from view_count_runs) - interval '5 minutes' where thread = quiet and account = bob;
   perform count_thread_views();
   if (select players from thread_view_counts where thread = quiet) is distinct from 2 then raise exception 'a read committed just after a run was never counted'; end if;
   -- Everyone signed in reads the counts.
@@ -119,4 +129,23 @@ begin
   perform tests.become(cat);
   if exists (select 1 from my_reactions where act = p) then raise exception 'the post''s author read who reacted to it'; end if;
   perform tests.unbecome();
+end $$;
+
+-- ---- Two first reads of one thread by one player at once: one row, and neither refused ----
+do $$
+declare
+  ann uuid := gen_random_uuid(); a1 uuid := gen_random_uuid(); a2 uuid := gen_random_uuid(); t uuid := gen_random_uuid();
+  said text[];
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'race-read@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into characters (id, owner, name, debuted_at) values (%2$L, %1$L, 'Race Reader One', now()), (%3$L, %1$L, 'Race Reader Two', now());
+    insert into class_history (character, class_key) values (%2$L, 'alpha'), (%3$L, 'alpha');
+    insert into threads (id, board, title, next_seq) select %4$L, id, 'Race read', 4 from boards where slug = 'general';
+  $sql$, ann, a1, a2, t));
+  said := tests.race(ann, format('select mark_read(%L, 2, %L)', t, a1), ann, format('select mark_read(%L, 3, %L)', t, a2));
+  if said[1] is not null or said[2] is not null then raise exception 'a first read raced and was refused: %', said; end if;
+  if (select count(*) from reading where thread = t) is distinct from 1::bigint then raise exception 'two first reads made two rows'; end if;
+  if (select furthest_seq from reading where thread = t) is distinct from 3 then raise exception 'the furthest of two reads at once is kept'; end if;
 end $$;

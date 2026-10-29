@@ -21,8 +21,10 @@ create table reading (
   read_at timestamptz not null default now(),
   primary key (account, thread)
 );
--- The threads read since a count, found without reading every row.
-create index reading_read_at on reading (read_at);
+-- The threads a new reader came to since a count, found without reading every row; and each
+-- thread's readers, counted without reading every player's.
+create index reading_first_read_at on reading (first_read_at);
+create index reading_thread on reading (thread);
 
 create table thread_view_counts (
   thread uuid primary key references threads (id),
@@ -38,6 +40,7 @@ create table view_count_runs (
 
 -- The caller read `in_thread` through post `seq`, through the HUD's character `through` (null for
 -- a player with no character yet). The furthest only rises, and never past the thread's last post.
+-- The first character is the first read's; where that read had none, the first read that had one.
 create function mark_read(in_thread uuid, seq integer, through uuid default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -50,26 +53,32 @@ begin
   if last_seq is null then raise exception 'there is no such thread' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   insert into reading as r (account, thread, furthest_seq, first_character)
   values (caller, in_thread, greatest(0, least(coalesce(seq, 0), last_seq)), through)
-  on conflict (account, thread) do update set furthest_seq = greatest(r.furthest_seq, excluded.furthest_seq), read_at = now()
+  on conflict (account, thread) do update set furthest_seq = greatest(r.furthest_seq, excluded.furthest_seq), read_at = now(),
+    first_character = coalesce(r.first_character, excluded.first_character)
   returning * into kept;
   return jsonb_build_object('thread', kept.thread, 'furthest_seq', kept.furthest_seq);
 end $$;
 
--- Recount the threads read since the last run: distinct players, however many masks they read
--- through. A read whose transaction began before the last run and committed after it is caught by
--- reading a little before that run, so a count is never left behind; a thread recounted twice is
--- the same count. The cost is the threads read in the hour and their readers, not the board.
+-- Recount the threads a new reader came to since the last run: distinct players, however many
+-- masks they read through. A re-read changes no count, so it is not a reason to recount. A first
+-- read whose transaction began before the last run and committed after it is caught by reading a
+-- little before that run, so a count is never left behind; a thread recounted twice is the same
+-- count. One run at a time, each reading the last run's time once it holds the lock. The cost is
+-- the threads that gained a reader in the hour and their readers, read through reading_thread.
 create function count_thread_views() returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  since timestamptz := coalesce((select ran_at from view_count_runs), '-infinity') - interval '10 minutes';
-  started timestamptz := clock_timestamp();
+  since timestamptz;
+  started timestamptz;
   done integer;
 begin
   perform pg_advisory_xact_lock(hashtext('kayfabb.count_thread_views'));
+  since := coalesce((select ran_at from view_count_runs), '-infinity') - interval '10 minutes';
+  started := clock_timestamp();
   insert into thread_view_counts as v (thread, players, counted_at)
-  select r.thread, (select count(*) from reading x where x.thread = r.thread), started
-  from (select distinct thread from reading where read_at >= since) r
+  select x.thread, count(*), started
+  from reading x where x.thread in (select thread from reading where first_read_at >= since)
+  group by x.thread
   on conflict (thread) do update set players = excluded.players, counted_at = excluded.counted_at;
   get diagnostics done = row_count;
   insert into view_count_runs (ran_at) values (started) on conflict (only_row) do update set ran_at = excluded.ran_at;
