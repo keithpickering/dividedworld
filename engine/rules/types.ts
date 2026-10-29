@@ -282,8 +282,10 @@ export interface Earning {
   readonly act?: string;
   readonly quadrant?: Quadrant;
   /**
-   * The reactions it pays for, where they are not on `act`: on this Act, from this time (a card's
-   * lift is the votes on its target after it). The live estimate hangs its lines on them.
+   * The reactions it pays for, where they are not on `act`: on this Act, after this time (a card's
+   * lift is the votes on its target after it). The live estimate hangs its lines on them, and
+   * without it on the reactions to `act` in `quadrant`: an earning paid for another Act's reactions
+   * names them here, or its lines hang on the wrong ones.
    */
   readonly valuing?: { readonly act: string; readonly from: number };
 }

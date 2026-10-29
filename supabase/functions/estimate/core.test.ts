@@ -28,13 +28,24 @@ function dbs(answers: Record<string, unknown>) {
 }
 
 test('the estimate is the signed-in caller\'s, read by the service for them, valued by the engine, and kept', async () => {
-  const { dbs: d, calls } = dbs({ whoami: me, estimate_kept: null, estimate_input: input, estimate_keep: null });
+  const stamped = { asOf: '2026-10-29T10:00:00Z', freshAfter: '2026-10-29T10:00:30Z' };
+  let keptAnswer: unknown;
+  const { dbs: d, calls } = dbs({ whoami: me, estimate_kept: null, estimate_input: input });
+  const keep = d.service.rpc;
+  d.service.rpc = async <T>(fn: string, args: Record<string, unknown>) => {
+    if (fn !== 'estimate_keep') return keep<T>(fn, args);
+    calls.push(`service:estimate_keep`);
+    keptAnswer = args.answer;
+    assert.equal(args.within_seconds, ESTIMATE_HOLD_SECONDS);
+    return { ...(args.answer as object), ...stamped } as T;
+  };
   const out = await runEstimate(d, instance);
   assert.equal(out.status, 200);
-  assert.deepEqual(calls.filter((c) => !c.includes('instance_settings') && !c.includes('estimate_keep:')), [
-    `player:whoami:{}`, `service:estimate_kept:{"account":"${me}","within_seconds":${ESTIMATE_HOLD_SECONDS}}`, `service:estimate_input:{"account":"${me}"}`]);
-  assert.ok(calls.some((c) => c.startsWith(`service:estimate_keep:{"account":"${me}","answer":`)), 'the answer is kept for the next ask');
+  assert.deepEqual(calls.filter((c) => !c.includes('instance_settings')), [
+    `player:whoami:{}`, `service:estimate_kept:{"account":"${me}","within_seconds":${ESTIMATE_HOLD_SECONDS}}`, `service:estimate_input:{"account":"${me}"}`, 'service:estimate_keep']);
   const body = out.body as { entries: { character: string; reason: string; amount: number }[]; lines: { at?: number; amount: number }[] };
+  // The answer is the one kept, with when it was made and when to ask again.
+  assert.deepEqual(out.body, { ...(keptAnswer as object), ...stamped });
   assert.ok(body.entries.length > 0 && body.entries.every((e) => e.character === 'mine'), JSON.stringify(body));
   assert.ok(body.lines.some((l) => l.at === 2 * H), 'a line per reaction, with its time');
   assert.ok(!JSON.stringify(body).includes('k1') && !JSON.stringify(body).includes('you-key'), 'no key reaches the answer');
@@ -50,7 +61,16 @@ test('asked again within the hold, the kept estimate is the answer, and the wind
 
 test('a session with no account is answered as nobody; no window yet is an empty estimate', async () => {
   assert.equal((await runEstimate(dbs({ whoami: null }).dbs, instance)).status, 401);
-  assert.deepEqual(await runEstimate(dbs({ whoami: me, estimate_kept: null, estimate_input: null }).dbs, instance), { status: 200, body: { entries: [], lines: [] } });
+  assert.deepEqual(await runEstimate(dbs({ whoami: me, estimate_kept: null, estimate_input: null }).dbs, instance), { status: 200, body: { entries: [], lines: [], asOf: null, freshAfter: null } });
+});
+
+test('an estimate that could not be kept is still the answer, which says to ask again whenever', async () => {
+  for (const failure of [new DatabaseError('estimate_keep: (detail)', 'XX000', 500), new TransportError('no answer')]) {
+    const out = await runEstimate(dbs({ whoami: me, estimate_kept: null, estimate_input: input, estimate_keep: failure }).dbs, instance);
+    assert.equal(out.status, 200);
+    const body = out.body as { entries: unknown[]; asOf: unknown; freshAfter: unknown };
+    assert.ok(body.entries.length > 0 && body.asOf === null && body.freshAfter === null, JSON.stringify(body));
+  }
 });
 
 test('a failure says nothing from inside, and a lost answer says so', async () => {

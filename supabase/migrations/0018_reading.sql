@@ -1,6 +1,6 @@
 -- Reading, remembered on the server: one private row per player per thread, so first-unread and
--- new-post markers follow a player from phone to desktop; public view counts, distinct players per
--- thread, recounted in batches and never live; and a player's own reactions, readable by that
+-- new-post markers follow a player from phone to desktop; view counts, distinct players per
+-- thread, recounted in batches and never live, and read by no player until #12 is answered; and a player's own reactions, readable by that
 -- player, so a screen can outline them and say "2 of 3 left". The screens' engine plan, Task 6;
 -- the screens' design, section 6 ("Reading is remembered on the server").
 --
@@ -119,9 +119,9 @@ grant select on reading to authenticated;
 create policy own on reading for select to authenticated using (account = auth.uid());
 -- Withheld from players for now: a count of distinct players can say that two masks that posted
 -- in a thread are one player's, so it waits on the owner's answer to #12 (count the masks read
--- through instead, or show none) before any player reads it. The rows and the job are kept, so
--- the count is there to show once the answer is written into the design.
-create policy read on thread_view_counts for select to authenticated using (true);
+-- through instead, or show none) before any player reads it, with no grant and no policy: the
+-- answer chooses both. The rows and the job are kept, so the count is there to show once the
+-- answer is written into the design.
 grant select on my_reactions to authenticated;
 
 revoke execute on function count_thread_views(), schedule_view_counts(), settings_reschedule_view_counts() from public, anon, authenticated;

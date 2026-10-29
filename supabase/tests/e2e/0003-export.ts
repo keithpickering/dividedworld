@@ -102,6 +102,11 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into character_profiles (character, title, signature, avatar_source, avatar_square, avatar_portrait, square_frame, portrait_frame)
       values (a, 'Exported', '[b]sig[/b]', 'exp-src.webp', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
       insert into admins (account) values (ann);
+      -- A kept estimate, a waiting Turn, a standing, and a class's total in e2e/0001's settlement.
+      insert into estimates (account, made_at, answer) values (ann, now(), '{"entries": [], "lines": [], "asOf": null, "freshAfter": null}');
+      insert into pending_turns (character, class_key, loudness) values (b, 'heel', 'silent');
+      insert into standings (character, season, amount) values (a, (select max(id) from seasons), 10) on conflict do nothing;
+      insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
     end $$;
@@ -110,12 +115,11 @@ test('an instance exported and imported into a fresh database is the same instan
     create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
-  for (const t of ['public.accounts', 'public.characters', 'public.class_history', 'public.acts', 'public.reactions', 'public.card_ledger', 'public.effect_state',
-    'public.invites', 'public.settlements', 'public.paid_votes', 'public.ledger', 'public.wallet_events', 'public.seasons', 'auth.users',
-    'public.effect_releases', 'public.reading', 'public.thread_view_counts', 'public.view_count_runs', 'public.account_preferences',
-    'public.character_profiles', 'public.pip_styles', 'public.admins']) {
-    assert.notEqual(before.get(t), '[]', `${t} should hold something to carry across`);
-  }
+  // Every table of ours holds a row to carry across, read from the database rather than listed
+  // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
+  // must agree are one list"); the migrations' own data is held to a fresh database below.
+  const empty = [...before].filter(([t, rows]) => rows === '[]' && !MIGRATION_DATA.includes(t)).map(([t]) => t);
+  assert.deepEqual(empty, [], 'each table should hold something to carry across');
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-export-'));
   const fresh = new URL(from);

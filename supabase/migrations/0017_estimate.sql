@@ -138,18 +138,28 @@ create table estimates (
   answer jsonb not null
 );
 
+-- The kept answer, inside its hold and only while no settlement has been applied since it was
+-- made: a settled window's lines are never shown as still to come.
 create function estimate_kept(account uuid, within_seconds integer) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
-  select e.answer from estimates e where e.account = estimate_kept.account and e.made_at > clock_timestamp() - make_interval(secs => within_seconds)
+  select e.answer from estimates e
+  where e.account = estimate_kept.account and e.made_at > clock_timestamp() - make_interval(secs => within_seconds)
+    and not exists (select 1 from settlements s where s.applied_at >= e.made_at)
 $$;
 
-create function estimate_keep(account uuid, answer jsonb) returns void
+-- Keeps an answer, and gives it back as every ask in its hold will be given it: with asOf, when
+-- it was made, and freshAfter, when an ask is answered anew. The screens ask again at freshAfter
+-- when a reaction landed while they held it (supabase/functions/estimate/index.ts).
+create function estimate_keep(account uuid, answer jsonb, within_seconds integer) returns jsonb
 language sql security definer set search_path = public, pg_temp as $$
-  insert into estimates (account, made_at, answer) values (account, clock_timestamp(), answer)
+  insert into estimates as e (account, made_at, answer)
+  select account, t.at, answer || jsonb_build_object('asOf', t.at, 'freshAfter', t.at + make_interval(secs => within_seconds))
+  from (select clock_timestamp() as at) t
   on conflict (account) do update set made_at = excluded.made_at, answer = excluded.answer
+  returning e.answer
 $$;
 
 alter table estimates enable row level security;
 revoke all on estimates from anon, authenticated;
-revoke execute on function estimate_kept(uuid, integer), estimate_keep(uuid, jsonb) from public, anon, authenticated;
-grant execute on function estimate_kept(uuid, integer), estimate_keep(uuid, jsonb) to service_role;
+revoke execute on function estimate_kept(uuid, integer), estimate_keep(uuid, jsonb, integer) from public, anon, authenticated;
+grant execute on function estimate_kept(uuid, integer), estimate_keep(uuid, jsonb, integer) to service_role;

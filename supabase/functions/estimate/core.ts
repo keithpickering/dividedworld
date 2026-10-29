@@ -8,8 +8,9 @@
  *
  * Every answer is the caller's own: the caller's characters' entries and lines, and no key the
  * input used. An answer is kept for ESTIMATE_HOLD_SECONDS and given again to every ask in that
- * time, so the screens cannot make the window be read once per reaction. A failure says nothing
- * from inside.
+ * time, so the screens cannot make the window be read once per reaction; each says when it was
+ * made (asOf) and when an ask is answered anew (freshAfter), both null where nothing was kept. A
+ * failure says nothing from inside.
  */
 import { estimateForOwner } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
@@ -23,6 +24,9 @@ import { withDatabaseSettings } from '../_shared/settings.ts';
  * reactions it values). The estimate is an estimate; it is never more than this stale.
  */
 export const ESTIMATE_HOLD_SECONDS = 30;
+
+/** An answer nobody kept: made just now, and the next ask reads the window anew. */
+const UNKEPT = { asOf: null, freshAfter: null } as const;
 
 export interface EstimateAnswer {
   readonly status: number;
@@ -41,11 +45,13 @@ export async function runEstimate(dbs: { player: Db; service: Db }, instance: In
     const kept = await dbs.service.rpc<unknown>('estimate_kept', { account: who, within_seconds: ESTIMATE_HOLD_SECONDS });
     if (kept) return { status: 200, body: kept };
     const input = await dbs.service.rpc<(SettlementInput & { player: string }) | null>('estimate_input', { account: who });
-    if (!input) return { status: 200, body: { entries: [], lines: [] } };
+    if (!input) return { status: 200, body: { entries: [], lines: [], ...UNKEPT } };
     const tuned = await withDatabaseSettings(instance, dbs.service);
     const answer = estimateForOwner(input, tuned, input.player);
-    await dbs.service.rpc('estimate_keep', { account: who, answer });
-    return { status: 200, body: answer };
+    // An estimate that could not be kept is still the caller's answer: the next ask reads anew.
+    const given = await dbs.service.rpc<unknown>('estimate_keep', { account: who, answer, within_seconds: ESTIMATE_HOLD_SECONDS })
+      .catch((e) => { console.error('estimate: could not keep an answer', e); return { ...answer, ...UNKEPT }; });
+    return { status: 200, body: given };
   } catch (e) {
     if (e instanceof TransportError) return { status: 503, body: { error: 'no answer came back; try again' } };
     console.error('estimate failed', e);

@@ -166,13 +166,16 @@ begin
     case when was.avatar_portrait is distinct from portrait then was.avatar_portrait end], null)));
 end $$;
 
--- The bucket the avatar function stores into, where Supabase Storage is installed. Public: an
--- avatar is shown to every reader, under a random name that says nothing of its character. It
--- takes WebP alone, no larger than the avatar function's largest file (LIMITS in its core.ts).
+-- The bucket the avatar function stores into, where Supabase Storage is installed, under random
+-- names that say nothing of a character. Private, read by the service alone, until #13 is
+-- answered: Storage answers a public file's read with Last-Modified, when it was written, so two
+-- masks' avatars set a minute apart would show themselves one player's, which updated_at is
+-- withheld to hide. It takes WebP alone, no larger than the avatar function's largest file
+-- (LIMITS in its core.ts).
 do $$ begin
   if to_regclass('storage.buckets') is not null then
     execute $b$insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-      values ('avatars', 'avatars', true, 1500000, array['image/webp']) on conflict (id) do nothing$b$;
+      values ('avatars', 'avatars', false, 1500000, array['image/webp']) on conflict (id) do nothing$b$;
   end if;
 end $$;
 
