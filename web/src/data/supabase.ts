@@ -23,7 +23,7 @@
  * No read counts rows. A count over a table that grows with the game (a board's threads, a character's
  * Acts, the season's characters) is work per view that grows with the instance, so every total a screen
  * shows is a counter a trigger keeps (board_counts, character_post_counts, season_size) or comes
- * from an index range on the server (standing_place); tools/check-web-reads.mjs refuses a `count` option.
+ * from an index range on the server (standing_place, standings_page); tools/check-web-reads.mjs refuses a `count` option.
  *
  * Nothing sent here carries the HUD's character beyond the request body the action needs: it is
  * never in a URL, a header or a channel name.
@@ -576,24 +576,19 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         ? ({ id: r['id'], number: r['number'], startsAt: r['starts_at'], endsAt: r['ends_at'] ?? null, turnsThread: r['turns_thread'] ?? null, revealAct: r['reveal_act'] ?? null } satisfies Season)
         : null;
     },
-    async standings() {
-      const rows = await list(() => client.from('season_standings').select('character,name,standing,place').order('place', { ascending: true }).order('name', { ascending: true }));
-      return rows.map((r): Standing => ({ character: r['character'], name: r['name'], standing: num(r['standing']), place: num(r['place']) }));
-    },
-    /* The standings screen is the one read that ranks everyone: season_standings ranks every debuted character with a window,
-       and a page of it is cut from that ranking. Its job is the whole ranking, a page at a time, so this is the one place
-       whose cost grows with the characters; every other screen reads standingAmounts or standingPlace. */
+    /* A page of the ranking from the server, which reads one range of the standings' index for it and never ranks the
+       season (standings_page, supabase/migrations/0030_screens_reads.sql); at most a row cap's worth, as it answers. */
     async standingsPage(offset, limit) {
       if (limit <= 0) return [];
-      const r = await read(() => client.from('season_standings').select('character,name,standing,place').order('place', { ascending: true }).order('name', { ascending: true }).range(offset, offset + Math.min(limit, ROW_CAP) - 1), true);
-      const rows = !r.error && Array.isArray(r.data) ? (r.data as Row[]) : [];
+      const r = await read(() => client.rpc('standings_page', { page_offset: Math.max(0, Math.floor(offset)), page_limit: rowLimit(limit) }));
+      const rows = Array.isArray(r.data) ? (r.data as Row[]) : [];
       return rows.map((x): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: num(x['place']) }));
     },
     async standingAmounts(ids) {
       const out: Record<Id, number> = Object.fromEntries(ids.map((id) => [id, 0]));
       const wanted = ids.filter(idOk);
       if (wanted.length === 0) return out;
-      /* The season season_standings ranks: the open one, else the latest. A few rows of seasons, then a probe of the standings' primary key per character. */
+      /* The season the standings read (season_standings, standings_page): the open one, else the latest. A few rows of seasons, then a probe of the standings' primary key per character. */
       const season = (await list(() => client.from('seasons').select('id').order('ends_at', { ascending: false, nullsFirst: true }).order('starts_at', { ascending: false }).limit(1)))[0];
       if (!season) return out;
       for (const r of await list(() => client.from('standings').select('character,amount').eq('season', season['id']).in('character', [...wanted]))) out[r['character']] = num(r['amount']);

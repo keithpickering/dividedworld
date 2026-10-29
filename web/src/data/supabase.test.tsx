@@ -79,8 +79,8 @@ const ACT: Act = { id: A, character: B, kind: 'post', thread: T, targetActId: nu
 const THREAD_ROW = { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00', last_at: '2026-10-01T10:00:00+00:00', last_seq: 2, first_act: A, first_character: B, last_act: A, last_character: B, replies: 3, replies_this_week: 4, origin_thread: null, origin_title: null, origin_seq: null };
 
 /** Everything a read can name, answered with an empty list or a plain value. */
-const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'season_standings', 'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
-const ALLOWED_RPCS = new Set(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'set_profile', 'release_effect', 'card_target', 'standing_place']);
+const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
+const ALLOWED_RPCS = new Set(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page']);
 
 import { beforeEach } from 'vitest';
 
@@ -103,7 +103,7 @@ describe('what the adapter may request', () => {
     await Promise.allSettled([
       api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
-      api.standings(), api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
+      api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
     const tables = new Set(h.rest().filter((r) => !r.url.pathname.includes('/rpc/')).map((r) => r.url.pathname.replace(`${REST}/`, '')));
@@ -259,21 +259,27 @@ describe('reads and their rows', () => {
     expect(await harness(() => rows([])).api.standingsCount()).toBe(0);
   });
 
-  it('reads a page of the standings with a range, so a season past the row cap is never cut', async () => {
-    const h = harness(() => rows([{ character: B, name: 'Bea', standing: 300, place: 1201 }]));
+  it('reads a page of the standings with one function call that reads the page, never the ranking of the season', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/standings_page') ? json([{ character: B, name: 'Bea', standing: 300, place: 1201 }]) : json({}, 404)));
     expect(await h.api.standingsPage(1200, 50)).toEqual([{ character: B, name: 'Bea', standing: 300, place: 1201 }]);
-    const [req] = h.to('season_standings');
-    expect(req?.url.searchParams.get('offset')).toBe('1200');
-    expect(req?.url.searchParams.get('limit')).toBe('50');
-    expect(req?.url.searchParams.get('order')).toBe('place.asc,name.asc');
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['rpc/standings_page']);
+    expect(h.to('rpc/standings_page')[0]?.body).toEqual({ page_offset: 1200, page_limit: 50 });
+    expect(h.to('season_standings')).toEqual([]);
+    /* At most a row cap's worth, whatever is asked; no page asked of no rows; a page past the end is no rows. */
+    const capped = harness(() => json([]));
+    expect(await capped.api.standingsPage(0, 5000)).toEqual([]);
+    expect(capped.to('rpc/standings_page')[0]?.body).toEqual({ page_offset: 0, page_limit: 1000 });
+    const none = harness(() => json([]));
+    expect(await none.api.standingsPage(0, 0)).toEqual([]);
+    expect(none.rest()).toEqual([]);
+    const refused = harness(() => json({ message: 'no' }, 400));
+    await expect(refused.api.standingsPage(0, 5)).rejects.toThrow();
   });
 
   it('answers a range past the end with no rows, not an error (PostgREST says 416)', async () => {
     const past = { code: 'PGRST103', message: 'Requested range not satisfiable', details: 'An offset of 99 was requested, but there are only 3 rows.' };
     const h = harness(() => json(past, 416, { 'content-range': '*/3' }));
     expect(await h.api.characterActs(B, ['post'], { offset: 1980, limit: 20 })).toEqual([]);
-    const h2 = harness(() => json(past, 416, { 'content-range': '*/3' }));
-    expect(await h2.api.standingsPage(99, 50)).toEqual([]);
   });
 
   it('reads a character\'s Acts as a page with no count: the totals are the counters\' (a profile\'s latest rows and a record\'s pager)', async () => {

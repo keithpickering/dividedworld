@@ -58,7 +58,7 @@ describe('My characters', () => {
     const w = world();
     const amounts = vi.spyOn(w.fake, 'standingAmounts');
     const place = vi.spyOn(w.fake, 'standingPlace');
-    const ranking = vi.spyOn(w.fake, 'standings');
+    const ranking = vi.spyOn(w.fake, 'standingsPage');
     open(w);
     await ready();
     expect(await within(row('Mrs. Hooligan')).findByText('6.85')).toBeInTheDocument();
@@ -105,7 +105,7 @@ describe('My characters', () => {
     expect(within(r).queryByRole('link', { name: 'Edit profile' })).toBeNull();
     /* Absent from every public read. */
     expect(await w.fake.characters([w.waiting])).toEqual([]);
-    expect((await w.fake.standings()).map((s) => s.character)).not.toContain(w.waiting);
+    expect((await w.fake.standingsPage(0, 1000)).map((s) => s.character)).not.toContain(w.waiting);
     expect(await w.fake.standingPlace(w.waiting)).toBeNull();
     expect(await w.fake.characterCounts(w.waiting)).toEqual({ posts: 0, spins: 0, cards: 0 });
     const board = (await w.fake.boards()).find((b) => b.slug === 'general')!;

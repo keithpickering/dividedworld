@@ -526,6 +526,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /* ------------------------------------------------------------------ the api ---- */
+  /** The season's standings, every debuted character ranked, as standings_page pages them: by standing, ties sharing a place, then by name. In memory, so the whole of it. */
+  const ranking = (): Standing[] => {
+    const listed = [...characters.values()].filter((c) => c.debutedAt !== null).map((c) => ({ character: c.id, name: c.name, standing: standingOf.get(c.id) ?? 0 }));
+    return listed
+      .map((s): Standing => ({ ...s, place: 1 + listed.filter((o) => o.standing > s.standing).length }))
+      .sort((a, b) => a.place - b.place || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  };
   const core: Sync<KayfaApi> = {
     session: () => sessionNow(),
     onSession(listener) { sessionListeners.add(listener); return () => { sessionListeners.delete(listener); }; },
@@ -630,16 +637,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     season: () => [...seasons].sort((a, b) => b.number - a.number)[0] ?? null,
     standingAmounts: (ids) => Object.fromEntries(ids.map((id) => [id, standingOf.get(id) ?? 0])),
     standingPlace(id) {
-      const s = core.standings().find((x) => x.character === id);
+      const s = ranking().find((x) => x.character === id);
       return s ? { standing: s.standing, place: s.place, of: [...characters.values()].filter((c) => c.debutedAt !== null).length } : null;
     },
-    standings() {
-      const listed = [...characters.values()].filter((c) => c.debutedAt !== null).map((c) => ({ character: c.id, name: c.name, standing: standingOf.get(c.id) ?? 0 }));
-      return listed
-        .map((s): Standing => ({ ...s, place: 1 + listed.filter((o) => o.standing > s.standing).length }))
-        .sort((a, b) => a.place - b.place || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    },
-    standingsPage: (offset, limit) => core.standings().slice(offset, offset + limit),
+    standingsPage: (offset, limit) => ranking().slice(Math.max(0, Math.floor(offset)), Math.max(0, Math.floor(offset)) + Math.max(0, Math.min(Math.floor(limit), 1000))),
     standingsCount: () => [...characters.values()].filter((c) => c.debutedAt !== null).length,
     lastSettledAt: () => (lastSettled === null ? null : iso(lastSettled)),
     classReveals: (ids) => [...acts.values()].filter((a) => a.kind === 'unmask' && a.character !== null && ids.includes(a.character))

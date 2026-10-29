@@ -225,10 +225,10 @@ create view board_counts as
 -- ------------------------------------------------------------------ the season's standings ----
 
 -- season_standings (0021) ranks every debuted character with a window, and a filter on a character is
--- not pushed below a window, so reading one character's place through it ranks all of them. The screens
--- that show one place (a profile) or one standing per character (a page of postbits) read these instead.
--- The standings screen is the one place whose job is the whole ranking, a page of it at a time; it
--- keeps reading season_standings.
+-- not pushed below a window, so reading one character's place through it ranks all of them, and a page
+-- of it is cut from the whole ranking. The screens read these instead: a profile one place
+-- (standing_place), a page of postbits one standing per character (the standings' own rows), and the
+-- standings screen a page of the ranking (standings_page), each costing what it shows.
 
 -- How many characters have debuted: the "of" in "Place 7 of 1,204", and the standings screen's pager.
 -- A counter, kept by a trigger on a character's debut (a character created already debuted, a waiting
@@ -273,9 +273,103 @@ select backfill_debuted_count();
 -- stays unreadable by the API roles; the number is the length of a public list.
 create view season_size as select coalesce(sum(d.characters), 0)::integer as characters from debuted_count d;
 
--- A place is the number of characters standing higher, plus one; those counts are read from an index of
--- the standings by amount, so they cost the characters ahead and never rank anyone.
-create index standings_season_amount on standings (season, amount desc);
+-- The roster: a standings row for every debuted character in the season the standings read, so the
+-- characters with nothing settled are rows at 0 like any other. Without it they are the characters with
+-- no row, and the only way to page them in name order among the rows settled at 0 is to walk every
+-- debuted character by name and skip the ones whose rows say otherwise: a walk that, at a busy instance
+-- where most characters have settled something, crosses nearly all of them to find a page of zeros. With
+-- it, the whole ranking is one index (below), and a page is a range of it. A row at 0 says what no row
+-- said, so nothing the game means changes: every reader already took a missing row as 0
+-- (season_standings, standing_place, the reveal), and a row is still always a debuted character's.
+--   A debut writes its character's row in the season the standings read (the open one, else the latest),
+--   and a new season writes a row for every debuted character: once a season, in The System's job that
+--   opens it, a write as long as the cast (the reveal before it already reads every character), chosen
+--   over a page that walks the cast on every view. The settlement's upsert (0003) adds to the row.
+--   The two must not miss each other: a new season's rows are read from the characters that have
+--   debuted, and a debut not yet committed is not among them, while its own row went to the season it
+--   could see. So a debut holds the roster's lock shared until it commits, and a new season takes it
+--   exclusive, waiting for the debuts in flight and making a debut that comes after wait for it, then
+--   read the open season afresh. Debuts never wait for each other. (supabase/tests/0037-standings-page.sql.)
+--   The row carries its character's name, kept by triggers (a rename rewrites the character's rows, one
+--   per season, through the primary key), because ties are listed by name and the index must hold the
+--   order to serve a page. A character's name is public (characters_public), and only a debuted
+--   character has a row, so the column shows nothing the list does not.
+alter table standings add column name text;
+update standings s set name = c.name from characters c where c.id = s.character;
+alter table standings alter column name set not null;
+
+create function standings_take_name() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  new.name := (select c.name from characters c where c.id = new.character);
+  return new;
+end $$;
+create trigger standings_take_name before insert or update of character, name on standings for each row execute function standings_take_name();
+
+create function characters_rename_standings() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  update standings set name = new.name where season in (select id from seasons) and character = new.id;
+  return null;
+end $$;
+create trigger characters_rename_standings after update of name on characters for each row when (new.name is distinct from old.name) execute function characters_rename_standings();
+
+-- The season the standings read: the open one, else the one that started last (season_standings's choice).
+create function standings_season() returns bigint
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce((select id from seasons where ends_at is null), (select id from seasons order by starts_at desc limit 1))
+$$;
+
+-- The roster's lock, as its two keys: a pair of int4 keys is a space of its own, apart from every
+-- single-key advisory lock (the tests' barrier among them).
+create function standings_roster_lock(exclusive boolean) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if exclusive then perform pg_advisory_xact_lock(hashtext('kayfabb'), hashtext('standings roster'));
+  else perform pg_advisory_xact_lock_shared(hashtext('kayfabb'), hashtext('standings roster'));
+  end if;
+end $$;
+
+create function characters_join_standings() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if new.debuted_at is not null and (tg_op = 'INSERT' or old.debuted_at is null) then
+    perform standings_roster_lock(false);
+    -- A statement of its own after the lock, so it reads the season a season that committed meanwhile opened.
+    insert into standings (character, season, amount) select new.id, standings_season(), 0 where standings_season() is not null
+    on conflict (season, character) do nothing;
+  end if;
+  return null;
+end $$;
+create trigger characters_join_standings after insert or update of debuted_at on characters for each row execute function characters_join_standings();
+
+create function seasons_open_standings() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform standings_roster_lock(true);
+  insert into standings (character, season, amount) select c.id, new.id, 0 from characters c where c.debuted_at is not null
+  on conflict (season, character) do nothing;
+  return null;
+end $$;
+create trigger seasons_open_standings after insert on seasons for each row execute function seasons_open_standings();
+
+-- For characters that debuted before the roster: their rows in the season the standings read. None on a
+-- fresh instance (no characters), so an import still finds its tables empty. Kept as a function so a
+-- test can replay it; not callable by the API roles.
+create function backfill_standings_roster() returns void
+language sql set search_path = public, pg_temp as $$
+  insert into standings (character, season, amount) select c.id, standings_season(), 0 from characters c
+  where c.debuted_at is not null and standings_season() is not null
+  on conflict (season, character) do nothing
+$$;
+select backfill_standings_roster();
+
+-- The standings in the order they are listed: by amount, highest first, then by name, so a page is a
+-- range of it (standings_page, below). A place is the number of characters standing higher,
+-- plus one; those counts are read from the same index, so they cost the characters ahead and never rank
+-- anyone. The price is an index entry rewritten on every settled change to a standing, which the plain
+-- (season, amount) index this replaces paid as well.
+create index standings_season_amount on standings (season, amount desc, name);
 
 -- One debuted character's standing, its place and the number of characters, as season_standings would
 -- say them: {standing, place, of}, or null for a character that has not debuted or does not exist (one
@@ -306,6 +400,51 @@ begin
   end if;
   return jsonb_build_object('standing', mine, 'place', ahead + 1, 'of', size);
 end $$;
+
+-- A page of the season's standings, as season_standings lists them ordered by place and then name: the
+-- same rows, in the same order, with the same places (ties share a place, and the next place skips), for
+-- the same season. Public, as season_standings is: a character, its name, its standing and its place,
+-- never a player, a class or a reaction, and nothing in it is computed from who plays a character.
+-- Every debuted character has a row (the roster, above), so a character with nothing settled is a row at
+-- 0 and debts are rows below it, and no character is read. Three ranges of standings_season_amount:
+--   - the page's first row, found by skipping the offset in the index alone (amount and name are in it),
+--     so a page deep in a busy season costs its offset in index entries, as any page of a list does,
+--     and never a ranking of the season;
+--   - the page itself, read from that row on: the rest of its amount by name, then the amounts below it,
+--     each in index order and each stopping at the page's length;
+--   - when the first row's amount began on an earlier page, the rows above it, counted as standing_place
+--     counts them (at most the offset), for its place.
+-- A place is computed for the page alone: a row whose amount first appears on the page stands at its
+-- position, and the first row's amount at the count above it, plus one. At most 1,000 rows, as many as a
+-- read of a table returns; a negative offset or limit is 0, and an offset past the end is no rows.
+create function standings_page(page_offset integer, page_limit integer)
+returns table ("character" uuid, name text, standing integer, place bigint)
+language sql stable security definer set search_path = public, pg_temp as $$
+  with start as materialized (
+    select s.amount, s.name from standings s
+    where s.season = (select standings_season())
+    order by s.amount desc, s.name
+    offset greatest(page_offset, 0) limit 1
+  ), page as materialized (
+    select x.character, x.name, x.amount, row_number() over (order by x.amount desc, x.name) as n
+    from ((select s.character, s.name, s.amount from standings s
+           where s.season = (select standings_season()) and s.amount = (select amount from start) and s.name >= (select name from start)
+           order by s.name limit least(greatest(page_limit, 0), 1000))
+          union all
+          (select s.character, s.name, s.amount from standings s
+           where s.season = (select standings_season()) and s.amount < (select amount from start)
+           order by s.amount desc, s.name limit least(greatest(page_limit, 0), 1000))) x
+    order by x.amount desc, x.name
+    limit least(greatest(page_limit, 0), 1000)
+  ), head as materialized (
+    select p.amount, 1 + (select count(*) from standings x where x.season = (select standings_season()) and x.amount > p.amount) as place
+    from page p where p.n = 1
+  )
+  select p.character, p.name, p.amount,
+         case when p.amount = h.amount then h.place else greatest(page_offset, 0) + min(p.n) over (partition by p.amount) end
+  from page p cross join head h
+  order by p.n
+$$;
 
 -- ------------------------------------------------------------- a character's post count ----
 
@@ -365,7 +504,9 @@ grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_li
 create policy read_all on character_post_counts for select to authenticated using (true);
 grant select on screen_settings to anon, authenticated;
 revoke execute on function backfill_thread_counters(), backfill_character_post_counts(), acts_count_character(),
-  backfill_board_counts(), threads_count_board(), boards_make_thread_counts(), backfill_debuted_count(), characters_count_debuted(), standing_place(uuid) from public, anon, authenticated;
-grant execute on function standing_place(uuid) to authenticated;
+  backfill_board_counts(), threads_count_board(), boards_make_thread_counts(), backfill_debuted_count(), characters_count_debuted(), standing_place(uuid),
+  standings_take_name(), characters_rename_standings(), standings_season(), standings_roster_lock(boolean), characters_join_standings(), seasons_open_standings(),
+  backfill_standings_roster(), standings_page(integer, integer) from public, anon, authenticated;
+grant execute on function standing_place(uuid), standings_page(integer, integer) to authenticated;
 
 commit;

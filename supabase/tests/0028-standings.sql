@@ -14,7 +14,8 @@ declare
   open_season bigint := (select id from seasons where ends_at is null);
   s timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
 begin
-  insert into standings (character, season, amount) values (a, open_season, 2000000000), (b, open_season, 1900000000), (c, open_season, 1900000000);
+  insert into standings (character, season, amount) values (a, open_season, 2000000000), (b, open_season, 1900000000), (c, open_season, 1900000000)
+  on conflict (season, character) do update set amount = excluded.amount;  -- a debut wrote each a row at 0 (0030's roster)
   insert into characters (owner, name, created_at) values (ann, 'Stand Waiting', s + interval '1 hour') returning id into waiting;
 
   perform tests.become(bob);

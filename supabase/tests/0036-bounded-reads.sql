@@ -104,7 +104,8 @@ declare
 begin
   insert into standings (character, season, amount) values
     (top, open_season, 900), (tied_a, open_season, 300), (tied_b, open_season, 300), (zero_row, open_season, 0),
-    (owes, open_season, -200), (owes_more, open_season, -700), (owes_same, open_season, -200);
+    (owes, open_season, -200), (owes_more, open_season, -700), (owes_same, open_season, -200)
+  on conflict (season, character) do update set amount = excluded.amount;  -- a debut wrote each a row at 0 (0030's roster)
   insert into characters (owner, name, created_at) values (ann, 'Sp Waiting', now()) returning id into waiting;
   select count(*) into total from season_standings;
 
@@ -160,7 +161,13 @@ declare
   fn text := (select prosrc from pg_proc where proname = 'standing_place');
 begin
   perform tests.post(a, th, 'One');
-  insert into standings (character, season, amount) values (a, open_season, mine);
+  insert into standings (character, season, amount) values (a, open_season, mine) on conflict (season, character) do update set amount = excluded.amount;
+  -- A season with a cast, and its statistics: on a table of a few rows whose statistics were never gathered,
+  -- a probe of two characters by the primary key and a walk of the season's rows in standings_season_amount
+  -- cost the planner the same, and it picks either. With 200 characters' rows it costs them as a busy
+  -- instance would, which is the choice this asks about. (Every debuted character has a row: 0030's roster.)
+  perform tests.character(tests.account(format('ix-cast-%s', g)), format('Ix Cast %s', g)) from generate_series(1, 200) g;
+  analyze standings;
   set local enable_seqscan = off;
 
   -- A page of postbits' standings: the standings' primary key, one probe per character.
@@ -194,8 +201,7 @@ begin
   plan := pg_temp.plan_of('select characters from season_size');
   if plan ~ 'Seq Scan on characters|Seq Scan on standings' then raise exception 'the season size is read from the counter, never counted: %', plan; end if;
 
-  -- The standings screen is the one read that ranks everyone, a page of it at a time. Its plan reads every
-  -- debuted character (a window over all of them), which is the screen's job; it is not asserted bounded.
+  -- The standings screen's page (standings_page) is held to the same in supabase/tests/0037-standings-page.sql.
 
   -- The checks above go red when the index is withheld: with standings_season_amount dropped, the same
   -- count is served by the season's primary-key range plus a filter (every row of the season), and the

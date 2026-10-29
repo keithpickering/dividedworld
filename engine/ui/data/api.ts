@@ -150,7 +150,7 @@ export interface Character {
   readonly joined: string;
 }
 
-/** A character's season standing (season_standings) and when it was last settled. */
+/** A character's season standing and its place, as a page of the standings lists it (standings_page). */
 export interface Standing {
   readonly character: Id;
   readonly name: string;
@@ -396,9 +396,11 @@ export interface KayfaApi {
   /** Every thread asked about, 0 where none has been counted yet (the count moves hourly, never live). */
   viewCounts(threads: readonly Id[]): Promise<Readonly<Record<Id, number>>>;
   season(): Promise<Season | null>;
-  /** The open season's standings, every debuted character, ranked. */
-  standings(): Promise<readonly Standing[]>;
-  /** A page of the open season's standings, as `standings` ranks them, empty past the end (the whole season is never read at once). */
+  /**
+   * A page of the open season's standings: every debuted character, ranked by standing (ties share a place, and the next
+   * place skips), then by name; at most 1,000 rows, empty past the end. The whole season is never read at once, and a
+   * page costs the page on the server (one range of an index, never a ranking of the season).
+   */
   standingsPage(offset: number, limit: number): Promise<readonly Standing[]>;
   /**
    * The open season's standing of each character asked about, and nothing else: 0 for one with no standings row (a debuted

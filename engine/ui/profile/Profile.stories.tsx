@@ -31,7 +31,7 @@ const full: World = (fake, instance) => {
 function Top({ record }: { readonly record?: boolean }) {
   const { api } = useKayfa();
   const [id, setId] = useState<string | null>(null);
-  useEffect(() => { void api.standings().then((r) => setId(r[0]?.character ?? 'nobody')); }, [api]);
+  useEffect(() => { void api.standingsPage(0, 1).then((r) => setId(r[0]?.character ?? 'nobody')); }, [api]);
   if (id === null) return null;
   return record ? <RecordScreen id={id} /> : <ProfileScreen id={id} />;
 }

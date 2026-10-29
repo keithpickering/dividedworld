@@ -359,12 +359,12 @@ describe('making a character', () => {
     const made = must(await fake.createCharacter('Newcomer', 'lurker', 'tally', 'with_class'));
     expect(made).toMatchObject({ name: 'Newcomer', class: 'lurker', waiting: true, loudness: 'with_class' });
     expect(await fake.characters([made.id])).toEqual([]);
-    expect((await fake.standings()).map((s) => s.character)).not.toContain(made.id);
+    expect((await fake.standingsPage(0, 1000)).map((s) => s.character)).not.toContain(made.id);
     expect(await fake.characterCounts(made.id)).toEqual({ posts: 0, spins: 0, cards: 0 });
     expect((await fake.myCharacters()).find((c) => c.id === made.id)).toMatchObject({ debutedAt: null, class: 'lurker', debutLoudness: 'with_class' });
     fake.seed.settle({});
     expect((await fake.characters([made.id])).map((c) => c.name)).toEqual(['Newcomer']);
-    expect((await fake.standings()).map((s) => s.character)).toContain(made.id);
+    expect((await fake.standingsPage(0, 1000)).map((s) => s.character)).toContain(made.id);
   });
   test('dropped now it is debuted; a debuted character cannot be re-timed', async () => {
     const { fake } = world();
@@ -379,7 +379,7 @@ describe('standings', () => {
     const { fake, ana, anaFace, anaHeel, boFace } = world();
     fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
     fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500 }, debut: false });
-    expect((await fake.standings()).map((s) => [s.name, s.standing, s.place])).toEqual([
+    expect((await fake.standingsPage(0, 1000)).map((s) => [s.name, s.standing, s.place])).toEqual([
       ['Bo Face', 500, 1], ['Ana Face', 300, 2], ['Ana Heel', 300, 2],
     ]);
     expect(await fake.lastSettledAt()).toBe(new Date(fake.clock.now()).toISOString());
@@ -394,7 +394,7 @@ describe('what the public reads never prove', () => {
     const ids = [anaFace, boFace];
     const everything = JSON.stringify([
       await fake.boards(), await fake.threads(await boardId(fake, 'general'), { offset: 0, limit: 9 }), await fake.acts(thread, 1, 9),
-      await fake.characters(ids), await fake.standings(), await fake.tallies([opener]), await fake.classReveals(ids), await fake.turnsAnnounced(ids),
+      await fake.characters(ids), await fake.standingsPage(0, 1000), await fake.tallies([opener]), await fake.classReveals(ids), await fake.turnsAnnounced(ids),
       await fake.characterActs(anaFace, ['post'], { offset: 0, limit: 9 }), await fake.viewCounts([thread]),
     ]);
     for (const secret of [ana, bo, fake.emailOf(ana), fake.emailOf(bo)]) expect(everything).not.toContain(secret);
@@ -778,7 +778,7 @@ describe('a place and a standing, read for one character or a page of them', () 
     const { fake, ana, anaFace, anaHeel, boFace } = world();
     const waiting = fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
     fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: -40 }, debut: false });
-    const all = await fake.standings();
+    const all = await fake.standingsPage(0, 1000);
     for (const s of all) expect(await fake.standingPlace(s.character)).toEqual({ standing: s.standing, place: s.place, of: all.length });
     expect((await fake.standingPlace(boFace))?.place).toBe(all.length);
     expect(await fake.standingPlace(waiting)).toBeNull();
@@ -812,17 +812,26 @@ describe('a character\'s season reveal posts and the season\'s size', () => {
 
   test('standingsCount is the number of debuted characters, as the standings list them', async () => {
     const { fake, ana } = world();
-    const before = (await fake.standings()).length;
+    const before = (await fake.standingsPage(0, 1000)).length;
     fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
     expect(await fake.standingsCount()).toBe(before);
   });
 });
 
 describe('a page of the standings', () => {
-  test('standingsPage is a slice of the ranking, and empty past the end', async () => {
-    const { fake } = world();
-    const all = await fake.standings();
-    expect(await fake.standingsPage(1, 2)).toEqual(all.slice(1, 3));
-    expect(await fake.standingsPage(all.length + 5, 2)).toEqual([]);
+  test('standingsPage pages the ranking as standings_page does: ties share a place across a page boundary, nothing settled stands at 0, debts last, empty past the end', async () => {
+    const { fake, bo, anaFace, anaHeel, boFace } = world();
+    const boHeel = fake.seed.character(bo, 'Bo Heel', 'heel');
+    const boLurk = fake.seed.character(bo, 'Bo Lurk', 'lurker');
+    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500, [boHeel]: -40 }, debut: false });
+    const row = (s: { name: string; standing: number; place: number }) => [s.name, s.standing, s.place];
+    expect((await fake.standingsPage(0, 2)).map(row)).toEqual([['Bo Face', 500, 1], ['Ana Face', 300, 2]]);
+    expect((await fake.standingsPage(2, 2)).map(row)).toEqual([['Ana Heel', 300, 2], ['Bo Lurk', 0, 4]]);
+    expect((await fake.standingsPage(4, 2)).map(row)).toEqual([['Bo Heel', -40, 5]]);
+    expect((await fake.standingsPage(4, 2))[0]?.character).toBe(boHeel);
+    expect((await fake.standingsPage(3, 1))[0]?.character).toBe(boLurk);
+    expect(await fake.standingsPage(5, 2)).toEqual([]);
+    expect(await fake.standingsPage(50, 2)).toEqual([]);
+    expect(await fake.standingsPage(0, 0)).toEqual([]);
   });
 });
