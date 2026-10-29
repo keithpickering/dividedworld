@@ -167,6 +167,12 @@ begin
     'turns', (select jsonb_agg(jsonb_build_object('character', gen_random_uuid(), 'name', 'Mask ' || g || '.' || k, 'loudness', 'announced')) from generate_series(1, 20) k))
   from generate_series(1, 3000) g;
   insert into acts (character, kind, thread, payload) select poster, 'post', posts_in, '{"body": "Again."}' from generate_series(1, 20000);
+  -- The tallies just written sit in the GIN index's pending list, which the planner prices as read on every
+  -- probe. A busy instance's autovacuum moves it into the index as it goes, and the tallies here would not be
+  -- one fresh batch; so it is flushed, as that would. Left in place, the plan depends on what VACUUM last saw:
+  -- with the index's statistics from an earlier VACUUM (any file before this one can leave them), the
+  -- pending pages price each probe above a walk of every tally, and the check below goes red at random.
+  perform gin_clean_pending_list('acts_tally_turns');
   analyze acts;
   set local enable_seqscan = off;
   p := pg_temp.plan_of('select * from class_reveals where character in ' || page);
