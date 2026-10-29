@@ -83,6 +83,9 @@ begin
       and (has_table_privilege('authenticated', format('public.%I', u.view_name), 'select') or has_table_privilege('anon', format('public.%I', u.view_name), 'select'))
       and (u.table_name, u.column_name) in (('characters', 'owner'), ('class_history', 'class_key'), ('accounts', 'id'),
                                             ('reactions', 'reactor_account'), ('reactions', 'reactor_character'))
+      -- my_reactions (0018) reads who reacted only to keep each caller to their own reactions,
+      -- through their own masks; 0024-reading.sql holds that it shows nobody else's.
+      and not (u.view_name = 'my_reactions' and u.table_name = 'reactions')
   loop
     leaks := leaks || format(' %s reads %s.%s;', r.view_name, r.table_name, r.column_name);
   end loop;

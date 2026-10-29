@@ -10,6 +10,7 @@ const settings: Settings = {
   reactionCap: 3,
   charactersPerPlayer: 6,
   settlementCron: '17 8 * * *',
+  viewCountCron: '41 * * * *',
   seasonLength: { unit: 'month', count: 3 },
   turnCooldown: { unit: 'day', count: 30 },
   registrationMode: 'invite',
@@ -51,6 +52,12 @@ test('a card\'s stack is a whole number, at least 1', () => {
   assert.deepEqual(instanceProblems(card(3)), []);
   assert.deepEqual(instanceProblems(card(undefined)), []);
   for (const bad of [0, 1.5, '3', -1]) assert.match(instanceProblems(card(bad)).join('\n'), /card "splat" stacks .*; a stack is a whole number, at least 1/, String(bad));
+});
+
+test('the view counts are recounted on a cron of their own', () => {
+  const { viewCountCron: _gone, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "viewCountCron" is missing/);
+  assert.match(settingsProblems({ ...settings, viewCountCron: 'hourly' }).join('\n'), /viewCountCron/);
 });
 
 test('two reactions with one key are a problem', () => {

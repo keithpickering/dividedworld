@@ -52,6 +52,11 @@ export interface Settings {
   /** When The System settles, as a five-field cron expression in UTC. */
   readonly settlementCron: string;
   /**
+   * When each thread's view count is recounted, as a five-field cron expression in UTC: hourly by
+   * default, never live, since a live count says whether a new poster's player had already read.
+   */
+  readonly viewCountCron: string;
+  /**
    * How long one settlement window is: a day for a daily settlement. The cron says when a run
    * comes; this says how finely it settles, each missed length its own window, a window settled
    * once its whole length has passed. A season's first window, where it did not begin at a

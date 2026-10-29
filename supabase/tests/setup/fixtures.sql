@@ -13,6 +13,7 @@ insert into settings (key, value) values
   ('vote', '10'),
   ('halving', '0.5'),
   ('settlementCron', '"17 8 * * *"'),
+  ('viewCountCron', '"41 * * * *"'),
   ('settlementLength', '{"unit": "day", "count": 1}'),
   -- Long enough that no file's settlement ends the season by chance; a file that reveals one sets its own.
   ('seasonLength', '{"unit": "month", "count": 1000}'),
