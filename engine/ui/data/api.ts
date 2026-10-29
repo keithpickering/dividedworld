@@ -381,6 +381,8 @@ export interface KayfaApi {
   season(): Promise<Season | null>;
   /** The open season's standings, every debuted character, ranked. */
   standings(): Promise<readonly Standing[]>;
+  /** A page of the open season's standings, as `standings` ranks them, empty past the end (the whole season is never read at once). */
+  standingsPage(offset: number, limit: number): Promise<readonly Standing[]>;
   /** The open season's standings of those characters only, as `standings` ranks them (a place counts the whole season's), so a page of postbits never reads it all. */
   standingsOf(ids: readonly Id[]): Promise<readonly Standing[]>;
   /** How many characters the season's standings list: one head count, never the rows. */

@@ -140,7 +140,13 @@ describe('the row', () => {
     expect(row).toHaveTextContent('Spritey');
     expect(within(row).getByRole('link', { name: 'Pipewrench' })).toHaveAttribute('href', `/c/${seeded.mine}`);
     expect(within(row).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${seeded.spritey}`);
-    expect(within(row).getByRole('link', { name: 'Latest post in Thread 001' })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=3#post-5`);
+    /* WCAG 2.5.3: the link's name holds its visible text (the time), then says where it goes. */
+    const latest = within(row).getByRole('link', { name: /latest post in Thread 001/u });
+    expect(latest).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=3#post-5`);
+    expect(latest).not.toHaveAttribute('aria-label');
+    expect(latest.getAttribute('href')).toBeTruthy();
+    expect(latest.textContent!.startsWith(latest.querySelector('time')!.textContent!)).toBe(true);
+    expect(within(latest).getByText(/latest post in Thread 001/u)).toHaveClass('kb-visually-hidden');
     expect(within(row).getByRole('link', { name: 'Page 2 of Thread 001' })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=2`);
   });
 });

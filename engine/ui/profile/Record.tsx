@@ -7,11 +7,14 @@
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { ActKind, Id } from '../data/api.ts';
-import { Ago, SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
+import { Ago, PageLinks, SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { RECORD_KINDS, RECORD_LABELS, RECORD_PAGE, actRow, newest, recordKind, revealRow, seasonRow, turnLinks, turnRow, type RecordKind, type RecordRow, type Words } from './record.ts';
 import { useCharacter } from './useCharacter.ts';
 import './profile.css';
+
+/** A page number past any real record is read as this one: an offset the server answers plainly. */
+const MAX_PAGE = 10_000;
 
 export const recordHref = (id: Id, kind: RecordKind, page = 1): string => {
   const q = new URLSearchParams();
@@ -30,7 +33,7 @@ export function RecordScreen({ id }: { readonly id: Id }) {
   const signedIn = useSignedIn(api);
   const { query } = useLocation();
   const kind = recordKind(query.get('kind'));
-  const page = Math.max(1, Number.parseInt(query.get('page') ?? '', 10) || 1);
+  const page = Math.min(MAX_PAGE, Math.max(1, Number.parseInt(query.get('page') ?? '', 10) || 1));
   const found = useCharacter(api, id);
   const [loaded, setLoaded] = useState<Loaded>({ status: 'loading' });
 
@@ -98,16 +101,7 @@ function Rows({ id, kind, page, rows, total }: { readonly id: Id; readonly kind:
             </tbody>
           </table>
         )}
-      <nav className="kb-pager kb-small" aria-label="Pages of the record">
-        <span className="kb-pager-where">Page {page} of {pages}</span>
-        {page > 1 && page <= pages && <Link to={recordHref(id, kind, page - 1)}>Previous page</Link>}
-        {page > pages && <Link to={recordHref(id, kind, 1)}>First page</Link>}
-        {pageList(Math.min(page, pages), pages).map((p, i) => (p === null
-          ? <span key={`gap${i}`} aria-hidden="true">…</span>
-          : p === page ? <span key={p} className="kb-pager-here" aria-current="page">{p}</span>
-            : <Link key={p} to={recordHref(id, kind, p)} aria-label={`Page ${p}`}>{p}</Link>))}
-        {page < pages && <Link to={recordHref(id, kind, page + 1)}>Next page</Link>}
-      </nav>
+      <PageLinks label="Pages of the record" page={page} pages={pages} href={(p) => recordHref(id, kind, p)} />
     </>
   );
 }

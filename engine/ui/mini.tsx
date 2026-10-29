@@ -66,3 +66,19 @@ export function pageList(current: number, total: number): readonly (number | nul
   });
   return out;
 }
+
+/** The pager of a list that is paged by a link: "Page 2 of 7", Previous, the page numbers, Next; past the end it offers the first page. */
+export function PageLinks({ label, page, pages, href }: { readonly label: string; readonly page: number; readonly pages: number; readonly href: (page: number) => string }) {
+  return (
+    <nav className="kb-pager kb-small" aria-label={label}>
+      <span className="kb-pager-where">Page {page} of {pages}</span>
+      {page > 1 && page <= pages && <Link to={href(page - 1)}>Previous page</Link>}
+      {page > pages && <Link to={href(1)}>First page</Link>}
+      {pageList(Math.min(page, pages), pages).map((p, i) => (p === null
+        ? <span key={`gap${i}`} aria-hidden="true">…</span>
+        : p === page ? <span key={p} className="kb-pager-here" aria-current="page">{p}</span>
+          : <Link key={p} to={href(p)} aria-label={`Page ${p}`}>{p}</Link>))}
+      {page < pages && <Link to={href(page + 1)}>Next page</Link>}
+    </nav>
+  );
+}

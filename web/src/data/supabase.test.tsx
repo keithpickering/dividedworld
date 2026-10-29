@@ -102,7 +102,7 @@ describe('what the adapter may request', () => {
     const api = h.api;
     await Promise.allSettled([
       api.settings(), api.boards(), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10),
-      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.tallies([A]), api.viewCounts([T]), api.season(),
+      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.standings(), api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
@@ -195,6 +195,23 @@ describe('reads and their rows', () => {
     const [req] = h.to('season_standings');
     expect(req?.method).toBe('HEAD');
     expect(h.rest()).toHaveLength(1);
+  });
+
+  it('reads a page of the standings with a range, so a season past the row cap is never cut', async () => {
+    const h = harness(() => rows([{ character: B, name: 'Bea', standing: 300, place: 1201 }]));
+    expect(await h.api.standingsPage(1200, 50)).toEqual([{ character: B, name: 'Bea', standing: 300, place: 1201 }]);
+    const [req] = h.to('season_standings');
+    expect(req?.url.searchParams.get('offset')).toBe('1200');
+    expect(req?.url.searchParams.get('limit')).toBe('50');
+    expect(req?.url.searchParams.get('order')).toBe('place.asc,name.asc');
+  });
+
+  it('answers a range past the end with no rows, not an error (PostgREST says 416)', async () => {
+    const past = { code: 'PGRST103', message: 'Requested range not satisfiable', details: 'An offset of 99 was requested, but there are only 3 rows.' };
+    const h = harness((r) => (r.method === 'HEAD' ? json([], 200, { 'content-range': '*/3' }) : json(past, 416, { 'content-range': '*/3' })));
+    expect(await h.api.characterActs(B, ['post'], { offset: 1980, limit: 20 })).toEqual({ acts: [], total: 3 });
+    const h2 = harness(() => json(past, 416, { 'content-range': '*/3' }));
+    expect(await h2.api.standingsPage(99, 50)).toEqual([]);
   });
 
   it('reads a thread range from acts_public by seq, leaving edits out', async () => {

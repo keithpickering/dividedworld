@@ -16,7 +16,6 @@ import type { Act } from '../data/api.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { figure } from '../characters/format.ts';
 import { Pips } from '../postbit/Postbit.tsx';
-import { shortDate } from '../postbit/dates.ts';
 import { Link } from '../router.tsx';
 import { BbCode } from '../bbcode/render.tsx';
 import { statements, wording } from './statements.ts';
@@ -115,7 +114,6 @@ export function RevealPost({ act }: { readonly act: Act }) {
   const rank = instance.ranks[index]?.name ?? '';
   const pips = ui.pips?.default;
   const shown = statements(payload.shown);
-  const turns = shown.filter((s) => s.kind === 'turn');
   return (
     <section className="kb-reveal-post kb-system-post" aria-label={`${name} in the season's reveal`}>
       <p className="kb-reveal-line">
@@ -129,8 +127,7 @@ export function RevealPost({ act }: { readonly act: Act }) {
         ? <p className="kb-small kb-muted">Its player made nothing about its class public.</p>
         : (
           <ul className="kb-reveal-stated kb-small">
-            {shown.filter((s) => s.kind === 'reveal' || s.class !== null).map((s, i) => <li key={`s${i}`}>{wording(s, className).replace(/^./u, (c) => c.toUpperCase())}</li>)}
-            {turns.map((s, i) => <li key={`t${i}`}>Announced a Turn on {shortDate(s.at)}</li>)}
+            {shown.map((s, i) => <li key={i}>{wording(s, className).replace(/^./u, (c) => c.toUpperCase())}</li>)}
           </ul>
         )}
     </section>

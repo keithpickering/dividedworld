@@ -51,6 +51,24 @@ describe('the season standings', () => {
     expect(row).toHaveTextContent('0.00');
   });
 
+  test('pages fifty to a page with ?page=, linked, from one count', async () => {
+    const fake = buildWorld();
+    const account = fake.seed.account('x');
+    for (let i = 0; i < 120; i++) fake.seed.character(account, `Name ${String(i).padStart(3, '0')}`, 'face', { at: T0 });
+    fake.signInAs(account);
+    renderIn(fake, <StandingsScreen />, { path: '/standings?page=3' });
+    await waitFor(() => expect(screen.getAllByRole('row').length).toBe(21));
+    expect(screen.getByText(/Page 3 of 3/u)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Previous page' })).toHaveAttribute('href', '/standings?page=2');
+  });
+
+  test('a page past the end is plain and links back to the first', async () => {
+    const w = world();
+    renderIn(w.fake, <StandingsScreen />, { path: '/standings?page=99' });
+    expect(await screen.findByText('Nothing on this page.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'First page' })).toHaveAttribute('href', '/standings');
+  });
+
   test('an empty season says so, and a signed-out visitor is asked to sign in', async () => {
     const fake = buildWorld();
     fake.signInAs(fake.seed.account('x'));

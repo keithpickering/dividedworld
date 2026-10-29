@@ -25,6 +25,11 @@ describe('the index', () => {
     expect(row).toHaveTextContent('Anything.');
     expect(within(row).getByText('2', { selector: '.kb-num' })).toBeInTheDocument();
     expect(row).toHaveTextContent('Spritey');
+    expect(within(row).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', expect.stringMatching(/^\/c\//u));
+    /* WCAG 2.5.3: the time link's name starts with its visible text and says where it goes. */
+    const latest = within(row).getByRole('link', { name: /latest post in General/u });
+    expect(latest).not.toHaveAttribute('aria-label');
+    expect(latest.textContent!.startsWith(latest.querySelector('time')!.textContent!)).toBe(true);
     const system = screen.getAllByRole('link', { name: 'The System' })[0]!.closest('tr')!;
     expect(system).toHaveTextContent('The System posts; you react and spin');
     expect(system).toHaveTextContent('The System');

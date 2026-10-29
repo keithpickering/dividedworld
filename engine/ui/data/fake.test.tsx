@@ -781,3 +781,12 @@ describe('a character\'s season reveal posts and the season\'s size', () => {
     expect(await fake.standingsCount()).toBe(before);
   });
 });
+
+describe('a page of the standings', () => {
+  test('standingsPage is a slice of the ranking, and empty past the end', async () => {
+    const { fake } = world();
+    const all = await fake.standings();
+    expect(await fake.standingsPage(1, 2)).toEqual(all.slice(1, 3));
+    expect(await fake.standingsPage(all.length + 5, 2)).toEqual([]);
+  });
+});

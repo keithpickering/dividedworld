@@ -636,6 +636,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .map((s): Standing => ({ ...s, place: 1 + listed.filter((o) => o.standing > s.standing).length }))
         .sort((a, b) => a.place - b.place || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     },
+    standingsPage: (offset, limit) => core.standings().slice(offset, offset + limit),
     standingsCount: () => [...characters.values()].filter((c) => c.debutedAt !== null).length,
     lastSettledAt: () => (lastSettled === null ? null : iso(lastSettled)),
     classReveals: (ids) => [...acts.values()].filter((a) => a.kind === 'unmask' && a.character !== null && ids.includes(a.character))

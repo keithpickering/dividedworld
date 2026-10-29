@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { RecordScreen } from './Record.tsx';
@@ -87,6 +87,15 @@ describe('the full public record', () => {
     open(fake, w.spritey, '?page=99');
     expect(await screen.findByText('Nothing on this page.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'First page' })).toBeInTheDocument();
+  });
+
+  test('an absurd page number is read as a sane one', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    const spy = vi.spyOn(fake, 'characterActs');
+    open(fake, w.spritey, '?page=99999999999');
+    await screen.findByText('Nothing on this page.');
+    expect(spy.mock.calls[0]![2].offset).toBeLessThanOrEqual(10_000 * 20);
   });
 
   test('a character that does not exist is not found', async () => {

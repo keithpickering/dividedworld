@@ -52,9 +52,42 @@ describe('a character\'s post in the season\'s reveal', () => {
   test('every Turn is listed, one that named no class too, and no class is guessed for it', async () => {
     show(reveal({ shown: [{ kind: 'turn', act: 'x', at: OCT20 }] }));
     const post = await screen.findByRole('region', { name: /in the season's reveal/u });
-    expect(post).toHaveTextContent('Announced a Turn on Oct 20');
+    expect(post).toHaveTextContent('A Turn on Oct 20');
     expect(screen.queryByRole('img', { name: /Classes its player made public/u })).toBeNull();
     expect(post).not.toHaveTextContent(/Face|Heel/u);
+  });
+
+  test('a Turn that named its old class is listed once, in the words of the bar', async () => {
+    show(reveal({ shown: [{ kind: 'turn', act: 'x', at: OCT20, was: 'face', since: '2026-10-01T12:00:00Z' }] }));
+    const post = await screen.findByRole('region', { name: /in the season's reveal/u });
+    expect(post).not.toHaveTextContent('Announced a Turn');
+    const items = within(post).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent('Face, from Oct 1 until its Turn on Oct 20');
+  });
+
+  test('a silent-named Turn is one row: "A Turn on Oct 20"', async () => {
+    show(reveal({ shown: [{ kind: 'turn', act: 'x', at: OCT20 }] }));
+    const post = await screen.findByRole('region', { name: /in the season's reveal/u });
+    const items = within(post).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent('A Turn on Oct 20');
+    expect(post).not.toHaveTextContent('Announced a Turn');
+  });
+
+  test('a reveal and a Turn that says the same class since the same day are one segment, not two', async () => {
+    show(reveal({
+      shown: [
+        { kind: 'reveal', act: 'y', at: '2026-10-01T12:00:00Z', class: 'face', via: 'act' },
+        { kind: 'turn', act: 'x', at: OCT20, was: 'face', since: '2026-10-01T12:00:00Z' },
+      ],
+    }));
+    const bar = await screen.findByRole('img', { name: /Classes its player made public/u });
+    expect(bar.querySelectorAll('[data-kb-class]')).toHaveLength(1);
+    const described = bar.getAttribute('aria-label')!;
+    expect(described).toContain('Face');
+    expect(described).toContain('Oct 20');
+    expect(described.match(/Face/gu)).toHaveLength(1);
   });
 
   test('a character that made nothing public shows no class at all', async () => {

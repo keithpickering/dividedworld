@@ -188,7 +188,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const transport = (r: Res) => r.error !== null && (r.status === 0 || r.status >= 500);
 
   /** A read, retried once on the request itself when it failed in transport; a second failure throws plain words. */
-  async function read(run: () => PromiseLike<unknown>): Promise<Res> {
+  async function read(run: () => PromiseLike<unknown>, pastEnd = false): Promise<Res> {
     const once = async (): Promise<Res> => {
       try {
         return (await run()) as Res;
@@ -198,7 +198,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     };
     let r = await once();
     if (transport(r)) r = await once();
-    if (r.error) throw new Error(NOT_READ);
+    /* A range that starts past the end is PostgREST's 416: for a page, that is an empty page. */
+    if (r.error && !(pastEnd && r.status === 416)) throw new Error(NOT_READ);
     return r;
   }
   const list = async (run: () => PromiseLike<unknown>): Promise<Row[]> => {
@@ -534,7 +535,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (kinds.length === 0 || page.limit <= 0) return { acts: [], total: 0 };
       const r = await read(() =>
         client.from('acts_public').select('*', { count: 'exact' }).eq('character', id).in('kind', [...kinds]).order('created_at', { ascending: false }).range(page.offset, page.offset + page.limit - 1),
-      );
+      true);
+      if (r.error) return { acts: [], total: await count(() => client.from('acts_public').select('id', { count: 'exact', head: true }).eq('character', id).in('kind', [...kinds])) };
       const rows = Array.isArray(r.data) ? (r.data as Row[]) : [];
       return { acts: rows.map(toAct), total: r.count ?? rows.length };
     },
@@ -566,6 +568,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async standings() {
       const rows = await list(() => client.from('season_standings').select('character,name,standing,place').order('place', { ascending: true }).order('name', { ascending: true }));
       return rows.map((r): Standing => ({ character: r['character'], name: r['name'], standing: num(r['standing']), place: num(r['place']) }));
+    },
+    async standingsPage(offset, limit) {
+      if (limit <= 0) return [];
+      const r = await read(() => client.from('season_standings').select('character,name,standing,place').order('place', { ascending: true }).order('name', { ascending: true }).range(offset, offset + Math.min(limit, ROW_CAP) - 1), true);
+      const rows = !r.error && Array.isArray(r.data) ? (r.data as Row[]) : [];
+      return rows.map((x): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: num(x['place']) }));
     },
     async standingsOf(ids) {
       if (ids.length === 0) return [];

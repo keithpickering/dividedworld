@@ -15,6 +15,8 @@ export interface Statement {
   readonly at: string;
   /** For a Turn that named its old class: since when the character had been it, when that was said. */
   readonly since: string | null;
+  /** For a reveal that a later Turn announced it had left: the Turn's date (the two are one statement of one stretch). */
+  readonly until?: string;
 }
 
 const text = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
@@ -35,13 +37,23 @@ export function statements(shown: unknown): readonly Statement[] {
       out.push({ kind: 'turn', class: text(row.was), at, since: text(row.since) });
     }
   }
+  /* A reveal made during the stretch a Turn then says it ended is the same statement of the same class: one entry, not two. */
+  const merged: Statement[] = [];
+  const used = new Set<Statement>();
+  for (const t of out) {
+    if (t.kind !== 'turn' || t.class === null) continue;
+    const from = t.since === null ? -Infinity : Date.parse(t.since);
+    const r = out.find((x) => x.kind === 'reveal' && !used.has(x) && x.class === t.class && Date.parse(x.at) >= from && Date.parse(x.at) <= Date.parse(t.at));
+    if (r) { used.add(r); used.add(t); merged.push({ ...r, until: t.at }); }
+  }
+  const rest = [...out.filter((x) => !used.has(x)), ...merged];
   const speaks = (s: Statement) => Date.parse(s.kind === 'turn' && s.since !== null ? s.since : s.at);
-  return out.sort((a, b) => speaks(a) - speaks(b) || Date.parse(a.at) - Date.parse(b.at));
+  return rest.sort((a, b) => speaks(a) - speaks(b) || Date.parse(a.at) - Date.parse(b.at));
 }
 
 /** One statement in words: "Heel, revealed Oct 3", "Face, from Oct 1 until its Turn on Oct 20", "a Turn on Oct 20". */
 export function wording(s: Statement, className: (key: string) => string): string {
-  if (s.kind === 'reveal') return `${className(s.class!)}, revealed ${shortDate(s.at)}`;
+  if (s.kind === 'reveal') return `${className(s.class!)}, revealed ${shortDate(s.at)}${s.until ? `, until its Turn on ${shortDate(s.until)}` : ''}`;
   if (s.class === null) return `a Turn on ${shortDate(s.at)}`;
   return `${className(s.class)}, ${s.since ? `from ${shortDate(s.since)} ` : ''}until its Turn on ${shortDate(s.at)}`;
 }

@@ -73,7 +73,7 @@ export function IndexScreen() {
                         : <span className="kb-system-name">The System</span>}
                       <br />
                       {b.lastThread
-                        ? <Link to={`/t/${b.lastThread}`} className="kb-muted" aria-label={`Latest post in ${b.name}`}><Ago at={b.lastAt} /></Link>
+                        ? <Link to={`/t/${b.lastThread}`} className="kb-muted"><Ago at={b.lastAt} /><span className="kb-visually-hidden"> — latest post in {b.name}</span></Link>
                         : <span className="kb-muted"><Ago at={b.lastAt} /></span>}
                     </>
                   )}
