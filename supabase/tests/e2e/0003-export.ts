@@ -93,10 +93,11 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into invites (code_hash, inviter) values (invite_hash('exported'), ann);
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "splat", "config": {"color": "red"}}') returning id into play;
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
-      -- What the screens keep: a release, reading, view counts, preferences, a profile with an
+      -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an
       -- avatar, and an admin.
       insert into effect_releases (account, play) values (bob, play);
       insert into reading (account, thread, furthest_seq, first_character) values (bob, t, 1, b);
+      insert into thread_reads (thread, reader) values (t, b);
       perform count_thread_views();
       insert into account_preferences (account, theme, postbit, motion) values (ann, 'dark', 'stacked', 'reduce');
       insert into character_profiles (character, title, signature, avatar_source, avatar_square, avatar_portrait, square_frame, portrait_frame)
