@@ -104,9 +104,23 @@ test('a waiting Turn is withdrawn by naming its character', () => {
   assert.match(refusal({ action: 'withdrawTurn' }) ?? '', /^character:/);
 });
 
+test('a character drops now or debuts at the tally, silent or announced; a waiting one is dropped or its loudness changed', () => {
+  assert.deepEqual(decide({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent' }, instance),
+    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent' } });
+  assert.match(refusal({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'later' }) ?? '', /^timing:/);
+  assert.match(refusal({ action: 'createCharacter', name: 'Dropped', class: 'a', loudness: 'revealed' }) ?? '', /^loudness:/);
+  assert.deepEqual(decide({ action: 'setDebut', character: id, timing: 'now', loudness: 'announced' }, instance),
+    { ok: true, rpc: 'set_debut', args: { through: id, timing: 'now', loudness: 'announced' } });
+  assert.deepEqual(decide({ action: 'setDebut', character: id, timing: 'tally', loudness: 'silent' }, instance),
+    { ok: true, rpc: 'set_debut', args: { through: id, timing: 'tally', loudness: 'silent' } });
+  assert.match(refusal({ action: 'setDebut', character: id, loudness: 'silent' }) ?? '', /^timing:/);
+  assert.match(refusal({ action: 'setDebut', character: id, timing: 'now' }) ?? '', /^loudness:/);
+  assert.match(refusal({ action: 'setDebut', timing: 'now', loudness: 'silent' }) ?? '', /^character:/);
+});
+
 test('a character is made with a name and one of the instance\'s classes; invites are made, sent again and spent', () => {
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Masked One', class: 'a' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a' } });
+    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a', timing: 'tally', loudness: 'announced' } });
   assert.match(refusal({ action: 'createCharacter', name: 'Masked One', class: 'z' }) ?? '', /^class:/);
   assert.match(refusal({ action: 'createCharacter', name: ' \u200b ', class: 'a' }) ?? '', /^name: is empty/);
   assert.match(refusal({ action: 'createCharacter', name: 'n'.repeat(41), class: 'a' }) ?? '', /^name: is longer than 40/);
@@ -120,7 +134,7 @@ test('a character is made with a name and one of the instance\'s classes; invite
   assert.match(refusal({ action: 'openAccount', invite: 7 }) ?? '', /^invite:/);
   // Trimmed as the database trims it, and held to the same hidden characters.
   assert.deepEqual(decide({ action: 'createCharacter', name: ` ${'n'.repeat(40)}  `, class: 'a' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a' } });
+    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a', timing: 'tally', loudness: 'announced' } });
   for (const name of ['Mas\u200bk', 'Mask\u00a01', 'Mask  1', 'Mask\u202e1', 'Mask\t1', 'Mask\ufeff1', 'Mask\u3164', 'Mask\u{e0041}', 'Mask\u2800', 'Mask\u{1d173}']) {
     assert.match(refusal({ action: 'createCharacter', name, class: 'a' }) ?? '', /^name: can hold/, JSON.stringify(name));
   }

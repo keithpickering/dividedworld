@@ -44,7 +44,7 @@ export const NAME_MAX_LENGTH = 40;
 /**
  * What a name may not hold, so that no character's name can be made to look like another's:
  * control, invisible, filler and direction characters, and any space but U+0020. The same set as
- * supabase/migrations/0009_registration.sql's create_character, which holds it again.
+ * supabase/migrations/0024_debuts.sql's create_character (0009's, remade), which holds it again.
  */
 const NAME_HIDDEN = /[\u0001-\u001f\u007f-\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180e\u2000-\u200f\u2028-\u202f\u205f-\u206f\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\u2800\u{1d173}-\u{1d17a}\u{e0000}-\u{e0fff}]|  /u;
 
@@ -75,6 +75,18 @@ const card = (r: Fields, instance: Instance): string => {
 };
 
 type Decided = Omit<Extract<Decision, { ok: true }>, 'ok'>;
+
+/**
+ * A character's debut (supabase/migrations/0024_debuts.sql): dropped `now` or at the `tally`,
+ * `silent` or `announced`; what a request leaves out is the default given, where there is one.
+ */
+const debut = (r: Fields, defaults?: { timing: string; loudness: string }): { timing: string; loudness: string } => {
+  const timing = r.timing ?? defaults?.timing;
+  if (timing !== 'now' && timing !== 'tally') throw new Refused('timing', 'a character drops now or debuts at the tally');
+  const loudness = r.loudness ?? defaults?.loudness;
+  if (loudness !== 'silent' && loudness !== 'announced') throw new Refused('loudness', 'a debut is silent or announced');
+  return { timing, loudness };
+};
 
 /** Each action: the SQL function that writes it, and its arguments from the request. */
 const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
@@ -124,8 +136,9 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (typeof kind !== 'string' || !instance.classes.some((c) => c.key === kind)) throw new Refused('class', `there is no class ${JSON.stringify(kind)}`);
     const name = text({ name: typeof r.name === 'string' ? r.name.replace(/^ +| +$/g, '') : r.name }, 'name', NAME_MAX_LENGTH);
     if (NAME_HIDDEN.test(name)) throw new Refused('name', 'can hold letters, marks, digits, symbols and single spaces, nothing hidden');
-    return { rpc: 'create_character', args: { name, class: kind } };
+    return { rpc: 'create_character', args: { name, class: kind, ...debut(r, { timing: 'tally', loudness: 'announced' }) } };
   },
+  setDebut: (r) => ({ rpc: 'set_debut', args: { through: id(r, 'character'), ...debut(r) } }),
   createInvite: () => ({ rpc: 'create_invite', args: {} }),
   reissueInvite: (r) => {
     if (typeof r.invite !== 'number' || !Number.isSafeInteger(r.invite) || r.invite < 1) throw new Refused('invite', 'is not an invite');

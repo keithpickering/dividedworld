@@ -30,6 +30,11 @@ type Row = Record<string, unknown>;
 const act = (a: unknown): Broadcast[] => (a && typeof a === 'object' && (a as Row).thread ? [{ topic: `thread:${(a as Row).thread}`, event: 'act', payload: a }] : []);
 const thread = (t: unknown): Broadcast[] => (t && typeof t === 'object' && (t as Row).board ? [{ topic: `board:${(t as Row).board}`, event: 'thread', payload: t }] : []);
 
+const announcement = (a: Row): Broadcast[] => {
+  const told = a.announcement as Row | null | undefined;
+  return told ? [...thread(told.thread), ...act(told.act)] : [];
+};
+
 /**
  * What each SQL function's answer sends live. Each is the public projection the function
  * returned, never more; a purchase, which is the player's alone, sends nothing, and so does a
@@ -54,8 +59,10 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   buy_card: () => [],
   // A player's own: a character appears on the next load of who is here, and an invite or an
-  // account is nobody else's to hear of.
-  create_character: () => [],
+  // account is nobody else's to hear of. A drop announced is The System's tally of one, sent now
+  // with the Turns thread it opened, as the settlement sends a tally (0024_debuts.sql).
+  create_character: (a) => announcement(a),
+  set_debut: (a) => announcement(a),
   create_invite: () => [],
   reissue_invite: () => [],
   open_account: () => [],
