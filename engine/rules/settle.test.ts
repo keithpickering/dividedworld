@@ -4,15 +4,15 @@ import { applyCap, estimateForOwner, settle } from './settle.ts';
 import type { ClassInput, ClassRules, Earning, Instance, InputAct, InputReaction, SettlementInput } from './types.ts';
 
 /* Two fake classes. "fan" earns a vote per whole excited-positive vote and loses one per bored-negative
-   vote; "quiet" earns a flat 7 per post and records every input it is given. */
+   vote, each naming the reaction's time; "quiet" earns a flat 7 per post and records every input it is given. */
 const seen: ClassInput[] = [];
 const fan: ClassRules = {
   key: 'fan',
   name: 'Fan',
   earn: (input, settings) =>
     input.received.flatMap((r): Earning[] =>
-      r.quadrant === 'excitedPositive' ? [{ reason: 'fan.love', amount: settings.vote * r.votes, act: r.act, quadrant: r.quadrant }]
-      : r.quadrant === 'boredNegative' ? [{ reason: 'fan.groan', amount: -settings.vote * r.votes, act: r.act, quadrant: r.quadrant }]
+      r.quadrant === 'excitedPositive' ? [{ reason: 'fan.love', amount: settings.vote * r.votes, act: r.act, quadrant: r.quadrant, at: r.at }]
+      : r.quadrant === 'boredNegative' ? [{ reason: 'fan.groan', amount: -settings.vote * r.votes, act: r.act, quadrant: r.quadrant, at: r.at }]
       : []),
 };
 const quiet: ClassRules = {
@@ -454,6 +454,10 @@ test('a vote a player holds reaches the class of the mask that says it, with the
     ['cat-1', 'excitedPositive', 2, 'excitedPositive', 0, 1, FROM + 4 * H],
   ]);
   assert.deepEqual(held.filter((h) => h.act === 'p1' && h.by === 'cat-1').map((h) => h.share), [0.5, 0.5]);
+  // Each is held through the reaction that says its quadrant, at that reaction's own time.
+  assert.deepEqual(held.filter((h) => h.act === 'p1').map((h) => [h.by, h.quadrant, h.reactedAt]).sort(), [
+    ['bob-1', 'excitedPositive', FROM + 4 * H], ['cat-1', 'boredNegative', FROM + 5 * H + 1], ['cat-1', 'excitedPositive', FROM + 5 * H],
+  ]);
 });
 
 test('a true tie is no direction, though taking a player\'s thirds out of the lean leaves dust', () => {
@@ -606,10 +610,12 @@ test('the options\' defaults are the exact settlement', () => {
       { window: 'w1', player: 'ann', character: 'ann-fan', reason: 'fan.love', amount: 20 },
       { window: 'w1', player: 'bob', character: 'bob-1', reason: 'quiet.post', amount: 7 },
     ],
+    // The entries as then; the details one line per reaction since each earning names its time (the clues plan, Task 2).
     details: [
-      { player: 'ann', character: 'ann-fan', reason: 'fan.groan', act: 'p1', quadrant: 'boredNegative', amount: -5 },
-      { player: 'ann', character: 'ann-fan', reason: 'fan.love', act: 'p1', quadrant: 'excitedPositive', amount: 15 },
-      { player: 'ann', character: 'ann-fan', reason: 'fan.love', act: 'p2', quadrant: 'excitedPositive', amount: 5 },
+      { player: 'ann', character: 'ann-fan', reason: 'fan.groan', act: 'p1', quadrant: 'boredNegative', at: FROM + 5 * H + 1, amount: -5 },
+      { player: 'ann', character: 'ann-fan', reason: 'fan.love', act: 'p1', quadrant: 'excitedPositive', at: FROM + 4 * H, amount: 10 },
+      { player: 'ann', character: 'ann-fan', reason: 'fan.love', act: 'p1', quadrant: 'excitedPositive', at: FROM + 5 * H, amount: 5 },
+      { player: 'ann', character: 'ann-fan', reason: 'fan.love', act: 'p2', quadrant: 'excitedPositive', at: FROM + 6 * H, amount: 5 },
       { player: 'bob', character: 'bob-1', reason: 'quiet.post', act: 'q1', amount: 7 },
     ],
   });

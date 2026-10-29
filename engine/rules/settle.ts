@@ -63,6 +63,8 @@ export interface Detail {
   readonly quadrant?: Quadrant;
   /** The reactions it pays for, where they are not on `act` (Earning.valuing). */
   readonly valuing?: { readonly act: string; readonly from: number };
+  /** The time of the one reaction it pays for (Earning.at). */
+  readonly at?: number;
   readonly amount: number;
 }
 
@@ -160,14 +162,14 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   /* Each Act's reactors by first reaction, each player's shares there and the mask that says
      each, and the Act's lean: one pass over the reactions, which are in time order. */
   const zero = (): Record<Quadrant, number> => ({ excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 });
-  const onAct = new Map<string, { first: Map<string, number>; lean: Record<Quadrant, number>; of: Map<string, { shares: Record<Quadrant, number>; voice: Partial<Record<Quadrant, string>> }> }>();
+  const onAct = new Map<string, { first: Map<string, number>; lean: Record<Quadrant, number>; of: Map<string, { shares: Record<Quadrant, number>; voice: Partial<Record<Quadrant, { character: string; at: number }>> }> }>();
   for (const r of shared) {
     const a = onAct.get(r.act) ?? { first: new Map(), lean: zero(), of: new Map() };
     if (!a.first.has(r.player)) a.first.set(r.player, r.at);
     a.lean[r.quadrant] += r.share;
     const p = a.of.get(r.player) ?? { shares: zero(), voice: {} };
     p.shares[r.quadrant] += r.share;
-    p.voice[r.quadrant] = r.character;
+    p.voice[r.quadrant] = { character: r.character, at: r.at };
     a.of.set(r.player, p);
     onAct.set(r.act, a);
   }
@@ -209,9 +211,9 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         // Shares only grow, so a quadrant with none is exactly 0; the share is paid exact (k/n),
         // never tidied, so a third of 7.5 rounds as 2.5 does.
         if (p.shares[q] <= 0) continue;
-        const character = p.voice[q]!;
+        const { character, at: reactedAt } = p.voice[q]!;
         const list = held.get(character) ?? [];
-        list.push({ act, quadrant: q, at, share: p.shares[q], rank: (sharedVote ? i : tiedFrom[i]!) + 1, othersBefore, othersNow, endsUp });
+        list.push({ act, quadrant: q, at, reactedAt, share: p.shares[q], rank: (sharedVote ? i : tiedFrom[i]!) + 1, othersBefore, othersNow, endsUp });
         held.set(character, list);
       }
     });
@@ -334,7 +336,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
-        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}) });
+        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}) });
       }
     }
   }
@@ -355,7 +357,8 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   /* Each entry's detail, in whole hundredths that add up to the entry exactly: the log names
      which Act moved how much, and its lines never disagree with the ledger ("The fiction may
      lie; the log never does"). The rounding is shared by largest remainder, ties by key. */
-  const lines = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}\u0000${c.act ?? ''}\u0000${c.quadrant ?? ''}`);
+  /* A line per Act, quadrant and reaction time, so two reactions' lines never merge (Earning.at). */
+  const lines = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}\u0000${c.act ?? ''}\u0000${c.quadrant ?? ''}\u0000${c.at ?? ''}`);
   const linesOf = new Map<string, { key: string; first: Contribution; amount: number }[]>();
   for (const [key, { first, amount }] of lines) {
     const k = `${first.player}\u0000${first.character}\u0000${first.reason}`;
@@ -380,7 +383,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       if (whole[i] === 0) return;
       details.push({
         player: l.first.player, character: l.first.character, reason: l.first.reason,
-        ...(l.first.act ? { act: l.first.act } : {}), ...(l.first.quadrant ? { quadrant: l.first.quadrant } : {}), ...(l.first.valuing ? { valuing: l.first.valuing } : {}), amount: whole[i]!,
+        ...(l.first.act ? { act: l.first.act } : {}), ...(l.first.quadrant ? { quadrant: l.first.quadrant } : {}), ...(l.first.valuing ? { valuing: l.first.valuing } : {}), ...(l.first.at !== undefined ? { at: l.first.at } : {}), amount: whole[i]!,
       });
     });
   }
@@ -419,17 +422,20 @@ export interface EstimateLine {
 }
 
 /**
- * A player's live estimate of the open window (the screens' design, section 7): the settlement
- * with the shared vote and the halving off, for the player's own characters only. Each reaction
- * is valued as a whole vote alone ("up to +0.10, before the shared vote and halving"), so no
- * amount says two reactions were one player's, or that a reactor reacted elsewhere; the
- * settlement is exact. A line the class paid on an Act and quadrant is split into one line per
- * reaction there in the window, each with its time and an even whole-hundredths share, never who
- * left it: a reaction the character received when the Act is the character's own, one it gave
- * otherwise, and for a line that values reactions on another Act (a card's lift, Earning.valuing),
- * the votes settle counts on that Act after that time. Even is each reaction's own amount wherever a rule values every reaction alike, as
- * a whole vote does; a rule that values a reaction by its rank or its crowd is apportioned. The
- * lines add up to the entries. Run on the server, from estimate_input()
+ * A player's live estimate of the open window (the screens' design, section 7; the clues design,
+ * section 3): the settlement with the shared vote and the halving off, for the player's own
+ * characters only. Each reaction is valued as a whole vote alone ("up to +0.10, before the shared
+ * vote and halving"), so no amount says two reactions were one player's, or that a reactor reacted
+ * elsewhere; the settlement is exact. Each line is exact, never apportioned, and names a time and
+ * an amount, never who reacted:
+ *
+ * - a line the class paid for one reaction (Earning.at) is that reaction's, at its time, whole;
+ * - a line that values reactions on another Act (a card's lift, Earning.valuing) is one line per
+ *   vote settle counts there after that time, each a whole vote alike, so an even split is each
+ *   vote's own amount;
+ * - any other is one line with no time.
+ *
+ * The lines add up to the entries. Run on the server, from estimate_input()
  * (supabase/migrations/0017_estimate.sql), which reads only what this player's estimate needs.
  */
 export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number }[]; lines: EstimateLine[] } {
@@ -442,16 +448,12 @@ export function estimateForOwner(input: SettlementInput, instance: Instance, pla
   const lines: EstimateLine[] = [];
   for (const d of s.details.filter((x) => x.player === player)) {
     const { player: _who, valuing, ...line } = d;
-    // The reactions a line pays for: on the Act it values, after the time it names, the votes
-    // settle counts there (neither the caller's nor the Act's author's, a card's lift); others' on
-    // the character's own Act; or the character's own on another's.
-    const on = valuing?.act ?? d.act;
-    const own = on !== undefined && mine.has(authorOf.get(on) ?? '');
-    const pays = (r: SettlementInput['reactions'][number]) => valuing
-      ? r.at > valuing.from && r.player !== player && r.player !== playerOf.get(authorOf.get(on!) ?? '')
-      : own ? r.player !== player : r.character === d.character;
-    const times = on === undefined || d.quadrant === undefined ? [] : input.reactions
-      .filter((r) => r.act === on && quadrantOf.get(r.kind) === d.quadrant && inWindow(r.at) && pays(r))
+    if (!valuing) { lines.push(line); continue; }
+    // The votes the lift counts: on the Act it values, after the time it names, neither the
+    // caller's nor the Act's author's, as settle counts them.
+    const author = playerOf.get(authorOf.get(valuing.act) ?? '');
+    const times = input.reactions
+      .filter((r) => r.act === valuing.act && quadrantOf.get(r.kind) === d.quadrant && inWindow(r.at) && r.at > valuing.from && r.player !== player && r.player !== author)
       .map((r) => r.at).sort((x, y) => x - y);
     if (!times.length) { lines.push(line); continue; }
     // Whole hundredths that add up to the line: the remainder to the earliest.

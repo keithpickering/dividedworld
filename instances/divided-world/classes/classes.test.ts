@@ -78,7 +78,7 @@ test('a Heel\'s thunder-stealing Salty card pays and a Face\'s costs', () => {
 });
 
 /* ---- Lurker ---- */
-const held = (over: Partial<HeldVote>): HeldVote => ({ act: 'p1', quadrant: 'excitedPositive', at: 10, share: 1, rank: 1, othersBefore: 2, othersNow: 3, endsUp: 'excitedPositive', ...over });
+const held = (over: Partial<HeldVote>): HeldVote => ({ act: 'p1', quadrant: 'excitedPositive', at: 10, reactedAt: 5, share: 1, rank: 1, othersBefore: 2, othersNow: 3, endsUp: 'excitedPositive', ...over });
 test('Lurker earns from reacting early in the direction a post ends up, once three other players have reacted', () => {
   assert.equal(total(lurker, input({ held: [held({ rank: 3 })] })), 10, 'third to react is early');
   assert.equal(total(lurker, input({ held: [held({ rank: 4 })] })), 0, 'fourth is not');
@@ -323,4 +323,21 @@ test('the estimate hangs a lifted post on the votes the lift counts, after the c
     ],
   }, instance, 'ann').lines;
   assert.deepEqual(lines.filter((l) => l.reason === 'face.liftedAPost').map((l) => [l.act, l.at, l.amount]), [['card', FROM + 3 * H, 10]]);
+});
+
+test('the estimate shows a Lurker\'s call on the Lurker\'s own reaction, whole, never apportioned over the crowd', () => {
+  const lines = estimateForOwner(crowd([by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'fire', 3 * H), by('o3', 'fire', 4 * H)]), world, 'pl').lines;
+  assert.deepEqual(lines.filter((l) => l.reason === 'lurker.calledIt').map((l) => [l.act, l.quadrant, l.at, l.amount]), [['p1', 'excitedPositive', H, 10]]);
+});
+
+test('the estimate shows each of a Lurker\'s reactions on a post at its own call: the early one whole, the late one nothing', () => {
+  // The fire comes first; the heart, after three others, ranks fifth and calls nothing. Split
+  // evenly, each would show half the fire's call.
+  const lines = estimateForOwner(crowd([by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'fire', 3 * H), by('o3', 'fire', 4 * H), by('lu', 'heart', 5 * H)]), world, 'pl').lines;
+  assert.deepEqual(lines.filter((l) => l.reason === 'lurker.calledIt').map((l) => [l.act, l.quadrant, l.at, l.amount]), [['p1', 'excitedPositive', H, 10]]);
+});
+
+test('the estimate shows two reactions in one quadrant as two lines, each a whole vote at its own time', () => {
+  const lines = estimateForOwner(crowd([by('o1', 'fire', H), by('o2', 'heart', 2 * H)]), world, 'p-au').lines;
+  assert.deepEqual(lines.filter((l) => l.reason === 'face.cheered').map((l) => [l.act, l.quadrant, l.at, l.amount]), [['p1', 'excitedPositive', H, 10], ['p1', 'excitedPositive', 2 * H, 10]]);
 });

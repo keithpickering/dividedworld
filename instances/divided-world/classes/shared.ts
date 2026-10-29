@@ -8,7 +8,7 @@ import type { ClassInput, Earning, Quadrant, Settings } from '../../../engine/ru
 export function perVote(input: ClassInput, settings: Settings, quadrant: Quadrant, sign: 1 | -1, reason: string): Earning[] {
   return input.received
     .filter((r) => r.quadrant === quadrant)
-    .map((r) => ({ reason, amount: sign * settings.vote * r.votes, act: r.act, quadrant }));
+    .map((r) => ({ reason, amount: sign * settings.vote * r.votes, act: r.act, quadrant, at: r.at }));
 }
 
 /** A card outdraws the post it landed on when it drew more votes than the post in the window. */
