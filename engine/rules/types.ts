@@ -138,9 +138,9 @@ export interface SettlementInput {
   readonly acts: readonly InputAct[];
   readonly reactions: readonly InputReaction[];
   /**
-   * The System's own Acts (a season's reveal) that an input Act points at: no character's, so
-   * nobody's to settle, but a player may spin a thread from one, and that spin is from someone
-   * else's Act.
+   * The System's own Acts (a tally, a season's reveal) that an input Act or reaction points at: no
+   * character's, so nobody's to settle. A player may spin a thread from one, and that spin is from
+   * someone else's Act; a player may react to one, and that reaction moves nobody's Aura.
    */
   readonly systemActs?: readonly string[];
   /**

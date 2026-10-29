@@ -344,6 +344,20 @@ test('a spin from one of The System\'s own Acts settles, as a spin from someone 
   assert.throws(() => settle({ ...fromTheSystem, systemActs: [] }, instance), /not in the input/);
 });
 
+test('a reaction to one of The System\'s own Acts settles and moves nobody\'s Aura, the reactor\'s included', () => {
+  const b = base();
+  const { rules, inputs } = recorder();
+  const onTheSystem: SettlementInput = {
+    ...b,
+    systemActs: ['tally-1'],
+    reactions: [...b.reactions, react('tally-1', 'bob', 'bob-1', 'fire', FROM + 7 * H), react('tally-1', 'ann', 'ann-fan', 'zzz', FROM + 8 * H)],
+  };
+  const r = settle(onTheSystem, withClasses(rules));
+  assert.deepEqual(r.entries, settle(b, withClasses(recorder().rules)).entries, 'the same entries as with no reaction to it');
+  assert.equal(r.paid.some((p) => p.act === 'tally-1'), false, 'no vote on it is paid, nor held to be moved later');
+  assert.equal(inputs.some((i) => [...i.given, ...i.received, ...i.held].some((x) => x.act === 'tally-1')), false, 'no class is given it');
+});
+
 test('two Sweet cards from one player on one post pay what one would: each vote counts once, for the earlier card', () => {
   const sweet = (key: string) => ({ key, name: key, alignment: 'sweet' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
   const { rules, inputs } = recorder();

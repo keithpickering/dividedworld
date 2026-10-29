@@ -116,10 +116,10 @@ begin
   -- it was made: masks made in one sitting would show themselves one player's.
   select payload into entry from acts where thread = in_thread and payload ->> 'name' = 'Made Midseason';
   if (entry -> 'classes' -> 0 ->> 'from')::timestamptz is distinct from season_start then raise exception 'the reveal showed when a character was made: %', entry; end if;
-  -- Nobody reacts to The System's own Acts, and the refusal says so plainly.
+  -- The reveal is reacted to like any Act (0015).
   perform tests.become(ann);
-  if pg_temp.refusal(format('select react(%L, %L, %L)', reveal, a, 'up')) is distinct from 'nobody reacts to The System''s own Acts' then
-    raise exception 'reacting to the reveal: %', pg_temp.refusal(format('select react(%L, %L, %L)', reveal, a, 'up'));
+  if pg_temp.refusal(format('select react(%L, %L, %L)', reveal, a, 'up')) is not null then
+    raise exception 'reacting to the reveal is refused: %', pg_temp.refusal(format('select react(%L, %L, %L)', reveal, a, 'up'));
   end if;
   perform tests.unbecome();
   if (select count(*) from seasons where ends_at is null) is distinct from 1 then raise exception 'one season is open after the reveal'; end if;

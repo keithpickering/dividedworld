@@ -93,6 +93,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
   const alignmentOf = new Map<string, Alignment>(instance.cards.map((c) => [c.key, c.alignment]));
 
   /* ---- the input, checked and in a canonical order; nothing at or after the window's end ---- */
+  const systemActs = new Set(input.systemActs ?? []);
   const characters = new Map<string, InputCharacter>();
   for (const c of [...input.characters].sort((a, b) => cmp(a.id, b.id))) {
     for (const k of c.classes) if (!classOf.has(k.class)) throw new Error(`settle: character ${c.id} holds class "${k.class}", which the instance does not have`);
@@ -110,14 +111,15 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     if (a.kind === 'card' && a.at >= window.from && (!a.card || !alignmentOf.has(a.card))) throw new Error(`settle: card Act ${a.id} plays "${a.card}", which the instance does not have`);
     acts.set(a.id, a);
   }
-  const systemActs = new Set(input.systemActs ?? []);
   const actOf = (id: string) => {
     const a = acts.get(id);
     if (!a) throw new Error(`settle: Act ${id} is not in the input`);
     return a;
   };
   const reactions = [...input.reactions]
-    .filter((r) => r.at < window.to)
+    /* A reaction to one of The System's own Acts (a tally, the reveal) is no character's to be
+       paid for, and moves nobody's Aura, the reactor's included: no class is given it. */
+    .filter((r) => r.at < window.to && !systemActs.has(r.act))
     .sort((a, b) => a.at - b.at || cmp(a.act, b.act) || cmp(a.player, b.player) || cmp(a.character, b.character) || cmp(a.kind, b.kind))
     .map((r) => {
       const quadrant = quadrantOf.get(r.kind);
