@@ -8,7 +8,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
-import { Link } from '../router.tsx';
+import { signInHref } from '../account/next.ts';
+import { Link, useLocation } from '../router.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { motionReduced } from '../appearance.ts';
@@ -16,6 +17,7 @@ import { motionReduced } from '../appearance.ts';
 export function Hud() {
   const { api, instance, settings } = useKayfa();
   const player = usePlayer();
+  const location = useLocation();
   const [face, setFace] = useState<Character | null>(null);
   const [handOpen, setHandOpen] = useState(false);
   const handButton = useRef<HTMLButtonElement>(null);
@@ -89,7 +91,7 @@ export function Hud() {
       )}
       <div className="kb-hud-bar">
         {!player.session.signedIn ? (
-          <Link to="/sign-in" className="kb-hud-sign-in">Sign in</Link>
+          <Link to={signInHref(location.path, location.query.size ? `?${location.query}` : '')} className="kb-hud-sign-in">Sign in</Link>
         ) : !player.loaded ? null : !hud ? (
           <Link to="/characters/new" className="kb-hud-make">Make a character</Link>
         ) : (

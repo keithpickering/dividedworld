@@ -3,9 +3,9 @@
  * applied to the page at once, and sign out. The thread reads the post style when it opens, so a
  * change shows on the next thread view with no reload.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Preferences } from '../data/api.ts';
+import { LOST_ANSWER, type Answer, type Preferences } from '../data/api.ts';
 import { applyAppearance } from '../appearance.ts';
 import { Link, useNavigate } from '../router.tsx';
 import { useSession } from './session.ts';
@@ -47,11 +47,14 @@ export function SettingsScreen() {
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const account = session?.account ?? null;
+  /* The choices as the page holds them now (before the server has answered), and the saves in line. */
+  const current = useRef<Preferences | null>(null);
+  const line = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     if (!account) return;
     let live = true;
-    void api.preferences().then((p) => { if (live) setPrefs(p); }, () => { if (live) setRefusal('Your settings could not be read right now. Reload the page to try again.'); });
+    void api.preferences().then((p) => { if (live) { current.current = p; setPrefs(p); } }, () => { if (live) setRefusal('Your settings could not be read right now. Reload the page to try again.'); });
     return () => { live = false; };
   }, [api, account]);
 
@@ -69,34 +72,44 @@ export function SettingsScreen() {
     ...ui.themes.slice(1).map((t) => ({ value: t.key, label: t.name })),
   ];
 
-  const change = async (patch: Partial<Preferences>) => {
-    const before = prefs;
-    const next = { ...prefs, ...patch };
-    setPrefs(next);
+  /*
+   * A choice shows at once; its save waits for the ones before it (one out at a time, so the
+   * account ends with the last choice made), and a refusal puts back that choice alone.
+   */
+  const change = (patch: Partial<Preferences>) => {
+    const key = Object.keys(patch)[0] as keyof Preferences;
+    const was = current.current![key];
+    const show = (next: Preferences) => { current.current = next; setPrefs(next); applyAppearance(document, next, ui.themes); };
+    show({ ...current.current!, ...patch });
     setRefusal(null);
     setSaved(false);
-    applyAppearance(document, next, ui.themes);
-    const r = await api.setPreferences(patch);
-    if (r.ok) { setPrefs(r.value); setSaved(true); return; }
-    setPrefs(before);
-    applyAppearance(document, before, ui.themes);
-    setRefusal(r.error);
+    line.current = line.current.then(async () => {
+      let r: Answer<Preferences>;
+      try { r = await api.setPreferences(patch); } catch { r = { ok: false, error: LOST_ANSWER }; }
+      if (r.ok) { setSaved(true); return; }
+      show({ ...current.current!, [key]: was });
+      setRefusal(r.error);
+    });
   };
 
   const signOut = async () => {
-    await api.signOut();
-    navigate('/');
+    try {
+      await api.signOut();
+      navigate('/');
+    } catch {
+      setRefusal('Signing out could not be done right now; try again.');
+    }
   };
 
   return (
     <div className="kb-account kb-settings">
       <h1 className="kb-heading">Settings</h1>
       <p className="kb-muted">Each choice is saved to your account as you make it, so it follows you to other devices.</p>
-      <Choice legend="Theme" name="theme" options={themeOptions} value={theme} onChange={(v) => void change({ theme: v })} />
-      <Choice legend="Post style" name="postbit" options={POSTBIT} value={prefs.postbit} onChange={(v) => void change({ postbit: v })} />
-      <Choice legend="Motion" name="motion" options={MOTION} value={prefs.motion} onChange={(v) => void change({ motion: v })} />
+      <Choice legend="Theme" name="theme" options={themeOptions} value={theme} onChange={(v) => change({ theme: v })} />
+      <Choice legend="Post style" name="postbit" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })} />
+      <Choice legend="Motion" name="motion" options={MOTION} value={prefs.motion} onChange={(v) => change({ motion: v })} />
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-      {saved && !refusal && <p role="status" className="kb-small kb-muted">Saved to your account.</p>}
+      <p role="status" className="kb-small kb-muted">{saved && !refusal ? 'Saved to your account.' : ''}</p>
       <h2 className="kb-heading">Sign out</h2>
       <p><button type="button" className="kb-button" onClick={() => void signOut()}>Sign out</button></p>
     </div>

@@ -72,7 +72,7 @@ describe('Settings', () => {
     w.fake.setPreferences = () => Promise.reject(new Error('offline'));
     open(w.fake);
     await userEvent.click(await screen.findByRole('radio', { name: /^Dark/u }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/No answer came back/u);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no answer came back/iu);
     expect(within(screen.getByRole('group', { name: 'Theme' })).getByRole('radio', { name: /^Device/u, checked: true })).toBeInTheDocument();
     expect(document.documentElement.hasAttribute('data-kb-mode')).toBe(false);
   });
@@ -89,7 +89,7 @@ describe('Settings', () => {
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1]!.patch).toEqual({ motion: 'reduce' });
     calls[1]!.settle({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'reduce' } });
-    await screen.findByText('Saved to your account.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('a theme is named in lowercase words joined by hyphens');
     expect(within(screen.getByRole('group', { name: 'Theme' })).getByRole('radio', { name: /^Device/u, checked: true })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /^Reduce/u, checked: true })).toBeInTheDocument();
     expect(document.documentElement.getAttribute('data-kb-motion')).toBe('reduce');

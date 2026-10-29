@@ -27,5 +27,5 @@ test('signing out puts the page back to the device\'s look', async () => {
   await waitFor(() => expect(document.documentElement.getAttribute('data-kb-mode')).toBe('dark'));
   await fake.signOut();
   await waitFor(() => expect(document.documentElement.hasAttribute('data-kb-mode')).toBe(false));
-  expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+  expect(await within(await screen.findByRole('region', { name: 'HUD' })).findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
 });

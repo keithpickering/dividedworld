@@ -58,7 +58,7 @@ describe('Invites', () => {
     open(w);
     await userEvent.click(await screen.findByRole('button', { name: 'Make an invite' }));
     const row = await screen.findByRole('row', { name: /Open/u });
-    expect(within(row).getByText(/Expires/u)).toBeInTheDocument();
+    expect(within(row).getByText(/expires/u)).toBeInTheDocument();
     const first = (screen.getByLabelText('Invite link') as HTMLInputElement).value;
     await userEvent.click(within(row).getByRole('button', { name: /Reissue/u }));
     await screen.findByText(/new code/iu);
@@ -97,7 +97,7 @@ describe('Invites', () => {
     w.fake.createInvite = () => Promise.reject(new Error('offline'));
     open(w);
     await userEvent.click(await screen.findByRole('button', { name: 'Make an invite' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/No answer came back/u);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no answer came back/iu);
     expect(screen.getByRole('button', { name: 'Make an invite' })).toBeEnabled();
   });
 

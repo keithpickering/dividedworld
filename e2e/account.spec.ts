@@ -6,9 +6,16 @@ const TEST_CODE = '123456';
 
 test('signs out, then signs in again with a code, by keyboard alone', async ({ page }) => {
   await page.goto('/settings');
+  await page.getByRole('radio', { name: /^Dark/u }).focus();
+  await page.keyboard.press('Space');
+  await expect(page.locator('html')).toHaveAttribute('data-kb-mode', 'dark');
+  await expect(page.getByText('Saved to your account.')).toBeVisible();
   await page.getByRole('button', { name: 'Sign out' }).focus();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/$/u);
+  /* Signed out: the page is the device's again, and the HUD offers Sign in (the drafts' removal is in Gate.test.tsx). */
+  await expect(page.locator('html')).not.toHaveAttribute('data-kb-mode', /.*/u);
+  await expect(page.getByRole('region', { name: 'HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
   /* A reload would start the demo world over, signed in; the HUD's own link is the way. */
   await page.getByRole('link', { name: 'Sign in' }).first().focus();
   await page.keyboard.press('Enter');

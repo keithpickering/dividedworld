@@ -4,6 +4,7 @@
  * An admin holds any number, and the page says so instead of a cap.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { LOST_ANSWER } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import type { MyInvite } from '../data/api.ts';
 import { Ago } from '../mini.tsx';
@@ -33,7 +34,8 @@ export function InvitesScreen() {
   const [shown, setShown] = useState<Shown | null>(null);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [note, setNote] = useState('');
+  const justShown = useRef(false);
   const linkField = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -42,6 +44,10 @@ export function InvitesScreen() {
     setAdmin(isAdmin);
   }, [api]);
   const account = session?.account ?? null;
+  /* A new link is where the player's attention goes next: it holds the code that will not come again. */
+  useEffect(() => {
+    if (shown && justShown.current) { justShown.current = false; linkField.current?.focus(); linkField.current?.select(); }
+  }, [shown]);
   useEffect(() => {
     if (!account) return;
     void load().catch(() => setRefusal('Your invites could not be read right now. Reload the page to try again.'));
@@ -62,28 +68,33 @@ export function InvitesScreen() {
     if (busy) return;
     setBusy(true);
     setRefusal(null);
-    setCopied(false);
-    const r = await make();
-    if (r.ok) {
-      setShown({ invite: r.value.invite, link: linkTo(r.value.code), reissued });
-      await load().catch(() => undefined);
-    } else {
-      setRefusal(r.error);
-      await load().catch(() => undefined);
+    setNote('');
+    try {
+      const r = await make();
+      if (r.ok) {
+        setShown({ invite: r.value.invite, link: linkTo(r.value.code), reissued });
+        justShown.current = true;
+      } else {
+        setRefusal(r.error);
+      }
+    } catch {
+      setRefusal(LOST_ANSWER);
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
+    await load().catch(() => undefined);
   };
 
   const copy = async () => {
     if (!shown) return;
     try {
       await globalThis.navigator.clipboard.writeText(shown.link);
-      setCopied(true);
+      setNote('Copied.');
     } catch {
       /* No clipboard here: select the text, so the player copies it by hand. */
       linkField.current?.focus();
       linkField.current?.select();
-      setCopied(false);
+      setNote('Copy is not available here: the link is selected; copy it by hand.');
     }
   };
 
@@ -102,6 +113,7 @@ export function InvitesScreen() {
         </button>
       </p>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
+      <p role="status" className="kb-small">{note}</p>
 
       {shown && (
         <section className="kb-invite-new kb-box" aria-label="Your new invite">
@@ -110,10 +122,7 @@ export function InvitesScreen() {
             <span>Invite link</span>
             <input ref={linkField} className="kb-input kb-mono kb-invite-link" readOnly value={shown.link} onFocus={(e) => e.currentTarget.select()} />
           </label>
-          <p>
-            <button type="button" className="kb-button" onClick={() => void copy()}>Copy the link</button>{' '}
-            {copied && <span role="status">Copied.</span>}
-          </p>
+          <p><button type="button" className="kb-button" onClick={() => void copy()}>Copy the link</button></p>
           <p className="kb-notice">This link will not be shown again. Copy it now and send it to the person you invite; anyone who has it can use it once. If you lose it, reissue the invite for a new one.</p>
         </section>
       )}
@@ -130,7 +139,7 @@ export function InvitesScreen() {
                 <td><Ago at={i.createdAt} /></td>
                 <td>
                   {statusOf(i)}
-                  {!i.used && i.expiresAt && <> <span className="kb-muted">{i.expired ? 'Expired' : 'Expires'} <Ago at={i.expiresAt} /></span></>}
+                  {!i.used && i.expiresAt && <> <span className="kb-muted">{i.expired ? 'since' : 'expires'} <Ago at={i.expiresAt} /></span></>}
                 </td>
                 <td>
                   {!i.used && <button type="button" className="kb-button" disabled={busy} onClick={() => void run(() => api.reissueInvite(i.id), true)}>Reissue<span className="kb-visually-hidden"> invite {i.id}</span></button>}

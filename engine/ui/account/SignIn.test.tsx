@@ -74,8 +74,8 @@ describe('Sign in', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Send a new code' }));
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
     expect(spy).toHaveBeenLastCalledWith('known@example.test', null);
+    await waitFor(() => expect(status).toHaveTextContent('Another code was asked for.'));
     expect(screen.getByRole('status')).toBe(status);
-    expect(status).toHaveTextContent('Another code was asked for.');
   });
 
   test('the code field is a numeric one-time code, and a pasted code with a space signs in', async () => {
@@ -119,7 +119,7 @@ describe('Sign in', () => {
     w.fake.requestCode = () => Promise.reject(new Error('offline'));
     open(w, 'sign-in');
     await ask('known@example.test');
-    expect(await screen.findByRole('alert')).toHaveTextContent(/No answer came back/u);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no answer came back/iu);
     expect(screen.getByRole('button', { name: 'Send a code' })).toBeEnabled();
   });
 
@@ -129,7 +129,7 @@ describe('Sign in', () => {
     await ask('known@example.test');
     w.fake.verifyCode = () => Promise.reject(new Error('offline'));
     await userEvent.type(await screen.findByLabelText('Code from the email'), '123456{Enter}');
-    expect(await screen.findByRole('alert')).toHaveTextContent(/No answer came back/u);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no answer came back/iu);
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled();
   });
 
