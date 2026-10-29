@@ -7,6 +7,8 @@
  * Light and dark: a theme sets its light values on :root, its dark ones under the device's
  * prefers-color-scheme unless the player chose light, and again for a player who chose dark. The
  * engine sets data-kb-mode on <html> only when the player overrides the device (appearance.ts).
+ * The dark blocks here outrank a theme's light :root, so a theme that holds both modes sets in its
+ * dark blocks every token it sets on :root, or this file's dark default shows through.
  */
 :root {
   /* The forum's chrome: black and white, 1px rules. */

@@ -16,9 +16,15 @@
  * hex, a color function (rgb, hsl, hwb, lab, lch, oklab, oklch, color) or a named color, and a font
  * family may only come from `var()`. A fallback inside `var()` is a literal too. In a script every
  * string, template and JSX attribute is read from the TypeScript AST, so a comment is never read:
- * any string that is a hex color or holds a color function fires, as does a named color or a family
- * given to a color or font key (`color`, `fill`, `fontFamily`, …). Selectors are not values, so a
- * class named `.kb-red` or an id `#fade` is clean.
+ * any string that is a hex color or holds a color function fires, as does a hex anywhere in a
+ * compound style value (`textDecoration: 'underline #000'`), and a named color or a family given
+ * to a color or font key (`color`, `fill`, `fontFamily`, …), through a ternary or `&&` too.
+ * Selectors are not values, so a class named `.kb-red` or an id `#fade` is clean. A screen's own
+ * custom property (`--kb-local: #fff`) holding a literal fires too: only tokens.css sets values.
+ *
+ * The guard cannot tell a style object from a data object, and does not try: an engine object
+ * that gives a color word to a `color` key fires, on purpose, because the engine names no color;
+ * a color is an instance's (`InstanceUi.classLooks`), handed to the screens as a value.
  *
  * Read from git, so an untracked scratch file neither fails the build nor makes it pass.
  * The detection is exported and pure so tools/test-ui-tokens.mjs drives every branch red.
@@ -54,11 +60,13 @@ const HEX = /#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})\b/i;
 const COLOR_FN = /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/i;
 
 /** A CSS property whose value is (or holds) a color. */
-const COLOR_PROP = /^(?:color|background(?:-color|-image)?|border(?:-(?:top|right|bottom|left|block|inline)(?:-start|-end)?)?(?:-color)?|outline(?:-color)?|fill|stroke|stop-color|flood-color|lighting-color|caret-color|accent-color|column-rule(?:-color)?|text-decoration(?:-color)?|text-emphasis(?:-color)?|box-shadow|text-shadow|filter|scrollbar-color)$/i;
+const COLOR_PROP = /^(?:color|background(?:-color|-image)?|border(?:-(?:top|right|bottom|left|block|inline)(?:-start|-end)?)?(?:-color)?|outline(?:-color)?|fill|stroke|stop-color|flood-color|lighting-color|caret-color|accent-color|column-rule(?:-color)?|text-decoration(?:-color)?|text-emphasis(?:-color)?|box-shadow|text-shadow|filter|backdrop-filter|scrollbar-color|border-image(?:-source)?|mask(?:-image)?|-webkit-mask(?:-image)?|-webkit-text-fill-color|-webkit-text-stroke(?:-color)?)$/i;
 
 /** A JS style key or JSX attribute that takes a color. */
 const COLOR_KEY = /^(?:color|background(?:Color|Image)?|border(?:Top|Right|Bottom|Left|Block|Inline)?(?:Start|End)?(?:Color)?|outline(?:Color)?|fill|stroke|stopColor|floodColor|lightingColor|caretColor|accentColor|boxShadow|textShadow|textDecorationColor|scrollbarColor)$/;
 const FONT_KEY = /^(?:fontFamily|font)$/;
+/** A JS style key whose value is a compound that may carry a color among other words: a hex anywhere in it is a color. */
+const STYLE_VALUE_KEY = /^(?:color|background\w*|border\w*|outline\w*|fill|stroke|stopColor|floodColor|lightingColor|caretColor|accentColor|boxShadow|textShadow|textDecoration\w*|textEmphasis\w*|filter|backdropFilter|transition|animation|mask\w*|WebkitMask\w*|WebkitTextFillColor|WebkitTextStroke\w*|columnRule\w*|scrollbarColor)$/;
 
 /** What the font shorthand may hold besides its family: sizes, weights, styles, keywords. */
 const FONT_WORD = /^(?:normal|bold|bolder|lighter|italic|oblique|small-caps|inherit|initial|unset|revert|[\d.]+(?:px|em|rem|%|pt|ex|ch|vw|vh)?|xx-small|x-small|small|medium|large|x-large|xx-large|smaller|larger)$/i;
@@ -69,6 +77,12 @@ function bareValue(value) {
   /* var(--name) goes; var(--name, fallback) leaves its fallback, innermost first. */
   for (let i = 0; i < 8 && /var\(/i.test(v); i++) v = v.replace(/var\(\s*--[\w-]+\s*(?:,([^()]*(?:\([^()]*\))*[^()]*))?\)/gi, (_, fb) => ` ${fb ?? ''} `);
   return v;
+}
+
+/** A hex or a color function anywhere in a value, or null: a color under any property. */
+function anyColor(value) {
+  const v = bareValue(value);
+  return v.match(HEX)?.[0] ?? v.match(COLOR_FN)?.[0] ?? null;
 }
 
 /** The literal a color value holds, or null. */
@@ -111,11 +125,13 @@ function cssFaults(file, text) {
   function read(from, to) {
     const decl = bare.slice(from, to);
     const m = decl.match(/^\s*([-\w]+)\s*:([\s\S]*)$/);
-    if (!m || m[1].startsWith('--')) return;
+    if (!m) return;
     const prop = m[1].toLowerCase();
     const at = from + decl.indexOf(m[1]);
-    let literal = null;
-    if (COLOR_PROP.test(prop)) literal = colorLiteral(m[2]);
+    /* A hex or a color function is a color under any property, a custom one included: a screen's own --x: #fff is a literal no theme reaches. Quoted strings (content: "#1") are not values. */
+    const unquoted = m[2].replace(/(["'])(?:\\.|(?!\1)[^\\])*\1/g, ' ');
+    let literal = anyColor(unquoted);
+    if (!literal && !prop.startsWith('--') && COLOR_PROP.test(prop)) literal = colorLiteral(m[2]);
     if (!literal && (prop === 'font' || prop === 'font-family')) literal = fontLiteral(prop, m[2]);
     if (literal) out.push({ file, line: lineAt(at), literal, why: `${prop} holds a literal; use a --kb- token from engine/ui/tokens.css` });
   }
@@ -129,10 +145,23 @@ function scriptFaults(file, text) {
   const lineOf = (node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
   /** The key a string is given to: a property assignment's name or a JSX attribute's. */
   const keyOf = (node) => {
-    const p = node.parent;
-    if (p && ts.isPropertyAssignment(p) && p.initializer === node) return p.name.getText(source).replace(/^['"]|['"]$/g, '');
-    if (p && ts.isJsxAttribute(p)) return p.name.getText(source);
-    if (p && ts.isJsxExpression(p) && p.parent && ts.isJsxAttribute(p.parent)) return p.parent.name.getText(source);
+    /* Up through what passes a value along unchanged: parentheses, a ternary's branch, && || ??, a cast. */
+    let n = node;
+    for (;;) {
+      const p = n.parent;
+      if (!p) return null;
+      if (ts.isParenthesizedExpression(p) || ts.isAsExpression(p) || ts.isSatisfiesExpression(p) || ts.isNonNullExpression(p)) { n = p; continue; }
+      if (ts.isConditionalExpression(p) && p.condition !== n) { n = p; continue; }
+      if (ts.isBinaryExpression(p) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(p.operatorToken.kind)) { n = p; continue; }
+      if (ts.isJsxExpression(p)) { n = p; continue; }
+      break;
+    }
+    const p = n.parent;
+    if (ts.isPropertyAssignment(p) && p.initializer === n) {
+      if (ts.isComputedPropertyName(p.name)) return ts.isStringLiteralLike(p.name.expression) ? p.name.expression.text : null;
+      return p.name.getText(source).replace(/^['"]|['"]$/g, '');
+    }
+    if (ts.isJsxAttribute(p)) return p.name.getText(source);
     return null;
   };
   const visit = (node) => {
@@ -145,6 +174,7 @@ function scriptFaults(file, text) {
       let literal = null;
       const whole = s.trim();
       if (/^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(whole)) literal = whole;
+      else if (key && STYLE_VALUE_KEY.test(key) && HEX.test(bareValue(s))) literal = bareValue(s).match(HEX)?.[0] ?? null;
       else if (COLOR_FN.test(bareValue(s))) literal = bareValue(s).match(COLOR_FN)?.[0] ?? null;
       else if (key && COLOR_KEY.test(key)) literal = colorLiteral(s);
       else if (key && FONT_KEY.test(key)) literal = fontLiteral(key === 'font' ? 'font' : 'fontFamily', s);

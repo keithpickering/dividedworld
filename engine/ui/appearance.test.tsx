@@ -21,6 +21,10 @@ describe('the theme a preference resolves to', () => {
   test('a theme the instance no longer offers falls back to the house theme on the device', () => {
     expect(resolveAppearance({ theme: 'gone', motion: 'system' }, themes)).toEqual({ href: '/house.css', mode: null, motion: null });
   });
+  test('a motion the engine does not know follows the device', () => {
+    expect(resolveAppearance({ theme: 'system', motion: 'Reduce' as 'reduce' }, themes).motion).toBe(null);
+    expect(resolveAppearance({ theme: 'system', motion: null as unknown as 'system' }, themes).motion).toBe(null);
+  });
   test('motion: the device unless overridden', () => {
     expect(resolveAppearance({ theme: 'system', motion: 'reduce' }, themes).motion).toBe('reduce');
     expect(resolveAppearance({ theme: 'system', motion: 'full' }, themes).motion).toBe('full');

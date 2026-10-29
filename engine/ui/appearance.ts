@@ -28,7 +28,9 @@ export interface Appearance {
 export function resolveAppearance(pref: AppearancePreference, themes: readonly ThemeOption[]): Appearance {
   const house = themes[0];
   if (!house) throw new Error('an instance offers at least one theme, its house theme');
-  const motion = pref.motion === 'system' ? null : pref.motion;
+  /* A preference is a row the server holds; anything but an override it knows follows the device. */
+  const motion = pref.motion === 'reduce' || pref.motion === 'full' ? pref.motion : null;
+  /* "light" and "dark" are the house theme in that mode; a house theme holds both (InstanceUi.themes). */
   if (pref.theme === 'light' || pref.theme === 'dark') return { href: house.href, mode: pref.theme, motion };
   const chosen = themes.find((t) => t.key === pref.theme && pref.theme !== 'system') ?? house;
   return { href: chosen.href, mode: chosen.modes === 'both' ? null : chosen.modes, motion };

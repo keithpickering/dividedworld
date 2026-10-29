@@ -66,6 +66,21 @@ check('an SVG stroke named color fires', fires('engine/ui/orbs/Orb.tsx', `export
 check('a color in a template literal fires', fires('engine/ui/x.ts', 'const css = `color: rgb(1, 2, 3)`;').length === 1);
 check('a .ts file is read too', fires('engine/ui/x.ts', `export const c = '#abc';`).length === 1);
 
+/* ---- from the Task 1 quality review: where a literal hid ---- */
+check('a custom property set to a literal outside tokens.css fires', fires('engine/ui/base.css', `:root { --kb-local: #fff; }\n.a { color: var(--kb-local); }`).length === 1);
+check('a hex in a property the color list does not name fires', fires('engine/ui/base.css', `.a { -webkit-text-fill-color: #fff; }`).length === 1);
+check('a gradient in a mask or border-image fires', fires('engine/ui/base.css', `.a { mask-image: linear-gradient(#000, transparent); border-image: linear-gradient(red, blue) 1; }`).length === 2);
+check('a hex inside a longer style value in a script fires', fires('engine/ui/x.tsx', `const s = { textDecoration: 'underline #000', filter: 'drop-shadow(0 0 2px #000)' };`).length === 2);
+check('a named color in a ternary under a color key fires', fires('engine/ui/x.tsx', `const s = { color: on ? 'red' : 'var(--kb-fg)' };`).length === 1);
+check('a named color in a JSX expression attribute fires', fires('engine/ui/x.tsx', `export const O = () => <circle fill={'black'} />;`).length === 1);
+check('a named color in a JSX ternary attribute fires', fires('engine/ui/x.tsx', `export const O = () => <circle fill={on ? 'black' : 'none'} />;`).length === 1);
+check('a computed color key fires', fires('engine/ui/x.tsx', `const s = { ['color']: 'white' };`).length === 1);
+check('a declaration string inside a script fires', fires('engine/ui/x.ts', `const css = 'border: 1px solid black;';`).length === 1);
+check('a template with substitutions fires', fires('engine/ui/x.ts', 'const css = `color: ${x}; border-color: #000`;').length === 1);
+check('a family in a script\'s font shorthand fires', fires('engine/ui/x.tsx', `const s = { font: 'bold 12px Verdana' };`).length === 1);
+check('a token in a script\'s font shorthand is clean', fires('engine/ui/x.tsx', `const s = { font: 'bold 12px var(--kb-font-mono)' };`).length === 0);
+check('a custom property set to a token or a length outside tokens.css is clean', fires('engine/ui/base.css', `.a { --kb-hud-height: 3.2em; --kb-local: var(--kb-fg); }`).length === 0);
+
 /* ---- what only looks like a literal ---- */
 check('a token is clean', fires('engine/ui/base.css', `.a { color: var(--kb-fg); border: 1px solid var(--kb-rule); font: bold 12px/1.4 var(--kb-font-mono); }`).length === 0);
 check('the keywords are clean', fires('engine/ui/base.css', `.a { color: inherit; background: transparent; border-color: currentColor; outline: none; fill: currentcolor; }`).length === 0);

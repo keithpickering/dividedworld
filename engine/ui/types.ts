@@ -29,7 +29,11 @@ export interface ClassLook {
   readonly description: string;
 }
 
-/** A pip style's images, by the rules' `PipStyle.key`. */
+/**
+ * A pip style's images, by the rules' `PipStyle.key`. Each is drawn as a mask over the pip's token
+ * color (`--kb-pip`, `--kb-pip-empty`), so one image serves light and dark: its shape is what
+ * counts, not its colors.
+ */
 export interface PipImages {
   readonly full: string;
   readonly empty: string;
