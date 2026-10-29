@@ -4,7 +4,7 @@ import type { Instance } from '../../rules/types.ts';
 import type { World } from '../story.tsx';
 import { BoardScreen } from './Board.tsx';
 
-const meta: Meta<typeof BoardScreen> = { title: 'Board/Thread list', component: BoardScreen };
+const meta: Meta<typeof BoardScreen> = { title: 'Board/Thread list', component: BoardScreen, args: { slug: 'general' } };
 export default meta;
 
 type Story = StoryObj<typeof BoardScreen>;
@@ -45,6 +45,7 @@ export const ManyThreadsPageTwo: Story = {
   },
 };
 export const TheSystemsBoard: Story = {
+  args: { slug: 'the-system' },
   parameters: {
     world: ((fake, instance) => {
       const w = players(fake, instance);

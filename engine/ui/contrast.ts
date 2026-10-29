@@ -10,7 +10,7 @@
  * carry no text and say what they mean in words beside them, so they are not held to a ratio.
  */
 
-export type Mode = 'light' | 'dark';
+export type Mode = 'light' | 'dark' | 'dark (device)';
 export type Tokens = Readonly<Record<string, string>>;
 
 function declarations(body: string): Record<string, string> {
@@ -19,18 +19,46 @@ function declarations(body: string): Record<string, string> {
   return out;
 }
 
-/** The blocks of a theme or token file: light is `:root`, dark is the explicit-dark block laid over it. */
-export function tokensOf(css: string): Record<Mode, Tokens> {
-  const stripped = css.replace(/\/\*[\s\S]*?\*\//gu, '');
-  const block = (selector: string): string => {
-    const at = stripped.indexOf(selector);
-    if (at < 0) return '';
-    const open = stripped.indexOf('{', at);
-    return stripped.slice(open + 1, stripped.indexOf('}', open));
+/** The declarations of the first block that opens after `selector`. */
+function blockAfter(css: string, selector: string): Record<string, string> {
+  const at = css.indexOf(selector);
+  if (at < 0) return {};
+  const open = css.indexOf('{', at + selector.length - 1);
+  return declarations(css.slice(open + 1, css.indexOf('}', open)));
+}
+
+const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//gu, '');
+const LIGHT = ':root {';
+const DEVICE_DARK = ':root:not([data-kb-mode="light"])';
+const CHOSEN_DARK = ':root[data-kb-mode="dark"]';
+
+/**
+ * The tokens a page sees, from stylesheets in the order they load (the engine's, then a theme's).
+ * Light is each file's `:root`. Dark, as a player who chose it gets it, is the light values with
+ * every file's explicit-dark block over them; dark as the device gets it is the same through the
+ * prefers-color-scheme block. The dark blocks outrank any `:root`, so the engine's dark block
+ * beats a theme's light value and only the theme's own dark block beats it back.
+ */
+export function tokensOf(...sheets: string[]): Record<Mode, Tokens> {
+  const css = sheets.map(strip);
+  const light = Object.assign({}, ...css.map((c) => blockAfter(c, LIGHT)));
+  const withDark = (selector: string) => {
+    const lights = css.map((c) => blockAfter(c, LIGHT));
+    return Object.assign({}, ...lights, ...css.map((c) => blockAfter(c, selector)));
   };
-  const light = declarations(block(':root {'));
-  const dark = { ...light, ...declarations(block(':root[data-kb-mode="dark"]')) };
-  return { light, dark };
+  return { light, dark: withDark(CHOSEN_DARK), 'dark (device)': withDark(DEVICE_DARK) };
+}
+
+/** A file whose device-dark block and chosen-dark block set different tokens would show two dark modes. */
+export function darkBlocksDisagree(sheet: string): string[] {
+  const css = strip(sheet);
+  const device = blockAfter(css, DEVICE_DARK);
+  const chosen = blockAfter(css, CHOSEN_DARK);
+  const lines: string[] = [];
+  for (const k of new Set([...Object.keys(device), ...Object.keys(chosen)])) {
+    if (device[k] !== chosen[k]) lines.push(`dark: ${k} is ${device[k] ?? 'unset'} for the device and ${chosen[k] ?? 'unset'} when chosen`);
+  }
+  return lines;
 }
 
 export function parseColor(value: string): [number, number, number] {
@@ -59,20 +87,25 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ['--kb-link-visited', '--kb-bg', 4.5, 'visited links'],
   ['--kb-fg', '--kb-hud-bg', 4.5, 'text on the HUD'],
   ['--kb-muted', '--kb-hud-bg', 4.5, 'muted text on the HUD'],
+  ['--kb-link', '--kb-hud-bg', 4.5, 'links on the HUD'],
   ['--kb-selection-fg', '--kb-selection-bg', 4.5, 'selected text'],
   ['--kb-fg', '--kb-chip-bg', 4.5, 'text on a reaction chip'],
+  ['--kb-muted', '--kb-chip-bg', 4.5, 'muted text on a reaction chip'],
   ['--kb-rule', '--kb-bg', 3, 'rules and control borders'],
+  ['--kb-rule', '--kb-hud-bg', 3, 'rules on the HUD'],
+  ['--kb-rule', '--kb-chip-bg', 3, 'a chip\'s border'],
   ['--kb-focus', '--kb-bg', 3, 'the focus ring'],
+  ['--kb-focus', '--kb-hud-bg', 3, 'the focus ring on the HUD'],
   ['--kb-chip-own', '--kb-chip-bg', 3, 'the outline of your own reaction'],
   ['--kb-pip', '--kb-bg', 3, 'a full pip'],
 ];
 
-/** The pairs below their least ratio, as readable lines; empty when the tokens are sound. */
-export function contrastFailures(css: string): string[] {
+/** The pairs below their least ratio, or naming a token that is not set; empty when the tokens are sound. */
+export function contrastFailures(...sheets: string[]): string[] {
   const failures: string[] = [];
-  for (const [mode, tokens] of Object.entries(tokensOf(css)) as [Mode, Tokens][]) {
+  for (const [mode, tokens] of Object.entries(tokensOf(...sheets)) as [Mode, Tokens][]) {
     for (const [fg, bg, least, what] of PAIRS) {
-      if (!tokens[fg] || !tokens[bg]) continue;
+      if (!tokens[fg] || !tokens[bg]) { failures.push(`${mode}: ${what} needs ${!tokens[fg] ? fg : bg}, which no stylesheet sets`); continue; }
       const got = ratio(tokens[fg], tokens[bg]);
       if (got < least) failures.push(`${mode}: ${what} (${fg} ${tokens[fg]} on ${bg} ${tokens[bg]}) is ${got.toFixed(2)}:1, needs ${least}:1`);
     }

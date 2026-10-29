@@ -6,6 +6,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { SECURITY_HEADERS } from './headers.ts';
 
 const repo = fileURLToPath(new URL('..', import.meta.url));
 
@@ -13,5 +14,7 @@ export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [react()],
   server: { fs: { allow: [repo] } },
+  /* `vite preview` answers with the headers the site is served with (headers.ts), so the e2e run is under the real policy. */
+  preview: { headers: { ...SECURITY_HEADERS } },
   build: { outDir: 'dist', emptyOutDir: true },
 });

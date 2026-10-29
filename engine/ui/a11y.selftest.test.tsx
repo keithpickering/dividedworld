@@ -6,7 +6,7 @@
 import { render } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { axeViolations } from './a11y.ts';
-import { contrastFailures } from './contrast.ts';
+import { contrastFailures, darkBlocksDisagree } from './contrast.ts';
 
 describe('the accessibility check detects', () => {
   test('an unlabeled button', async () => {
@@ -26,13 +26,32 @@ describe('the accessibility check detects', () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  test('low-contrast text, in the contrast path the real test uses (the token pairs)', () => {
-    const poisoned = `
-      :root { --kb-fg:#000; --kb-bg:#fff; --kb-muted:#bbb; --kb-link:#000; --kb-link-visited:#333; --kb-rule:#000; --kb-focus:#000;
-        --kb-selection-fg:#fff; --kb-selection-bg:#000; --kb-hud-bg:#fff; --kb-chip-bg:#fff; --kb-chip-own:#000; --kb-pip:#000; }
-      :root[data-kb-mode="dark"] { --kb-bg:#000; --kb-fg:#fff; --kb-muted:#333; --kb-hud-bg:#000; --kb-chip-bg:#000; --kb-chip-own:#fff; --kb-link:#fff; --kb-link-visited:#ccc; --kb-rule:#fff; --kb-focus:#fff; --kb-pip:#fff; --kb-selection-fg:#000; --kb-selection-bg:#fff; }`;
-    const failures = contrastFailures(poisoned);
+  const BASE = `
+    :root { --kb-fg:#000; --kb-bg:#fff; --kb-muted:#555; --kb-link:#000; --kb-link-visited:#333; --kb-rule:#000; --kb-focus:#000;
+      --kb-selection-fg:#fff; --kb-selection-bg:#000; --kb-hud-bg:#fff; --kb-chip-bg:#fff; --kb-chip-own:#000; --kb-pip:#000; }`;
+  const DARK = `--kb-bg:#000; --kb-fg:#fff; --kb-muted:#aaa; --kb-hud-bg:#000; --kb-chip-bg:#000; --kb-chip-own:#fff; --kb-link:#fff; --kb-link-visited:#ccc; --kb-rule:#fff; --kb-focus:#fff; --kb-pip:#fff; --kb-selection-fg:#000; --kb-selection-bg:#fff;`;
+  const both = (dark: string, device = dark) => `${BASE}
+    @media (prefers-color-scheme: dark) { :root:not([data-kb-mode="light"]) { ${device} } }
+    :root[data-kb-mode="dark"] { ${dark} }`;
+
+  test('the unpoisoned tokens pass the same function', () => {
+    expect(contrastFailures(both(DARK))).toEqual([]);
+  });
+
+  test('low-contrast text, in the contrast path the real test uses (the token pairs), light and dark', () => {
+    const failures = contrastFailures(BASE.replace('--kb-muted:#555', '--kb-muted:#bbb') + `:root[data-kb-mode="dark"] { ${DARK.replace('--kb-muted:#aaa', '--kb-muted:#333')} }`);
     expect(failures.some((f) => f.startsWith('light: muted text'))).toBe(true);
     expect(failures.some((f) => f.startsWith('dark: muted text'))).toBe(true);
+  });
+
+  test('a poor value only on the device-dark path', () => {
+    const failures = contrastFailures(both(DARK, DARK.replace('--kb-muted:#aaa', '--kb-muted:#333')));
+    expect(failures.some((f) => f.startsWith('dark (device): muted text'))).toBe(true);
+    expect(darkBlocksDisagree(both(DARK, DARK.replace('--kb-muted:#aaa', '--kb-muted:#333'))).length).toBeGreaterThan(0);
+  });
+
+  test('a token that is renamed away fails instead of being skipped', () => {
+    const failures = contrastFailures(BASE.replace('--kb-hud-bg:#fff;', ''));
+    expect(failures.some((f) => f.includes('--kb-hud-bg, which no stylesheet sets'))).toBe(true);
   });
 });

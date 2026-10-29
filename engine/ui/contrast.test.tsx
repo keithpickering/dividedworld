@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { contrastFailures, ratio, tokensOf } from './contrast.ts';
+import { contrastFailures, darkBlocksDisagree, ratio, tokensOf } from './contrast.ts';
 
-const read = (p: string) => readFileSync(join(process.cwd(), 'engine/ui', p), 'utf8');
+const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
+const engine = read('engine/ui/tokens.css');
 const themes = readdirSync(join(process.cwd(), 'instances')).filter((d) => existsSync(join(process.cwd(), 'instances', d, 'ui/theme.css')));
 
 describe('color contrast of the tokens, light and dark', () => {
@@ -13,14 +14,18 @@ describe('color contrast of the tokens, light and dark', () => {
   });
 
   test('the engine defaults hold', () => {
-    expect(contrastFailures(read('./tokens.css'))).toEqual([]);
+    expect(contrastFailures(engine)).toEqual([]);
+    expect(darkBlocksDisagree(engine)).toEqual([]);
   });
 
   test('there is a theme to check', () => { expect(themes.length).toBeGreaterThan(0); });
 
-  test.each(themes)('the %s theme holds, with the engine defaults under it', (name) => {
-    const css = read(`../../instances/${name}/ui/theme.css`);
-    expect(Object.keys(tokensOf(css).dark).length).toBeGreaterThan(10);
-    expect(contrastFailures(css)).toEqual([]);
+  test.each(themes)('the %s theme, laid over the engine defaults as the page loads them, holds in light, chosen dark and device dark', (name) => {
+    const theme = read(`instances/${name}/ui/theme.css`);
+    const seen = tokensOf(engine, theme);
+    expect(Object.keys(seen.dark).length).toBeGreaterThan(10);
+    expect(seen['dark (device)']).toEqual(seen.dark);
+    expect(darkBlocksDisagree(theme)).toEqual([]);
+    expect(contrastFailures(engine, theme)).toEqual([]);
   });
 });

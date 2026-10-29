@@ -121,8 +121,16 @@
   margin: 0.3em 0;
 }
 
+.kb-choice-option input {
+  /* A target of 24px at the least (WCAG 2.2, 2.5.8). */
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: 0;
+}
+
 .kb-choice-sub {
-  margin-left: 1.6em;
+  margin-left: calc(1.5rem + 0.5em);
 }
 
 /* What everyone will see. */

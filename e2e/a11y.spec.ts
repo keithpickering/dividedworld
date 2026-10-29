@@ -20,6 +20,9 @@ export async function pageViolations(page: Page): Promise<string[]> {
   return found.map((v) => `${v.id} (${v.impact}): ${v.nodes.slice(0, 12).map((n) => `${JSON.stringify(n.target)} ${n.html.slice(0, 100)}`).join(' | ')}`);
 }
 
+/* These specs inject axe and poison styles into the page; the site's policy (e2e/csp.spec.ts holds it) would block them. */
+test.use({ bypassCSP: true });
+
 const PAGES: readonly [string, string][] = [
   ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['standings', '/standings'], ['settings', '/settings'], ['invites', '/invites'],
 ];
@@ -44,6 +47,59 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.locator('#post-1').getByRole('button', { name: 'Spin thread' }).click();
         await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
         await expect(page.getByRole('dialog', { name: /^React as / })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+      });
+
+      test('a profile and its record have none, reached through a character link', async ({ page }) => {
+        await page.goto('/standings');
+        await page.getByRole('link', { name: 'Pipewrench' }).click();
+        await expect(page.getByRole('region', { name: 'About Pipewrench' })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+        await page.getByRole('link', { name: 'See the full record' }).click();
+        await expect(page.getByRole('table')).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+      });
+
+      test('the new-character page has none', async ({ page }) => {
+        await page.goto('/characters/new');
+        await expect(page.getByRole('heading', { level: 1, name: 'New character' })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+      });
+
+      test('the Turn, Reveal and Debut dialogs have none', async ({ page }) => {
+        await page.goto('/characters');
+        await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
+        await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: "Reveal Pipewrench's class" }).click();
+        await expect(page.getByRole('dialog')).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+        await page.keyboard.press('Escape');
+        /* A new character waits to debut: its two debut dialogs. */
+        await page.goto('/characters/new');
+        await page.getByLabel(/name/iu).first().fill('Waiting Wanda');
+        await page.getByRole('radio').first().check();
+        await page.getByRole('button', { name: 'Make the character' }).click();
+        await page.getByRole('button', { name: 'Drop Waiting Wanda now' }).click();
+        await expect(page.getByRole('dialog', { name: 'Drop Waiting Wanda now' })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name: 'Change how Waiting Wanda debuts' }).click();
+        await expect(page.getByRole('dialog', { name: 'How Waiting Wanda debuts' })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+      });
+
+      test('signed out: sign-in and register have none', async ({ page }) => {
+        /* The demo world starts signed in and starts over on a load, so sign out in the app and go on from there. */
+        await page.goto('/settings');
+        await page.getByRole('button', { name: 'Sign out' }).click();
+        await expect(page.getByRole('region', { name: 'HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
+        await page.getByRole('link', { name: 'Sign in' }).first().click();
+        await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+        await page.evaluate(() => { history.pushState(null, '', '/register?invite=ab12cd34'); window.dispatchEvent(new PopStateEvent('popstate')); });
+        await expect(page.getByRole('heading', { level: 1, name: /register|create|join/iu })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
       });
     });
