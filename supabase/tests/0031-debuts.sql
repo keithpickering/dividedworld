@@ -42,6 +42,27 @@ begin
   if pg_temp.named_in(w) is distinct from 1::bigint then raise exception 'a drop racing the settlement was named % times', pg_temp.named_in(w); end if;
 end $$;
 
+-- ---- Two drops at once into a season whose Turns thread is not open: one thread, both named in it ----
+do $$
+declare
+  ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid();
+  said text[];
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'race-drop-a@test.invalid'), (%2$L, 'race-drop-b@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L);
+    update seasons set turns_thread = null where ends_at is null;
+  $sql$, ann, bob));
+  said := tests.race(ann, 'select create_character(''Racing Drop A'', ''alpha'', ''now'', ''announced'')', bob, 'select create_character(''Racing Drop B'', ''alpha'', ''now'', ''announced'')');
+  if said[1] is not null or said[2] is not null then raise exception 'two drops at once: %', said; end if;
+  if (select count(distinct a.thread) from acts a, jsonb_array_elements(a.payload -> 'debuts') d where a.kind = 'tally' and d ->> 'name' in ('Racing Drop A', 'Racing Drop B')) is distinct from 1::bigint then
+    raise exception 'two drops at once opened two Turns threads';
+  end if;
+  if (select turns_thread from seasons where ends_at is null) is distinct from (select a.thread from acts a, jsonb_array_elements(a.payload -> 'debuts') d where a.kind = 'tally' and d ->> 'name' = 'Racing Drop A') then
+    raise exception 'the season holds the thread both were named in';
+  end if;
+end $$;
+
 -- ---- The defaults are create_character(name, class) as it was: waiting, announced, no tally ----
 do $$
 declare

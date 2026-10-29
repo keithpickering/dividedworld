@@ -183,7 +183,7 @@ end $$;
 
 -- The two options, as the Edge Function checks them first (engine/rules/actions.ts).
 create function debut_options(timing text, loudness text) returns void
-language plpgsql immutable security definer set search_path = public, pg_temp as $$
+language plpgsql immutable set search_path = public, pg_temp as $$
 begin
   if timing is null or timing not in ('now', 'tally') then
     raise exception 'a character drops now or debuts at the tally' using hint = 'kayfabb.refusal', errcode = '22023';
