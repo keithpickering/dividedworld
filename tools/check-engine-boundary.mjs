@@ -40,23 +40,53 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 export const SOURCE = /^(engine|instances)\/.*\.(ts|mts|cts|tsx|js|mjs|cjs|css)$/;
 
 /**
- * Every specifier a stylesheet names, with its line: `@import "x"`, `@import url(x)` and every
- * `url(x)`, comments stripped first (blanked to spaces, so lines keep their numbers). A `data:`
- * URL names no file. A theme is a stylesheet, so a stylesheet can cross the line as an import can.
+ * A stylesheet with its comments blanked to spaces, so lines keep their numbers. Strings are
+ * skipped whole, so a `/*` inside `content: "/*"` opens no comment; an unclosed comment runs to
+ * the end, as a browser reads it.
+ * @param {string} text
+ */
+function cssWithoutComments(text) {
+  let out = '';
+  for (let i = 0; i < text.length;) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < text.length && text[j] !== c && text[j] !== '\n') j += text[j] === '\\' ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j + 1;
+    } else if (c === '/' && text[i + 1] === '*') {
+      const close = text.indexOf('*/', i + 2);
+      const j = close === -1 ? text.length : close + 2;
+      out += text.slice(i, j).replace(/[^\n]/g, ' ');
+      i = j;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+/**
+ * Every specifier a stylesheet names, with its line: `@import "x"`, `@import url(x)`, every
+ * `url(x)` and every string in an `image-set()`, in any case, comments stripped first. A `data:`
+ * URL names no file, and a `#fragment` names a part of the same document. A theme is a
+ * stylesheet, so a stylesheet can cross the line as an import can.
  * @param {string} text
  * @returns {{ spec: string | null, line: number }[]}
  */
 function cssSpecifiers(text) {
-  const bare = text.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+  const bare = cssWithoutComments(text);
   /** @type {{ spec: string | null, line: number }[]} */
   const out = [];
   const lineAt = (i) => bare.slice(0, i).split('\n').length;
   const unquote = (s) => s.trim().replace(/^(['"])([\s\S]*)\1$/, '$2').trim();
-  for (const m of bare.matchAll(/url\(\s*((?:"[^"]*"|'[^']*'|[^)]*?))\s*\)/g)) {
-    const spec = unquote(m[1]);
-    if (!/^data:/i.test(spec)) out.push({ spec, line: lineAt(m.index) });
+  const keep = (spec, at) => { if (!/^(data:|#)/i.test(spec)) out.push({ spec, line: lineAt(at) }); };
+  for (const m of bare.matchAll(/url\(\s*("[^"]*"|'[^']*'|[^)]*?)\s*\)/gi)) keep(unquote(m[1]), m.index);
+  for (const m of bare.matchAll(/@import\s*(["'])([^"']*)\1/gi)) keep(m[2], m.index);
+  for (const m of bare.matchAll(/image-set\(([^)]*(?:\([^)]*\)[^)]*)*)\)/gi)) {
+    for (const q of m[1].matchAll(/(["'])([^"']*)\1/g)) keep(q[2], m.index);
   }
-  for (const m of bare.matchAll(/@import\s+(["'])([^"']*)\1/g)) out.push({ spec: m[2], line: lineAt(m.index) });
   return out;
 }
 

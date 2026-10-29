@@ -79,6 +79,34 @@ check('a CSS url() inside a comment is not an import',
   fires(`/* url(../../instances/divided-world/ui/pip.png) */\n.kb-pip { color: var(--kb-pip); }`, 'engine/ui/base.css').length === 0);
 check('a CSS data: url and an engine-relative url are clean',
   fires(`.a { background: url("data:image/svg+xml,%3Csvg/%3E"); }\n@import "./tokens.css";`, 'engine/ui/base.css').length === 0);
+check('CSS keywords are read in any case',
+  fires(`@IMPORT "../../instances/divided-world/ui/t.css";\n.a { background: URL(../../instances/divided-world/p.png); }`, 'engine/ui/base.css').length === 2);
+check('an @import with no space before its string fires',
+  fires(`@import"../../instances/divided-world/ui/t.css";`, 'engine/ui/base.css').length === 1);
+check('an @import string with a media query fires',
+  fires(`@import "../../instances/divided-world/ui/t.css" screen and (min-width: 40em);`, 'engine/ui/base.css').length === 1);
+check('a url() with spaces inside its parentheses fires',
+  fires(`.a { background: url(  "../../instances/divided-world/p.png"  ); }`, 'engine/ui/base.css').length === 1);
+check('an image-set() string fires',
+  fires(`.a { background-image: image-set("../../instances/divided-world/p.png" 1x, "../../instances/divided-world/p2.png" 2x); }`, 'engine/ui/base.css').length === 2);
+{
+  const r = fires(`/* a comment\n   over two lines */\n.a { background: url(../../instances/divided-world/p.png); }`, 'engine/ui/base.css');
+  check('a stylesheet\'s line numbers survive its comments', r.length === 1 && r[0]?.line === 3, JSON.stringify(r));
+}
+check('a comment marker inside a CSS string does not hide the rules after it',
+  fires(`.a { content: "/*"; } .b { background: url(../../instances/divided-world/p.png); } .c { content: "*/"; }`, 'engine/ui/base.css').length === 1);
+check('an unquoted data: url is clean',
+  fires(`.a { background: url(data:image/png;base64,AAAA); }`, 'engine/ui/base.css').length === 0);
+check('a bare relative url() is read against its file, so a folder named instances inside engine/ui is clean',
+  fires(`.a { background: url(img/instances/pip.png); }`, 'engine/ui/base.css').length === 0);
+check('a bare relative url() that climbs into instances/ fires',
+  fires(`.a { background: url(../../instances/divided-world/p.png); }`, 'engine/ui/x/y.css').length === 0
+  && fires(`.a { background: url(../../../instances/divided-world/p.png); }`, 'engine/ui/x/y.css').length === 1);
+check('a protocol-relative or absolute URL naming instances/ fires, as a bare specifier does',
+  fires(`.a { background: url(//cdn.example/instances/divided-world/x.png); }`, 'engine/ui/base.css').length === 1
+  && fires(`.a { background: url(https://cdn.example/instances/divided-world/x.png); }`, 'engine/ui/base.css').length === 1);
+check('a url(#fragment), an SVG filter in the same document, is clean',
+  fires(`.a { filter: url(#instances); }`, 'engine/ui/base.css').length === 0);
 check('an instance\'s ui importing another instance\'s stylesheet fires',
   fires(`@import "../../other-world/ui/theme.css";`, 'instances/divided-world/ui/theme.css').length === 1);
 check('an instance\'s ui .tsx importing another instance fires',
