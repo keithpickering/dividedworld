@@ -4,8 +4,9 @@
  * `settle(input, instance)` reads one window's Acts and reactions, turns each player's
  * reactions into votes (engine/rules/votes.ts), hands each character's class the Acts it made
  * and received in the window, and returns ledger entries per player and character, each with
- * a reason. The same function, run on the window so far, is the owner's live view in their
- * own log (`previewForOwner`): there is no second implementation to disagree with it.
+ * a reason. The same function, run on the window so far with the shared vote and the halving
+ * off, is a player's live estimate in their own log (`estimateForOwner`): there is no second
+ * implementation to disagree with it.
  *
  * What a class is given is only what anyone could watch happen: Acts, and reactions as
  * quadrants, times and weights. Who reacted is read here, to hold one player's reactions to
@@ -83,9 +84,23 @@ const round = (x: number) => { const y = Math.round(Math.abs(x) * 1e6) / 1e6; re
 const tidy = (x: number) => Math.round(x * 1e6) / 1e6 || 0;
 const byTime = <T extends { at: number; act: string }>(a: T, b: T) => a.at - b.at || cmp(a.act, b.act);
 
-export function settle(input: SettlementInput, instance: Instance): Settlement {
+/**
+ * How the settlement counts. Both on is the settlement itself. The live estimate turns both off
+ * (estimateForOwner): with the shared vote off, each reaction is a vote of its own, and whatever
+ * counts players counts reactions instead (a post's reactors, its lean, a card's later votes) or,
+ * for a spun thread's repliers, characters; with the halving off, each Act's votes weigh whole.
+ * Then no amount depends on how anyone's reactions group into players.
+ */
+export interface SettleOptions {
+  readonly sharedVote?: boolean;
+  readonly halving?: boolean;
+}
+
+export function settle(input: SettlementInput, instance: Instance, options: SettleOptions = {}): Settlement {
   const { window } = input;
   const settings = instance.settings;
+  const sharedVote = options.sharedVote ?? true;
+  const halving = options.halving ?? true ? settings.halving : 1;
 
   /* ---- the instance's vocabulary ---- */
   const quadrantOf = new Map(instance.reactions.map((r) => [r.key, r.quadrant]));
@@ -128,12 +143,15 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
       return { ...r, quadrant };
     })
     /* A player's reactions to their own characters are never counted, whichever character left them. */
-    .filter((r) => r.player !== playerOf(actOf(r.act).character));
+    .filter((r) => r.player !== playerOf(actOf(r.act).character))
+    /* With the shared vote off, each reaction votes alone: its voter is the reaction, and who
+       left it (`owner`) is read only to keep a caster's own votes off their card's count. */
+    .map((r, i) => (sharedVote ? { ...r, owner: r.player } : { ...r, owner: r.player, player: `${r.player}\u0000${i}` }));
 
   /* ---- votes ---- */
   const shared = shareVotes(reactions);
   const inWindow = (at: number) => at >= window.from && at < window.to;
-  const { votes: windowVotes, paid } = payVotes(reactions, window, input.paid ?? [], actOf, settings.halving);
+  const { votes: windowVotes, paid } = payVotes(reactions, window, sharedVote ? input.paid ?? [] : [], actOf, halving);
   const votesOn = new Map<string, number>();
   for (const v of windowVotes) votesOn.set(v.act, (votesOn.get(v.act) ?? 0) + v.share);
 
@@ -251,7 +269,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     // Each vote after the card counts once per player and alignment: for the earliest of that
     // player's cards of this alignment on the target (an earlier window's included), so two
     // Sweet cards pay what one would (the owner's answer 3, on #4).
-    for (const v of windowVotesOn.get(target.id) ?? []) if (v.at > a.at && v.player !== player && holder.get(`${target.id}\u0000${player}\u0000${alignmentOf.get(a.card!)}`) === a.id) after[v.quadrant] += v.share;
+    for (const v of windowVotesOn.get(target.id) ?? []) if (v.at > a.at && v.owner !== player && holder.get(`${target.id}\u0000${player}\u0000${alignmentOf.get(a.card!)}`) === a.id) after[v.quadrant] += v.share;
     const alignment = alignmentOf.get(a.card!)!;
     const onOthers = playerOf(target.character) !== player;
     const list = played.get(a.character) ?? [];
@@ -271,7 +289,9 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     const firstReply = new Map<string, number>();
     for (const a of postsIn.get(s.thread) ?? []) {
       const p = playerOf(a.character);
-      if (p !== spinner && !firstReply.has(p)) firstReply.set(p, a.at);
+      // Repliers are players; with the shared vote off, characters, so masks are never grouped.
+      const replier = sharedVote ? p : a.character;
+      if (p !== spinner && !firstReply.has(replier)) firstReply.set(replier, a.at);
     }
     const times = [...firstReply.values()].sort((x, y) => x - y);
     const before = times.filter((t) => t < window.from).length;
@@ -381,12 +401,50 @@ export function applyCap(balance: number, entries: readonly { readonly amount: n
   return { balance: next, change: next - balance, overflow: Math.max(0, raw - cap), floored: Math.max(0, -raw) };
 }
 
+/** One line of a player's live estimate: what one character earned for one reason, and from what. */
+export interface EstimateLine {
+  readonly character: string;
+  readonly reason: string;
+  readonly act?: string;
+  readonly quadrant?: Quadrant;
+  /** When the reaction it values landed, for a line that values one reaction. */
+  readonly at?: number;
+  readonly amount: number;
+}
+
 /**
- * The owner's live view: the settlement computed on the window so far, for one player's own
- * characters only. Nothing about another player leaves this function. It runs on the server,
- * never in the browser, because it reads every player's reactions to compute one player's.
+ * A player's live estimate of the open window (the screens' design, section 7): the settlement
+ * with the shared vote and the halving off, for the player's own characters only. Each reaction
+ * is valued as a whole vote alone ("up to +0.10, before the shared vote and halving"), so no
+ * amount says two reactions were one player's, or that a reactor reacted elsewhere; the
+ * settlement is exact. A line the class paid on an Act and quadrant is split into one line per
+ * reaction there in the window, each with its time and its whole-hundredths share, never who
+ * left it: a reaction the character received when the Act is the character's own, one it gave
+ * otherwise. The lines add up to the entries. Run on the server, from estimate_input()
+ * (supabase/migrations/0017_estimate.sql), which reads only what this player's estimate needs.
  */
-export function previewForOwner(openWindow: SettlementInput, instance: Instance, account: string) {
-  const s = settle(openWindow, instance);
-  return { entries: s.entries.filter((e) => e.player === account), details: s.details.filter((d) => d.player === account) };
+export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number }[]; lines: EstimateLine[] } {
+  const s = settle(input, instance, { sharedVote: false, halving: false });
+  const mine = new Set(input.characters.filter((c) => c.player === player).map((c) => c.id));
+  const authorOf = new Map(input.acts.map((a) => [a.id, a.character]));
+  const quadrantOf = new Map(instance.reactions.map((r) => [r.key, r.quadrant]));
+  const inWindow = (at: number) => at >= input.window.from && at < input.window.to;
+  const lines: EstimateLine[] = [];
+  for (const d of s.details.filter((x) => x.player === player)) {
+    const { player: _who, ...line } = d;
+    const own = d.act !== undefined && mine.has(authorOf.get(d.act) ?? '');
+    const times = d.act === undefined || d.quadrant === undefined ? [] : input.reactions
+      .filter((r) => r.act === d.act && quadrantOf.get(r.kind) === d.quadrant && inWindow(r.at) && (own ? r.player !== player : r.character === d.character))
+      .map((r) => r.at).sort((x, y) => x - y);
+    if (!times.length) { lines.push(line); continue; }
+    // Whole hundredths that add up to the line: the remainder to the earliest.
+    const each = Math.trunc(d.amount / times.length);
+    let rest = d.amount - each * times.length;
+    for (const at of times) {
+      const step = rest === 0 ? 0 : Math.sign(rest);
+      rest -= step;
+      lines.push({ ...line, at, amount: each + step });
+    }
+  }
+  return { entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount }) => ({ character, reason, amount })), lines: lines.filter((l) => l.amount !== 0) };
 }
