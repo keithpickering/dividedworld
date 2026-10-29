@@ -27,15 +27,24 @@ async function open(src: string, crossOrigin: boolean, blob: Blob | null, failur
   const natural = { width: img.naturalWidth, height: img.naturalHeight };
   const plan = planDecode(natural);
   if (plan.kind === 'too-large') { release(); throw new CropError(natural.width > 0 ? TOO_LARGE : failure); }
-  const done = (source: CanvasImageSource, release2: () => void): Picture => ({ ...plan.size, url: src, source, release: () => { release2(); release(); } });
+  const done = (source: CanvasImageSource, release2: () => void, url = src): Picture => ({ ...plan.size, url, source, release: () => { release2(); release(); } });
   if (!plan.shrunk) return done(img, () => {});
+  /* What is shown (the stage, the previews) is the shrunk picture too, or the browser would decode the whole original again to draw it. */
+  const showing = async (source: CanvasImageSource, release2: () => void): Promise<Picture> => {
+    const canvas = document.createElement('canvas');
+    canvas.width = plan.size.width;
+    canvas.height = plan.size.height;
+    const ctx = canvas.getContext('2d');
+    ctx?.drawImage(source, 0, 0);
+    const shown = ctx ? await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.92)) : null;
+    if (!shown) { release2(); release(); throw new CropError(TOO_LARGE); }
+    const shownUrl = URL.createObjectURL(shown);
+    return done(source, () => { URL.revokeObjectURL(shownUrl); release2(); }, shownUrl);
+  };
   if (blob && typeof createImageBitmap === 'function') {
-    try {
-      const bitmap = await createImageBitmap(blob, { resizeWidth: plan.size.width, resizeHeight: plan.size.height, resizeQuality: 'high', imageOrientation: 'from-image' });
-      return done(bitmap, () => bitmap.close());
-    } catch {
-      /* Fall through to the <img> path, which has its own cap. */
-    }
+    const bitmap = await createImageBitmap(blob, { resizeWidth: plan.size.width, resizeHeight: plan.size.height, resizeQuality: 'high', imageOrientation: 'from-image' }).catch(() => null);
+    /* Where the bitmap could not be made, the <img> path below has its own cap. */
+    if (bitmap) return showing(bitmap, () => bitmap.close());
   }
   if (!fitsWithoutShrinking(natural)) { release(); throw new CropError(TOO_LARGE); }
   const canvas = document.createElement('canvas');
@@ -45,7 +54,7 @@ async function open(src: string, crossOrigin: boolean, blob: Blob | null, failur
   if (!ctx) { release(); throw new CropError(TOO_LARGE); }
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, plan.size.width, plan.size.height);
-  return done(canvas, () => {});
+  return showing(canvas, () => {});
 }
 
 export const browserIo: PictureIo = {

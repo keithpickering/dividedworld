@@ -99,3 +99,58 @@ test('opens a 48 megapixel photo at a longest side of 4096 and cuts an avatar fr
   await page.getByRole('button', { name: 'Save the avatar' }).click();
   await expect(page.getByText('Avatar saved.')).toBeVisible();
 });
+
+/* What the cropper shows is the shrunk picture too: the stage image is never the 48 megapixel original. */
+test('shows the shrunk picture, not the original, in the stage', async ({ page }) => {
+  await page.goto('/characters');
+  await page.getByRole('row', { name: /^Pipewrench/u }).getByRole('link', { name: 'Edit profile' }).click();
+  await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 8000;
+    canvas.height = 6000;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#4a8';
+    ctx.fillRect(0, 0, 8000, 6000);
+    const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.8));
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const files = new DataTransfer();
+    files.items.add(new File([blob], 'big.jpg', { type: 'image/jpeg' }));
+    input.files = files.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(page.getByRole('group', { name: 'Portrait frame' })).toBeVisible({ timeout: 15_000 });
+  const stage = page.locator('img[src^="blob:"]').first();
+  await expect(stage).toBeVisible();
+  await expect.poll(() => stage.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  expect(await stage.evaluate((img: HTMLImageElement) => Math.max(img.naturalWidth, img.naturalHeight))).toBeLessThanOrEqual(4096);
+});
+
+/* A phone's photo is stored turned and carries an EXIF orientation; the picture opens as it is meant to be seen. */
+for (const orientation of [6, 8]) {
+  test(`opens a large JPEG with EXIF orientation ${orientation} at its oriented size, and the frames match it`, async ({ page }) => {
+    await page.goto('/characters');
+    await page.getByRole('row', { name: /^Pipewrench/u }).getByRole('link', { name: 'Edit profile' }).click();
+    await page.evaluate(async (o) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 6000;
+      canvas.height = 4500;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = '#a48';
+      ctx.fillRect(0, 0, 6000, 4500);
+      const jpeg = new Uint8Array(await (await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.8))).arrayBuffer());
+      /* An APP1 EXIF segment holding one tag, Orientation, right after the start of image. */
+      const exif = [0xff, 0xe1, 0x00, 0x22, 0x45, 0x78, 0x69, 0x66, 0, 0, 0x4d, 0x4d, 0, 0x2a, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, o, 0, 0, 0, 0, 0, 0];
+      const withExif = new Uint8Array([...jpeg.subarray(0, 2), ...exif, ...jpeg.subarray(2)]);
+      const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+      const files = new DataTransfer();
+      files.items.add(new File([withExif], 'phone.jpg', { type: 'image/jpeg' }));
+      input.files = files.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, orientation);
+    await expect(page.getByRole('group', { name: 'Portrait frame' })).toBeVisible({ timeout: 15_000 });
+    /* 6000 by 4500 turned a quarter is 4500 by 6000, shrunk to 3072 by 4096; its whole is a portrait of that shape. */
+    await expect(page.getByText(/Portrait: 3072 by 4096 pixels/u)).toBeVisible();
+    await page.getByRole('button', { name: 'Save the avatar' }).click();
+    await expect(page.getByText('Avatar saved.')).toBeVisible();
+  });
+}
