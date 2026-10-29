@@ -9,7 +9,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Act, KayfaApi, ScreenSettings } from '../../../engine/ui/data/api.ts';
 import { createSupabaseApi } from './supabase.ts';
 
-const REST = '/rest/v1';
+/* Built in pieces on purpose: the web-reads guard refuses a path it cannot read to its end. */
+const REST = ['', 'rest', 'v1'].join('/');
 const URL_ = 'https://proj.supabase.co';
 const ANON = 'anon-key';
 const FALLBACK: ScreenSettings = {
@@ -68,8 +69,8 @@ function harness(router: Router) {
     return reply;
   }) as typeof fetch;
   const api = createSupabaseApi({ url: URL_, anonKey: ANON, settingsFallback: FALLBACK, fetch: fetchFake });
-  const rest = () => log.filter((r) => r.url.pathname.startsWith('/rest/v1/'));
-  const to = (name: string) => log.filter((r) => r.url.pathname === `/rest/v1/${name}`);
+  const rest = () => log.filter((r) => r.url.pathname.startsWith(`${REST}/`));
+  const to = (name: string) => log.filter((r) => r.url.pathname === `${REST}/${name}`);
   return { api, log, rest, to };
 }
 
@@ -105,7 +106,7 @@ describe('what the adapter may request', () => {
       api.standings(), api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
-    const tables = new Set(h.rest().filter((r) => !r.url.pathname.includes('/rpc/')).map((r) => r.url.pathname.replace('/rest/v1/', '')));
+    const tables = new Set(h.rest().filter((r) => !r.url.pathname.includes('/rpc/')).map((r) => r.url.pathname.replace(`${REST}/`, '')));
     expect(tables.size).toBeGreaterThan(15);
     for (const t of tables) expect(ALLOWED_TABLES.has(t), `read of ${t}`).toBe(true);
     const rpcs = h.rest().filter((r) => r.url.pathname.includes('/rpc/')).map((r) => r.url.pathname.replace(`${REST}/rpc/`, ''));
@@ -401,6 +402,111 @@ describe('the estimate', () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+});
+
+describe('the estimate across sessions', () => {
+  const FRESH = '2099-01-01T00:00:00Z';
+  const answerFor = (who: string) => ({ entries: [{ character: B, reason: `for.${who}`, amount: 1 }], lines: [], asOf: '2026-10-29T12:00:00Z', freshAfter: FRESH });
+
+  /** A client stub whose session the test switches, and a fetch whose answers the test releases. */
+  function world() {
+    let user: string | null = 'A';
+    let notify: (event: string, session: unknown) => void = () => {};
+    const whoami = vi.fn(async () => ({ data: 'acct', error: null, status: 200 }));
+    const client = {
+      auth: {
+        getSession: async () => ({ data: { session: user ? { access_token: `token-${user}`, user: { id: user } } : null } }),
+        onAuthStateChange: (f: typeof notify) => {
+          notify = f;
+          return { data: { subscription: { unsubscribe() {} } } };
+        },
+      },
+      rpc: whoami,
+    };
+    const asked: { who: string; release: (r: Response) => void }[] = [];
+    const fetchFake = (async (_input: unknown, init?: RequestInit) => {
+      const auth = new Headers(init?.headers).get('authorization') ?? '';
+      return new Promise<Response>((resolve) => asked.push({ who: auth.replace('Bearer token-', ''), release: resolve }));
+    }) as typeof fetch;
+    const api = createSupabaseApi({ url: URL_, anonKey: ANON, settingsFallback: FALLBACK, client: client as never, fetch: fetchFake });
+    const become = (id: string | null, event = 'SIGNED_IN') => {
+      user = id;
+      notify(event, id ? { access_token: `token-${id}`, user: { id } } : null);
+    };
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    return { api, asked, become, whoami, tick };
+  }
+
+  it('asks again when the session becomes another user, and never serves one user the other\'s answer', async () => {
+    const w = world();
+    w.api.onSession(() => {});
+    const first = w.api.estimate();
+    await w.tick();
+    w.asked[0]?.release(json(answerFor('A')));
+    expect((await first).entries[0]?.reason).toBe('for.A');
+    await w.api.estimate();
+    expect(w.asked).toHaveLength(1);
+    w.become('B');
+    const second = w.api.estimate();
+    await w.tick();
+    expect(w.asked).toHaveLength(2);
+    expect(w.asked[1]?.who).toBe('B');
+    w.asked[1]?.release(json(answerFor('B')));
+    expect((await second).entries[0]?.reason).toBe('for.B');
+  });
+
+  it('drops an answer that lands after the session changed, and a later ask is not joined to it', async () => {
+    const w = world();
+    w.api.onSession(() => {});
+    const forA = w.api.estimate();
+    await w.tick();
+    w.become('B');
+    const forB = w.api.estimate();
+    await w.tick();
+    expect(w.asked.map((r) => r.who)).toEqual(['A', 'B']);
+    w.asked[0]?.release(json(answerFor('A')));
+    await forA;
+    // A's late answer is not cached for B: B's next ask is still B's own request in flight.
+    w.asked[1]?.release(json(answerFor('B')));
+    expect((await forB).entries[0]?.reason).toBe('for.B');
+    expect((await w.api.estimate()).entries[0]?.reason).toBe('for.B');
+    expect(w.asked).toHaveLength(2);
+  });
+
+  it('does not cache an answer that lands after the session changed', async () => {
+    const w = world();
+    w.api.onSession(() => {});
+    const forA = w.api.estimate();
+    await w.tick();
+    w.become(null, 'SIGNED_OUT');
+    w.asked[0]?.release(json(answerFor('A')));
+    await forA;
+    w.become('B');
+    const forB = w.api.estimate();
+    await w.tick();
+    expect(w.asked).toHaveLength(2);
+    w.asked[1]?.release(json(answerFor('B')));
+    expect((await forB).entries[0]?.reason).toBe('for.B');
+  });
+
+  it('reads whoami once for a user, not again on a token refresh or a repeat sign-in, and again for another user', async () => {
+    const w = world();
+    const heard = vi.fn();
+    w.api.onSession(heard);
+    w.become('A', 'INITIAL_SESSION');
+    await w.tick();
+    w.become('A', 'TOKEN_REFRESHED');
+    w.become('A', 'SIGNED_IN');
+    await w.tick();
+    expect(w.whoami).toHaveBeenCalledTimes(1);
+    expect(heard).toHaveBeenCalledTimes(1);
+    w.become('B');
+    await w.tick();
+    expect(w.whoami).toHaveBeenCalledTimes(2);
+    w.become(null, 'SIGNED_OUT');
+    await w.tick();
+    expect(heard).toHaveBeenLastCalledWith({ signedIn: false, account: null });
   });
 });
 

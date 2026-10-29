@@ -17,6 +17,8 @@ declare
   fresh uuid;
   reply uuid;
   r record;
+  ln record;
+  plan text := '';
   t0 timestamptz := date_trunc('second', now() - interval '20 days');
 begin
   op := tests.post(a, older, 'Opening', t0);
@@ -54,6 +56,29 @@ begin
   fresh := tests.thread('Fresh');
   perform tests.post(a, fresh, 'Only', now());
   if (select replies_this_week from thread_list where id = fresh) is distinct from 0 then raise exception 'an opening post is not a reply'; end if;
+
+  -- The list never scans: a board's page is read from the (board, last_at) index, and the week's
+  -- replies from the partial index of recent posts. A table this small would be scanned whatever
+  -- the indexes were, so the sequential scan is off for the plans being looked at.
+  set local enable_seqscan = off;
+  for ln in execute format('explain select * from thread_list where board = %L order by last_at desc limit 20', (select board from threads where id = older)) loop
+    plan := plan || E'\n' || ln."QUERY PLAN";
+  end loop;
+  if plan not like '%threads_board_last_at%' then raise exception 'a board''s list is not read from threads_board_last_at: %', plan; end if;
+  -- The week's replies: on a table this small the planner reads the week's posts through any index
+  -- that mentions a thread or kind, usable or not. So every other index on acts is dropped here (this
+  -- file is rolled back) and the question is whether acts_recent_posts can serve the subquery, that
+  -- is, that its predicate still matches the view's.
+  for ln in select indexname from pg_indexes where schemaname = 'public' and tablename = 'acts' and indexname not in ('acts_recent_posts', 'acts_pkey') and indexname not in (select conname from pg_constraint) loop
+    execute format('drop index %I', ln.indexname);
+  end loop;
+  alter table acts drop constraint acts_thread_seq_key;
+  plan := '';
+  for ln in execute format('explain select * from thread_list where board = %L order by last_at desc limit 20', (select board from threads where id = older)) loop
+    plan := plan || E'\n' || ln."QUERY PLAN";
+  end loop;
+  if plan not like '%acts_recent_posts%' then raise exception 'the week''s replies are not read from acts_recent_posts: %', plan; end if;
+  set local enable_seqscan = on;
 
   -- A signed-in player reads the list; a signed-out visitor does not.
   perform tests.become(bob);

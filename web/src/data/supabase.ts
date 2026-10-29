@@ -361,8 +361,20 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /* --------------------------------------------------------------- estimate ---- */
 
+  /* The estimate is the signed-in player's own, so its cache belongs to one user: when the session's user
+     changes the answer and any ask in flight are dropped, and an answer that lands after a change is
+     returned to the one who asked and never kept. */
   let lastEstimate: { answer: Estimate; until: number } | null = null;
   let estimateInFlight: Promise<Estimate> | null = null;
+  let estimateOwner: string | null | undefined;
+  /** Notes the session's user; true when it is not the one the estimate cache belongs to. */
+  function ownerChanged(id: string | null): boolean {
+    if (id === estimateOwner) return false;
+    estimateOwner = id;
+    lastEstimate = null;
+    estimateInFlight = null;
+    return true;
+  }
 
   /* -------------------------------------------------------------------- the api ---- */
 
@@ -380,7 +392,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const api: KayfaApi = {
     session: currentSession,
     onSession(listener) {
+      let heardFor: string | null | undefined;
       const { data } = client.auth.onAuthStateChange((_event, s) => {
+        const id = s?.user?.id ?? null;
+        ownerChanged(id);
+        // A token refresh or a repeat sign-in of the same user changes nothing a screen shows.
+        if (id === heardFor) return;
+        heardFor = id;
         // Not awaited inside the callback: Auth holds its lock while it runs.
         setTimeout(() => {
           void (s ? currentSession() : Promise.resolve<Session>({ signedIn: false, account: null }))
@@ -551,19 +569,23 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     estimate() {
       if (lastEstimate && Date.now() < lastEstimate.until) return Promise.resolve(lastEstimate.answer);
-      estimateInFlight ??= (async () => {
+      if (estimateInFlight) return estimateInFlight;
+      let mine!: Promise<Estimate>;
+      mine = (async () => {
         try {
           const a = await edge('estimate', {}, NOT_READ, true);
           if (!a.ok) throw new Error(a.error);
           const answer = toEstimate(a.value);
           const until = answer.freshAfter ? Date.parse(answer.freshAfter) : Number.NaN;
-          lastEstimate = Number.isNaN(until) ? null : { answer, until };
+          // Still the ask in flight: the user has not changed since it was sent.
+          if (estimateInFlight === mine) lastEstimate = Number.isNaN(until) ? null : { answer, until };
           return answer;
         } finally {
-          estimateInFlight = null;
+          if (estimateInFlight === mine) estimateInFlight = null;
         }
       })();
-      return estimateInFlight;
+      estimateInFlight = mine;
+      return mine;
     },
     async invites() {
       const rows = await list(() => client.from('my_invites').select('id,created_at,used,expires_at,expired').order('created_at', { ascending: false }));

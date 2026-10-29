@@ -160,6 +160,17 @@ describe('reading a thread by seq', () => {
     expect(list.threads.map((t) => t.id)).toEqual([thread]);
     expect(list.threads[0]?.lastAct).toBe(mine.id);
   });
+  test('a thread\'s last time is its greatest non-edit Act\'s, so a back-dated Act does not move it back', async () => {
+    const { fake } = world();
+    fake.clock.advance(DAY);
+    const opened = fake.clock.now();
+    const said = fake.seed.thread('the-system', null, 'Tally', 'Settled.');
+    fake.seed.post(said.thread, null, 'seeded long ago', { at: opened - 10 * DAY });
+    const system = (await fake.boards()).find((b) => b.slug === 'the-system')!;
+    const listed = (await fake.threads(system.id, { offset: 0, limit: 10 })).threads.find((t) => t.id === said.thread)!;
+    expect(listed.lastSeq).toBe(2);
+    expect(Date.parse(listed.lastAt)).toBe(opened);
+  });
   test('a spin from The System\'s board opens on the players\' board', async () => {
     const { fake, anaFace } = world();
     const said = fake.seed.thread('the-system', null, 'Tally', 'Settled.');
@@ -271,6 +282,14 @@ describe('Turns', () => {
     must(await fake.turn(anaFace, 'heel', 'silent', false, false));
     expect(await fake.withdrawTurn(anaFace)).toEqual({ ok: true, value: { withdrawn: true } });
     expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.pendingTurn).toBeNull();
+  });
+  test('retiring a character clears its waiting Turn, as the server does', async () => {
+    const { fake, anaFace } = world();
+    must(await fake.turn(anaFace, 'heel', 'silent', false, false));
+    fake.seed.retire(anaFace);
+    const gone = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
+    expect(gone.retiredAt).not.toBeNull();
+    expect(gone.pendingTurn).toBeNull();
   });
   test('the cooldown runs from the settlement that made the Turn, and says when it ends', async () => {
     const { fake, anaFace } = world();

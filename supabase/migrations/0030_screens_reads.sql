@@ -110,6 +110,10 @@ language sql set search_path = public, pg_temp as $$
 $$;
 select backfill_threads_last_at();
 
+-- The price of a list that never scans: last_at is in this index, so every non-edit Act's update of
+-- its thread (acts_take_seq() above) changes an indexed column, which makes it a non-HOT update that
+-- also writes an index entry. That is the cost of putting the sort in the index, paid on every post
+-- of a busy instance, and chosen over scanning every thread's Acts for each page of a list.
 create index threads_board_last_at on threads (board, last_at desc);
 -- A thread's replies this week, read from the thread's own posts in time order, never from every Act.
 create index acts_recent_posts on acts (thread, created_at) where kind = 'post' and seq > 1;

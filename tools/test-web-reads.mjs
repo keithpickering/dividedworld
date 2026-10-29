@@ -68,6 +68,40 @@ check('a .from() on something that is not a client chain, an Array.from, is clea
 check('a comment naming a private table is clean', fires(`// client.from('reactions')\nexport const a = 1;`).length === 0);
 check('a screen file is read too, and a clean one passes', fires(`export const T = () => null;`, 'engine/ui/thread/Thread.tsx').length === 0);
 
+/* ---- ways round the property form ---- */
+check('element access .from fires', fires(`client['from']('reactions').select();`).length === 1);
+check('element access .rpc fires', fires(`client['rpc']('x');`).length === 1);
+check('element access .schema fires', fires(`const s = client['schema']('public');`).length === 1);
+check('destructuring from off a client fires', fires(`const { from } = client; from('reactions');`).length >= 1);
+check('destructuring rpc off a client fires', fires(`const { rpc } = client;`).length >= 1);
+check('a bound from fires', fires(`const f = client.from.bind(client);`).length >= 1);
+check('rpc read without a call fires', fires(`const r = client.rpc;`).length >= 1);
+check('a .from() result kept in a variable fires', fires(`const q = client.from('reading'); q.insert({});`).length >= 1);
+check('a .from() result returned fires', fires(`const q = () => client.from('reading');`).length >= 1);
+check('a .from() followed by a read method is clean', fires(`client.from('reading').select('*').eq('a', 1).order('b').limit(3);`).length === 0);
+check('a parenthesized cast chain write fires', fires(`(client.from('reading') as any).upsert({});`).length >= 1);
+check('a non-null chain write fires', fires(`client.from('reading')!.upsert({});`).length >= 1);
+check('a satisfies chain write fires', fires(`(client.from('reading') satisfies unknown).delete();`).length >= 1);
+check('a cast client fires on a private table', fires(`(client as any).from('reactions').select();`).length === 1);
+check('a REST path built in pieces fires', fires(`const base = url + '/rest/v1/'; fetch(base + name);`).length === 1);
+check('a REST path ending at /rest/v1 fires', fires(`const base = url + '/rest/v1';`).length === 1);
+check('a REST rpc prefix fires', fires('const base = `${url}/rest/v1/rpc/`;').length === 1);
+check('a dynamic import of supabase-js outside the data layer fires', fires(`const m = await import('@supabase/supabase-js');`, 'web/src/App.tsx').length === 1);
+check('a require of supabase-js outside the data layer fires', fires(`const m = require('@supabase/supabase-js');`, 'web/src/App.tsx').length === 1);
+check('a dynamic import of supabase-js in the data layer is clean', fires(`const m = await import('@supabase/supabase-js');`).length === 0);
+check('an export from supabase-js outside the data layer fires', fires(`export { createClient } from '@supabase/supabase-js';`, 'web/src/App.tsx').length === 1);
+check('an export from supabase-js in the data layer is clean', fires(`export { createClient } from '@supabase/supabase-js';`).length === 0);
+check('the public avatars bucket is clean', fires(`client.storage.from('avatars').getPublicUrl(p);`).length === 0);
+check('any other bucket fires', fires(`client.storage.from('private').download(p);`).length === 1);
+check('a bucket the guard cannot read fires', fires(`client.storage.from(b).download(p);`).length === 1);
+check('globalThis.Array.from is clean', fires(`globalThis.Array.from(x);`).length === 0);
+check('window.Array.from is clean', fires(`window.Array.from(x);`).length === 0);
+for (const n of ['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']) {
+  check(`${n}.from(x) is clean`, fires(`${n}.from(x);`).length === 0);
+}
+check('a screen in TSX with JSX is parsed, and a read in it fires', fires(`export const T = () => { client.from('reactions').select(); return <div className="a">{x}</div>; };`, 'engine/ui/thread/Thread.tsx').length === 1);
+check('a TSX file with JSX and no read is clean', fires(`export const T = () => <p>{xs.map((x) => <i key={x}>{x}</i>)}</p>;`, 'engine/ui/thread/Thread.tsx').length === 0);
+
 /* ---- the real tree ---- */
 {
   const files = treeFiles();

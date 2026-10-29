@@ -28,7 +28,7 @@ function Appearance({ api }: { readonly api: KayfaApi }) {
   useEffect(() => {
     if (!session.account) { applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes); return; }
     let live = true;
-    void api.preferences().then((p) => { if (live) applyAppearance(document, p, instanceUi.themes); });
+    void api.preferences().then((p) => { if (live) applyAppearance(document, p, instanceUi.themes); }, () => { /* keep the device's choice */ });
     return () => { live = false; };
   }, [api, session.account]);
   return null;

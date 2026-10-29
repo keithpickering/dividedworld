@@ -234,8 +234,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const first = all[0];
     const last = all.at(-1);
     const week = now() - 7 * DAY;
+    // The greatest time of any placed (non-edit) Act, as threads.last_at is; the creation time with none, since lastAt is not null here.
     return {
-      id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at), lastAt: iso(last?.at ?? t.at), lastSeq: t.nextSeq - 1,
+      id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at), lastAt: iso(all.length ? Math.max(...all.map((a) => a.at)) : t.at), lastSeq: t.nextSeq - 1,
       firstAct: first?.id ?? null, firstCharacter: first?.character ?? null, lastAct: last?.id ?? null, lastCharacter: last?.character ?? null,
       repliesThisWeek: all.filter((a) => a.kind === 'post' && a.seq! > 1 && a.at > week && a.at <= now()).length,
     };
@@ -754,7 +755,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!accounts.has(account)) throw new Error(`no such account ${account}`);
       return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, loudness: o?.loudness ?? 'announced', retired: o?.retired, at: o?.at }).id;
     },
-    retire(character) { characters.get(character)!.retiredAt = now(); },
+    retire(character) {
+      const c = characters.get(character)!;
+      c.retiredAt = now();
+      // As retire_character does: a waiting Turn of a retired mask would never be applied.
+      c.pending = null;
+    },
     thread(slug, character, title, body = '', o = {}) {
       const board = boards.find((b) => b.slug === slug);
       if (!board) throw new Error(`no board ${slug}`);
