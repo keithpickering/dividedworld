@@ -38,7 +38,10 @@ begin
   return new;
 end $$;
 
--- How long an invite opens for: the setting, or, on an instance not yet seeded with it, a week.
+-- How long an invite opens for: the setting, or, for the backfill below on an instance not yet
+-- seeded with it, a week. The cap has no such fallback: an instance seeded before this migration
+-- holds no invitesPerPlayer until it is seeded again, which every deploy does, and until then
+-- create_invite says the setting is not set rather than guess a cap.
 create function invite_lifetime() returns interval
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(span_interval((select value from settings where key = 'inviteLifetime')), interval '7 days')
@@ -47,8 +50,20 @@ $$;
 -- Every invite made before this migration opens for a whole lifetime from now, so none dies the
 -- day the cap arrives.
 alter table invites add column expires_at timestamptz;
-update invites set expires_at = case when used_by is null then now() else created_at end + invite_lifetime();
+update invites set expires_at = now() + invite_lifetime();
 alter table invites alter column expires_at set not null, alter column expires_at set default now() + invite_lifetime();
+
+-- A cap is a whole number of invites, at least one, held so when it is written.
+create function settings_invites_hold() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  if new.key = 'invitesPerPlayer' and not (jsonb_typeof(new.value) = 'number' and (new.value #>> '{}')::numeric >= 1
+       and (new.value #>> '{}')::numeric = trunc((new.value #>> '{}')::numeric) and (new.value #>> '{}')::numeric <= 2147483647) then
+    raise exception 'invitesPerPlayer is a whole number, at least 1' using errcode = '23514';
+  end if;
+  return new;
+end $$;
+create trigger settings_invites_hold before insert or update on settings for each row execute function settings_invites_hold();
 
 -- Whether an invite is open to its inviter: not shown used, and not expired.
 create function invite_open_for_inviter(used_at timestamptz, expires_at timestamptz) returns boolean
@@ -147,6 +162,6 @@ alter table admins enable row level security;
 revoke all on admins, my_invites from anon, authenticated;
 grant select on my_invites to authenticated;
 
-revoke execute on function invite_lifetime(), invite_open_for_inviter(timestamptz, timestamptz), invite_room(uuid, bigint) from public, anon, authenticated;
+revoke execute on function invite_lifetime(), invite_open_for_inviter(timestamptz, timestamptz), invite_room(uuid, bigint), settings_invites_hold() from public, anon, authenticated;
 revoke execute on function is_admin() from public, anon;
 grant execute on function is_admin() to authenticated;

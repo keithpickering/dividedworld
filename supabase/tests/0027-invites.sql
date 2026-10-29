@@ -51,11 +51,14 @@ begin
   perform apply_settlement(coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons)),
     coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons)) + interval '1 day', '[]');
   perform tests.unbecome();
+  -- Shown used, it frees a place: this makes Ann's third open invite.
   perform tests.become(ann);
   if pg_temp.refusal('select create_invite()') is not null then raise exception 'a use the settlement has shown frees an invite'; end if;
   perform tests.unbecome();
 
-  -- An expired invite reads as an unknown code, and frees a place.
+  -- An expired invite reads as an unknown code, and frees a place. Alike in time too: both are
+  -- refused by one lookup, the expiry one more condition on the row it finds or does not.
+  -- (Ann holds codes[2], codes[3] and the one just made.)
   update invites set expires_at = now() - interval '1 minute' where code_hash = invite_hash(codes[2]);
   perform tests.become_service();
   if invite_open(codes[2]) is distinct from invite_open('never-made') or invite_open(codes[2]) is distinct from 'nothing' then raise exception 'an expired code reads unlike an unknown one'; end if;
@@ -70,6 +73,7 @@ begin
   open_one := (select id from invites where code_hash = invite_hash(codes[3]));
   perform tests.become(ann);
   if (select expired from my_invites where id = expired_one) is distinct from true then raise exception 'its inviter sees it expired'; end if;
+  -- The expired one freed a place: a new one fills it.
   perform create_invite();
   -- At the cap again; a reissue of the expired one would open a fourth, and is refused.
   why := pg_temp.refusal(format('select reissue_invite(%L)', expired_one));
@@ -81,6 +85,23 @@ begin
   perform tests.become_service();
   if invite_open(fresh) is distinct from 'opens' then raise exception 'a reissued code opens'; end if;
   perform tests.unbecome();
+
+  -- Under the cap (another of Ann's lapses), the expired one reissued opens again, for a whole
+  -- lifetime: its way out.
+  update invites set expires_at = now() - interval '1 minute' where id = open_one;
+  perform tests.become(ann);
+  fresh := reissue_invite(expired_one) ->> 'code';
+  if (select (expired, expires_at) from my_invites where id = expired_one) is distinct from (false, now() + interval '7 days') then raise exception 'an expired invite reissued under the cap opens again'; end if;
+  perform tests.unbecome();
+  perform tests.become_service();
+  if invite_open(fresh) is distinct from 'opens' then raise exception 'a reissued expired code opens'; end if;
+  perform tests.unbecome();
+  -- A cap is a whole number, at least one, when it is written.
+  begin
+    update settings set value = '0' where key = 'invitesPerPlayer';
+    raise exception 'a cap of 0 was written';
+  exception when check_violation then null;
+  end;
 
   -- Who is an admin is the service's to write and the caller's own to ask.
   perform tests.become(ann);
