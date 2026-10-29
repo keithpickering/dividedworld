@@ -347,3 +347,23 @@ test('the estimate shows two reactions on a Lurker\'s card as two lines, each a 
   const lines = estimateForOwner({ ...b, reactions: [{ act: 'k1', player: 'pf', character: 'fa', kind: 'fire', at: 3 * H }, { act: 'k1', player: 'pj', character: 'ja', kind: 'heart', at: 5 * H }] }, world, 'pl').lines;
   assert.deepEqual(lines.filter((l) => l.reason === 'lurker.cardDrew').map((l) => [l.act, l.quadrant, l.at, l.amount]), [['k1', 'excitedPositive', 3 * H, 10], ['k1', 'excitedPositive', 5 * H, 10]]);
 });
+
+/* A reveal of a class (the class reveal design, section 4): an Act like any of its character's. */
+test('a Face\'s reveal drawing a cheer pays the Face\'s cheer; a Lurker\'s reveal is no post toward its limit', () => {
+  const W = { id: 'w1', from: 0, to: 24 * H };
+  const reveal = (id: string, character: string, at: number) => ({ id, character, kind: 'unmask' as const, at, thread: 't' });
+  const posts = (character: string, n: number) => Array.from({ length: n }, (_, i) => ({ id: `${character}-p${i}`, character, kind: 'post' as const, at: (i + 2) * H, thread: 't' }));
+  const r = settle({
+    window: W,
+    characters: [
+      { id: 'fa', player: 'pf', classes: [{ class: 'face', from: -1 }] },
+      { id: 'lu', player: 'pl', classes: [{ class: 'lurker', from: -1 }] },
+      { id: 'he', player: 'ph', classes: [{ class: 'heel', from: -1 }] },
+    ],
+    // The Lurker posts as many times as it may, and reveals besides.
+    acts: [reveal('u-fa', 'fa', H), reveal('u-lu', 'lu', H), ...posts('lu', settings.economy['lurker.postsAllowed']!)],
+    reactions: [{ act: 'u-fa', player: 'ph', character: 'he', kind: 'fire', at: 2 * H }],
+  }, world);
+  assert.deepEqual(r.entries.filter((e) => e.character === 'fa').map((e) => [e.reason, e.amount]), [['face.cheered', settings.vote]]);
+  assert.deepEqual(r.entries.filter((e) => e.character === 'lu' && e.reason === 'lurker.postedTooMuch'), []);
+});

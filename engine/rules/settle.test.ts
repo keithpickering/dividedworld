@@ -687,3 +687,19 @@ test('the estimate ranks reactions at the same instant alike, whatever keys thei
   assert.ok(crowd(tied).length > 0);
   assert.deepEqual(crowd(renamed), crowd(tied));
 });
+
+test('a reveal is an Act of its character like a card: its reactions are scored, it counts in the halving, and it is no post', () => {
+  const { rules, inputs } = recorder();
+  const b = base();
+  const unmask: InputAct = { id: 'u1', character: 'ann-fan', kind: 'unmask', at: FROM + 30 * 60_000, thread: 't1' };
+  const input: SettlementInput = { ...b, acts: [unmask, ...b.acts], reactions: [react('u1', 'bob', 'bob-1', 'fire', FROM + 3 * H), ...b.reactions] };
+  // Its cheer pays its character's class, as any of its Acts' would.
+  const r = settle(input, instance);
+  assert.deepEqual(r.details.filter((d) => d.act === 'u1').map((d) => [d.reason, d.amount]), [['fan.love', 10]]);
+  // And it is Bob's first Act of Ann's voted on, so p1 and p2, after it, are his second and third: halved, then halved again.
+  assert.equal(amountOf(r, 'ann-fan', 'fan.love'), amountOf(settle(b, instance), 'ann-fan', 'fan.love') - 5 - 2.5 + 10 + 0.5);
+  settle({ ...input, acts: [{ ...unmask, character: 'ann-quiet' }, ...b.acts] }, withClasses(rules));
+  const received = inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.received);
+  assert.deepEqual(received.map((x) => [x.act, x.actKind]), [['u1', 'unmask']], 'a class reads a reveal\'s reactions, named as a reveal\'s');
+  assert.deepEqual(inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.posts), [], 'a reveal is not a post');
+});

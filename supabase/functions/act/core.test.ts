@@ -150,6 +150,8 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'setDebut', character: id, timing: 'now', loudness: 'announced' },
       { set_debut: { id, waiting: false, announcement: { act: { id: 'd', thread }, thread: null } } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'd', thread } }]],
     [{ action: 'setDebut', character: id, timing: 'now', loudness: 'silent' }, { set_debut: { id, waiting: false, announcement: null } }, []],
+    // A reveal is the character's Act in its thread, sent like a post.
+    [{ action: 'unmask', character: id, thread }, { unmask: { id: 'u', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'u', thread } }]],
   ];
   for (const [request, answers, broadcasts] of cases) {
     const { dbs } = pair(answers);

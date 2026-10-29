@@ -13,7 +13,7 @@
  * the two never disagree on an emoji.
  */
 import type { Instance } from './types.ts';
-import { basePrice } from './cards.ts';
+import { basePrice, casterMessage } from './cards.ts';
 
 /**
  * A decided action. Most are written as the player, whose session the database reads. A card's
@@ -120,6 +120,13 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     return { rpc: 'turn', args: { through: id(r, 'character'), to_class: to, loudness } };
   },
   withdrawTurn: (r) => ({ rpc: 'withdraw_turn', args: { through: id(r, 'character') } }),
+  // A reveal of the character's own class (supabase/migrations/0027_unmask.sql): the class is read
+  // where it is written, never taken from the request; the message is a caster's, plain and short.
+  unmask: (r) => {
+    const said = casterMessage(r.message);
+    if (!said.ok) throw new Refused('message', said.why);
+    return { rpc: 'unmask', args: { through: id(r, 'character'), in_thread: id(r, 'thread'), message: said.value } };
+  },
   buyCard: (r, instance) => {
     const key = card(r, instance);
     return { rpc: 'buy_card', args: { card: key, price: basePrice(instance.cards.find((c) => c.key === key)!, instance.settings) }, asService: true };

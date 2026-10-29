@@ -89,8 +89,12 @@ export interface Settings {
   readonly economy: Readonly<Record<string, number>>;
 }
 
-/** The kinds of Act the settlement reads. */
-export type ActKind = 'post' | 'spin' | 'card' | 'edit';
+/**
+ * The kinds of Act the settlement reads. An `unmask` is a character's reveal of its own class
+ * (supabase/migrations/0027_unmask.sql): an Act of its character like a card, whose reactions are
+ * scored and which counts in the halving, and no post.
+ */
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'unmask';
 
 /**
  * A board the instance starts with. Exactly one is The System's (`system`): only The System posts

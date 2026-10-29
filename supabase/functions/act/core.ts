@@ -52,6 +52,7 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   play_card: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
   spin: (a) => [...thread(a.thread), ...act(a.act)],
+  unmask: (a) => act(a),
   // A Turn waits for the settlement, whose tally is sent from there (settle/core.ts).
   turn: () => [],
   withdraw_turn: () => [],

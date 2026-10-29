@@ -139,3 +139,19 @@ test('a character is made with a name and one of the instance\'s classes; invite
     assert.match(refusal({ action: 'createCharacter', name, class: 'a' }) ?? '', /^name: can hold/, JSON.stringify(name));
   }
 });
+
+test('a reveal names its character and thread, and a line of its words, checked before the database is asked', () => {
+  assert.deepEqual(decide({ action: 'unmask', character: id, thread: other, message: '  You knew.  ' }, instance),
+    { ok: true, rpc: 'unmask', args: { through: id, in_thread: other, message: 'You knew.' } });
+  assert.deepEqual(decide({ action: 'unmask', character: id, thread: other }, instance),
+    { ok: true, rpc: 'unmask', args: { through: id, in_thread: other, message: '' } });
+  // Two hundred characters, counted as characters: two hundred emoji are taken, and one more is not.
+  assert.equal(refusal({ action: 'unmask', character: id, thread: other, message: '🔥'.repeat(200) }), null);
+  assert.match(refusal({ action: 'unmask', character: id, thread: other, message: 'x'.repeat(201) }) ?? '', /^message: the message is at most 200 characters/);
+  assert.match(refusal({ action: 'unmask', character: id, thread: other, message: 7 }) ?? '', /^message:/);
+  assert.match(refusal({ action: 'unmask', character: id, thread: 'x' }) ?? '', /^thread:/);
+  assert.match(refusal({ action: 'unmask', thread: other }) ?? '', /^character:/);
+  // The class is The System's to read, never the request's.
+  assert.deepEqual(decide({ action: 'unmask', character: id, thread: other, class: 'a' }, instance),
+    { ok: true, rpc: 'unmask', args: { through: id, in_thread: other, message: '' } });
+});

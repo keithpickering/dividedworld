@@ -322,6 +322,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         character: c.id,
         from: stretch.from,
         to: stretch.to,
+        // Posts alone: a card, a spin and a reveal (`unmask`) are the character's Acts, never its posts.
         posts: inside((windowActsBy.get(c.id) ?? []).filter((a) => a.kind === 'post')).map((a) => ({ act: a.id, at: a.at })),
         received: inside(received.get(c.id)).sort(byTime),
         given: inside(given.get(c.id)).sort(byTime),
