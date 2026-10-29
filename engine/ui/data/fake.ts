@@ -621,6 +621,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         : [];
       return { acts: all.slice(page.offset, page.offset + page.limit).map(publicAct), total: all.length };
     },
+    characterReveals: (id, limit = 50) => [...acts.values()].filter((a) => a.kind === 'reveal' && a.payload.character === id)
+      .sort((x, y) => y.at - x.at || y.order - x.order).slice(0, Math.max(1, limit)).map(publicAct),
     tallies: (ids) => Object.fromEntries(ids.map((id) => [id, tallyOf(id)])),
     viewCounts: (ids) => Object.fromEntries(ids.map((id) => [id, views.get(id) ?? 0])),
     season: () => [...seasons].sort((a, b) => b.number - a.number)[0] ?? null,
@@ -634,6 +636,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .map((s): Standing => ({ ...s, place: 1 + listed.filter((o) => o.standing > s.standing).length }))
         .sort((a, b) => a.place - b.place || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     },
+    standingsCount: () => [...characters.values()].filter((c) => c.debutedAt !== null).length,
     lastSettledAt: () => (lastSettled === null ? null : iso(lastSettled)),
     classReveals: (ids) => [...acts.values()].filter((a) => a.kind === 'unmask' && a.character !== null && ids.includes(a.character))
       .sort((a, b) => a.at - b.at || a.order - b.order)

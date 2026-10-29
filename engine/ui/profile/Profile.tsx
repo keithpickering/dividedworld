@@ -22,7 +22,7 @@ import { Pips } from '../postbit/Postbit.tsx';
 import { monthYear, shortDate } from '../postbit/dates.ts';
 import { reveals } from '../postbit/reveals.ts';
 import { Link } from '../router.tsx';
-import { PROFILE_ROWS, actRow, newest, revealRow, turnRow, type RecordRow, type Words } from './record.ts';
+import { PROFILE_ROWS, actRow, newest, revealRow, seasonRow, turnLinks, turnRow, type RecordRow, type Words } from './record.ts';
 import { NotFound, recordHref } from './Record.tsx';
 import { useCharacter } from './useCharacter.ts';
 import './profile.css';
@@ -35,6 +35,7 @@ interface Loaded {
   readonly reveals: readonly ClassReveal[];
   readonly turns: readonly TurnAnnounced[];
   readonly rows: readonly RecordRow[];
+  readonly seasonSize: number;
 }
 
 export function ProfileScreen({ id }: { readonly id: Id }) {
@@ -70,10 +71,12 @@ function Profile({ character: c }: { readonly character: Character }) {
     Promise.all([
       api.characterCounts(c.id), api.standingsOf([c.id]), api.lastSettledAt(), api.season(),
       api.classReveals([c.id]), api.turnsAnnounced([c.id]), api.characterActs(c.id, ['post', 'spin', 'card'], { offset: 0, limit: PROFILE_ROWS }),
-    ]).then(([counts, standings, settledAt, season, revealed, turns, acts]) => {
+      api.characterReveals(c.id), api.standingsCount(),
+    ]).then(async ([counts, standings, settledAt, season, revealed, turns, acts, seasons, seasonSize]) => {
+      const links = await turnLinks(api, turns, words.perPage);
       /* The newest few of everything: the newest few Acts, with every reveal and Turn, hold the newest few overall. */
-      const rows = newest([...acts.acts.map((a) => actRow(a, words)), ...revealed.map((r) => revealRow(r, words)), ...turns.map((t) => turnRow(t, words))]).slice(0, PROFILE_ROWS);
-      if (live) setLoaded({ counts, standing: standings[0] ?? null, settledAt, season: season?.number ?? null, reveals: revealed, turns, rows });
+      const rows = newest([...acts.acts.map((a) => actRow(a, words)), ...revealed.map((r) => revealRow(r, words)), ...turns.map((t) => turnRow(t, words, links)), ...seasons.map((a) => seasonRow(a, words))]).slice(0, PROFILE_ROWS);
+      if (live) setLoaded({ counts, standing: standings[0] ?? null, settledAt, season: season?.number ?? null, reveals: revealed, turns, rows, seasonSize });
     }, () => { if (live) setLoaded('failed'); });
     return () => { live = false; };
   }, [api, c.id, instance, settings.postsPerPage]);
@@ -104,7 +107,7 @@ function Profile({ character: c }: { readonly character: Character }) {
               {data.standing && data.settledAt
                 ? (
                   <p className="kb-profile-standing">
-                    Aura this season: <b>{figure(data.standing.standing)}</b> (settled {dayAndTime(data.settledAt)}) · Place {data.standing.place}{data.season !== null && <> in season {data.season}</>} · <Link to="/standings">season standings</Link>
+                    Aura this season: <b>{figure(data.standing.standing)}</b> (settled {dayAndTime(data.settledAt)}) · Place {data.standing.place}{data.seasonSize > 0 && <> of {data.seasonSize}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/standings">season standings</Link>
                   </p>
                 )
                 : <p className="kb-profile-standing kb-muted">Nothing has settled for it yet. <Link to="/standings">Season standings</Link></p>}

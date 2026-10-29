@@ -761,3 +761,23 @@ describe('the standings of a few', () => {
     expect(await fake.standingsOf([])).toEqual([]);
   });
 });
+
+describe('a character\'s season reveal posts and the season\'s size', () => {
+  test('characterReveals returns the reveal Acts that name the character, newest first, bounded', async () => {
+    const { fake, anaFace, boFace } = world();
+    const sys = fake.seed.thread('the-system', null, 'Reveal', '', { kind: 'reveal', payload: { season: 1, from: 'a', to: 'b', body: 'Over.', characters: 2 } });
+    const one = fake.seed.post(sys.thread, null, '', { kind: 'reveal', at: Date.UTC(2026, 9, 1), payload: { season: 1, character: anaFace, name: 'Ana', place: 1, standing: 1, shown: [] } });
+    fake.seed.post(sys.thread, null, '', { kind: 'reveal', at: Date.UTC(2026, 9, 2), payload: { season: 1, character: boFace, name: 'Bo', place: 2, standing: 0, shown: [] } });
+    const two = fake.seed.post(sys.thread, null, '', { kind: 'reveal', at: Date.UTC(2026, 11, 1), payload: { season: 2, character: anaFace, name: 'Ana', place: 1, standing: 1, shown: [] } });
+    expect((await fake.characterReveals(anaFace)).map((a) => a.id)).toEqual([two, one]);
+    expect((await fake.characterReveals(anaFace, 1)).map((a) => a.id)).toEqual([two]);
+    expect(await fake.characterReveals('nobody')).toEqual([]);
+  });
+
+  test('standingsCount is the number of debuted characters, as the standings list them', async () => {
+    const { fake, ana } = world();
+    const before = (await fake.standings()).length;
+    fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
+    expect(await fake.standingsCount()).toBe(before);
+  });
+});

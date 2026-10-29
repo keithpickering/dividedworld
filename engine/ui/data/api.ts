@@ -372,6 +372,8 @@ export interface KayfaApi {
   characterStats(ids: readonly Id[]): Promise<Readonly<Record<Id, { readonly posts: number }>>>;
   /** A character's public Acts of a kind, newest first, for its public record. */
   characterActs(id: Id, kinds: readonly ActKind[], page: { readonly offset: number; readonly limit: number }): Promise<{ readonly acts: readonly Act[]; readonly total: number }>;
+  /** The season reveal posts that name this character (kind reveal, `payload.character`), newest first, at most `limit` (default 50): its past seasons. */
+  characterReveals(id: Id, limit?: number): Promise<readonly Act[]>;
   /** Every Act asked about, with an empty tally where none has been left. */
   tallies(acts: readonly Id[]): Promise<Readonly<Record<Id, Tally>>>;
   /** Every thread asked about, 0 where none has been counted yet (the count moves hourly, never live). */
@@ -381,6 +383,8 @@ export interface KayfaApi {
   standings(): Promise<readonly Standing[]>;
   /** The open season's standings of those characters only, as `standings` ranks them (a place counts the whole season's), so a page of postbits never reads it all. */
   standingsOf(ids: readonly Id[]): Promise<readonly Standing[]>;
+  /** How many characters the season's standings list: one head count, never the rows. */
+  standingsCount(): Promise<number>;
   /** When the season's standings were last settled: the latest settlement's end. */
   lastSettledAt(): Promise<string | null>;
   classReveals(characters: readonly Id[]): Promise<readonly ClassReveal[]>;

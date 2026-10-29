@@ -71,6 +71,16 @@ describe('the full public record', () => {
     expect(screen.getByRole('table')).toHaveTextContent('Revealed: Face');
   });
 
+  test('the seasons filter lists the character\'s past reveal posts and links to them, and a Turn links to its tally', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    const sys = fake.seed.thread('the-system', null, 'Reveal', '');
+    fake.seed.post(sys.thread, null, '', { kind: 'reveal', payload: { season: 1, character: w.spritey, name: 'Spritey', place: 4, standing: 0, shown: [] } });
+    open(fake, w.spritey, '?kind=seasons');
+    const link = await screen.findByRole('link', { name: 'Season 1 reveal: finished #4' });
+    expect(link).toHaveAttribute('href', `/t/${sys.thread}?page=1#post-2`);
+  });
+
   test('a page past the end, or a waiting character, is plain', async () => {
     const fake = buildWorld();
     const w = world(fake);

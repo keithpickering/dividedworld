@@ -1,5 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { ProfileScreen } from './Profile.tsx';
@@ -152,5 +152,56 @@ describe('the public record on the profile', () => {
     open(c, fake);
     const record = await screen.findByRole('region', { name: 'Public record' });
     await waitFor(() => expect(record).toHaveTextContent('Nothing yet.'));
+  });
+});
+
+describe('past seasons, announced Turns and the size of the season', () => {
+  function withReveals(fake: Fake) {
+    const w = world(fake);
+    const sys = fake.seed.thread('the-system', null, 'Turns', '');
+    const tally = fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20 });
+    const reveal = fake.seed.post(sys.thread, null, '', {
+      kind: 'reveal', at: OCT20 + DAY, payload: { season: 1, character: w.pipe, name: 'Pipewrench', place: 2, standing: 120, shown: [] },
+    });
+    return { ...w, sys: sys.thread, tally, reveal };
+  }
+
+  test('the place is of the whole season, from one count', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    open(w.spritey, fake);
+    const facts = await screen.findByRole('region', { name: 'About Spritey' });
+    await waitFor(() => expect(facts).toHaveTextContent('Place 1 of 2'));
+  });
+
+  test('a past season\'s reveal post is a row of the record that links to the post', async () => {
+    const fake = buildWorld();
+    const w = withReveals(fake);
+    open(w.pipe, fake);
+    const record = await screen.findByRole('region', { name: 'Public record' });
+    const link = await within(record).findByRole('link', { name: 'Season 1 reveal: finished #2' });
+    expect(link).toHaveAttribute('href', `/t/${w.sys}?page=1#post-3`);
+  });
+
+  test('an announced Turn links to its tally', async () => {
+    const fake = buildWorld();
+    const w = withReveals(fake);
+    open(w.pipe, fake);
+    const record = await screen.findByRole('region', { name: 'Public record' });
+    const link = await within(record).findByRole('link', { name: 'Announced a Turn' });
+    expect(link).toHaveAttribute('href', `/t/${w.sys}?page=1#post-2`);
+  });
+
+  test('the profile reads these once, never once per row', async () => {
+    const fake = buildWorld();
+    const w = withReveals(fake);
+    const by = vi.spyOn(fake, 'actsById');
+    const rv = vi.spyOn(fake, 'characterReveals');
+    const count = vi.spyOn(fake, 'standingsCount');
+    open(w.pipe, fake);
+    await screen.findByRole('link', { name: 'Announced a Turn' });
+    expect(by).toHaveBeenCalledTimes(1);
+    expect(rv).toHaveBeenCalledTimes(1);
+    expect(count).toHaveBeenCalledTimes(1);
   });
 });

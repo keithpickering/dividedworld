@@ -102,7 +102,7 @@ describe('what the adapter may request', () => {
     const api = h.api;
     await Promise.allSettled([
       api.settings(), api.boards(), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10),
-      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.tallies([A]), api.viewCounts([T]), api.season(),
+      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.standings(), api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
@@ -173,6 +173,28 @@ describe('reads and their rows', () => {
     const none = harness(() => rows([]));
     expect(await none.api.standingsOf([])).toEqual([]);
     expect(none.rest()).toEqual([]);
+  });
+
+  it('reads a character\'s reveal posts from acts_public: kind reveal, naming the character, newest first, limited', async () => {
+    const h = harness(() => rows([{ ...ACT_ROW, character: null, kind: 'reveal', payload: { character: B } }]));
+    const acts = await h.api.characterReveals(B, 7);
+    const [req] = h.to('acts_public');
+    const p = req?.url.searchParams;
+    expect(p?.get('kind')).toBe('eq.reveal');
+    expect(p?.get('payload->>character')).toBe(`eq.${B}`);
+    expect(p?.get('order')).toBe('created_at.desc');
+    expect(p?.get('limit')).toBe('7');
+    expect(acts).toHaveLength(1);
+    expect(acts[0]?.kind).toBe('reveal');
+    expect(await harness(() => rows([])).api.characterReveals('not-an-id')).toEqual([]);
+  });
+
+  it('counts the season\'s standings with one head request, never reading the rows', async () => {
+    const h = harness(() => json([], 200, { 'content-range': '*/22' }));
+    expect(await h.api.standingsCount()).toBe(22);
+    const [req] = h.to('season_standings');
+    expect(req?.method).toBe('HEAD');
+    expect(h.rest()).toHaveLength(1);
   });
 
   it('reads a thread range from acts_public by seq, leaving edits out', async () => {

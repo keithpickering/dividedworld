@@ -538,6 +538,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const rows = Array.isArray(r.data) ? (r.data as Row[]) : [];
       return { acts: rows.map(toAct), total: r.count ?? rows.length };
     },
+    async characterReveals(id, limit = 50) {
+      if (!idOk(id)) return [];
+      const rows = await list(() => client.from('acts_public').select('*').eq('kind', 'reveal').eq('payload->>character', id).order('created_at', { ascending: false }).limit(rowLimit(limit)));
+      return rows.map(toAct);
+    },
     async tallies(acts) {
       const out: Record<Id, Record<string, number>> = Object.fromEntries(acts.map((a) => [a, {}]));
       if (acts.length === 0) return out;
@@ -567,6 +572,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const rows = await list(() => client.from('season_standings').select('character,name,standing,place').in('character', [...ids]).order('place', { ascending: true }).order('name', { ascending: true }));
       return rows.map((r): Standing => ({ character: r['character'], name: r['name'], standing: num(r['standing']), place: num(r['place']) }));
     },
+    standingsCount: () => count(() => client.from('season_standings').select('character', { count: 'exact', head: true })),
     async lastSettledAt() {
       const r = await list(() => client.from('settlements').select('ends_at').order('ends_at', { ascending: false }).limit(1));
       return r[0]?.['ends_at'] ?? null;
