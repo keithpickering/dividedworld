@@ -104,6 +104,19 @@ describe('a character\'s post in the season\'s reveal', () => {
   });
 });
 
+describe('a quote in The System\'s words', () => {
+  test('a tally\'s body and the reveal\'s opening link their quotes like any post', async () => {
+    const fake = buildWorld();
+    const body = '[quote=abc]earlier[/quote]';
+    const link = (id: string) => <a href={`#${id}`}>quoted {id}</a>;
+    const { unmount } = renderIn(fake, <TallyPost act={actOf('tally', { body })} quoteLink={link} />, { path: '/' });
+    expect(await screen.findByRole('link', { name: 'quoted abc' })).toBeInTheDocument();
+    unmount();
+    renderIn(fake, <RevealPost act={actOf('reveal', { body })} quoteLink={link} />, { path: '/' });
+    expect(await screen.findByRole('link', { name: 'quoted abc' })).toBeInTheDocument();
+  });
+});
+
 describe('the tally', () => {
   test('lists the night\'s debuts and announced Turns by name, linked to their profiles', async () => {
     show(actOf('tally', {

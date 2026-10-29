@@ -51,8 +51,8 @@ describe('the full public record', () => {
       unmount();
     }
     expect(seen).toHaveLength(51);
-    /* Only the three season rows read alike; every other row is there once. */
-    expect(new Set(seen).size).toBe(49);
+    /* Each row has its own time or words, so none appears twice. */
+    expect(new Set(seen).size).toBe(51);
     expect(seen.filter((t) => /reveal: finished/u.test(t))).toHaveLength(3);
     /* newest first: the day-40 and day-25 season rows come before the Turn, day 3's. */
     const turn = seen.findIndex((t) => /Announced a Turn/u.test(t));

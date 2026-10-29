@@ -90,5 +90,5 @@ export { Debuts };
 
 /** The words of The System's own post: the tally of a settlement, or the season's reveal (engine/ui/reveal/). */
 export function SystemPost({ act }: { readonly act: Act }) {
-  return act.kind === 'reveal' ? <RevealPost act={act} /> : <TallyPost act={act} />;
+  return act.kind === 'reveal' ? <RevealPost act={act} quoteLink={quoteLink} /> : <TallyPost act={act} quoteLink={quoteLink} />;
 }
