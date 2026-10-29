@@ -8,8 +8,8 @@
  * Files no row names come from a replaced avatar whose removal failed, a write whose answer was
  * lost, and the originals profiles held before 0025, which that migration listed in
  * avatar_orphans. The bucket is listed, and the names the profiles give are read after the
- * listing. A database that names no avatar while the bucket holds old files is refused then,
- * before anything is removed: it is not the bucket's own database. The originals go first,
+ * listing. A database none of whose avatars is in the bucket, while the bucket holds old files it
+ * does not name, is refused then, before anything is removed: it is not the bucket's own database. The originals go first,
  * whatever their age, since no profile can name an original again, and their rows with them;
  * then every listed file no profile names and written more than an hour before the listing: an
  * upload stores its files a moment before its profile is written, and the hour keeps the sweep
@@ -49,9 +49,12 @@ async function main() {
   const objects = await store.list(avatars.bucket);
   const named = namedNow();
   const stale = unnamed(objects, named, listedAt);
-  // A database that names no avatar beside a bucket that holds old ones is not this bucket's
-  // database (a restore, an empty one, another instance's): nothing is taken on its word.
-  if (!named.size && stale.length) throw new Error(`${db.named} names no avatar, and ${store.named}'s bucket holds ${stale.length} file(s) over an hour old: is this the instance's own database? Nothing was removed.`);
+  // A database none of whose avatars is in the bucket, beside old files it does not name, is not
+  // this bucket's database (a restore, an empty one, another instance's): nothing is taken on its word.
+  const listed = new Set(objects.map((o) => o.name));
+  if (stale.length && ![...named].some((k) => listed.has(k))) {
+    throw new Error(`none of the avatars ${db.named} names is in ${store.named}'s bucket, which holds ${stale.length} file(s) over an hour old that it does not name: is this the instance's own database? Nothing was removed.`);
+  }
 
   // The originals 0025 listed: no profile names one, so each goes now, whatever its age, and then its row.
   const orphans = JSON.parse(psql(db, `select coalesce(json_agg(key order by key), '[]') from public.avatar_orphans`));

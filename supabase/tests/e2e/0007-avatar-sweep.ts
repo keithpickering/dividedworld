@@ -98,6 +98,18 @@ test('the sweep removes each file no profile names that was written over an hour
     const again = await run(['--from', scratchUrl(), '--storage', store.url]);
     assert.equal(again.status, 0, again.stderr);
     assert.deepEqual([...store.objects.keys()].sort(), ['named-pt.webp', 'named-sq.webp', 'nearly.webp', 'new.webp']);
+    // Another instance's bucket, none of whose files this database names: refused, nothing taken.
+    const other = await fakeStorage();
+    other.objects.set('elsewhere-sq.webp', old);
+    other.objects.set('elsewhere-pt.webp', old);
+    try {
+      const wrong = await run(['--from', scratchUrl(), '--storage', other.url]);
+      assert.notEqual(wrong.status, 0, 'a sweep pairing a database with another instance\'s bucket is refused');
+      assert.match(wrong.stderr, /is this the instance's own database\? Nothing was removed/);
+      assert.equal(other.objects.size, 2, 'nothing is removed from a bucket the database names nothing in');
+    } finally {
+      await other.close();
+    }
     // Without Storage, or without its key, it refuses before it reads anything.
     assert.match((await run(['--from', scratchUrl()])).stderr, /usage/);
   } finally {
@@ -142,7 +154,7 @@ test('0025 on a database holding profiles with an original lists each original f
     try {
       const refused = await run(['--from', db.toString(), '--storage', store.url]);
       assert.notEqual(refused.status, 0);
-      assert.match(refused.stderr, /names no avatar, and .* holds 1 file\(s\) over an hour old: is this the instance's own database\? Nothing was removed/);
+      assert.match(refused.stderr, /none of the avatars .* names is in .* bucket, which holds 1 file\(s\) over an hour old that it does not name: is this the instance's own database\? Nothing was removed/);
       assert.ok(store.objects.has('sq-1.webp'), 'nothing is removed on the word of a database that names no avatar');
     } finally {
       await store.close();

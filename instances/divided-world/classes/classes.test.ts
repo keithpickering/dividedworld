@@ -341,3 +341,9 @@ test('the estimate shows two reactions in one quadrant as two lines, each a whol
   const lines = estimateForOwner(crowd([by('o1', 'fire', H), by('o2', 'heart', 2 * H)]), world, 'p-au').lines;
   assert.deepEqual(lines.filter((l) => l.reason === 'face.cheered').map((l) => [l.act, l.quadrant, l.at, l.amount]), [['p1', 'excitedPositive', H, 10], ['p1', 'excitedPositive', 2 * H, 10]]);
 });
+
+test('the estimate shows two reactions on a Lurker\'s card as two lines, each a whole vote at its own time', () => {
+  const b = board();
+  const lines = estimateForOwner({ ...b, reactions: [{ act: 'k1', player: 'pf', character: 'fa', kind: 'fire', at: 3 * H }, { act: 'k1', player: 'pj', character: 'ja', kind: 'heart', at: 5 * H }] }, world, 'pl').lines;
+  assert.deepEqual(lines.filter((l) => l.reason === 'lurker.cardDrew').map((l) => [l.act, l.quadrant, l.at, l.amount]), [['k1', 'excitedPositive', 3 * H, 10], ['k1', 'excitedPositive', 5 * H, 10]]);
+});
