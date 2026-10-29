@@ -495,11 +495,11 @@ describe('live updates', () => {
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     deliver(() => tapped().onTally?.(w.ids[2]!, { fire: 2 }));
-    await waitFor(() => expect(within(post(3)).getByLabelText('2 fire')).toBeInTheDocument());
+    await waitFor(() => expect(within(post(3)).getByText('Fire, 2')).toBeInTheDocument());
     deliver(() => tapped().onTally?.(w.ids[2]!, { fire: 1, tea: 1 }));
-    await waitFor(() => expect(within(post(3)).getByLabelText('1 tea')).toBeInTheDocument());
-    expect(within(post(3)).getByLabelText('2 fire')).toBeInTheDocument();
-    expect(within(post(2)).queryByLabelText(/fire/u)).toBeNull();
+    await waitFor(() => expect(within(post(3)).getByText('Tea, 1')).toBeInTheDocument());
+    expect(within(post(3)).getByText('Fire, 2')).toBeInTheDocument();
+    expect(within(post(2)).queryByText(/^Fire, /u)).toBeNull();
   });
 
   test('a tally that lands on one of the player\'s own Acts asks for the estimate, and on anyone else\'s does not', async () => {

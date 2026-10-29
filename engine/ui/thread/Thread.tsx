@@ -32,6 +32,7 @@ import { emptyFeed, feedReducer, ordered, shownEnd } from './feed.ts';
 import { ActIndex, type Located } from './locate.tsx';
 import { pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
 import { ActArticle, ThreadCtx, type ThreadContext } from './Post.tsx';
+import { createMine } from '../reactions/mine.ts';
 import { createTallies } from './tallies.ts';
 import './thread.css';
 
@@ -70,6 +71,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const [atBottom, setAtBottom] = useState(() => typeof IntersectionObserver === 'undefined');
   const [lines, setLines] = useState<readonly { readonly key: number; readonly text: string }[]>([]);
   const tallies = useMemo(() => createTallies(), []);
+  const mine = useMemo(() => createMine(), []);
 
   /* The player, read by callbacks that must not change when it does. */
   const hud = useRef<Id | null>(null);
@@ -112,8 +114,12 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     if (acts.length > 0) {
       const counted = await api.tallies(acts.map((a) => a.id));
       for (const [id, t] of Object.entries(counted)) tallies.merge(id, t);
+      /* The player's own reactions: if they cannot be read the server still refuses a repeat, in its words. */
+      const ids = acts.map((a) => a.id);
+      const own = await api.myReactions(ids).catch(() => []);
+      for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
     }
-  }, [api, ensurePeople, tallies]);
+  }, [api, ensurePeople, tallies, mine]);
 
   /* ----------------------------------------------------------------- where to scroll ---- */
   const scrollTo = useRef<{ readonly seq: number; readonly scroll: boolean; readonly focus: boolean } | null>(null);
@@ -326,7 +332,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     const a = feedRef.current.shown.get(id) ?? feedRef.current.held.get(id);
     return a && a.seq !== null ? { thread: a.thread, seq: a.seq } : undefined;
   }, []);
-  const context = useMemo<ThreadContext | null>(() => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, observer } : null), [thread, P, feed.summary, tallies, observer]);
+  const context = useMemo<ThreadContext | null>(() => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, observer } : null), [thread, P, feed.summary, tallies, mine, observer]);
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
 
   const showHeld = () => {

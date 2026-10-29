@@ -4,8 +4,8 @@
  * draw them are built (the cards plan draws a card's effect, the profile and reveal tasks the
  * rest). The words of an Act are shown as text or as BBCode, never as markup.
  *
- * A post is memoized on its Act, its person and its layout, and reads its own tally from the
- * tallies store, so a reaction re-renders the post it is on and nothing else.
+ * A post is memoized on its Act, its person and its layout, and its reactions read their own tally
+ * from the tallies store, so a reaction re-renders the post it is on and nothing else.
  */
 import { createContext, memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
@@ -15,13 +15,17 @@ import { Postbit, Signature, type PostbitLayout, type PostbitPerson } from '../p
 import { Link } from '../router.tsx';
 import { useLocated } from './locate.tsx';
 import { pageOf, threadHref } from './pages.ts';
-import { useTally, type Tallies } from './tallies.ts';
+import { Reactions } from '../reactions/Reactions.tsx';
+import type { Mine } from '../reactions/mine.ts';
+import type { Tallies } from './tallies.ts';
 
 export interface ThreadContext {
   readonly thread: Id;
   readonly perPage: number;
   readonly summary: ThreadSummary;
   readonly tallies: Tallies;
+  /** The player's own reactions on the Acts on screen. */
+  readonly mine: Mine;
   /** Reports which posts are in view, for mark_read. */
   readonly observer: IntersectionObserver | null;
 }
@@ -45,24 +49,6 @@ export function QuoteLink({ act }: { readonly act: Id }) {
   return <Link to={threadHref(found.thread, pageOf(found.seq, perPage), found.seq)}>Post #{found.seq}</Link>;
 }
 const quoteLink = (act: Id): ReactNode => <QuoteLink act={act} />;
-
-/** Reactions as the chips a reader sees, read-only until the reactions task draws the picker. */
-function Tallies({ act }: { readonly act: Id }) {
-  const { tallies } = useThread();
-  const { instance } = useKayfa();
-  const tally = useTally(tallies, act);
-  const shown = instance.reactions.filter((r) => (tally[r.key] ?? 0) > 0);
-  if (shown.length === 0) return null;
-  return (
-    <ul className="kb-tallies" aria-label="Reactions">
-      {shown.map((r) => (
-        <li key={r.key} className="kb-tally" data-kb-reaction={r.key} aria-label={`${tally[r.key]} ${r.key}`}>
-          <span aria-hidden="true">{r.emoji} {tally[r.key]}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 /** Every version of a post, the original first, for anyone who asks. */
 function History({ post }: { readonly post: Id }) {
@@ -146,7 +132,7 @@ function CardLine({ act, name }: { readonly act: Act; readonly name: string }) {
 
 function Body({ act, name, person }: { readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined }) {
   const { instance } = useKayfa();
-  const { summary, perPage } = useThread();
+  const { summary, perPage, tallies, mine } = useThread();
   const payload = act.currentPayload;
   switch (act.kind) {
     case 'card': return <CardLine act={act} name={name} />;
@@ -179,7 +165,7 @@ function Body({ act, name, person }: { readonly act: Act; readonly name: string;
           )}
           <BbCode text={text(payload.body)} quoteLink={quoteLink} />
           <Edited act={act} />
-          <Tallies act={act.id} />
+          <Reactions act={act.id} author={act.character} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
         </>
       );

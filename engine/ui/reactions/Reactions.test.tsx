@@ -49,7 +49,7 @@ describe('the chips', () => {
   test('show each kind with its count, and name the player\'s own as theirs', async () => {
     const w = world();
     const v = show(w, w.theirs, w.spritey);
-    act(() => { v.tallies.merge(w.theirs, { fire: 2, tea: 1 }); v.mine.add({ act: w.theirs, kind: 'fire', character: w.hooligan }); });
+    act(() => { v.tallies.merge(w.theirs, { fire: 2, tea: 1 }); v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
     expect(screen.getByText('Fire, 2, including yours')).toBeInTheDocument();
     expect(screen.getByText('Tea, 1')).toBeInTheDocument();
     expect(screen.queryByText(/Tomato/u)).toBeNull();
@@ -85,8 +85,8 @@ describe('who gets a React button', () => {
 
   test('the HUD character\'s own post shows its tally and no button', async () => {
     const w = world();
-    const v = show(w, w.mine, w.pipe);
-    act(() => { v.tallies.merge(w.mine, { fire: 1 }); });
+    const v = show(w, w.sibling, w.hooligan);
+    act(() => { v.tallies.merge(w.sibling, { fire: 1 }); });
     await screen.findByText('Fire, 1');
     await new Promise((r) => setTimeout(r, 60));
     expect(screen.queryByRole('button', { name: 'React' })).toBeNull();
@@ -94,8 +94,8 @@ describe('who gets a React button', () => {
 
   test('a post by another of the player\'s characters shows no button either', async () => {
     const w = world();
-    const v = show(w, w.sibling, w.hooligan);
-    act(() => { v.tallies.merge(w.sibling, { tea: 2 }); });
+    const v = show(w, w.mine, w.pipe);
+    act(() => { v.tallies.merge(w.mine, { tea: 2 }); });
     await screen.findByText('Tea, 2');
     await new Promise((r) => setTimeout(r, 60));
     expect(screen.queryByRole('button', { name: 'React' })).toBeNull();
@@ -107,7 +107,7 @@ describe('the picker', () => {
     const w = world();
     show(w, w.theirs, w.spritey);
     const p = await open();
-    expect(picker()).toHaveAccessibleName('React as Pipewrench');
+    expect(picker()).toHaveAccessibleName('React as Mrs. Hooligan');
     const groups = p.getAllByRole('group').map((g) => g.getAttribute('aria-label'));
     expect(groups).toEqual(['Heat', 'Hype', 'Groan', 'Calm']);
     expect(p.getByRole('button', { name: 'Fire, Hype' })).toBeInTheDocument();
@@ -120,7 +120,7 @@ describe('the picker', () => {
   test('counts what is left across all the player\'s characters', async () => {
     const w = world();
     const v = show(w, w.theirs, w.spritey);
-    act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.hooligan }); });
+    act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
     const p = await open();
     expect(p.getByText('2 of 3 left')).toBeInTheDocument();
     expect(p.getByRole('button', { name: /^Fire, Hype/u })).toBeDisabled();
@@ -131,7 +131,7 @@ describe('the picker', () => {
     const w = world();
     const v = show(w, w.theirs, w.spritey);
     act(() => {
-      for (const kind of ['fire', 'tea', 'zzz']) v.mine.add({ act: w.theirs, kind, character: w.hooligan });
+      for (const kind of ['fire', 'tea', 'zzz']) v.mine.add({ act: w.theirs, kind, character: w.pipe });
     });
     const p = await open();
     expect(p.getByText('0 of 3 left')).toBeInTheDocument();
@@ -171,7 +171,7 @@ describe('the picker', () => {
   test('has one tab stop, and arrows skip a kind already left', async () => {
     const w = world();
     const v = show(w, w.theirs, w.spritey);
-    act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.hooligan }); });
+    act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
     const p = await open();
     await userEvent.keyboard('{ArrowRight}');
     expect(p.getByRole('button', { name: 'Zzz, Groan' })).toHaveFocus();
@@ -195,8 +195,8 @@ describe('reacting', () => {
     const p = await open();
     await userEvent.click(p.getByRole('button', { name: 'Fire, Hype' }));
     await waitFor(() => expect(screen.getByText('Fire, 1, including yours')).toBeInTheDocument());
-    expect(react).toHaveBeenCalledWith(w.theirs, w.pipe, 'fire');
-    expect(v.mine.get(w.theirs)).toEqual([{ act: w.theirs, kind: 'fire', character: w.pipe }]);
+    expect(react).toHaveBeenCalledWith(w.theirs, w.hooligan, 'fire');
+    expect(v.mine.get(w.theirs)).toEqual([{ act: w.theirs, kind: 'fire', character: w.hooligan }]);
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByRole('button', { name: 'React' })).toHaveFocus();
     expect(landed).toHaveBeenCalledTimes(1);
@@ -221,5 +221,20 @@ describe('reacting', () => {
     const p = await open();
     await userEvent.click(p.getByRole('button', { name: 'Tea, Calm' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('The reaction could not be sent. Try again.');
+  });
+});
+
+describe('in a thread', () => {
+  test('the player\'s own reactions come with the page, and their own posts have no button', async () => {
+    const { ThreadScreen } = await import('../thread/Thread.tsx');
+    const w = world();
+    w.fake.seed.react(w.me, w.pipe, w.theirs, 'tea');
+    w.fake.seed.react(w.other, w.spritey, w.mine, 'fire');
+    renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}` });
+    expect(await screen.findByText('Tea, 1, including yours')).toBeInTheDocument();
+    const own = screen.getByRole('article', { name: /^Post 2 /u });
+    expect(within(own).getByText('Fire, 1')).toBeInTheDocument();
+    expect(within(own).queryByRole('button', { name: 'React' })).toBeNull();
+    expect(within(screen.getByRole('article', { name: /^Post 1 /u})).getByRole('button', { name: 'React' })).toBeInTheDocument();
   });
 });
