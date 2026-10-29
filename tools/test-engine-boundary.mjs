@@ -97,6 +97,23 @@ check('an engine import of a bare package, or of a file the tree does not hold, 
 check('a composition-root file that imports an instance is clean on its own',
   fires(`import { ui } from '../instances/divided-world/ui/index.ts';`, '.storybook/preview.tsx').length === 0);
 
+/* ---- the engine reaching an instance through the filesystem ---- */
+{
+  const poison = `import { readdirSync } from 'node:fs';\nimport { join } from 'node:path';\nconst themes = readdirSync(join(process.cwd(), 'instances'));`;
+  const r = fires(poison, 'engine/ui/x.test.tsx');
+  check('readdirSync(join(cwd, \'instances\')) in an engine test fires', r.length === 1 && r[0]?.line === 3 && /filesystem/.test(r[0]?.why ?? ''), JSON.stringify(r));
+}
+check('readFileSync of a path string naming instances/ fires', fires(`readFileSync('instances/divided-world/ui/theme.css', 'utf8');`, 'engine/ui/x.test.tsx').length === 1);
+check('existsSync with a join of segments naming instances fires', fires(`existsSync(join(root, 'instances', d, 'ui/theme.css'));`, 'engine/ui/x.test.tsx').length === 1);
+check('path.resolve fires', fires(`path.resolve(here, '../../instances');`, 'engine/ui/x.test.tsx').length === 1);
+check('new URL naming instances fires', fires(`new URL('../../instances/divided-world/ui/theme.css', import.meta.url);`, 'engine/ui/x.test.tsx').length === 1);
+check('a template literal naming instances fires', fires('readFileSync(`instances/${name}/ui/theme.css`, "utf8");', 'engine/ui/x.test.tsx').length === 1);
+check('a string that merely contains the word (a sentence, a longer segment) is clean',
+  fires(`join(root, 'instances-old'); readFileSync('notes about instances.txt'); expect(x).toBe('instances');`, 'engine/ui/x.test.tsx').length === 0);
+check('the same call in an instance or in the composition root is clean',
+  fires(`readdirSync(join(process.cwd(), 'instances'));`, 'web/contrast.test.tsx').length === 0
+  && fires(`readdirSync(join(process.cwd(), 'instances'));`, 'instances/divided-world/ui/index.test.tsx').length === 0);
+
 /* ---- the screens: .tsx files and stylesheets are read too ---- */
 check('an engine/ui component importing an instance\'s theme stylesheet fires',
   fires(`import '../../../instances/divided-world/ui/theme.css';\nexport const Frame = () => <div />;`, 'engine/ui/frame/Frame.tsx').length === 1);

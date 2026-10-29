@@ -35,7 +35,7 @@ const ROUTES: readonly Route[] = [
   { path: '/b/:slug', render: ({ slug }) => <BoardScreen slug={slug!} /> },
   { path: '/characters', render: () => <Characters /> },
   { path: '/characters/new', render: () => <NewCharacter /> },
-  { path: '/characters/:id/edit', render: ({ id }) => <ProfileEdit id={id!} /> },
+  { path: '/characters/edit', render: () => <ProfileEdit /> },
   { path: '/standings', render: () => <StandingsScreen /> },
   { path: '/c/:id', render: ({ id }) => <ProfileScreen id={id!} /> },
   { path: '/c/:id/record', render: ({ id }) => <RecordScreen id={id!} /> },

@@ -79,8 +79,8 @@ const ACT: Act = { id: A, character: B, kind: 'post', thread: T, targetActId: nu
 const THREAD_ROW = { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00', last_at: '2026-10-01T10:00:00+00:00', last_seq: 2, first_act: A, first_character: B, last_act: A, last_character: B, replies: 3, replies_this_week: 4, origin_thread: null, origin_title: null, origin_seq: null };
 
 /** Everything a read can name, answered with an empty list or a plain value. */
-const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'season_standings', 'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
-const ALLOWED_RPCS = new Set(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'set_profile', 'release_effect', 'card_target']);
+const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'season_standings', 'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
+const ALLOWED_RPCS = new Set(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'set_profile', 'release_effect', 'card_target', 'standing_place']);
 
 import { beforeEach } from 'vitest';
 
@@ -101,8 +101,8 @@ describe('what the adapter may request', () => {
     });
     const api = h.api;
     await Promise.allSettled([
-      api.settings(), api.boards(), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10),
-      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
+      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10),
+      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.standings(), api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
@@ -112,6 +112,8 @@ describe('what the adapter may request', () => {
     const rpcs = h.rest().filter((r) => r.url.pathname.includes('/rpc/')).map((r) => r.url.pathname.replace(`${REST}/rpc/`, ''));
     expect(rpcs.length).toBeGreaterThan(0);
     for (const f of rpcs) expect(ALLOWED_RPCS.has(f), `rpc ${f}`).toBe(true);
+    /* Nothing is counted per view: no read asks PostgREST for a count of rows (a head request, or a count preference). */
+    expect(h.rest().filter((r) => r.method === 'HEAD' || /count=/.test(r.headers.get('prefer') ?? '')).map((r) => r.url.pathname), 'a read that counts rows').toEqual([]);
     expect(h.log.filter((r) => r.url.pathname.startsWith('/auth/v1/otp') || r.url.pathname.startsWith('/auth/v1/verify'))).toEqual([]);
   });
 
@@ -133,16 +135,42 @@ describe('what the adapter may request', () => {
 });
 
 describe('reads and their rows', () => {
-  it('maps a thread page from thread_list, newest first, with the total', async () => {
-    const h = harness(() => rows([THREAD_ROW], 37));
+  it('maps a thread page from thread_list, newest first, with the board\'s counter as the total and no count of the list', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/boards') ? rows([{ thread_count: 37 }]) : rows([THREAD_ROW])));
     const page = await h.api.threads(C, { offset: 10, limit: 10 });
     const [req] = h.to('thread_list');
+    expect(req?.method).toBe('GET');
+    expect(req?.headers.get('prefer') ?? '').not.toContain('count');
+    const [counter] = h.to('boards');
+    expect(counter?.url.searchParams.get('select')).toBe('thread_count');
+    expect(counter?.url.searchParams.get('id')).toBe(`eq.${C}`);
     expect(req?.url.searchParams.get('board')).toBe(`eq.${C}`);
     expect(req?.url.searchParams.get('order')).toBe('last_at.desc');
     expect(req?.url.searchParams.get('offset')).toBe('10');
     expect(req?.url.searchParams.get('limit')).toBe('10');
     expect(page.total).toBe(37);
     expect(page.threads).toEqual([{ id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: '2026-10-01T10:00:00+00:00', lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, replies: 3, repliesThisWeek: 4, originThread: null, originTitle: null, originSeq: null }]);
+  });
+
+  it('reads only the counter for a page of no rows, and none of the list', async () => {
+    const h = harness(() => rows([{ thread_count: 37 }]));
+    expect(await h.api.threads(C, { offset: 0, limit: 0 })).toEqual({ threads: [], total: 37 });
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['boards']);
+    expect(await harness(() => rows([])).api.threads(C, { offset: 0, limit: 5 })).toEqual({ threads: [], total: 0 });
+  });
+
+  it('reads one board by its slug, or by its id, as one row of boards', async () => {
+    const row = { id: C, slug: 'general', name: 'General', description: 'All', is_system: true };
+    const h = harness(() => rows([row]));
+    expect(await h.api.board('general')).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: true });
+    expect(await h.api.board(C)).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: true });
+    const [bySlug, byId] = h.to('boards');
+    expect(bySlug?.url.searchParams.get('slug')).toBe('eq.general');
+    expect(bySlug?.url.searchParams.get('id')).toBeNull();
+    expect(byId?.url.searchParams.get('id')).toBe(`eq.${C}`);
+    expect(byId?.url.searchParams.get('limit')).toBe('1');
+    expect(h.rest().every((r) => r.url.pathname.endsWith('/boards'))).toBe(true);
+    expect(await harness(() => rows([])).api.board('nowhere')).toBeNull();
   });
 
   it('reads a spun thread\'s origin with its row, not in reads of its own', async () => {
@@ -175,12 +203,49 @@ describe('reads and their rows', () => {
     expect(await harness(() => rows([])).api.characterStats([])).toEqual({});
   });
 
-  it('reads the standings of a few characters only, filtered where they are read', async () => {
-    const h = harness(() => rows([{ character: B, name: 'Bea', standing: 300, place: 2 }]));
-    expect(await h.api.standingsOf([B, A])).toEqual([{ character: B, name: 'Bea', standing: 300, place: 2 }]);
-    const [req] = h.to('season_standings');
+  it('reads a page of postbits\' standings from the standings table for the open season, 0 for a character with no row, never through the ranking', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/seasons') ? rows([{ id: 7 }]) : rows([{ character: B, amount: 300 }])));
+    expect(await h.api.standingAmounts([B, A])).toEqual({ [B]: 300, [A]: 0 });
+    const [season] = h.to('seasons');
+    expect(season?.url.searchParams.get('select')).toBe('id');
+    expect(season?.url.searchParams.get('limit')).toBe('1');
+    expect(season?.url.searchParams.get('order')).toBe('ends_at.desc.nullsfirst,starts_at.desc');
+    const [req] = h.to('standings');
+    expect(req?.url.searchParams.get('select')).toBe('character,amount');
+    expect(req?.url.searchParams.get('season')).toBe('eq.7');
     expect(req?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
-    expect(req?.url.searchParams.get('order')).toBe('place.asc,name.asc');
+    expect(h.to('season_standings')).toEqual([]);
+    const none = harness(() => rows([]));
+    expect(await none.api.standingAmounts([])).toEqual({});
+    expect(none.rest()).toEqual([]);
+    /* No season yet: nothing is settled, so every standing is 0 and standings is not asked. */
+    const unseasoned = harness(() => rows([]));
+    expect(await unseasoned.api.standingAmounts([B])).toEqual({ [B]: 0 });
+    expect(unseasoned.to('standings')).toEqual([]);
+  });
+
+  it('reads a profile\'s place with one function call, which counts index ranges and not the season', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/standing_place') ? json({ standing: 300, place: 2, of: 40 }) : json({}, 404)));
+    expect(await h.api.standingPlace(B)).toEqual({ standing: 300, place: 2, of: 40 });
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['rpc/standing_place']);
+    expect(h.to('rpc/standing_place')[0]?.body).toEqual({ of_character: B });
+    expect(await harness(() => json(null)).api.standingPlace(B)).toBeNull();
+    const refused = harness(() => json({ message: 'no' }, 400));
+    await expect(refused.api.standingPlace(B)).rejects.toThrow();
+    expect(await harness(() => json({})).api.standingPlace('not-an-id')).toBeNull();
+  });
+
+  it('reads the standings of a roster through the place function, one call each and no more than a roster\'s worth', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/standing_place')) return (r.body as { of_character: string }).of_character === B ? json({ standing: 300, place: 2, of: 40 }) : json(null);
+      return rows([{ id: B, name: 'Bea' }]);
+    });
+    expect(await h.api.standingsOf([B, A])).toEqual([{ character: B, name: 'Bea', standing: 300, place: 2 }]);
+    expect(h.to('rpc/standing_place')).toHaveLength(2);
+    expect(h.to('season_standings')).toEqual([]);
+    const many = harness(() => json(null));
+    await many.api.standingsOf(Array.from({ length: 80 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`));
+    expect(many.to('rpc/standing_place').length).toBeLessThanOrEqual(20);
     const none = harness(() => rows([]));
     expect(await none.api.standingsOf([])).toEqual([]);
     expect(none.rest()).toEqual([]);
@@ -200,12 +265,14 @@ describe('reads and their rows', () => {
     expect(await harness(() => rows([])).api.characterReveals('not-an-id')).toEqual([]);
   });
 
-  it('counts the season\'s standings with one head request, never reading the rows', async () => {
-    const h = harness(() => json([], 200, { 'content-range': '*/22' }));
+  it('says the season\'s size from the counter of debuted characters, one row, never a count of the standings', async () => {
+    const h = harness(() => rows([{ characters: 22 }]));
     expect(await h.api.standingsCount()).toBe(22);
-    const [req] = h.to('season_standings');
-    expect(req?.method).toBe('HEAD');
+    const [req] = h.to('season_size');
+    expect(req?.method).toBe('GET');
+    expect(req?.url.searchParams.get('select')).toBe('characters');
     expect(h.rest()).toHaveLength(1);
+    expect(await harness(() => rows([])).api.standingsCount()).toBe(0);
   });
 
   it('reads a page of the standings with a range, so a season past the row cap is never cut', async () => {
@@ -219,10 +286,25 @@ describe('reads and their rows', () => {
 
   it('answers a range past the end with no rows, not an error (PostgREST says 416)', async () => {
     const past = { code: 'PGRST103', message: 'Requested range not satisfiable', details: 'An offset of 99 was requested, but there are only 3 rows.' };
-    const h = harness((r) => (r.method === 'HEAD' ? json([], 200, { 'content-range': '*/3' }) : json(past, 416, { 'content-range': '*/3' })));
-    expect(await h.api.characterActs(B, ['post'], { offset: 1980, limit: 20 })).toEqual({ acts: [], total: 3 });
+    const h = harness(() => json(past, 416, { 'content-range': '*/3' }));
+    expect(await h.api.characterActs(B, ['post'], { offset: 1980, limit: 20 })).toEqual([]);
     const h2 = harness(() => json(past, 416, { 'content-range': '*/3' }));
     expect(await h2.api.standingsPage(99, 50)).toEqual([]);
+  });
+
+  it('reads a character\'s Acts as a page with no count: the totals are the counters\' (a profile\'s latest rows and a record\'s pager)', async () => {
+    const h = harness(() => rows([ACT_ROW]));
+    expect(await h.api.characterActs(B, ['post', 'spin'], { offset: 20, limit: 20 })).toEqual([ACT]);
+    const [req] = h.to('acts_public');
+    const p = req?.url.searchParams;
+    expect(req?.method).toBe('GET');
+    expect(req?.headers.get('prefer') ?? '').not.toContain('count');
+    expect(p?.get('character')).toBe(`eq.${B}`);
+    expect(p?.get('kind')).toBe('in.(post,spin)');
+    expect(p?.get('order')).toBe('created_at.desc');
+    expect(p?.get('offset')).toBe('20');
+    expect(p?.get('limit')).toBe('20');
+    expect(await harness(() => rows([])).api.characterActs(B, [], { offset: 0, limit: 5 })).toEqual([]);
   });
 
   it('reads a thread range from acts_public by seq, leaving edits out', async () => {
@@ -293,11 +375,12 @@ describe('reads and their rows', () => {
 
   it('builds the board index from boards and thread_list', async () => {
     const h = harness((r) => {
-      if (r.url.pathname.endsWith('/boards')) return rows([{ id: C, slug: 'general', name: 'General', description: 'All', is_system: false, created_at: 'x' }]);
-      if (r.headers.get('prefer')?.includes('count=exact') && r.method === 'HEAD') return rows([], 12);
+      if (r.url.pathname.endsWith('/boards')) return rows([{ id: C, slug: 'general', name: 'General', description: 'All', is_system: false, thread_count: 12, created_at: 'x' }]);
       return rows([THREAD_ROW]);
     });
     const [board] = await h.api.boards();
+    expect(h.to('boards')[0]?.url.searchParams.get('select')).toBe('id,slug,name,description,is_system,thread_count');
+    expect(h.to('thread_list').every((r) => r.method === 'GET' && !(r.headers.get('prefer') ?? '').includes('count'))).toBe(true);
     expect(board).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: false, threadCount: 12, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T });
     const latest = h.to('thread_list').find((r) => r.method === 'GET');
     expect(latest?.url.searchParams.get('order')).toBe('last_at.desc');

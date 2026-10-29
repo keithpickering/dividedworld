@@ -101,13 +101,13 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     if (need.length > 0) {
       const batch = (async () => {
         const [chars, stats, standings, revealed, turns] = await Promise.all([
-          api.characters(need), api.characterStats(need), api.standingsOf(need), api.classReveals(need), api.turnsAnnounced(need),
+          api.characters(need), api.characterStats(need), api.standingAmounts(need), api.classReveals(need), api.turnsAnnounced(need),
         ]);
         const said = reveals(revealed, turns);
         for (const c of chars) {
           const statement = said.get(c.id);
           people.current.set(c.id, {
-            character: c, posts: stats[c.id]?.posts ?? 0, standing: standings.find((s) => s.character === c.id)?.standing ?? null,
+            character: c, posts: stats[c.id]?.posts ?? 0, standing: standings[c.id] ?? null,
             revealed: statement?.revealed ?? null, turnedAt: statement?.turnedAt ?? null,
           });
         }
@@ -197,13 +197,12 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const wanted = goal.current.seq !== null ? pageOf(goal.current.seq, P) : goal.current.page ?? 1;
       const page = Math.min(Math.max(1, wanted), last);
       const { start, end } = pageRange(page, P);
-      const [acts, reading, prefs, boards] = await Promise.all([api.acts(thread, start, end), api.reading([thread]), api.preferences(), api.boards().catch(() => null)]);
+      const [acts, reading, prefs, board] = await Promise.all([api.acts(thread, start, end), api.reading([thread]), api.preferences(), api.board(summary.board).catch(() => null)]);
       await prepare(acts);
       if (!live) return;
       sent.current = Math.max(sent.current, reading[thread] ?? 0);
       setLayout(prefs.postbit);
       /* Known before the first post is drawn, so the reply box and the posts' Quote links do not change the page after it. */
-      const board = boards?.find((b) => b.id === summary.board);
       setSystemBoard(board ? board.isSystem : null);
       setBoardUnread(!board);
       dispatch({ type: 'loaded', summary, firstPage: page, lastPage: page, acts, tailLoaded: acts.length < end - start + 1 });
@@ -397,7 +396,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   /* Which kind of board this is, read again after it could not be. */
   const readBoard = async () => {
     try {
-      const board = (await api.boards()).find((b) => b.id === feedRef.current.summary?.board);
+      const boardId = feedRef.current.summary?.board;
+      const board = boardId ? await api.board(boardId) : null;
       setSystemBoard(board ? board.isSystem : null);
       setBoardUnread(!board);
     } catch { setBoardUnread(true); }

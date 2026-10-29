@@ -10,7 +10,7 @@
  * planted here with a private name and must fire, each allowed name must stay clean, and the last
  * case runs the guard over the real tree, so a guard that has gone quiet over nothing fails here.
  */
-import { readFaults, treeFiles, ALLOWED_READS, ALLOWED_RPCS } from './check-web-reads.mjs';
+import { readFaults, treeFiles, ALLOWED_READS, ALLOWED_RPCS, ALLOWED_COUNTS } from './check-web-reads.mjs';
 
 let pass = 0;
 const failures = [];
@@ -101,6 +101,35 @@ for (const n of ['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']) {
 }
 check('a screen in TSX with JSX is parsed, and a read in it fires', fires(`export const T = () => { client.from('reactions').select(); return <div className="a">{x}</div>; };`, 'engine/ui/thread/Thread.tsx').length === 1);
 check('a TSX file with JSX and no read is clean', fires(`export const T = () => <p>{xs.map((x) => <i key={x}>{x}</i>)}</p>;`, 'engine/ui/thread/Thread.tsx').length === 0);
+
+/* ---- a count of rows is work per view that grows with the table ---- */
+{
+  const poison = `await client.from('acts_public').select('*', { count: 'exact' }).eq('character', id).range(0, 19);`;
+  const r = fires(poison);
+  check('{ count: \'exact\' } on characterActs\' read fires', r.length === 1 && r[0]?.name === 'acts_public' && r[0]?.line === 1, JSON.stringify(r));
+  check('and says why', /grows with the table/.test(r[0]?.why ?? ''), JSON.stringify(r));
+}
+check('a head count fires', fires(`await client.from('thread_list').select('id', { count: 'exact', head: true }).eq('board', b);`).length === 1);
+check("count: 'planned' fires", fires(`client.from('thread_list').select('*', { count: 'planned' });`).length === 1);
+check("count: 'estimated' fires", fires(`client.from('thread_list').select('*', { count: 'estimated' });`).length === 1);
+check('a quoted option name fires', fires(`client.from('thread_list').select('*', { 'count': 'exact' });`).length === 1);
+check('a count in a screen file fires', fires(`client.from('thread_list').select('*', { count: 'exact' });`, 'engine/ui/board/Board.tsx').length === 1);
+check('a count whose kind is a variable fires', fires(`client.from('thread_list').select('*', { count: kind });`).length === 1);
+check('a shorthand count fires', fires(`const count = 'exact'; client.from('thread_list').select('*', { count });`).length === 1);
+check('select options the guard cannot read fire', fires(`client.from('thread_list').select('*', options);`).length === 1);
+check('a spread in select options fires', fires(`client.from('thread_list').select('*', { ...options });`).length === 1);
+check('a computed option name fires', fires(`client.from('thread_list').select('*', { [k]: 'exact' });`).length === 1);
+check('a count through a cast and parentheses fires', fires(`(client.from('thread_list') as any).select('*', ({ count: 'exact' }) as any);`).length === 1);
+check('a select with other options (head alone) is clean', fires(`client.from('thread_list').select('id', { head: true });`).length === 0);
+check('a select with no options is clean', fires(`client.from('thread_list').select('*').eq('board', b).range(0, 9);`).length === 0);
+{
+  const allowed = [{ table: 'standings', count: 'estimated', why: 'a pager that only needs the order of magnitude' }];
+  const read = (kind, table = 'standings') => `client.from('${table}').select('*', { count: '${kind}' });`;
+  check('an allowlisted count (the table and the kind) is clean', readFaults({ [DATA]: read('estimated') }, allowed).length === 0);
+  check('the same table with another kind of count fires', readFaults({ [DATA]: read('exact') }, allowed).length === 1);
+  check('the same kind on another table fires', readFaults({ [DATA]: read('estimated', 'thread_list') }, allowed).length === 1);
+}
+check('every read allowed to count says why, and the list holds no count that has no reason', ALLOWED_COUNTS.every((a) => typeof a.why === 'string' && a.why.trim().length >= 20 && ['exact', 'planned', 'estimated'].includes(a.count) && ALLOWED_READS.includes(a.table)), JSON.stringify(ALLOWED_COUNTS));
 
 /* ---- the real tree ---- */
 {

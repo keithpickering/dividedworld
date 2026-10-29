@@ -12,7 +12,12 @@ import { PageLinks, SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Link, useLocation } from '../router.tsx';
 import './standings.css';
 
-/** Fifty to a page: the season is never read whole. */
+/**
+ * Fifty to a page: the season is never read whole. This is the one screen whose job is the whole ranking:
+ * a page of season_standings is cut from a window over every debuted character, so its cost grows with the
+ * characters and not with the page (a profile and a postbit read standing_place and the standings' own rows
+ * instead). Its total is the counter of debuted characters (standingsCount), never a count of the rows.
+ */
 const PER_PAGE = 50;
 const MAX_PAGE = 10_000;
 

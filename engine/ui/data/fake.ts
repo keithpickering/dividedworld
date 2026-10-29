@@ -21,7 +21,7 @@
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { sameName } from '../../rules/names.ts';
-import { LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
+import { LOST_ANSWER, SPUN_FROM_MAX, STANDINGS_OF_MAX } from './api.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Board, BoardListener, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness,
   DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
@@ -569,6 +569,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
       return { ...b, threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null };
     }),
+    board: (slugOrId) => boards.find((b) => b.slug === slugOrId || b.id === slugOrId) ?? null,
     threads(board, page) {
       const all = [...threads.values()].filter((t) => t.board === board).map(summary)
         .sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id));
@@ -620,15 +621,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const all = c && c.debutedAt !== null
         ? [...acts.values()].filter((a) => a.character === id && kinds.includes(a.kind)).sort((x, y) => y.at - x.at || y.order - x.order)
         : [];
-      return { acts: all.slice(page.offset, page.offset + page.limit).map(publicAct), total: all.length };
+      return all.slice(page.offset, page.offset + page.limit).map(publicAct);
     },
     characterReveals: (id, limit = 50) => [...acts.values()].filter((a) => a.kind === 'reveal' && a.payload.character === id)
       .sort((x, y) => y.at - x.at || y.order - x.order).slice(0, Math.max(1, limit)).map(publicAct),
     tallies: (ids) => Object.fromEntries(ids.map((id) => [id, tallyOf(id)])),
     viewCounts: (ids) => Object.fromEntries(ids.map((id) => [id, views.get(id) ?? 0])),
     season: () => [...seasons].sort((a, b) => b.number - a.number)[0] ?? null,
+    standingAmounts: (ids) => Object.fromEntries(ids.map((id) => [id, standingOf.get(id) ?? 0])),
+    standingPlace(id) {
+      const s = core.standings().find((x) => x.character === id);
+      return s ? { standing: s.standing, place: s.place, of: [...characters.values()].filter((c) => c.debutedAt !== null).length } : null;
+    },
     standingsOf(ids) {
-      const wanted = new Set(ids);
+      const wanted = new Set(ids.slice(0, STANDINGS_OF_MAX));
       return core.standings().filter((s) => wanted.has(s.character));
     },
     standings() {

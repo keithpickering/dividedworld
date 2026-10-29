@@ -16,6 +16,21 @@
 -- settings table itself, and call only span_interval() and next_settlement_at(), which are.
 -- Nothing here is computed from another player's rows; every my_* view answers from the caller's
 -- own, so "a response never proves a private fact" holds by construction.
+--
+-- Counters, not counts. Every number a screen shows per view is a row a trigger keeps (a thread's
+-- replies, a character's posts, a board's threads, the number of debuted characters) or a read of an
+-- index range (a character's place), so a view costs the page and not an instance's history.
+
+-- This file is one transaction, and it begins by locking the tables the counters below are backfilled
+-- from. The backfills read a table in one statement and the triggers that keep each counter are created
+-- after it, so a row written between the two (by an instance that is live while this is applied) would
+-- be counted by neither: not in the backfill, which had already read, and not by the trigger, which
+-- did not exist yet. SHARE ROW EXCLUSIVE lets readers carry on and makes every writer of these tables
+-- wait for the commit, after which its row fires the triggers. Not the same lock as the ALTERs below
+-- take (they are stronger, on threads and boards only), and it must come first so no writer is already
+-- through.
+begin;
+lock table acts, threads, characters in share row exclusive mode;
 
 -- ---------------------------------------------------------------- a player's characters ----
 
@@ -158,6 +173,105 @@ create view thread_list as
   left join acts o on o.id = t.origin_act_id
   left join threads ot on ot.id = o.thread;
 
+-- ------------------------------------------------------------------ a board's thread count ----
+
+-- How many threads a board holds, for the index and for a board's pager. A counter, kept by a trigger
+-- on a thread's creation (a thread is never deleted or moved, by append-only), and not a count of
+-- thread_list: a board's page must cost its page however many threads the board has had. The price is
+-- one more write, to the board's row, per thread started; threads are started far less often than
+-- they are posted in, and the row is held only to the end of that one transaction. Public, as the
+-- threads are; nothing in it depends on who started one.
+alter table boards add column thread_count integer not null default 0 check (thread_count >= 0);
+
+create function threads_count_board() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  update boards set thread_count = thread_count + 1 where id = new.board;
+  return new;
+end $$;
+create trigger threads_count_board after insert on threads for each row execute function threads_count_board();
+
+-- For boards that predate it; a function so a test can replay it, not callable by the API roles.
+create function backfill_board_counts() returns void
+language sql set search_path = public, pg_temp as $$
+  update boards b set thread_count = (select count(*) from threads t where t.board = b.id)
+$$;
+select backfill_board_counts();
+
+-- ------------------------------------------------------------------ the season's standings ----
+
+-- season_standings (0021) ranks every debuted character with a window, and a filter on a character is
+-- not pushed below a window, so reading one character's place through it ranks all of them. The screens
+-- that show one place (a profile) or one standing per character (a page of postbits) read these instead.
+-- The standings screen is the one place whose job is the whole ranking, a page of it at a time; it
+-- keeps reading season_standings.
+
+-- How many characters have debuted: the "of" in "Place 7 of 1,204", and the standings screen's pager.
+-- A counter in a row of its own, kept by a trigger on a character's debut (a character created already
+-- debuted, a waiting one that debuts), and not a count of characters. Debuts come in a batch at a
+-- settlement, a few at a time, so one row is not contended. The same number season_standings lists.
+create table debuted_count (
+  only_row boolean primary key default true check (only_row),
+  characters integer not null default 0 check (characters >= 0)
+);
+alter table debuted_count enable row level security;
+insert into debuted_count default values;
+
+create function characters_count_debuted() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  change integer := case when tg_op = 'DELETE' then 0 else (new.debuted_at is not null)::integer end
+                  - case when tg_op = 'INSERT' then 0 else (old.debuted_at is not null)::integer end;
+begin
+  if change <> 0 then update debuted_count set characters = characters + change; end if;
+  return null;
+end $$;
+create trigger characters_count_debuted after insert or update of debuted_at or delete on characters for each row execute function characters_count_debuted();
+
+create function backfill_debuted_count() returns void
+language sql set search_path = public, pg_temp as $$
+  update debuted_count set characters = (select count(*) from characters where debuted_at is not null)
+$$;
+select backfill_debuted_count();
+
+-- The count as a public view, for the standings screen's pager. A view runs as its owner, so the table
+-- stays unreadable by the API roles; the number is the length of a public list.
+create view season_size as select d.characters from debuted_count d;
+
+-- A place is the number of characters standing higher, plus one; those counts are read from an index of
+-- the standings by amount, so they cost the characters ahead and never rank anyone.
+create index standings_season_amount on standings (season, amount desc);
+
+-- One debuted character's standing, its place and the number of characters, as season_standings would
+-- say them: {standing, place, of}, or null for a character that has not debuted or does not exist (one
+-- answer for both, so it proves nothing about a waiting character). The season is the one season_standings
+-- reads. A character with no standings row stands at 0, as there. Public: a standing and a place are what
+-- the standings list shows, and nothing here is computed from who plays a character.
+--   standing >= 0: the characters ahead are the rows above it (a character with no row stands at 0 and
+--     is never above a standing of 0 or more); one range of the index.
+--   standing < 0: every character with no row (standing 0) is ahead of it, and they are not rows, so the
+--     characters ahead are all of them but the rows at or below its standing: one range of the index, of
+--     the debts only, and the counter.
+-- A standings row is a character's that has acted, and only a debuted character can act, so a row is
+-- always a debuted character's. Ties share a place: "ahead" is strictly higher.
+create function standing_place(of_character uuid) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  open_season bigint := coalesce((select id from seasons where ends_at is null), (select id from seasons order by starts_at desc limit 1));
+  size integer := (select d.characters from debuted_count d);
+  mine integer;
+  ahead bigint;
+begin
+  if not exists (select 1 from characters c where c.id = of_character and c.debuted_at is not null) then return null; end if;
+  mine := coalesce((select s.amount from standings s where s.season = open_season and s.character = of_character), 0);
+  if mine < 0 then
+    ahead := size - (select count(*) from standings s where s.season = open_season and s.amount <= mine);
+  else
+    ahead := (select count(*) from standings s where s.season = open_season and s.amount > mine);
+  end if;
+  return jsonb_build_object('standing', mine, 'place', ahead + 1, 'of', size);
+end $$;
+
 -- ------------------------------------------------------------- a character's post count ----
 
 -- How many posts, spins and cards a character has made, for a page of postbits ("Posts: 1,204" under
@@ -211,8 +325,12 @@ create or replace view characters_public as
 
 -- --------------------------------------------------------------------------- grants ----
 
-revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_settings, thread_list, character_post_counts from anon, authenticated;
-grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list, character_post_counts to authenticated;
+revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_settings, thread_list, character_post_counts, debuted_count, season_size from anon, authenticated;
+grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list, character_post_counts, season_size to authenticated;
 create policy read_all on character_post_counts for select to authenticated using (true);
 grant select on screen_settings to anon, authenticated;
-revoke execute on function backfill_thread_counters(), backfill_character_post_counts(), acts_count_character() from public, anon, authenticated;
+revoke execute on function backfill_thread_counters(), backfill_character_post_counts(), acts_count_character(),
+  backfill_board_counts(), threads_count_board(), backfill_debuted_count(), characters_count_debuted(), standing_place(uuid) from public, anon, authenticated;
+grant execute on function standing_place(uuid) to authenticated;
+
+commit;

@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
-import type { Character, CharacterCounts, ClassReveal, Id, Standing, TurnAnnounced } from '../data/api.ts';
+import type { Character, CharacterCounts, ClassReveal, Id, StandingPlace, TurnAnnounced } from '../data/api.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { dayAndTime, figure } from '../characters/format.ts';
 import { Ago, SignInPrompt, useSignedIn } from '../mini.tsx';
@@ -29,13 +29,12 @@ import './profile.css';
 
 interface Loaded {
   readonly counts: CharacterCounts;
-  readonly standing: Standing | null;
+  readonly standing: StandingPlace | null;
   readonly settledAt: string | null;
   readonly season: number | null;
   readonly reveals: readonly ClassReveal[];
   readonly turns: readonly TurnAnnounced[];
   readonly rows: readonly RecordRow[];
-  readonly seasonSize: number;
 }
 
 export function ProfileScreen({ id }: { readonly id: Id }) {
@@ -69,16 +68,17 @@ function Profile({ character: c }: { readonly character: Character }) {
       perPage: settings.postsPerPage,
     };
     Promise.all([
-      api.characterCounts(c.id), api.standingsOf([c.id]), api.lastSettledAt(), api.season(),
+      /* Every read here costs the page and not the history: counters (the counts, the place) and a few newest rows with no count. */
+      api.characterCounts(c.id), api.standingPlace(c.id), api.lastSettledAt(), api.season(),
       api.classReveals([c.id]), api.turnsAnnounced([c.id]), api.characterActs(c.id, ['post', 'spin', 'card'], { offset: 0, limit: PROFILE_ROWS }),
-      api.characterReveals(c.id), api.standingsCount(),
-    ]).then(async ([counts, standings, settledAt, season, revealed, turns, acts, seasons, seasonSize]) => {
+      api.characterReveals(c.id),
+    ]).then(async ([counts, standing, settledAt, season, revealed, turns, acts, seasons]) => {
       /* The Turns' tallies are placed with one batched read, which needs the Turns first. */
       const links = await turnLinks(api, turns, words.perPage);
       /* The newest few of everything: the newest few Acts, with every reveal and Turn, hold the newest few overall. */
       const extras = newest([...revealed.map((r) => revealRow(r, words)), ...turns.map((t) => turnRow(t, words, links)), ...seasons.map((a) => seasonRow(a, words))]);
-      const rows = mergeWindow(extras, acts.acts.map((a) => actRow(a, words)), 0, 0, PROFILE_ROWS);
-      if (live) setLoaded({ counts, standing: standings[0] ?? null, settledAt, season: season?.number ?? null, reveals: revealed, turns, rows, seasonSize });
+      const rows = mergeWindow(extras, acts.map((a) => actRow(a, words)), 0, 0, PROFILE_ROWS);
+      if (live) setLoaded({ counts, standing, settledAt, season: season?.number ?? null, reveals: revealed, turns, rows });
     }, () => { if (live) setLoaded('failed'); });
     return () => { live = false; };
   }, [api, c.id, instance, settings.postsPerPage]);
@@ -109,7 +109,7 @@ function Profile({ character: c }: { readonly character: Character }) {
               {data.standing && data.settledAt
                 ? (
                   <p className="kb-profile-standing">
-                    Aura this season: <b>{figure(data.standing.standing)}</b> (settled {dayAndTime(data.settledAt)}) · Place {data.standing.place}{data.seasonSize > 0 && <> of {data.seasonSize}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/standings">season standings</Link>
+                    Aura this season: <b>{figure(data.standing.standing)}</b> (settled {dayAndTime(data.settledAt)}) · Place {data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/standings">season standings</Link>
                   </p>
                 )
                 : <p className="kb-profile-standing kb-muted">Nothing has settled for it yet. <Link to="/standings">Season standings</Link></p>}

@@ -129,6 +129,19 @@ describe('the full public record', () => {
     expect(spy.mock.calls[0]![2].offset).toBeLessThanOrEqual(10_000 * 20);
   });
 
+  test('the pager\'s total is the character\'s counters, read once; the Acts are a page with no count', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    const counts = vi.spyOn(fake, 'characterCounts');
+    const page = vi.spyOn(fake, 'characterActs');
+    open(fake, w.spritey, '?kind=post');
+    await screen.findByRole('table');
+    expect(counts).toHaveBeenCalledTimes(1);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(page.mock.calls[0]![1]).toEqual(['post']);
+    expect(Array.isArray(await page.mock.results[0]!.value)).toBe(true);
+  });
+
   test('a character that does not exist is not found', async () => {
     const fake = buildWorld();
     world(fake);

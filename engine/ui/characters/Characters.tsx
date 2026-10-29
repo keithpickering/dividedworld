@@ -204,7 +204,7 @@ export function Characters() {
                   </td>
                   <td data-label="This season">{standingCell(c)}</td>
                   <td data-label="Turn">{turnCell(c)}</td>
-                  <td>{live && <Link to={`/characters/${c.id}/edit`} aria-label={`Edit profile`}>Edit profile</Link>}</td>
+                  <td>{live && <Link to="/characters/edit" state={{ character: c.id }} aria-label={`Edit profile`}>Edit profile</Link>}</td>
                 </tr>
               );
             })}

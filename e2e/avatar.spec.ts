@@ -125,6 +125,43 @@ test('shows the shrunk picture, not the original, in the stage', async ({ page }
   expect(await stage.evaluate((img: HTMLImageElement) => Math.max(img.naturalWidth, img.naturalHeight))).toBeLessThanOrEqual(4096);
 });
 
+/* A browser that ignores resizeWidth/resizeHeight would hand back the whole 48 megapixel bitmap, allocated before anything can check its size.
+   So the page asks once, on a tiny generated picture, whether the options are honored, and never gives such a browser the player's photo. */
+test('a browser whose createImageBitmap ignores the resize is never handed the photo, and the canvas path opens it at no more than 4096', async ({ page }) => {
+  await page.addInitScript(() => {
+    const real = window.createImageBitmap.bind(window) as (...a: unknown[]) => Promise<ImageBitmap>;
+    const asked: string[] = [];
+    (window as unknown as { __bitmapAsked: string[] }).__bitmapAsked = asked;
+    (window as unknown as { createImageBitmap: unknown }).createImageBitmap = (image: unknown, options?: { imageOrientation?: string }) => {
+      asked.push(image instanceof Blob ? image.type : 'other');
+      return real(image, { imageOrientation: options?.imageOrientation });
+    };
+  });
+  await page.goto('/characters');
+  await page.getByRole('row', { name: /^Pipewrench/u }).getByRole('link', { name: 'Edit profile' }).click();
+  await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 8000;
+    canvas.height = 6000;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#4a8';
+    ctx.fillRect(0, 0, 8000, 6000);
+    const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.8));
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const files = new DataTransfer();
+    files.items.add(new File([blob], 'big.jpg', { type: 'image/jpeg' }));
+    input.files = files.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(page.getByRole('group', { name: 'Portrait frame' })).toBeVisible({ timeout: 15_000 });
+  const stage = page.locator('img[src^="blob:"]').first();
+  await expect.poll(() => stage.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  expect(await stage.evaluate((img: HTMLImageElement) => Math.max(img.naturalWidth, img.naturalHeight))).toBeLessThanOrEqual(4096);
+  const asked = await page.evaluate(() => (window as unknown as { __bitmapAsked: string[] }).__bitmapAsked);
+  expect(asked, 'the page probed the browser once, on a generated picture').toContain('image/png');
+  expect(asked, 'and never gave it the player\'s photo').not.toContain('image/jpeg');
+});
+
 /* A phone's photo is stored turned and carries an EXIF orientation; the picture opens as it is meant to be seen. */
 for (const orientation of [6, 8]) {
   test(`opens a large JPEG with EXIF orientation ${orientation} at its oriented size, and the frames match it`, async ({ page }) => {

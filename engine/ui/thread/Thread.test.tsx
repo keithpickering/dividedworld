@@ -178,10 +178,22 @@ describe('pages and permalinks', () => {
 
   test('a page costs one read of the Acts and one each of its characters, stats, standings, reveals, turns and tallies', async () => {
     const w = world(20);
-    const spies = (['acts', 'characters', 'characterStats', 'standingsOf', 'classReveals', 'turnsAnnounced', 'tallies'] as const).map((m) => [m, vi.spyOn(w.fake, m)] as const);
+    const spies = (['acts', 'characters', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'tallies'] as const).map((m) => [m, vi.spyOn(w.fake, m)] as const);
     open(w);
     await screen.findByRole('article', { name: /^Post 20 /u });
     for (const [name, spy] of spies) expect(spy, name).toHaveBeenCalledTimes(1);
+  });
+
+  test('a page learns what kind of board it is from one read of that board, never from the list of boards', async () => {
+    const w = world(3);
+    const list = vi.spyOn(w.fake, 'boards');
+    const one = vi.spyOn(w.fake, 'board');
+    const ranked = vi.spyOn(w.fake, 'standingsOf');
+    open(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    expect(one).toHaveBeenCalledTimes(1);
+    expect(list).not.toHaveBeenCalled();
+    expect(ranked).not.toHaveBeenCalled();
   });
 
   test('a thread that is not there says so and leads back', async () => {

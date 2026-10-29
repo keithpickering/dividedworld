@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
 import { useLocation } from '../router.tsx';
@@ -230,6 +230,23 @@ describe('a list of 0, 1 and 200 threads', () => {
     renderInWorld(<BoardScreen slug="general" />, { path: '/b/general?page=99', seed: (f) => world(f, { threads: 41 }) });
     await screen.findByRole('link', { name: 'Thread 001' });
     expect(screen.getByRole('navigation', { name: 'Pages, top' })).toHaveTextContent('Page 3 of 3');
+  });
+});
+
+describe('what a page of a board reads', () => {
+  test('its own board by one read of that board, and the list of threads once; never the list of boards', async () => {
+    let spies: Record<'boards' | 'board' | 'threads', { readonly mock: { readonly calls: readonly unknown[][] } }> | null = null;
+    renderInWorld(<BoardScreen slug="general" />, {
+      seed: (f) => {
+        world(f, { threads: 3 });
+        spies = { boards: vi.spyOn(f, 'boards'), board: vi.spyOn(f, 'board'), threads: vi.spyOn(f, 'threads') };
+      },
+    });
+    await screen.findByRole('heading', { level: 1, name: /General/u });
+    expect(spies!.board.mock.calls).toHaveLength(1);
+    expect(spies!.board.mock.calls[0]![0]).toBe('general');
+    expect(spies!.threads.mock.calls).toHaveLength(1);
+    expect(spies!.boards.mock.calls).toHaveLength(0);
   });
 });
 

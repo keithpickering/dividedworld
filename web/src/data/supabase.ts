@@ -20,15 +20,20 @@
  *   answer "may have gone through: look before you try again", and a repeat is the player's
  *   decision after looking. ("Three unrelated timeouts are not a poison pill".)
  *
+ * No read counts rows. A count over a table that grows with the game (a board's threads, a character's
+ * Acts, the season's characters) is work per view that grows with the instance, so every total a screen
+ * shows is a counter a trigger keeps (boards.thread_count, character_post_counts, season_size) or comes
+ * from an index range on the server (standing_place); tools/check-web-reads.mjs refuses a `count` option.
+ *
  * Nothing sent here carries the HUD's character beyond the request body the action needs: it is
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { LOST_ANSWER, SPUN_FROM_MAX, STANDINGS_OF_MAX } from '../../../engine/ui/data/api.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Board, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
   Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
-  Tally, ThreadSummary, TurnAnnounced, TurnAsked, Wallet,
+  Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -170,7 +175,7 @@ function toEstimate(r: Row): Estimate {
 
 /* ---------------------------------------------------------------------- the adapter ---- */
 
-type Res = { data: unknown; error: { message: string; hint?: string | null } | null; status: number; count?: number | null };
+type Res = { data: unknown; error: { message: string; hint?: string | null } | null; status: number };
 
 export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const { url, anonKey, settingsFallback } = options;
@@ -409,7 +414,6 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const a = toAct(r['act']);
     return { thread: toNewThread(r['thread'], a), act: a };
   };
-  const count = async (run: () => PromiseLike<unknown>): Promise<number> => num((await read(run)).count);
 
   const api: KayfaApi = {
     session: currentSession,
@@ -460,25 +464,28 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     settings,
 
     async boards() {
-      const bs = await list(() => client.from('boards').select('id,slug,name,description,is_system').order('created_at', { ascending: true }));
+      const bs = await list(() => client.from('boards').select('id,slug,name,description,is_system,thread_count').order('created_at', { ascending: true }));
+      /* One read of each board's newest thread, by the (board, last_at) index: a handful of boards, a row each. */
       return Promise.all(
         bs.map(async (b): Promise<BoardSummary> => {
-          const [threadCount, latest] = await Promise.all([
-            count(() => client.from('thread_list').select('id', { count: 'exact', head: true }).eq('board', b['id'])),
-            list(() => client.from('thread_list').select('*').eq('board', b['id']).order('last_at', { ascending: false }).limit(1)),
-          ]);
-          const l = latest[0];
-          return { ...toBoard(b), threadCount, lastAt: l?.['last_at'] ?? null, lastCharacter: l?.['last_character'] ?? null, lastThread: l?.['id'] ?? null };
+          const l = (await list(() => client.from('thread_list').select('*').eq('board', b['id']).order('last_at', { ascending: false }).limit(1)))[0];
+          return { ...toBoard(b), threadCount: num(b['thread_count']), lastAt: l?.['last_at'] ?? null, lastCharacter: l?.['last_character'] ?? null, lastThread: l?.['id'] ?? null };
         }),
       );
     },
+    async board(slugOrId) {
+      const rows = await list(() => client.from('boards').select('id,slug,name,description,is_system').eq(idOk(slugOrId) ? 'id' : 'slug', slugOrId).limit(1));
+      return rows[0] ? toBoard(rows[0]) : null;
+    },
     async threads(board, page) {
-      if (page.limit <= 0) return { threads: [], total: await count(() => client.from('thread_list').select('id', { count: 'exact', head: true }).eq('board', board)) };
-      const r = await read(() =>
-        client.from('thread_list').select('*', { count: 'exact' }).eq('board', board).order('last_at', { ascending: false }).range(page.offset, page.offset + page.limit - 1),
-      );
-      const rows = Array.isArray(r.data) ? (r.data as Row[]) : [];
-      return { threads: rows.map(toThread), total: r.count ?? rows.length };
+      /* The page is the list's rows; the total is the board's counter (a trigger keeps it), so a page turn counts nothing. */
+      const total = async () => num((await list(() => client.from('boards').select('thread_count').eq('id', board).limit(1)))[0]?.['thread_count']);
+      if (page.limit <= 0) return { threads: [], total: await total() };
+      const [rows, all] = await Promise.all([
+        list(() => client.from('thread_list').select('*').eq('board', board).order('last_at', { ascending: false }).range(page.offset, page.offset + page.limit - 1)),
+        total(),
+      ]);
+      return { threads: rows.map(toThread), total: all };
     },
     async thread(id) {
       const r = await list(() => client.from('thread_list').select('*').eq('id', id).limit(1));
@@ -533,13 +540,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return out;
     },
     async characterActs(id, kinds, page) {
-      if (kinds.length === 0 || page.limit <= 0) return { acts: [], total: 0 };
+      /* A page and no count (a count reads the character's whole history); a range past the end is PostgREST's 416, an empty page. */
+      if (kinds.length === 0 || page.limit <= 0 || !idOk(id)) return [];
       const r = await read(() =>
-        client.from('acts_public').select('*', { count: 'exact' }).eq('character', id).in('kind', [...kinds]).order('created_at', { ascending: false }).range(page.offset, page.offset + page.limit - 1),
+        client.from('acts_public').select('*').eq('character', id).in('kind', [...kinds]).order('created_at', { ascending: false }).range(page.offset, page.offset + page.limit - 1),
       true);
-      if (r.error) return { acts: [], total: await count(() => client.from('acts_public').select('id', { count: 'exact', head: true }).eq('character', id).in('kind', [...kinds])) };
-      const rows = Array.isArray(r.data) ? (r.data as Row[]) : [];
-      return { acts: rows.map(toAct), total: r.count ?? rows.length };
+      return (Array.isArray(r.data) ? (r.data as Row[]) : []).map(toAct);
     },
     async characterReveals(id, limit = 50) {
       if (!idOk(id)) return [];
@@ -570,18 +576,45 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const rows = await list(() => client.from('season_standings').select('character,name,standing,place').order('place', { ascending: true }).order('name', { ascending: true }));
       return rows.map((r): Standing => ({ character: r['character'], name: r['name'], standing: num(r['standing']), place: num(r['place']) }));
     },
+    /* The standings screen is the one read that ranks everyone: season_standings ranks every debuted character with a window,
+       and a page of it is cut from that ranking. Its job is the whole ranking, a page at a time, so this is the one place
+       whose cost grows with the characters; every other screen reads standingAmounts or standingPlace. */
     async standingsPage(offset, limit) {
       if (limit <= 0) return [];
       const r = await read(() => client.from('season_standings').select('character,name,standing,place').order('place', { ascending: true }).order('name', { ascending: true }).range(offset, offset + Math.min(limit, ROW_CAP) - 1), true);
       const rows = !r.error && Array.isArray(r.data) ? (r.data as Row[]) : [];
       return rows.map((x): Standing => ({ character: x['character'], name: x['name'], standing: num(x['standing']), place: num(x['place']) }));
     },
-    async standingsOf(ids) {
-      if (ids.length === 0) return [];
-      const rows = await list(() => client.from('season_standings').select('character,name,standing,place').in('character', [...ids]).order('place', { ascending: true }).order('name', { ascending: true }));
-      return rows.map((r): Standing => ({ character: r['character'], name: r['name'], standing: num(r['standing']), place: num(r['place']) }));
+    async standingAmounts(ids) {
+      const out: Record<Id, number> = Object.fromEntries(ids.map((id) => [id, 0]));
+      const wanted = ids.filter(idOk);
+      if (wanted.length === 0) return out;
+      /* The season season_standings ranks: the open one, else the latest. A few rows of seasons, then a probe of the standings' primary key per character. */
+      const season = (await list(() => client.from('seasons').select('id').order('ends_at', { ascending: false, nullsFirst: true }).order('starts_at', { ascending: false }).limit(1)))[0];
+      if (!season) return out;
+      for (const r of await list(() => client.from('standings').select('character,amount').eq('season', season['id']).in('character', [...wanted]))) out[r['character']] = num(r['amount']);
+      return out;
     },
-    standingsCount: () => count(() => client.from('season_standings').select('character', { count: 'exact', head: true })),
+    async standingPlace(id): Promise<StandingPlace | null> {
+      if (!idOk(id)) return null;
+      const v = (await read(() => client.rpc('standing_place', { of_character: id }))).data;
+      return v && typeof v === 'object' && !Array.isArray(v) ? { standing: num((v as Row)['standing']), place: num((v as Row)['place']), of: num((v as Row)['of']) } : null;
+    },
+    async standingsOf(ids) {
+      const wanted = [...new Set(ids)].filter(idOk).slice(0, STANDINGS_OF_MAX);
+      if (wanted.length === 0) return [];
+      const [places, names] = await Promise.all([
+        Promise.all(wanted.map((id) => api.standingPlace(id))),
+        list(() => client.from('characters_public').select('id,name').in('id', wanted)),
+      ]);
+      const name = new Map(names.map((n) => [n['id'] as string, n['name'] as string]));
+      return wanted
+        .flatMap((id, i): Standing[] => (places[i] ? [{ character: id, name: name.get(id) ?? '', standing: places[i]!.standing, place: places[i]!.place }] : []))
+        .sort((x, y) => x.place - y.place || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+    },
+    async standingsCount() {
+      return num((await list(() => client.from('season_size').select('characters').limit(1)))[0]?.['characters']);
+    },
     async lastSettledAt() {
       const r = await list(() => client.from('settlements').select('ends_at').order('ends_at', { ascending: false }).limit(1));
       return r[0]?.['ends_at'] ?? null;

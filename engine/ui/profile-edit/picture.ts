@@ -15,6 +15,36 @@ function load(src: string, crossOrigin: boolean): Promise<HTMLImageElement | nul
   });
 }
 
+let resizeProbe: Promise<boolean> | null = null;
+
+/**
+ * Whether this browser's `createImageBitmap` honors resizeWidth and resizeHeight, asked once per page on a
+ * generated 4 by 4 picture and remembered. A browser that ignores them decodes the whole picture before
+ * anything can look at its size, so the player's photo is never handed to one: checking the size after the
+ * call is too late, the full bitmap is already allocated. Where it cannot be asked (no canvas, no blob), the
+ * answer is no, and the <img> path with its own cap opens the picture.
+ */
+function bitmapResizeHonored(): Promise<boolean> {
+  resizeProbe ??= (async () => {
+    try {
+      if (typeof createImageBitmap !== 'function') return false;
+      const canvas = document.createElement('canvas');
+      canvas.width = 4;
+      canvas.height = 4;
+      canvas.getContext('2d')?.fillRect(0, 0, 4, 4);
+      const tiny = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!tiny) return false;
+      const bitmap = await createImageBitmap(tiny, { resizeWidth: 2, resizeHeight: 2 });
+      const honored = bitmapIsAsked(bitmap, { width: 2, height: 2 });
+      bitmap.close();
+      return honored;
+    } catch {
+      return false;
+    }
+  })();
+  return resizeProbe;
+}
+
 /**
  * A picture opened at no more than 4096 on its longest side. The browser shrinks it as it decodes
  * where `createImageBitmap` can (so a 48 megapixel photo is never held whole, and its EXIF
@@ -41,9 +71,9 @@ async function open(src: string, crossOrigin: boolean, blob: Blob | null, failur
     const shownUrl = URL.createObjectURL(shown);
     return done(source, () => { URL.revokeObjectURL(shownUrl); release2(); }, shownUrl);
   };
-  if (blob && typeof createImageBitmap === 'function') {
+  if (blob && typeof createImageBitmap === 'function' && await bitmapResizeHonored()) {
     const bitmap = await createImageBitmap(blob, { resizeWidth: plan.size.width, resizeHeight: plan.size.height, resizeQuality: 'high', imageOrientation: 'from-image' }).catch(() => null);
-    /* Where the bitmap could not be made, or the browser ignored the resize and handed back the whole picture, the <img> path below has its own cap. */
+    /* Where the bitmap could not be made, the <img> path below has its own cap. A browser that ignores the resize was ruled out above, before it allocated anything. */
     if (bitmap && bitmapIsAsked(bitmap, plan.size)) return showing(bitmap, () => bitmap.close());
     bitmap?.close();
   }

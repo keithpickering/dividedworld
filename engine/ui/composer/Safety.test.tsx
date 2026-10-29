@@ -286,8 +286,8 @@ describe('the box', () => {
 describe('a board that could not be read', () => {
   test('shows neither the reply box nor the System\'s note, but a plain line with Try again', async () => {
     const w = threadWorld();
-    const real = w.fake.boards.bind(w.fake);
-    const failing = vi.spyOn(w.fake, 'boards').mockRejectedValue(new Error('down'));
+    const real = w.fake.board.bind(w.fake);
+    const failing = vi.spyOn(w.fake, 'board').mockRejectedValue(new Error('down'));
     openThread(w);
     await screen.findByRole('article', { name: /^Post 1 /u });
     expect(await screen.findByText(/could not be read, so the reply box is left out/u)).toBeInTheDocument();

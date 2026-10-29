@@ -54,6 +54,19 @@ describe('My characters', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Your characters (3 of 4)' })).toBeInTheDocument();
   });
 
+  test('no link or navigation on the page puts a character in the address: Edit profile carries it in history.state', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    for (const a of document.querySelectorAll('a[href]')) {
+      for (const id of [w.pipe, w.hoolie, w.waiting]) expect(a.getAttribute('href')).not.toContain(id);
+    }
+    expect(within(row('Pipewrench')).getByRole('link', { name: 'Edit profile' })).toHaveAttribute('href', '/characters/edit');
+    await userEvent.click(within(row('Mrs. Hooligan')).getByRole('link', { name: 'Edit profile' }));
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe('/characters/edit');
+    expect(window.history.state).toEqual({ character: w.hoolie });
+  });
+
   test('says when a Turn opens instead of offering it, and why', async () => {
     const w = world();
     await cooldown(w);

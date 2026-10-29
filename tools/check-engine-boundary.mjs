@@ -23,6 +23,10 @@
  * cannot say it does not. Comments and strings are not imports, and the AST knows that
  * without help.
  *
+ * An engine file may also reach an instance by the filesystem, with no import: `readdirSync(join(cwd, 'instances'))`.
+ * A string literal whose path segments include `instances`, among the arguments of an fs or path call (readdirSync,
+ * readFileSync, existsSync, join, resolve, …) or of `new URL`, fires in engine/.
+ *
  * `import.meta.glob(…)` names files too (Vite reads it): its pattern, or every pattern of an array, is a
  * specifier, relative to its file, so a glob over `../../instances/*` fires in engine/ as an import does.
  *
@@ -142,6 +146,43 @@ function specifiers(file, text) {
   return out;
 }
 
+/** The calls that read the filesystem or build a path: a string argument naming `instances` among them is the engine reaching an instance by fs. */
+const FS_CALLS = new Set(['readdirSync', 'readFileSync', 'existsSync', 'statSync', 'readdir', 'readFile', 'stat', 'access', 'opendirSync', 'globSync', 'join', 'resolve']);
+
+/**
+ * Where the engine names an instance's directory to the filesystem: a string literal (or a template's
+ * text) whose `/`-separated segments include `instances`, among the arguments of a call to an fs or path
+ * function or of `new URL`. A nested call is read on its own visit, so each literal fires once.
+ * @param {string} file @param {string} text
+ * @returns {{ spec: string, line: number }[]}
+ */
+function fsInstanceReaches(file, text) {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const out = [];
+  const named = (s) => s.split(/[\\/]/).includes('instances');
+  const scan = (node, report) => {
+    if (ts.isCallExpression(node) || ts.isNewExpression(node)) return;
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) { if (named(node.text)) report(node, node.text); return; }
+    if (ts.isTemplateExpression(node)) {
+      for (const t of [node.head, ...node.templateSpans.map((x) => x.literal)]) if (named(t.text)) report(node, t.text);
+    }
+    ts.forEachChild(node, (c) => scan(c, report));
+  };
+  const visit = (node) => {
+    const callee = ts.isCallExpression(node) ? node.expression : null;
+    const fname = callee === null ? null : ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) && !ts.isMetaProperty(callee.expression) ? callee.name.text : null;
+    const isUrl = ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'URL';
+    if ((fname !== null && FS_CALLS.has(fname)) || isUrl) {
+      for (const arg of node.arguments ?? []) {
+        scan(arg, (at, str) => out.push({ spec: str, line: source.getLineAndCharacterOfPosition(at.getStart(source)).line + 1 }));
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return out;
+}
+
 /** `instances/<name>` for a repository path inside an instance, else null. */
 const instanceOf = (p) => p.match(/^instances\/([^/]+)(\/|$)/)?.[1] ?? null;
 
@@ -195,6 +236,9 @@ export function boundaryFaults(files) {
     if (!SOURCE.test(file)) continue;
     const inEngine = file.startsWith('engine/');
     const home = instanceOf(file);
+    if (inEngine && !file.endsWith('.css')) {
+      for (const { spec, line } of fsInstanceReaches(file, text)) out.push({ file, line, spec, target: spec, why: 'the engine reaches an instance through the filesystem (a path argument naming instances); read it in the composition root (web/) instead' });
+    }
     for (const { spec, line } of specsOf(file, text)) {
       if (spec === null) {
         if (inEngine) out.push({ file, line, spec: null, target: null, why: 'a dynamic import, glob or require the guard cannot read, which could name an instance' });

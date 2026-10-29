@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { ActKind, Id } from '../data/api.ts';
+import type { ActKind, CharacterCounts, Id } from '../data/api.ts';
 import { Ago, PageLinks, SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { RECORD_KINDS, RECORD_LABELS, RECORD_PAGE, SEASONS_SHOWN, actRow, mergeWindow, newest, recordKind, revealRow, seasonRow, turnLinks, turnRow, type RecordKind, type RecordRow, type Words } from './record.ts';
@@ -47,6 +47,8 @@ export function RecordScreen({ id }: { readonly id: Id }) {
       perPage: settings.postsPerPage,
     };
     const offset = (page - 1) * RECORD_PAGE;
+    /* A kind's total is the character's counters, one row, never a count of its Acts. */
+    const totalOf = (counts: CharacterCounts) => (kind === 'all' ? counts.posts + counts.spins + counts.cards : kind === 'post' ? counts.posts : kind === 'spin' ? counts.spins : counts.cards);
     const paged = (all: readonly RecordRow[]) => ({ rows: all.slice(offset, offset + RECORD_PAGE), total: all.length });
     /* The reveals, announced Turns and past seasons: short lists, read whole. The tallies' places come with a second, batched read. */
     const extras = async (): Promise<RecordRow[]> => {
@@ -62,12 +64,12 @@ export function RecordScreen({ id }: { readonly id: Id }) {
       : kind === 'seasons'
         ? api.characterReveals(id, SEASONS_SHOWN).then((list) => paged(list.map((a) => seasonRow(a, words))))
         : kind === 'all'
-          ? extras().then(async (more) => {
+          ? Promise.all([extras(), api.characterCounts(id)]).then(async ([more, counts]) => {
             const from = Math.max(0, offset - more.length);
-            const r = await api.characterActs(id, KINDS.all, { offset: from, limit: offset + RECORD_PAGE - from });
-            return { rows: mergeWindow(more, r.acts.map((a) => actRow(a, words)), from, offset, RECORD_PAGE), total: r.total + more.length };
+            const acts = await api.characterActs(id, KINDS.all, { offset: from, limit: offset + RECORD_PAGE - from });
+            return { rows: mergeWindow(more, acts.map((a) => actRow(a, words)), from, offset, RECORD_PAGE), total: totalOf(counts) + more.length };
           })
-          : api.characterActs(id, KINDS[kind], { offset, limit: RECORD_PAGE }).then((r) => ({ rows: r.acts.map((a) => actRow(a, words)), total: r.total }));
+          : Promise.all([api.characterActs(id, KINDS[kind], { offset, limit: RECORD_PAGE }), api.characterCounts(id)]).then(([acts, counts]) => ({ rows: acts.map((a) => actRow(a, words)), total: totalOf(counts) }));
     read.then((r) => { if (live) setLoaded({ status: 'ready', ...r }); }, () => { if (live) setLoaded({ status: 'failed' }); });
     return () => { live = false; };
   }, [api, id, kind, page, found.status, instance, settings.postsPerPage]);

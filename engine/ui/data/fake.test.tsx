@@ -655,9 +655,10 @@ describe('counts', () => {
     await fake.edit(post.id, anaFace, 'two');
     must(await fake.spin(opener, anaFace, 'Spun', ''));
     expect(await fake.characterCounts(anaFace)).toEqual({ posts: 1, spins: 1, cards: 0 });
+    /* A page of Acts, with no total: the totals are the counts above, which a record's pager takes. */
     const record = await fake.characterActs(anaFace, ['post', 'spin'], { offset: 0, limit: 1 });
-    expect(record.total).toBe(2);
-    expect(record.acts.map((a) => a.kind)).toEqual(['spin']);
+    expect(record.map((a) => a.kind)).toEqual(['spin']);
+    expect((await fake.characterActs(anaFace, ['post', 'spin'], { offset: 1, limit: 5 })).map((a) => a.kind)).toEqual(['post']);
   });
 });
 
@@ -772,6 +773,39 @@ describe('the standings of a few', () => {
     expect(await fake.standingsOf([anaHeel, boFace, waiting])).toEqual(all.filter((s) => s.character === anaHeel || s.character === boFace));
     expect((await fake.standingsOf([anaHeel])).map((s) => [s.name, s.place])).toEqual([['Ana Heel', 2]]);
     expect(await fake.standingsOf([])).toEqual([]);
+  });
+});
+
+describe('a place and a standing, read for one character or a page of them', () => {
+  test('standingAmounts is each asked character\'s standing: 0 for one with nothing settled, and for one that is not a character', async () => {
+    const { fake, ana, anaFace, anaHeel, boFace } = world();
+    const waiting = fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [boFace]: -40 }, debut: false });
+    expect(await fake.standingAmounts([anaFace, boFace, anaHeel, waiting, 'nobody'])).toEqual({ [anaFace]: 300, [boFace]: -40, [anaHeel]: 0, [waiting]: 0, nobody: 0 });
+    expect(await fake.standingAmounts([])).toEqual({});
+  });
+
+  test('standingPlace is the standing, the place and the number of debuted characters, as the ranking says them, and null for one that has not debuted', async () => {
+    const { fake, ana, anaFace, anaHeel, boFace } = world();
+    const waiting = fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: -40 }, debut: false });
+    const all = await fake.standings();
+    for (const s of all) expect(await fake.standingPlace(s.character)).toEqual({ standing: s.standing, place: s.place, of: all.length });
+    expect((await fake.standingPlace(boFace))?.place).toBe(all.length);
+    expect(await fake.standingPlace(waiting)).toBeNull();
+    expect(await fake.standingPlace('nobody')).toBeNull();
+  });
+});
+
+describe('one board', () => {
+  test('board is one board by its slug or its id, and null for neither', async () => {
+    const { fake } = world();
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    const { threadCount: _c, lastAt: _a, lastCharacter: _l, lastThread: _t, ...row } = general;
+    expect(await fake.board('general')).toEqual(row);
+    expect(await fake.board(general.id)).toEqual(row);
+    expect((await fake.board('the-system'))?.isSystem).toBe(true);
+    expect(await fake.board('nowhere')).toBeNull();
   });
 });
 

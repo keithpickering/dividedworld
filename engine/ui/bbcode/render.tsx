@@ -50,7 +50,10 @@ function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink']): Reac
         ? <Link key={key} to={n.href} rel={REL} referrerPolicy="no-referrer">{inside}</Link>
         : <a key={key} href={n.href} rel={REL} referrerPolicy="no-referrer">{inside}</a>;
     }
-    case 'img': return <img key={key} className="kb-bb-img" src={n.src} alt={altFor(n.src)} loading="lazy" referrerPolicy="no-referrer" />;
+    case 'img':
+      /* The parser keeps what the player wrote, http: included; the page's img-src is https only (web/headers.ts), so an http: image would be a broken picture. A link to it is what can be shown. */
+      if (/^http:/i.test(n.src)) return <a key={key} href={n.src} rel={REL} referrerPolicy="no-referrer">image: {n.src}</a>;
+      return <img key={key} className="kb-bb-img" src={n.src} alt={altFor(n.src)} loading="lazy" referrerPolicy="no-referrer" />;
     case 'quote':
       return (
         <blockquote key={key} className="kb-quote">

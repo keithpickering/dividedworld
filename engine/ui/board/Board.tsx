@@ -54,7 +54,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
     setState((s) => (s.status === 'ready' && s.board.slug === slug ? s : { status: 'loading' }));
     setTurning(true);
     void (async () => {
-      const board = (await api.boards()).find((b) => b.slug === slug);
+      const board = await api.board(slug);
       if (!board) { if (live) setState({ status: 'missing' }); return; }
       const want = Number.isFinite(asked) && asked > 0 ? asked : 1;
       let listed = await api.threads(board.id, { offset: (want - 1) * THREADS_PER_PAGE, limit: THREADS_PER_PAGE });

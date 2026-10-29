@@ -26,6 +26,13 @@
  * - `.storage.from('x')` names a bucket; only ALLOWED_BUCKETS (the public avatar bucket) is clean.
  * - A string holding `/rest/v1/x` or `/rest/v1/rpc/x` is held to the same lists; one that ends at
  *   `/rest/v1`, `/rest/v1/` or `/rest/v1/rpc/` (a path built in pieces) fires, unreadable.
+ * - A `.select()` that asks for a count (`{ count: 'exact' }`, and 'planned' and 'estimated' as well) fires
+ *   unless the table and the kind of count are in ALLOWED_COUNTS with a stated reason. A count of rows is
+ *   work per view that grows with the table ("Weigh a design at the scale of a busy instance"): a profile
+ *   that counted a character's Acts to show a number it discarded, a board index that counted every board's
+ *   threads, each paid more with every post. A total a screen shows is a counter a trigger keeps
+ *   (boards.thread_count, character_post_counts, season_size) or an index range on the server. Options the
+ *   guard cannot read (a variable, a spread) fire as well, since they could hold a count.
  * - `@supabase/supabase-js` is imported, exported from, `import()`-ed or `require()`-d only in
  *   web/src/data/, the one place a client lives ("Portable by construction").
  *
@@ -53,14 +60,21 @@ export const ALLOWED_READS = Object.freeze([
   // Public: what anyone could have watched.
   'boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'season_standings',
-  'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts',
+  'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size',
   // The player's own.
   'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading',
   'account_preferences', 'effect_releases',
 ]);
 
+/**
+ * The reads that may ask PostgREST for a count of rows, each `{ table, count, why }`; the reason is what makes
+ * a count here more than a convenience. Empty: every total a screen shows is a counter, and an entry added here
+ * is a read whose cost grows with a table, argued in the open. The reason is checked by tools/test-web-reads.mjs.
+ */
+export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string, count: string, why?: string }[]} */ ([]));
+
 /** The SQL functions a screen may call directly; every other write goes through the `act` function. */
-export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'set_profile', 'release_effect', 'card_target']);
+export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'set_profile', 'release_effect', 'card_target', 'standing_place']);
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);
@@ -93,7 +107,7 @@ function isBuiltIn(node) {
 }
 
 /** Every fault in one file. */
-function fileFaults(file, text) {
+function fileFaults(file, text, allowedCounts = ALLOWED_COUNTS) {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const out = [];
   const lineOf = (node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
@@ -126,7 +140,41 @@ function fileFaults(file, text) {
     return loads ? literal(node.arguments[0]) : null;
   };
 
+  /** The table a `.from('x')` at the head of a call chain names, or null when the chain does not start with a literal one. */
+  const tableOf = (call) => {
+    let n = unwrap(call.expression);
+    while (n) {
+      if (ts.isCallExpression(n)) {
+        const callee = unwrap(n.expression);
+        if (memberName(callee) === 'from') return literal(n.arguments[0]);
+        n = ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee) ? unwrap(callee.expression) : null;
+      } else if (ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) n = unwrap(n.expression);
+      else return null;
+    }
+    return null;
+  };
+
+  /** A `.select(columns, options)` whose options ask for a count, or hide what they ask for. */
+  const checkSelect = (call) => {
+    const options = call.arguments.slice(1);
+    for (const o of options) {
+      const opts = unwrap(o);
+      if (!ts.isObjectLiteralExpression(opts)) { fault(call, tableOf(call), 'select options the guard cannot read, which could ask for a count'); continue; }
+      for (const prop of opts.properties) {
+        if (ts.isSpreadAssignment(prop)) { fault(prop, tableOf(call), 'a spread in select options, which could hold a count'); continue; }
+        const name = prop.name;
+        if (name && ts.isComputedPropertyName(name)) { fault(prop, tableOf(call), 'a computed select option the guard cannot read, which could be a count'); continue; }
+        if (!name || !(ts.isIdentifier(name) || ts.isStringLiteral(name)) || name.text !== 'count') continue;
+        const table = tableOf(call);
+        const kind = ts.isPropertyAssignment(prop) ? literal(unwrap(prop.initializer)) : null;
+        if (kind === null) fault(prop, table, 'a count whose kind the guard cannot read');
+        else if (!allowedCounts.some((a) => a.table === table && a.count === kind)) fault(prop, table, `a count: '${kind}' is work per view that grows with the table; keep a counter a trigger maintains, or add the read to ALLOWED_COUNTS with its reason`);
+      }
+    }
+  };
+
   const visit = (node) => {
+    if (ts.isCallExpression(node) && memberName(unwrap(node.expression)) === 'select') checkSelect(node);
     const spec = (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier ? literal(node.moduleSpecifier) : loadedModule(node);
     if (spec?.startsWith('@supabase/') && !DATA_LAYER.test(file)) fault(node, spec, 'a Supabase client lives only in web/src/data/');
 
@@ -183,10 +231,11 @@ function fileFaults(file, text) {
 /**
  * Every fault in a set of files, as `{ file, line, name, why }`; [] is clean.
  * @param {Record<string, string>} files repository path to text
+ * @param {readonly { table: string, count: string, why?: string }[]} [allowedCounts] the reads that may count (a test passes its own)
  */
-export function readFaults(files) {
+export function readFaults(files, allowedCounts = ALLOWED_COUNTS) {
   const out = [];
-  for (const [file, text] of Object.entries(files)) if (SOURCE.test(file)) out.push(...fileFaults(file, text));
+  for (const [file, text] of Object.entries(files)) if (SOURCE.test(file)) out.push(...fileFaults(file, text, allowedCounts));
   return out;
 }
 

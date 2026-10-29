@@ -5,14 +5,14 @@ import type { World } from '../story.tsx';
 import { usePlayer } from '../player.tsx';
 import { ProfileEdit } from './ProfileEdit.tsx';
 
-/** The player's first character's edit page (its id is made by the seed). */
+/** The edit page, opened on the HUD's character (the seed makes the character; no address names it). */
 function FirstCharacter() {
   const { characters, loaded } = usePlayer();
   const { api } = useKayfa();
   const [ready, setReady] = useState(false);
   useEffect(() => { void api.session().then(() => setReady(true)); }, [api]);
   const first = characters[0];
-  return loaded && ready && first ? <ProfileEdit id={first.id} /> : <div aria-busy="true" />;
+  return loaded && ready && first ? <ProfileEdit /> : <div aria-busy="true" />;
 }
 
 const meta: Meta<typeof FirstCharacter> = { title: 'Characters/Profile edit', component: FirstCharacter };

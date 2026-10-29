@@ -197,11 +197,18 @@ describe('past seasons, announced Turns and the size of the season', () => {
     const w = withReveals(fake);
     const by = vi.spyOn(fake, 'actsById');
     const rv = vi.spyOn(fake, 'characterReveals');
-    const count = vi.spyOn(fake, 'standingsCount');
+    const place = vi.spyOn(fake, 'standingPlace');
+    const latest = vi.spyOn(fake, 'characterActs');
+    const ranked = vi.spyOn(fake, 'standingsOf');
+    const size = vi.spyOn(fake, 'standingsCount');
     open(w.pipe, fake);
     await screen.findByRole('link', { name: 'Announced a Turn' });
     expect(by).toHaveBeenCalledTimes(1);
     expect(rv).toHaveBeenCalledTimes(1);
-    expect(count).toHaveBeenCalledTimes(1);
+    /* A profile's place is one call that counts index ranges: it never ranks the season or counts its characters. */
+    expect(place).toHaveBeenCalledTimes(1);
+    expect(latest).toHaveBeenCalledTimes(1);
+    expect(ranked).not.toHaveBeenCalled();
+    expect(size).not.toHaveBeenCalled();
   });
 });

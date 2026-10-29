@@ -60,6 +60,16 @@ describe('the BBCode renderer', () => {
     expect(img.getAttribute('alt')).toBeTruthy();
   });
 
+  test('an http: image is a plain link to it, never an <img> (the page loads images over https only)', () => {
+    show('[img]http://img.example.com/a/pic.png[/img]');
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(out().querySelector('img')).toBeNull();
+    const link = screen.getByRole('link', { name: 'image: http://img.example.com/a/pic.png' });
+    expect(link).toHaveAttribute('href', 'http://img.example.com/a/pic.png');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer nofollow ugc');
+    expect(link).toHaveAttribute('referrerpolicy', 'no-referrer');
+  });
+
   test('code is shown as typed, in a pre', () => {
     show('[code][b]not bold[/b][/code]');
     expect(out().querySelector('pre code')).toHaveTextContent('[b]not bold[/b]');

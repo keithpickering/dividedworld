@@ -160,6 +160,18 @@ export interface Standing {
   readonly place: number;
 }
 
+/** A character's standing, its place and how many characters have debuted (`standing_place`). */
+export interface StandingPlace {
+  /** Hundredths. */
+  readonly standing: number;
+  /** Ties share a place. */
+  readonly place: number;
+  readonly of: number;
+}
+
+/** The most characters `standingsOf` is asked about: a roster's worth, since each is a place read of its own. */
+export const STANDINGS_OF_MAX = 20;
+
 export interface Season {
   readonly id: number;
   readonly number: number;
@@ -345,7 +357,11 @@ export interface KayfaApi {
   settings(): Promise<ScreenSettings>;
 
   /* What anyone signed in can read. */
+  /** Every board with its thread count (a counter) and latest thread: for the index, which lists them all. */
   boards(): Promise<readonly BoardSummary[]>;
+  /** One board by its slug or its id, or null: a screen that needs one board's row never reads the list of boards. */
+  board(slugOrId: string): Promise<Board | null>;
+  /** A page of a board's threads, newest first; `total` is the board's thread counter, never a count of the list. */
   threads(board: Id, page: { readonly offset: number; readonly limit: number }): Promise<{ readonly threads: readonly ThreadSummary[]; readonly total: number }>;
   thread(id: Id): Promise<ThreadSummary | null>;
   /** A thread's Acts from one seq to another, both included, edits left out (each shows through its post). */
@@ -370,8 +386,12 @@ export interface KayfaApi {
   characterCounts(id: Id): Promise<CharacterCounts>;
   /** A page of postbits' counts in one read: each character's posts (kind post, edits not counted), every id asked about, 0 where none or not debuted. */
   characterStats(ids: readonly Id[]): Promise<Readonly<Record<Id, { readonly posts: number }>>>;
-  /** A character's public Acts of a kind, newest first, for its public record. */
-  characterActs(id: Id, kinds: readonly ActKind[], page: { readonly offset: number; readonly limit: number }): Promise<{ readonly acts: readonly Act[]; readonly total: number }>;
+  /**
+   * A page of a character's public Acts of those kinds, newest first, for its public record and a profile's latest rows.
+   * It carries no total: a page is never counted (that would read the character's whole history on every view); a record's
+   * totals are `characterCounts` (posts, spins, cards).
+   */
+  characterActs(id: Id, kinds: readonly ActKind[], page: { readonly offset: number; readonly limit: number }): Promise<readonly Act[]>;
   /** The season reveal posts that name this character (kind reveal, `payload.character`), newest first, at most `limit` (default 50): its past seasons. */
   characterReveals(id: Id, limit?: number): Promise<readonly Act[]>;
   /** Every Act asked about, with an empty tally where none has been left. */
@@ -383,9 +403,23 @@ export interface KayfaApi {
   standings(): Promise<readonly Standing[]>;
   /** A page of the open season's standings, as `standings` ranks them, empty past the end (the whole season is never read at once). */
   standingsPage(offset: number, limit: number): Promise<readonly Standing[]>;
-  /** The open season's standings of those characters only, as `standings` ranks them (a place counts the whole season's), so a page of postbits never reads it all. */
+  /**
+   * The open season's standing of each character asked about, and nothing else: 0 for one with no standings row (a debuted
+   * character with nothing settled yet, which is all this is asked about), so a page of postbits reads one row each and
+   * never ranks the season.
+   */
+  standingAmounts(ids: readonly Id[]): Promise<Readonly<Record<Id, number>>>;
+  /**
+   * One debuted character's standing, its place and how many characters have debuted, or null for one that has not (or none):
+   * the profile's "Place 7 of 40", computed on the server by counting index ranges (never by ranking the season) and a counter.
+   */
+  standingPlace(id: Id): Promise<StandingPlace | null>;
+  /**
+   * The standings of a handful of characters (a player's own roster; at most `STANDINGS_OF_MAX`, the rest left out), with the
+   * places, one `standingPlace` each. A page of postbits asks `standingAmounts`, never this.
+   */
   standingsOf(ids: readonly Id[]): Promise<readonly Standing[]>;
-  /** How many characters the season's standings list: one head count, never the rows. */
+  /** How many characters have debuted, as the standings list them: a counter's one row, never a count of the standings. */
   standingsCount(): Promise<number>;
   /** When the season's standings were last settled: the latest settlement's end. */
   lastSettledAt(): Promise<string | null>;
