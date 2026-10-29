@@ -46,7 +46,11 @@ begin
   on conflict (account, thread) do update set furthest_seq = greatest(r.furthest_seq, excluded.furthest_seq), read_at = now(),
     first_character = coalesce(r.first_character, excluded.first_character)
   returning * into kept;
-  insert into thread_reads (thread, reader) values (in_thread, coalesce(through, caller)) on conflict do nothing;
+  -- A read with no mask is the account's only while it has no mask to read through: a player
+  -- with one reads through it, so a read sent without it adds no view of its own.
+  if through is not null or not exists (select 1 from characters where owner = caller and debuted_at is not null and retired_at is null) then
+    insert into thread_reads (thread, reader) values (in_thread, coalesce(through, caller)) on conflict do nothing;
+  end if;
   return jsonb_build_object('thread', kept.thread, 'furthest_seq', kept.furthest_seq);
 end $$;
 

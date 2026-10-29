@@ -61,17 +61,15 @@ begin
   perform mark_read(t, 1, b);
   perform tests.unbecome();
 
-  -- Each mask that read is a reader of its own; one mask reading twice is one reader; a read with
-  -- no character is the account's, and a read after it through a mask is the mask's too.
+  -- Each mask that read is a reader of its own; one mask reading twice is one reader; Ann's read
+  -- of bare with none on the HUD is no reader, since she has masks (below, one with none yet).
   if (select count(*) from thread_reads where thread = t) is distinct from 4::bigint then raise exception 'each mask that read t is a reader: %', (select count(*) from thread_reads where thread = t); end if;
-  if (select count(*) from thread_reads where thread = bare) is distinct from 3::bigint then raise exception 'a characterless read, then two masks, are three readers: %', (select count(*) from thread_reads where thread = bare); end if;
-  if not exists (select 1 from thread_reads where thread = bare and reader = ann) then raise exception 'a read with no character is recorded as the account''s'; end if;
+  if (select count(*) from thread_reads where thread = bare) is distinct from 2::bigint then raise exception 'two masks that read bare are two readers: %', (select count(*) from thread_reads where thread = bare); end if;
 
   -- The count moves only when the job runs: three of Ann's masks and Bob's one are four views.
   if exists (select 1 from thread_view_counts where thread = t) then raise exception 'a view count moved before the job ran'; end if;
   perform count_thread_views();
   if (select views from thread_view_counts where thread = t) is distinct from 4 then raise exception 'one player through three masks counts three: %', (select views from thread_view_counts where thread = t); end if;
-  if (select views from thread_view_counts where thread = bare) is distinct from 3 then raise exception 'a reader with no character counts once, and again through a mask: %', (select views from thread_view_counts where thread = bare); end if;
   counted := (select counted_at from thread_view_counts where thread = quiet);
   -- A read since moves its own thread's count at the next run, and no other's.
   perform tests.become(bob);
@@ -111,6 +109,37 @@ begin
   if (select schedule from cron.job where jobname = 'kayfabb-view-counts') is distinct from '41 * * * *' then raise exception 'the view counts are scheduled at viewCountCron: %', (select schedule from cron.job where jobname = 'kayfabb-view-counts'); end if;
   update settings set value = '"3 * * * *"' where key = 'viewCountCron';
   if (select schedule from cron.job where jobname = 'kayfabb-view-counts') is distinct from '3 * * * *' then raise exception 'changing viewCountCron reschedules the count'; end if;
+end $$;
+
+-- ---- A reader with no character counts once, and again once they read through a mask; a read
+-- with no mask from a player who has one adds no view ----
+do $$
+declare
+  ann uuid := tests.account('maskless-ann');
+  cat uuid := tests.account('maskless-cat');
+  a1 uuid := tests.character(ann, 'Maskless One');
+  c1 uuid;
+  t uuid := tests.thread('Read without the HUD');
+begin
+  perform tests.become(ann);
+  perform mark_read(t, 0, a1);
+  perform mark_read(t, 0, null);
+  perform tests.unbecome();
+  -- Cat has no character yet: her read is her account's, once however often she reads.
+  perform tests.become(cat);
+  perform mark_read(t, 0, null);
+  perform mark_read(t, 0, null);
+  perform tests.unbecome();
+  perform count_thread_views();
+  if (select views from thread_view_counts where thread = t) is distinct from 2 then raise exception 'a reader with no character counts once: %', (select views from thread_view_counts where thread = t); end if;
+  c1 := tests.character(cat, 'Maskless Cat');
+  perform tests.become(cat);
+  perform mark_read(t, 0, c1);
+  perform mark_read(t, 0, null);
+  perform tests.unbecome();
+  if (select array_agg(reader order by reader) from thread_reads where thread = t) is distinct from (select array_agg(x order by x) from unnest(array[a1, cat, c1]) x) then
+    raise exception 'a characterless reader counts once and again through a mask, and a maskless read from a player with a mask adds none: %', (select jsonb_agg(reader) from thread_reads where thread = t);
+  end if;
 end $$;
 
 -- ---- A player's own reactions: theirs to read, nobody else's ----
@@ -164,6 +193,10 @@ begin
   if said[1] is not null or said[2] is not null then raise exception 'a first read raced and was refused: %', said; end if;
   if (select count(*) from reading where thread = t) is distinct from 1::bigint then raise exception 'two first reads made two rows'; end if;
   if (select furthest_seq from reading where thread = t) is distinct from 3 then raise exception 'the furthest of two reads at once is kept'; end if;
+  -- And two reads through the same mask at once: one reader, neither refused.
+  said := tests.race(ann, format('select mark_read(%L, 1, %L)', t, a1), ann, format('select mark_read(%L, 1, %L)', t, a1));
+  if said[1] is not null or said[2] is not null then raise exception 'two reads through one mask raced and one was refused: %', said; end if;
+  if (select count(*) from thread_reads where thread = t and reader = a1) is distinct from 1::bigint then raise exception 'two reads through one mask at once made two readers'; end if;
 end $$;
 
 -- ---- Readers before 0023: each reading row's first character, or its account where it had none ----
