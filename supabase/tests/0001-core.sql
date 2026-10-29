@@ -86,6 +86,9 @@ begin
       -- my_reactions (0018) reads who reacted only to keep each caller to their own reactions,
       -- through their own masks; 0024-reading.sql holds that it shows nobody else's.
       and not (u.view_name = 'my_reactions' and u.table_name = 'reactions')
+      -- my_characters (0030) reads the owner to keep each caller to their own characters, and the class to say what it is now;
+      -- 0033-screens-reads.sql holds that it shows nobody else's.
+      and not (u.view_name = 'my_characters' and (u.table_name, u.column_name) in (('characters', 'owner'), ('class_history', 'class_key')))
   loop
     leaks := leaks || format(' %s reads %s.%s;', r.view_name, r.table_name, r.column_name);
   end loop;

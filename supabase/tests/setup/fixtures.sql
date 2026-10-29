@@ -24,6 +24,8 @@ insert into settings (key, value) values
   ('editGrace', '{"unit": "minute", "count": 2}'),
   ('postMaxLength', '20000'),
   ('titleMaxLength', '120'),
+  ('postsPerPage', '20'),
+  ('hotReplies', '10'),
   ('economy', '{"sweetie.price": 100, "splat.price": 100, "blot.price": 100}'),
   ('copy', '{"turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
 insert into class_kinds (key, name) values ('alpha', 'Alpha'), ('beta', 'Beta');

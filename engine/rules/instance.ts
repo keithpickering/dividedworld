@@ -55,6 +55,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   editGrace: (v) => (isSpan(v, GRACE_UNITS) ? null : 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000'),
   postMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
+  postsPerPage: (v) => (isWhole(v, 1) ? null : 'a whole number of posts, at least 1'),
+  hotReplies: (v) => (isWhole(v, 1) ? null : 'a whole number of replies, at least 1'),
   economy: (v) => {
     if (typeof v !== 'object' || v === null || Array.isArray(v)) return 'an object of named numbers';
     const bad = Object.entries(v).filter(([, n]) => typeof n !== 'number' || !Number.isFinite(n)).map(([k]) => k);
