@@ -29,12 +29,21 @@ const good: Instance = {
     { key: 'zzz', emoji: '💤', quadrant: 'boredNegative' },
   ],
   settings,
-  boards: [{ slug: 'general', name: 'General', description: 'Anything.' }],
+  boards: [{ slug: 'general', name: 'General', description: 'Anything.' }, { slug: 'the-system', name: 'The System', description: 'Its own.', system: true }],
   copy: { turnsThreadTitle: 'Season {season}: Turns', revealTitle: 'Season {season}: The Reveal', revealBody: 'All of it.' },
 };
 
 test('a whole instance has no problems', () => {
   assert.deepEqual(instanceProblems(good), []);
+});
+
+test('exactly one board is The System\'s, and at least one is not', () => {
+  const ordinary = good.boards.filter((b) => !b.system);
+  assert.match(instanceProblems({ ...good, boards: ordinary }).join('\n'), /no board is The System's/);
+  const twice = [...good.boards, { slug: 'also-system', name: 'Also', description: '', system: true }];
+  assert.match(instanceProblems({ ...good, boards: twice }).join('\n'), /2 boards are The System's \(the-system, also-system\); one is/);
+  const onlySystem = good.boards.filter((b) => b.system);
+  assert.match(instanceProblems({ ...good, boards: onlySystem }).join('\n'), /no board for players/);
 });
 
 test('two reactions with one key are a problem', () => {

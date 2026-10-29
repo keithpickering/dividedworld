@@ -12,6 +12,6 @@ export function instanceSeed(instance: Instance) {
     classes: instance.classes.map((c) => ({ key: c.key, name: c.name })),
     reactions: instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })),
     cards: instance.cards.map((c) => ({ key: c.key, name: c.name, alignment: c.alignment, priceSetting: c.priceKey })),
-    boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description })),
+    boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
   };
 }

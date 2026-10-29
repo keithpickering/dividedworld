@@ -77,11 +77,16 @@ export interface Settings {
 /** The kinds of Act the settlement reads. */
 export type ActKind = 'post' | 'spin' | 'card' | 'edit';
 
-/** A board the instance starts with. */
+/**
+ * A board the instance starts with. Exactly one is The System's (`system`): only The System posts
+ * there (a settlement's tally, the season's reveal), and players react to it and spin threads
+ * from it onto a board of their own.
+ */
 export interface BoardSeed {
   readonly slug: string;
   readonly name: string;
   readonly description: string;
+  readonly system?: boolean;
 }
 
 /* ------------------------------------------------------------ the settlement's input ---- */

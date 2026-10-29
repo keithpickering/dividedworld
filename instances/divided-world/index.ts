@@ -12,6 +12,8 @@ import { defaults, playtest } from './settings.ts';
 
 const boards = deepFreeze([
   { slug: 'general', name: 'General', description: 'Anything and everything. The System is watching.' },
+  // Only The System posts here: each night's tally, each season's reveal. The description is the owner's copy to give.
+  { slug: 'the-system', name: 'The System', description: 'What The System says. Reply by spinning a thread.', system: true },
 ]);
 
 /** The System's words, in its own voice. */

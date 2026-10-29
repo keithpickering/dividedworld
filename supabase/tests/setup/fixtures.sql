@@ -27,7 +27,7 @@ insert into reaction_kinds (key, emoji, quadrant) values
   ('up', '⬆️', 'excitedPositive'), ('boo', '👻', 'excitedNegative'),
   ('calm', '🌊', 'calmPositive'), ('meh', '😑', 'boredNegative'), ('wow', '🎆', 'excitedPositive');
 insert into card_kinds (key, name, alignment, price_setting) values ('sweetie', 'Sweetie', 'sweet', 'sweetie.price'), ('splat', 'Splat', 'salty', 'splat.price');
-insert into boards (slug, name) values ('general', 'General');
+insert into boards (slug, name, is_system) values ('general', 'General', false), ('the-system', 'The System', true);
 insert into seasons (number, starts_at) values (1, '2000-01-01T00:00:00Z');
 
 create schema tests;
