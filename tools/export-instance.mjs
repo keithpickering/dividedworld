@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { FORMAT, NOT_EXPORTED, answered, args, connection, fail, fileOf, filesNamed, nameFolds, psql, sha256, storage, tables } from './instance-files.mjs';
+import { BUCKETS, FORMAT, NOT_EXPORTED, answered, args, connection, fail, fileOf, filesNamed, nameFolds, psql, sha256, storage, tables } from './instance-files.mjs';
 
 const usage = 'usage: node tools/export-instance.mjs --from postgres://… --to <new directory> [--storage https://<project>]';
 
@@ -34,6 +34,9 @@ async function main() {
   if (fs.existsSync(to) && fs.readdirSync(to).length) throw new Error(`${to} is not empty; an export goes into a new directory`);
   const db = connection(from);
   console.log(`exporting from ${db.named}; the server says it is ${answered(db)}`);
+  // An instance whose rows name files is refused before anything is written, if Storage is not given.
+  const naming = psql(db, BUCKETS.map((b) => `select 1 from ${b.table} where ${b.columns.map((c) => `${c} is not null`).join(' or ')} limit 1;`).join('\n'));
+  if (naming) storage(storageUrl);
   // Every file this process and psql make is its owner's alone.
   process.umask(0o077);
   fs.mkdirSync(to, { recursive: true, mode: 0o700 });

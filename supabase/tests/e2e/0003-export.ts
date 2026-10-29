@@ -148,7 +148,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const without = await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'without')]);
     assert.notEqual(without.status, 0);
     assert.match(without.stderr, /holds files: give --storage/);
-    fs.rmSync(path.join(dir, 'without'), { recursive: true, force: true });
+    assert.equal(fs.existsSync(path.join(dir, 'without')), false, 'refused before anything was written');
     const exported = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
     assert.match(exported.stdout, /exporting from localhost:\d+\/kayfabb_scratch/);
@@ -233,6 +233,14 @@ test('an instance exported and imported into a fresh database is the same instan
     fs.cpSync(dir, tampered, { recursive: true });
     fs.writeFileSync(path.join(tampered, 'files', 'avatars', 'exp-sq.webp'), 'RIFF-other');
     assert.match((await run('import-instance.mjs', ['--from', tampered, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /exp-sq\.webp is not the file the export made/);
+    // A carried file no row names, and a row naming a file the export does not carry.
+    fs.writeFileSync(path.join(tampered, 'files', 'avatars', 'exp-sq.webp'), avatar['avatars/exp-sq.webp']);
+    const carried = JSON.parse(fs.readFileSync(path.join(tampered, 'manifest.json'), 'utf8'));
+    fs.writeFileSync(path.join(tampered, 'files', 'avatars', 'stray.webp'), 'RIFF-stray');
+    fs.writeFileSync(path.join(tampered, 'manifest.json'), JSON.stringify({ ...carried, files: [...carried.files, { bucket: 'avatars', name: 'stray.webp', bytes: 10, sha256: 'x' }] }));
+    assert.match((await run('import-instance.mjs', ['--from', tampered, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /carries avatars\/stray\.webp, which no row names/);
+    fs.writeFileSync(path.join(tampered, 'manifest.json'), JSON.stringify({ ...carried, files: carried.files.filter((f: { name: string }) => f.name !== 'exp-pt.webp') }));
+    assert.match((await run('import-instance.mjs', ['--from', tampered, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /a row names avatars\/exp-pt\.webp, which the export does not carry/);
     fs.rmSync(tampered, { recursive: true, force: true });
     // A file already in the new project under a name the export carries, with other bytes, is refused.
     newStore.objects.set('avatars/exp-src.webp', Buffer.from('RIFF-someone-else'));
