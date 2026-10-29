@@ -76,7 +76,7 @@ begin
   -- Bob's re-read of t is no new reader: t is not recounted either.
   if (select counted_at from thread_view_counts where thread = t) is distinct from counted then raise exception 'a re-read recounted its thread'; end if;
   -- A read whose transaction began just before the last run, and committed after it, is counted
-  -- at the next: its read_at is its transaction's start, a moment before the run it missed.
+  -- at the next: its first_read_at is its transaction's start, a moment before the run it missed.
   perform tests.become(bob);
   perform mark_read(quiet, 1, b);
   perform tests.unbecome();

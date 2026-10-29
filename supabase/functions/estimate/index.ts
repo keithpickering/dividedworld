@@ -13,7 +13,7 @@ const answer = (status: number, body: unknown) =>
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-  if (request.method !== 'POST') return answer(405, { error: 'the estimate is posted for' });
+  if (request.method !== 'POST') return answer(405, { error: 'the estimate is asked for with a POST' });
   const env = environment((name) => Deno.env.get(name));
   const anon = Deno.env.get('SUPABASE_ANON_KEY');
   if (!anon) throw new Error('SUPABASE_ANON_KEY must be set');

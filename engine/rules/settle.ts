@@ -100,7 +100,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   const { window } = input;
   const settings = instance.settings;
   const sharedVote = options.sharedVote ?? true;
-  const halving = options.halving ?? true ? settings.halving : 1;
+  const halving = (options.halving ?? true) ? settings.halving : 1;
 
   /* ---- the instance's vocabulary ---- */
   const quadrantOf = new Map(instance.reactions.map((r) => [r.key, r.quadrant]));

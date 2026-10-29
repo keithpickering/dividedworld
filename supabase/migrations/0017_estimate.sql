@@ -19,9 +19,11 @@
 -- those posts; the cards others played on the caller's posts; and for each thread a caller's
 -- character spun that is active, its spin and each character's first post in it. With every
 -- reaction on the Acts reacted to, earlier ones included, for a post's reactors and lean. Its
--- cost is the caller's own activity and the reactions it drew: a post with thousands of reactions
--- is thousands of rows, read through reactions' unique index, which leads with the Act. Read by
--- the service only.
+-- cost is the caller's own activity and the reactions it drew, never the instance's: each of the
+-- caller's Acts is looked up by acts_character, its reactions and cards by the indexes that lead
+-- with the Act (reactions' unique index, acts_target), and the caller's own reactions by
+-- reactions_reactor. A post with thousands of reactions is thousands of rows; a player with
+-- thousands of posts is that many index probes. Read by the service only.
 
 -- `until` is now for every caller the estimate function makes; a test reads a window it wrote.
 create function estimate_input(account uuid, until timestamptz default now()) returns jsonb
@@ -29,24 +31,36 @@ language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   salt text := gen_random_uuid()::text;
   window_start timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
-  window_end timestamptz := until;
+  season_end timestamptz;
+  window_end timestamptz;
   you text := md5(salt || 'you');
 begin
-  if window_start is null or window_start >= window_end then return null; end if;
+  -- The window the next settlement reads begins where next_settlement_window (0004) begins it: at
+  -- the last settled end, or, where no season holds that instant (a gap between seasons), at the
+  -- next season's start; and it never runs past its season's end.
+  if window_start is not null and not exists (select 1 from seasons where starts_at <= window_start and (ends_at is null or ends_at > window_start)) then
+    window_start := (select min(starts_at) from seasons where starts_at > window_start);
+  end if;
+  if window_start is null then return null; end if;
+  select coalesce(s.ends_at, nullif(greatest(s.starts_at + span_interval(setting('seasonLength')), window_start), window_start)) into season_end
+  from seasons s where s.starts_at <= window_start and (s.ends_at is null or s.ends_at > window_start);
+  window_end := least(until, coalesce(season_end, 'infinity'));
+  if window_start >= window_end then return null; end if;
   return (
   with
   mine as (select id from characters where owner = account),
   win_acts as (select a.* from acts a join mine m on m.id = a.character where a.created_at >= window_start and a.created_at < window_end),
-  win_reactions as (select r.* from reactions r where r.created_at >= window_start and r.created_at < window_end),
-  -- The caller's Acts reacted to in the window, whenever written.
-  mine_reacted as (select distinct r.act from win_reactions r join acts a on a.id = r.act join mine m on m.id = a.character),
-  -- The Acts the caller reacted to in the window.
-  reacted_by_me as (select distinct r.act from win_reactions r where r.reactor_account = account),
+  -- The caller's Acts reacted to in the window, whenever written: each of the caller's Acts, then
+  -- its reactions through the index that leads with the Act, never the whole window's reactions.
+  mine_reacted as (select distinct a.id as act from acts a join mine m on m.id = a.character
+                   where exists (select 1 from reactions r where r.act = a.id and r.created_at >= window_start and r.created_at < window_end)),
+  -- The Acts the caller reacted to in the window, through reactions_reactor.
+  reacted_by_me as (select distinct r.act from reactions r where r.reactor_account = account and r.created_at >= window_start and r.created_at < window_end),
   targets as (select target_act_id as id from win_acts where kind in ('card', 'spin') and target_act_id is not null),
   -- Every card of the caller's on a post the caller's window cards point at: a vote counts for the earliest.
   my_cards_there as (select a.id from acts a join mine m on m.id = a.character join targets t on t.id = a.target_act_id where a.kind = 'card' and a.created_at < window_end),
   -- Cards others played on the caller's posts in the window.
-  landed as (select a.id from acts a join acts p on p.id = a.target_act_id join mine m on m.id = p.character
+  landed as (select a.id from acts p join mine m on m.id = p.character join acts a on a.target_act_id = p.id
              where a.kind = 'card' and a.created_at >= window_start and a.created_at < window_end),
   -- The caller's spun threads active in the window: the spin, and each character's first post.
   spun as (select distinct s.thread as id from acts s join mine m on m.id = s.character

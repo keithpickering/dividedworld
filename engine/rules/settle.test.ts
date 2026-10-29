@@ -185,6 +185,7 @@ test('a wallet inside its bounds moves by the sum of the entries', () => {
   assert.deepEqual(applyCap(100, [{ amount: 30 }, { amount: -20 }], 600), { balance: 110, change: 10, overflow: 0, floored: 0 });
 });
 
+/* ---- one player, one vote per Act, across windows (the owner's answer 2) ---- */
 const W1 = { id: 'mon', from: FROM, to: TO };
 const W2 = { id: 'tue', from: TO, to: TO + 24 * H };
 const day = (window: typeof W1, reactions: InputReaction[], paid: SettlementInput['paid'] = []): SettlementInput => ({ ...base(), window, reactions, paid });
@@ -598,6 +599,20 @@ const counting = (b: SettlementInput): SettlementInput => ({ ...b, characters: b
 
 test('the options\' defaults are the exact settlement', () => {
   const b = base();
+  // As settle() read this window before it had options (b7ad22d), pinned.
+  assert.deepEqual({ entries: settle(b, instance).entries, details: settle(b, instance).details }, {
+    entries: [
+      { window: 'w1', player: 'ann', character: 'ann-fan', reason: 'fan.groan', amount: -5 },
+      { window: 'w1', player: 'ann', character: 'ann-fan', reason: 'fan.love', amount: 20 },
+      { window: 'w1', player: 'bob', character: 'bob-1', reason: 'quiet.post', amount: 7 },
+    ],
+    details: [
+      { player: 'ann', character: 'ann-fan', reason: 'fan.groan', act: 'p1', quadrant: 'boredNegative', amount: -5 },
+      { player: 'ann', character: 'ann-fan', reason: 'fan.love', act: 'p1', quadrant: 'excitedPositive', amount: 15 },
+      { player: 'ann', character: 'ann-fan', reason: 'fan.love', act: 'p2', quadrant: 'excitedPositive', amount: 5 },
+      { player: 'bob', character: 'bob-1', reason: 'quiet.post', act: 'q1', amount: 7 },
+    ],
+  });
   assert.deepEqual(settle(b, instance, { sharedVote: true, halving: true }), settle(b, instance));
   assert.deepEqual(settle(b, instance, {}), settle(b, instance));
 });
