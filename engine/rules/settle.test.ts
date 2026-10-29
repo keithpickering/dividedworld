@@ -199,12 +199,41 @@ test('the owner\'s live preview is the settlement so far, for their own characte
   assert.equal(love.reduce((s, d) => s + d.amount, 0), amountOf(settled, 'ann-fan', 'fan.love'));
 });
 
-test('a reaction\'s share counts its player\'s earlier reactions on the Act, and the window pays only its own', () => {
-  const b = base();
-  const later: SettlementInput = { ...b, reactions: [...b.reactions, react('q1', 'dee', 'dee-1', 'zzz', FROM - 1), react('p2', 'dee', 'dee-1', 'zzz', FROM - 1), react('p2', 'dee', 'dee-1', 'fire', FROM + 7 * H)] };
-  // Dee's zzz on p2 came in an earlier window and is not paid here; her fire here is half her vote.
-  assert.equal(amountOf(settle(later, instance), 'ann-fan', 'fan.love'), 25);
-  assert.equal(amountOf(settle(later, instance), 'ann-fan', 'fan.groan'), -5);
+/* ---- one player, one vote per Act, across windows (the owner's answer 2) ---- */
+const W1 = { id: 'mon', from: FROM, to: TO };
+const W2 = { id: 'tue', from: TO, to: TO + 24 * H };
+const day = (window: typeof W1, reactions: InputReaction[], paid: SettlementInput['paid'] = []): SettlementInput => ({ ...base(), window, reactions, paid });
+
+test('a player reacting on Monday and again on Tuesday is paid one vote in all, as on one day', () => {
+  const monday = settle(day(W1, [react('p1', 'bob', 'bob-1', 'fire', FROM + H)]), instance);
+  assert.equal(amountOf(monday, 'ann-fan', 'fan.love'), 10);
+  const tuesday = settle(day(W2, [react('p1', 'bob', 'bob-1', 'fire', FROM + H), react('p1', 'bob', 'bob-1', 'heart', TO + H)], monday.paid), instance);
+  assert.equal(amountOf(tuesday, 'ann-fan', 'fan.love'), 0, 'a second reaction in the same quadrant adds nothing to one vote');
+  const sameDay = settle(day(W1, [react('p1', 'bob', 'bob-1', 'fire', FROM + H), react('p1', 'bob', 'bob-1', 'heart', FROM + 2 * H)]), instance);
+  assert.equal(amountOf(monday, 'ann-fan', 'fan.love') + amountOf(tuesday, 'ann-fan', 'fan.love'), amountOf(sameDay, 'ann-fan', 'fan.love'));
+});
+
+test('a second reaction in a later window moves half the vote from one quadrant to the other', () => {
+  const monday = settle(day(W1, [react('p1', 'bob', 'bob-1', 'fire', FROM + H)]), instance);
+  const tuesday = settle(day(W2, [react('p1', 'bob', 'bob-1', 'fire', FROM + H), react('p1', 'bob', 'bob-1', 'zzz', TO + H)], monday.paid), instance);
+  assert.equal(amountOf(tuesday, 'ann-fan', 'fan.love'), -5, 'half the love taken back');
+  assert.equal(amountOf(tuesday, 'ann-fan', 'fan.groan'), -5, 'and paid as half a groan');
+  assert.deepEqual(tuesday.paid, [{ player: 'bob', act: 'p1', weight: 1, shares: { excitedPositive: 0.5, excitedNegative: 0, calmPositive: 0, boredNegative: 0.5 } }]);
+});
+
+test('the halving is fixed in the window of a player\'s first reaction, and never earned again later', () => {
+  const monday = settle(day(W1, [react('p1', 'bob', 'bob-1', 'fire', FROM + 4 * H), react('p2', 'bob', 'bob-1', 'fire', FROM + 6 * H)]), instance);
+  assert.equal(amountOf(monday, 'ann-fan', 'fan.love'), 15, 'p1 whole, p2 halved');
+  assert.equal(monday.paid.find((v) => v.act === 'p2')?.weight, 0.5);
+  // On Tuesday p2 is the only Act Bob reacts to; its weight stays the half it was given.
+  const tuesday = settle(day(W2, [react('p1', 'bob', 'bob-1', 'fire', FROM + 4 * H), react('p2', 'bob', 'bob-1', 'fire', FROM + 6 * H), react('p2', 'bob', 'bob-1', 'zzz', TO + H)], monday.paid), instance);
+  assert.equal(tuesday.paid.find((v) => v.act === 'p2')?.weight, 0.5);
+  assert.equal(amountOf(tuesday, 'ann-fan', 'fan.groan'), -3, 'half of a half vote, at -2.5, away from zero');
+  assert.equal(tuesday.paid.find((v) => v.act === 'p1'), undefined, 'an Act nobody reacted to again is not written again');
+});
+
+test('a vote reacted to before the window with nothing recorded as paid is refused, never paid in full again', () => {
+  assert.throws(() => settle(day(W2, [react('p1', 'bob', 'bob-1', 'fire', FROM + H), react('p1', 'bob', 'bob-1', 'zzz', TO + H)]), instance), /paid/);
 });
 
 test('the log\'s lines are whole hundredths that add up to their entry exactly', () => {

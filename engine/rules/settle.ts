@@ -30,7 +30,7 @@
  * - Input is read in a canonical order and amounts are summed before they are rounded, so the
  *   result is the same whatever order the rows arrive in.
  */
-import { halveAcrossActs, shareVotes } from './votes.ts';
+import { payVotes, shareVotes, type PaidVote } from './votes.ts';
 import type {
   Alignment, ClassInput, ClassRules, GivenReaction, InputAct, InputCharacter, InputReaction, Instance,
   LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread,
@@ -63,6 +63,8 @@ export interface Settlement {
   readonly standings: readonly { readonly character: string; readonly amount: number }[];
   /** What each class earned in all, for the season review. */
   readonly byClass: Readonly<Record<string, number>>;
+  /** Each vote this window touched, as now paid: stored with the settlement, read by the next. */
+  readonly paid: readonly PaidVote[];
 }
 
 /** A reason's shape, as the ledger holds it (supabase/migrations/0003_aura.sql): `class.what`. */
@@ -122,7 +124,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
   /* ---- votes ---- */
   const shared = shareVotes(reactions);
   const inWindow = (at: number) => at >= window.from && at < window.to;
-  const windowVotes = halveAcrossActs(shared.filter((r) => inWindow(r.at)), actOf, settings.halving);
+  const { votes: windowVotes, paid } = payVotes(reactions, window, input.paid ?? [], actOf, settings.halving);
   const votesOn = new Map<string, number>();
   for (const v of windowVotes) votesOn.set(v.act, (votesOn.get(v.act) ?? 0) + v.share);
 
@@ -308,6 +310,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     details,
     standings: [...standing].sort((a, b) => cmp(a[0], b[0])).map(([character, amount]) => ({ character, amount })),
     byClass,
+    paid,
   };
 }
 

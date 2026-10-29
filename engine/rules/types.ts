@@ -131,6 +131,16 @@ export interface SettlementInput {
    * else's Act.
    */
   readonly systemActs?: readonly string[];
+  /**
+   * What earlier windows paid for each player's vote on each Act this window's reactions touch
+   * (engine/rules/votes.ts's payVotes): its weight, and each quadrant's share at it.
+   */
+  readonly paid?: readonly {
+    readonly player: string;
+    readonly act: string;
+    readonly weight: number;
+    readonly shares: Readonly<Record<Quadrant, number>>;
+  }[];
 }
 
 /* ------------------------------------------------------ what a class's rules are given ---- */

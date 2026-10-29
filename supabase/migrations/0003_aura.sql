@@ -53,6 +53,21 @@ create table ledger (
 create index ledger_account on ledger (account, settlement);
 create index ledger_settlement on ledger (settlement);
 
+-- One player, one vote per Act, across windows (engine/rules/votes.ts's payVotes): the weight
+-- each player's vote on an Act was given in the window of their first reaction there, and each
+-- quadrant's share of it paid so far. Written by apply_settlement in the window's own
+-- transaction, so a retried window never pays a difference twice; read by settlement_input.
+-- Who voted how is private: no grant.
+create table paid_votes (
+  account uuid not null references accounts (id),
+  act uuid not null references acts (id),
+  weight numeric not null check (weight > 0 and weight <= 1),
+  shares jsonb not null,
+  settlement bigint not null references settlements (id),
+  primary key (account, act)
+);
+create index paid_votes_act on paid_votes (act);
+
 create table wallets (
   account uuid primary key references accounts (id),
   balance integer not null default 0 check (balance >= 0)
@@ -133,7 +148,7 @@ end $$;
 -- standing, in one transaction. Entries are `[{player, character, reason, amount}]` and class
 -- totals `{class: amount}`, as engine/rules/settle.ts returns them. A window already applied
 -- is a no-op that says so; a window that does not start where the last one ended is refused.
-create function apply_settlement(window_start timestamptz, window_end timestamptz, entries jsonb, class_totals jsonb default '{}')
+create function apply_settlement(window_start timestamptz, window_end timestamptz, entries jsonb, class_totals jsonb default '{}', paid jsonb default '[]')
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -174,6 +189,25 @@ begin
        or not exists (select 1 from class_kinds k where k.key = t.key)) then
     raise exception 'class totals are whole amounts keyed by a class the instance has' using errcode = '22023';
   end if;
+  -- Each paid vote: a player who has an account, an Act, a weight inside one vote, and the four
+  -- quadrants' shares of it, each from 0 to 1, together one vote. A vote paid before keeps its weight.
+  if jsonb_typeof(coalesce(paid, '[]')) <> 'array' or exists (
+    select 1 from jsonb_array_elements(coalesce(paid, '[]')) v
+    where jsonb_typeof(v -> 'weight') is distinct from 'number' or (v ->> 'weight')::numeric <= 0 or (v ->> 'weight')::numeric > 1
+       or jsonb_typeof(v -> 'shares') is distinct from 'object'
+       or (select count(*) from jsonb_each(v -> 'shares')) <> 4
+       or exists (select 1 from jsonb_each(v -> 'shares') s
+                  where s.key not in ('excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative')
+                     or jsonb_typeof(s.value) <> 'number' or (s.value #>> '{}')::numeric < 0 or (s.value #>> '{}')::numeric > 1)
+       or abs((select sum((s.value #>> '{}')::numeric) from jsonb_each(v -> 'shares') s) - 1) > 0.000001
+       or not exists (select 1 from accounts x where x.id = (v ->> 'player')::uuid)
+       or not exists (select 1 from acts x where x.id = (v ->> 'act')::uuid)) then
+    raise exception 'paid votes are a player, an Act, a weight of at most one vote, and four shares that make one vote' using errcode = '22023';
+  end if;
+  if exists (select 1 from jsonb_array_elements(coalesce(paid, '[]')) v join paid_votes p on p.account = (v ->> 'player')::uuid and p.act = (v ->> 'act')::uuid
+             where p.weight <> (v ->> 'weight')::numeric) then
+    raise exception 'a paid vote''s weight is fixed in the window it was first paid; this one changes it' using errcode = '22023';
+  end if;
 
   insert into settlements (starts_at, ends_at, season) values (window_start, window_end, open_season) returning id into settled;
   insert into ledger (settlement, account, character, reason, amount)
@@ -191,6 +225,10 @@ begin
   insert into settlement_class_totals (settlement, class_key, amount)
   select settled, key, (value)::numeric::integer from jsonb_each_text(coalesce(class_totals, '{}'));
 
+  insert into paid_votes (account, act, weight, shares, settlement)
+  select (v ->> 'player')::uuid, (v ->> 'act')::uuid, (v ->> 'weight')::numeric, v -> 'shares', settled from jsonb_array_elements(coalesce(paid, '[]')) v
+  on conflict (account, act) do update set shares = excluded.shares, settlement = excluded.settlement;
+
   return jsonb_build_object('applied', true, 'settlement', settled,
     'entries', (select count(*) from ledger where settlement = settled));
 end $$;
@@ -204,7 +242,8 @@ alter table ledger enable row level security;
 alter table wallets enable row level security;
 alter table wallet_events enable row level security;
 alter table standings enable row level security;
-revoke all on seasons, settlements, settlement_class_totals, ledger, wallets, wallet_events, standings from anon, authenticated;
+alter table paid_votes enable row level security;
+revoke all on seasons, settlements, settlement_class_totals, ledger, wallets, wallet_events, standings, paid_votes from anon, authenticated;
 revoke all on all sequences in schema public from anon, authenticated;
 
 grant select on seasons, settlements, standings to authenticated;
@@ -218,5 +257,5 @@ create policy own on wallets for select to authenticated using (account = auth.u
 create policy own on wallet_events for select to authenticated using (account = auth.uid());
 
 revoke execute on function wallets_within_cap(), ledger_append_only(), wallet_move(uuid, bigint, text, bigint, uuid),
-  apply_settlement(timestamptz, timestamptz, jsonb, jsonb) from public, anon, authenticated;
-grant execute on function apply_settlement(timestamptz, timestamptz, jsonb, jsonb) to service_role;
+  apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb) from public, anon, authenticated;
+grant execute on function apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb) to service_role;

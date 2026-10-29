@@ -50,3 +50,74 @@ export function halveAcrossActs<R extends { readonly act: string; readonly playe
     return { ...v, votes: v.share * halving ** i };
   });
 }
+
+/** What one player has been paid for their vote on one Act: its weight, and each quadrant's share at it. */
+export interface PaidVote {
+  readonly player: string;
+  readonly act: string;
+  readonly weight: number;
+  readonly shares: Readonly<Record<'excitedPositive' | 'excitedNegative' | 'calmPositive' | 'boredNegative', number>>;
+}
+
+const QUADRANT_KEYS = ['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative'] as const;
+type Q = (typeof QUADRANT_KEYS)[number];
+const sweep = (x: number) => Math.round(x * 1e9) / 1e9 || 0;
+
+/**
+ * One player, one vote per Act, whenever the reactions come (the owner's answer 2, on #4).
+ *
+ * A player's vote on an Act has one weight, set by the halving in the window of their first
+ * reaction there, and is split across quadrants by their reactions' shares. A window pays, for
+ * each player and Act its reactions touched, the difference between the shares now and the
+ * shares already paid, at that weight: a second reaction in the same quadrant a day later pays
+ * nothing more, one in another quadrant moves half the vote from the first to it, and the halving
+ * is never earned again by coming back. What is paid is returned, to be stored beside the
+ * settlement in the same transaction, so a retried window never pays a difference twice.
+ *
+ * `reactions` are every reaction on each touched Act up to the window's end, earlier ones
+ * included; a pair with an earlier reaction and nothing recorded as paid is refused, since
+ * paying it as new would pay what an earlier window paid.
+ */
+export function payVotes<R extends { readonly act: string; readonly player: string; readonly character: string; readonly quadrant: Q; readonly at: number }>(
+  reactions: readonly R[],
+  window: { readonly from: number; readonly to: number },
+  paid: readonly PaidVote[],
+  actOf: (id: string) => { readonly character: string; readonly at: number },
+  halving: number,
+): { votes: (R & { share: number; votes: number })[]; paid: PaidVote[] } {
+  const pairKey = (player: string, act: string) => `${player}\u0000${act}`;
+  const before = new Map(paid.map((p) => [pairKey(p.player, p.act), p]));
+  const byPair = new Map<string, R[]>();
+  for (const r of reactions) {
+    if (r.at >= window.to) continue;
+    const k = pairKey(r.player, r.act);
+    const list = byPair.get(k);
+    if (list) list.push(r); else byPair.set(k, [r]);
+  }
+  const inWindow = (r: R) => r.at >= window.from && r.at < window.to;
+  const touched = [...byPair.entries()].filter(([, rs]) => rs.some(inWindow));
+  // A vote new in this window takes its weight from this window's halving, among the player's
+  // other new votes on the same character's Acts; one paid before keeps the weight it was given.
+  const fresh = touched.filter(([k]) => !before.has(k)).map(([, rs]) => ({ act: rs[0]!.act, player: rs[0]!.player, share: 1 }));
+  const weightOf = new Map(halveAcrossActs(fresh, actOf, halving).map((v) => [pairKey(v.player, v.act), v.votes]));
+  const votes: (R & { share: number; votes: number })[] = [];
+  const out: PaidVote[] = [];
+  for (const [k, rs] of touched) {
+    const prior = before.get(k);
+    if (!prior && rs.some((r) => r.at < window.from)) {
+      throw new Error(`settle: ${rs[0]!.player}'s vote on Act ${rs[0]!.act} began before the window, and nothing is recorded as paid for it`);
+    }
+    const weight = prior?.weight ?? weightOf.get(k)!;
+    const shares = Object.fromEntries(QUADRANT_KEYS.map((q) => [q, sweep(rs.filter((r) => r.quadrant === q).length / rs.length)])) as Record<Q, number>;
+    const last = [...rs].filter(inWindow).sort((a, b) => a.at - b.at).at(-1)!;
+    for (const q of QUADRANT_KEYS) {
+      const share = sweep(shares[q] - (prior?.shares[q] ?? 0));
+      if (share === 0) continue;
+      const voice = [...rs].filter((r) => inWindow(r) && r.quadrant === q).sort((a, b) => a.at - b.at).at(-1) ?? last;
+      votes.push({ ...voice, quadrant: q, share, votes: weight * share });
+    }
+    out.push({ player: rs[0]!.player, act: rs[0]!.act, weight, shares });
+  }
+  out.sort((a, b) => (a.player < b.player ? -1 : a.player > b.player ? 1 : a.act < b.act ? -1 : a.act > b.act ? 1 : 0));
+  return { votes, paid: out };
+}

@@ -32,6 +32,7 @@ export async function runSettlement(db: Db, instance: Instance, until: string): 
     window_end: window.end,
     entries: result.entries.map((e) => ({ player: e.player, character: e.character, reason: e.reason, amount: e.amount })),
     class_totals: result.byClass,
+    paid: result.paid,
   });
   return { status: applied.applied ? 'applied' : 'already settled', window, entries: result.entries.length };
 }

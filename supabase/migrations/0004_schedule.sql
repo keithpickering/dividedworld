@@ -170,7 +170,11 @@ language sql stable security definer set search_path = public, pg_temp as $$
         'player', r.reactor_account, 'character', r.reactor_character) order by r.created_at, r.id)
       from all_reactions r), '[]'),
     -- The System's Acts an input Act points at (a spin from the reveal): named, never settled.
-    'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'))
+    'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'),
+    -- What earlier windows paid for each vote this window's reactions touch.
+    'paid', coalesce((
+      select jsonb_agg(jsonb_build_object('player', p.account, 'act', p.act, 'weight', p.weight, 'shares', p.shares) order by p.account, p.act)
+      from paid_votes p join (select distinct act, reactor_account from win_reactions) w on w.act = p.act and w.reactor_account = p.account), '[]'))
 $$;
 
 -- Every setting as the rows hold it now, for the functions that run the instance's rules, so
