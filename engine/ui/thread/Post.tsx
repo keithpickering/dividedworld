@@ -42,7 +42,14 @@ function Body({ act, name, person, editing, onDone }: { readonly act: Act; reado
     case 'card': return <CardLine act={act} name={name} />;
     case 'unmask': return <UnmaskLine act={act} name={name} />;
     case 'tally':
-    case 'reveal': return <SystemPost act={act} />;
+    case 'reveal':
+      /* The System's own posts are reacted to like any Act (no player is their author, so no one is shut out). */
+      return (
+        <>
+          <SystemPost act={act} />
+          <Reactions act={act.id} author={null} tallies={tallies} mine={mine} />
+        </>
+      );
     default: {
       /* A post, and a spin's first Act, which is a post that opens on its origin. */
       const origin = act.kind === 'spin' && summary.originActId !== null && summary.originThread !== null;

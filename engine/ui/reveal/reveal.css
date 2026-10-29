@@ -1,0 +1,48 @@
+/* The tally and the season's reveal: The System's posts about the characters. */
+.kb-reveal-post,
+.kb-tally-post {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kb-reveal-line {
+  margin: 0 0 0.4em;
+}
+
+.kb-reveal-stated {
+  margin: 0.3em 0;
+  padding-left: 1.4em;
+}
+
+/* One segment for each class stated, equal in width: its width says nothing. */
+.kb-class-bar {
+  display: flex;
+  min-height: 1.8em;
+  margin: 0.4em 0;
+  border: 1px solid var(--kb-rule);
+}
+
+.kb-class-segment {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2em;
+  border-right: 1px solid var(--kb-rule);
+}
+
+.kb-class-segment:last-child {
+  border-right: 0;
+}
+
+.kb-class-label {
+  background: var(--kb-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-rule);
+  padding: 0 0.4em;
+  font: bold var(--kb-size-small) / 1.4 var(--kb-font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

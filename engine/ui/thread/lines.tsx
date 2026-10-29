@@ -6,6 +6,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
+import { Debuts, RevealPost, TallyPost } from '../reveal/Reveal.tsx';
+
 import { Link } from '../router.tsx';
 import { useThread } from './context.ts';
 import { useLocated } from './locate.tsx';
@@ -64,25 +66,6 @@ export function LastEdited({ act }: { readonly act: Act }) {
   return <div className="kb-post-edited kb-small kb-muted">Last edited <time dateTime={act.shownEditedAt}>{when(act.shownEditedAt)}</time></div>;
 }
 
-export function Debuts({ payload }: { readonly payload: Act['payload'] }) {
-  const { instance } = useKayfa();
-  const cls = (k: unknown) => (typeof k === 'string' ? instance.classes.find((c) => c.key === k)?.name ?? k : null);
-  const rows = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null) : []);
-  const debuts = rows(payload.debuts);
-  const turns = rows(payload.turns);
-  if (debuts.length === 0 && turns.length === 0) return null;
-  return (
-    <ul className="kb-system-list">
-      {debuts.map((d, i) => <li key={`d${i}`}>{text(d.name) || 'A character'} debuts{cls(d.class) ? ` as ${cls(d.class)}` : ''}</li>)}
-      {turns.map((t, i) => (
-        <li key={`t${i}`}>
-          {text(t.name) || 'A character'} has Turned{cls(t.was) ? ` from ${cls(t.was)}` : ''}{cls(t.class) ? ` to ${cls(t.class)}` : ''}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 export function CardLine({ act, name }: { readonly act: Act; readonly name: string }) {
   const { instance } = useKayfa();
   const { perPage } = useThread();
@@ -103,14 +86,9 @@ export function UnmaskLine({ act, name }: { readonly act: Act; readonly name: st
   return <p className="kb-act-line">{name} revealed: {cls}{message && <> — “{message}”</>}</p>;
 }
 
-/** The words of The System's own post (a tally, the reveal). */
+export { Debuts };
+
+/** The words of The System's own post: the tally of a settlement, or the season's reveal (engine/ui/reveal/). */
 export function SystemPost({ act }: { readonly act: Act }) {
-  const body = text(act.currentPayload.body);
-  return (
-    <div className="kb-system-post">
-      {body && <BbCode text={body} quoteLink={quoteLink} />}
-      {act.kind === 'reveal' && !body && <p>The season’s reveal.</p>}
-      <Debuts payload={act.currentPayload} />
-    </div>
-  );
+  return act.kind === 'reveal' ? <RevealPost act={act} /> : <TallyPost act={act} />;
 }
