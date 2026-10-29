@@ -200,7 +200,7 @@ begin
   return new;
 end $$;
 create trigger boards_make_thread_counts after insert on boards for each row execute function boards_make_thread_counts();
-insert into board_thread_counts (board, shard) select b.id, g from boards b, generate_series(0, 3) g;
+insert into board_thread_counts (board, shard) select b.id, g from boards b, generate_series(0, 3) g;  -- boards that predate it; none on a fresh instance
 
 create function threads_count_board() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -240,17 +240,21 @@ create table debuted_count (
   characters integer not null default 0
 );
 alter table debuted_count enable row level security;
-insert into debuted_count (shard) select g from generate_series(0, 3) g;
+-- No row is made here: a migration that fills a table makes an instance's import (tools/import-instance.mjs)
+-- refuse it as not empty. The trigger makes a shard when it first needs one, and the backfill makes the first.
 
 create function characters_count_debuted() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   change integer := case when tg_op = 'DELETE' then 0 else (new.debuted_at is not null)::integer end
                   - case when tg_op = 'INSERT' then 0 else (old.debuted_at is not null)::integer end;
+  taken integer;
 begin
   if change <> 0 then
-    update debuted_count set characters = characters + change
-     where shard = coalesce((select d.shard from debuted_count d order by d.shard for update skip locked limit 1), 0);
+    -- A shard no other transaction holds; else the first one not made yet (up to four); else wait for the first.
+    taken := coalesce((select d.shard from debuted_count d order by d.shard for update skip locked limit 1),
+                      (select g from generate_series(0, 3) g where not exists (select 1 from debuted_count d where d.shard = g) limit 1), 0);
+    insert into debuted_count as d (shard, characters) values (taken, change) on conflict (shard) do update set characters = d.characters + change;
   end if;
   return null;
 end $$;
@@ -258,13 +262,15 @@ create trigger characters_count_debuted after insert or update of debuted_at or 
 
 create function backfill_debuted_count() returns void
 language sql set search_path = public, pg_temp as $$
-  update debuted_count set characters = case when shard = 0 then (select count(*) from characters where debuted_at is not null) else 0 end
+  update debuted_count set characters = 0;
+  insert into debuted_count as d (shard, characters) values (0, (select count(*) from characters where debuted_at is not null))
+  on conflict (shard) do update set characters = excluded.characters
 $$;
 select backfill_debuted_count();
 
 -- The count as a public view, for the standings screen's pager. A view runs as its owner, so the table
 -- stays unreadable by the API roles; the number is the length of a public list.
-create view season_size as select sum(d.characters)::integer as characters from debuted_count d;
+create view season_size as select coalesce(sum(d.characters), 0)::integer as characters from debuted_count d;
 
 -- A place is the number of characters standing higher, plus one; those counts are read from an index of
 -- the standings by amount, so they cost the characters ahead and never rank anyone.
@@ -286,7 +292,7 @@ create function standing_place(of_character uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   open_season bigint := coalesce((select id from seasons where ends_at is null), (select id from seasons order by starts_at desc limit 1));
-  size integer := (select sum(d.characters) from debuted_count d);
+  size integer := (select coalesce(sum(d.characters), 0) from debuted_count d);
   mine integer;
   ahead bigint;
 begin
