@@ -6,6 +6,10 @@ starts after the engine plan (`docs/plans/2026-10-29-screens-engine-plan.md`) is
 merged. A build session carries it out task by task, tests first, each red run recorded
 (`.claude/skills/build-session/SKILL.md`).
 
+**Amended 2026-10-29, after PR #7** (`docs/plans/2026-10-29-core-loop-build-answers.md`): sign-in is passwordless;
+a new character waits to debut at the next settlement; a Turn is pending until then and can be changed or withdrawn;
+announced Turns and debuts appear in The System's tally. Tasks 9, 10 and 11 say so.
+
 The mockups each screen follows are in `docs/research/2026-10-29-screens/`; the design's sections say what was decided
 and why. Where a mockup and the design disagree, the design wins. impeccable is installed (`.claude/skills/impeccable/`)
 with its product record (`PRODUCT.md`); a builder runs `.claude/skills/impeccable/scripts/impeccable context` once, then
@@ -171,14 +175,16 @@ engine's `Instance`. A Supabase client lives only in `web/src/data/` ("Portable 
 ### Task 9. Characters and Turns
 
 - `engine/ui/characters/`: My characters (class marked "only you", standing and pips, the Turn button or the date it
-  opens, a pending Turn with Cancel); New character with the class cards (each class's description from the instance);
+  opens, a pending Turn with Change and Withdraw, a new character "waiting to debut at tonight's settlement"); New character with the class cards (each class's description from the instance);
   a full roster's plain note that an admin can retire a character on request.
 - The Turn modal: the class, how loud, the preview of what everyone will see ("Pipewrench has Turned", or with the old
-  class), "takes effect at the next settlement"; focus held, Esc closes, focus returned.
+  class, as it will read in The System's tally), "takes effect at the next settlement"; focus held, Esc closes, focus
+  returned.
 - `engine/ui/profile-edit/`: title, signature, pip style (the default only, in the slice), and the avatar cropper: one
   image, two frames (square; portrait up to 1:2, the square defaulting to its top), re-encoded in the browser to WebP
   with nothing but pixels, sent to the `avatar` function.
-- **Tests first:** the modal's focus trap and return; a pending Turn cancelled; the cropper refuses a portrait frame
+- **Tests first:** the modal's focus trap and return; a pending Turn changed and withdrawn; a new character shown as
+  waiting to debut and absent from every public list; the cropper refuses a portrait frame
   taller than 2:1; the re-encoded file carries no EXIF chunk.
 
 ### Task 10. The profile, the standings and the reveal
@@ -186,6 +192,7 @@ engine's `Instance`. A Supabase client lives only in `web/src/data/` ("Portable 
 - `engine/ui/profile/`: the public profile (tall avatar, title, rank, exact standing and when settled, place, counts,
   the month joined, signature); the public record's latest rows and a full view, paged and filtered by kind.
 - `engine/ui/standings/`: the season's standings from `season_standings`.
+- The tally: The System's Act each settlement naming the night's debuts and announced Turns, on its board.
 - The reveal thread: each character's post with place, rank, standing, a bar of its classes in `classLooks`, every Turn
   listed; reactable and spinnable like any Act.
 - **Tests first:** the profile shows no class except one announced with a revealed Turn; a character with no Act and no
@@ -194,8 +201,9 @@ engine's `Instance`. A Supabase client lives only in `web/src/data/` ("Portable 
 
 ### Task 11. Out of character: registration, sign-in, invites, settings
 
-- `engine/ui/account/`: registration (an invite field while the instance is invite-only; the 18+ acknowledgement), sign
-  in with email and password, reset; the plain words of `account`'s answers, the same for every address.
+- `engine/ui/account/`: registration (an invite field while the instance is invite-only; the 18+ acknowledgement) and
+  passwordless sign-in (request a code or link by email, then enter the code), in the plain words of `account`'s
+  answers, the same for every address.
 - Invites: make one (a link to copy), the cap and expiry said plainly, reissue.
 - Settings: theme (device, light, dark, and the instance's themes), postbit style, motion (device, reduce, full), sign
   out; all saved to the account.
@@ -219,7 +227,8 @@ engine's `Instance`. A Supabase client lives only in `web/src/data/` ("Portable 
 |---|---|
 | A draft whose HUD character changed | Send again to confirm, or swap back |
 | The Turn modal | Cancel, Esc, or confirm |
-| A pending Turn | Cancel on My characters; or the settlement applies it |
+| A pending Turn | Change or withdraw it on My characters; or the settlement applies it |
+| A character waiting to debut | The next settlement |
 | A "3 new posts" bar | Click it, or read on; it never moves the page by itself |
 | A full roster | The plain note: an admin retires a character on request |
 
