@@ -1,27 +1,29 @@
 /**
- * Signing up, signing in and resetting a password, as a pure module, so that none of them
+ * Signing in, passwordless, as a pure module (the owner's answer 13, on #4): a player asks for a
+ * code, which Supabase Auth emails with a link beside it, and signs in with it. Neither step
  * answers differently for an address with an account than for one without ("A response never
  * varies with a private fact").
  *
  * Two things could tell an address apart, and each is closed here:
- *   - What is said. A sign-up and a reset say the same for every address and do their work
- *     with Supabase Auth only after the answer (`later`), so nothing Auth says about the address
- *     can reach it. A sign-in's refusal is one sentence for a wrong password and for an address
- *     nobody holds. Only the right password learns more, and it already knows.
+ *   - What is said. Asking for a code says the same for every address and asks Auth only after
+ *     the answer (`later`), so nothing Auth says about the address can reach it. A code that
+ *     does not match is one sentence whether the address has a login or not.
  *   - How long it takes. Every answer, refusals included, is held to a whole number of
- *     ANSWER_FLOOR_MS from when the request came in, so a password compared for a known address
- *     and none compared for an unknown one take the same time to answer.
+ *     ANSWER_FLOOR_MS from when the request came in.
+ * No path takes a password, and no login holds one (supabase/migrations/0012_passwordless.sql).
  *
- * A sign-up's invite is checked before the answer, since whether a code opens anything is a fact
- * about the code, not the address; it is spent only when the login opens its account at its
- * first sign-in (supabase/migrations/0009_registration.sql), with the code it signed up with.
- * Where that fails (the invite was spent meanwhile), the sign-in still succeeds and says the way
- * out: the openAccount action, with another invite.
+ * A code asked for with an invite may make a login; the invite is checked before the answer,
+ * since whether a code opens anything is a fact about the code, not the address, and goes with
+ * the login as its metadata. It is spent only when the login opens its account, at its first
+ * sign-in (supabase/migrations/0009_registration.sql). Where that fails (the invite was spent
+ * meanwhile), the sign-in still succeeds and says the way out: the openAccount action, with
+ * another invite. A link from the email signs in through Auth itself, and the client then calls
+ * open_account() as this does.
  */
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { REFUSAL_HINT } from '../act/core.ts';
 
-/** Long enough to cover a sign-in's password check and its round trips, so the floor is what shows. */
+/** Long enough to cover a code's check and its round trips, so the floor is what shows. */
 export const ANSWER_FLOOR_MS = 1_000;
 
 export interface Session {
@@ -33,11 +35,9 @@ export interface Session {
 
 /** The little of Supabase Auth this needs (supabase/functions/_shared/gotrue.ts). */
 export interface Auth {
-  signUp(email: string, password: string, data: { invite: string | null }): Promise<void>;
-  signIn(email: string, password: string): Promise<{ session: Session } | { refused: 'credentials' | 'unconfirmed' }>;
-  recover(email: string): Promise<void>;
-  /** Sends a sign-up's confirmation again. */
-  resend(email: string): Promise<void>;
+  /** Emails a code and a link; `create` lets it make a login for an address with none, carrying the invite. */
+  requestCode(email: string, options: { create: boolean; invite: string | null }): Promise<void>;
+  verifyCode(email: string, code: string): Promise<{ session: Session } | { refused: 'code' }>;
 }
 
 export interface Clock {
@@ -48,14 +48,12 @@ export interface Clock {
 export interface AccountAnswer {
   readonly status: number;
   readonly body: unknown;
-  /** Work for after the answer has gone: Auth asked to sign up or to send a reset. */
+  /** Work for after the answer has gone: Auth asked to send a code. */
   readonly later?: () => Promise<void>;
 }
 
-const SENT_SIGN_UP = 'If this address can sign up, a link to finish is on its way to it.';
-const SENT_RESET = 'If this address has an account, a link to reset its password is on its way to it.';
-const SENT_CONFIRMATION = 'If this address signed up and is not yet confirmed, a new link to confirm it is on its way to it.';
-const NO_MATCH = 'that email and password do not match';
+const SENT_CODE = 'If this address can sign in here, a code and a link to sign in are on their way to it.';
+const NO_MATCH = 'that code does not match, or it has expired: ask for a new one';
 
 const refused = (field: string, error: string): AccountAnswer => ({ status: 400, body: { field, error } });
 
@@ -64,51 +62,35 @@ const email = (r: Fields): string | AccountAnswer => {
   const v = typeof r.email === 'string' ? r.email.trim() : '';
   return v.length >= 3 && v.length <= 254 && /^[^\s@]+@[^\s@]+$/.test(v) ? v : refused('email', 'is not an email address');
 };
-/** Supabase Auth hashes at most 72 bytes of a password; a longer one would be cut without a word. */
-const password = (r: Fields, least: number): string | AccountAnswer => {
-  const v = r.password;
-  if (typeof v !== 'string' || v.length < least) return refused('password', least > 1 ? `is shorter than ${least} characters` : 'is missing');
-  if (new TextEncoder().encode(v).length > 72) return refused('password', 'is longer than 72 bytes');
-  return v;
+/** Auth's codes are its digits only, six by default (supabase/config.toml's otp_length). */
+const code = (r: Fields): string | AccountAnswer => {
+  const v = typeof r.code === 'string' ? r.code.trim() : '';
+  return /^\d{6,10}$/.test(v) ? v : refused('code', 'is the digits from the email');
 };
 
 async function answer(deps: { auth: Auth; service: Db; player: (token: string) => Db }, request: unknown): Promise<AccountAnswer> {
   if (typeof request !== 'object' || request === null) return refused('action', 'a request is an object naming its action');
   const r = request as Fields;
   switch (r.action) {
-    case 'signUp': {
+    case 'requestCode': {
       const address = email(r);
       if (typeof address !== 'string') return address;
-      const secret = password(r, 8);
-      if (typeof secret !== 'string') return secret;
-      const code = typeof r.invite === 'string' && r.invite.length <= 64 ? r.invite : null;
-      const opens = await deps.service.rpc<'opens' | 'closed' | 'nothing'>('invite_open', { code });
-      if (opens === 'closed') return { status: 403, body: { error: 'registration is closed' } };
-      if (opens !== 'opens') return refused('invite', code === null ? 'signing up here needs an invite' : 'that invite opens nothing');
-      return { status: 202, body: { message: SENT_SIGN_UP }, later: () => deps.auth.signUp(address, secret, { invite: code }) };
+      const invite = typeof r.invite === 'string' && r.invite.length > 0 && r.invite.length <= 64 ? r.invite : null;
+      // With no invite, the answer is whether the instance lets anyone make a login (open); an
+      // invite that opens nothing is refused, for any address alike.
+      const opens = await deps.service.rpc<'opens' | 'closed' | 'nothing'>('invite_open', { code: invite });
+      if (invite !== null && opens === 'closed') return { status: 403, body: { error: 'registration is closed' } };
+      if (invite !== null && opens !== 'opens') return refused('invite', 'that invite opens nothing');
+      const create = opens === 'opens';
+      return { status: 202, body: { message: SENT_CODE }, later: () => deps.auth.requestCode(address, { create, invite }) };
     }
-    case 'reset': {
+    case 'verifyCode': {
       const address = email(r);
       if (typeof address !== 'string') return address;
-      return { status: 202, body: { message: SENT_RESET }, later: () => deps.auth.recover(address) };
-    }
-    case 'resend': {
-      const address = email(r);
-      if (typeof address !== 'string') return address;
-      return { status: 202, body: { message: SENT_CONFIRMATION }, later: () => deps.auth.resend(address) };
-    }
-    case 'signIn': {
-      const address = email(r);
-      if (typeof address !== 'string') return address;
-      const secret = password(r, 1);
-      if (typeof secret !== 'string') return secret;
-      const out = await deps.auth.signIn(address, secret);
-      if ('refused' in out) {
-        // Only the right password reaches "unconfirmed", so saying it tells nobody anything new.
-        return out.refused === 'unconfirmed'
-          ? { status: 403, body: { error: 'confirm your email first: the link is in the email sent when you signed up, or ask for a new link' } }
-          : refused('password', NO_MATCH);
-      }
+      const digits = code(r);
+      if (typeof digits !== 'string') return digits;
+      const out = await deps.auth.verifyCode(address, digits);
+      if ('refused' in out) return refused('code', NO_MATCH);
       const invite = out.session.user.user_metadata?.invite;
       try {
         await deps.player(out.session.access_token).rpc('open_account', { code: typeof invite === 'string' ? invite : null });
@@ -124,7 +106,7 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       }
     }
     default:
-      return refused('action', 'the actions are signUp, signIn, reset, resend');
+      return refused('action', 'the actions are requestCode and verifyCode');
   }
 }
 
@@ -135,7 +117,7 @@ export async function runAccount(deps: { auth: Auth; service: Db; player: (token
     out = await answer(deps, request);
   } catch (e) {
     console.error('account failed', e);
-    out = { status: 503, body: { error: (request as Fields | null)?.action === 'signIn' ? 'signing in is not working right now; try again' : 'that could not be done right now; try again' } };
+    out = { status: 503, body: { error: (request as Fields | null)?.action === 'verifyCode' ? 'signing in is not working right now; try again' : 'that could not be done right now; try again' } };
   }
   const took = deps.clock.now() - start;
   await deps.clock.sleep(Math.max(1, Math.ceil(took / ANSWER_FLOOR_MS)) * ANSWER_FLOOR_MS - took);

@@ -1,14 +1,14 @@
 /**
- * Signing up, signing in and resetting a password, one entry point. The work is core.ts, which
- * holds every answer to the same words and the same time whatever the address; this is the
- * edge: the public key Supabase Auth is called with, the service key that asks whether an invite
- * opens anything, a player's session for opening their account, the clock, and the work handed
- * on to run after the answer.
+ * Signing in, passwordless, one entry point: asking for a code and signing in with it. The work
+ * is core.ts, which holds every answer to the same words and the same time whatever the
+ * address; this is the edge: the public key Supabase Auth is called with, the service key that
+ * asks whether an invite opens anything, a player's session for opening their account, the
+ * clock, and the work handed on to run after the answer.
  *
  * This guards the client that uses it. Supabase Auth's own endpoints stay reachable with the
- * public key: supabase/config.toml keeps email confirmation on, so Auth's own sign-up answers
- * alike for an address it knows, and whether its password sign-in takes the same time for both
- * is Auth's, an open question for the owner (issue #3).
+ * public key: no login holds a password (supabase/migrations/0012_passwordless.sql), so its
+ * password sign-in fails alike for every address; whether its own code request takes the same
+ * time for an address it knows is Auth's, measured once on the owner's test project (issue #3).
  */
 import { runAccount } from './core.ts';
 import { gotrue } from '../_shared/gotrue.ts';

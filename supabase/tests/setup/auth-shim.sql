@@ -18,6 +18,8 @@ create schema if not exists auth;
 create table if not exists auth.users (
   id uuid primary key default gen_random_uuid(),
   email text unique,
+  -- Supabase Auth's column for a login's password hash, empty for one with none.
+  encrypted_password varchar(255),
   created_at timestamptz not null default now()
 );
 
