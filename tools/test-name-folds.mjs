@@ -39,6 +39,11 @@ const mapping = rows.findIndex((l) => /^\s*\('confusable', /.test(l));
   check('a client copy of another release fires', foldFaults(release, migration).length > 0);
 }
 {
+  const cut = rows.slice(0, -4).join('\n');
+  check('a migration that lost its last lines fires', foldFaults(data, cut).length > 0);
+  check('a data module with a table missing is a sentence, never a throw', (() => { try { return foldFaults(data.replace('"ccc": {', '"cccc": {'), migration).length > 0; } catch { return false; } })());
+}
+{
   const edited = migration.replace(/create table name_maps/, '-- an edit by hand\ncreate table name_maps');
   check('a migration edited by hand fires', foldFaults(data, edited).length > 0);
 }
@@ -60,6 +65,10 @@ const mapping = rows.findIndex((l) => /^\s*\('confusable', /.test(l));
     '00C2;LATIN CAPITAL LETTER A WITH CIRCUMFLEX;Lu;0;L;0041 0302;;;;N;;;;00E2;',
     '00BD;VULGAR FRACTION ONE HALF;No;0;ON;<fraction> 0031 2044 0035;;;1/2;N;;;;;',
   ].join('\n'));
+  const refuses = (f) => { try { f(); return false; } catch { return true; } };
+  check('case folding: a data line the parser cannot read is refused', refuses(() => parseCaseFolding('# CaseFolding-18.0.0.txt\n0041 C 0061 # no semicolons\n')));
+  check('unicode data: a data line the parser cannot read is refused', refuses(() => parseUnicodeData('0041;LATIN CAPITAL LETTER A;Lu;0\n')));
+  check('unicode data: a decomposition that never ends is refused', refuses(() => parseUnicodeData(['0041;A;Lu;0;L;0042;;;;N;;;;;', '0042;B;Lu;0;L;0041;;;;N;;;;;'].join('\n'))));
   check('unicode data: a decomposition taken to its end, a compatibility one left out, a mark\'s class', ucd.decompose['\u1EA6'] === 'A\u0302\u0300' && ucd.decompose['\u00C0'] === 'A\u0300' && !('\u00BD' in ucd.decompose) && ucd.ccc['\u0300'] === 230 && !('A' in ucd.ccc), JSON.stringify(ucd));
 }
 

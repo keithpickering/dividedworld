@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { nameKeys, sameName } from './names.ts';
+import { nameKeys, nfd, sameName } from './names.ts';
 import { NAME_FOLDS } from './name-folds.data.ts';
 
 test('a Cyrillic letter that looks Latin is the same name as the Latin one', () => {
@@ -51,4 +51,17 @@ test('the data says which Unicode release it is, which the database\'s copy name
   assert.ok(Object.keys(NAME_FOLDS.fold).length > 1500);
   assert.ok(Object.keys(NAME_FOLDS.decompose).length > 2000);
   assert.ok(Object.keys(NAME_FOLDS.ccc).length > 900);
+});
+
+test('the edges of decomposing: the last Hangul syllable and the code points either side, marks with no letter before them, and marks of one class', () => {
+  const cp = (...n: number[]) => String.fromCodePoint(...n);
+  assert.equal(nfd(cp(0xd7a3)), cp(0x1112, 0x1175, 0x11c2));
+  assert.equal(nfd(cp(0xac00)), cp(0x1100, 0x1161));
+  assert.equal(nfd(cp(0xd7a4)), cp(0xd7a4));
+  assert.equal(nfd(cp(0xabff)), cp(0xabff));
+  // Marks with no letter before them are put in order too (ogonek's 202 before acute's 230).
+  assert.equal(nfd(cp(0x301, 0x328, 0x61)), cp(0x328, 0x301, 0x61));
+  // Marks of one class (grave and acute, both 230) keep their order.
+  assert.equal(nfd(cp(0x61, 0x301, 0x300)), cp(0x61, 0x301, 0x300));
+  assert.notEqual(nameKeys(cp(0x61, 0x300, 0x301)).look, nameKeys(cp(0x61, 0x301, 0x300)).look);
 });

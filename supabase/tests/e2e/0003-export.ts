@@ -12,6 +12,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { scratchUrl, sql } from './psql-db.ts';
 
+/** The tables the migrations fill themselves (tools/instance-files.mjs), held below to what a fresh database holds. */
+const files = '../../../tools/instance-files.mjs';
+const { MIGRATION_DATA } = (await import(files)) as { MIGRATION_DATA: readonly string[] };
+
 const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
@@ -103,6 +107,11 @@ test('an instance exported and imported into a fresh database is the same instan
     // The fresh instance: the shim and the migrations, nothing seeded.
     psqlOn(fresh.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
     for (const m of fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort()) psqlOn(fresh.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    // The tables a fresh, migrated database already holds rows in are the ones the export leaves
+    // to the migrations (MIGRATION_DATA): one more, and every import would be refused as not empty.
+    const filled = psqlOn(fresh.toString(), `select string_agg(name, ',' order by name) from (select format('%I.%I', schemaname, tablename) as name from pg_tables where schemaname = 'public') t
+      where (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %s', name), false, true, '')))[1]::text::bigint > 0`);
+    assert.equal(filled, [...MIGRATION_DATA].sort().join(','), 'the tables the migrations fill are MIGRATION_DATA');
     psqlOn(fresh.toString(), 'create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);');
 
     // The export is as private as the database: no file in it is readable by anyone else.
@@ -146,10 +155,18 @@ test('an instance exported and imported into a fresh database is the same instan
     // From a clean copy of the export, but for that one row.
     for (const f of ['manifest.json', 'public.accounts.jsonl']) fs.copyFileSync(path.join(dir, f), path.join(short, f));
     const characters = fs.readFileSync(path.join(dir, 'public.characters.jsonl'), 'utf8').split('\n').filter(Boolean);
-    const forged = JSON.parse(characters[0]!);
-    forged.name_key = 'not its name';
-    fs.writeFileSync(path.join(short, 'public.characters.jsonl'), [JSON.stringify(forged), ...characters.slice(1)].join('\n') + '\n');
-    assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /name_key/);
+    for (const key of ['name_key', 'name_look']) {
+      const forged = JSON.parse(characters[0]!);
+      forged[key] = 'not its name';
+      fs.writeFileSync(path.join(short, 'public.characters.jsonl'), [JSON.stringify(forged), ...characters.slice(1)].join('\n') + '\n');
+      assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /edited after it was made/, key);
+    }
+    // An export from before the folds were carried names none, and is told so plainly.
+    const none = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+    delete none.nameFolds;
+    fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(none));
+    assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /names no release of the name folds/);
+    fs.copyFileSync(path.join(dir, 'manifest.json'), path.join(short, 'manifest.json'));
     fs.writeFileSync(path.join(short, 'public.characters.jsonl'), characters.join('\n') + '\n');
     fs.rmSync(short, { recursive: true, force: true });
     assert.equal(psqlOn(fresh.toString(), 'select count(*) from public.accounts'), '0', 'a refused import left rows behind');

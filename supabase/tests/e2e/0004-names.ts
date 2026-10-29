@@ -14,6 +14,7 @@ const NAMES = [
   'Pipewrench', 'PIPEWRENCH', 'Pipewrеnch', 'Ріpewrench', 'B0b', 'Café', 'Café', 'Straße', 'STRASSE',
   'ǅungla', 'ﬁre', 'Ⅻ', '\u{1d401}\u{1d428}\u{1d425}\u{1d41d}', 'Ꭺmy', 'ΑΣΚ', 'İstanbul', 'Ⓜario', 'mañana',
   'ＷＩＤＥ', 'Ŀuigi', 'ǈ', 'PipewrenchI', 'Pipewrenchl', 'Za\u0301\u0328', 'Za\u0328\u0301', '\ud55c', 'X\u{16D68}',
+  '\uabff', '\uac00', '\ud7a3', '\ud7a4', '\u0301\u0328a', 'a\u0300\u0301', 'a\u0301\u0300',
 ];
 
 test('the client\'s name keys are the database\'s, name by name', () => {

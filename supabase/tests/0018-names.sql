@@ -44,6 +44,16 @@ begin
   if pg_temp.refusal(format('select create_character(%L, %L)', 'Pipewrench II', 'alpha')) is not null then raise exception '"Pipewrench II" was refused'; end if;
   if pg_temp.refusal(format('select create_character(%L, %L)', 'The Real Pipewrench', 'alpha')) is not null then raise exception '"The Real Pipewrench" was refused'; end if;
   perform tests.unbecome();
+  -- A character renamed is keyed by its new name, and a lookalike of that name is refused.
+  update characters set name = 'Renamed One' where name = 'The Real Pipewrench';
+  begin
+    insert into characters (owner, name) values (bob, U&'R\0435named One');
+    raise exception 'a lookalike of a new name was written';
+  exception when unique_violation then null;
+  end;
+  -- A key written by hand is the name's again.
+  update characters set name_key = 'forged', name_look = 'forged' where name = 'Renamed One';
+  if (select name_key from characters where name = 'Renamed One') is distinct from name_skeleton('Renamed One') then raise exception 'a key was written past its name'; end if;
   -- The key is held by the table, so no writer can skip it.
   if (select name_key from characters where name = 'Pipewrench') is distinct from name_skeleton(U&'Pipewr\0435nch') then raise exception 'a character''s key is its name''s skeleton'; end if;
   begin

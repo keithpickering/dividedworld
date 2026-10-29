@@ -46,8 +46,10 @@ function check(db, manifest) {
   for (const name of here.keys()) {
     if (!theirs.has(name)) throw new Error(`this database has ${name}, which the export does not: the export is from other migrations or another Auth`);
   }
+  if (!manifest.nameFolds) throw new Error('the export names no release of the name folds: it was made before they were carried; export it again with these tools');
   if (JSON.stringify(nameFolds(db)) !== JSON.stringify(manifest.nameFolds)) {
-    throw new Error(`this database holds the name folds ${JSON.stringify(nameFolds(db))} and the export ${JSON.stringify(manifest.nameFolds)}: apply the migrations the export was made with`);
+    const release = (f) => Object.entries(f ?? {}).map(([what, v]) => `${what} ${v?.version ?? '?'}`).join(', ');
+    throw new Error(`the name folds differ: this database holds ${release(nameFolds(db))} and the export was made with ${release(manifest.nameFolds)}, or the same release from other files: apply the migrations the export was made with`);
   }
   const held = psql(db, manifest.tables.map((t) => `select ${literal(t.name)} where exists (select 1 from ${t.name});`).join('\n'));
   if (held) throw new Error(`the database is not empty (${held.split('\n').join(', ')}); an import goes into a fresh instance`);
@@ -105,7 +107,7 @@ async function load(db, dir, manifest) {
   // computed again from its name and this database's folds, and one that differs is refused.
   await write(`do $$ declare n bigint; begin
     select count(*) into n from public.characters where name_key is distinct from public.name_skeleton(name) or name_look is distinct from public.name_look(name);
-    if n > 0 then raise exception '% character(s) carry a name_key or name_look that is not their name''s', n; end if;
+    if n > 0 then raise exception '% character(s) carry a name key that is not their name''s: the export was edited after it was made', n; end if;
   end $$;\n`);
   // Each identity and serial column's next value past its rows.
   await write(`do $$ declare s record; most bigint; begin

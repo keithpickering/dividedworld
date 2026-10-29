@@ -21,6 +21,9 @@ export function foldFaults(dataText, migrationText) {
   for (const k of ['unicode', 'confusablesDate', 'caseFolding', 'confusablesSha256', 'caseFoldingSha256', 'unicodeDataSha256']) {
     if (typeof data[k] !== 'string' || !data[k]) return [`${DATA}: no ${k}`];
   }
+  for (const k of ['decompose', 'ccc', 'fold', 'confusable']) {
+    if (typeof data[k] !== 'object' || data[k] === null) return [`${DATA}: no ${k} table`];
+  }
   const want = migration(data).split('\n');
   const have = migrationText.split('\n');
   for (let i = 0; i < Math.max(want.length, have.length); i++) {

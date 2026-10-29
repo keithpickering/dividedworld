@@ -50,6 +50,8 @@ declare
   k integer;
   i integer;
 begin
+  -- Plain ASCII has no decomposition and no mark: itself, with no lookup.
+  if s !~ '[^\x01-\x7f]' then return coalesce(s, ''); end if;
   foreach c in array coalesce(string_to_array(s, null), '{}') loop
     select target into d from name_maps where kind = 'decompose' and source = c;
     foreach x in array string_to_array(coalesce(d, name_hangul(c), c), null) loop
@@ -93,6 +95,8 @@ begin
   new.name_look := name_look(new.name);
   return new;
 end $$;
-create trigger characters_name_key before insert or update of name on characters for each row execute function characters_name_key();
+-- On a write of any of the three, so a key written by hand is its name's again. A restore with
+-- triggers off (an import) is checked by the importer instead (tools/import-instance.mjs).
+create trigger characters_name_key before insert or update of name, name_key, name_look on characters for each row execute function characters_name_key();
 
 revoke execute on function name_mapped(text, text), name_hangul(text), name_nfd(text), name_skeleton(text), name_look(text), characters_name_key() from public, anon, authenticated;
