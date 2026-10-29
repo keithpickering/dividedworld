@@ -8,7 +8,8 @@
  * Files no row names come from a replaced avatar whose removal failed, a write whose answer was
  * lost, and the originals profiles held before 0025, which that migration listed in
  * avatar_orphans. The bucket is listed, and the names the profiles give are read after the
- * listing. A database none of whose avatars is in the bucket, while the bucket holds old files it
+ * listing. Once no original is left, the bucket, which 0025 kept private while one was there,
+ * is made public. A database none of whose avatars is in the bucket, while the bucket holds old files it
  * does not name, is refused then, before anything is removed: it is not the bucket's own database. The originals go first,
  * whatever their age, since no profile can name an original again, and their rows with them;
  * then every listed file no profile names and written more than an hour before the listing: an
@@ -65,6 +66,9 @@ async function main() {
     psql(db, `delete from public.avatar_orphans where key = any(array[${some.map((k) => `'${k.replace(/'/g, "''")}'`).join(', ')}]::text[]);`);
   }
   console.log(`  originals listed by 0025: ${gone.length} removed`);
+  // With no original left in it, the bucket is made public, as 0025 makes one that never held any.
+  const opened = psql(db, `update storage.buckets set public = true where id = '${avatars.bucket}' and not public and not exists (select 1 from public.avatar_orphans) returning id;`);
+  if (opened) console.log(`  no original is left: the bucket is public`);
 
   const removed = new Set(gone);
   const rest = stale.filter((k) => !removed.has(k));

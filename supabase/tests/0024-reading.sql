@@ -141,6 +141,17 @@ begin
   if (select array_agg(reader order by reader) from thread_reads where thread = t) is distinct from (select array_agg(x order by x) from unnest(array[a1, cat, c1]) x) then
     raise exception 'a characterless reader counts once and again through a mask, and a maskless read from a player with a mask adds none: %', (select jsonb_agg(reader) from thread_reads where thread = t);
   end if;
+  -- A player whose only character still waits to debut cannot read through it, so their read is
+  -- their account's, as one with no character yet.
+  declare
+    dee uuid := tests.account('maskless-dee');
+  begin
+    insert into characters (owner, name) values (dee, 'Maskless Waiting');
+    perform tests.become(dee);
+    perform mark_read(t, 0, null);
+    perform tests.unbecome();
+    if not exists (select 1 from thread_reads where thread = t and reader = dee) then raise exception 'a player whose only character waits counts as their account'; end if;
+  end;
 end $$;
 
 -- ---- A player's own reactions: theirs to read, nobody else's ----

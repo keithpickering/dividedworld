@@ -147,6 +147,21 @@ test('0025 on a database holding profiles with an original lists each original f
     assert.equal(psqlOn(db.toString(), `select string_agg(key, ',' order by key) from avatar_orphans`), 'src-1.webp,src-2.webp', 'each original is listed for the sweep');
     assert.equal(psqlOn(db.toString(), `select string_agg(concat_ws('/', avatar_square, avatar_portrait), ',' order by avatar_square) from character_profiles`), 'sq-1.webp/pt-1.webp,sq-2.webp', 'each profile keeps its crops');
     assert.equal(psqlOn(db.toString(), `select count(*) from information_schema.columns where table_name = 'character_profiles' and column_name = 'avatar_source'`), '0', 'no profile names an original');
+    // Players could read each original's key (0019's avatar_source), so the bucket is not public
+    // while an original is in it: the sweep removes them, and then makes it public.
+    assert.equal(psqlOn(db.toString(), `select public from storage.buckets where id = 'avatars'`), 'f', 'the bucket is private while an original is listed');
+    const swept = await fakeStorage();
+    const long = new Date(Date.now() - 2 * HOUR).toISOString();
+    for (const name of ['src-1.webp', 'src-2.webp', 'sq-1.webp', 'pt-1.webp', 'sq-2.webp']) swept.objects.set(name, long);
+    try {
+      const out = await run(['--from', db.toString(), '--storage', swept.url]);
+      assert.equal(out.status, 0, out.stderr + out.stdout);
+      assert.deepEqual([...swept.objects.keys()].sort(), ['pt-1.webp', 'sq-1.webp', 'sq-2.webp'], 'the originals are removed, the crops kept');
+      assert.equal(psqlOn(db.toString(), `select public from storage.buckets where id = 'avatars'`), 't', 'the sweep makes the bucket public once no original is in it');
+      assert.match(out.stdout, /the bucket is public/);
+    } finally {
+      await swept.close();
+    }
     // The same database emptied, beside a bucket holding old files: not this bucket's database.
     psqlOn(db.toString(), `delete from character_profiles; delete from avatar_orphans;`);
     const store = await fakeStorage();

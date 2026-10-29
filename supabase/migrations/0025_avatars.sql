@@ -6,7 +6,7 @@
 -- before this keeps its two crops, and its original is handed to the sweep. A profile with a square
 -- and no portrait stays valid, the square filling the tall slot, until its player uploads again.
 --
--- The bucket is public: Storage answers a file's read with Last-Modified, when it was written,
+-- The bucket is public, once no original is in it (below): Storage answers a file's read with Last-Modified, when it was written,
 -- which is a clue, never proof (CLAUDE.md, "A response never proves a private fact"; the design,
 -- section 1). Its files' names are random and no policy lets anyone list it, so a file is found
 -- only through a name a profile gives or a player shares.
@@ -70,12 +70,16 @@ end $$;
 -- The bucket, public by URL and listed by nobody: no policy on storage.objects is written, here or
 -- before, so a listing finds nothing. It takes WebP alone, no larger than the avatar function's
 -- largest file (LIMITS in its core.ts; supabase/tests/e2e/0006-avatar-bucket.ts holds the two
--- together). A bucket of that name already there is held to the same.
+-- together). A bucket of that name already there is held to the same. While an original is in
+-- it, it stays private: every signed-in player could read an original's key (0019 granted
+-- avatar_source), so a public bucket would serve what its player cropped away. The sweep removes
+-- the originals and then makes it public (tools/sweep-avatars.mjs); an instance that held none is
+-- public at once.
 do $$ begin
   if to_regclass('storage.buckets') is not null then
     execute $b$insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-      values ('avatars', 'avatars', true, 400000, array['image/webp'])
-      on conflict (id) do update set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types$b$;
+      values ('avatars', 'avatars', not exists (select 1 from public.avatar_orphans), 400000, array['image/webp'])
+      on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types$b$;
   end if;
 end $$;
 
