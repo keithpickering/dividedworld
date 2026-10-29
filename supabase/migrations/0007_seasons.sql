@@ -20,6 +20,21 @@ language sql immutable set search_path = public, pg_temp as $$
   select (span ->> 'count')::integer * case span ->> 'unit' when 'day' then interval '1 day' when 'week' then interval '1 week' when 'month' then interval '1 month' end
 $$;
 
+-- The settings that are spans are spans, held so when they are written: a length of nothing, or
+-- a unit no interval knows, would stop every window or season silently.
+create function settings_spans_hold() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  if new.key in ('settlementLength', 'seasonLength', 'turnCooldown') and not (
+       jsonb_typeof(new.value) = 'object' and new.value ->> 'unit' in ('day', 'week', 'month')
+       and jsonb_typeof(new.value -> 'count') = 'number' and (new.value ->> 'count')::numeric >= 1
+       and (new.value ->> 'count')::numeric = trunc((new.value ->> 'count')::numeric)) then
+    raise exception '% is a span: a unit of day, week or month and a whole count of at least 1', new.key using errcode = '23514';
+  end if;
+  return new;
+end $$;
+create trigger settings_spans_hold before insert or update on settings for each row execute function settings_spans_hold();
+
 -- One of the instance's words, with {season} filled in. Words the instance never gave are an
 -- error naming them, never a thread with no title; the settings trigger below keeps a seeded
 -- instance from losing them, so the way out of this error is the seed that gives them.
@@ -169,7 +184,7 @@ end $$;
 
 select cron.schedule('kayfabb-reveal', '23 * * * *', 'select public.reveal_season()');
 
-revoke execute on function span_interval(jsonb), copy_of(text, integer), system_board(), reveal_season(),
+revoke execute on function span_interval(jsonb), copy_of(text, integer), system_board(), reveal_season(), settings_spans_hold(),
   settings_copy_complete(), settings_copy_kept() from public, anon, authenticated;
 revoke execute on function turn(uuid, text, text) from public, anon;
 grant execute on function turn(uuid, text, text) to authenticated;

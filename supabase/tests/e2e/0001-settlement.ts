@@ -104,3 +104,31 @@ test('a player reacting on two days is paid one vote in all, through the real mi
   assert.equal((await runSettlement(db, instance, at(48))).status, 'applied');
   assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Twice Heel']}' and reason = 'heel.drewHeat'`)), 10, 'one vote of heat over two days, not one and a half');
 });
+
+test('two missed days settle as two windows through the real migrations, the halving over each day alone', async () => {
+  const db = psqlDb();
+  const start = sql(`select to_jsonb(coalesce(max(ends_at), now()))#>>'{}' from settlements`);
+  const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
+  const ids = JSON.parse(sql(`
+    with u as (insert into auth.users (email) values ('e2e-missed-heel@test.invalid'), ('e2e-missed-fan@test.invalid') returning id, email),
+    a as (insert into accounts (id) select id from u returning id)
+    select json_object_agg(split_part(email, '@', 1), id) from u`));
+  const characters = JSON.parse(sql(`
+    with c as (insert into characters (owner, name, created_at) values
+      ('${ids['e2e-missed-heel']}', 'Missed Heel', '${at(-1)}'), ('${ids['e2e-missed-fan']}', 'Missed Fan', '${at(-1)}') returning id, name),
+    h as (insert into class_history (character, class_key, started_at)
+      select id, case name when 'Missed Heel' then 'heel' else 'face' end, '${at(-1)}' from c returning 1)
+    select json_object_agg(name, id) from c`));
+  // One post each day, and the Fan's heat on each: on one window, the second would be halved.
+  for (const [hour, body] of [[1, 'Day one.'], [25, 'Day two.']] as const) {
+    const post = sql(`
+      with t as (insert into threads (board, title) select id, 'Missed ${hour}' from boards where slug = 'general' returning id)
+      insert into acts (character, kind, thread, payload, created_at)
+      select '${characters['Missed Heel']}', 'post', t.id, '{"body": "${body}"}', '${at(hour)}' from t returning id`);
+    sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
+      ('${post}', '${characters['Missed Fan']}', '${ids['e2e-missed-fan']}', 'tomato', 1, '${at(hour + 1)}')`);
+  }
+  const out = await runSettlement(db, instance, at(48));
+  assert.equal(out.status === 'applied' && out.windows.length, 2);
+  assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Missed Heel']}' and reason = 'heel.drewHeat'`)), 20, 'a whole vote each day, never halved across the two');
+});

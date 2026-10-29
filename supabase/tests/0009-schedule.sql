@@ -75,6 +75,21 @@ begin
   update settings set value = '{"unit": "week", "count": 1}' where key = 'settlementLength';
   if (next_settlement_window(last_end + interval '9 days') ->> 'end')::timestamptz is distinct from last_end + interval '7 days' then raise exception 'the window''s length is the setting'; end if;
   update settings set value = '{"unit": "day", "count": 1}' where key = 'settlementLength';
+  -- A run a few minutes late settles the whole day, and no sliver after it.
+  w := next_settlement_window(last_end + interval '1 day 3 minutes');
+  if (w ->> 'end')::timestamptz is distinct from last_end + interval '1 day' then raise exception 'a late run settles its whole day: %', w; end if;
+  if next_settlement_window(last_end + interval '23 hours') is not null then raise exception 'a window is settled only once its whole length has passed'; end if;
+  -- The settings a window's length and a season's are spans, held as such when they are written.
+  begin
+    update settings set value = '{"unit": "day", "count": 0}' where key = 'settlementLength';
+    raise exception 'a settlement length of nothing was written';
+  exception when check_violation then null;
+  end;
+  begin
+    update settings set value = '{"unit": "fortnight", "count": 1}' where key = 'seasonLength';
+    raise exception 'a season length that is no span was written';
+  exception when check_violation then null;
+  end;
   -- A season ending inside the window ends the window there.
   update seasons set ends_at = last_end + interval '6 hours' where number = 1;
   insert into seasons (number, starts_at) values (2, last_end + interval '6 hours');

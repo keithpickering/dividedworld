@@ -51,7 +51,11 @@ export interface Settings {
   readonly charactersPerPlayer: number;
   /** When The System settles, as a five-field cron expression in UTC. */
   readonly settlementCron: string;
-  /** How long one settlement window is: a day for a daily settlement. A missed run's days are each settled as one. */
+  /**
+   * How long one settlement window is: a day for a daily settlement. The cron says when a run
+   * comes; this says how finely it settles, each missed length its own window, a window settled
+   * once its whole length has passed.
+   */
   readonly settlementLength: Span;
   readonly seasonLength: Span;
   readonly turnCooldown: Span;

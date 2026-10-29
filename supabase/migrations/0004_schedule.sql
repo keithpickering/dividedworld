@@ -113,10 +113,13 @@ begin
     select s.starts_at, s.ends_at into start_at, season_end from seasons s where s.starts_at > start_at order by s.starts_at limit 1;
     if start_at is null then return null; end if;
   end if;
-  -- One window of the instance's settlement length at most, so missed days are each settled as
-  -- their own window, in order, and the halving and every per-window limit run over one length.
-  end_at := least(until, coalesce(season_end, until), start_at + span_interval(setting('settlementLength')));
-  if end_at <= start_at then return null; end if;
+  -- One window of the instance's settlement length, so missed days are each settled as their own
+  -- window, in order, and the halving and every per-window limit run over one length. A window
+  -- is settled once its whole length has passed, so a run a few minutes late settles its day and
+  -- leaves no sliver after it; only a season's end makes one shorter. The cron says when a run
+  -- comes (settlementCron); the length says how finely it settles.
+  end_at := least(coalesce(season_end, 'infinity'), start_at + span_interval(setting('settlementLength')));
+  if end_at > until or end_at <= start_at then return null; end if;
   return jsonb_build_object('start', start_at, 'end', end_at);
 end $$;
 
