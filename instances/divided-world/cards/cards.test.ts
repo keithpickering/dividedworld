@@ -105,6 +105,8 @@ test('Whoops! strokes wash or ink, in widths of the fixed layout: across 0 to 1,
   assert.equal(whoops.validateState!({ strokes: [] }).ok, true, 'nothing saved yet');
   assert.deepEqual(whoops.validateState!({ strokes: [wash], clean: true }), { ok: true, value: { strokes: [wash], clean: true } }, 'washed clean, said by the author\'s save');
   assert.equal(whoops.validateState!({ strokes: [], clean: 'yes' }).ok, false);
+  // A state 0026 moved aside keeps its old strokes under legacy; a save never carries it back.
+  assert.deepEqual(whoops.validateState!({ strokes: [wash], legacy: { strokes: [{ width: 0.05, points: [[0.1, 0.2]] }] } }), { ok: true, value: { strokes: [wash] } }, 'a save takes no legacy');
   assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[0.5, 64]] }] }).ok, true, 'down to 64 widths');
   assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[0.5, 65]] }] }).ok, false, 'a down of 65');
   assert.equal(whoops.validateState!({ strokes: [{ ...ink, points: [[1.01, 0.5]] }] }).ok, false, 'an across of 1.01');

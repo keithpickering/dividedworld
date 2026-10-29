@@ -142,3 +142,53 @@ begin
     raise exception 'two plays at once take layers 1 and 2: %', (select array_agg(payload) from acts where kind = 'card' and target_act_id = p);
   end if;
 end $$;
+
+-- ---- A saved state of 0006's shape (strokes with no tool) is moved under `legacy` with no
+-- strokes; a state of the new shape is untouched; the author's next save is taken
+-- (supabase/migrations/0026_whoops_legacy.sql; the clues plan, Task 5) ----
+do $$
+declare
+  ann uuid := tests.account('legacy-ann');
+  bob uuid := tests.account('legacy-bob');
+  author uuid := tests.character(ann, 'Legacy Author');
+  caster uuid := tests.character(bob, 'Legacy Caster');
+  t uuid := tests.thread('Legacy strokes');
+  p uuid := tests.post(author, t, 'Splatted long ago.');
+  q uuid := tests.post(author, t, 'Splatted lately.');
+  old_play uuid := tests.act(caster, 'card', t, '{"card": "splat", "config": {"color": "red"}}', p);
+  new_play uuid := tests.act(caster, 'card', t, '{"card": "splat", "config": {"color": "blue"}}', q);
+  old_state jsonb := '{"strokes": [{"width": 0.05, "points": [[0.1, 0.2], [0.3, 0.25]]}, {"tool": "wash", "width": 0.05, "points": [[0.5, 0.5]]}]}';
+  new_state jsonb := '{"strokes": [{"tool": "wash", "width": 0.05, "points": [[0.1, 2.5]]}], "clean": false}';
+  said jsonb;
+begin
+  insert into effect_state (play, state, saved_by) values (old_play, old_state, author), (new_play, new_state, author);
+  perform effect_states_of_0006();
+  if (select state from effect_state where play = old_play) is distinct from jsonb_build_object('strokes', '[]'::jsonb, 'legacy', old_state) then
+    raise exception 'a state of 0006''s shape is moved under legacy, with no strokes: %', (select state from effect_state where play = old_play);
+  end if;
+  if (select state from effect_state where play = new_play) is distinct from new_state then raise exception 'a state of the new shape is untouched: %', (select state from effect_state where play = new_play); end if;
+  -- A state of 0006's shape at the bound's very edge is wrapped too: the bytes the wrapping adds
+  -- never refuse it.
+  declare
+    edge_play uuid := tests.act(caster, 'card', t, '{"card": "splat", "config": {"color": "green"}}', tests.post(author, t, 'Splatted to the edge.'));
+    edge jsonb := jsonb_build_object('strokes', jsonb_build_array(jsonb_build_object('width', 0.05, 'points', '[[0.1, 0.2]]'::jsonb)), 'pad', '');
+  begin
+    edge := jsonb_set(edge, '{pad}', to_jsonb(repeat('x', 262144 - octet_length(edge::text))));
+    if octet_length(edge::text) is distinct from 262144 then raise exception 'the edge state is not at the edge: %', octet_length(edge::text); end if;
+    insert into effect_state (play, state, saved_by) values (edge_play, edge, author);
+    begin
+      perform effect_states_of_0006();
+    exception when check_violation then
+      raise exception 'a state at the bound''s edge is wrapped, not refused: %', sqlerrm;
+    end;
+    if (select state -> 'legacy' from effect_state where play = edge_play) is distinct from edge then raise exception 'a state at the bound''s edge is wrapped'; end if;
+  end;
+  -- Run again, a wrapped state is not wrapped twice.
+  perform effect_states_of_0006();
+  if (select state -> 'legacy' from effect_state where play = old_play) is distinct from old_state then raise exception 'a legacy state was wrapped twice'; end if;
+  -- The author's next save, with new strokes, is taken, and the legacy goes with it.
+  perform tests.become_service();
+  said := save_effect_state(ann, author, old_play, '{"strokes": [{"tool": "ink", "color": "#112233", "width": 0.02, "points": [[0.2, 1.5]]}]}');
+  perform tests.unbecome();
+  if said -> 'state' ? 'legacy' or jsonb_array_length(said -> 'state' -> 'strokes') is distinct from 1 then raise exception 'the author''s next save is taken: %', said; end if;
+end $$;
