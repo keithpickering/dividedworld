@@ -65,6 +65,14 @@ begin
   update view_count_runs set ran_at = ran_at - interval '1 hour';
   perform count_thread_views();
   if (select counted_at from thread_view_counts where thread = quiet) is distinct from counted then raise exception 'a thread nobody read since was recounted'; end if;
+  -- A read whose transaction began just before the last run, and committed after it, is counted
+  -- at the next: its read_at is its transaction's start, a moment before the run it missed.
+  perform tests.become(bob);
+  perform mark_read(quiet, 1, b);
+  perform tests.unbecome();
+  update reading set read_at = (select ran_at from view_count_runs) - interval '5 minutes' where thread = quiet and account = bob;
+  perform count_thread_views();
+  if (select players from thread_view_counts where thread = quiet) is distinct from 2 then raise exception 'a read committed just after a run was never counted'; end if;
   -- Everyone signed in reads the counts.
   perform tests.become(bob);
   if (select players from thread_view_counts where thread = t) is distinct from 2 then raise exception 'the counts are public'; end if;
