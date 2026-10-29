@@ -1,12 +1,17 @@
 /**
- * A character's avatar, as a pure module (the screens' design, section 4): the browser re-encodes
- * one upload as three WebP files (the original, at most 1600 on its long side; a square crop,
- * 256 by 256; a portrait crop, 256 wide and up to twice as tall, or none, when the square fills
- * the tall slot too) and sends them with the frames they were cut at. A portrait is never shorter
- * than it is wide. This reads each file's bytes itself and refuses any that is not a WebP, that
- * carries anything beside its picture, or that is not its size; stores the three under random names
- * through the Storage it is given; and writes them as the character's avatar, as the service, for
- * the player whoami() reads the session as (set_avatar, supabase/migrations/0019_profiles.sql).
+ * A character's avatar, as a pure module (the screens' design, section 4; the clues design,
+ * section 5): two crops, both public, and nothing else. The browser cuts a portrait from the
+ * player's own picture (256 to 512 wide, and 1 to 2 times as tall as it is wide, stored larger than
+ * the postbit draws it so a square that zooms into it stays sharp) and a square from inside the
+ * portrait (256 by 256, a small file of its own so lists load no portraits), re-encodes each as a
+ * WebP, and sends them with the frames they were cut at: the portrait's in the player's picture,
+ * the square's in the portrait. A recrop sends a new square and its frame alone, cut in the browser
+ * from the public portrait, and the portrait is kept. The original is never sent, and a request
+ * carrying one is refused: what a player cropped away is stored nowhere. This reads each file's
+ * bytes itself and refuses any that is not a WebP, that carries anything beside its picture, or
+ * that is not its size; stores them under random names through the Storage it is given; and
+ * writes them as the character's avatar, as the service, for the player whoami() reads the session
+ * as (set_avatar, supabase/migrations/0025_avatars.sql).
  *
  * The bytes are read, not trusted. The browser strips metadata when it re-encodes; this refuses
  * every file that still carries any, by its own reading of the RIFF file of chunks a WebP is:
@@ -28,9 +33,9 @@ const refuse = (why: string): Verdict<never> => ({ ok: false, why });
 
 /** Each file's size and bytes. A re-encoded WebP at these sizes is far below each bound. */
 export const LIMITS = {
-  source: { longest: 1600, bytes: 1_500_000 },
   square: { side: 256, bytes: 100_000 },
-  portrait: { width: 256, tallest: 512, bytes: 200_000 },
+  /** From 256 to 512 wide, and from 1 to 2 times as tall as it is wide. */
+  portrait: { width: [256, 512], ratio: [1, 2], bytes: 400_000 },
 } as const;
 
 const fourcc = (b: Uint8Array, at: number) => String.fromCharCode(b[at]!, b[at + 1]!, b[at + 2]!, b[at + 3]!);
@@ -93,13 +98,13 @@ export function readWebp(bytes: Uint8Array): Verdict<{ width: number; height: nu
 export interface Frame { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
 export interface AvatarRequest {
   readonly character: string;
-  /** The portrait's frame is null with no portrait. */
+  /** The square's in the portrait; the portrait's in the player's own picture, null for a recrop. */
   readonly frames: { readonly square: Frame; readonly portrait: Frame | null };
-  /** The re-encoded original; null for a recrop of the one already kept. */
-  readonly source: Uint8Array | null;
   readonly square: Uint8Array;
-  /** Null for an avatar that is a square alone, which fills the tall slot too. */
+  /** Null for a recrop, which keeps the stored portrait. */
   readonly portrait: Uint8Array | null;
+  /** Never sent: a request carrying an original is refused. */
+  readonly source?: unknown;
 }
 
 export interface AvatarAnswer { readonly status: number; readonly body: unknown }
@@ -108,27 +113,38 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const refused = (field: string, error: string): AvatarAnswer => ({ status: 400, body: { field, error } });
 
 /** Whether a file is its size, by its own bytes. */
-function check(field: 'source' | 'square' | 'portrait', bytes: Uint8Array): string | null {
+function check(field: 'square' | 'portrait', bytes: Uint8Array): string | null {
   const read = readWebp(bytes);
   if (!read.ok) return read.why;
   const { width, height } = read.value;
   if (field === 'square' && (width !== LIMITS.square.side || height !== LIMITS.square.side)) return 'is 256 by 256';
-  if (field === 'portrait' && (width !== LIMITS.portrait.width || height < LIMITS.portrait.width || height > LIMITS.portrait.tallest)) return 'is 256 wide and from 256 to 512 tall';
-  if (field === 'source' && Math.max(width, height) > LIMITS.source.longest) return 'is at most 1600 on its long side';
+  const { width: [narrowest, widest], ratio: [least, most] } = LIMITS.portrait;
+  if (field === 'portrait' && (width < narrowest || width > widest || height < least * width || height > most * width)) return 'is from 256 to 512 wide, and from 1 to 2 times as tall as it is wide';
   if (bytes.length > LIMITS[field].bytes) return `is at most ${LIMITS[field].bytes} bytes`;
   return null;
 }
+
+/** A frame inside its picture, in fractions of its width and height, as set_avatar's frame_holds reads it. */
+const inside = (f: unknown): boolean => {
+  if (typeof f !== 'object' || f === null || Object.keys(f).length !== 4) return false;
+  const { x, y, w, h } = f as Record<string, unknown>;
+  if (![x, y, w, h].every((n) => typeof n === 'number' && Number.isFinite(n))) return false;
+  const [fx, fy, fw, fh] = [x, y, w, h] as number[];
+  return fx! >= 0 && fy! >= 0 && fw! > 0 && fh! > 0 && fx! + fw! <= 1 && fy! + fh! <= 1;
+};
 
 /** The hint the SQL functions raise a player's refusal with. */
 const REFUSAL_HINT = 'kayfabb.refusal';
 
 export async function runAvatar(dbs: { player: Db; service: Db }, storage: Storage, request: AvatarRequest, newName: () => string = () => `${crypto.randomUUID()}.webp`): Promise<AvatarAnswer> {
   if (typeof request.character !== 'string' || !UUID.test(request.character)) return refused('character', 'is not an id');
+  if (request.source !== undefined && request.source !== null) return refused('source', 'an avatar is two crops; the original stays with you');
   if (!request.frames || typeof request.frames.square !== 'object' || request.frames.square === null || typeof request.frames.portrait !== 'object'
       || (request.frames.portrait === null) !== (request.portrait === null)) return refused('frames', 'are a square and a portrait frame');
-  for (const field of ['source', 'square', 'portrait'] as const) {
+  if (!inside(request.frames.square)) return refused('frames', 'the square is cut from inside the portrait');
+  for (const field of ['square', 'portrait'] as const) {
     const bytes = request[field];
-    if (bytes === null && field !== 'square') continue;
+    if (bytes === null && field === 'portrait') continue;
     if (!(bytes instanceof Uint8Array)) return refused(field, `the ${field} is a file`);
     const why = check(field, bytes);
     if (why) return refused(field, `the ${field} ${why}`);
@@ -137,15 +153,15 @@ export async function runAvatar(dbs: { player: Db; service: Db }, storage: Stora
   try {
     const who = await dbs.player.rpc<string | null>('whoami', {});
     if (!who) return { status: 401, body: { error: 'sign in to set an avatar' } };
-    const names = { source: request.source ? newName() : null, square: newName(), portrait: request.portrait ? newName() : null };
-    for (const field of ['source', 'square', 'portrait'] as const) {
+    const names = { square: newName(), portrait: request.portrait ? newName() : null };
+    for (const field of ['square', 'portrait'] as const) {
       const name = names[field];
       if (name === null) continue;
       await storage.put(name, request[field]!, 'image/webp');
       stored.push(name);
     }
     const written = await dbs.service.rpc<{ profile: unknown; replaced: string[] }>('set_avatar', {
-      who, through: request.character, source: names.source, square: names.square, portrait: names.portrait,
+      who, through: request.character, square: names.square, portrait: names.portrait,
       square_frame: request.frames.square, portrait_frame: request.frames.portrait,
     });
     stored.length = 0;

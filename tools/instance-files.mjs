@@ -38,9 +38,9 @@ export function args(argv, usage) {
 /**
  * The buckets an instance keeps files in, each with the table and columns that name its files: an
  * export carries every file a row names, and an import puts each back under its name, so the
- * imported forum shows the same avatars (supabase/migrations/0019_profiles.sql).
+ * imported forum shows the same avatars (supabase/migrations/0019_profiles.sql, 0025_avatars.sql).
  */
-export const BUCKETS = [{ bucket: 'avatars', table: 'public.character_profiles', columns: ['avatar_source', 'avatar_square', 'avatar_portrait'], contentType: 'image/webp' }];
+export const BUCKETS = [{ bucket: 'avatars', table: 'public.character_profiles', columns: ['avatar_square', 'avatar_portrait'], contentType: 'image/webp' }];
 
 /** The environment variable that holds the service key Storage is called with; never printed, never on a command line. */
 export const STORAGE_KEY = 'KAYFABB_STORAGE_KEY';
@@ -66,6 +66,24 @@ export async function filesNamed(dir) {
     }
   }
   return out;
+}
+
+/** How long a file no row names is left before the sweep removes it: one stored a moment before its profile is written is never taken. */
+export const SWEEP_AFTER_MS = 60 * 60 * 1000;
+
+/**
+ * The files of a bucket listing that no row names and that were written more than an hour before
+ * `now` (tools/sweep-avatars.mjs). A file's written time is its later of created and updated; one
+ * whose listing says neither is kept, since its age is not known.
+ */
+export function unnamed(objects, named, now) {
+  const out = [];
+  for (const o of objects) {
+    if (named.has(o.name)) continue;
+    const written = Math.max(...[o.created_at, o.updated_at].map((t) => (t ? Date.parse(t) : Number.NaN)).filter((t) => !Number.isNaN(t)));
+    if (Number.isFinite(written) && written <= now - SWEEP_AFTER_MS) out.push(o.name);
+  }
+  return out.sort();
 }
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
@@ -104,8 +122,30 @@ export function storage(url, { timeoutMs = Number(process.env.KAYFABB_STORAGE_TI
     throw new Error(`storage: ${what}: no answer after ${seen.length} attempt(s): ${seen.join('; ')}`);
   };
   const read = async (bucket, name) => request(at(bucket, name), { headers }, `reading ${bucket}/${name}`);
+  const endpoint = (p) => new URL(`storage/v1/object/${p}`, base.href.endsWith('/') ? base.href : `${base.href}/`);
+  const json = { ...headers, 'Content-Type': 'application/json' };
   return {
     named: base.origin,
+    /** Every file in a bucket, with when it was written, a page at a time. */
+    async list(bucket) {
+      const out = [];
+      for (let offset = 0; ; offset += LIST_PAGE) {
+        const r = await request(endpoint(`list/${bucket}`), { method: 'POST', headers: json, body: JSON.stringify({ prefix: '', limit: LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } }) }, `listing ${bucket}`);
+        if (!r.ok) { await r.body?.cancel(); throw new Error(`storage: listing ${bucket} answered HTTP ${r.status}`); }
+        const page = await r.json();
+        // A folder is listed with no id; an avatar is never in one.
+        for (const o of page) if (o.id) out.push({ name: o.name, created_at: o.created_at, updated_at: o.updated_at });
+        if (page.length < LIST_PAGE) return out;
+      }
+    },
+    /** Removes files by name; one already gone is no matter. */
+    async remove(bucket, names) {
+      for (let i = 0; i < names.length; i += LIST_PAGE) {
+        const r = await request(endpoint(bucket), { method: 'DELETE', headers: json, body: JSON.stringify({ prefixes: names.slice(i, i + LIST_PAGE) }) }, `removing from ${bucket}`);
+        await r.body?.cancel();
+        if (!r.ok) throw new Error(`storage: removing from ${bucket} answered HTTP ${r.status}`);
+      }
+    },
     async get(bucket, name) {
       const r = await read(bucket, name);
       if (r.status === 404 || r.status === 400) {
@@ -137,6 +177,9 @@ export function storage(url, { timeoutMs = Number(process.env.KAYFABB_STORAGE_TI
     },
   };
 }
+
+/** How many files a listing pages by, and a removal sends at once. */
+const LIST_PAGE = 1000;
 
 export const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 

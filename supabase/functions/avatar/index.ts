@@ -2,15 +2,16 @@
  * A character's avatar, one entry point: the work is core.ts; this is the edge: the session, which
  * whoami() reads as the player; the service key, for the bucket and the write; a bound on the body
  * before it is read; and the multipart form the browser sends (character, frames as JSON, and the
- * files source, square and portrait, source left out for a recrop and portrait for a square alone).
+ * files square and portrait, portrait left out for a recrop). A form carrying a source is passed on
+ * as carrying one, for core.ts to refuse: the original stays with the player.
  */
 import { LIMITS, runAvatar } from './core.ts';
 import { postgrest } from '../_shared/rpc.ts';
 import { supabaseStorage } from '../_shared/storage.ts';
 import { CORS, environment } from '../_shared/serve.ts';
 
-/** The three files at their largest, and the form around them. */
-const MOST_BYTES = LIMITS.source.bytes + LIMITS.square.bytes + LIMITS.portrait.bytes + 16 * 1024;
+/** The two files at their largest, and the form around them. */
+const MOST_BYTES = LIMITS.square.bytes + LIMITS.portrait.bytes + 16 * 1024;
 
 const answer = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
@@ -38,7 +39,7 @@ Deno.serve(async (request) => {
     // The write is sent once: one repeated after it committed would answer that it replaced nothing.
     { player: postgrest({ url: env.url, key: anon, bearer: session }), service: postgrest({ url: env.url, key: env.key, safeToRepeat: (fn) => fn !== 'set_avatar' }) },
     supabaseStorage({ url: env.url, key: env.key, bucket: 'avatars' }),
-    { character: String(form.get('character') ?? ''), frames: frames as never, source: await file(form, 'source'), square: (await file(form, 'square')) as Uint8Array, portrait: await file(form, 'portrait') },
+    { character: String(form.get('character') ?? ''), frames: frames as never, source: form.has('source') ? true : null, square: (await file(form, 'square')) as Uint8Array, portrait: await file(form, 'portrait') },
   );
   return answer(out.status, out.body);
 });

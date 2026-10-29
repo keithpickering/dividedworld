@@ -74,7 +74,8 @@ const u32ofLength = (file: Uint8Array) => file.length - 8;
 /* ---- the function ---- */
 const me = '11111111-1111-4111-8111-111111111111';
 const character = '22222222-2222-4222-8222-222222222222';
-const frames = { square: { x: 0, y: 0, w: 0.5, h: 0.5 }, portrait: { x: 0, y: 0, w: 0.5, h: 1 } };
+/* The square's frame is in fractions of the portrait; the portrait's, of the player's own original. */
+const frames = { square: { x: 0, y: 0, w: 1, h: 0.5 }, portrait: { x: 0, y: 0, w: 0.5, h: 1 } };
 
 function world(answers: Record<string, unknown>) {
   const calls: string[] = [];
@@ -105,16 +106,33 @@ function world(answers: Record<string, unknown>) {
   let n = 0;
   return { dbs: { player: make('player'), service: make('service') }, storage, calls, stored, removed, order, name: () => `k${++n}.webp` };
 }
-const request = (over: Partial<AvatarRequest> = {}): AvatarRequest => ({ character, frames, source: webp(1200, 900), square: webp(256, 256), portrait: webp(256, 512), ...over });
+const request = (over: Partial<AvatarRequest> = {}): AvatarRequest => ({ character, frames, square: webp(256, 256), portrait: webp(256, 512), ...over });
 
-test('three checked WebPs are stored under random names and written as the character\'s avatar; the ones they replace are removed', async () => {
+test('two checked crops are stored under random names and written as the character\'s avatar; the ones they replace are removed', async () => {
   const w = world({ whoami: me, set_avatar: { profile: { character }, replaced: ['old-sq.webp', 'old-pt.webp'] } });
   const out = await runAvatar(w.dbs, w.storage, request(), w.name);
   assert.deepEqual(out, { status: 200, body: { character } });
-  assert.deepEqual([...w.stored.keys()], ['k1.webp', 'k2.webp', 'k3.webp']);
-  assert.ok(w.calls.includes(`service:set_avatar:${JSON.stringify({ who: me, through: character, source: 'k1.webp', square: 'k2.webp', portrait: 'k3.webp', square_frame: frames.square, portrait_frame: frames.portrait })}`), w.calls.join('\n'));
+  assert.deepEqual([...w.stored.keys()], ['k1.webp', 'k2.webp']);
+  assert.ok(w.calls.includes(`service:set_avatar:${JSON.stringify({ who: me, through: character, square: 'k1.webp', portrait: 'k2.webp', square_frame: frames.square, portrait_frame: frames.portrait })}`), w.calls.join('\n'));
   assert.deepEqual(w.removed, ['old-sq.webp', 'old-pt.webp']);
-  assert.deepEqual(w.order, ['whoami', 'put k1.webp', 'put k2.webp', 'put k3.webp', 'set_avatar', 'remove old-sq.webp,old-pt.webp'], 'stored, then written, then the replaced removed');
+  assert.deepEqual(w.order, ['whoami', 'put k1.webp', 'put k2.webp', 'set_avatar', 'remove old-sq.webp,old-pt.webp'], 'stored, then written, then the replaced removed');
+});
+
+test('an avatar is two crops: a request carrying the original is refused, before anything is read', async () => {
+  const w = world({ whoami: me });
+  const out = await runAvatar(w.dbs, w.storage, { ...request(), source: webp(1200, 900) } as AvatarRequest, w.name);
+  assert.deepEqual(out, { status: 400, body: { field: 'source', error: 'an avatar is two crops; the original stays with you' } });
+  assert.equal(w.calls.length, 0);
+  assert.equal(w.stored.size, 0);
+});
+
+test('the square is cut from inside the portrait: a frame outside it is refused', async () => {
+  for (const square of [{ x: 0.6, y: 0, w: 0.5, h: 0.25 }, { x: 0, y: -0.1, w: 0.5, h: 0.25 }, { x: 0, y: 0, w: 0, h: 0.25 }, { x: 0, y: 0, w: 0.5, h: 0.25, z: 1 }]) {
+    const w = world({ whoami: me });
+    const out = await runAvatar(w.dbs, w.storage, request({ frames: { square: square as AvatarRequest['frames']['square'], portrait: frames.portrait } }), w.name);
+    assert.deepEqual(out, { status: 400, body: { field: 'frames', error: 'the square is cut from inside the portrait' } }, JSON.stringify(square));
+    assert.equal(w.stored.size, 0);
+  }
 });
 
 test('a store that fails part way, or a write that fails, removes what was stored; a removal that fails after the write still answers the avatar', async () => {
@@ -129,19 +147,28 @@ test('a store that fails part way, or a write that fails, removes what was store
   assert.deepEqual(await runAvatar(sticky.dbs, sticky.storage, request(), sticky.name), { status: 200, body: { character } });
 });
 
-test('a recrop sends no original: the kept one is cut again', async () => {
-  const w = world({ whoami: me, set_avatar: { profile: { character }, replaced: [] } });
-  await runAvatar(w.dbs, w.storage, request({ source: null }), w.name);
-  assert.ok(w.calls.some((c) => c.includes('"source":null') && c.includes('"square":"k1.webp"')), w.calls.join('\n'));
+test('a recrop sends a new square and its frame alone: the stored portrait is kept', async () => {
+  const w = world({ whoami: me, set_avatar: { profile: { character }, replaced: ['old-sq.webp'] } });
+  const out = await runAvatar(w.dbs, w.storage, request({ portrait: null, frames: { square: frames.square, portrait: null } }), w.name);
+  assert.equal(out.status, 200);
+  assert.deepEqual([...w.stored.keys()], ['k1.webp']);
+  assert.ok(w.calls.some((c) => c.includes('"square":"k1.webp","portrait":null') && c.includes('"portrait_frame":null')), w.calls.join('\n'));
 });
 
-test('each file is held to its size: a square 256 by 256, a portrait 256 wide and at most twice as tall, an original at most 1600 on its long side', async () => {
+test('each file is held to its size: a square 256 by 256; a portrait 256 to 512 wide and 1 to 2 times as tall', async () => {
+  for (const portrait of [webp(512, 1024), webp(256, 256), webp(300, 450)]) {
+    const w = world({ whoami: me, set_avatar: { profile: { character }, replaced: [] } });
+    assert.equal((await runAvatar(w.dbs, w.storage, request({ portrait }), w.name)).status, 200);
+  }
+  const portraitWhy = 'is from 256 to 512 wide, and from 1 to 2 times as tall as it is wide';
   for (const [over, field, why] of [
     [{ square: webp(255, 256) }, 'square', 'is 256 by 256'],
-    [{ portrait: webp(256, 513) }, 'portrait', 'is 256 wide and from 256 to 512 tall'],
-    [{ portrait: webp(256, 200) }, 'portrait', 'is 256 wide and from 256 to 512 tall'],
-    [{ source: webp(1601, 900) }, 'source', 'is at most 1600 on its long side'],
+    [{ portrait: webp(513, 1024) }, 'portrait', portraitWhy],
+    [{ portrait: webp(255, 400) }, 'portrait', portraitWhy],
+    [{ portrait: webp(256, 513) }, 'portrait', portraitWhy],
+    [{ portrait: webp(256, 200) }, 'portrait', portraitWhy],
     [{ square: webp(256, 256, LIMITS.square.bytes) }, 'square', `is at most ${LIMITS.square.bytes} bytes`],
+    [{ portrait: webp(512, 1024, LIMITS.portrait.bytes) }, 'portrait', `is at most ${LIMITS.portrait.bytes} bytes`],
     [{ square: riff([vp8(256, 256), chunk('EXIF', [1, 2])]) }, 'square', 'carries metadata (EXIF), which an avatar is sent without'],
   ] as const) {
     const w = world({ whoami: me });
@@ -166,15 +193,10 @@ test('a request with no character or no frames is refused before anything is rea
   const w = world({ whoami: me });
   assert.deepEqual(await runAvatar(w.dbs, w.storage, request({ character: 'x' }), w.name), { status: 400, body: { field: 'character', error: 'is not an id' } });
   assert.deepEqual(await runAvatar(w.dbs, w.storage, request({ frames: { square: frames.square } as AvatarRequest['frames'] }), w.name), { status: 400, body: { field: 'frames', error: 'are a square and a portrait frame' } });
+  // A portrait with no frame, or a frame with no portrait.
+  assert.deepEqual(await runAvatar(w.dbs, w.storage, request({ frames: { square: frames.square, portrait: null } }), w.name), { status: 400, body: { field: 'frames', error: 'are a square and a portrait frame' } });
+  assert.deepEqual(await runAvatar(w.dbs, w.storage, request({ portrait: null }), w.name), { status: 400, body: { field: 'frames', error: 'are a square and a portrait frame' } });
   assert.equal(w.calls.length, 0);
-});
-
-test('an avatar with no portrait crop is a square alone, which fills the tall slot', async () => {
-  const w = world({ whoami: me, set_avatar: { profile: { character }, replaced: [] } });
-  const out = await runAvatar(w.dbs, w.storage, request({ portrait: null, frames: { square: frames.square, portrait: null } }), w.name);
-  assert.equal(out.status, 200);
-  assert.deepEqual([...w.stored.keys()], ['k1.webp', 'k2.webp']);
-  assert.ok(w.calls.some((c) => c.includes('"square":"k2.webp","portrait":null') && c.includes('"portrait_frame":null')), w.calls.join('\n'));
 });
 
 test('a write whose answer was lost keeps the files it may now name, and says it may have gone through', async () => {
@@ -182,5 +204,5 @@ test('a write whose answer was lost keeps the files it may now name, and says it
   const out = await runAvatar(w.dbs, w.storage, request(), w.name);
   assert.equal(out.status, 503);
   assert.match(String((out.body as { error: string }).error), /may have gone through/);
-  assert.equal(w.stored.size, 3, 'no file the profile may name is removed');
+  assert.equal(w.stored.size, 2, 'no file the profile may name is removed');
 });

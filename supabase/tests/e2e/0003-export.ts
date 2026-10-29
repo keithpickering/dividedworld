@@ -100,8 +100,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into thread_reads (thread, reader) values (t, b);
       perform count_thread_views();
       insert into account_preferences (account, theme, postbit, motion) values (ann, 'dark', 'stacked', 'reduce');
-      insert into character_profiles (character, title, signature, avatar_source, avatar_square, avatar_portrait, square_frame, portrait_frame)
-      values (a, 'Exported', '[b]sig[/b]', 'exp-src.webp', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
+      insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame)
+      values (a, 'Exported', '[b]sig[/b]', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
+      -- An original 0025 handed to the sweep: a row the export carries, naming a file it does not.
+      insert into avatar_orphans (key) values ('exp-src.webp');
       insert into admins (account) values (ann);
       -- A kept estimate, a waiting Turn, a standing, and a class's total in e2e/0001's settlement.
       insert into estimates (account, made_at, window_from, answer) values (ann, now(), now(), '{"entries": [], "lines": [], "asOf": null, "freshAfter": null}');
@@ -129,10 +131,10 @@ test('an instance exported and imported into a fresh database is the same instan
   server.pathname = '/postgres';
   fresh.pathname = `/${name}`;
   psqlOn(server.toString(), `create database ${name};`);
-  // The old project's Storage holds the avatar's three files; the new project's starts empty.
+  // The old project's Storage holds the avatar's two files; the new project's starts empty.
   const oldStore = await fakeStorage();
   const newStore = await fakeStorage();
-  const avatar = { 'avatars/exp-src.webp': Buffer.from('RIFF-src'), 'avatars/exp-sq.webp': Buffer.from('RIFF-sq'), 'avatars/exp-pt.webp': Buffer.from('RIFF-pt') };
+  const avatar = { 'avatars/exp-sq.webp': Buffer.from('RIFF-sq'), 'avatars/exp-pt.webp': Buffer.from('RIFF-pt') };
   for (const [k, v] of Object.entries(avatar)) oldStore.objects.set(k, v);
   try {
     // Each tool names the database it touches and refuses one a URL does not name.
@@ -269,10 +271,10 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.match((await run('import-instance.mjs', ['--from', tampered, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /a row names avatars\/exp-pt\.webp, which the export does not carry/);
     fs.rmSync(tampered, { recursive: true, force: true });
     // A file already in the new project under a name the export carries, with other bytes, is refused.
-    newStore.objects.set('avatars/exp-src.webp', Buffer.from('RIFF-someone-else'));
-    assert.match((await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /exp-src\.webp is already there, and is another file/);
+    newStore.objects.set('avatars/exp-sq.webp', Buffer.from('RIFF-someone-else'));
+    assert.match((await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /exp-sq\.webp is already there, and is another file/);
     // The refused imports above put some files in already; the same files again are the same files.
-    newStore.objects.delete('avatars/exp-src.webp');
+    newStore.objects.delete('avatars/exp-sq.webp');
     newStore.trouble.push('unavailable');
     const imported = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.equal(imported.status, 0, imported.stderr + imported.stdout);
