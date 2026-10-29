@@ -74,7 +74,7 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   const turned = await runAction(asBob, instance, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'announced' });
   assert.equal(turned.status, 200, JSON.stringify(turned));
   const { takes_effect_at: when, ...waiting } = turned.body as { takes_effect_at: string | null };
-  assert.deepEqual(waiting, { pending: true, class: 'jabroni', loudness: 'announced' });
+  assert.deepEqual(waiting, { pending: true, class: 'jabroni', loudness: 'announced', show_from: false, show_to: false });
   assert.equal(when, sql(`select to_json(next_settlement_at())`).replace(/^"|"$/g, '') || null, 'it says when it takes effect, or that the first run decides');
   assert.deepEqual(turned.broadcasts, []);
   const withdrawn = await runAction(asBob, instance, { action: 'withdrawTurn', character: bob.character });
