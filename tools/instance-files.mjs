@@ -76,6 +76,6 @@ export function tables(url) {
 }
 
 export const NOT_EXPORTED = [
-  'the two Vault secrets the scheduled jobs call the Edge Functions with, kayfabb_functions_url and kayfabb_service_key: secrets, which are set by hand on the new project, with select vault.create_secret(<the functions URL>, 'kayfabb_functions_url') and select vault.create_secret(<the service key>, 'kayfabb_service_key') (supabase/migrations/0004_schedule.sql reads them); until then the settlement job runs and calls nothing',
+  'the two Vault secrets the scheduled jobs call the Edge Functions with, kayfabb_functions_url and kayfabb_service_key: secrets, which are set by hand on the new project, with select vault.create_secret(<the functions URL>, \'kayfabb_functions_url\') and select vault.create_secret(<the service key>, \'kayfabb_service_key\') (supabase/migrations/0004_schedule.sql reads them); until then the settlement job runs and calls nothing',
   'Supabase Auth\'s sessions and refresh tokens: they end, and each player signs in once more',
 ];
