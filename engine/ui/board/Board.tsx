@@ -117,7 +117,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
                 <th scope="col" className="kb-thread-flags-head"><span className="kb-visually-hidden">Status</span></th>
                 <th scope="col">Thread</th>
                 <th scope="col">Replies</th>
-                <th scope="col">Views</th>
+                <th scope="col"><abbr title="Characters that have read it, counted hourly">Views</abbr></th>
                 <th scope="col">Last post</th>
               </tr>
             </thead>
