@@ -104,21 +104,37 @@ declare
   season_end timestamptz;
   end_at timestamptz;
   found boolean;
+  first_of_season boolean;
+  len interval := span_interval(setting('settlementLength'));
 begin
-  select coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons)) into start_at;
+  select max(ends_at) into start_at from settlements;
+  first_of_season := start_at is null;
+  if first_of_season then select min(starts_at) into start_at from seasons; end if;
   if start_at is null then return null; end if;
   select true, s.ends_at into found, season_end from seasons s
   where s.starts_at <= start_at and (s.ends_at is null or s.ends_at > start_at);
   if not coalesce(found, false) then
     select s.starts_at, s.ends_at into start_at, season_end from seasons s where s.starts_at > start_at order by s.starts_at limit 1;
     if start_at is null then return null; end if;
+    first_of_season := true;
   end if;
   -- One window of the instance's settlement length, so missed days are each settled as their own
   -- window, in order, and the halving and every per-window limit run over one length. A window
   -- is settled once its whole length has passed, so a run a few minutes late settles its day and
-  -- leaves no sliver after it; only a season's end makes one shorter. The cron says when a run
-  -- comes (settlementCron); the length says how finely it settles.
-  end_at := least(coalesce(season_end, 'infinity'), start_at + span_interval(setting('settlementLength')));
+  -- leaves no sliver after it. The cron says when a run comes (settlementCron); the length says
+  -- how finely it settles.
+  end_at := start_at + len;
+  -- A season that did not begin where a window ended (the instance's first, or one after a gap)
+  -- has a first window that ends in step with the run: at `until`, less whole lengths, so it is
+  -- at most one length, and every window after it ends when the cron comes. Otherwise a season
+  -- begun at 14:03 under an 08:17 cron would lag each of its windows by 18 hours. Only this
+  -- and a season's end make a window shorter. A run reads the minute its cron fired, so this
+  -- keeps step with the schedule, not with a run's lateness.
+  if first_of_season and until > start_at then
+    end_at := until;
+    while end_at - len > start_at loop end_at := end_at - len; end loop;
+  end if;
+  end_at := least(coalesce(season_end, 'infinity'), end_at);
   if end_at > until or end_at <= start_at then return null; end if;
   return jsonb_build_object('start', start_at, 'end', end_at);
 end $$;

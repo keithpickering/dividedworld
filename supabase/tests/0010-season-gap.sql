@@ -14,6 +14,10 @@ begin
   if next_settlement_window(last_end + interval '1 day') is not null then raise exception 'nothing to settle inside the gap'; end if;
   w := next_settlement_window(last_end + interval '4 days');
   if (w ->> 'start')::timestamptz <> last_end + interval '3 days' then raise exception 'the window should start at the next season''s start: %', w; end if;
+  -- A season begun after a gap falls in step with the run too: its first window ends at the run.
+  if (next_settlement_window(last_end + interval '3 days 6 hours') ->> 'end')::timestamptz is distinct from last_end + interval '3 days 6 hours' then
+    raise exception 'a season after a gap should end its first window at the run';
+  end if;
   set local role service_role;
   said := apply_settlement((w ->> 'start')::timestamptz, (w ->> 'end')::timestamptz, '[]');
   reset role;

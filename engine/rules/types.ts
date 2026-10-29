@@ -54,7 +54,8 @@ export interface Settings {
   /**
    * How long one settlement window is: a day for a daily settlement. The cron says when a run
    * comes; this says how finely it settles, each missed length its own window, a window settled
-   * once its whole length has passed.
+   * once its whole length has passed. A season's first window, where it did not begin at a
+   * window's end, ends at the first run, so the windows after it end when the cron comes.
    */
   readonly settlementLength: Span;
   readonly seasonLength: Span;

@@ -124,6 +124,9 @@ test('a number a class reads can carry its bounds, and a price is a whole number
 
 test('a settlement window\'s length is a span', () => {
   assert.match(settingsProblems({ ...settings, settlementLength: { unit: 'hour', count: 1 } as never }).join('\n'), /settlementLength/);
+  // A count the database's span_interval cannot hold would break every window: refused here as there.
+  assert.match(settingsProblems({ ...settings, seasonLength: { unit: 'month', count: 1001 } }).join('\n'), /seasonLength/);
+  assert.deepEqual(settingsProblems({ ...settings, seasonLength: { unit: 'month', count: 1000 } }), []);
 });
 
 test('an override of one economy number keeps the others', () => {

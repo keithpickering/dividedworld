@@ -7,9 +7,11 @@ import type { EconomyRead, Instance, Settings, Span } from './types.ts';
 import { INT4_MAX } from './cards.ts';
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
+/** The most of a unit a span counts, as settings_spans_hold (0007) holds it: past any instance's life, inside span_interval's integer. */
+const SPAN_MOST = 1000;
 const isWhole = (n: unknown, min: number): n is number => Number.isSafeInteger(n) && (n as number) >= min;
 const isSpan = (s: unknown): s is Span =>
-  typeof s === 'object' && s !== null && SPAN_UNITS.includes((s as Span).unit) && isWhole((s as Span).count, 1);
+  typeof s === 'object' && s !== null && SPAN_UNITS.includes((s as Span).unit) && isWhole((s as Span).count, 1) && (s as Span).count <= SPAN_MOST;
 /**
  * Five fields of numbers, `*`, ranges, lists and steps, each inside its own range (minute,
  * hour, day of month, month, day of week with 0 and 7 both Sunday): what pg_cron and every
@@ -41,9 +43,9 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   reactionCap: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   charactersPerPlayer: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   settlementCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
-  settlementLength: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count of at least 1'),
-  seasonLength: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count of at least 1'),
-  turnCooldown: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count of at least 1'),
+  settlementLength: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
+  seasonLength: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
+  turnCooldown: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
   registrationMode: (v) => (v === 'open' || v === 'invite' || v === 'closed' ? null : '"open", "invite" or "closed"'),
   postMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),

@@ -60,13 +60,31 @@ begin
   end if;
 end $$;
 
--- ---- The next window: from the last settled end, to now or the season's end ----
+-- ---- The next window: from the last settled end, a whole length, in step with the run ----
 do $$
 declare
-  last_end timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
+  settled timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
+  -- A season begun at an odd hour, after what was settled: as a seed at 14:03 begins one.
+  season_start timestamptz := settled + interval '5 hours 57 minutes';
+  last_end timestamptz;
   w jsonb;
 begin
-  if next_settlement_window(last_end) is not null then raise exception 'a window ending where it starts is nothing to settle'; end if;
+  update seasons set ends_at = settled where number = 1;
+  insert into seasons (number, starts_at) values (2, season_start);
+  if next_settlement_window(season_start) is not null then raise exception 'a window ending where it starts is nothing to settle'; end if;
+  -- A season's first window ends in step with the run, so the windows after it end when the cron
+  -- comes: a season begun at 14:03 under an 08:17 cron settles 18 hours at the first run, and a
+  -- day at each run after it, rather than lagging every window by 18 hours.
+  w := next_settlement_window(season_start + interval '18 hours');
+  if (w ->> 'start')::timestamptz <> season_start or (w ->> 'end')::timestamptz is distinct from season_start + interval '18 hours' then
+    raise exception 'a season''s first window should end at the run: %', w;
+  end if;
+  -- A first run days late still settles one length at most, ending where the run's days fall.
+  w := next_settlement_window(season_start + interval '3 days 18 hours');
+  if (w ->> 'end')::timestamptz is distinct from season_start + interval '18 hours' then raise exception 'a late first run settles the first stretch alone: %', w; end if;
+  insert into settlements (starts_at, ends_at, season) select season_start, season_start + interval '18 hours', id from seasons where number = 2;
+  last_end := season_start + interval '18 hours';
+
   w := next_settlement_window(last_end + interval '1 day');
   if (w ->> 'start')::timestamptz <> last_end or (w ->> 'end')::timestamptz <> last_end + interval '1 day' then raise exception 'the next window: %', w; end if;
   -- Missed days are settled one at a time: the window is the instance's settlement length, however far behind.
@@ -90,9 +108,15 @@ begin
     raise exception 'a season length that is no span was written';
   exception when check_violation then null;
   end;
+  -- A count no interval can hold would break every window; it is refused when written.
+  begin
+    update settings set value = '{"unit": "day", "count": 3000000000}' where key = 'settlementLength';
+    raise exception 'a settlement length past any interval was written';
+  exception when check_violation then null;
+  end;
   -- A season ending inside the window ends the window there.
-  update seasons set ends_at = last_end + interval '6 hours' where number = 1;
-  insert into seasons (number, starts_at) values (2, last_end + interval '6 hours');
+  update seasons set ends_at = last_end + interval '6 hours' where number = 2;
+  insert into seasons (number, starts_at) values (3, last_end + interval '6 hours');
   w := next_settlement_window(last_end + interval '1 day');
   if (w ->> 'end')::timestamptz <> last_end + interval '6 hours' then raise exception 'a window should stop at its season''s end: %', w; end if;
 end $$;

@@ -20,16 +20,18 @@ language sql immutable set search_path = public, pg_temp as $$
   select (span ->> 'count')::integer * case span ->> 'unit' when 'day' then interval '1 day' when 'week' then interval '1 week' when 'month' then interval '1 month' end
 $$;
 
--- The settings that are spans are spans, held so when they are written: a length of nothing, or
--- a unit no interval knows, would stop every window or season silently.
+-- The settings that are spans are spans, held so when they are written: a length of nothing, a
+-- unit no interval knows, or a count past what span_interval reads, would stop every window or
+-- season silently. A thousand months is longer than any instance runs.
 create function settings_spans_hold() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 begin
   if new.key in ('settlementLength', 'seasonLength', 'turnCooldown') and not (
        jsonb_typeof(new.value) = 'object' and new.value ->> 'unit' in ('day', 'week', 'month')
        and jsonb_typeof(new.value -> 'count') = 'number' and (new.value ->> 'count')::numeric >= 1
+       and (new.value ->> 'count')::numeric <= 1000
        and (new.value ->> 'count')::numeric = trunc((new.value ->> 'count')::numeric)) then
-    raise exception '% is a span: a unit of day, week or month and a whole count of at least 1', new.key using errcode = '23514';
+    raise exception '% is a span: a unit of day, week or month and a whole count from 1 to 1000', new.key using errcode = '23514';
   end if;
   return new;
 end $$;
