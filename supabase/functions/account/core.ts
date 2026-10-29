@@ -10,14 +10,17 @@
  *     does not match is one sentence whether the address has a login or not.
  *   - How long it takes. Every answer, refusals included, is held to a whole number of
  *     ANSWER_FLOOR_MS from when the request came in.
- * No path takes a password, and no login holds one (supabase/migrations/0012_passwordless.sql).
+ * No path here takes a password, and no login holds one (supabase/migrations/0012_passwordless.sql).
+ * This guards the client that uses it, not Supabase Auth's own endpoints, which answer the public
+ * key directly: whether those can tell an address apart (its /otp asked to make no login, its
+ * password sign-in's timing) is the owner's to measure on a test project, on #3.
  *
  * A code asked for with an invite may make a login; the invite is checked before the answer,
  * since whether a code opens anything is a fact about the code, not the address, and goes with
  * the login as its metadata. It is spent only when the login opens its account, at its first
  * sign-in (supabase/migrations/0009_registration.sql). Where that fails (the invite was spent
- * meanwhile), the sign-in still succeeds and says the way out: the openAccount action, with
- * another invite. A link from the email signs in through Auth itself, and the client then calls
+ * meanwhile), the sign-in still succeeds and says the way out: another invite, opened with the
+ * act function's openAccount action (engine/rules/actions.ts). A link from the email signs in through Auth itself, and the client then calls
  * open_account() as this does.
  */
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
@@ -64,7 +67,7 @@ const email = (r: Fields): string | AccountAnswer => {
 };
 /** Auth's codes are its digits only, six by default (supabase/config.toml's otp_length). */
 const code = (r: Fields): string | AccountAnswer => {
-  const v = typeof r.code === 'string' ? r.code.trim() : '';
+  const v = typeof r.code === 'string' ? r.code.replace(/\s+/g, '') : '';
   return /^\d{6,10}$/.test(v) ? v : refused('code', 'is the digits from the email');
 };
 
@@ -75,14 +78,17 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
     case 'requestCode': {
       const address = email(r);
       if (typeof address !== 'string') return address;
-      const invite = typeof r.invite === 'string' && r.invite.length > 0 && r.invite.length <= 64 ? r.invite : null;
-      // With no invite, the answer is whether the instance lets anyone make a login (open); an
-      // invite that opens nothing is refused, for any address alike.
-      const opens = await deps.service.rpc<'opens' | 'closed' | 'nothing'>('invite_open', { code: invite });
-      if (invite !== null && opens === 'closed') return { status: 403, body: { error: 'registration is closed' } };
-      if (invite !== null && opens !== 'opens') return refused('invite', 'that invite opens nothing');
+      // An invite given is checked, a fact about the code and never the address. One that opens
+      // may make a login; one that does not (spent, mistyped, longer than any code, not text)
+      // makes none, but the code is still sent, so a returning player whose form kept an old
+      // invite signs in, and the answer says what became of the invite, alike for every address.
+      const given = r.invite !== undefined && r.invite !== null && r.invite !== '';
+      const code = typeof r.invite === 'string' && r.invite.trim().length > 0 && r.invite.length <= 64 ? r.invite.trim() : null;
+      const opens = await deps.service.rpc<'opens' | 'closed' | 'nothing'>('invite_open', { code: given && code === null ? '' : code });
       const create = opens === 'opens';
-      return { status: 202, body: { message: SENT_CODE }, later: () => deps.auth.requestCode(address, { create, invite }) };
+      const invite = create ? code : null;
+      const note = !given || create ? {} : { invite: opens === 'closed' ? 'registration is closed, so no new login is made' : 'that invite opens nothing, so no new login is made with it' };
+      return { status: 202, body: { message: SENT_CODE, ...note }, later: () => deps.auth.requestCode(address, { create, invite }) };
     }
     case 'verifyCode': {
       const address = email(r);

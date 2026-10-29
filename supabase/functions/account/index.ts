@@ -7,8 +7,9 @@
  *
  * This guards the client that uses it. Supabase Auth's own endpoints stay reachable with the
  * public key: no login holds a password (supabase/migrations/0012_passwordless.sql), so its
- * password sign-in fails alike for every address; whether its own code request takes the same
- * time for an address it knows is Auth's, measured once on the owner's test project (issue #3).
+ * password sign-in fails for every address. Whether its endpoints answer an address it knows as
+ * they answer one it does not (its /otp asked to make no login may refuse an unknown address
+ * outright; its failures may differ in time) is Auth's, measured on the owner's test project (#3).
  */
 import { runAccount } from './core.ts';
 import { gotrue } from '../_shared/gotrue.ts';

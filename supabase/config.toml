@@ -18,7 +18,9 @@ enable_signup = true
 # Sign-in is passwordless (the owner's answer 13, on #4): a code, and a link beside it, sent by
 # email (supabase/functions/account/core.ts). Auth has no setting that turns its password
 # sign-in off on its own, so supabase/migrations/0012_passwordless.sql keeps every login's
-# password empty, and password sign-in fails alike for every address.
+# password empty, and password sign-in fails for every address. Whether Auth's own endpoints
+# answer an address it knows as they answer one it does not is measured on the owner's test
+# project (#3).
 enable_signup = true
 # A login is confirmed by its first code before it can open an account.
 enable_confirmations = true

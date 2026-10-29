@@ -77,13 +77,35 @@ test('a code asked for with an invite that opens may make a login; one asked for
   assert.deepEqual(closed.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${KNOWN}:${JSON.stringify({ create: false, invite: null })}`]);
 });
 
-test('whether a code request is refused turns on the invite and the instance\'s mode, never on the address', async () => {
+test('an invite that opens nothing still sends a returning player their code, and says so the same for every address', async () => {
   for (const email of [KNOWN, UNKNOWN]) {
-    const bad = await world().answer({ action: 'requestCode', email, invite: 'not a code' });
-    assert.deepEqual([bad.status, bad.body, bad.took, bad.later], [400, { field: 'invite', error: 'that invite opens nothing' }, ANSWER_FLOOR_MS, undefined]);
-    const shut = await world({ mode: 'closed' }).answer({ action: 'requestCode', email, invite: INVITE });
-    assert.deepEqual([shut.status, shut.body], [403, { error: 'registration is closed' }]);
+    const w = world();
+    const bad = await w.answer({ action: 'requestCode', email, invite: 'not a code' });
+    assert.equal(bad.status, 202);
+    assert.equal((bad.body as { invite: string }).invite, 'that invite opens nothing, so no new login is made with it');
+    await bad.later?.();
+    assert.deepEqual(w.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${email}:${JSON.stringify({ create: false, invite: null })}`]);
+    const shut = world({ mode: 'closed' });
+    const closed = await shut.answer({ action: 'requestCode', email, invite: INVITE });
+    assert.equal(closed.status, 202);
+    assert.equal((closed.body as { invite: string }).invite, 'registration is closed, so no new login is made');
+    await closed.later?.();
+    assert.deepEqual(shut.calls.filter((c) => c.startsWith('requestCode')), [`requestCode:${email}:${JSON.stringify({ create: false, invite: null })}`]);
   }
+  // An invite longer than any code, or not text at all, opens nothing, and is said so.
+  for (const invite of ['x'.repeat(65), 42]) {
+    const out = await world().answer({ action: 'requestCode', email: UNKNOWN, invite });
+    assert.equal((out.body as { invite?: string }).invite, 'that invite opens nothing, so no new login is made with it', String(invite));
+  }
+});
+
+test('an address and a code are read as a player types them: spaces at the ends of either, and inside a code, are not part of them', async () => {
+  const w = world();
+  const asked = await w.answer({ action: 'requestCode', email: `  ${KNOWN} `, invite: INVITE });
+  await asked.later?.();
+  assert.ok(w.calls.some((c) => c.startsWith(`requestCode:${KNOWN}:`)));
+  const signed = await w.answer({ action: 'verifyCode', email: ` ${KNOWN}`, code: ' 123 456 ' });
+  assert.equal(signed.status, 200);
 });
 
 test('a wrong code answers the same, in the same time, as a code for an address with no account', async () => {
