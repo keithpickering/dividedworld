@@ -68,11 +68,13 @@ export function IndexScreen() {
                   {b.lastAt === null ? <span className="kb-muted">None yet</span> : (
                     <>
                       <span className="kb-board-last-label">last: </span>
-                      {b.lastThread
-                        ? <Link to={`/t/${b.lastThread}`}>{b.lastCharacter ? <><Mini character={who} name={who?.name ?? 'A'} />{who?.name ?? 'A character'}</> : <span className="kb-system-name">The System</span>}</Link>
-                        : null}
+                      {b.lastCharacter
+                        ? <><Mini character={who} name={who?.name ?? 'A'} /><Link to={`/c/${encodeURIComponent(b.lastCharacter)}`}>{who?.name ?? 'A character'}</Link></>
+                        : <span className="kb-system-name">The System</span>}
                       <br />
-                      <span className="kb-muted"><Ago at={b.lastAt} /></span>
+                      {b.lastThread
+                        ? <Link to={`/t/${b.lastThread}`} className="kb-muted" aria-label={`Latest post in ${b.name}`}><Ago at={b.lastAt} /></Link>
+                        : <span className="kb-muted"><Ago at={b.lastAt} /></span>}
                     </>
                   )}
                 </td>

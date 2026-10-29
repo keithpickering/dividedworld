@@ -168,7 +168,7 @@ function ThreadRow({ t, loaded, perPage, hot }: { readonly t: ThreadSummary; rea
         <div className="kb-thread-meta kb-small">
           <span className="kb-thread-started">
             <Mini character={t.firstCharacter ? characters.get(t.firstCharacter) : undefined} name={starter ?? 'S'} />
-            {starter ?? <span className="kb-system-name">The System</span>}
+            {t.firstCharacter ? <Link to={`/c/${encodeURIComponent(t.firstCharacter)}`}>{starter}</Link> : <span className="kb-system-name">The System</span>}
           </span>
           {isNew && (
             <> · <Link to={threadHref(t.id, pageOf(firstUnread, perPage), firstUnread)} aria-label={`First unread post in ${t.title}`}>first unread</Link></>
@@ -187,12 +187,10 @@ function ThreadRow({ t, loaded, perPage, hot }: { readonly t: ThreadSummary; rea
       <td role="cell" className="kb-thread-views kb-num"><span className="kb-num">{views[t.id] ?? 0}</span><span className="kb-thread-unit"> views</span></td>
       <td role="cell" className="kb-thread-last kb-small">
         <span className="kb-thread-last-label">last: </span>
-        <Link to={threadHref(t.id, pagesInThread, t.lastSeq)} className="kb-thread-last-link">
-          <Mini character={t.lastCharacter ? characters.get(t.lastCharacter) : undefined} name={last ?? 'S'} />
-          {last ?? <span className="kb-system-name">The System</span>}
-        </Link>
+        <Mini character={t.lastCharacter ? characters.get(t.lastCharacter) : undefined} name={last ?? 'S'} />
+        {t.lastCharacter ? <Link to={`/c/${encodeURIComponent(t.lastCharacter)}`}>{last}</Link> : <span className="kb-system-name">The System</span>}
         <br />
-        <span className="kb-muted"><Ago at={t.lastAt} /></span>
+        <Link to={threadHref(t.id, pagesInThread, t.lastSeq)} className="kb-thread-last-link kb-muted" aria-label={`Latest post in ${t.title}`}><Ago at={t.lastAt} /></Link>
       </td>
     </tr>
   );

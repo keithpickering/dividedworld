@@ -15,6 +15,7 @@ import { useKayfa } from '../context.tsx';
 import type { Character } from '../data/api.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { monthYear, shortDate } from './dates.ts';
+import { Link } from '../router.tsx';
 import type { Statement } from './reveals.ts';
 import './postbit.css';
 
@@ -71,7 +72,7 @@ export const Postbit = memo(function Postbit({ person, layout }: { readonly pers
     <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={layout}>
       <Avatar character={c} layout={layout} />
       <div className="kb-postbit-text">
-        <span className="kb-postbit-name">{c.name}</span>
+        <span className="kb-postbit-name"><Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link></span>
         {c.title && <span className="kb-postbit-title kb-small kb-muted">{c.title}</span>}
         <span className="kb-postbit-rank kb-small">
           <b className="kb-postbit-rank-name" aria-hidden={instance.ranks.length > 0 || undefined}>{rank}</b>

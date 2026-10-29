@@ -27,6 +27,11 @@ describe('the postbit', () => {
     expect(bit).not.toHaveTextContent('Oct 1,');
   });
 
+  test('the name links to the character\'s public profile', () => {
+    show(person());
+    expect(screen.getByRole('link', { name: 'Pipewrench' })).toHaveAttribute('href', '/c/c1');
+  });
+
   test('side by side puts the portrait in the tall slot, with the square for a phone', () => {
     show(person());
     expect(screen.getByRole('group')).toHaveAttribute('data-kb-postbit', 'side');

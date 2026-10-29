@@ -158,7 +158,11 @@ describe('pages and permalinks', () => {
     await screen.findByRole('article', { name: /^Post 20 /u });
     await userEvent.click(screen.getAllByRole('link', { name: 'Continue to page 2' })[0]!);
     await screen.findByRole('article', { name: /^Post 40 /u });
-    for (const link of screen.getAllByRole('link')) expect(link.getAttribute('href') ?? '').not.toContain(w.pipe);
+    /* A character's own public page is the one place its id is an address: the postbit's name links to it. */
+    for (const link of screen.getAllByRole('link')) {
+      const href = link.getAttribute('href') ?? '';
+      if (!href.startsWith('/c/')) expect(href).not.toContain(w.pipe);
+    }
     expect(window.location.href).not.toContain(w.pipe);
   });
 

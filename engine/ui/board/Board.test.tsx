@@ -138,8 +138,9 @@ describe('the row', () => {
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
     expect(row).toHaveTextContent('Spritey');
-    const last = within(row).getByRole('link', { name: /Pipewrench/ });
-    expect(last).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=3#post-5`);
+    expect(within(row).getByRole('link', { name: 'Pipewrench' })).toHaveAttribute('href', `/c/${seeded.mine}`);
+    expect(within(row).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${seeded.spritey}`);
+    expect(within(row).getByRole('link', { name: 'Latest post in Thread 001' })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=3#post-5`);
     expect(within(row).getByRole('link', { name: 'Page 2 of Thread 001' })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=2`);
   });
 });

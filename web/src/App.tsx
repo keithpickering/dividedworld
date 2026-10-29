@@ -9,17 +9,20 @@ import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
 import { Characters } from '../../engine/ui/characters/Characters.tsx';
 import { NewCharacter } from '../../engine/ui/characters/NewCharacter.tsx';
+import { ProfileScreen } from '../../engine/ui/profile/Profile.tsx';
+import { RecordScreen } from '../../engine/ui/profile/Record.tsx';
 import { Frame } from '../../engine/ui/frame/Frame.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
+import { StandingsScreen } from '../../engine/ui/standings/Standings.tsx';
 import { RouterProvider } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 
-const LINKS = [{ to: '/', label: 'Index' }, { to: '/characters', label: 'Characters' }];
+const LINKS = [{ to: '/', label: 'Index' }, { to: '/standings', label: 'Standings' }, { to: '/characters', label: 'Characters' }];
 
 const ROUTES: readonly Route[] = [
   { path: '/', render: () => <IndexScreen /> },
@@ -27,6 +30,9 @@ const ROUTES: readonly Route[] = [
   { path: '/characters', render: () => <Characters /> },
   { path: '/characters/new', render: () => <NewCharacter /> },
   { path: '/characters/:id/edit', render: ({ id }) => <ProfileEdit id={id!} /> },
+  { path: '/standings', render: () => <StandingsScreen /> },
+  { path: '/c/:id', render: ({ id }) => <ProfileScreen id={id!} /> },
+  { path: '/c/:id/record', render: ({ id }) => <RecordScreen id={id!} /> },
   { path: '/t/:thread', render: ({ thread }) => <ThreadScreen thread={thread!} /> },
 ];
 

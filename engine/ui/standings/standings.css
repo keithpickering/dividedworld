@@ -1,0 +1,9 @@
+/* The season's standings. */
+.kb-standings {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kb-standings-table {
+  width: 100%;
+}
