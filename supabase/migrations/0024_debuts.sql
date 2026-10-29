@@ -149,15 +149,14 @@ begin
   end if;
   perform debut_options(timing, loudness);
   begin
-    insert into characters (owner, name, debut_loudness) values (caller, named, loudness) returning id, created_at into made, at;
+    -- A drop is debuted in the insert itself, at its creation (both are the transaction's now()).
+    insert into characters (owner, name, debut_loudness, debuted_at) values (caller, named, loudness, case when timing = 'now' then now() end)
+    returning id, created_at into made, at;
   exception when unique_violation then
     raise exception 'that name is taken' using hint = 'kayfabb.refusal', errcode = '23505';
   end;
   insert into class_history (character, class_key, started_at) values (made, class, at);
-  if timing = 'now' then
-    update characters set debuted_at = at where id = made;
-    if loudness = 'announced' then announced := announce_drop(made, at); end if;
-  end if;
+  if timing = 'now' and loudness = 'announced' then announced := announce_drop(made, at); end if;
   return jsonb_build_object('id', made, 'name', named, 'class', class, 'waiting', timing = 'tally', 'loudness', loudness, 'announcement', announced);
 end $$;
 

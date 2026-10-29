@@ -169,6 +169,14 @@ begin
   perform tests.unbecome();
   if (said ->> 'waiting')::boolean or (select debuted_at from characters where id = w) is distinct from now() then raise exception 'a waiting character dropped now acts at once: %', said; end if;
   if pg_temp.named_in(w) is distinct from 1::bigint or (said -> 'announcement' -> 'act' ->> 'id') is null then raise exception 'a waiting character dropped loud is announced at once: %', said; end if;
+  -- A retired one is refused, with its way back.
+  perform tests.unbecome();
+  update characters set retired_at = now() where id = v;
+  perform tests.become(ann);
+  if pg_temp.refusal(format('select set_debut(%L, %L, %L)', v, 'now', 'silent')) is distinct from 'that character is retired; an admin can restore it' then raise exception 'a retired character was dropped'; end if;
+  perform tests.unbecome();
+  update characters set retired_at = null where id = v;
+  perform tests.become(ann);
   -- Once debuted, it is refused.
   perform tests.become(ann);
   if pg_temp.refusal(format('select set_debut(%L, %L, %L)', w, 'tally', 'silent')) is distinct from 'it has debuted' then raise exception 'a debuted character''s debut was set'; end if;
