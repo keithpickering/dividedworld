@@ -364,6 +364,12 @@ test('two Sweet cards from one player on one post pay what one would: each vote 
   // A Sweet card from an earlier window still holds the votes after it.
   const monday: InputAct = { ...cards[0]!, at: FROM - H };
   assert.deepEqual(after(lifts, [monday, cards[1]!]), [['k2', 0]], 'the earlier window\'s card holds them; the later card is paid none');
+  // Per player and per alignment: another player's earlier Sweet card, or this player's earlier
+  // Salty one, holds none of the votes a Sweet card of this player's draws.
+  const bobs: InputAct = { id: 'k0', character: 'bob-1', kind: 'card', at: FROM + 6 * H, thread: 't1', target: 'p1', card: 'sugar' };
+  assert.deepEqual(after(lifts, [bobs, cards[1]!]), [['k0', 1], ['k2', 1]], 'each player\'s own card holds the votes after it');
+  const salty: InputAct = { id: 'k0', character: 'cat-1', kind: 'card', at: FROM + 6 * H, thread: 't1', target: 'p1', card: 'splat' };
+  assert.deepEqual(after(lifts, [salty, cards[1]!]), [['k0', 1], ['k2', 1]], 'a Salty card holds Salty counting, never a Sweet card\'s');
 });
 
 /* ---- the edges: each case below is a boundary a one-character change would move ---- */

@@ -181,7 +181,7 @@ export interface PlayedCard {
   readonly votes: number;
   /** Votes on the target post in the window. */
   readonly targetVotes: number;
-  /** Votes on the target post after the card was played, by quadrant, from other players. */
+  /** Votes on the target post after the card was played (each counted once per player and alignment, for that player's earliest card of this alignment there), by quadrant, from other players. */
   readonly targetAfter: Readonly<Record<Quadrant, number>>;
 }
 
