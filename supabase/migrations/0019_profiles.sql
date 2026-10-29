@@ -42,7 +42,10 @@ create table character_profiles (
   portrait_frame jsonb,
   pip_style text not null default 'default' references pip_styles (key),
   updated_at timestamptz not null default now(),
-  check ((avatar_square is null) = (avatar_portrait is null) and (avatar_square is null or avatar_source is not null))
+  -- A portrait needs a square, and a square an original it was cut from; a square alone fills the
+  -- tall slot too (the screens' design, section 4).
+  check ((avatar_portrait is null or avatar_square is not null) and (avatar_square is null or avatar_source is not null)
+     and (avatar_portrait is null) = (portrait_frame is null) and (avatar_square is null) = (square_frame is null))
 );
 
 -- seed_instance (0016), writing the instance's pip styles. Everything else as 0016 wrote it.
@@ -136,8 +139,9 @@ language sql immutable set search_path = public, pg_temp as $$
 $$;
 
 -- An avatar's keys, written by the service for `who` once the avatar function has checked and
--- stored its files. `source` is null for a recrop of the original already kept. Returns the keys
--- it replaced, for the function to remove from the bucket.
+-- stored its files. `source` is null for a recrop of the original already kept; `portrait` and its
+-- frame are null for a square alone. Returns the keys it replaced, for the function to remove from
+-- the bucket.
 create function set_avatar(who uuid, through uuid, source text, square text, portrait text, square_frame jsonb, portrait_frame jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -145,8 +149,8 @@ declare
   kept_source text;
 begin
   perform played_by(through, who);
-  if not frame_holds(square_frame) or not frame_holds(portrait_frame) then raise exception 'a crop frame lies inside its picture' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  if square is null or portrait is null then raise exception 'an avatar has a square and a portrait crop' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if square is null or (portrait is null) <> (portrait_frame is null) then raise exception 'an avatar has a square crop, and a portrait crop with its frame or neither' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if not frame_holds(square_frame) or (portrait is not null and not frame_holds(portrait_frame)) then raise exception 'a crop frame lies inside its picture' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   select * into was from character_profiles where character = through for update;
   kept_source := coalesce(source, was.avatar_source);
   if kept_source is null then raise exception 'an avatar is cut from a picture; send it' using hint = 'kayfabb.refusal', errcode = '22023'; end if;

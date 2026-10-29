@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LIMITS, readWebp, runAvatar, type AvatarRequest } from './core.ts';
-import { DatabaseError, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import type { Storage } from '../_shared/storage.ts';
 
 /* ---- WebP files, built byte by byte ---- */
@@ -116,4 +116,20 @@ test('a request with no character or no frames is refused before anything is rea
   assert.deepEqual(await runAvatar(w.dbs, w.storage, request({ character: 'x' }), w.name), { status: 400, body: { field: 'character', error: 'is not an id' } });
   assert.deepEqual(await runAvatar(w.dbs, w.storage, request({ frames: { square: frames.square } as AvatarRequest['frames'] }), w.name), { status: 400, body: { field: 'frames', error: 'are a square and a portrait frame' } });
   assert.equal(w.calls.length, 0);
+});
+
+test('an avatar with no portrait crop is a square alone, which fills the tall slot', async () => {
+  const w = world({ whoami: me, set_avatar: { profile: { character }, replaced: [] } });
+  const out = await runAvatar(w.dbs, w.storage, request({ portrait: null, frames: { square: frames.square, portrait: null } }), w.name);
+  assert.equal(out.status, 200);
+  assert.deepEqual([...w.stored.keys()], ['k1.webp', 'k2.webp']);
+  assert.ok(w.calls.some((c) => c.includes('"square":"k2.webp","portrait":null') && c.includes('"portrait_frame":null')), w.calls.join('\n'));
+});
+
+test('a write whose answer was lost keeps the files it may now name, and says it may have gone through', async () => {
+  const w = world({ whoami: me, set_avatar: new TransportError('set_avatar: no answer') });
+  const out = await runAvatar(w.dbs, w.storage, request(), w.name);
+  assert.equal(out.status, 503);
+  assert.match(String((out.body as { error: string }).error), /may have gone through/);
+  assert.equal(w.stored.size, 3, 'no file the profile may name is removed');
 });

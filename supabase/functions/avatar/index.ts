@@ -2,7 +2,7 @@
  * A character's avatar, one entry point: the work is core.ts; this is the edge: the session, which
  * whoami() reads as the player; the service key, for the bucket and the write; a bound on the body
  * before it is read; and the multipart form the browser sends (character, frames as JSON, and the
- * files source, square and portrait, source left out for a recrop).
+ * files source, square and portrait, source left out for a recrop and portrait for a square alone).
  */
 import { LIMITS, runAvatar } from './core.ts';
 import { postgrest } from '../_shared/rpc.ts';
@@ -37,7 +37,7 @@ Deno.serve(async (request) => {
   const out = await runAvatar(
     { player: postgrest({ url: env.url, key: anon, bearer: session }), service: postgrest({ url: env.url, key: env.key }) },
     supabaseStorage({ url: env.url, key: env.key, bucket: 'avatars' }),
-    { character: String(form.get('character') ?? ''), frames: frames as never, source: await file(form, 'source'), square: (await file(form, 'square')) as Uint8Array, portrait: (await file(form, 'portrait')) as Uint8Array },
+    { character: String(form.get('character') ?? ''), frames: frames as never, source: await file(form, 'source'), square: (await file(form, 'square')) as Uint8Array, portrait: await file(form, 'portrait') },
   );
   return answer(out.status, out.body);
 });

@@ -1,8 +1,9 @@
 /**
  * A character's avatar, as a pure module (the screens' design, section 4): the browser re-encodes
  * one upload as three WebP files (the original, at most 1600 on its long side; a square crop,
- * 256 by 256; a portrait crop, 256 wide and up to twice as tall) and sends them with the frames
- * they were cut at. This reads each file's bytes itself and refuses any that is not a WebP, that
+ * 256 by 256; a portrait crop, 256 wide and up to twice as tall, or none, when the square fills
+ * the tall slot too) and sends them with the frames they were cut at. A portrait is never shorter
+ * than it is wide. This reads each file's bytes itself and refuses any that is not a WebP, that
  * carries anything beside its picture, or that is not its size; stores the three under random names
  * through the Storage it is given; and writes them as the character's avatar, as the service, for
  * the player whoami() reads the session as (set_avatar, supabase/migrations/0019_profiles.sql).
@@ -79,11 +80,13 @@ export function readWebp(bytes: Uint8Array): Verdict<{ width: number; height: nu
 export interface Frame { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
 export interface AvatarRequest {
   readonly character: string;
-  readonly frames: { readonly square: Frame; readonly portrait: Frame };
+  /** The portrait's frame is null with no portrait. */
+  readonly frames: { readonly square: Frame; readonly portrait: Frame | null };
   /** The re-encoded original; null for a recrop of the one already kept. */
   readonly source: Uint8Array | null;
   readonly square: Uint8Array;
-  readonly portrait: Uint8Array;
+  /** Null for an avatar that is a square alone, which fills the tall slot too. */
+  readonly portrait: Uint8Array | null;
 }
 
 export interface AvatarAnswer { readonly status: number; readonly body: unknown }
@@ -108,10 +111,11 @@ const REFUSAL_HINT = 'kayfabb.refusal';
 
 export async function runAvatar(dbs: { player: Db; service: Db }, storage: Storage, request: AvatarRequest, newName: () => string = () => `${crypto.randomUUID()}.webp`): Promise<AvatarAnswer> {
   if (typeof request.character !== 'string' || !UUID.test(request.character)) return refused('character', 'is not an id');
-  if (!request.frames || typeof request.frames.square !== 'object' || typeof request.frames.portrait !== 'object') return refused('frames', 'are a square and a portrait frame');
+  if (!request.frames || typeof request.frames.square !== 'object' || request.frames.square === null || typeof request.frames.portrait !== 'object'
+      || (request.frames.portrait === null) !== (request.portrait === null)) return refused('frames', 'are a square and a portrait frame');
   for (const field of ['source', 'square', 'portrait'] as const) {
     const bytes = request[field];
-    if (bytes === null && field === 'source') continue;
+    if (bytes === null && field !== 'square') continue;
     if (!(bytes instanceof Uint8Array)) return refused(field, `the ${field} is a file`);
     const why = check(field, bytes);
     if (why) return refused(field, `the ${field} ${why}`);
@@ -120,7 +124,7 @@ export async function runAvatar(dbs: { player: Db; service: Db }, storage: Stora
   try {
     const who = await dbs.player.rpc<string | null>('whoami', {});
     if (!who) return { status: 401, body: { error: 'sign in to set an avatar' } };
-    const names = { source: request.source ? newName() : null, square: newName(), portrait: newName() };
+    const names = { source: request.source ? newName() : null, square: newName(), portrait: request.portrait ? newName() : null };
     for (const field of ['source', 'square', 'portrait'] as const) {
       const name = names[field];
       if (name === null) continue;
@@ -136,9 +140,11 @@ export async function runAvatar(dbs: { player: Db; service: Db }, storage: Stora
     await storage.remove(written.replaced ?? []).catch((e) => console.error('avatar: could not remove replaced files', e));
     return { status: 200, body: written.profile };
   } catch (e) {
+    // A write whose answer was lost may have committed and now name these files: they are kept,
+    // since a file nobody names is harmless and a name with no file is a broken avatar.
+    if (e instanceof TransportError) return { status: 503, body: { error: 'no answer came back, so this may have gone through: look before you try again' } };
     await storage.remove(stored).catch((x) => console.error('avatar: could not remove files a failed write stored', x));
     if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) return { status: e.status >= 400 && e.status < 500 ? e.status : 400, body: { error: e.reason } };
-    if (e instanceof TransportError) return { status: 503, body: { error: 'no answer came back, so this may have gone through: look before you try again' } };
     console.error('avatar failed', e);
     return { status: 500, body: { error: 'the avatar could not be saved; try again' } };
   }
