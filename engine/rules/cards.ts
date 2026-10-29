@@ -35,6 +35,10 @@ export interface CardRules<Config = unknown> {
   readonly priceKey: string;
   /** The economy numbers its rules read beside its price. */
   readonly reads?: readonly EconomyRead[];
+  /** How many of this card one post may carry, each its own play and layer; 1 unless said. */
+  readonly stack?: number;
+  /** Whether each play is drawn from a seed the server chooses (a splat different every time), stored on its Act. */
+  readonly seeded?: boolean;
   /** What playing it on this target costs from the wallet, on top of the base price already paid. */
   playPrice(settings: Settings, target: CardTarget, config: Config): Hundredths;
   canApply(target: CardTarget, effectsOnTarget: readonly CardEffect[]): Verdict;
@@ -73,20 +77,44 @@ export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
  * or shorter in the moment before the play lands costs the caster what it would have a moment
  * earlier: the caster pays what they were shown, and nobody else is touched.
  */
-export function decidePlay(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown): Verdict<{ price: Hundredths; config: unknown }> {
+export function decidePlay(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown): Verdict<{ price: Hundredths; config: unknown; message: string }> {
   const lands = rules.canApply(target, effects);
   if (!lands.ok) return lands;
   const checked = rules.validateConfig(config);
   if (!checked.ok) return checked;
+  const said = casterMessage(message);
+  if (!said.ok) return said;
   const price = rules.playPrice(settings, target, checked.value);
   if (!Number.isSafeInteger(price) || price < 0) throw new Error(`card ${rules.key} priced a play at ${price}`);
-  return ok({ price, config: checked.value });
+  return ok({ price, config: checked.value, message: said.value });
 }
 
-/** What every card holds to unless it says otherwise: it lands on a post, once per post. */
-export function landsOncePerPost(key: string, target: CardTarget, effects: readonly CardEffect[]): Verdict {
+/** The longest a caster's message may be, in characters; play_card (supabase/migrations/0016_cards_screens.sql) holds it again. */
+export const MESSAGE_MOST = 200;
+
+/**
+ * The caster's message, shown on the card's Act: plain text, which the screens show as text and
+ * never as markup, trimmed, at most MESSAGE_MOST characters, and empty when there is none ("a
+ * riposte with no words falls flat", and that is the caster's to choose).
+ */
+export function casterMessage(message: unknown): Verdict<string> {
+  if (message === undefined || message === null) return ok('');
+  if (typeof message !== 'string') return refuse('the message is text');
+  const said = message.trim();
+  if ([...said].length > MESSAGE_MOST) return refuse(`the message is at most ${MESSAGE_MOST} characters`);
+  return ok(said);
+}
+
+/**
+ * What every card holds to unless it says otherwise: it lands on a post, and a post carries at
+ * most its stack of it (one unless the card says more), each its own play.
+ */
+export function landsOnPost(rules: Pick<CardRules, 'key' | 'stack'>, target: CardTarget, effects: readonly CardEffect[]): Verdict {
   if (target.kind !== 'post') return refuse('a card lands on a post');
-  if (effects.some((e) => e.card === key)) return refuse('this post already carries that card');
+  const stack = rules.stack ?? 1;
+  if (effects.filter((e) => e.card === rules.key).length >= stack) {
+    return refuse(stack === 1 ? 'this post already carries that card' : `this post already carries ${stack} of that card, the most it takes`);
+  }
   return ok(undefined);
 }
 

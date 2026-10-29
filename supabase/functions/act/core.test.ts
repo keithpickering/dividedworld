@@ -61,18 +61,25 @@ const whoami = '33333333-3333-4333-8333-333333333333';
 
 test('a play asks the post, prices it by the card\'s own rules, and is written by the service for the caller', async () => {
   const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 1200, effects: [] }, play_card: { id: 'k', kind: 'card' } });
-  const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'Red' } });
+  const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'Red', seed: 7 }, message: ' Clean that up. ' });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 200, body: { id: 'k', kind: 'card' } });
   assert.deepEqual(calls, [
     `player:whoami:{}`,
     `service:instance_settings:{}`,
     `player:card_target:{"target":"${target}"}`,
-    `service:play_card:${JSON.stringify({ card: 'whoops', through: id, target, config: { color: 'red' }, who: whoami, price: 50 })}`,
+    `service:play_card:${JSON.stringify({ card: 'whoops', through: id, target, config: { color: 'red' }, message: 'Clean that up.', who: whoami, price: 50 })}`,
   ]);
 });
 
+test('a play whose message is too long is refused by its field, and never written', async () => {
+  const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [] } });
+  const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, message: 'x'.repeat(201) });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'message', error: 'the message is at most 200 characters' } });
+  assert.ok(!calls.some((c) => c.startsWith('service:play_card:')), calls.join('\n'));
+});
+
 test('a play its card refuses is never written by the service', async () => {
-  const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [{ card: 'whoops', act: 'k0' }] } });
+  const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [1, 2, 3].map((i) => ({ card: 'whoops', act: `k${i}` })) } });
   const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } });
   assert.equal(out.status, 400);
   assert.match(String((out.body as { error: string }).error), /already/);

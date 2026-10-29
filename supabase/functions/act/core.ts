@@ -13,7 +13,7 @@
  * PostgREST's detail, which can quote a row, nor a constraint's or a table's name.
  */
 import { decide } from '../../../engine/rules/actions.ts';
-import { basePrice, decidePlay, type CardEffect, type CardTarget } from '../../../engine/rules/cards.ts';
+import { basePrice, casterMessage, decidePlay, type CardEffect, type CardTarget } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, postgrest, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -102,9 +102,11 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       const target = await dbs.player.rpc<(CardTarget & { effects: CardEffect[] }) | null>('card_target', { target: decision.args.target });
       if (!target) return refused('target', 'there is no such post');
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
-      const play = decidePlay(rules, tuned.settings, target, target.effects, decision.args.config);
+      const said = casterMessage(decision.args.message);
+      if (!said.ok) return refused('message', said.why);
+      const play = decidePlay(rules, tuned.settings, target, target.effects, decision.args.config, said.value);
       if (!play.ok) return refused('config', play.why);
-      args = { ...args, config: play.value.config, price: play.value.price };
+      args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
     }
     if (decision.needsCardOfPlay) {
       const key = await dbs.player.rpc<string | null>('card_of_play', { play: decision.args.on_play });

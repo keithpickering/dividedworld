@@ -46,6 +46,13 @@ test('exactly one board is The System\'s, and at least one is not', () => {
   assert.match(instanceProblems({ ...good, boards: onlySystem }).join('\n'), /no board for players/);
 });
 
+test('a card\'s stack is a whole number, at least 1', () => {
+  const card = (stack: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', stack, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  assert.deepEqual(instanceProblems(card(3)), []);
+  assert.deepEqual(instanceProblems(card(undefined)), []);
+  for (const bad of [0, 1.5, '3', -1]) assert.match(instanceProblems(card(bad)).join('\n'), /card "splat" stacks .*; a stack is a whole number, at least 1/, String(bad));
+});
+
 test('two reactions with one key are a problem', () => {
   const bad = { ...good, reactions: [...good.reactions, { key: 'fire', emoji: '🌶️', quadrant: 'excitedPositive' as const }] };
   assert.match(instanceProblems(bad).join('\n'), /reaction key "fire" is used twice/);

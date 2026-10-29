@@ -54,9 +54,11 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   sql(`insert into wallets (account, balance) values ('${ann.account}', 300) on conflict (account) do update set balance = 300`);
   const bought = await runAction(asAnn, instance, { action: 'buyCard', card: 'whoops' });
   assert.equal(bought.status, 200, JSON.stringify(bought));
-  const played = await runAction(asAnn, instance, { action: 'playCard', card: 'whoops', character: ann.character, target: act.id, config: { color: 'Teal' } });
+  const played = await runAction(asAnn, instance, { action: 'playCard', card: 'whoops', character: ann.character, target: act.id, config: { color: 'Teal', seed: 1 }, message: ' Oops. ' });
   assert.equal(played.status, 200, JSON.stringify(played));
-  assert.deepEqual((played.body as { payload: unknown }).payload, { card: 'whoops', config: { color: 'teal' } });
+  const { seed, ...payload } = (played.body as { payload: { seed: unknown } }).payload;
+  assert.deepEqual(payload, { card: 'whoops', layer: 1, message: 'Oops.', config: { color: 'teal' } });
+  assert.ok(Number.isSafeInteger(seed) && (seed as number) >= 0 && (seed as number) < 2 ** 31, `the server's seed: ${seed}`);
   const k = (played.body as { id: string }).id;
   assert.equal(Number(sql(`select balance from wallets where account = '${ann.account}'`)), 200, 'a short post: the play costs nothing more');
   const caster = await runAction(asAnn, instance, { action: 'saveEffect', play: k, character: ann.character, state: { strokes: [] } });
@@ -71,7 +73,9 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   // may withdraw it until then.
   const turned = await runAction(asBob, instance, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'announced' });
   assert.equal(turned.status, 200, JSON.stringify(turned));
-  assert.deepEqual(turned.body, { pending: true, class: 'jabroni', loudness: 'announced' });
+  const { takes_effect_at: when, ...waiting } = turned.body as { takes_effect_at: string | null };
+  assert.deepEqual(waiting, { pending: true, class: 'jabroni', loudness: 'announced' });
+  assert.equal(when, sql(`select to_json(next_settlement_at())`).replace(/^"|"$/g, '') || null, 'it says when it takes effect, or that the first run decides');
   assert.deepEqual(turned.broadcasts, []);
   const withdrawn = await runAction(asBob, instance, { action: 'withdrawTurn', character: bob.character });
   assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn));

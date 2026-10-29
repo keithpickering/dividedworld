@@ -80,7 +80,8 @@ test('a card is bought at the Vending Machine\'s price, by the service, for the 
 
 test('a play names the card, the character, the post and the caster\'s configuration; its price waits on the post', () => {
   assert.deepEqual(decide({ action: 'playCard', card: 'splat', character: id, target: other, config: { color: 'red' } }, instance),
-    { ok: true, rpc: 'play_card', args: { card: 'splat', through: id, target: other, config: { color: 'red' } }, asService: true, needsTarget: true });
+    { ok: true, rpc: 'play_card', args: { card: 'splat', through: id, target: other, config: { color: 'red' }, message: '' }, asService: true, needsTarget: true });
+  assert.equal((decide({ action: 'playCard', card: 'splat', character: id, target: other, message: 'Take that.' }, instance) as unknown as { args: { message: unknown } }).args.message, 'Take that.', 'the caster\'s message travels to the card\'s rules');
   assert.match(refusal({ action: 'playCard', card: 'nothing', character: id, target: other }) ?? '', /^card:/);
   assert.match(refusal({ action: 'playCard', card: 'splat', character: id, target: 'x' }) ?? '', /^target:/);
 });

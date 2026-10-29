@@ -91,6 +91,9 @@ export function instanceProblems(instance: Instance): string[] {
   if (!instance.classes.length) out.push('the instance has no class');
   for (const k of duplicates(instance.classes, (c) => c.key)) out.push(`class key "${k}" is used twice`);
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
+  for (const c of instance.cards) {
+    if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
+  }
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
   const systems = instance.boards.filter((b) => b.system === true);
