@@ -42,7 +42,7 @@ export const testInstance: Instance = {
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
 };
 
-const ui = { quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, copy: { siteName: 'Test', siteTagline: 'test', shopName: 'Shop' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } } } as unknown as Kayfa['ui'];
+const ui = { classLooks: { face: { color: '#2e86de', description: 'The crowd favorite: earns from cheers.' }, heel: { color: '#c0392b', description: 'Earns heat: boos and tomatoes.' } }, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, copy: { siteName: 'Test', siteTagline: 'test', shopName: 'Shop' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } } } as unknown as Kayfa['ui'];
 
 export interface WorldOptions {
   /** The address the screen opens at (a path, a query, a fragment). */
