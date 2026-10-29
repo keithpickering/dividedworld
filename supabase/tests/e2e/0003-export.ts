@@ -63,9 +63,23 @@ test('an instance exported and imported into a fresh database is the same instan
   fresh.pathname = `/${name}`;
   psqlOn(server.toString(), `create database ${name};`);
   try {
+    // Each tool names the database it touches and refuses one a URL does not name.
+    const unnamed = new URL(from);
+    unnamed.pathname = '';
+    const nowhere = run('export-instance.mjs', ['--from', unnamed.toString(), '--to', path.join(dir, 'nowhere')]);
+    assert.notEqual(nowhere.status, 0);
+    assert.match(nowhere.stderr, /names no database/);
+    const steered = run('export-instance.mjs', ['--from', `${from}?host=elsewhere`, '--to', path.join(dir, 'nowhere')]);
+    assert.notEqual(steered.status, 0);
+    assert.match(steered.stderr, /host/);
+
     const exported = run('export-instance.mjs', ['--from', from, '--to', dir]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
     assert.match(exported.stdout, /exporting from localhost:\d+\/kayfabb_scratch/);
+    assert.match(exported.stdout, /the server says it is kayfabb_scratch\w+ on port \d+/);
+    assert.match(exported.stdout, /kayfabb_functions_url.*kayfabb_service_key/s, 'both Vault secrets are named as not exported');
+    const again = run('export-instance.mjs', ['--from', from, '--to', dir]);
+    assert.notEqual(again.status, 0, 'an export into a directory that is not empty');
     assert.doesNotMatch(exported.stdout + exported.stderr, /pg@|password/i, 'the export printed a secret');
 
     // The fresh instance: the shim and the migrations, nothing seeded.
@@ -89,10 +103,14 @@ test('an instance exported and imported into a fresh database is the same instan
       .map(([table, column]) => `${table}.${column}`).join(', ');
     assert.equal(behind, '', `identity columns behind their rows: ${behind}`);
 
+    // The jobs that run the instance are there: the reveal's from its migration, the
+    // settlement's from the imported settings.
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-reveal,kayfabb-settle');
+
     // And a second import onto what is no longer a fresh instance is refused, naming why.
-    const again = run('import-instance.mjs', ['--from', dir, '--to', fresh.toString()]);
-    assert.notEqual(again.status, 0);
-    assert.match(again.stderr, /not empty/);
+    const twice = run('import-instance.mjs', ['--from', dir, '--to', fresh.toString()]);
+    assert.notEqual(twice.status, 0);
+    assert.match(twice.stderr, /not empty/);
   } finally {
     psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
     fs.rmSync(dir, { recursive: true, force: true });

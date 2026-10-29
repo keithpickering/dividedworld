@@ -12,14 +12,21 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { FORMAT, NOT_EXPORTED, args, named, psql, tables } from './instance-files.mjs';
+import readline from 'node:readline';
+import { FORMAT, NOT_EXPORTED, answered, args, named, psql, tables } from './instance-files.mjs';
 
 const usage = 'usage: node tools/export-instance.mjs --from postgres://… --to <new directory>';
 
-function main() {
+const rowsIn = async (file) => {
+  let n = 0;
+  for await (const line of readline.createInterface({ input: fs.createReadStream(file, 'utf8'), crlfDelay: Infinity })) if (line) n++;
+  return n;
+};
+
+async function main() {
   const { from, to } = args(process.argv.slice(2), usage);
   if (fs.existsSync(to) && fs.readdirSync(to).length) throw new Error(`${to} is not empty; an export goes into a new directory`);
-  console.log(`exporting from ${named(from)}`);
+  console.log(`exporting from ${named(from)}; the server says it is ${answered(from)}`);
   fs.mkdirSync(to, { recursive: true, mode: 0o700 });
   const all = tables(from);
   const file = (t) => path.join(path.resolve(to), `${t.name}.jsonl`);
@@ -30,14 +37,13 @@ function main() {
     '\\o',
     'commit;',
   ].join('\n'));
+  // The tables were listed before the snapshot; a migration between the two is refused.
+  if (JSON.stringify(tables(from)) !== JSON.stringify(all)) throw new Error('the tables changed while they were exported; export again');
   const manifest = {
     format: FORMAT,
     exportedAt: new Date().toISOString(),
     from: named(from),
-    tables: all.map((t) => {
-      const text = fs.readFileSync(file(t), 'utf8');
-      return { name: t.name, file: path.basename(file(t)), columns: t.columns, rows: text ? text.split('\n').filter(Boolean).length : 0 };
-    }),
+    tables: await Promise.all(all.map(async (t) => ({ name: t.name, file: path.basename(file(t)), columns: t.columns, rows: await rowsIn(file(t)) }))),
     notExported: NOT_EXPORTED,
   };
   fs.writeFileSync(path.join(to, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
@@ -46,9 +52,7 @@ function main() {
   console.log(`wrote ${path.resolve(to)}`);
 }
 
-try {
-  main();
-} catch (e) {
+main().catch((e) => {
   console.error(String(e.stderr || e.message || e).trim());
   process.exit(1);
-}
+});

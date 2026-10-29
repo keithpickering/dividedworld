@@ -24,11 +24,28 @@ export function args(argv, usage) {
   return out;
 }
 
-/** Which database a URL names, as host:port/database, with no user or password in it. */
+/** The query parameters a URL may carry: none of them can send psql to another database. */
+const HARMLESS = new Set(['sslmode', 'sslrootcert', 'connect_timeout', 'application_name']);
+
+/**
+ * Which database a URL names, as host:port/database, with no user or password in it. A URL that
+ * names no database, or carries a parameter that could connect somewhere else than it says (a
+ * host, a database, a service), is refused, and so is a PG* variable that would fill a part the
+ * URL leaves out.
+ */
 export function named(url) {
   const u = new URL(url);
   if (!/^postgres(ql)?:$/.test(u.protocol)) throw new Error('the database is a postgres:// URL');
+  if (!u.hostname) throw new Error('the URL names no host');
+  if (u.pathname.length < 2) throw new Error('the URL names no database');
+  for (const key of u.searchParams.keys()) if (!HARMLESS.has(key)) throw new Error(`the URL's ${key} parameter could connect somewhere it does not say`);
+  for (const key of ['PGSERVICE', 'PGSERVICEFILE', 'PGHOSTADDR', 'PGOPTIONS']) if (process.env[key]) throw new Error(`${key} is set, and could connect somewhere the URL does not say`);
   return `${u.hostname}:${u.port || '5432'}${u.pathname}`;
+}
+
+/** The database as the server itself names it, once connected. */
+export function answered(url) {
+  return psql(url, `select format('%s on port %s', current_database(), coalesce(inet_server_port()::text, 'the local socket'))`);
 }
 
 /** Runs a script through psql and returns its unaligned output. */
@@ -59,6 +76,6 @@ export function tables(url) {
 }
 
 export const NOT_EXPORTED = [
-  'the schedule\'s service key in Vault: a secret, seeded again with the instance (supabase/functions/seed/)',
+  'the two Vault secrets the scheduled jobs call the Edge Functions with, kayfabb_functions_url and kayfabb_service_key: secrets, which the new project sets with vault.create_secret() as a deploy does (supabase/migrations/0004_schedule.sql); until then the settlement job runs and calls nothing',
   'Supabase Auth\'s sessions and refresh tokens: they end, and each player signs in once more',
 ];

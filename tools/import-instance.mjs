@@ -14,13 +14,15 @@
  * The rows go in one transaction, as a replica writes them (session_replication_role), so the
  * triggers that number an Act, cap a player's characters or check a card's words do not run
  * again over rows they already ran over; the append-only guards fire on updates and deletes,
- * and an import makes neither. Then each identity's next value is set past its rows.
+ * and an import makes neither. Then each identity's next value is set past its rows, and the
+ * settlement's job is scheduled from the imported settings, as the trigger the replica skipped
+ * would have scheduled it (supabase/migrations/0004_schedule.sql).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
-import { FORMAT, NOT_EXPORTED, args, named, psql, tables } from './instance-files.mjs';
+import { FORMAT, NOT_EXPORTED, answered, args, named, psql, tables } from './instance-files.mjs';
 
 const usage = 'usage: node tools/import-instance.mjs --from <export directory> --to postgres://…';
 
@@ -92,7 +94,10 @@ async function load(to, dir, order) {
       execute format('select max(%I) from %s', s.col, s.tbl) into most;
       if most is not null then perform setval(s.seq, most, true); end if;
     end loop;
-  end $$;\ncommit;\n`);
+  end $$;
+  set local session_replication_role = origin;
+  select schedule_settlement() where exists (select 1 from settings where key = 'settlementCron');
+  commit;\n`);
   child.stdin.end();
   const code = await done;
   if (code !== 0) throw new Error(stderr.trim() || `psql exited ${code}`);
@@ -101,7 +106,7 @@ async function load(to, dir, order) {
 async function main() {
   const { from, to } = args(process.argv.slice(2), usage);
   const manifest = JSON.parse(fs.readFileSync(path.join(from, 'manifest.json'), 'utf8'));
-  console.log(`importing into ${named(to)}, from the export of ${manifest.from} made ${manifest.exportedAt}`);
+  console.log(`importing into ${named(to)}; the server says it is ${answered(to)}; from the export of ${manifest.from} made ${manifest.exportedAt}`);
   check(to, manifest);
   await load(to, from, ordered(to, manifest));
   for (const t of manifest.tables) console.log(`  ${t.name}: ${t.rows} row(s)`);
