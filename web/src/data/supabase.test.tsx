@@ -102,7 +102,7 @@ describe('what the adapter may request', () => {
     const api = h.api;
     await Promise.allSettled([
       api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10),
-      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
+      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.standings(), api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
@@ -233,22 +233,6 @@ describe('reads and their rows', () => {
     const refused = harness(() => json({ message: 'no' }, 400));
     await expect(refused.api.standingPlace(B)).rejects.toThrow();
     expect(await harness(() => json({})).api.standingPlace('not-an-id')).toBeNull();
-  });
-
-  it('reads the standings of a roster through the place function, one call each and no more than a roster\'s worth', async () => {
-    const h = harness((r) => {
-      if (r.url.pathname.endsWith('/rpc/standing_place')) return (r.body as { of_character: string }).of_character === B ? json({ standing: 300, place: 2, of: 40 }) : json(null);
-      return rows([{ id: B, name: 'Bea' }]);
-    });
-    expect(await h.api.standingsOf([B, A])).toEqual([{ character: B, name: 'Bea', standing: 300, place: 2 }]);
-    expect(h.to('rpc/standing_place')).toHaveLength(2);
-    expect(h.to('season_standings')).toEqual([]);
-    const many = harness(() => json(null));
-    await many.api.standingsOf(Array.from({ length: 80 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`));
-    expect(many.to('rpc/standing_place').length).toBeLessThanOrEqual(20);
-    const none = harness(() => rows([]));
-    expect(await none.api.standingsOf([])).toEqual([]);
-    expect(none.rest()).toEqual([]);
   });
 
   it('reads a character\'s reveal posts from acts_public: kind reveal, naming the character, newest first, limited', async () => {

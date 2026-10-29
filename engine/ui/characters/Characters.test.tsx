@@ -54,6 +54,20 @@ describe('My characters', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Your characters (3 of 4)' })).toBeInTheDocument();
   });
 
+  test('the roster reads its standings in one read of the amounts, never a place per character', async () => {
+    const w = world();
+    const amounts = vi.spyOn(w.fake, 'standingAmounts');
+    const place = vi.spyOn(w.fake, 'standingPlace');
+    const ranking = vi.spyOn(w.fake, 'standings');
+    open(w);
+    await ready();
+    expect(await within(row('Mrs. Hooligan')).findByText('6.85')).toBeInTheDocument();
+    expect(amounts).toHaveBeenCalledTimes(1);
+    expect([...(amounts.mock.calls[0]?.[0] ?? [])].sort()).toEqual([w.pipe, w.hoolie].sort());
+    expect(place).not.toHaveBeenCalled();
+    expect(ranking).not.toHaveBeenCalled();
+  });
+
   test('no link or navigation on the page puts a character in the address: Edit profile carries it in history.state', async () => {
     const w = world();
     open(w);
@@ -92,7 +106,7 @@ describe('My characters', () => {
     /* Absent from every public read. */
     expect(await w.fake.characters([w.waiting])).toEqual([]);
     expect((await w.fake.standings()).map((s) => s.character)).not.toContain(w.waiting);
-    expect(await w.fake.standingsOf([w.waiting])).toEqual([]);
+    expect(await w.fake.standingPlace(w.waiting)).toBeNull();
     expect(await w.fake.characterCounts(w.waiting)).toEqual({ posts: 0, spins: 0, cards: 0 });
     const board = (await w.fake.boards()).find((b) => b.slug === 'general')!;
     expect((await w.fake.threads(board.id, { offset: 0, limit: 20 })).threads.flatMap((t) => [t.firstCharacter, t.lastCharacter])).not.toContain(w.waiting);

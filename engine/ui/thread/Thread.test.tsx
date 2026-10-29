@@ -188,7 +188,7 @@ describe('pages and permalinks', () => {
     const w = world(3);
     const list = vi.spyOn(w.fake, 'boards');
     const one = vi.spyOn(w.fake, 'board');
-    const ranked = vi.spyOn(w.fake, 'standingsOf');
+    const ranked = vi.spyOn(w.fake, 'standingsPage');
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     expect(one).toHaveBeenCalledTimes(1);

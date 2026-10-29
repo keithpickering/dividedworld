@@ -21,7 +21,7 @@
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { sameName } from '../../rules/names.ts';
-import { LOST_ANSWER, SPUN_FROM_MAX, STANDINGS_OF_MAX } from './api.ts';
+import { LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Board, BoardListener, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness,
   DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
@@ -632,10 +632,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     standingPlace(id) {
       const s = core.standings().find((x) => x.character === id);
       return s ? { standing: s.standing, place: s.place, of: [...characters.values()].filter((c) => c.debutedAt !== null).length } : null;
-    },
-    standingsOf(ids) {
-      const wanted = new Set(ids.slice(0, STANDINGS_OF_MAX));
-      return core.standings().filter((s) => wanted.has(s.character));
     },
     standings() {
       const listed = [...characters.values()].filter((c) => c.debutedAt !== null).map((c) => ({ character: c.id, name: c.name, standing: standingOf.get(c.id) ?? 0 }));

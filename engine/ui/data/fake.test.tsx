@@ -764,17 +764,6 @@ describe('counts for a page of postbits', () => {
   });
 });
 
-describe('the standings of a few', () => {
-  test('standingsOf is the same ranking, for those characters only', async () => {
-    const { fake, ana, anaFace, anaHeel, boFace } = world();
-    const waiting = fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
-    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500 }, debut: false });
-    const all = await fake.standings();
-    expect(await fake.standingsOf([anaHeel, boFace, waiting])).toEqual(all.filter((s) => s.character === anaHeel || s.character === boFace));
-    expect((await fake.standingsOf([anaHeel])).map((s) => [s.name, s.place])).toEqual([['Ana Heel', 2]]);
-    expect(await fake.standingsOf([])).toEqual([]);
-  });
-});
 
 describe('a place and a standing, read for one character or a page of them', () => {
   test('standingAmounts is each asked character\'s standing: 0 for one with nothing settled, and for one that is not a character', async () => {

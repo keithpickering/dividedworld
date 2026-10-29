@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
-import type { Character, Id, MyCharacter, Standing } from '../data/api.ts';
+import type { Character, Id, MyCharacter } from '../data/api.ts';
 import { Mini, SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
@@ -33,7 +33,7 @@ export function Characters() {
   const player = usePlayer();
   const signedIn = useSignedIn(api);
   const [faces, setFaces] = useState<ReadonlyMap<Id, Character>>(new Map());
-  const [standings, setStandings] = useState<ReadonlyMap<Id, Standing>>(new Map());
+  const [standings, setStandings] = useState<Readonly<Record<Id, number>>>({});
   const [next, setNext] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [flash, setFlash] = useState('');
@@ -53,12 +53,12 @@ export function Characters() {
     void (async () => {
       const [people, stood, at] = await Promise.all([
         debutedIds.length ? api.characters(debutedIds) : [],
-        debutedIds.length ? api.standingsOf(debutedIds) : [],
+        debutedIds.length ? api.standingAmounts(debutedIds) : {},
         api.nextSettlementAt(),
       ]);
       if (!live) return;
       setFaces(new Map(people.map((c) => [c.id, c])));
-      setStandings(new Map(stood.map((s) => [s.character, s])));
+      setStandings(stood);
       setNext(at);
     })().catch(() => { if (live) setFailed(true); });
     return () => { live = false; };
@@ -134,14 +134,14 @@ export function Characters() {
 
   const standingCell = (c: MyCharacter) => {
     if (c.debutedAt === null) return <span className="kb-muted kb-small">Not in the season yet.</span>;
-    const s = standings.get(c.id);
-    if (!s) return <span className="kb-muted kb-small">No standing yet.</span>;
-    const index = rankIndex(instance.ranks, s.standing);
+    const standing = standings[c.id];
+    if (standing === undefined) return <span className="kb-muted kb-small">No standing yet.</span>;
+    const index = rankIndex(instance.ranks, standing);
     const rank = instance.ranks[index];
     const face = faces.get(c.id);
     return (
       <>
-        <span className="kb-num">{figure(s.standing)}</span>
+        <span className="kb-num">{figure(standing)}</span>
         {rank && <Pips ranks={instance.ranks.length} index={index} name={rank.name} style={ui.pips?.[face?.pipStyle ?? 'default'] ?? ui.pips?.default} />}
         {rank && <span className="kb-small kb-muted"> {rank.name}</span>}
       </>

@@ -29,7 +29,7 @@
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { LOST_ANSWER, SPUN_FROM_MAX, STANDINGS_OF_MAX } from '../../../engine/ui/data/api.ts';
+import { LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Board, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
   Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
@@ -603,18 +603,6 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!idOk(id)) return null;
       const v = (await read(() => client.rpc('standing_place', { of_character: id }))).data;
       return v && typeof v === 'object' && !Array.isArray(v) ? { standing: num((v as Row)['standing']), place: num((v as Row)['place']), of: num((v as Row)['of']) } : null;
-    },
-    async standingsOf(ids) {
-      const wanted = [...new Set(ids)].filter(idOk).slice(0, STANDINGS_OF_MAX);
-      if (wanted.length === 0) return [];
-      const [places, names] = await Promise.all([
-        Promise.all(wanted.map((id) => api.standingPlace(id))),
-        list(() => client.from('characters_public').select('id,name').in('id', wanted)),
-      ]);
-      const name = new Map(names.map((n) => [n['id'] as string, n['name'] as string]));
-      return wanted
-        .flatMap((id, i): Standing[] => (places[i] ? [{ character: id, name: name.get(id) ?? '', standing: places[i]!.standing, place: places[i]!.place }] : []))
-        .sort((x, y) => x.place - y.place || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
     },
     async standingsCount() {
       return num((await list(() => client.from('season_size').select('characters').limit(1)))[0]?.['characters']);

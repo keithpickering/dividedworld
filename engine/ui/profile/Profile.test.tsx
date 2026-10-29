@@ -199,7 +199,7 @@ describe('past seasons, announced Turns and the size of the season', () => {
     const rv = vi.spyOn(fake, 'characterReveals');
     const place = vi.spyOn(fake, 'standingPlace');
     const latest = vi.spyOn(fake, 'characterActs');
-    const ranked = vi.spyOn(fake, 'standingsOf');
+    const ranked = vi.spyOn(fake, 'standingsPage');
     const size = vi.spyOn(fake, 'standingsCount');
     open(w.pipe, fake);
     await screen.findByRole('link', { name: 'Announced a Turn' });

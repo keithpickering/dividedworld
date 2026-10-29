@@ -169,9 +169,6 @@ export interface StandingPlace {
   readonly of: number;
 }
 
-/** The most characters `standingsOf` is asked about: a roster's worth, since each is a place read of its own. */
-export const STANDINGS_OF_MAX = 20;
-
 export interface Season {
   readonly id: number;
   readonly number: number;
@@ -414,11 +411,6 @@ export interface KayfaApi {
    * the profile's "Place 7 of 40", computed on the server by counting index ranges (never by ranking the season) and a counter.
    */
   standingPlace(id: Id): Promise<StandingPlace | null>;
-  /**
-   * The standings of a handful of characters (a player's own roster; at most `STANDINGS_OF_MAX`, the rest left out), with the
-   * places, one `standingPlace` each. A page of postbits asks `standingAmounts`, never this.
-   */
-  standingsOf(ids: readonly Id[]): Promise<readonly Standing[]>;
   /** How many characters have debuted, as the standings list them: a counter's one row, never a count of the standings. */
   standingsCount(): Promise<number>;
   /** When the season's standings were last settled: the latest settlement's end. */
