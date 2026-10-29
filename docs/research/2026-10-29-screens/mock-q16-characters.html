@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q16 Characters and Turns</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:24px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  .label { font:bold 11px "Courier New", monospace; margin:10px 0 4px; }
+  a { color:var(--fg); }
+  table.t { width:100%; border-collapse:collapse; }
+  .t th { font:bold 11px "Courier New", monospace; text-align:left; border:1px solid var(--fg); padding:3px 1%; }
+  .t td { border:1px solid var(--fg); padding:5px 1%; vertical-align:middle; }
+  .ava { width:32px; height:32px; border:1px solid var(--fg); display:inline-block; text-align:center; line-height:32px; font-size:8px; vertical-align:middle; }
+  .name { font:bold 12px "Courier New", monospace; }
+  .private { font:bold 10px "Courier New", monospace; border:1px dashed var(--fg); padding:0 4px; }
+  button { font:11px Verdana; background:var(--bg); color:var(--fg); border:1px solid var(--fg); padding:2px 8px; }
+  button.main { font-weight:bold; border-width:2px; }
+  button[disabled] { opacity:.5; }
+  .small { font-size:10px; } .muted { color:var(--mute); }
+  .pips b { color:#f1c40f; text-shadow:0 0 1px #000; }
+  .scrim { background:rgba(0,0,0,.45); padding:24px 4%; }
+  .modal { background:var(--bg); color:var(--fg); border:3px double var(--fg); max-width:560px; margin:0 auto; }
+  .modal .h { font:bold 12px "Courier New", monospace; background:var(--fg); color:var(--bg); padding:4px 3%; display:flex; justify-content:space-between; }
+  .modal .b { padding:8px 3%; }
+  .classes { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:6px; }
+  .cls { border:1px solid var(--fg); padding:6px; display:flex; gap:6px; }
+  .cls.on { border-width:3px; }
+  .cls b { font:bold 12px "Courier New", monospace; }
+  fieldset { border:1px solid var(--fg); margin:8px 0; padding:6px 8px; }
+  legend { font:bold 11px "Courier New", monospace; padding:0 4px; }
+  .opt { display:flex; gap:6px; margin:4px 0; align-items:flex-start; }
+  .preview { border:1px solid var(--fg); padding:6px; margin-top:4px; font-size:11px; }
+  .preview .sys { font:bold 11px "Courier New", monospace; }
+  .foot { display:flex; justify-content:flex-end; gap:8px; padding:6px 3% 8px; border-top:1px solid var(--fg); }
+</style>
+</head>
+<body>
+<h1>Q16. Your characters, and the Turn</h1>
+<p class="note">"My characters" is out of character and seen only by you: everything here is written plainly. Classes show only here (dashed box = private).</p>
+
+<div class="label">My characters (3 of 6)</div>
+<table class="t">
+  <tr><th style="width:34%">Character</th><th>Class <span class="private">only you</span></th><th>This season</th><th>Turn</th><th></th></tr>
+  <tr><td><span class="ava">ava</span> <span class="name">Pipewrench</span><br><span class="small muted">Professional Wrench &middot; joined Oct 2026</span></td><td>Face since Oct 3</td><td>14.20 &middot; <span class="pips"><b>&#9733;&#9733;&#9733;&#9733;</b></span></td><td><button class="main">Turn&hellip;</button></td><td><a href="#">Edit profile</a></td></tr>
+  <tr><td><span class="ava">ava</span> <span class="name">Mrs. Hooligan</span><br><span class="small muted">joined Oct 2026</span></td><td>Jabroni since Oct 12</td><td>6.85 &middot; <span class="pips"><b>&#9733;&#9733;</b></span></td><td><button disabled>Turn</button><br><span class="small">Available Nov 11 (in 13 days)</span></td><td><a href="#">Edit profile</a></td></tr>
+  <tr><td><span class="ava">ava</span> <span class="name">Spritey</span><br><span class="small muted">joined Oct 2026</span></td><td>Lurker since Oct 20</td><td>2.10 &middot; <span class="pips"><b>&#9733;</b></span></td><td><button disabled>Turn</button><br><span class="small">Available Nov 19</span></td><td><a href="#">Edit profile</a></td></tr>
+</table>
+<p><button>New character</button> <span class="small muted">You have 3 open slots.</span></p>
+
+<h2>The Turn (a modal)</h2>
+<div class="scrim"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="th">
+  <div class="h"><span id="th">TURN PIPEWRENCH</span><span>&times;</span></div>
+  <div class="b">
+    <p class="small" style="margin-top:0">Pipewrench is a <b>Face</b> (since Oct 3). After a Turn, Pipewrench can Turn again in 30 days. The season reveal will show every Turn, silent ones included.</p>
+    <div class="label" style="margin-top:0">Turn to</div>
+    <div class="classes">
+      <label class="cls on"><input type="radio" name="c" checked><span><b>Heel</b><br><span class="small">Earns from heat: angry, excited reactions. A Salty card that outdraws its target pays. Polite shrugs hurt.</span></span></label>
+      <label class="cls"><input type="radio" name="c"><span><b>Lurker</b><br><span class="small">Earns by reacting early in the direction a post ends up, and from threads it spins that draw replies. Posting more than three times a day hurts.</span></span></label>
+      <label class="cls"><input type="radio" name="c"><span><b>Jabroni</b><br><span class="small">Earns from the groan: bored, eye-rolling reactions, and from Salty cards landing on its posts. Being taken sincerely hurts.</span></span></label>
+    </div>
+    <fieldset><legend>How loud</legend>
+      <label class="opt"><input type="radio" name="l"><span><b>Silent.</b> Nobody is told. Until the season reveal, only you know.</span></label>
+      <label class="opt"><input type="radio" name="l" checked><span><b>Announced.</b> The System posts that Pipewrench has Turned, never to what.</span></label>
+      <label class="opt"><input type="radio" name="l"><span><b>Announced, with the old class.</b> The System also reveals what Pipewrench was.</span></label>
+    </fieldset>
+    <div class="label">What everyone will see</div>
+    <div class="preview"><span class="sys">THE SYSTEM</span> in The System &middot; just now<br>Pipewrench has Turned.</div>
+  </div>
+  <div class="foot"><button>Cancel</button><button class="main">Turn Pipewrench</button></div>
+</div></div>
+</body>
+</html>

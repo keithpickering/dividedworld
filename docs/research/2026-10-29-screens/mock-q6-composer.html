@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q6 The Composer</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:26px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .desk { flex:1 1 600px; min-width:0; }
+  .phone { flex:0 0 340px; max-width:100%; }
+  .label { font:bold 11px "Courier New", monospace; margin-bottom:4px; }
+  .box { border:1px solid var(--fg); }
+  .box .t { font:bold 11px "Courier New", monospace; border-bottom:1px solid var(--fg); padding:4px 2%; display:flex; justify-content:space-between; align-items:center; gap:2%; flex-wrap:wrap; }
+  .tools { border-bottom:1px solid var(--fg); padding:3px 2%; display:flex; gap:4px; flex-wrap:wrap; }
+  .tools button { font:bold 11px "Courier New", monospace; background:var(--bg); color:var(--fg); border:1px solid var(--fg); padding:1px 6px; min-width:24px; }
+  textarea { display:block; box-sizing:border-box; width:100%; height:110px; border:0; padding:6px 2%; font:12px Verdana; background:var(--bg); color:var(--fg); resize:vertical; }
+  .foot { border-top:1px solid var(--fg); padding:4px 2%; display:flex; gap:8px; justify-content:flex-end; align-items:center; }
+  .foot button { font:11px Verdana; background:var(--bg); color:var(--fg); border:1px solid var(--fg); padding:2px 10px; }
+  .foot button.main { font-weight:bold; border-width:2px; }
+  .as { font:bold 12px "Courier New", monospace; }
+  .warn { font-size:10px; border:1px dashed var(--fg); padding:2px 6px; }
+  .muted { color:var(--mute); }
+  .small { font-size:10px; }
+  .hud { border-top:2px solid var(--fg); padding:5px 2%; display:flex; gap:3%; align-items:center; font-size:11px; }
+  .ava { width:22px; height:22px; border:1px solid var(--fg); text-align:center; line-height:22px; font-size:8px; }
+  .page { border:1px solid var(--fg); }
+  .page .crumb { padding:6px 2%; font-size:11px; border-bottom:1px solid var(--fg); }
+  .prev { border:1px solid var(--fg); margin:8px 2%; padding:6px 2%; }
+  .prev .h { font:bold 10px "Courier New", monospace; border-bottom:1px solid var(--fg); margin-bottom:4px; }
+  blockquote { margin:4px 0; border:1px solid var(--fg); padding:4px 8px; font-size:11px; }
+  blockquote .w { font:bold 10px "Courier New", monospace; }
+</style>
+</head>
+<body>
+<h1>Q6. The composer: writing, quoting, editing</h1>
+<p class="note">In every option: you post as the character in your HUD, and the composer names it in bold. If you change character in the HUD while a draft is open, the composer says so ("now posting as Mrs. Hooligan") before you can send, since posting as the wrong mask is the one mistake that unmasks you. Quote puts <code>[quote=#15]</code> in the box (the whole post, by its Act); the text is BBCode, with a toolbar for those who never learned it.</p>
+
+<h2>A. Quick reply at the foot of every thread, with a preview (recommended)</h2>
+<p class="note">vBulletin's quick reply: always there, no page change. Preview renders the BBCode in place, exactly as the post will look. Quote on any post appends the quote and moves focus to the box. On a phone the box sits at the end of the thread, above the HUD, and grows as you type.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop</div>
+  <div class="box"><div class="t"><span>Reply as <span class="as">Pipewrench</span></span><span class="small muted">BBCode</span></div>
+    <div class="tools"><button>B</button><button><i>I</i></button><button><u>U</u></button><button><s>S</s></button><button>Color</button><button>Size</button><button>URL</button><button>IMG</button><button>Quote</button><button>Code</button><button>List</button></div>
+    <textarea aria-label="Reply as Pipewrench">[quote=#15]Hot take: the Situation Room should be renamed the Sitcom Room.[/quote]
+Respectfully, [b]no[/b].</textarea>
+    <div class="foot"><button>Preview</button><button class="main">Post reply</button></div></div>
+  <div class="prev"><div class="h">PREVIEW</div><blockquote><span class="w">Mrs. Hooligan wrote (#15):</span><br>Hot take: the Situation Room should be renamed the Sitcom Room.</blockquote>Respectfully, <b>no</b>.</div>
+  </div>
+  <div class="phone"><div class="label">Phone, after switching character mid-draft</div>
+  <div class="page"><div class="box" style="border:0"><div class="t"><span>Reply as <span class="as">Mrs. Hooligan</span></span><span class="warn">now posting as Mrs. Hooligan</span></div>
+    <div class="tools"><button>B</button><button><i>I</i></button><button>URL</button><button>Quote</button><button>&hellip;</button></div>
+    <textarea aria-label="Reply as Mrs. Hooligan">Respectfully, [b]no[/b].</textarea>
+    <div class="foot"><button>Preview</button><button class="main">Post</button></div></div>
+    <div class="hud"><span class="ava">ava</span><b>Mrs. Hooligan &#9662;</b><span class="muted">orbs</span></div></div></div>
+</div>
+
+<h2>B. A separate "Post Reply" page</h2>
+<p class="note">phpBB2's full page: the thread's last few posts below for reference, the toolbar, smilies, preview. The most 2003, and roomy on a phone, but every reply leaves the thread, and live updates on the thread are out of sight while you write.</p>
+<div class="row"><div class="desk"><div class="label">Desktop</div>
+  <div class="page"><div class="crumb"><b>Divided World</b> &raquo; General Chaos &raquo; Sitcom Room discourse &raquo; <b>Post a reply</b></div>
+  <div class="box" style="margin:8px 2%"><div class="t"><span>Reply as <span class="as">Pipewrench</span></span></div>
+    <div class="tools"><button>B</button><button><i>I</i></button><button><u>U</u></button><button>Color</button><button>URL</button><button>IMG</button><button>Quote</button><button>Code</button></div>
+    <textarea aria-label="Reply"></textarea><div class="foot"><button>Preview</button><button class="main">Submit</button></div></div>
+  <div class="small muted" style="padding:0 2% 8px">Topic review: the last 5 posts, newest first&hellip;</div></div></div></div>
+
+<h2>C. Both</h2>
+<p class="note">Quick reply in the thread, and a "Go advanced" link to the full page for long posts. Two composers to build and keep alike, for a case A's resizable box already covers.</p>
+</body>
+</html>

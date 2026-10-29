@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q16b Avatars</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:24px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  .label { font:bold 11px "Courier New", monospace; margin:10px 0 4px; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .small { font-size:10px; } .muted { color:var(--mute); }
+  .name { font:bold 13px "Courier New", monospace; }
+  .pips b { color:#f1c40f; text-shadow:0 0 1px #000; }
+  .art { background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 200'><rect width='100' height='200' fill='%2387ceeb'/><rect y='150' width='100' height='50' fill='%2350a050'/><circle cx='50' cy='52' r='22' fill='%23f2c08f'/><rect x='30' y='26' width='40' height='12' fill='%23633'/><rect x='28' y='76' width='44' height='60' fill='%23c0392b'/><rect x='34' y='136' width='12' height='40' fill='%23345'/><rect x='54' y='136' width='12' height='40' fill='%23345'/><rect x='66' y='84' width='26' height='8' fill='%23999'/><rect x='86' y='76' width='8' height='24' fill='%23999'/><circle cx='42' cy='50' r='3'/><circle cx='58' cy='50' r='3'/></svg>") center/cover; }
+  .crop { position:relative; width:150px; height:300px; border:1px solid var(--fg); }
+  .crop .sq { position:absolute; left:0; top:4%; width:100%; height:50%; outline:3px dashed #f1c40f; outline-offset:-3px; }
+  .crop .tall { position:absolute; inset:0; outline:3px solid #3498db; outline-offset:-3px; }
+  .legend span { display:inline-block; margin-right:12px; }
+  .post { width:100%; border-collapse:collapse; border:1px solid var(--fg); }
+  .post td { border:1px solid var(--fg); vertical-align:top; padding:6px 1.5%; }
+  .meta { font-size:10px; display:flex; justify-content:space-between; }
+  .bit { width:20%; }
+  .tallava { width:100%; max-width:120px; aspect-ratio:1/2; display:block; margin:4px 0; border:1px solid var(--fg); }
+  .sqava { width:48px; height:48px; border:1px solid var(--fg); display:inline-block; vertical-align:middle; }
+  .stackhead { display:flex; gap:10px; align-items:center; border-bottom:1px solid var(--fg); padding:6px 1.5%; }
+  .list { border-collapse:collapse; width:100%; }
+  .list td, .list th { border:1px solid var(--fg); padding:4px 1%; text-align:left; }
+  .list th { font:bold 11px "Courier New", monospace; }
+  .mini { width:20px; height:20px; border:1px solid var(--fg); display:inline-block; vertical-align:middle; margin-right:4px; }
+  .setting { border:1px dashed var(--fg); padding:6px 10px; display:inline-block; }
+</style>
+</head>
+<body>
+<h1>Q16b. Avatars: one upload, two crops</h1>
+<p class="note">You upload once; the server re-encodes it (metadata stripped) and keeps your two crop frames, so you can recrop later without uploading again.</p>
+
+<div class="row">
+  <div><div class="label">The cropper</div>
+    <div class="crop art"><div class="tall"></div><div class="sq"></div></div>
+    <div class="small legend" style="margin-top:4px"><span><b style="color:#3498db">&#9632;</b> portrait, up to 1:2</span><span><b style="color:#d4ac0d">&#9632;</b> square, 1:1</span></div>
+    <p class="small muted" style="max-width:150px">Drag each frame; the square defaults to the top of the portrait, where a face usually is.</p></div>
+  <div style="flex:1 1 380px"><div class="label">The square, in lists (thread list, index, "last post by")</div>
+    <table class="list"><tr><th>Thread</th><th>Started by</th><th>Last post</th></tr>
+    <tr><td><b><u>The Crimson Incident</u></b></td><td><span class="mini art" style="background-position:center 8%;background-size:100% 200%"></span>Pipewrench</td><td><span class="mini art" style="background-position:center 8%;background-size:100% 200%"></span>Pipewrench, 2 min ago</td></tr></table>
+    <div class="label" style="margin-top:14px">Reader setting (Settings &raquo; Display)</div>
+    <div class="setting">Posts show <label><input type="radio" name="s" checked> side by side, tall avatars</label> <label><input type="radio" name="s"> stacked, square avatars</label><br><span class="small muted">On a phone, posts are always stacked with square avatars.</span></div>
+  </div>
+</div>
+
+<h2>A. Side by side, tall avatar (desktop)</h2>
+<table class="post"><tr><td colspan="2"><div class="meta"><span>Posted Oct 29, 2026 9:14 am</span><span>#22</span></div></td></tr>
+<tr><td class="bit"><span class="name">Pipewrench</span><br><span class="small muted">Professional Wrench</span><span class="tallava art"></span><span class="small"><b>Main Eventer</b></span><br><span class="pips"><b>&#9733;&#9733;&#9733;&#9733;</b></span><br><span class="small muted">Posts: 212<br>Joined Oct 2026</span></td>
+<td>I have brought my own wrench to this discussion and I intend to use it.</td></tr></table>
+
+<h2>B. Stacked, square avatar (desktop, and always on a phone)</h2>
+<div style="border:1px solid var(--fg)">
+  <div class="stackhead"><span class="sqava art" style="background-position:center 8%;background-size:100% 200%"></span><div><span class="name">Pipewrench</span> <span class="small muted">Professional Wrench</span><br><span class="small"><b>Main Eventer</b> <span class="pips"><b>&#9733;&#9733;&#9733;&#9733;</b></span> &middot; 212 posts</span></div><span class="small muted" style="margin-left:auto;text-align:right">Oct 29, 9:14 am<br>#22</span></div>
+  <div style="padding:8px 1.5%">I have brought my own wrench to this discussion and I intend to use it.</div>
+</div>
+</body>
+</html>

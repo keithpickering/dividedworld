@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q12 Vending Machine</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:26px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .desk { flex:1 1 560px; min-width:0; }
+  .phone { flex:0 0 340px; max-width:100%; }
+  .label { font:bold 11px "Courier New", monospace; margin-bottom:4px; }
+  .small { font-size:10px; } .muted { color:var(--mute); }
+  /* the machine: a game piece, so it gets color */
+  .vm { width:min(420px, 100%); margin:0 auto; background:linear-gradient(#c0392b,#962d22); border:3px solid #000; border-radius:10px 10px 4px 4px; padding:3% 4% 4%; color:#fff; box-shadow:inset 0 0 0 3px #e74c3c; }
+  .vm .brand { font:bold 20px "Courier New", monospace; text-align:center; letter-spacing:2px; text-shadow:2px 2px 0 #000; margin-bottom:3%; }
+  .vm .body { display:flex; gap:4%; }
+  .glass { flex:1 1 70%; background:linear-gradient(135deg,#d6eaf8 0%,#aed6f1 40%,#ebf5fb 45%,#aed6f1 50%,#85c1e9 100%); border:3px solid #000; border-radius:4px; padding:4%; display:grid; grid-template-columns:1fr 1fr; gap:6%; }
+  .slot { background:#fff; border:2px solid #000; border-radius:3px; color:#000; text-align:center; padding:6% 4%; font-size:10px; cursor:pointer; }
+  .slot .art { height:56px; border:1px solid #000; margin-bottom:4px; display:flex; align-items:center; justify-content:center; font:bold 11px "Courier New", monospace; }
+  .slot .art.sweet { background:repeating-linear-gradient(45deg,#f9e79f 0 6px,#fdebd0 6px 12px); }
+  .slot .art.salty { background:radial-gradient(circle at 40% 40%,#e74c3c 0 30%,transparent 31%),radial-gradient(circle at 70% 65%,#e74c3c 0 12%,transparent 13%),#fdedec; }
+  .slot .code { font:bold 11px "Courier New", monospace; }
+  .slot .price { display:inline-block; background:#000; color:#fff; font:bold 11px "Courier New", monospace; padding:0 6px; margin-top:3px; }
+  .slot.empty { opacity:.35; cursor:default; }
+  .panel { flex:0 0 26%; display:flex; flex-direction:column; gap:6%; align-items:stretch; }
+  .lcd { background:#1e3d1e; color:#7dff7d; font:bold 12px "Courier New", monospace; border:2px solid #000; padding:6%; text-align:center; min-height:44px; }
+  .coin { background:#222; border:2px solid #000; border-radius:4px; height:44px; display:flex; align-items:center; justify-content:center; }
+  .coin i { display:block; width:6px; height:60%; background:#000; border:1px solid #777; border-radius:3px; }
+  .tray { margin-top:4%; height:36px; background:#111; border:3px solid #000; border-radius:3px; display:flex; align-items:center; justify-content:center; font:bold 10px "Courier New", monospace; color:#aaa; }
+  table.shop { width:100%; border-collapse:collapse; }
+  .shop th { font:bold 11px "Courier New", monospace; text-align:left; border:1px solid var(--fg); padding:3px 1%; }
+  .shop td { border:1px solid var(--fg); padding:4px 1%; vertical-align:top; }
+  .shop button, .hud button { font:11px Verdana; background:var(--bg); color:var(--fg); border:1px solid var(--fg); padding:1px 8px; }
+  .hud { border:1px solid var(--fg); border-top:2px solid var(--fg); padding:6px 2%; display:flex; align-items:center; gap:3%; flex-wrap:wrap; }
+  .ava { width:26px; height:26px; border:1px solid var(--fg); text-align:center; line-height:26px; font-size:8px; }
+  .orb { display:inline-block; width:16px; height:16px; border-radius:50%; border:1px solid var(--fg); vertical-align:middle; margin-right:2px; }
+  .hand { display:inline-flex; align-items:center; gap:4px; font:bold 11px "Courier New", monospace; border:1px solid var(--fg); padding:1px 6px; background:var(--bg); color:var(--fg); }
+  .mini { display:inline-block; width:12px; height:16px; border:1px solid #000; vertical-align:middle; margin-left:-6px; }
+  .drawer { border:1px solid var(--fg); border-bottom:0; padding:6px 2%; display:flex; gap:3%; flex-wrap:wrap; }
+  .pc { width:30%; min-width:90px; border:2px solid #000; border-radius:3px; background:#fff; color:#000; font-size:10px; text-align:center; padding:4px; }
+  .pc .art { height:40px; border:1px solid #000; margin-bottom:3px; display:flex; align-items:center; justify-content:center; font:bold 10px "Courier New", monospace; }
+</style>
+</head>
+<body>
+<h1>Q12. The Vending Machine, and your hand in the HUD</h1>
+<p class="note">Buying is private: nobody sees what you bought or hold; only a play is a public Act. A card is bought with solid (settled) orbs only. Your hand is the player's, shared by all your characters, as the core-loop design set.</p>
+
+<h2>A. A drawn machine (recommended)</h2>
+<p class="note">The page is a vending machine: a game piece, so it is in color, like the orbs. Each slot is a real button ("Buy Stick Around, 1.00 orb"); pressing it shows the price on the little display, takes the orbs from your HUD (the cascade runs backwards), and drops the card into the tray, from where it flies into your hand. With reduced motion the card simply appears in the hand. Sizes are percentages of the machine, which is a percentage of the screen.</p>
+<div class="row">
+  <div class="desk"><div class="label">Desktop and phone (the machine scales)</div>
+  <div class="vm" role="region" aria-label="Vending Machine">
+    <div class="brand">VEND-O-MATIC</div>
+    <div class="body">
+      <div class="glass">
+        <button class="slot" aria-label="Buy Stick Around, Sweet, 1.00 orb"><div class="art sweet">STICK<br>AROUND</div><span class="code">A1</span> Sweet<br><span class="price">1.00</span></button>
+        <button class="slot" aria-label="Buy Whoops!, Salty, 1.00 orb plus a surcharge on long posts"><div class="art salty">WHOOPS!</div><span class="code">A2</span> Salty<br><span class="price">1.00+</span></button>
+        <div class="slot empty" aria-hidden="true"><div class="art"></div><span class="code">B1</span><br>&nbsp;</div>
+        <div class="slot empty" aria-hidden="true"><div class="art"></div><span class="code">B2</span><br>&nbsp;</div>
+      </div>
+      <div class="panel"><div class="lcd">A2<br>1.00</div><div class="coin" title="Pays from your orbs"><i></i></div><div class="small" style="text-align:center">orbs only</div></div>
+    </div>
+    <div class="tray">PUSH</div>
+  </div>
+  <p class="small muted" style="text-align:center">Empty slots wait for future cards. "1.00+" says Whoops! costs more to play on a long post; the card's description says how much.</p>
+  </div>
+  <div class="phone"><div class="label">The HUD with a hand, drawer open</div>
+    <div class="drawer"><div class="pc"><div class="art" style="background:repeating-linear-gradient(45deg,#f9e79f 0 6px,#fdebd0 6px 12px)">STICK<br>AROUND</div>&times;1</div><div class="pc"><div class="art" style="background:#fdedec">WHOOPS!</div>&times;2</div></div>
+    <div class="hud"><span class="ava">ava</span><b>Pipewrench &#9662;</b>
+      <span><span class="orb" style="background:#9b59b6"></span><span class="orb" style="background:#3498db"></span><span class="orb" style="background:conic-gradient(#2ecc71 40%,transparent 0)"></span><span class="orb"></span><span class="orb"></span><span class="orb"></span></span>
+      <button class="hand" aria-expanded="true" aria-label="Hand: 3 cards">&#127183; 3</button></div>
+    <p class="small muted">The hand button shows how many cards you hold; it opens a drawer above the HUD. A card in the drawer is played by choosing a post (next question).</p></div>
+</div>
+
+<h2>B. A 2003 shop table</h2>
+<p class="note">The same purchases as a plain table, in the house style. The HUD gets the same hand button. Easiest to build and to scan; loses the toy.</p>
+<div class="row"><div class="desk">
+  <table class="shop"><tr><th>Card</th><th>Alignment</th><th>What it does</th><th>Price</th><th></th></tr>
+  <tr><td><b>Stick Around</b></td><td>Sweet</td><td>Holds a reader on a post until they certify they read it.</td><td>1.00</td><td><button>Buy</button></td></tr>
+  <tr><td><b>Whoops!</b></td><td>Salty</td><td>Splats a post in ink; readers scrub to read it, the author washes it away.</td><td>1.00 + 0.25 per 500 characters when played</td><td><button>Buy</button></td></tr></table>
+</div></div>
+</body>
+</html>

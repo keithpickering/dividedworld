@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stick Around Prototype</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; --sweet:#f1c40f; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  html, body { overscroll-behavior-y: contain; }  /* no pull-to-refresh eating a cock at the top of the page */
+  body { margin:0; padding:16px 4% 70px; background:var(--bg); color:var(--fg); font:12px/1.5 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  p.note { max-width:72em; margin:0 0 8px; }
+  .post { border:1px solid var(--fg); margin:14px 0; }
+  .post .head { border-bottom:1px solid var(--fg); padding:4px 2%; font-size:10px; display:flex; justify-content:space-between; }
+  .post .b { padding:10px 2%; }
+  .name { font:bold 12px "Courier New", monospace; }
+  .filler { color:var(--mute); }
+  .held { position:relative; border:3px solid var(--sweet); box-shadow:0 0 0 1px var(--fg), 0 0 18px #f1c40f88; }
+  .held .tag { font:bold 11px "Courier New", monospace; background:var(--sweet); color:#000; padding:3px 2%; display:flex; justify-content:space-between; align-items:center; gap:2%; }
+  .held .tag button { font:bold 10px "Courier New", monospace; background:#000; color:var(--sweet); border:1px solid #000; padding:1px 6px; }
+  .cert { margin:8px 2% 10px; padding:8px; border:2px dashed var(--fg); font-size:12px; }
+  .cert label { display:flex; gap:8px; align-items:flex-start; cursor:pointer; }
+  .cert input { width:18px; height:18px; flex:0 0 auto; margin-top:1px; }
+  .released { border-color:var(--fg); box-shadow:none; }
+  .released .tag { background:var(--bg); color:var(--fg); border-bottom:1px solid var(--fg); }
+  .released .tag button { display:none; }
+  .pulling { box-shadow:0 0 0 1px var(--fg), 0 0 28px #f1c40fcc; }
+  /* The wind-up: the band tightens, so a reader learns a flick is coming. */
+  .held { transition:transform .12s ease-out, box-shadow .12s; }
+  .tense { transform:scaleY(1.025); box-shadow:0 0 0 2px var(--fg), 0 0 36px #f1c40f; }
+  .hint { font:bold 10px "Courier New", monospace; opacity:0; transition:opacity .3s; }
+  .hinted .hint { opacity:1; }
+  .diag { font-weight:normal; }
+  ul.note { max-width:72em; margin:0 0 8px; padding-left:18px; }
+  .held { --stretch:0; }
+  .tense { transform:scaleY(calc(1 + var(--stretch) * 0.04)); box-shadow:0 0 0 2px var(--fg), 0 0 calc(18px + var(--stretch) * 30px) #f1c40f; }
+  .sling { font:bold 14px "Courier New", monospace; background:#000; color:var(--sweet); border:1px solid #000; width:28px; height:22px; padding:0; cursor:grab; touch-action:none; transition:transform .25s cubic-bezier(.3,1.8,.5,1); }
+  .sling.dragging { cursor:grabbing; transition:none; }
+  .released .sling { display:none; }
+  .tune { border:1px dashed var(--fg); padding:4px 8px; margin:6px 0; font-size:11px; max-width:520px; }
+  .status { position:fixed; left:0; right:0; bottom:0; border-top:2px solid var(--fg); background:var(--bg); padding:6px 4%; font:bold 11px "Courier New", monospace; display:flex; gap:3%; align-items:center; flex-wrap:wrap; }
+  .meter { flex:0 0 120px; height:8px; border:1px solid var(--fg); }
+  .meter i { display:block; height:100%; width:0; background:var(--sweet); }
+  button { font:11px Verdana; background:var(--bg); color:var(--fg); border:1px solid var(--fg); padding:1px 8px; }
+</style>
+</head>
+<body>
+<h1>Stick Around: prototype, round 6 (the slingshot, read along the arc)</h1>
+<p class="note">Two Stick Arounds, #15 and #30. When you stop scrolling, the nearest one you have seen and not escaped pulls you back, slowly at first and landing with a rubber band. <b>To break free, fire the slingshot.</b></p>
+<ul class="note">
+<li><b>On a touch screen:</b> drag far enough one way to cock it (the frame stretches; no hurry, it stays cocked while your finger stays down and you do not drift back), then flick fiercely the other way to fire.</li>
+<li><b>With a mouse:</b> grab the handle on the frame (&#8661;), drag it back to cock, flick it the other way and let go to fire; the page launches. The wheel still breaks free with round 4's flick: a quick nudge one way, then at once a fierce scroll the other.</li>
+<li><b>Keyboard and screen reader:</b> the BREAK FREE button: press once to wind up, again between 0.12 and 0.6 seconds later to release.</li>
+</ul>
+<p class="note">A hard scroll on its own never breaks free. Certifying releases for good. The bar at the bottom reads out each attempt; the tuning panel sets what each path needs. Reset holds you again.</p>
+<details class="tune"><summary>Tuning</summary>
+<b>Touch and handle</b><br>
+<label>Distance to cock: <input type="range" id="tc" min="0.03" max="0.5" step="0.01"> <b id="tcv"></b> screens</label><br>
+<label>Fire speed needed: <input type="range" id="tp" min="2" max="25" step="0.5"> <b id="tpv"></b> screens/s</label><br>
+<b>Mouse wheel (round 4's flick)</b><br>
+<label>Wind-up speed needed: <input type="range" id="tw" min="0.3" max="6" step="0.1"> <b id="twv"></b> screens/s</label><br>
+<label>Flick speed needed: <input type="range" id="tf" min="1" max="20" step="0.5"> <b id="tfv"></b> screens/s</label><br>
+<label>Longest pause between them: <input type="range" id="tg" min="40" max="400" step="10"> <b id="tgv"></b> ms</label></details>
+<div id="posts"></div>
+<div class="status" role="status"><span id="state">Not held yet.</span><span id="diag" class="diag"></span><span id="dev"></span><button id="reset">Reset</button></div>
+<script>
+const filler = "Somebody posted their desk setup, somebody else asked why the monitor is upside down, and the thread has been going for nine pages. ";
+const HELD = { 15: 'Mrs. Hooligan', 30: 'Spritey' };
+const posts = document.getElementById('posts');
+for (let i = 11; i <= 44; i++) {
+  const d = document.createElement('article'); d.className = 'post'; d.id = 'post-' + i;
+  const author = ['Spritey','Mrs. Hooligan','Captain Gravy','Pipewrench'][i % 4];
+  if (HELD[i]) {
+    d.classList.add('held'); d.dataset.held = i;
+    d.innerHTML = `<div class="tag"><span>STICK AROUND &middot; played by ${HELD[i]}</span><span class="hint">FIRE THE SLINGSHOT TO BREAK FREE</span><span><button class="sling" aria-hidden="true" tabindex="-1" title="Drag back, then flick to fire">&#8661;</button> <button class="struggle" aria-label="Break free of post #${i}: press once to wind up, then again within half a second to release">BREAK FREE</button></span></div>
+      <div class="head"><span class="name">${author}</span><span>#${i}</span></div>
+      <div class="b">${i === 15 ? 'The correct number of pancakes is seven. Not six. Not eight. Seven is where the stack is ambitious but stable. ' : 'Hot take: socks with sandals is a lifestyle, not a mistake. '}${filler.repeat(2)}</div>
+      <div class="cert"><label><input type="checkbox" class="certbox"> <span>I legally certify that I have read this post in full and thought about it contemplatively.</span></label></div>`;
+  } else {
+    d.innerHTML = `<div class="head"><span class="name">${author}</span><span>#${i}</span></div><div class="b filler">${filler.repeat(3 + (i % 3))}</div>`;
+  }
+  posts.appendChild(d);
+}
+
+// The flick: a quick wind-up one way, then at once a fierce scroll the other way, as one motion.
+// Speeds are in screens a second, so they mean the same on any screen. A touch screen's own fling
+// is fast already, so it needs a fiercer flick than a mouse wheel.
+const touch = matchMedia('(pointer: coarse)').matches;
+let WIND_SPEED = touch ? 1.5 : 1.0;     // the wind-up's peak speed
+const WIND_MIN = 0.06;                  // ... and its least distance, in screens (a nudge, not a twitch)
+const WIND_MS = 450;                    // the wind-up is quick: at most this long
+let FLICK_SPEED = touch ? 7 : 4;        // the flick's peak speed
+const FLICK_MIN = 0.35;                 // ... and its least distance, in screens
+let GAP_MS = touch ? 180 : 140;         // the longest pause between wind-up and flick
+// The slingshot, for a finger and for the handle: cocked by distance (no speed, no time limit while held),
+// fired by speed. The owner's phone numbers from round 4: a fire of about 11.5 screens a second.
+let COCK = 0.12;                        // screens dragged one way to cock it
+let FIRE = 7.5;                         // screens a second the other way to fire it (the owner: 6 to 9 feels right)
+const FIRE_MIN = 0.08;                  // ... over at least this many screens, so a twitch never fires
+const VEL_MS = 70;                      // the finger's speed is read over its last this-many ms
+let DRIFT = 1.0;                        // below this many screens a second, moving back under the cocking distance uncocks it
+const HOLD_MS = 600;                    // samples kept
+const IDLE_MS = 160;
+const BTN_MIN = 120, BTN_MAX = 600;     // the button: release no sooner, and no later, than this after winding up
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.getElementById('dev').textContent = touch ? '(touch tuning)' : '(mouse tuning)';
+
+const held = [...document.querySelectorAll('[data-held]')].map(el => ({ el, seen: false, free: false }));
+const stateEl = document.getElementById('state');
+let lastY = scrollY, lastT = performance.now(), idle, anim = null, captor = null, samples = [], pulls = new Map();
+const say = t => { stateEl.textContent = t; (window.__log ||= []).push(Math.round(performance.now()) + ' ' + t); };
+const diag = document.getElementById('diag');
+
+const watch = new IntersectionObserver(es => es.forEach(e => {
+  const h = held.find(h => h.el === e.target);
+  if (e.isIntersecting && !h.seen && !h.free) { h.seen = true; say(`Held by #${h.el.dataset.held}.`); }
+}), { threshold: 0.25 });
+held.forEach(h => watch.observe(h.el));
+
+// Gravity: the nearest seen, unescaped Stick Around to the middle of the screen is the one that pulls.
+function nearest() {
+  const mid = innerHeight / 2; let best = null, bestD = Infinity;
+  for (const h of held) if (h.seen && !h.free) {
+    const r = h.el.getBoundingClientRect(), d = Math.abs((r.top + r.bottom) / 2 - mid);
+    if (d < bestD) { best = h; bestD = d; }
+  }
+  return best;
+}
+const inView = el => { const r = el.getBoundingClientRect(); return r.bottom > innerHeight * 0.2 && r.top < innerHeight * 0.8; };
+
+// The pull, in three beats: it starts slowly once the reader's own scroll has settled (ease in),
+// gathers speed, then lands with a rubber band: an overshoot of at most OVERSHOOT px and a small
+// bounce back. The overshoot is in pixels, not a share of the distance, so a long pull and a
+// short one land the same way.
+const PULL_IN = 0.74, OVERSHOOT = 48;
+function pullOffset(t, dist) {
+  const dir = Math.sign(dist), d = Math.abs(dist);
+  if (t < PULL_IN) return dist * Math.pow(t / PULL_IN, 2.4);                // slow, then faster
+  const u = (t - PULL_IN) / (1 - PULL_IN), o = Math.min(OVERSHOOT, d * 0.2);
+  return dist + dir * o * Math.exp(-3 * u) * Math.sin(3 * Math.PI * u) / 0.63; // past it, back, settle
+}
+function pullTo(h) {
+  const to = Math.max(0, h.el.getBoundingClientRect().top + scrollY - 16), from = scrollY;
+  h.el.classList.add('pulling'); setTimeout(() => h.el.classList.remove('pulling'), 900);
+  pulls.set(h, (pulls.get(h) || 0) + 1); if (pulls.get(h) >= 2) h.el.classList.add('hinted');
+  if (reduce) { scrollTo(0, to); lastY = scrollY; return; }
+  const start = performance.now(), dur = Math.min(1300, 650 + Math.abs(to - from) / 5);
+  cancelAnimationFrame(anim);
+  const step = now => {
+    const t = Math.min(1, (now - start) / dur);
+    scrollTo(0, t < 1 ? from + pullOffset(t, to - from) : to);
+    lastY = scrollY; lastT = now;
+    anim = t < 1 ? requestAnimationFrame(step) : null;
+  };
+  anim = requestAnimationFrame(step);
+}
+function stopAnim() { if (anim) { cancelAnimationFrame(anim); anim = null; } }
+['wheel', 'touchstart', 'keydown'].forEach(ev => addEventListener(ev, stopAnim, { passive: true }));
+
+// Runs: the recent scroll split where its direction changes, each with its distance, duration and
+// peak speed. A scroll event after a pause counts as at most 50 ms of motion, so one wheel notch is quick.
+function runs(now) {
+  samples = samples.filter(s => now - s.t <= HOLD_MS);
+  const out = [];
+  for (const s of samples) {
+    const r = out[out.length - 1];
+    if (!r || r.dir !== s.dir) out.push({ dir: s.dir, start: s.t - s.dt, end: s.t, dist: s.dy, peak: s.v });
+    else { r.end = s.t; r.dist += s.dy; r.peak = Math.max(r.peak, s.v); }
+  }
+  return out;
+}
+function tense(h, on, stretch = 1) { h.el.classList.toggle('tense', on); h.el.style.setProperty('--stretch', on ? stretch : 0); }
+
+// ---- the slingshot ----------------------------------------------------------------------------
+let pointerDown = false;
+// One drag: where it started, the samples of where it has been, whether it is cocked and which way.
+function slingshot(onFire) {
+  let y0 = 0, pts = [], cocked = 0, peak = 0;
+  // Screens a second over the last VEL_MS, signed by which way it went up or down. A thumb's swipe arcs, so
+  // the speed is read along the finger's path, not its height alone; a path more sideways than about 60 degrees
+  // from vertical reads as no release at all. Touch events can come 30-50 ms apart while the page scrolls, so the
+  // window always reaches back at least one earlier point.
+  const speed = () => {
+    const n = pts.length; if (n < 2) return 0;
+    const now = pts[n - 1];
+    let i = n - 2; while (i > 0 && now.t - pts[i - 1].t <= VEL_MS) i--;
+    let path = 0; for (let k = i + 1; k < n; k++) path += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
+    const dy = now.y - pts[i].y, dt = (now.t - pts[i].t) / 1000;
+    if (dt <= 0 || !path || Math.abs(dy) < path * 0.5) return 0;
+    return Math.sign(dy) * path / innerHeight / dt;
+  };
+  const tryFire = () => {
+    const v = speed();
+    if (!cocked || Math.sign(v) !== -cocked) return false;
+    peak = Math.max(peak, Math.abs(v));
+    const now = pts[pts.length - 1], back = pts.filter(q => now.t - q.t <= Math.max(VEL_MS, 120));
+    const travel = Math.abs(now.y - back[0].y) / innerHeight;
+    if (Math.abs(v) >= FIRE && travel >= FIRE_MIN) { const fired = { v, dir: -cocked }; cocked = 0; onFire(fired); return true; }
+    return false;
+  };
+  return {
+    start(y, t, x = 0) { y0 = y; pts = [{ x, y, t }]; cocked = 0; peak = 0; pointerDown = true; },
+    move(y, t, h, x = 0) {
+      pts.push({ x, y, t }); pts = pts.filter(q => t - q.t <= 300);
+      const d = (y - y0) / innerHeight, dir = Math.sign(d);
+      if (!cocked && Math.abs(d) >= COCK) { cocked = dir; peak = 0; }
+      // Firing is read before drifting: the fire swings back past the cocking distance by its nature.
+      if (tryFire()) return;
+      // A drift back uncocks it only when it is slow: a release in progress keeps it cocked.
+      if (cocked && Math.abs(d) < COCK * 0.9 && Math.abs(speed()) < DRIFT) cocked = 0;
+      if (h) tense(h, cocked !== 0 || Math.abs(d) > COCK / 3, Math.min(1, Math.abs(d) / (COCK * 2)));
+      diag.textContent = cocked ? `cocked; release peaked at ${peak.toFixed(1)} of ${FIRE} screens/s` : `drag ${Math.abs(d).toFixed(2)} of ${COCK} screens to cock`;
+    },
+    // Lifting the finger mid-flick: read the speed once more, from the last points.
+    end(h) { if (cocked) tryFire(); pointerDown = false; cocked = 0; if (h) tense(h, false); },
+  };
+}
+
+// A finger anywhere on the page.
+const finger = slingshot(f => { const h = nearest(); if (h) { diag.textContent = `fired at ${Math.abs(f.v).toFixed(1)} screens/s`; escape(h, 'You slingshot free of'); } });
+addEventListener('touchstart', e => { if (e.touches.length === 1 && nearest()) finger.start(e.touches[0].clientY, performance.now(), e.touches[0].clientX); }, { passive: true });
+addEventListener('touchmove', e => { if (pointerDown && e.touches.length === 1) finger.move(e.touches[0].clientY, performance.now(), nearest(), e.touches[0].clientX); }, { passive: true });
+addEventListener('touchcancel', () => { if (pointerDown) { finger.end(null); samples = []; scheduleIdle(); } }, { passive: true });
+addEventListener('touchend', () => { if (pointerDown) { finger.end(nearest()); samples = []; scheduleIdle(); } }, { passive: true });
+
+// The handle, for a mouse: dragging it does not scroll; firing launches the page the way it was flicked.
+function launch(dir) {
+  if (reduce) { scrollBy(0, dir * innerHeight * 1.5); return; }
+  const from = scrollY, dist = dir * innerHeight * 1.5, start = performance.now(), dur = 550;
+  const step = now => { const k = Math.min(1, (now - start) / dur); scrollTo(0, from + dist * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+addEventListener('scroll', () => {
+  const now = performance.now(), dt = Math.min(50, Math.max(8, now - lastT));
+  const raw = scrollY - lastY; lastY = scrollY; lastT = now;
+  if (anim || !raw) return;                       // our own pull-back is not a flick
+  if (pointerDown) { clearTimeout(idle); return; } // a finger or the handle holds the band; the slingshot reads it
+  captor = nearest(); if (!captor) return;
+  const H = innerHeight, dy = Math.abs(raw) / H;
+  samples.push({ t: now, dt, dir: Math.sign(raw), dy, v: dy / (dt / 1000) });
+  const rs = runs(now), b = rs[rs.length - 1], a = rs[rs.length - 2];
+  const windUp = r => r && r.dist >= WIND_MIN && r.peak >= WIND_SPEED && r.end - r.start <= WIND_MS;
+  tense(captor, windUp(b));
+  if (a && windUp(a) && b.dir === -a.dir && b.start - a.end <= GAP_MS) {
+    diag.textContent = `wind-up ${a.peak.toFixed(1)}, flick ${b.peak.toFixed(1)} of ${FLICK_SPEED} screens/s`;
+    if (b.peak >= FLICK_SPEED && b.dist >= FLICK_MIN) { tense(captor, false); return escape(captor, 'You flicked free of'); }
+  }
+  scheduleIdle();
+}, { passive: true });
+function scheduleIdle() {
+  clearTimeout(idle);
+  idle = setTimeout(() => { if (pointerDown) return; if (captor) tense(captor, false); const h = nearest(); if (h && !inView(h.el)) { say(`#${h.el.dataset.held} pulls you back.`); pullTo(h); } }, IDLE_MS);
+}
+
+function escape(h, why) {
+  h.free = true; samples = []; clearTimeout(idle); stopAnim(); h.el.classList.remove('tense', 'hinted');
+  h.el.classList.add('released'); say(`${why} #${h.el.dataset.held}.`);
+}
+held.forEach(h => {
+  h.el.querySelector('.certbox').addEventListener('change', e => e.target.checked && escape(h, 'Certified:'));
+  const handle = h.el.querySelector('.sling'), sling = slingshot(f => {
+    diag.textContent = `fired at ${Math.abs(f.v).toFixed(1)} screens/s`;
+    escape(h, 'You slingshot free of'); launch(f.dir);
+  });
+  let grabY = 0;
+  handle.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') return; handle.setPointerCapture(e.pointerId); handle.classList.add('dragging'); grabY = e.clientY; sling.start(e.clientY, performance.now(), e.clientX); });
+  handle.addEventListener('pointermove', e => {
+    if (!handle.classList.contains('dragging')) return;
+    handle.style.transform = `translateY(${Math.max(-60, Math.min(60, e.clientY - grabY))}px)`;   // the band stretches, to a point
+    sling.move(e.clientY, performance.now(), h, e.clientX);
+  });
+  const drop = () => { if (!handle.classList.contains('dragging')) return; handle.classList.remove('dragging'); handle.style.transform = ''; sling.end(h); scheduleIdle(); };
+  handle.addEventListener('pointerup', drop); handle.addEventListener('pointercancel', drop);
+  // The button's flick: press to wind up (the frame tightens), press again inside the window to release.
+  // Too soon or too late lets the band go slack, and you wind up again. About what the gesture costs.
+  let wound = 0, slack;
+  h.el.querySelector('.struggle').addEventListener('click', () => {
+    const now = performance.now(), since = now - wound;
+    if (wound && since >= BTN_MIN && since <= BTN_MAX) { wound = 0; clearTimeout(slack); tense(h, false); return escape(h, 'You flicked free of'); }
+    if (wound && since < BTN_MIN) { wound = 0; tense(h, false); return say('Too soon: wind up, then release.'); }
+    wound = now; tense(h, true); say('Wound up: release now.');
+    clearTimeout(slack); slack = setTimeout(() => { if (wound) { wound = 0; tense(h, false); say('Too late: the band went slack.'); } }, BTN_MAX);
+  });
+});
+const tw = document.getElementById('tw'), tf = document.getElementById('tf'), tg = document.getElementById('tg'), tc = document.getElementById('tc'), tp = document.getElementById('tp');
+const tune = () => { WIND_SPEED = +tw.value; FLICK_SPEED = +tf.value; GAP_MS = +tg.value; COCK = +tc.value; FIRE = +tp.value;
+  for (const [id, v] of [['twv', WIND_SPEED], ['tfv', FLICK_SPEED], ['tgv', GAP_MS], ['tcv', COCK], ['tpv', FIRE]]) document.getElementById(id).textContent = v; };
+tw.value = WIND_SPEED; tf.value = FLICK_SPEED; tg.value = GAP_MS; tc.value = COCK; tp.value = FIRE; tune();
+for (const el of [tw, tf, tg, tc, tp]) el.oninput = tune;
+document.getElementById('reset').addEventListener('click', () => {
+  held.forEach(h => { h.seen = h.free = false; h.el.classList.remove('released', 'tense', 'hinted'); h.el.querySelector('.certbox').checked = false; });
+  samples = []; pulls.clear(); diag.textContent = ''; stopAnim(); scrollTo(0, 0); say('Not held yet.');
+  // Look again at what is on screen, so a post already in view holds again.
+  held.forEach(h => { watch.unobserve(h.el); watch.observe(h.el); });
+});
+</script>
+</body>
+</html>

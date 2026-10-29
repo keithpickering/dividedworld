@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q3 Orbs Between Settlements</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.4 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:24px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:70em; }
+  .hud { border:1px solid var(--fg); border-top:2px solid var(--fg); padding:6px 2%; display:flex; align-items:center; gap:3%; flex-wrap:wrap; max-width:640px; margin:6px 0; }
+  .ava { width:28px; height:28px; border:1px solid var(--fg); text-align:center; line-height:28px; font-size:9px; }
+  select { font:11px Verdana; color:var(--fg); background:var(--bg); border:1px solid var(--fg); }
+  .orbs { display:inline-flex; gap:5px; align-items:center; }
+  .orb { position:relative; width:20px; height:20px; border-radius:50%; border:1px solid var(--fg); overflow:hidden;
+         background:conic-gradient(var(--c) calc(var(--p,0)*1%), transparent 0); }
+  .orb.full { background:radial-gradient(circle at 50% 25%, #fff9 0 22%, transparent 45%), var(--c); }
+  /* pending gain: hatched arc after the solid fill */
+  .orb.gain::after { content:""; position:absolute; inset:0; border-radius:50%;
+    background:conic-gradient(transparent calc(var(--from,0)*1%), var(--c) 0 calc(var(--to)*1%), transparent 0);
+    -webkit-mask:repeating-linear-gradient(45deg,#000 0 2px,transparent 2px 4px); mask:repeating-linear-gradient(45deg,#000 0 2px,transparent 2px 4px); }
+  /* pending loss: the solid fill that a hostile reaction will take, drained to grey */
+  .orb.loss::after { content:""; position:absolute; inset:0; border-radius:50%;
+    background:conic-gradient(transparent calc(var(--from)*1%), var(--bg) 0 calc(var(--to)*1%), transparent 0); opacity:.7; }
+  .num { font:bold 12px "Courier New", monospace; }
+  .pend { font:bold 11px "Courier New", monospace; }
+  .muted { color:var(--mute); }
+  .states { display:flex; flex-direction:column; gap:2px; }
+  .cap { font-size:11px; }
+</style>
+</head>
+<body>
+<h1>Q3. The orbs between settlements</h1>
+<p class="note">The wallet changes only at a settlement (daily by default). The player's own log already shows each reaction's effect live. The question is whether the HUD shows it too. In every option, the HUD is the player's alone; nothing here reaches anyone else.</p>
+
+<h2>A. Still until settlement</h2>
+<p class="note">The orbs show the settled wallet and nothing else. At the settlement, the next time the player loads a page, the orbs play your pen's cascade (fill orb by orb, flash and shine on each one that fills), and the log says why. Calm and honest, but the crowd's reaction is felt a day late.</p>
+<div class="states">
+  <div class="cap">All day, whatever the crowd does:</div>
+  <div class="hud"><span class="ava">ava</span><select><option>Pipewrench</option></select>
+    <span class="orbs"><span class="orb full" style="--c:#9b59b6"></span><span class="orb full" style="--c:#3498db"></span><span class="orb" style="--c:#2ecc71;--p:40"></span><span class="orb" style="--c:#f1c40f"></span><span class="orb" style="--c:#e67e22"></span><span class="orb" style="--c:#e74c3c"></span></span>
+    <span class="num">2.40</span></div>
+</div>
+
+<h2>B. A live ghost fill (recommended)</h2>
+<p class="note">TTYD's audience fills Mario's Star Power while he performs; this is that. The solid fill is the settled wallet (spendable). A hatched fill grows live as favored reactions land; hostile ones drain solid fill to a pale band. At the settlement, the ghost turns solid with the cascade. Aura pending past six orbs shows as "+0.40 past the cap", since it will go to the standing and not the wallet.</p>
+<div class="states">
+  <div class="cap">Settled 2.40, and +0.85 pending from today's reactions:</div>
+  <div class="hud"><span class="ava">ava</span><select><option>Pipewrench</option></select>
+    <span class="orbs" role="img" aria-label="Wallet 2.40 of 6 orbs, 0.85 pending until the next settlement"><span class="orb full" style="--c:#9b59b6"></span><span class="orb full" style="--c:#3498db"></span><span class="orb gain" style="--c:#2ecc71;--p:40;--from:40;--to:100"></span><span class="orb gain" style="--c:#f1c40f;--from:0;--to:25"></span><span class="orb" style="--c:#e67e22"></span><span class="orb" style="--c:#e74c3c"></span></span>
+    <span class="num">2.40</span> <span class="pend">+0.85 pending</span></div>
+  <div class="cap">Settled 2.40, and &minus;0.30 pending (a Heel's day of polite shrugs):</div>
+  <div class="hud"><span class="ava">ava</span><select><option>Pipewrench</option></select>
+    <span class="orbs" role="img" aria-label="Wallet 2.40 of 6 orbs, 0.30 to be lost at the next settlement"><span class="orb full" style="--c:#9b59b6"></span><span class="orb full loss" style="--c:#3498db;--from:90;--to:100"></span><span class="orb loss" style="--c:#2ecc71;--p:40;--from:0;--to:40"></span><span class="orb" style="--c:#f1c40f"></span><span class="orb" style="--c:#e67e22"></span><span class="orb" style="--c:#e74c3c"></span></span>
+    <span class="num">2.40</span> <span class="pend">&minus;0.30 pending</span></div>
+</div>
+
+<h2>C. A number only</h2>
+<p class="note">The orbs stay still as in A, with a small pending figure beside them that ticks live. Informative, but the orbs, the part that feels like a game, never react to the crowd until the next day.</p>
+<div class="states">
+  <div class="hud"><span class="ava">ava</span><select><option>Pipewrench</option></select>
+    <span class="orbs"><span class="orb full" style="--c:#9b59b6"></span><span class="orb full" style="--c:#3498db"></span><span class="orb" style="--c:#2ecc71;--p:40"></span><span class="orb" style="--c:#f1c40f"></span><span class="orb" style="--c:#e67e22"></span><span class="orb" style="--c:#e74c3c"></span></span>
+    <span class="num">2.40</span> <span class="pend muted">(+0.85 today)</span></div>
+</div>
+</body>
+</html>

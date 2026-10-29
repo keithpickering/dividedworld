@@ -3,3 +3,6 @@ dist/
 .runs/
 .env
 .env.*
+
+# impeccable's engine binary: downloaded by its launcher on first run, never committed.
+.claude/skills/impeccable/scripts/bin/

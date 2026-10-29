@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q10 Spinning a Thread</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:26px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .desk { flex:1 1 600px; min-width:0; }
+  .phone { flex:0 0 340px; max-width:100%; }
+  .label { font:bold 11px "Courier New", monospace; margin-bottom:4px; }
+  .post { border:1px solid var(--fg); margin-bottom:8px; }
+  .post .head { border-bottom:1px solid var(--fg); padding:4px 2%; font-size:10px; display:flex; justify-content:space-between; }
+  .post .b { padding:8px 2%; }
+  .name { font:bold 12px "Courier New", monospace; }
+  .acts { border-top:1px solid var(--fg); padding:4px 2%; font-size:11px; display:flex; flex-wrap:wrap; gap:4%; }
+  .acts a, a { color:var(--fg); }
+  .spun { border-top:1px dashed var(--fg); padding:4px 2%; font-size:11px; }
+  .origin { border:3px double var(--fg); margin-bottom:8px; }
+  .origin .tag { font:bold 11px "Courier New", monospace; background:var(--fg); color:var(--bg); padding:3px 2%; display:flex; justify-content:space-between; }
+  .origin .tag a { color:var(--bg); }
+  .origin .inner { padding:6px 2%; }
+  .crumb { font-size:11px; margin-bottom:6px; }
+  .title { font:bold 15px "Courier New", monospace; margin:4px 0 8px; }
+  .chip { border:1px solid var(--fg); padding:0 5px; font-size:12px; margin-right:4px; }
+  .muted { color:var(--mute); }
+  .small { font-size:10px; }
+  .card { display:inline-block; border:1px solid var(--fg); padding:2px 8px; font:bold 11px "Courier New", monospace; background:repeating-linear-gradient(45deg,#e74c3c22 0 6px,transparent 6px 12px); }
+  .form { border:2px solid var(--fg); padding:8px 2%; }
+  .form label { display:block; font:bold 11px "Courier New", monospace; margin:6px 0 2px; }
+  .form input, .form textarea { box-sizing:border-box; width:100%; font:12px Verdana; border:1px solid var(--fg); background:var(--bg); color:var(--fg); padding:3px; }
+  .form textarea { height:60px; }
+  .form .foot { text-align:right; margin-top:6px; }
+  .form button { font:bold 11px Verdana; border:2px solid var(--fg); background:var(--bg); color:var(--fg); padding:2px 10px; }
+</style>
+</head>
+<body>
+<h1>Q10. Spinning a thread from an Act</h1>
+<p class="note">The mockups show option A: a "Spin thread" link on every Act, a small form, and the new thread opening on the Act it came from. B and C differ only in how you pick the Act; they are described in the message.</p>
+
+<div class="row">
+  <div class="desk">
+    <div class="label">1. The origin, a card play in a thread; it lists what was spun from it</div>
+    <div class="post"><div class="head"><span><b>Mrs. Hooligan</b> played <span class="card">Whoops!</span> on Pipewrench's post #14</span><span>#16 &middot; 11:55 pm</span></div>
+      <div class="b">"Crimson, for the occasion."</div>
+      <div style="padding:0 2% 6px"><span class="chip">😡 5</span><span class="chip">🔥 2</span></div>
+      <div class="spun">&#8627; Spun into: <a href="#">The Crimson Incident</a> (14 replies) &middot; <a href="#">Is Mrs. Hooligan a Heel? [Evidence inside]</a> (3 replies)</div>
+      <div class="acts"><a href="#">Quote</a><a href="#"><b>Spin thread</b></a><a href="#">Link</a></div></div>
+
+    <div class="label" style="margin-top:14px">2. The spin form (inline, under the Act, or a sheet on a phone)</div>
+    <div class="form" role="form" aria-label="Spin a thread from #16">
+      <div class="small">Spinning a thread from <b>#16</b> (Mrs. Hooligan's Whoops!) as <b>Pipewrench</b></div>
+      <label for="t">Thread title</label><input id="t" value="The Crimson Incident">
+      <label for="c">Your opening post</label><textarea id="c">I would like to formally request an investigation.</textarea>
+      <div class="foot"><button>Spin thread</button></div></div>
+  </div>
+  <div class="phone">
+    <div class="label">3. The new thread opens on its origin</div>
+    <div class="crumb"><b>Divided World</b> &raquo; General Chaos</div>
+    <div class="title">The Crimson Incident</div>
+    <div class="origin"><div class="tag"><span>ORIGIN &middot; ACT #16</span><a href="#">in "Sitcom Room discourse" &#8599;</a></div>
+      <div class="inner"><b>Mrs. Hooligan</b> played <span class="card">Whoops!</span> on Pipewrench's post #14<br>"Crimson, for the occasion."<br><span class="small muted">Oct 28, 11:55 pm</span></div></div>
+    <div class="post"><div class="head"><span class="name">Pipewrench</span><span>#1</span></div>
+      <div class="b">I would like to formally request an investigation.</div>
+      <div class="acts"><a href="#">Quote</a><a href="#">Spin</a><a href="#">Card</a></div></div>
+    <p class="small muted">The origin box is a live view of the Act as it stands now (its current text, its effects), not a copy, so an edit to the origin shows here too, with its history link.</p>
+  </div>
+</div>
+</body>
+</html>

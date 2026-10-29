@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q11 Your Log</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:26px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .desk { flex:1 1 640px; min-width:0; }
+  .phone { flex:0 0 340px; max-width:100%; }
+  .label { font:bold 11px "Courier New", monospace; margin-bottom:4px; }
+  a { color:var(--fg); }
+  .bar { display:flex; gap:2%; align-items:center; flex-wrap:wrap; margin:6px 0; font-size:11px; }
+  select { font:11px Verdana; color:var(--fg); background:var(--bg); border:1px solid var(--fg); }
+  table.log { width:100%; border-collapse:collapse; }
+  .log th { font:bold 11px "Courier New", monospace; text-align:left; border:1px solid var(--fg); padding:3px 1%; }
+  .log td { border:1px solid var(--fg); padding:3px 1%; vertical-align:top; }
+  .log td.n { text-align:right; font:bold 11px "Courier New", monospace; white-space:nowrap; }
+  .log tr.win td { font:bold 11px "Courier New", monospace; border-top:2px solid var(--fg); }
+  .pend { font-style:italic; }
+  .muted { color:var(--mute); }
+  .small { font-size:10px; }
+  .card { border:1px solid var(--fg); padding:0 4px; font:bold 10px "Courier New", monospace; }
+  .entry { border-bottom:1px solid var(--fg); padding:5px 3%; display:flex; gap:3%; }
+  .entry .n { margin-left:auto; font:bold 11px "Courier New", monospace; white-space:nowrap; }
+  .wh { font:bold 11px "Courier New", monospace; background:var(--fg); color:var(--bg); padding:3px 3%; }
+</style>
+</head>
+<body>
+<h1>Q11. Your log (option A: a ledger by settlement)</h1>
+<p class="note">Only you ever see this page. Plain words, never in character. Newest first. "Pending" lines are what the open window would pay if it settled now; they can still change, and the log says so. Each line links to the Act it is about.</p>
+
+<div class="row">
+<div class="desk"><div class="label">Desktop</div>
+  <div class="bar">Show <select><option>All my characters</option><option>Pipewrench</option><option>Mrs. Hooligan</option></select>
+    <span>Wallet: <b>2.40</b> settled &middot; <b>+0.85</b> pending</span><span class="muted">Next settlement: tonight, 3:00 am</span></div>
+  <table class="log">
+    <tr><th style="width:14%">When</th><th style="width:16%">Character</th><th>What happened</th><th style="width:10%">Aura</th></tr>
+    <tr class="win"><td colspan="3">OPEN WINDOW, settles tonight 3:00 am</td><td class="n pend">+0.85</td></tr>
+    <tr><td>11:58 pm</td><td>Pipewrench</td><td class="pend">A 🔥 (excited, positive) on <a href="#">your post #14</a>. As a Face, that is your favored kind. Pending; it shares a vote with any other reaction the same player leaves on that post.</td><td class="n pend">+0.10</td></tr>
+    <tr><td>11:55 pm</td><td>Pipewrench</td><td class="pend"><span class="card">Whoops!</span> was played on <a href="#">your post #14</a>. It does not change Aura by itself for a Face.</td><td class="n pend">0.00</td></tr>
+    <tr><td>11:41 pm</td><td>Mrs. Hooligan</td><td class="pend">A 🙄 (bored, negative) on <a href="#">your post #9</a>, this character's third post this window, so that player's vote counts a quarter. As a Jabroni, the groan is your favored kind.</td><td class="n pend">+0.03</td></tr>
+    <tr><td>10:02 pm</td><td>Mrs. Hooligan</td><td>You bought <span class="card">Whoops!</span> at the Vending Machine.</td><td class="n">&minus;1.00</td></tr>
+    <tr class="win"><td colspan="3">SETTLED Oct 28, 3:00 am</td><td class="n">+1.30</td></tr>
+    <tr><td>3:00 am</td><td>Pipewrench</td><td>Favored reactions on 4 of your Acts, after the shared vote and halving.</td><td class="n">+0.90</td></tr>
+    <tr><td>3:00 am</td><td>Pipewrench</td><td>Bored reactions (your weakness as a Face) on <a href="#">your post #3</a>.</td><td class="n">&minus;0.20</td></tr>
+    <tr><td>3:00 am</td><td>Mrs. Hooligan</td><td>A Salty card landed on <a href="#">your post #2</a>. As a Jabroni, selling the L pays.</td><td class="n">+0.20</td></tr>
+    <tr><td>3:00 am</td><td>Mrs. Hooligan</td><td>Groans on 2 of your Acts.</td><td class="n">+0.40</td></tr>
+    <tr><td>3:00 am</td><td colspan="2" class="muted">Wallet capped at 6.00: nothing overflowed this time. Standings: Pipewrench 14.20, Mrs. Hooligan 6.85.</td><td class="n"></td></tr>
+  </table></div>
+
+<div class="phone"><div class="label">Phone</div>
+  <div class="bar"><select><option>All my characters</option></select></div>
+  <div class="small" style="margin-bottom:4px">Wallet <b>2.40</b> &middot; <b>+0.85</b> pending &middot; settles 3:00 am</div>
+  <div style="border:1px solid var(--fg)">
+  <div class="wh">OPEN WINDOW &middot; +0.85 pending</div>
+  <div class="entry"><div><b>Pipewrench</b> &middot; 11:58 pm<br><span class="pend">🔥 on <a href="#">your post #14</a>. Favored (Face).</span></div><span class="n">+0.10</span></div>
+  <div class="entry"><div><b>Mrs. Hooligan</b> &middot; 11:41 pm<br><span class="pend">🙄 on <a href="#">your post #9</a>, third post, counts a quarter. Favored (Jabroni).</span></div><span class="n">+0.03</span></div>
+  <div class="entry"><div><b>Mrs. Hooligan</b> &middot; 10:02 pm<br>Bought <span class="card">Whoops!</span></div><span class="n">&minus;1.00</span></div>
+  <div class="wh">SETTLED OCT 28 &middot; +1.30</div>
+  <div class="entry"><div><b>Pipewrench</b><br>Favored reactions on 4 Acts.</div><span class="n">+0.90</span></div>
+  </div></div>
+</div>
+</body>
+</html>
