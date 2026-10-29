@@ -141,8 +141,8 @@ async function load(db, dir, manifest) {
 async function checkFiles(dir, manifest) {
   const files = manifest.files ?? [];
   const carried = new Set(files.map((f) => `${f.bucket}/${f.name}`));
-  for (const f of await filesNamed(dir)) if (!carried.has(`${f.bucket}/${f.name}`)) throw new Error(`a row names ${f.bucket}/${f.name}, which the export does not carry`);
   const named = new Set((await filesNamed(dir)).map((f) => `${f.bucket}/${f.name}`));
+  for (const f of named) if (!carried.has(f)) throw new Error(`a row names ${f}, which the export does not carry`);
   for (const f of files) {
     if (!BUCKETS.some((b) => b.bucket === f.bucket) || !named.has(`${f.bucket}/${f.name}`)) throw new Error(`the export carries ${f.bucket}/${f.name}, which no row names`);
     const bytes = fs.readFileSync(path.join(dir, 'files', f.bucket, f.name));

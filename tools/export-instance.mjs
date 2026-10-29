@@ -36,7 +36,7 @@ async function main() {
   console.log(`exporting from ${db.named}; the server says it is ${answered(db)}`);
   // An instance whose rows name files is refused before anything is written, if Storage is not given.
   const naming = psql(db, BUCKETS.map((b) => `select 1 from ${b.table} where ${b.columns.map((c) => `${c} is not null`).join(' or ')} limit 1;`).join('\n'));
-  if (naming) storage(storageUrl);
+  const store = naming || storageUrl ? storage(storageUrl) : null;
   // Every file this process and psql make is its owner's alone.
   process.umask(0o077);
   fs.mkdirSync(to, { recursive: true, mode: 0o700 });
@@ -56,10 +56,11 @@ async function main() {
   const named = await filesNamed(to);
   const files = [];
   if (named.length) {
-    const store = storage(storageUrl);
-    console.log(`fetching ${named.length} file(s) from ${store.named}`);
+    // A file named since the check above, by an avatar set in the moment between, still needs Storage.
+    const from = store ?? storage(storageUrl);
+    console.log(`fetching ${named.length} file(s) from ${from.named}`);
     for (const f of named) {
-      const bytes = await store.get(f.bucket, f.name);
+      const bytes = await from.get(f.bucket, f.name);
       fs.mkdirSync(path.join(to, 'files', f.bucket), { recursive: true, mode: 0o700 });
       fs.writeFileSync(path.join(to, 'files', f.bucket, f.name), bytes, { mode: 0o600 });
       files.push({ bucket: f.bucket, name: f.name, bytes: bytes.length, sha256: sha256(bytes) });

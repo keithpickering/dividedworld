@@ -68,35 +68,70 @@ export async function filesNamed(dir) {
   return out;
 }
 
-/** Supabase Storage at a project's URL, called with the service key from STORAGE_KEY. */
-export function storage(url) {
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/**
+ * Supabase Storage at a project's URL, called with the service key from STORAGE_KEY. The URL
+ * carries no credentials, and is https unless it is this machine. Each request is retried on what
+ * says it never reached a Storage that ran it, or never answered (a timeout, a thrown fetch, a 5xx,
+ * a 429), a few times, waiting longer each time; any other answer is a fact about the request
+ * ("Three unrelated timeouts are not a poison pill"). A retried store is safe: the same bytes found
+ * there are the same file.
+ */
+export function storage(url, { timeoutMs = Number(process.env.KAYFABB_STORAGE_TIMEOUT_MS) || 30_000, attempts = 4 } = {}) {
   const key = process.env[STORAGE_KEY];
   if (!url) throw new Error('the instance holds files: give --storage with its Supabase URL');
   if (!key) throw new Error(`the instance holds files: set ${STORAGE_KEY} to its service key`);
   secrets.add(key);
   let base;
   try { base = new URL(url); } catch { throw new Error('--storage is the project\'s URL, https://…'); }
+  if (base.username || base.password) throw new Error('--storage carries credentials; the key goes in ' + STORAGE_KEY + ', never the URL');
+  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && LOOPBACK.has(base.hostname))) throw new Error('--storage is https, unless it is this machine: the service key never travels in clear');
   const headers = { apikey: key, Authorization: `Bearer ${key}` };
   const at = (bucket, name) => new URL(`storage/v1/object/${bucket}/${encodeURIComponent(name)}`, base.href.endsWith('/') ? base.href : `${base.href}/`);
+  const request = async (where, init, what) => {
+    const seen = [];
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      if (attempt > 1) await new Promise((r) => setTimeout(r, 250 * 2 ** (attempt - 2)));
+      try {
+        const r = await fetch(where, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+        if (r.status >= 500 || r.status === 429) { seen.push(`HTTP ${r.status}`); await r.body?.cancel(); continue; }
+        return r;
+      } catch (e) {
+        seen.push(`no answer (${e?.name === 'TimeoutError' ? `none in ${timeoutMs} ms` : e?.message ?? e})`);
+      }
+    }
+    throw new Error(`storage: ${what}: no answer after ${seen.length} attempt(s): ${seen.join('; ')}`);
+  };
+  const read = async (bucket, name) => request(at(bucket, name), { headers }, `reading ${bucket}/${name}`);
   return {
     named: base.origin,
     async get(bucket, name) {
-      const r = await fetch(at(bucket, name), { headers });
-      if (!r.ok) throw new Error(`storage: ${bucket}/${name} answered HTTP ${r.status}`);
+      const r = await read(bucket, name);
+      if (r.status === 404 || r.status === 400) {
+        await r.body?.cancel();
+        throw new Error(`storage: ${bucket}/${name}, which a row names, is not there: it was replaced or removed since the rows were read; export again into a new directory (this one is left as it is)`);
+      }
+      if (!r.ok) { await r.body?.cancel(); throw new Error(`storage: ${bucket}/${name} answered HTTP ${r.status}`); }
       return new Uint8Array(await r.arrayBuffer());
     },
     /**
      * Stores a file, never over another: one already there with the same bytes (an import run again
-     * after one that stopped part way) is the same file; one with other bytes is refused.
+     * after one that stopped part way) is the same file; one with other bytes is refused. Storage
+     * answers 409, or 400 with its own word for it, for a name taken; any other refusal is said as
+     * itself.
      */
     async put(bucket, name, bytes, contentType) {
-      const r = await fetch(at(bucket, name), { method: 'POST', headers: { ...headers, 'Content-Type': contentType, 'x-upsert': 'false' }, body: bytes });
+      const r = await request(at(bucket, name), { method: 'POST', headers: { ...headers, 'Content-Type': contentType, 'x-upsert': 'false' }, body: bytes }, `storing ${bucket}/${name}`);
       await r.body?.cancel();
       if (r.ok) return;
       if (r.status === 400 || r.status === 409) {
-        const there = await fetch(at(bucket, name), { headers });
-        if (there.ok && sha256(new Uint8Array(await there.arrayBuffer())) === sha256(bytes)) return;
-        throw new Error(`storage: ${bucket}/${name} is already there, and is another file`);
+        const there = await read(bucket, name);
+        if (there.ok) {
+          if (sha256(new Uint8Array(await there.arrayBuffer())) === sha256(bytes)) return;
+          throw new Error(`storage: ${bucket}/${name} is already there, and is another file`);
+        }
+        await there.body?.cancel();
       }
       throw new Error(`storage: storing ${bucket}/${name} answered HTTP ${r.status}`);
     },

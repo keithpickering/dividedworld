@@ -33,7 +33,7 @@ const contents = (url: string): Map<string, string> => {
 const STORAGE_KEY = 'sErViCe-kEy-for-storage';
 /** A tool, run as an admin runs it; spawned, not run synchronously, so the fake Storage below answers it. */
 const run = (tool: string, args: string[]) => new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
-  const child = spawn(process.execPath, [path.join(root, 'tools', tool), ...args], { env: { ...process.env, KAYFABB_STORAGE_KEY: STORAGE_KEY } });
+  const child = spawn(process.execPath, [path.join(root, 'tools', tool), ...args], { env: { ...process.env, KAYFABB_STORAGE_KEY: STORAGE_KEY, KAYFABB_STORAGE_TIMEOUT_MS: '500' } });
   let stdout = '';
   let stderr = '';
   child.stdout.on('data', (d) => { stdout += d; });
@@ -45,22 +45,32 @@ const run = (tool: string, args: string[]) => new Promise<{ status: number | nul
 async function fakeStorage() {
   const objects = new Map<string, Buffer>();
   const seen: string[] = [];
+  /** What the next requests meet first: a 503, or no answer at all. */
+  const trouble: ('unavailable' | 'silent')[] = [];
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
       seen.push(`${req.method} ${req.url} ${req.headers.authorization === `Bearer ${STORAGE_KEY}` ? 'keyed' : 'unkeyed'}`);
+      const next = trouble.shift();
+      if (next === 'unavailable') { res.writeHead(503).end(); return; }
+      if (next === 'silent') return;
       const m = /^\/storage\/v1\/object\/([^/]+)\/(.+)$/.exec(req.url ?? '');
       if (!m || req.headers.authorization !== `Bearer ${STORAGE_KEY}`) { res.writeHead(403).end(); return; }
       const key = `${m[1]}/${decodeURIComponent(m[2]!)}`;
-      if (req.method === 'GET') { const o = objects.get(key); if (!o) { res.writeHead(404).end(); return; } res.writeHead(200).end(o); return; }
-      if (req.method === 'POST') { if (objects.has(key)) { res.writeHead(409).end(); return; } objects.set(key, Buffer.concat(chunks)); res.writeHead(200).end('{}'); return; }
+      if (req.method === 'GET') { const o = objects.get(key); if (!o) { res.writeHead(400).end('{"error":"not_found"}'); return; } res.writeHead(200).end(o); return; }
+      if (req.method === 'POST') {
+        // As Storage: never over a file unless asked to, and a name taken is a 400 with its word.
+        if (req.headers['x-upsert'] !== 'false' || req.headers['content-type'] !== 'image/webp') { res.writeHead(422).end(); return; }
+        if (objects.has(key)) { res.writeHead(400).end('{"error":"Duplicate"}'); return; }
+        objects.set(key, Buffer.concat(chunks)); res.writeHead(200).end('{}'); return;
+      }
       res.writeHead(405).end();
     });
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
   const { port } = server.address() as { port: number };
-  return { url: `http://127.0.0.1:${port}`, objects, seen, close: () => new Promise<void>((r) => server.close(() => r())) };
+  return { url: `http://127.0.0.1:${port}`, objects, seen, trouble, close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }) };
 }
 
 test('an instance exported and imported into a fresh database is the same instance, table by table', async () => {
@@ -149,6 +159,17 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.notEqual(without.status, 0);
     assert.match(without.stderr, /holds files: give --storage/);
     assert.equal(fs.existsSync(path.join(dir, 'without')), false, 'refused before anything was written');
+    // A Storage URL with credentials in it, or one in clear to another machine, is refused.
+    assert.match((await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'without'), '--storage', 'https://admin:hunter22@project.test'])).stderr, /carries credentials/);
+    assert.match((await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'without'), '--storage', 'http://project.test'])).stderr, /is https, unless it is this machine/);
+    // A file a row names that Storage no longer holds says so, and how to go on.
+    const kept = oldStore.objects.get('avatars/exp-pt.webp')!;
+    oldStore.objects.delete('avatars/exp-pt.webp');
+    assert.match((await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'gone'), '--storage', oldStore.url])).stderr, /exp-pt\.webp, which a row names, is not there: it was replaced or removed/);
+    oldStore.objects.set('avatars/exp-pt.webp', kept);
+    fs.rmSync(path.join(dir, 'gone'), { recursive: true, force: true });
+    // Storage that is down a moment, and then silent a moment, is asked again.
+    oldStore.trouble.push('unavailable', 'silent');
     const exported = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
     assert.match(exported.stdout, /exporting from localhost:\d+\/kayfabb_scratch/);
@@ -159,7 +180,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.doesNotMatch(exported.stdout + exported.stderr, /pg@|password/i, 'the export printed a secret');
     assert.ok(!(exported.stdout + exported.stderr).includes(STORAGE_KEY), 'the export printed the Storage key');
     for (const [k, v] of Object.entries(avatar)) assert.deepEqual(fs.readFileSync(path.join(dir, 'files', k)), v, `${k} is carried`);
-    assert.ok(oldStore.seen.every((r) => r.startsWith('GET') && r.endsWith('keyed')), oldStore.seen.join('\n'));
+    assert.ok(oldStore.seen.every((r) => r.startsWith('GET') && r.endsWith(' keyed')), oldStore.seen.join('\n'));
 
     // The fresh instance: the shim and the migrations, nothing seeded.
     psqlOn(fresh.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
@@ -247,6 +268,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.match((await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /exp-src\.webp is already there, and is another file/);
     // The refused imports above put some files in already; the same files again are the same files.
     newStore.objects.delete('avatars/exp-src.webp');
+    newStore.trouble.push('unavailable');
     const imported = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.equal(imported.status, 0, imported.stderr + imported.stdout);
     const after = contents(fresh.toString());
