@@ -13,6 +13,8 @@ export const RECORD_LABELS: Readonly<Record<RecordKind, string>> = { all: 'All',
 export const RECORD_PAGE = 20;
 /** How many rows the profile shows before it links to the full record. */
 export const PROFILE_ROWS = 5;
+/** How many season reveal posts the Seasons view reads (the newest). */
+export const SEASONS_SHOWN = 50;
 
 export const recordKind = (v: string | null): RecordKind => (RECORD_KINDS as readonly string[]).includes(v ?? '') ? (v as RecordKind) : 'all';
 
@@ -76,3 +78,28 @@ export function turnRow(t: TurnAnnounced, w: Words, links: ReadonlyMap<Id, strin
 
 /** Newest first. */
 export const newest = (rows: readonly RecordRow[]): RecordRow[] => [...rows].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+
+const time = (r: RecordRow) => Date.parse(r.at);
+
+/**
+ * One window of the character's Acts merged with its extras (reveals, announced Turns, past
+ * seasons: a short list, read whole, newest first). The Acts are read from `from`, which the
+ * caller chooses as `max(0, offset - extras.length)`: the first `from` Acts are certainly among the
+ * first `offset` rows, so a window never needs more than `limit + extras.length` Acts read, however
+ * deep the page.
+ */
+export function mergeWindow(extras: readonly RecordRow[], acts: readonly RecordRow[], from: number, offset: number, limit: number): RecordRow[] {
+  /* Extras newer than the first Act read are among the rows before the window, so they only move its start. */
+  const edge = from > 0 && acts.length > 0 ? time(acts[0]!) : Infinity;
+  const dropped = extras.filter((e) => time(e) > edge).length;
+  const kept = extras.filter((e) => time(e) <= edge);
+  const merged: RecordRow[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < acts.length || j < kept.length) {
+    if (j >= kept.length || (i < acts.length && time(acts[i]!) >= time(kept[j]!))) merged.push(acts[i++]!);
+    else merged.push(kept[j++]!);
+  }
+  const start = offset - from - dropped;
+  return merged.slice(Math.max(0, start), Math.max(0, start) + limit);
+}

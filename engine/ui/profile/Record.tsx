@@ -9,7 +9,7 @@ import { useKayfa } from '../context.tsx';
 import type { ActKind, Id } from '../data/api.ts';
 import { Ago, PageLinks, SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Link, useLocation } from '../router.tsx';
-import { RECORD_KINDS, RECORD_LABELS, RECORD_PAGE, actRow, newest, recordKind, revealRow, seasonRow, turnLinks, turnRow, type RecordKind, type RecordRow, type Words } from './record.ts';
+import { RECORD_KINDS, RECORD_LABELS, RECORD_PAGE, SEASONS_SHOWN, actRow, mergeWindow, newest, recordKind, revealRow, seasonRow, turnLinks, turnRow, type RecordKind, type RecordRow, type Words } from './record.ts';
 import { useCharacter } from './useCharacter.ts';
 import './profile.css';
 
@@ -48,14 +48,26 @@ export function RecordScreen({ id }: { readonly id: Id }) {
     };
     const offset = (page - 1) * RECORD_PAGE;
     const paged = (all: readonly RecordRow[]) => ({ rows: all.slice(offset, offset + RECORD_PAGE), total: all.length });
+    /* The reveals, announced Turns and past seasons: short lists, read whole. The tallies' places come with a second, batched read. */
+    const extras = async (): Promise<RecordRow[]> => {
+      const [r, t, seasons] = await Promise.all([api.classReveals([id]), api.turnsAnnounced([id]), api.characterReveals(id)]);
+      const links = await turnLinks(api, t, words.perPage);
+      return newest([...r.map((x) => revealRow(x, words)), ...t.map((x) => turnRow(x, words, links)), ...seasons.map((a) => seasonRow(a, words))]);
+    };
     const read = kind === 'class'
       ? Promise.all([api.classReveals([id]), api.turnsAnnounced([id])]).then(async ([r, t]) => {
         const links = await turnLinks(api, t, words.perPage);
         return paged(newest([...r.map((x) => revealRow(x, words)), ...t.map((x) => turnRow(x, words, links))]));
       })
       : kind === 'seasons'
-        ? api.characterReveals(id).then((list) => paged(list.map((a) => seasonRow(a, words))))
-        : api.characterActs(id, KINDS[kind], { offset, limit: RECORD_PAGE }).then((r) => ({ rows: r.acts.map((a) => actRow(a, words)), total: r.total }));
+        ? api.characterReveals(id, SEASONS_SHOWN).then((list) => paged(list.map((a) => seasonRow(a, words))))
+        : kind === 'all'
+          ? extras().then(async (more) => {
+            const from = Math.max(0, offset - more.length);
+            const r = await api.characterActs(id, KINDS.all, { offset: from, limit: offset + RECORD_PAGE - from });
+            return { rows: mergeWindow(more, r.acts.map((a) => actRow(a, words)), from, offset, RECORD_PAGE), total: r.total + more.length };
+          })
+          : api.characterActs(id, KINDS[kind], { offset, limit: RECORD_PAGE }).then((r) => ({ rows: r.acts.map((a) => actRow(a, words)), total: r.total }));
     read.then((r) => { if (live) setLoaded({ status: 'ready', ...r }); }, () => { if (live) setLoaded({ status: 'failed' }); });
     return () => { live = false; };
   }, [api, id, kind, page, found.status, instance, settings.postsPerPage]);
@@ -76,6 +88,8 @@ export function RecordScreen({ id }: { readonly id: Id }) {
       </nav>
       {loaded.status === 'failed' && <p className="kb-notice" data-kb-tone="refusal">The record could not be loaded. Reload the page to try again.</p>}
       {loaded.status === 'loading' && <p className="kb-muted" aria-busy="true">Loading…</p>}
+      {kind === 'seasons' && <p className="kb-small kb-muted">The latest {SEASONS_SHOWN} season reveal posts.</p>}
+      {kind === 'all' && <p className="kb-small kb-muted">Its Acts with its reveals, announced Turns and season reveal posts, newest first.</p>}
       {loaded.status === 'ready' && <Rows id={id} kind={kind} page={page} rows={loaded.rows} total={loaded.total} />}
     </div>
   );

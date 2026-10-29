@@ -22,7 +22,7 @@ import { Pips } from '../postbit/Postbit.tsx';
 import { monthYear, shortDate } from '../postbit/dates.ts';
 import { reveals } from '../postbit/reveals.ts';
 import { Link } from '../router.tsx';
-import { PROFILE_ROWS, actRow, newest, revealRow, seasonRow, turnLinks, turnRow, type RecordRow, type Words } from './record.ts';
+import { PROFILE_ROWS, actRow, mergeWindow, newest, revealRow, seasonRow, turnLinks, turnRow, type RecordRow, type Words } from './record.ts';
 import { NotFound, recordHref } from './Record.tsx';
 import { useCharacter } from './useCharacter.ts';
 import './profile.css';
@@ -73,9 +73,11 @@ function Profile({ character: c }: { readonly character: Character }) {
       api.classReveals([c.id]), api.turnsAnnounced([c.id]), api.characterActs(c.id, ['post', 'spin', 'card'], { offset: 0, limit: PROFILE_ROWS }),
       api.characterReveals(c.id), api.standingsCount(),
     ]).then(async ([counts, standings, settledAt, season, revealed, turns, acts, seasons, seasonSize]) => {
+      /* The Turns' tallies are placed with one batched read, which needs the Turns first. */
       const links = await turnLinks(api, turns, words.perPage);
       /* The newest few of everything: the newest few Acts, with every reveal and Turn, hold the newest few overall. */
-      const rows = newest([...acts.acts.map((a) => actRow(a, words)), ...revealed.map((r) => revealRow(r, words)), ...turns.map((t) => turnRow(t, words, links)), ...seasons.map((a) => seasonRow(a, words))]).slice(0, PROFILE_ROWS);
+      const extras = newest([...revealed.map((r) => revealRow(r, words)), ...turns.map((t) => turnRow(t, words, links)), ...seasons.map((a) => seasonRow(a, words))]);
+      const rows = mergeWindow(extras, acts.acts.map((a) => actRow(a, words)), 0, 0, PROFILE_ROWS);
       if (live) setLoaded({ counts, standing: standings[0] ?? null, settledAt, season: season?.number ?? null, reveals: revealed, turns, rows, seasonSize });
     }, () => { if (live) setLoaded('failed'); });
     return () => { live = false; };
