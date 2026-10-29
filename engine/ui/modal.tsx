@@ -5,8 +5,14 @@
  * Esc and a press on the dimmed page close it, and focus returns to the control that opened it. If
  * that control is gone by then (the row it sat in changed under the dialog), focus goes to the
  * place the screen names with `returnFocusTo`, so a keyboard never lands on the page's top.
+ *
+ * While any modal is open the page behind cannot scroll (its overflow is restored exactly as it
+ * was when the last one closes) and everything behind the top modal is `inert`, so no keyboard,
+ * pointer or reader can reach it. Modals nest: a module-level stack makes only the top one answer
+ * Esc, Tab and stray focus. The app root is not named here: every direct child of the body other
+ * than the top modal's overlay is the page behind, which holds in the web app, in stories and in tests.
  */
-import { useEffect, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import './modal.css';
 
@@ -22,6 +28,41 @@ const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([ty
 
 const tabbables = (box: HTMLElement) => [...box.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => !el.closest('[hidden]') && el.getAttribute('aria-hidden') !== 'true');
 
+/* The open modals, lowest first. A parent renders before its child, so its sequence number is lower even though a child's effects run first. */
+interface Entry { readonly seq: number; overlay: HTMLElement | null }
+const stack: Entry[] = [];
+let sequence = 0;
+let saved: { readonly overflow: string; readonly paddingRight: string } | null = null;
+const wasInert = new Map<Element, boolean>();
+
+const isTop = (entry: Entry) => stack[stack.length - 1] === entry;
+
+/** Everything in the body but the top modal's overlay is inert; what was inert before stays inert after. */
+function settle() {
+  const top = stack[stack.length - 1]?.overlay ?? null;
+  if (stack.length === 0) {
+    for (const [el, was] of wasInert) if (!was) el.removeAttribute('inert');
+    wasInert.clear();
+    if (saved) { document.body.style.overflow = saved.overflow; document.body.style.paddingRight = saved.paddingRight; saved = null; }
+    return;
+  }
+  if (!saved) {
+    saved = { overflow: document.body.style.overflow, paddingRight: document.body.style.paddingRight };
+    const bar = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = 'hidden';
+    /* The page keeps its width when its scrollbar goes. */
+    if (bar > 0 && document.documentElement.clientWidth > 0) document.body.style.paddingRight = `calc(${getComputedStyle(document.body).paddingRight} + ${bar}px)`;
+  }
+  for (const el of Array.from(document.body.children)) {
+    if (el === top) {
+      if (wasInert.has(el) && !wasInert.get(el)) el.removeAttribute('inert');
+      continue;
+    }
+    if (!wasInert.has(el)) wasInert.set(el, el.hasAttribute('inert'));
+    el.setAttribute('inert', '');
+  }
+}
+
 export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
   const id = useId();
   const box = useRef<HTMLDivElement>(null);
@@ -31,14 +72,22 @@ export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
   latest.current = { onClose, returnFocusTo };
   /* Cleared first thing when the dialog closes, so giving focus back is not mistaken for focus escaping. */
   const open = useRef(true);
+  const overlay = useRef<HTMLDivElement>(null);
+  const [entry] = useState<Entry>(() => ({ seq: ++sequence, overlay: null }));
 
   useLayoutEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    entry.overlay = overlay.current;
+    stack.push(entry);
+    stack.sort((a, b) => a.seq - b.seq);
+    settle();
     const first = tabbables(box.current!).find((el) => el !== closeButton.current) ?? closeButton.current;
-    first?.focus();
+    if (isTop(entry)) first?.focus();
     open.current = true;
     return () => {
       open.current = false;
+      stack.splice(stack.indexOf(entry), 1);
+      settle();
       /* After the commit that closes it: the control that opened it may be replaced by that same commit. */
       queueMicrotask(() => {
         if (opener?.isConnected && opener !== document.body) opener.focus();
@@ -50,7 +99,7 @@ export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const dialog = box.current;
-      if (!dialog) return;
+      if (!dialog || !isTop(entry)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -69,7 +118,7 @@ export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
     /* Focus that lands outside (a script, a click through) is brought back in. */
     const onFocus = (e: FocusEvent) => {
       const dialog = box.current;
-      if (open.current && dialog && e.target instanceof Node && !dialog.contains(e.target)) (tabbables(dialog)[0] ?? dialog).focus();
+      if (open.current && isTop(entry) && dialog && e.target instanceof Node && !dialog.contains(e.target)) (tabbables(dialog)[0] ?? dialog).focus();
     };
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('focusin', onFocus);
@@ -80,7 +129,7 @@ export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
   }, []);
 
   return createPortal(
-    <div className="kb-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div ref={overlay} className="kb-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={box} className="kb-modal" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1}>
         <div className="kb-modal-bar">
           <h2 id={id} className="kb-modal-head">{title}</h2>

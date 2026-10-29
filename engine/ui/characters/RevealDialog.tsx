@@ -22,6 +22,7 @@ export interface RevealDialogProps {
 }
 
 const MAX = 200;
+const PAGE = 20;
 
 export function RevealDialog({ character, thread = null, onClose, onDone, returnFocusTo }: RevealDialogProps) {
   const { api, instance } = useKayfa();
@@ -29,6 +30,8 @@ export function RevealDialog({ character, thread = null, onClose, onDone, return
   const [boards, setBoards] = useState<readonly Board[]>([]);
   const [board, setBoard] = useState('');
   const [threads, setThreads] = useState<readonly ThreadSummary[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
+  const [more, setMore] = useState(false);
   const [chosen, setChosen] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -44,12 +47,27 @@ export function RevealDialog({ character, thread = null, onClose, onDone, return
 
   useEffect(() => {
     setThreads([]);
+    setTotal(null);
     setChosen('');
     if (thread || !board) return;
     let live = true;
-    void api.threads(board, { offset: 0, limit: 20 }).then((r) => { if (live) setThreads(r.threads); }, () => { if (live) setRefusal('That board’s threads could not be loaded. Choose it again.'); });
+    void api.threads(board, { offset: 0, limit: PAGE }).then((r) => { if (live) { setThreads(r.threads); setTotal(r.total); } }, () => { if (live) setRefusal('That board’s threads could not be loaded. Choose it again.'); });
     return () => { live = false; };
   }, [api, board, thread]);
+
+  /* The next page, appended: a thread that moved onto an earlier page meanwhile is not listed twice. */
+  const older = async () => {
+    setMore(true);
+    try {
+      const r = await api.threads(board, { offset: threads.length, limit: PAGE });
+      setThreads((have) => [...have, ...r.threads.filter((t) => !have.some((h) => h.id === t.id))]);
+      setTotal(r.total);
+    } catch {
+      setRefusal('Older threads could not be loaded. Try again.');
+    } finally {
+      setMore(false);
+    }
+  };
 
   const where = thread ?? chosen;
   const over = [...message].length > MAX;
@@ -78,7 +96,7 @@ export function RevealDialog({ character, thread = null, onClose, onDone, return
         <p>
           {character.name} is {withArticle(className)}. This shows everyone that, as checked by The System, as {character.name}&apos;s own post. Anyone can react to it or spin a thread from it, and this can&apos;t be taken back.
         </p>
-        {character.pendingTurn && <p className="kb-small kb-muted">{character.name} has a Turn waiting. This reveals the class it holds now, {className}, as of today.</p>}
+        {character.pendingTurn && <p className="kb-small kb-muted">{character.name} has a Turn waiting. This reveals the class it holds now, {className}, as of today. If its settlement is due, a reveal waits until it has run.</p>}
         {thread ? (
           <p className="kb-small">It will be posted in this thread.</p>
         ) : (
@@ -97,6 +115,10 @@ export function RevealDialog({ character, thread = null, onClose, onDone, return
                 {threads.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
               </select>
             </label>
+            {board && total === 0 && <p className="kb-small kb-muted">No threads on this board yet; choose another board.</p>}
+            {total !== null && threads.length < total && (
+              <p><button type="button" className="kb-button" disabled={more} onClick={() => void older()}>Show older threads</button></p>
+            )}
           </>
         )}
         <label className="kb-field">

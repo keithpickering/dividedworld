@@ -1,6 +1,7 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { usePlayer } from '../player.tsx';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { Characters } from './Characters.tsx';
 
@@ -338,5 +339,108 @@ describe('Reveal', () => {
     open(w);
     await ready();
     expect(within(row('Spritey')).queryByRole('button', { name: /^Reveal/u })).toBeNull();
+  });
+});
+
+describe('Reveal: choosing a thread', () => {
+  const openReveal = async () => {
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    return screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+  };
+
+  test('shows twenty threads of a board and offers the older ones, a page at a time', async () => {
+    const w = world();
+    for (let i = 1; i <= 25; i++) w.fake.seed.thread('general', w.stranger, `Thread ${String(i).padStart(2, '0')}`, 'x', { at: T0 + i * 1000 });
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
+    const select = await within(dialog).findByLabelText('Thread');
+    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(21));
+    expect(within(select).queryByRole('option', { name: 'Thread 01' })).toBeNull();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Show older threads' }));
+    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(26));
+    expect(within(select).getByRole('option', { name: 'Thread 01' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Show older threads' })).toBeNull();
+  });
+
+  test('says plainly when a board has no threads', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'Off Topic');
+    expect(await within(dialog).findByText('No threads on this board yet; choose another board.')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Show older threads' })).toBeNull();
+  });
+});
+
+describe('My characters: stale words', () => {
+  const turnIt = async () => {
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Turn Pipewrench' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  };
+
+  test('a confirmation is gone once another dialog opens', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    await turnIt();
+    expect(screen.getByRole('status')).toHaveTextContent(/Pipewrench/u);
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    await screen.findByRole('dialog');
+    expect(document.querySelector('.kb-flash')).toBeEmptyDOMElement();
+  });
+
+  test('a withdrawal\'s refusal is gone once a dialog opens, and a flash is gone once a withdrawal starts', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    await turnIt();
+    vi.spyOn(w.fake, 'withdrawTurn').mockResolvedValueOnce({ ok: false, error: 'there is nothing to withdraw' });
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Withdraw Pipewrench\'s Turn' }));
+    expect(await within(row('Pipewrench')).findByText('there is nothing to withdraw')).toBeInTheDocument();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Change Pipewrench\'s Turn' }));
+    await screen.findByRole('dialog');
+    await userEvent.keyboard('{Escape}');
+    expect(within(row('Pipewrench')).queryByText('there is nothing to withdraw')).toBeNull();
+  });
+
+  test('a failed load is not kept once the characters are read again', async () => {
+    const w = world();
+    const read = vi.spyOn(w.fake, 'characters').mockRejectedValueOnce(new Error('network'));
+    function Again() { const { refresh } = usePlayer(); return <button type="button" onClick={() => void refresh()}>Again</button>; }
+    renderIn(w.fake, <><Characters /><Again /></>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+    expect(await screen.findByText(/could not be loaded/u)).toBeInTheDocument();
+    /* Another character debuts, so the characters read changes and is read again. */
+    w.fake.seed.settle({ at: w.fake.clock.now(), debut: true });
+    await userEvent.click(screen.getByRole('button', { name: 'Again' }));
+    await waitFor(() => expect(screen.queryByText(/could not be loaded/u)).toBeNull());
+    expect(read).toHaveBeenCalled();
+  });
+});
+
+describe('A pending Turn and a reveal', () => {
+  const NOTE = 'If its settlement is due, a reveal waits until it has run.';
+
+  test('the row\'s note on a pending Turn says so, and the reveal dialog says it too', async () => {
+    const w = world();
+    expect((await w.fake.turn(w.pipe, 'heel', 'announced', false, false)).ok).toBe(true);
+    open(w);
+    await ready();
+    expect(within(row('Pipewrench')).getByText(NOTE)).toBeInTheDocument();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    expect(within(dialog).getByText(new RegExp(NOTE.replace('.', '\\.'), 'u'))).toBeInTheDocument();
+  });
+
+  test('a character without a pending Turn is told nothing of the kind', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    expect(screen.queryByText(NOTE)).toBeNull();
   });
 });

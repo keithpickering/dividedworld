@@ -49,6 +49,7 @@ export function Characters() {
   useEffect(() => {
     if (!signedIn) return;
     let live = true;
+    setFailed(false);
     void (async () => {
       const [people, stood, at] = await Promise.all([
         debutedIds.length ? api.characters(debutedIds) : [],
@@ -80,10 +81,13 @@ export function Characters() {
   const className = (k: string) => instance.classes.find((c) => c.key === k)?.name ?? k;
   const target = dialog ? mine.find((c) => c.id === dialog.id) ?? null : null;
   const done = (message: string) => { setFlash(message); setDialog(null); };
+  /* Words from an earlier action are not left standing under a new one. */
+  const show = (next: Dialog) => { setFlash(''); setProblem(null); setDialog(next); };
 
   const withdraw = async (c: MyCharacter) => {
     setBusy(c.id);
     setProblem(null);
+    setFlash('');
     try {
       const answer = await api.withdrawTurn(c.id);
       if (!answer.ok) { setProblem({ id: c.id, text: answer.error }); return; }
@@ -108,8 +112,9 @@ export function Characters() {
         <>
           <span className="kb-turn-pending"><b>Turn waiting</b>: to {className(p.class)}, {named}.</span>
           <span className="kb-small kb-turn-when">Takes effect at the next settlement{when ? `, ${dayAndTime(when)}` : ''}.</span>
+          <span className="kb-small kb-muted kb-turn-note">If its settlement is due, a reveal waits until it has run.</span>
           <span className="kb-row-actions">
-            <button type="button" className="kb-button" data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => setDialog({ kind: 'turn', id: c.id })}>Change</button>
+            <button type="button" className="kb-button" data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => show({ kind: 'turn', id: c.id })}>Change</button>
             <button type="button" className="kb-button" aria-label={`Withdraw ${c.name}'s Turn`} disabled={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</button>
           </span>
           {problem?.id === c.id && <span role="alert" className="kb-notice kb-small" data-kb-tone="refusal">{problem.text}</span>}
@@ -124,7 +129,7 @@ export function Characters() {
         </>
       );
     }
-    return <button type="button" className="kb-button" data-kb-return="" data-kb-primary="" aria-label={`Turn ${c.name}`} onClick={() => setDialog({ kind: 'turn', id: c.id })}>Turn…</button>;
+    return <button type="button" className="kb-button" data-kb-return="" data-kb-primary="" aria-label={`Turn ${c.name}`} onClick={() => show({ kind: 'turn', id: c.id })}>Turn…</button>;
   };
 
   const standingCell = (c: MyCharacter) => {
@@ -182,8 +187,8 @@ export function Characters() {
                         <span>Waiting to debut at the next settlement{next ? `, ${dayAndTime(next)}` : ''}.</span>
                         <span> It will debut {LOUD[c.debutLoudness ?? 'announced']}.</span>
                         <span className="kb-row-actions">
-                          <button type="button" className="kb-button" data-kb-return="" aria-label={`Drop ${c.name} now`} onClick={() => setDialog({ kind: 'drop', id: c.id })}>Drop now…</button>
-                          <button type="button" className="kb-button" aria-label={`Change how ${c.name} debuts`} onClick={() => setDialog({ kind: 'debut', id: c.id })}>Change how it debuts…</button>
+                          <button type="button" className="kb-button" data-kb-return="" aria-label={`Drop ${c.name} now`} onClick={() => show({ kind: 'drop', id: c.id })}>Drop now…</button>
+                          <button type="button" className="kb-button" aria-label={`Change how ${c.name} debuts`} onClick={() => show({ kind: 'debut', id: c.id })}>Change how it debuts…</button>
                         </span>
                       </span>
                     )}
@@ -193,7 +198,7 @@ export function Characters() {
                     <span className="kb-small kb-muted">{c.debutedAt === null ? '(chosen when it was made)' : `since ${shortDate(c.classSince)}`}</span>
                     {live && (
                       <span className="kb-row-actions">
-                        <button type="button" className="kb-button" aria-label={`Reveal ${c.name}'s class`} onClick={() => setDialog({ kind: 'reveal', id: c.id })}>Reveal…</button>
+                        <button type="button" className="kb-button" aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</button>
                       </span>
                     )}
                   </td>

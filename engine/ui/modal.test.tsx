@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { Modal } from './modal.tsx';
 
@@ -100,5 +101,83 @@ describe('the modal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remove opener' }));
     await userEvent.keyboard('{Escape}');
     expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Outside link' }));
+  });
+});
+
+describe('behind the modal', () => {
+  test('the page cannot scroll while it is open, and its scrolling is restored exactly on close', async () => {
+    document.body.style.overflow = 'scroll';
+    document.body.style.paddingRight = '3px';
+    render(<Host />);
+    await userEvent.click(opener());
+    expect(document.body.style.overflow).toBe('hidden');
+    await userEvent.keyboard('{Escape}');
+    expect(document.body.style.overflow).toBe('scroll');
+    expect(document.body.style.paddingRight).toBe('3px');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+  });
+
+  test('a body that had no overflow set has none again after', async () => {
+    render(<Host />);
+    await userEvent.click(opener());
+    await userEvent.keyboard('{Escape}');
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  test('the overlay keeps a scroll inside it from passing to the page', () => {
+    expect(readFileSync('engine/ui/modal.css', 'utf8')).toMatch(/\.kb-overlay\s*\{[^}]*overscroll-behavior:\s*contain/u);
+  });
+
+  test('the app behind is inert while it is open, and not after', async () => {
+    const { container } = render(<Host />);
+    await userEvent.click(opener());
+    expect(container).toHaveAttribute('inert');
+    expect(document.querySelector('.kb-overlay')!.closest('[inert]')).toBeNull();
+    await userEvent.keyboard('{Escape}');
+    expect(container).not.toHaveAttribute('inert');
+  });
+});
+
+function Two({ log }: { readonly log: string[] }) {
+  const [a, setA] = useState(true);
+  const [b, setB] = useState(true);
+  return (
+    <div>
+      {a && (
+        <Modal title="First" onClose={() => { log.push('first'); setA(false); }}>
+          <button type="button">In first</button>
+          {b && (
+            <Modal title="Second" onClose={() => { log.push('second'); setB(false); }}>
+              <button type="button">In second</button>
+            </Modal>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+describe('two modals open', () => {
+  test('only the top one answers Esc, then the one under it', async () => {
+    const log: string[] = [];
+    render(<Two log={log} />);
+    await userEvent.keyboard('{Escape}');
+    expect(log).toEqual(['second']);
+    await userEvent.keyboard('{Escape}');
+    expect(log).toEqual(['second', 'first']);
+  });
+
+  test('focus stays in the top one, and the page scroll is restored only when both are closed', async () => {
+    const log: string[] = [];
+    render(<Two log={log} />);
+    expect(screen.getByRole('dialog', { name: 'Second' }).contains(document.activeElement)).toBe(true);
+    screen.getByRole('button', { name: 'In first' }).focus();
+    expect(screen.getByRole('dialog', { name: 'Second' }).contains(document.activeElement)).toBe(true);
+    expect(document.body.style.overflow).toBe('hidden');
+    await userEvent.keyboard('{Escape}');
+    expect(document.body.style.overflow).toBe('hidden');
+    await userEvent.keyboard('{Escape}');
+    expect(document.body.style.overflow).toBe('');
   });
 });

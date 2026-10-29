@@ -114,21 +114,30 @@ export function webpProblem(bytes: Uint8Array): string | null {
 export function stripColorProfile(bytes: Uint8Array): Uint8Array {
   const read = webpChunks(bytes);
   if (!read.ok || read.flags === null || (read.flags & FLAGS.icc) === 0) return bytes;
-  const out: number[] = [...bytes.subarray(0, 12)];
+  /* Measured first and copied piece by piece into one buffer: a spread of a large chunk's bytes overflows the call stack. */
+  const kept: { readonly start: number; readonly end: number; readonly header: boolean }[] = [];
   let at = 12;
+  let total = 12;
   for (const chunk of read.chunks) {
     const end = at + 8 + chunk.size + (chunk.size % 2);
     if (chunk.kind !== 'ICCP') {
-      const piece = [...bytes.subarray(at, end)];
-      if (chunk.kind === 'VP8X') piece[8] = piece[8]! & ~FLAGS.icc;
-      out.push(...piece);
+      kept.push({ start: at, end, header: chunk.kind === 'VP8X' });
+      total += end - at;
     }
     at = end;
   }
-  const size = out.length - 8;
+  const out = new Uint8Array(total);
+  out.set(bytes.subarray(0, 12), 0);
+  let to = 12;
+  for (const piece of kept) {
+    out.set(bytes.subarray(piece.start, piece.end), to);
+    if (piece.header) out[to + 8] = out[to + 8]! & ~FLAGS.icc;
+    to += piece.end - piece.start;
+  }
+  const size = total - 8;
   out[4] = size & 255;
   out[5] = (size >> 8) & 255;
   out[6] = (size >> 16) & 255;
   out[7] = (size >>> 24) & 255;
-  return Uint8Array.from(out);
+  return out;
 }

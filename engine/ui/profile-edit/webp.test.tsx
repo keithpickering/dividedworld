@@ -85,4 +85,12 @@ describe('stripColorProfile: the canvas\'s own sRGB profile is dropped, and only
     const both = stripColorProfile(webpBytes(256, 256, { icc: true, exif: true }));
     expect(webpProblem(both)).toMatch(/EXIF/u);
   });
+
+  test('handles a detailed portrait\'s picture chunk of 300 KB beside a color profile (no spread of its bytes)', () => {
+    const big = webpBytes(512, 1024, { icc: true, pad: 300_000 });
+    const stripped = stripColorProfile(big);
+    expect(webpProblem(stripped)).toBeNull();
+    expect(stripped.length).toBeLessThan(big.length);
+    expect(webpSize(stripped)).toEqual({ width: 512, height: 1024 });
+  });
 });

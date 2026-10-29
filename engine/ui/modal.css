@@ -21,3 +21,8 @@
 .kb-modal:focus {
   outline: none;
 }
+
+/* A scroll that reaches the end of the box stops there; it does not carry on to the page behind. */
+.kb-overlay {
+  overscroll-behavior: contain;
+}
