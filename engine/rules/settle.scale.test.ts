@@ -23,7 +23,7 @@ const counting: ClassRules = {
 };
 const kinds = ['fire', 'tomato', 'tea', 'zzz'] as const;
 const instance: Instance = {
-  key: 'busy', name: 'Busy', classes: [counting], boards: [{ slug: 'b', name: 'B', description: '' }],
+  key: 'busy', name: 'Busy', classes: [counting], ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'b', name: 'B', description: '' }],
   copy: { turnsThreadTitle: 'S{season} Turns', revealTitle: 'S{season} Reveal', revealBody: 'All.' },
   cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
   reactions: [

@@ -23,7 +23,22 @@ const copy = deepFreeze({
   revealBody: 'Every mask, every class, every Turn, the quiet ones too. Who wore them, The System keeps to itself.',
 });
 
-export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, reactions, settings: defaults, boards });
+/** A 2003 member rank from the settled season standing. The names are the owner's placeholders, and the thresholds are the owner's to set. */
+const ranks = deepFreeze([
+  { name: 'Jobber', from: 0 },
+  { name: 'Enhancement Talent', from: 100 },
+  { name: 'Midcarder', from: 300 },
+  { name: 'Main Eventer', from: 600 },
+  { name: 'Headliner', from: 1000 },
+  { name: 'Legend', from: 2000 },
+]);
+
+/** The pips a postbit draws beside a rank: the default for now; more come with the gacha and trophies. */
+const pipStyles = deepFreeze([
+  { key: 'default', name: 'Default', full: 'pips/default-full.svg', empty: 'pips/default-empty.svg' },
+]);
+
+export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, reactions, settings: defaults, boards, ranks, pipStyles });
 
 /** The same instance on the playtest's shorter season and Turn cooldown. */
 export const playtestInstance: Instance = Object.freeze({ ...instance, settings: playtest });

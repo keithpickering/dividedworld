@@ -31,6 +31,8 @@ const good: Instance = {
   ],
   settings,
   boards: [{ slug: 'general', name: 'General', description: 'Anything.' }, { slug: 'the-system', name: 'The System', description: 'Its own.', system: true }],
+  ranks: [{ name: 'Rookie', from: 0 }, { name: 'Regular', from: 100 }, { name: 'Legend', from: 1000 }],
+  pipStyles: [{ key: 'default', name: 'Default', full: 'pip-full.svg', empty: 'pip-empty.svg' }],
   copy: { turnsThreadTitle: 'Season {season}: Turns', revealTitle: 'Season {season}: The Reveal', revealBody: 'All of it.' },
 };
 
@@ -58,6 +60,21 @@ test('the view counts are recounted on a cron of their own', () => {
   const { viewCountCron: _gone, ...without } = settings;
   assert.match(settingsProblems(without as Settings).join('\n'), /setting "viewCountCron" is missing/);
   assert.match(settingsProblems({ ...settings, viewCountCron: 'hourly' }).join('\n'), /viewCountCron/);
+});
+
+test('ranks start at 0 and rise, each named', () => {
+  assert.match(instanceProblems({ ...good, ranks: [] }).join('\n'), /no rank/);
+  assert.match(instanceProblems({ ...good, ranks: [{ name: 'Late', from: 50 }] }).join('\n'), /the first rank is from 0/);
+  assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: 'B', from: 100 }, { name: 'C', from: 100 }] }).join('\n'), /rank "C" is from 100, not above the rank before it/);
+  assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: ' ', from: 10 }] }).join('\n'), /a rank has no name/);
+  assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: 'B', from: 1.5 }] }).join('\n'), /rank "B" is from 1.5/);
+});
+
+test('pip styles hold a default, each with a key, a name and a full and an empty', () => {
+  assert.match(instanceProblems({ ...good, pipStyles: [{ key: 'gold', name: 'Gold', full: 'g', empty: 'e' }] }).join('\n'), /no pip style "default"/);
+  assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'default', name: 'Again', full: 'f', empty: 'e' }] }).join('\n'), /pip style "default" is used twice/);
+  assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'Bad Key', name: 'Bad', full: 'f', empty: 'e' }] }).join('\n'), /pip style key "Bad Key"/);
+  assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'blank', name: 'Blank', full: '', empty: 'e' }] }).join('\n'), /pip style "blank" has no full/);
 });
 
 test('two reactions with one key are a problem', () => {
@@ -114,7 +131,7 @@ test('settings that are not an object are a problem, not a crash', () => {
 });
 
 test('an instance missing a list is a problem, not a crash', () => {
-  for (const key of ['classes', 'cards', 'reactions', 'boards'] as const) {
+  for (const key of ['classes', 'cards', 'reactions', 'boards', 'ranks', 'pipStyles'] as const) {
     const { [key]: _gone, ...rest } = good;
     assert.match(instanceProblems(rest as Instance).join('\n'), new RegExp(`no ${key} list`), key);
   }

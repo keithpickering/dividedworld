@@ -12,7 +12,7 @@ const instance: Instance = {
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
     postMaxLength: 50, titleMaxLength: 10, economy: { 'splat.price': 100 },
   },
-  boards: [{ slug: 'general', name: 'General', description: '' }],
+  ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { turnsThreadTitle: 'S{season} Turns', revealTitle: 'S{season} Reveal', revealBody: 'All.' },
 };
 const id = '11111111-1111-4111-8111-111111111111';

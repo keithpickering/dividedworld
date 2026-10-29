@@ -299,6 +299,26 @@ export interface Copy {
   readonly revealBody: string;
 }
 
+/**
+ * A member rank, as a 2003 postbit shows one: its name, from a settled season standing up.
+ * Ranks are listed ascending, the first from 0; a standing below 0 holds the first.
+ */
+export interface Rank {
+  readonly name: string;
+  readonly from: Hundredths;
+}
+
+/**
+ * A style of pips, the row a postbit draws beside a rank: a full and an empty image, named for the
+ * screens to draw. The instance's `default` is every character's until its player picks another.
+ */
+export interface PipStyle {
+  readonly key: string;
+  readonly name: string;
+  readonly full: string;
+  readonly empty: string;
+}
+
 export interface Instance {
   readonly key: string;
   readonly name: string;
@@ -308,4 +328,6 @@ export interface Instance {
   readonly reactions: readonly ReactionKind[];
   readonly settings: Settings;
   readonly boards: readonly BoardSeed[];
+  readonly ranks: readonly Rank[];
+  readonly pipStyles: readonly PipStyle[];
 }

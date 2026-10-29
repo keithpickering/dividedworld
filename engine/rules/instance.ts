@@ -81,7 +81,7 @@ function duplicates<T>(items: readonly T[], key: (t: T) => string): string[] {
 
 export function instanceProblems(instance: Instance): string[] {
   const out: string[] = [];
-  const lists = ['classes', 'cards', 'reactions', 'boards'] as const;
+  const lists = ['classes', 'cards', 'reactions', 'boards', 'ranks', 'pipStyles'] as const;
   for (const key of lists) if (!Array.isArray(instance[key])) out.push(`the instance has no ${key} list`);
   if (out.length) return [...out, ...settingsProblems(instance.settings)];
   for (const k of duplicates(instance.reactions, (r) => r.key)) out.push(`reaction key "${k}" is used twice`);
@@ -101,6 +101,19 @@ export function instanceProblems(instance: Instance): string[] {
   if (!systems.length) out.push('no board is The System\'s: exactly one board sets system: true, where The System posts');
   if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
+  if (!instance.ranks.length) out.push('the instance has no rank');
+  instance.ranks.forEach((r, i) => {
+    if (typeof r.name !== 'string' || r.name.trim() === '') out.push('a rank has no name');
+    if (!Number.isSafeInteger(r.from)) out.push(`rank "${r.name}" is from ${r.from}; a rank is from a whole number of hundredths`);
+    else if (i === 0 && r.from !== 0) out.push(`the first rank is from 0, not ${r.from}`);
+    else if (i > 0 && !(r.from > instance.ranks[i - 1]!.from)) out.push(`rank "${r.name}" is from ${r.from}, not above the rank before it`);
+  });
+  for (const k of duplicates(instance.pipStyles, (p) => p.key)) out.push(`pip style "${k}" is used twice`);
+  if (!instance.pipStyles.some((p) => p.key === 'default')) out.push('there is no pip style "default", every character\'s until its player picks another');
+  for (const p of instance.pipStyles) {
+    if (typeof p.key !== 'string' || !/^[a-z][a-z0-9-]*$/.test(p.key)) out.push(`pip style key "${p.key}" is not lowercase words joined by hyphens`);
+    for (const part of ['name', 'full', 'empty'] as const) if (typeof p[part] !== 'string' || p[part].trim() === '') out.push(`pip style "${p.key}" has no ${part}`);
+  }
   for (const key of ['turnsThreadTitle', 'revealTitle', 'revealBody'] as const) {
     const words = instance.copy?.[key];
     if (typeof words !== 'string' || words.trim() === '') out.push(`the instance has no copy for ${key}`);

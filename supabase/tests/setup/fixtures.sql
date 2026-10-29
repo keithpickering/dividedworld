@@ -32,6 +32,7 @@ insert into card_kinds (key, name, alignment, price_setting) values ('sweetie', 
 insert into card_kinds (key, name, alignment, price_setting, stack, seeded) values ('blot', 'Blot', 'salty', 'blot.price', 3, true);
 insert into boards (slug, name, is_system) values ('general', 'General', false), ('the-system', 'The System', true);
 insert into seasons (number, starts_at) values (1, '2000-01-01T00:00:00Z');
+insert into pip_styles (key, name, full_image, empty_image) values ('default', 'Default', 'full.svg', 'empty.svg'), ('stars', 'Stars', 'star.svg', 'hollow.svg');
 
 create schema tests;
 grant usage on schema tests to anon, authenticated, service_role;
