@@ -1,0 +1,48 @@
+/* A post's words. Newlines are the player's own line breaks. */
+.kb-bb {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.kb-bb ul,
+.kb-bb ol {
+  margin: 0.4em 0;
+  padding-left: 2em;
+  white-space: normal;
+}
+
+.kb-bb-size-1 { font-size: 0.7em; }
+.kb-bb-size-2 { font-size: 0.85em; }
+.kb-bb-size-3 { font-size: 1em; }
+.kb-bb-size-4 { font-size: 1.2em; }
+.kb-bb-size-5 { font-size: 1.5em; }
+.kb-bb-size-6 { font-size: 2em; }
+.kb-bb-size-7 { font-size: 2.5em; }
+
+.kb-bb-img {
+  max-width: 100%;
+  height: auto;
+}
+
+.kb-bb-code {
+  border: 1px solid var(--kb-rule);
+  font-family: var(--kb-font-mono);
+  margin: 0.4em 0;
+  padding: 0.4em 1%;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.kb-quote {
+  border: 1px solid var(--kb-rule);
+  margin: 0.4em 0;
+  padding: 0.3em 2%;
+}
+
+.kb-quote-from {
+  display: block;
+  font-size: var(--kb-size-small);
+  font-style: normal;
+  color: var(--kb-muted);
+}

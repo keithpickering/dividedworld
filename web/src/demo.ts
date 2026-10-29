@@ -10,6 +10,8 @@ export interface Demo {
   readonly other: string;
   readonly characters: { readonly pipewrench: string; readonly hooligan: string; readonly spritey: string };
   readonly thread: string;
+  /** A thread of 170 Acts, nine pages of twenty: post 142 is on page 8. */
+  readonly longThread: string;
 }
 
 export function seedDemo(fake: Fake): Demo {
@@ -27,10 +29,14 @@ export function seedDemo(fake: Fake): Demo {
   fake.seed.react(other, spritey, fake.seed.post(thread, hooligan, 'Calm down, everyone.', { at: t0 + 4 * day }), 'tea');
   fake.seed.react(me, pipewrench, act, 'fire');
   fake.seed.thread('general', hooligan, 'Rate my avatar', 'Be honest.', { at: t0 + 5 * day });
+  const long = fake.seed.thread('general', spritey, 'The long one', 'Post 1 of a thread long enough to have pages.', { at: t0 + 4 * day });
+  for (let n = 2; n <= 170; n++) {
+    fake.seed.post(long.thread, n % 3 === 0 ? hooligan : n % 2 === 0 ? pipewrench : spritey, `Post ${n} of the long thread. [i]Still going.[/i]`, { at: t0 + 4 * day + n * 60_000 });
+  }
   fake.seed.settle({ at: t0 + 6 * day, wallet: { [me]: 240 }, standings: { [pipewrench]: 140, [hooligan]: 60, [spritey]: 90 } });
   fake.seed.cards(me, { whoops: 2, 'stick-around': 1 });
   fake.seed.estimate(me, { entries: [{ character: pipewrench, reason: 'heel.drewHeat', amount: 85 }] });
   fake.seed.views(thread, 3);
   fake.signInAs(me);
-  return { me, other, characters: { pipewrench, hooligan, spritey }, thread };
+  return { me, other, characters: { pipewrench, hooligan, spritey }, thread, longThread: long.thread };
 }

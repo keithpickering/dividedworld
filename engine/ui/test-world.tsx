@@ -27,7 +27,7 @@ export const testInstance: Instance = {
   key: 'test', name: 'Test',
   copy: { turnsThreadTitle: 'Turns {season}', revealTitle: 'Reveal {season}', revealBody: 'All.' },
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }],
-  cards: [],
+  cards: [{ key: 'whoops', name: 'Whoops!' } as unknown as Instance['cards'][number]],
   reactions: [
     { key: 'fire', emoji: 'F', quadrant: 'excitedPositive' }, { key: 'tomato', emoji: 'T', quadrant: 'excitedNegative' },
     { key: 'tea', emoji: 'E', quadrant: 'calmPositive' }, { key: 'zzz', emoji: 'Z', quadrant: 'boredNegative' },
@@ -38,11 +38,11 @@ export const testInstance: Instance = {
     { slug: 'off-topic', name: 'Off Topic', description: 'Elsewhere.' },
     { slug: 'the-system', name: 'The System', description: 'Its words.', system: true },
   ],
-  ranks: [{ name: 'Jobber', from: 0 }],
+  ranks: [{ name: 'Jobber', from: 0 }, { name: 'Midcarder', from: 300 }, { name: 'Main Eventer', from: 600 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
 };
 
-const ui = { copy: { siteName: 'Test', siteTagline: 'test', shopName: 'Shop' } } as unknown as Kayfa['ui'];
+const ui = { copy: { siteName: 'Test', siteTagline: 'test', shopName: 'Shop' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } } } as unknown as Kayfa['ui'];
 
 export interface WorldOptions {
   /** The address the screen opens at (a path, a query, a fragment). */

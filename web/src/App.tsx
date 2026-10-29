@@ -12,6 +12,7 @@ import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { RouterProvider } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
+import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 
@@ -20,6 +21,7 @@ const LINKS = [{ to: '/', label: 'Index' }];
 const ROUTES: readonly Route[] = [
   { path: '/', render: () => <IndexScreen /> },
   { path: '/b/:slug', render: ({ slug }) => <BoardScreen slug={slug!} /> },
+  { path: '/t/:thread', render: ({ thread }) => <ThreadScreen thread={thread!} /> },
 ];
 
 /** The account's theme and motion, once it is known; the device decides until then. */
