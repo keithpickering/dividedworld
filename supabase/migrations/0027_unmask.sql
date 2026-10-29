@@ -23,7 +23,7 @@ alter table acts add constraint acts_check1 check (kind in ('post', 'tally', 're
 -- was made, and its words are a caster's, at most 200 characters, whoever writes it.
 alter table acts add constraint acts_unmask_untargeted check (kind <> 'unmask' or target_act_id is null);
 alter table acts add constraint acts_unmask_said check (kind <> 'unmask'
-  or (payload ->> 'via' in ('act', 'debut', 'turn') and char_length(payload ->> 'message') <= 200));
+  or (coalesce(payload ->> 'via', '') in ('act', 'debut', 'turn') and char_length(coalesce(payload ->> 'message', '')) <= 200));
 
 -- A character's reveals, newest first, for the postbit: one index probe per character on a page.
 create index acts_unmask on acts (character, created_at desc) where kind = 'unmask';

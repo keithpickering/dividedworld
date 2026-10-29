@@ -76,6 +76,7 @@ begin
   if pg_temp.refusal(format('select tests.act(%L, %L, %L, %L)', b, 'unmask', t, '{"class": "beta", "message": "", "via": "act"}')) is distinct from 'an unmask names the class its character holds' then raise exception 'an unmask naming a class not held was written'; end if;
   if coalesce(pg_temp.refusal(format('select tests.act(%L, %L, %L, %L, %L)', b, 'unmask', t, '{"class": "alpha", "message": "", "via": "act"}', tests.post(b, t))), '') not like '%"acts_unmask_untargeted"' then raise exception 'an unmask pointing at an Act was written'; end if;
   if coalesce(pg_temp.refusal(format('select tests.act(%L, %L, %L, %L)', b, 'unmask', t, '{"class": "alpha", "message": "", "via": "rumor"}')), '') not like '%"acts_unmask_said"' then raise exception 'an unmask made no known way was written'; end if;
+  if coalesce(pg_temp.refusal(format('select tests.act(%L, %L, %L, %L)', b, 'unmask', t, '{"class": "alpha", "message": ""}')), '') not like '%"acts_unmask_said"' then raise exception 'an unmask saying nothing of how it was made was written'; end if;
   if coalesce(pg_temp.refusal(format('select tests.act(%L, %L, %L, %L)', b, 'unmask', t, jsonb_build_object('class', 'alpha', 'message', repeat('x', 201), 'via', 'act'))), '') not like '%"acts_unmask_said"' then raise exception 'an unmask of 201 characters was written'; end if;
 end $$;
 
