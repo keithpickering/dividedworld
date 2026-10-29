@@ -34,8 +34,10 @@ export function RouterProvider({ children, window: w = globalThis.window }: { re
     return () => w.removeEventListener('popstate', onPop);
   }, [w]);
   const navigate = useCallback((to: string, options?: { readonly replace?: boolean }) => {
-    const url = new URL(to, w.location.href);
-    if (url.origin !== w.location.origin) { w.location.assign(url.href); return; }
+    // An in-app navigation never leaves the site: an address that resolves elsewhere (a stray `next`,
+    // a link built from text) is the index. A <Link> to another site is left to the browser instead.
+    let url = new URL(to, w.location.href);
+    if (url.origin !== w.location.origin) url = new URL('/', w.location.href);
     const same = url.pathname + url.search + url.hash === w.location.pathname + w.location.search + w.location.hash;
     if (options?.replace || same) w.history.replaceState(null, '', url.pathname + url.search + url.hash);
     else w.history.pushState(null, '', url.pathname + url.search + url.hash);
@@ -65,6 +67,7 @@ export function Link({ to, replace, onClick, ...rest }: { readonly to: string; r
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || rest.target || rest.download !== undefined) return;
+    if (new URL(to, window.location.href).origin !== window.location.origin) return;
     e.preventDefault();
     navigate(to, { replace });
   };

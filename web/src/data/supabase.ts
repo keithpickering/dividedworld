@@ -521,9 +521,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     characters,
     async characterCounts(id): Promise<CharacterCounts> {
-      const kind = (k: string) => count(() => client.from('acts_public').select('id', { count: 'exact', head: true }).eq('character', id).eq('kind', k));
-      const [posts, spins, cards] = await Promise.all([kind('post'), kind('spin'), kind('card')]);
-      return { posts, spins, cards };
+      // One row of counters kept by a trigger (0030), never a count of the character's Acts; none for a character that has done nothing.
+      if (!idOk(id)) return { posts: 0, spins: 0, cards: 0 };
+      const r = (await list(() => client.from('character_post_counts').select('character,posts,spins,cards').eq('character', id)))[0];
+      return { posts: num(r?.['posts']), spins: num(r?.['spins']), cards: num(r?.['cards']) };
     },
     async characterStats(ids) {
       const out: Record<Id, { posts: number }> = Object.fromEntries(ids.map((id) => [id, { posts: 0 }]));

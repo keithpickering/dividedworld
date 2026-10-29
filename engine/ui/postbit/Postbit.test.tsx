@@ -119,6 +119,10 @@ describe('reveals(): which statement of its class a character has made', () => {
     expect(out.get('b')).toEqual({ revealed: { class: 'face', at: '2026-10-05T00:00:00Z' }, turnedAt: null });
     expect(out.has('c')).toBe(false);
   });
+  test('a Turn from before the reveal, or at its moment, says nothing: there is no "Has Turned since"', () => {
+    const out = reveals([rev('a', 'heel', '2026-10-03T00:00:00Z')], [turn('a', '2026-09-15T00:00:00Z'), turn('a', '2026-10-03T00:00:00Z')]);
+    expect(out.get('a')).toEqual({ revealed: { class: 'heel', at: '2026-10-03T00:00:00Z' }, turnedAt: null });
+  });
 });
 
 describe('dates', () => {

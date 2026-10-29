@@ -132,7 +132,12 @@ create index acts_recent_posts on acts (thread, created_at) where kind = 'post' 
 -- A board's list of threads, one row each, as a screen shows it. The first and last Acts are read by
 -- the unique (thread, seq) index, the week's replies by acts_recent_posts. Replies this week are
 -- posts (no spin, card or edit) made in the last 7 days, not counting the opening post; replies is
--- the thread's counter (threads.replies, above), never a count of its posts. A spun thread's origin
+-- the thread's counter (threads.replies, above), never a count of its posts. replies_this_week is
+-- capped at the hotReplies setting: a screen only compares it with that threshold (a thread is HOT
+-- at that many), so counting a busy thread's every reply this week (hundreds, for each row of a
+-- page) would be work for a number nobody reads; the subquery stops at the threshold. A column that
+-- reads hotReplies when the setting is absent (an instance not yet seeded with it) is not capped, as
+-- `limit null` is no limit. A spun thread's origin
 -- (the origin Act's thread, that thread's title and the Act's seq) is read in the same query, so a
 -- list never reads it row by row. Public,
 -- as threads and acts are: every column is a thread's or an Act's public one, a character's id as
@@ -142,7 +147,10 @@ create view thread_list as
   select t.id, t.board, t.title, t.origin_act_id, t.created_at, t.last_at, t.next_seq - 1 as last_seq, t.replies,
          f.id as first_act, f.character as first_character,
          l.id as last_act, l.character as last_character,
-         (select count(*) from acts r where r.thread = t.id and r.kind = 'post' and r.seq > 1 and r.created_at > now() - interval '7 days') as replies_this_week,
+         (select count(*) from (
+            select 1 from acts r where r.thread = t.id and r.kind = 'post' and r.seq > 1 and r.created_at > now() - interval '7 days'
+            limit (select (h.value #>> '{}')::integer from settings h where h.key = 'hotReplies')
+          ) capped) as replies_this_week,
          o.thread as origin_thread, ot.title as origin_title, o.seq as origin_seq
   from threads t
   left join acts f on f.thread = t.id and f.seq = 1
@@ -152,36 +160,43 @@ create view thread_list as
 
 -- ------------------------------------------------------------- a character's post count ----
 
--- How many posts a character has made, for a page of postbits ("Posts: 1,204" under every avatar).
--- A counter in a row of its own, kept by a trigger after each post, and not a count of the Acts: a
--- page of twenty postbits must cost twenty primary-key reads however many posts a busy character has
--- made, where counting them would read all of them, on every page view. The price is one more
--- write per post, to the row of the character that posted (a player's own character, so no two
--- players' posts contend for it), chosen over a read that grows with the Acts. A card, a spin, an
--- unmask, a tally and an edit are not posts. A character that never posted has no row, and the
--- read says 0. Public, as an Act's author and kind already are; the table is not an Act and holds
--- nothing an Act does not.
+-- How many posts, spins and cards a character has made, for a page of postbits ("Posts: 1,204" under
+-- every avatar) and a profile's three counts. Counters in a row of their own, kept by a trigger after
+-- each such Act, and not counts of the Acts: a page of twenty postbits must cost twenty primary-key
+-- reads however many posts a busy character has made, and a profile one, where counting would read
+-- all of a character's history on every view. The price is one more write per post, spin or card, to
+-- the row of the character that acted (a player's own character, so no two players' Acts contend for
+-- it), chosen over a read that grows with the Acts. An unmask, a tally, a reveal and an edit are
+-- counted by none. A character that never acted has no row, and the read says 0. Public, as an Act's
+-- author and kind already are; the table is not an Act and holds nothing an Act does not.
 create table character_post_counts (
   character uuid primary key references characters (id),
-  posts integer not null check (posts >= 0)
+  posts integer not null default 0 check (posts >= 0),
+  spins integer not null default 0 check (spins >= 0),
+  cards integer not null default 0 check (cards >= 0)
 );
 alter table character_post_counts enable row level security;
 
-create function acts_count_post() returns trigger
+create function acts_count_character() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  p integer := case when new.kind = 'post' then 1 else 0 end;
+  s integer := case when new.kind = 'spin' then 1 else 0 end;
+  k integer := case when new.kind = 'card' then 1 else 0 end;
 begin
-  insert into character_post_counts as c (character, posts) values (new.character, 1)
-  on conflict (character) do update set posts = c.posts + 1;
+  insert into character_post_counts as c (character, posts, spins, cards) values (new.character, p, s, k)
+  on conflict (character) do update set posts = c.posts + p, spins = c.spins + s, cards = c.cards + k;
   return new;
 end $$;
-create trigger acts_count_post after insert on acts for each row when (new.kind = 'post' and new.character is not null) execute function acts_count_post();
+create trigger acts_count_character after insert on acts for each row when (new.kind in ('post', 'spin', 'card') and new.character is not null) execute function acts_count_character();
 
 -- For characters that predate it; kept as a function so a test can replay it, and not callable by the API roles.
 create function backfill_character_post_counts() returns void
 language sql set search_path = public, pg_temp as $$
-  insert into character_post_counts (character, posts)
-  select a.character, count(*) from acts a where a.kind = 'post' and a.character is not null group by a.character
-  on conflict (character) do update set posts = excluded.posts
+  insert into character_post_counts (character, posts, spins, cards)
+  select a.character, count(*) filter (where a.kind = 'post'), count(*) filter (where a.kind = 'spin'), count(*) filter (where a.kind = 'card')
+  from acts a where a.kind in ('post', 'spin', 'card') and a.character is not null group by a.character
+  on conflict (character) do update set posts = excluded.posts, spins = excluded.spins, cards = excluded.cards
 $$;
 select backfill_character_post_counts();
 
@@ -200,4 +215,4 @@ revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_sett
 grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list, character_post_counts to authenticated;
 create policy read_all on character_post_counts for select to authenticated using (true);
 grant select on screen_settings to anon, authenticated;
-revoke execute on function backfill_thread_counters(), backfill_character_post_counts(), acts_count_post() from public, anon, authenticated;
+revoke execute on function backfill_thread_counters(), backfill_character_post_counts(), acts_count_character() from public, anon, authenticated;

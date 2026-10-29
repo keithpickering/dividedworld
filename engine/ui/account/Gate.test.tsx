@@ -86,6 +86,24 @@ describe('Where sign-in returns to', () => {
     for (const bad of [null, '', '//evil.example', 'https://evil.example', '/\\evil.example', 'javascript:alert(1)', 'standings']) expect(safeNext(bad)).toBe('/');
   });
 
+  test('nothing that resolves off this site is followed, however the address is dressed', () => {
+    const origin = window.location.origin;
+    // The URL parser drops tab, newline and carriage return, so "/\t/evil.example" is "//evil.example".
+    const raw = ['/\t/evil.example', '/\n/evil.example', '/\r/evil.example', '/\t\\evil.example', '/\t/\tevil.example', '/\\x', '//x', 'https://x', 'javascript:x', ' /x', '\t/x', '\n//x', '/\\\\x'];
+    for (const bad of raw) expect(safeNext(bad), JSON.stringify(bad)).toBe('/');
+    // Percent-encoded they are ordinary path characters: still this site, never another.
+    for (const ok of ['/%09/evil.example', '/%0A/evil.example', '/%0D/evil.example']) {
+      const got = safeNext(ok);
+      expect(new URL(got, origin).origin).toBe(origin);
+      expect(got).toBe(ok);
+    }
+  });
+
+  test('a good path keeps its query and fragment', () => {
+    expect(safeNext('/t/abc?page=2&x=%2F#post-9')).toBe('/t/abc?page=2&x=%2F#post-9');
+    expect(safeNext('/standings#top')).toBe('/standings#top');
+  });
+
   test('the link to sign in carries the page the visitor is on, but not the sign-in pages themselves', () => {
     expect(signInHref('/standings', '')).toBe('/sign-in?next=%2Fstandings');
     expect(signInHref('/t/1', '?page=2')).toBe('/sign-in?next=%2Ft%2F1%3Fpage%3D2');

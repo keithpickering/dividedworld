@@ -1,6 +1,6 @@
 /** The browser's side of cropping: decoding a picture, drawing a crop on a canvas, encoding it as a WebP. Tested in a real browser (e2e/avatar.spec.ts); jsdom has no canvas. */
 import { CropError, type Picture, type PictureIo } from './crops.ts';
-import { fitsWithoutShrinking, NOT_A_PICTURE, planDecode, TOO_LARGE, webpFrom } from './decode.ts';
+import { bitmapIsAsked, fitsWithoutShrinking, NOT_A_PICTURE, planDecode, TOO_LARGE, webpFrom } from './decode.ts';
 import { encodeWebpWasm } from './wasm-webp.ts';
 
 const STORED_UNREADABLE = 'Your stored portrait could not be read back into this browser to cut a new square from it. Upload a picture again to set both.';
@@ -35,7 +35,7 @@ async function open(src: string, crossOrigin: boolean, blob: Blob | null, failur
     canvas.width = plan.size.width;
     canvas.height = plan.size.height;
     const ctx = canvas.getContext('2d');
-    ctx?.drawImage(source, 0, 0);
+    ctx?.drawImage(source, 0, 0, plan.size.width, plan.size.height);
     const shown = ctx ? await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.92)) : null;
     if (!shown) { release2(); release(); throw new CropError(TOO_LARGE); }
     const shownUrl = URL.createObjectURL(shown);
@@ -43,8 +43,9 @@ async function open(src: string, crossOrigin: boolean, blob: Blob | null, failur
   };
   if (blob && typeof createImageBitmap === 'function') {
     const bitmap = await createImageBitmap(blob, { resizeWidth: plan.size.width, resizeHeight: plan.size.height, resizeQuality: 'high', imageOrientation: 'from-image' }).catch(() => null);
-    /* Where the bitmap could not be made, the <img> path below has its own cap. */
-    if (bitmap) return showing(bitmap, () => bitmap.close());
+    /* Where the bitmap could not be made, or the browser ignored the resize and handed back the whole picture, the <img> path below has its own cap. */
+    if (bitmap && bitmapIsAsked(bitmap, plan.size)) return showing(bitmap, () => bitmap.close());
+    bitmap?.close();
   }
   if (!fitsWithoutShrinking(natural)) { release(); throw new CropError(TOO_LARGE); }
   const canvas = document.createElement('canvas');

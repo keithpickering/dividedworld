@@ -1,5 +1,5 @@
 /**
- * The accessibility check every story is held to (engine/ui/a11y.test.tsx) and its poisoned twin
+ * The accessibility check every story is held to (web/a11y.test.tsx, the composition root's sweep) and its poisoned twin
  * (a11y.selftest.test.tsx) share this one function: axe-core with the WCAG 2.0, 2.1 and 2.2 A and
  * AA rules. jsdom has no layout and no painting, so axe's color-contrast rule cannot run here; the
  * colors are held by `contrast.ts` (the token pairs, in light and dark) and by the e2e pass in a

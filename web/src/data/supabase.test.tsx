@@ -153,6 +153,17 @@ describe('reads and their rows', () => {
     expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['thread_list']);
   });
 
+  it('counts a character\'s posts, spins and cards from its one counter row, never from its Acts', async () => {
+    const h = harness(() => rows([{ character: B, posts: 12, spins: 3, cards: 5 }]));
+    expect(await h.api.characterCounts(B)).toEqual({ posts: 12, spins: 3, cards: 5 });
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['character_post_counts']);
+    const [req] = h.to('character_post_counts');
+    expect(req?.url.searchParams.get('select')).toBe('character,posts,spins,cards');
+    expect(req?.url.searchParams.get('character')).toBe(`eq.${B}`);
+    // No row: a character that has done nothing, or has not debuted.
+    expect(await harness(() => rows([])).api.characterCounts(B)).toEqual({ posts: 0, spins: 0, cards: 0 });
+  });
+
   it('counts a page of characters\' posts in one read of the counters, 0 for each without one', async () => {
     const h = harness(() => rows([{ character: B, posts: 12 }]));
     const stats = await h.api.characterStats([B, A]);

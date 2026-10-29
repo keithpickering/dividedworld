@@ -62,6 +62,41 @@ check('a file in a subdirectory of engine/ is held to the same line',
 check('a .mjs file in engine/ is held to the same line',
   fires(`import x from '../instances/divided-world/index.ts';`, 'engine/x.mjs').length === 1);
 
+/* ---- a glob names files as an import does, and a file outside engine/ can carry the engine to an instance ---- */
+{
+  const r = fires(`const m = import.meta.glob('../../instances/*/ui/**/*.stories.tsx', { eager: true });`, 'engine/ui/a11y.test.tsx');
+  check('import.meta.glob of a string naming instances/ fires in engine/', r.length === 1 && r[0]?.file === 'engine/ui/a11y.test.tsx' && r[0]?.line === 1, JSON.stringify(r));
+}
+check('import.meta.glob of an array naming instances/ fires, whichever element names it',
+  fires(`const m = import.meta.glob(['./**/*.stories.tsx', '../../instances/*/ui/**/*.stories.tsx'], { eager: true });`, 'engine/ui/a11y.test.tsx').length === 1);
+check('import.meta.glob with a pattern it cannot read fires in engine/, as a dynamic import does',
+  fires('const m = import.meta.glob(pattern);', 'engine/ui/a11y.test.tsx').length === 1);
+check('import.meta.glob of the engine\'s own files is clean',
+  fires(`const m = import.meta.glob(['./**/*.stories.tsx', '!./**/skip.stories.tsx'], { eager: true });`, 'engine/ui/a11y.test.tsx').length === 0);
+{
+  const tree = { '.storybook/preview.tsx': `import { ui } from '../instances/divided-world/ui/index.ts';\nexport default {};` };
+  const r = fires(`import * as preview from '../../.storybook/preview.tsx';`, 'engine/ui/a11y.test.tsx', tree);
+  check('an engine file importing a composition-root file that imports an instance fires, naming the chain',
+    r.length === 1 && r[0]?.file === 'engine/ui/a11y.test.tsx' && /\.storybook\/preview\.tsx/.test(r[0]?.why ?? '') && /instances\/divided-world/.test(r[0]?.why ?? ''), JSON.stringify(r));
+}
+{
+  const tree = {
+    'web/src/shared.ts': `export * from './deeper.ts';`,
+    'web/src/deeper.ts': `export const x = import.meta.glob('../../instances/*/ui/index.ts');`,
+  };
+  const r = fires(`import { x } from '../../web/src/shared.ts';`, 'engine/ui/thing.tsx', tree);
+  check('the chain is followed through several files, and a glob in a followed file counts', r.length === 1, JSON.stringify(r));
+}
+{
+  const tree = { 'web/a.ts': `import './b.ts';`, 'web/b.ts': `import './a.ts';\nimport { z } from '../engine/rules/z.ts';` };
+  check('a cycle outside the engine ends, and a file that only reaches the engine is clean',
+    fires(`import '../../web/a.ts';`, 'engine/ui/thing.tsx', tree).length === 0);
+}
+check('an engine import of a bare package, or of a file the tree does not hold, is not followed',
+  fires(`import x from 'react';\nimport y from '../../elsewhere/y.ts';`, 'engine/ui/thing.tsx', {}).length === 0);
+check('a composition-root file that imports an instance is clean on its own',
+  fires(`import { ui } from '../instances/divided-world/ui/index.ts';`, '.storybook/preview.tsx').length === 0);
+
 /* ---- the screens: .tsx files and stylesheets are read too ---- */
 check('an engine/ui component importing an instance\'s theme stylesheet fires',
   fires(`import '../../../instances/divided-world/ui/theme.css';\nexport const Frame = () => <div />;`, 'engine/ui/frame/Frame.tsx').length === 1);

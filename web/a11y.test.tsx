@@ -1,4 +1,8 @@
 /**
+ * The composition root's sweep: it imports the preview, which hands the stories an instance's look
+ * and words, so it lives in web/ and not in engine/ui/ (the engine never knows an instance; the pure
+ * check it calls, engine/ui/a11y.ts, and its poisoned twin stay in the engine).
+ *
  * Every Storybook story, rendered in its fake world, holds no axe violation at WCAG AA, and
  * actually shows its screen: a story that renders an error or an empty page is checked against
  * nothing, so it fails here unless it is one of the by-design states listed below. The stories are
@@ -7,13 +11,13 @@
 import { render, waitFor } from '@testing-library/react';
 import { composeStories, setProjectAnnotations } from '@storybook/react-vite';
 import { describe, expect, test } from 'vitest';
-import * as preview from '../../.storybook/preview.tsx';
-import { axeViolations, describeViolations } from './a11y.ts';
+import * as preview from '../.storybook/preview.tsx';
+import { axeViolations, describeViolations } from '../engine/ui/a11y.ts';
 
 setProjectAnnotations(preview as never);
 
 const modules = import.meta.glob<Record<string, unknown>>(
-  ['./**/*.stories.tsx', '../../instances/*/ui/**/*.stories.tsx'],
+  ['../engine/ui/**/*.stories.tsx', '../instances/*/ui/**/*.stories.tsx'],
   { eager: true },
 );
 

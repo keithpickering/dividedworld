@@ -249,7 +249,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at), lastAt: iso(all.length ? Math.max(...all.map((a) => a.at)) : t.at), lastSeq: t.nextSeq - 1,
       replies: all.filter((a) => a.kind === 'post' && a.seq! > 1).length,
       firstAct: first?.id ?? null, firstCharacter: first?.character ?? null, lastAct: last?.id ?? null, lastCharacter: last?.character ?? null,
-      repliesThisWeek: all.filter((a) => a.kind === 'post' && a.seq! > 1 && a.at > week && a.at <= now()).length,
+      // Capped at the hotReplies threshold, as thread_list counts it: a screen only compares it with that.
+      repliesThisWeek: Math.min(settings.hotReplies, all.filter((a) => a.kind === 'post' && a.seq! > 1 && a.at > week && a.at <= now()).length),
       originThread: origin?.thread ?? null, originTitle: from?.title ?? null, originSeq: origin?.seq ?? null,
     };
   }

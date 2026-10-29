@@ -58,6 +58,19 @@ function world(overrides: Partial<Settings> = {}) {
   return { fake, ana, bo, anaFace, anaHeel, boFace, thread, opener };
 }
 
+describe('a thread\'s replies this week are counted only up to hotReplies, as thread_list counts them', () => {
+  test('a thread with more recent replies than the threshold reads the threshold, and replies stays the whole count', async () => {
+    const { fake, anaFace, thread } = world();
+    for (let i = 0; i < 12; i++) fake.seed.post(thread, anaFace, `reply ${i}`);
+    const row = await fake.thread(thread);
+    expect(row?.replies).toBe(12);
+    expect(row?.repliesThisWeek).toBe(10);
+    const few = world();
+    for (let i = 0; i < 4; i++) few.fake.seed.post(few.thread, few.anaFace, `reply ${i}`);
+    expect((await few.fake.thread(few.thread))?.repliesThisWeek).toBe(4);
+  });
+});
+
 describe('refusing a post in the server\'s words', () => {
   test('an empty body, a long one, and a title', async () => {
     const { fake, anaFace, thread } = world();

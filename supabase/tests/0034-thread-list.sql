@@ -18,6 +18,8 @@ declare
   reply uuid;
   card uuid;
   spun uuid;
+  th_cap uuid;
+  i integer;
   r record;
   ln record;
   plan text := '';
@@ -50,6 +52,16 @@ begin
   perform tests.post(a, older, 'Recent 2', now() - interval '6 days');
   perform tests.act(a, 'edit', older, '{"body": "again"}', op, now());
   if (select replies_this_week from thread_list where id = older) is distinct from 2 then raise exception 'replies this week: %', (select replies_this_week from thread_list where id = older); end if;
+  -- The count is capped at the hotReplies threshold (the screen only compares it with that): a thread
+  -- with more recent replies than that reads the threshold, and replies stays the whole count.
+  th_cap := tests.thread('Capped');
+  perform tests.post(a, th_cap, 'Opening', now() - interval '2 days');
+  for i in 1..13 loop perform tests.post(b, th_cap, 'Busy ' || i, now() - interval '1 day'); end loop;
+  if (select replies_this_week from thread_list where id = th_cap) is distinct from 10 then raise exception 'replies this week is capped at hotReplies (10): %', (select replies_this_week from thread_list where id = th_cap); end if;
+  if (select replies from thread_list where id = th_cap) is distinct from 13 then raise exception 'replies is not capped'; end if;
+  update settings set value = '12' where key = 'hotReplies';
+  if (select replies_this_week from thread_list where id = th_cap) is distinct from 12 then raise exception 'the cap follows the setting: %', (select replies_this_week from thread_list where id = th_cap); end if;
+  update settings set value = '10' where key = 'hotReplies';
   -- A thread opened this week counts its opening post for nothing.
   perform tests.post(a, newer, 'Fresh opening', now() - interval '1 hour');
   if (select replies_this_week from thread_list where id = older) is distinct from 2 then raise exception 'the opening post counts'; end if;
@@ -161,14 +173,24 @@ begin
   if (select posts from character_post_counts where character = a) is distinct from 2 then raise exception 'posts counted: %', (select posts from character_post_counts where character = a); end if;
   if (select posts from character_post_counts where character = b) is distinct from 1 then raise exception 'a card is no post: %', (select posts from character_post_counts where character = b); end if;
   if exists (select 1 from character_post_counts where character = idle) then raise exception 'a character that never posted has no row (the read says 0)'; end if;
-  if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'character_post_counts') is distinct from array['character', 'posts'] then
-    raise exception 'character_post_counts shows more than a character and its posts';
+  -- A spin and a card are counted beside the posts, so a profile never counts a character's Acts.
+  if (select spins from character_post_counts where character = b) is distinct from 0 or (select cards from character_post_counts where character = b) is distinct from 1 then
+    raise exception 'a card counts as a card: %', (select to_jsonb(c) from character_post_counts c where character = b);
+  end if;
+  perform tests.act(a, 'spin', tests.thread('Pc Spun'), '{"title": "Spun out"}', op);
+  perform tests.act(a, 'edit', th, '{"body": "again"}', op);
+  if (select spins from character_post_counts where character = a) is distinct from 1 or (select posts from character_post_counts where character = a) is distinct from 2 or (select cards from character_post_counts where character = a) is distinct from 0 then
+    raise exception 'a spin counts as a spin, and an edit as nothing: %', (select to_jsonb(c) from character_post_counts c where character = a);
+  end if;
+  if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'character_post_counts') is distinct from array['character', 'posts', 'spins', 'cards'] then
+    raise exception 'character_post_counts shows more than a character and its counters';
   end if;
   -- The backfill is the migration's own statement, kept in a function: counters lost are counted again from the Acts.
   delete from character_post_counts;
   perform backfill_character_post_counts();
-  if (select posts from character_post_counts where character = a) is distinct from 2 or (select posts from character_post_counts where character = b) is distinct from 1 then
-    raise exception 'the backfill counts the posts again';
+  if (select posts from character_post_counts where character = a) is distinct from 2 or (select posts from character_post_counts where character = b) is distinct from 1
+     or (select spins from character_post_counts where character = a) is distinct from 1 or (select cards from character_post_counts where character = b) is distinct from 1 then
+    raise exception 'the backfill counts the posts, spins and cards again: %', (select jsonb_agg(to_jsonb(c)) from character_post_counts c);
   end if;
   -- A character still waiting to debut is in no public list, and its count is no more readable than it is: the policy follows characters_public.
   insert into characters (owner, name) values (bob, 'Pc Waiting') returning id into waiting;

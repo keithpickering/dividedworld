@@ -25,6 +25,21 @@ describe('the router', () => {
     expect(screen.getByTestId('path').textContent).toBe('/');
     expect(window.history.length).toBe(before);
   });
+  test('navigate() never leaves this site: an off-site address is the index, and an off-site link is left to the browser', () => {
+    const origin = window.location.origin;
+    window.history.replaceState(null, '', '/somewhere');
+    render(<RouterProvider><Link to="https://evil.example/x">out</Link><Where /></RouterProvider>);
+    for (const bad of ['https://evil.example/x', '//evil.example', '/\t/evil.example']) {
+      act(() => { window.history.replaceState(null, '', '/somewhere'); });
+      function Go() { const n = useNavigate(); return <button onClick={() => n(bad)}>bad</button>; }
+      const { unmount } = render(<RouterProvider><Go /></RouterProvider>);
+      act(() => screen.getByText('bad').click());
+      expect(window.location.pathname, bad).toBe('/');
+      expect(window.location.origin).toBe(origin);
+      unmount();
+    }
+    expect(fireEvent.click(screen.getByRole('link', { name: 'out' }))).toBe(true);
+  });
   test('navigating to where it already is adds no history entry', () => {
     render(<RouterProvider><Where /></RouterProvider>);
     act(() => screen.getByText('go').click());

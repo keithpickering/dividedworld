@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { fitsWithoutShrinking, MAX_PIXELS, NOT_A_PICTURE, planDecode, TOO_LARGE, webpFrom } from './decode.ts';
+import { bitmapIsAsked, fitsWithoutShrinking, MAX_PIXELS, NOT_A_PICTURE, planDecode, TOO_LARGE, webpFrom } from './decode.ts';
 
 describe('opening a picture', () => {
   test('keeps a picture whose longest side is within 4096 as it is', () => {
@@ -19,6 +19,15 @@ describe('opening a picture', () => {
     expect(fitsWithoutShrinking({ width: 8000, height: 6000 })).toBe(true);
     expect(fitsWithoutShrinking({ width: 20000, height: 10000 })).toBe(false);
     expect(MAX_PIXELS).toBe(64_000_000);
+  });
+
+  test('trusts a bitmap only if it came back the size it was asked for', () => {
+    const asked = { width: 4096, height: 3072 };
+    expect(bitmapIsAsked({ width: 4096, height: 3072 }, asked)).toBe(true);
+    /* A browser that ignores resizeWidth and resizeHeight returns the whole 48 megapixel picture. */
+    expect(bitmapIsAsked({ width: 8000, height: 6000 }, asked)).toBe(false);
+    expect(bitmapIsAsked({ width: 4096, height: 3071 }, asked)).toBe(false);
+    expect(bitmapIsAsked({ width: 0, height: 0 }, asked)).toBe(false);
   });
 
   test('the two failures are told apart in plain words', () => {

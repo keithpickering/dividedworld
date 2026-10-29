@@ -35,3 +35,6 @@ export async function webpFrom(native: Blob | null, fallback: () => Promise<Blob
   if (native && native.type === 'image/webp') return native;
   return fallback();
 }
+
+/** Whether a bitmap `createImageBitmap` made is the size it was asked for. Some browsers ignore the resize options and hand back the whole picture. */
+export const bitmapIsAsked = (bitmap: Size, asked: Size): boolean => bitmap.width === asked.width && bitmap.height === asked.height;

@@ -26,3 +26,16 @@ describe('netlify.toml and web/headers.ts are one list', () => {
     expect(code).not.toMatch(/SERVICE_ROLE|SECRET|API_KEY/iu);
   });
 });
+
+describe('the owner\'s choice, 2026-10-29: a post may show an image from any https host', () => {
+  test('img-src allows https: (a poster\'s host can see who loads it; the owner chose old-forum [img])', () => {
+    const img = (SECURITY_HEADERS['Content-Security-Policy'] ?? '').split(';').map((d) => d.trim()).find((d) => d.startsWith('img-src '));
+    expect(img?.split(/\s+/u)).toContain('https:');
+  });
+  test('nothing else is opened: scripts, connections and frames stay as they were', () => {
+    const csp = SECURITY_HEADERS['Content-Security-Policy'] ?? '';
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
+    expect(csp).toContain("connect-src 'self' https://*.supabase.co wss://*.supabase.co");
+    expect(csp).toContain("frame-ancestors 'none'");
+  });
+});

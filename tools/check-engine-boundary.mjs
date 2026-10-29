@@ -23,6 +23,18 @@
  * cannot say it does not. Comments and strings are not imports, and the AST knows that
  * without help.
  *
+ * `import.meta.glob(…)` names files too (Vite reads it): its pattern, or every pattern of an array, is a
+ * specifier, relative to its file, so a glob over `../../instances/*` fires in engine/ as an import does.
+ *
+ * A file outside both layers can carry the engine to an instance: an engine file that imports
+ * `.storybook/preview.tsx` (which imports the instance) depends on the instance as surely as one that
+ * imports it directly. So each relative import in engine/ that leaves both layers is followed, through
+ * the files it reaches (any tracked source), until it reaches instances/ (a crossing, reported on the
+ * engine file with the chain), reaches engine/ again (that file is checked on its own), or leaves the
+ * tree. Following was chosen over forbidding engine/ from importing `.storybook/` and `web/`: the
+ * rule is "the engine never reaches an instance", and a ban on two directories names two places the
+ * route happens to pass through today.
+ *
  * Read from git, so an untracked scratch file neither fails the build nor makes it pass.
  * The detection is exported and pure so tools/test-engine-boundary.mjs drives every branch
  * red on purpose.
@@ -36,8 +48,10 @@ import ts from 'typescript';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** The files the guard reads. */
+/** The files the guard checks. */
 export const SOURCE = /^(engine|instances)\/.*\.(ts|mts|cts|tsx|js|mjs|cjs|css)$/;
+/** The files it may read while following an import out of engine/: any source in the tree. */
+export const FOLLOWED = /\.(ts|mts|cts|tsx|js|mjs|cjs|css)$/;
 
 /**
  * A stylesheet with its comments blanked to spaces, so lines keep their numbers. Strings are
@@ -113,6 +127,11 @@ function specifiers(file, text) {
     } else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'resolve'
       && ts.isMetaProperty(node.expression.expression) && node.expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword) {
       out.push({ spec: literal(node.arguments[0]), line: lineOf(node) });
+    } else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && /^glob(Eager)?$/.test(node.expression.name.text)
+      && ts.isMetaProperty(node.expression.expression) && node.expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword) {
+      const arg = node.arguments[0];
+      if (arg && ts.isArrayLiteralExpression(arg)) for (const el of arg.elements) out.push({ spec: literal(el), line: lineOf(node) });
+      else out.push({ spec: literal(arg), line: lineOf(node) });
     } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
       out.push({ spec: literal(node.argument.literal), line: lineOf(node) });
     }
@@ -126,8 +145,48 @@ function specifiers(file, text) {
 /** `instances/<name>` for a repository path inside an instance, else null. */
 const instanceOf = (p) => p.match(/^instances\/([^/]+)(\/|$)/)?.[1] ?? null;
 
+/** The specifiers of any source file, stylesheets included. */
+const specsOf = (file, text) => (file.endsWith('.css') ? cssSpecifiers(text) : specifiers(file, text));
+
+/** The repository path a relative specifier names from `file`, or null for a bare or absolute one. */
+function resolveRelative(file, spec, css) {
+  const relative = spec.startsWith('./') || spec.startsWith('../') || (css && !/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(spec));
+  return relative ? path.posix.normalize(path.posix.join(path.posix.dirname(file), spec)) : null;
+}
+
+/** The tracked file a repository path names (exact, with an extension, or a directory's index), or null. */
+function tracked(files, target) {
+  const tries = [target, ...['.ts', '.tsx', '.mjs', '.js', '.css'].map((e) => target + e), ...['ts', 'tsx', 'mjs', 'js'].map((e) => `${target}/index.${e}`)];
+  return tries.find((t) => Object.hasOwn(files, t) && FOLLOWED.test(t)) ?? null;
+}
+
 /**
- * Every crossing in a set of files, as `{ file, line, spec, target, why }`; [] is clean.
+ * The chain from `start` (a file outside both layers) to an instance, as `a -> b -> instances/x`, or
+ * null when it reaches none. Stops at engine/ (checked on its own), at a path outside the tree, and
+ * at a file it has seen.
+ */
+function reachesInstance(files, start, seen) {
+  if (seen.has(start)) return null;
+  seen.add(start);
+  for (const { spec } of specsOf(start, files[start])) {
+    if (spec === null) continue;
+    const target = resolveRelative(start, spec, start.endsWith('.css'));
+    const named = target === null ? spec.match(/(?:^|[/#@])instances(?:\/([^/]+)|$)/) : null;
+    if (target === null) { if (named) return `${start} -> ${spec}`; continue; }
+    if (target.startsWith('..')) continue;
+    if (instanceOf(target) !== null) return `${start} -> ${target}`;
+    if (target.startsWith('engine/')) continue;
+    const next = tracked(files, target);
+    if (next === null) continue;
+    const rest = reachesInstance(files, next, seen);
+    if (rest !== null) return `${start} -> ${rest}`;
+  }
+  return null;
+}
+
+/**
+ * Every crossing in a set of files, as `{ file, line, spec, target, why }`; [] is clean. `files`
+ * holds the engine and instance sources, and any other source an engine import may lead through.
  * @param {Record<string, string>} files repository path to text
  */
 export function boundaryFaults(files) {
@@ -136,20 +195,23 @@ export function boundaryFaults(files) {
     if (!SOURCE.test(file)) continue;
     const inEngine = file.startsWith('engine/');
     const home = instanceOf(file);
-    for (const { spec, line } of (file.endsWith('.css') ? cssSpecifiers(text) : specifiers(file, text))) {
+    for (const { spec, line } of specsOf(file, text)) {
       if (spec === null) {
-        if (inEngine) out.push({ file, line, spec: null, target: null, why: 'a dynamic import or require the guard cannot read, which could name an instance' });
+        if (inEngine) out.push({ file, line, spec: null, target: null, why: 'a dynamic import, glob or require the guard cannot read, which could name an instance' });
         continue;
       }
       /* A stylesheet's url(x) with no ./ is relative too, as a browser reads it; a scheme or // is not a file here. */
-      const css = file.endsWith('.css');
-      const relative = spec.startsWith('./') || spec.startsWith('../') || (css && !/^([a-z][a-z0-9+.-]*:|\/|#)/i.test(spec));
-      const target = relative ? path.posix.normalize(path.posix.join(path.posix.dirname(file), spec)) : null;
+      const target = resolveRelative(file, spec, file.endsWith('.css'));
       /* A bare or absolute specifier is read as it stands: the instance it names, if any. */
       const named = target === null ? spec.match(/(?:^|[/#@])instances(?:\/([^/]+)|$)/) : null;
       if (inEngine) {
         if (target !== null && instanceOf(target) !== null) out.push({ file, line, spec, target, why: 'the engine imports an instance' });
         else if (named) out.push({ file, line, spec, target: spec, why: 'the engine names instances/ through a bare or absolute specifier' });
+        else if (target !== null && !target.startsWith('engine/') && !target.startsWith('..')) {
+          const next = tracked(files, target);
+          const chain = next === null ? null : reachesInstance(files, next, new Set());
+          if (chain !== null) out.push({ file, line, spec, target, why: `the engine reaches an instance through a file outside both layers: ${file} -> ${chain}` });
+        }
       } else if (home !== null) {
         const other = target !== null ? instanceOf(target) : (named?.[1] ?? null);
         if (other !== null && other !== home) out.push({ file, line, spec, target: target ?? spec, why: `instance ${home} imports instance ${other}` });
@@ -159,19 +221,20 @@ export function boundaryFaults(files) {
   return out;
 }
 
-/** The tracked engine and instance sources, read from disk. */
+/** The tracked sources, read from disk: the engine's and the instances', and the rest that an engine import may lead through. */
 export function treeFiles() {
   const tree = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', cwd: repoRoot }).split('\0').filter(Boolean);
   /** @type {Record<string, string>} */
   const files = {};
-  for (const p of tree) if (SOURCE.test(p) && fs.existsSync(path.join(repoRoot, p))) files[p] = fs.readFileSync(path.join(repoRoot, p), 'utf8');
+  for (const p of tree) if (FOLLOWED.test(p) && fs.existsSync(path.join(repoRoot, p))) files[p] = fs.readFileSync(path.join(repoRoot, p), 'utf8');
   return files;
 }
 
 function main() {
   const files = treeFiles();
   /* A guard reading nothing would pass; the engine is never empty, so an empty read is a broken read. */
-  if (!Object.keys(files).some((f) => f.startsWith('engine/'))) {
+  const checked = Object.keys(files).filter((f) => SOURCE.test(f));
+  if (!checked.some((f) => f.startsWith('engine/'))) {
     console.error('  engine-boundary: no engine file was read, which cannot be right; refusing to report a pass on nothing');
     process.exit(1);
   }
@@ -182,7 +245,7 @@ function main() {
     console.error('  The engine reaches an instance only through the Instance interface, which the composition root\n  (supabase/functions/) hands it. See CLAUDE.md, "KayfaBB never knows which instance it runs".');
     process.exit(1);
   }
-  console.log(`  engine-boundary: ${Object.keys(files).length} engine and instance file(s), no crossing`);
+  console.log(`  engine-boundary: ${checked.length} engine and instance file(s), no crossing`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
