@@ -51,7 +51,7 @@ begin
   input := settlement_input(now() - interval '1 hour', now() + interval '1 hour');
   if not (input -> 'systemActs') @> jsonb_build_array(reveal, tally) then raise exception 'the settlement is not told the reveal and tally are The System''s: %', input -> 'systemActs'; end if;
   if exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'id' in (reveal::text, tally::text)) then raise exception 'The System''s Acts reached the settlement as a character''s'; end if;
-  -- An edit is still never reacted to, and nothing that does not exist is.
+  -- Nothing that does not exist is reacted to.
   perform tests.become(ann);
   if pg_temp.refusal(format('select react(%L, %L, %L)', gen_random_uuid(), a1, 'up')) is distinct from 'there is no such Act' then raise exception 'reacting to nothing'; end if;
   perform tests.unbecome();
