@@ -45,7 +45,7 @@ export const NAME_MAX_LENGTH = 40;
  * control, invisible, filler and direction characters, and any space but U+0020. The same set as
  * supabase/migrations/0009_registration.sql's create_character, which holds it again.
  */
-const NAME_HIDDEN = /[\u0001-\u001f\u007f-\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180e\u2000-\u200f\u2028-\u202f\u205f-\u206f\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff]|  /u;
+const NAME_HIDDEN = /[\u0001-\u001f\u007f-\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180e\u2000-\u200f\u2028-\u202f\u205f-\u206f\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\u2800\u{1d173}-\u{1d17a}\u{e0000}-\u{e0fff}]|  /u;
 
 class Refused extends Error {
   readonly field: string;

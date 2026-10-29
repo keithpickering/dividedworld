@@ -106,7 +106,7 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       if ('refused' in out) {
         // Only the right password reaches "unconfirmed", so saying it tells nobody anything new.
         return out.refused === 'unconfirmed'
-          ? { status: 403, body: { error: 'confirm your email first: the link is in the email sent when you signed up, and resend sends a new one' } }
+          ? { status: 403, body: { error: 'confirm your email first: the link is in the email sent when you signed up, or ask for a new link' } }
           : refused('password', NO_MATCH);
       }
       const invite = out.session.user.user_metadata?.invite;

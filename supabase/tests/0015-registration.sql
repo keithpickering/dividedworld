@@ -138,7 +138,7 @@ begin
   if pg_temp.refusal($q$select create_character('   ', 'beta')$q$) is null then raise exception 'a character with no name'; end if;
   if pg_temp.refusal(format('select create_character(%L, %L)', repeat('n', 41), 'beta')) is null then raise exception 'a name past 40 characters'; end if;
   -- A name another's cannot be made to look like: no invisible, control or direction characters, no space but a single one.
-  foreach why in array array['Mas' || chr(8203) || 'k 1', 'Mask' || chr(160) || '1', 'Mask  1', 'Mask' || chr(8238) || '1', 'Mask' || chr(9) || '1', 'Mask' || chr(65279) || '1'] loop
+  foreach why in array array['Mas' || chr(8203) || 'k 1', 'Mask' || chr(160) || '1', 'Mask  1', 'Mask' || chr(8238) || '1', 'Mask' || chr(9) || '1', 'Mask' || chr(65279) || '1', 'Mask' || chr(917569), 'Mask' || chr(10240), 'Mask' || chr(119155)] loop
     if coalesce(pg_temp.refusal(format('select create_character(%L, %L)', why, 'beta')), '') not like '%can hold%' then raise exception 'a name with a hidden character: %', why; end if;
   end loop;
   if (create_character(' Spaced Name ', 'beta') ->> 'name') <> 'Spaced Name' then raise exception 'a name is trimmed'; end if;

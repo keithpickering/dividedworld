@@ -99,7 +99,7 @@ test('an address not yet confirmed is told its way out: a confirmation sent agai
     service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock: w.clock,
   }, { action: 'signIn', email: KNOWN, password: 'right password' });
   assert.equal(unconfirmed.status, 403);
-  assert.match((unconfirmed.body as { error: string }).error, /confirm your email first.*resend/);
+  assert.match((unconfirmed.body as { error: string }).error, /confirm your email first.*ask for a new link/);
   const known = await w.answer({ action: 'resend', email: KNOWN });
   const unknown = await w.answer({ action: 'resend', email: UNKNOWN });
   assert.equal(known.status, 202);

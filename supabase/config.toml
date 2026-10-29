@@ -1,6 +1,8 @@
 # Divided World's Supabase project settings that the code relies on, for the local stack and
-# `supabase config push`. A push writes the CLI's default for any setting left out, so every Auth
-# setting a push would otherwise reset (where its links point) is set here too.
+# `supabase config push`. A push writes the CLI's default for any setting left out: where Auth's
+# links point is set here for that reason; token lifetimes, rate limits and SMTP are not yet, so
+# a push before they are written here resets them. site_url is production's, so links from the
+# local stack point there too.
 project_id = "dividedworld"
 
 [auth]

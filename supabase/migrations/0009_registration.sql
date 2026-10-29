@@ -131,7 +131,7 @@ begin
   -- A name nobody's can be made to look like: unique whatever its case (0001), and holding no
   -- invisible, control or direction character and no space but a single one. The same set as
   -- engine/rules/actions.ts's NAME_HIDDEN.
-  if named ~ '[\u0001-\u001f\u007f-\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180e\u2000-\u200f\u2028-\u202f\u205f-\u206f\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff]' or named like '%  %' then
+  if named ~ '[\u0001-\u001f\u007f-\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180e\u2000-\u200f\u2028-\u202f\u205f-\u206f\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\u2800\U0001d173-\U0001d17a\U000e0000-\U000e0fff]' or named like '%  %' then
     raise exception 'a name can hold letters, marks, digits, symbols and single spaces, nothing hidden' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   if not exists (select 1 from class_kinds where key = class) then

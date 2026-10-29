@@ -57,7 +57,7 @@ begin
   why := pg_temp.refusal(format('select turn(%L, %L, %L)', a, 'alpha', 'silent'));
   if why is null then raise exception 'a Turn inside the cooldown went through'; end if;
   if why !~ 'can Turn again at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z' then raise exception 'the refusal should say when: %', why; end if;
-  if substring(why from '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z')::timestamptz not between now() + interval '30 days' - interval '1 minute' and now() + interval '30 days' then
+  if substring(why from '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z')::timestamptz not between now() + interval '30 days' - interval '1 minute' and clock_timestamp() + interval '30 days' then
     raise exception 'the time it names should be the cooldown after the last Turn: %', why;
   end if;
   -- And the rest of what a Turn cannot be.
