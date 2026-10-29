@@ -85,10 +85,10 @@ describe('NEW comes from the player\'s own reading rows', () => {
 
   test('a thread is never marked as the player\'s own', async () => {
     renderInWorld(<BoardScreen slug="general" />, {
-      seed: (f) => { const w = world(f); f.seed.thread('general', w.mine, 'Mine', 'x', { at: T0 + 5 * DAY }); return w; },
+      seed: (f) => { const w = world(f); f.seed.thread('general', w.mine, 'Plain thread', 'x', { at: T0 + 5 * DAY }); return w; },
     });
-    await screen.findByRole('link', { name: 'Mine' });
-    expect(rowOf('Mine')).not.toHaveTextContent(/\byou\b|\byours\b|\bmine\b/i);
+    await screen.findByRole('link', { name: 'Plain thread' });
+    expect(rowOf('Plain thread')).not.toHaveTextContent(/\byou\b|\byours\b|\bmine\b/i);
   });
 });
 

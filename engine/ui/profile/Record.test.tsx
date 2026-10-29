@@ -31,15 +31,38 @@ describe('the full public record', () => {
     open(fake, w.spritey);
     expect(await screen.findByRole('heading', { level: 1, name: 'Spritey’s public record' })).toBeInTheDocument();
     await waitFor(() => expect(dataRows()).toHaveLength(20));
-    expect(dataRows()[0]).toHaveTextContent('Played Whoops!');
+    /* "All" is what the profile's latest rows are: the Acts with the reveals and Turns, newest first. */
+    expect(dataRows()[0]).toHaveTextContent('Announced a Turn');
+    expect(dataRows()[1]).toHaveTextContent('Revealed: Face');
+    expect(dataRows()[2]).toHaveTextContent('Played Whoops!');
     expect(screen.getByText(/Page 1 of 3/u)).toBeInTheDocument();
+  });
+
+  test('"All" pages the merge exactly: every row once, in order, across the pages', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    const sys = fake.seed.thread('the-system', null, 'Reveal', '');
+    for (const d of [0.5, 25, 40]) fake.seed.post(sys.thread, null, '', { kind: 'reveal', at: T0 + d * DAY, payload: { season: 1, character: w.spritey, name: 'Spritey', place: 1, standing: 0, shown: [] } });
+    const seen: string[] = [];
+    for (const page of [1, 2, 3]) {
+      const { unmount } = open(fake, w.spritey, `?page=${page}`);
+      await waitFor(() => expect(dataRows().length).toBeGreaterThan(0));
+      for (const r of dataRows()) seen.push(r.textContent!);
+      unmount();
+    }
+    expect(seen).toHaveLength(51);
+    expect(new Set(seen.map((t) => t)).size).toBeLessThan(51);
+    expect(seen.filter((t) => /reveal: finished/u.test(t))).toHaveLength(3);
+    /* newest first: the day-40 and day-25 season rows come before the Turn, day 3's. */
+    const turn = seen.findIndex((t) => /Announced a Turn/u.test(t));
+    expect(seen.findIndex((t) => /Season 1 reveal/u.test(t))).toBeLessThan(turn);
   });
 
   test('?page=3 shows the rest, and the pager links by keyboard', async () => {
     const fake = buildWorld();
     const w = world(fake);
     open(fake, w.spritey, '?page=3');
-    await waitFor(() => expect(dataRows()).toHaveLength(6));
+    await waitFor(() => expect(dataRows()).toHaveLength(8));
     const user = userEvent.setup();
     const prev = screen.getByRole('link', { name: 'Previous page' });
     expect(prev).toHaveAttribute('href', `/c/${w.spritey}/record?page=2`);

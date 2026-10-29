@@ -37,6 +37,14 @@ describe('Sign in', () => {
     expect(known).not.toMatch(/no such account|not registered|does not exist/iu);
   });
 
+  test('says honestly how a new player gets in: register, or give an invite after the code', async () => {
+    open(world(), 'sign-in');
+    const intro = await screen.findByText(/There is no password/u);
+    expect(intro).not.toHaveTextContent(/first sign-in with an invite/u);
+    expect(intro).toHaveTextContent(/new player registers first/u);
+    expect(intro).toHaveTextContent(/invite after the code/u);
+  });
+
   test('a code signs a known address in, by keyboard alone', async () => {
     const w = world();
     open(w, 'sign-in');
@@ -59,6 +67,23 @@ describe('Sign in', () => {
     open(world(), 'sign-in');
     await ask('nonsense');
     expect(await screen.findByRole('alert')).toHaveTextContent('is not an email address');
+  });
+});
+
+describe('Register, the same for every address', () => {
+  test('says exactly the same words for an address with an account and one without, through the code step', async () => {
+    const run = async (email: string) => {
+      const w = world();
+      const r = open(w, 'register', '/register?invite=wrong');
+      await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+      await ask(email);
+      await userEvent.type(await screen.findByLabelText('Code from the email'), '000000{Enter}');
+      await screen.findByRole('alert');
+      const html = r.container.innerHTML;
+      cleanup();
+      return html;
+    };
+    expect(await run('stranger@example.test')).toBe(await run('known@example.test'));
   });
 });
 
