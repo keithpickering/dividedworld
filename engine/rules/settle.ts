@@ -192,12 +192,21 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
   }
   const played = new Map<string, PlayedCard[]>();
   const landed = new Map<string, LandedCard[]>();
+  const cardsOnTarget = group([...acts.values()].filter((a) => a.kind === 'card' && a.target && a.card && alignmentOf.has(a.card)), (a) => a.target!);
+  /** The card a vote at `at` on a target counts for, among one player's cards of one alignment there: the earliest before it. */
+  const holderOf = (target: string, player: string, alignment: string, at: number) =>
+    (cardsOnTarget.get(target) ?? [])
+      .filter((c) => c.at < at && playerOf(c.character) === player && alignmentOf.get(c.card!) === alignment)
+      .sort((x, y) => x.at - y.at || cmp(x.id, y.id))[0]?.id;
   for (const a of windowActs.filter((a) => a.kind === 'card')) {
     if (!a.target) throw new Error(`settle: card Act ${a.id} has no target`);
     const target = actOf(a.target);
     const player = playerOf(a.character);
     const after: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
-    for (const v of windowVotesOn.get(target.id) ?? []) if (v.at > a.at && v.player !== player) after[v.quadrant] += v.share;
+    // Each vote after the card counts once per player and alignment: for the earliest of that
+    // player's cards of this alignment on the target (an earlier window's included), so two
+    // Sweet cards pay what one would (the owner's answer 3, on #4).
+    for (const v of windowVotesOn.get(target.id) ?? []) if (v.at > a.at && v.player !== player && holderOf(target.id, player, alignmentOf.get(a.card!)!, v.at) === a.id) after[v.quadrant] += v.share;
     const alignment = alignmentOf.get(a.card!)!;
     const onOthers = playerOf(target.character) !== player;
     const list = played.get(a.character) ?? [];

@@ -147,6 +147,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
     select id from win_acts union select act from reacted
     union select target_act_id from win_acts where kind in ('card', 'spin') and target_act_id is not null
     union select id from spins union select target_act_id from spins where target_act_id is not null
+    -- Every card on an Act a reaction touches, an earlier window's too: a vote counts once per
+    -- player and alignment, for the earliest card (engine/rules/settle.ts).
+    union select a.id from acts a join reacted x on x.act = a.target_act_id where a.kind = 'card'
     union select id from first_posts
   ),
   all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null),

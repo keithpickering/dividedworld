@@ -39,7 +39,12 @@ begin
 
   -- The next settlement reads it back for the Act a reaction touches.
   insert into reactions (act, reactor_account, reactor_character, kind, slot, created_at) values (p, bob, b, 'up', 1, w2 + interval '1 hour');
+  -- A card played on the Act in an earlier window, so the settlement can tell which card a vote counts for.
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (b, 'card', t, p, '{"card": "sweetie"}', w1 + interval '2 hours');
   input := settlement_input(w2, w3);
+  if not exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'kind' = 'card' and x ->> 'target' = p::text) then
+    raise exception 'settlement_input should carry the cards played on an Act its reactions touch, an earlier window''s included';
+  end if;
   if input -> 'paid' is distinct from jsonb_build_array(jsonb_build_object('player', bob, 'act', p, 'weight', 1, 'shares', whole)) then
     raise exception 'settlement_input should carry what was paid for the votes it touches: %', input -> 'paid';
   end if;

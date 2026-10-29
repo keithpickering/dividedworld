@@ -343,6 +343,29 @@ test('a spin from one of The System\'s own Acts settles, as a spin from someone 
   assert.throws(() => settle({ ...fromTheSystem, systemActs: [] }, instance), /not in the input/);
 });
 
+test('two Sweet cards from one player on one post pay what one would: each vote counts once, for the earlier card', () => {
+  const sweet = (key: string) => ({ key, name: key, alignment: 'sweet' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const { rules, inputs } = recorder();
+  const world = { ...withClasses(rules), cards: [...instance.cards, sweet('sugar'), sweet('honey')] };
+  const b = base();
+  const cards: InputAct[] = [
+    { id: 'k1', character: 'cat-1', kind: 'card', at: FROM + 7 * H, thread: 't1', target: 'p1', card: 'sugar' },
+    { id: 'k2', character: 'cat-1', kind: 'card', at: FROM + 8 * H, thread: 't1', target: 'p1', card: 'honey' },
+  ];
+  const after = (votes: InputReaction[], acts = cards) => {
+    inputs.length = 0;
+    settle({ ...b, acts: [...b.acts, ...acts], reactions: [...b.reactions, ...votes] }, world);
+    return inputs.flatMap((i) => i.cardsPlayed).filter((c) => c.target === 'p1').map((c) => [c.act, c.targetAfter.excitedPositive]);
+  };
+  const lifts = [react('p1', 'dee', 'dee-1', 'fire', FROM + 9 * H)];
+  assert.deepEqual(after(lifts), [['k1', 1], ['k2', 0]], 'Dee\'s fire after both counts for the earlier card alone');
+  assert.deepEqual(after(lifts, [cards[0]!]), [['k1', 1]], 'as it would with the one card');
+  assert.deepEqual(after([react('p1', 'dee', 'dee-1', 'fire', FROM + 7 * H + 30 * 60_000)]), [['k1', 1], ['k2', 0]], 'between the two: the first');
+  // A Sweet card from an earlier window still holds the votes after it.
+  const monday: InputAct = { ...cards[0]!, at: FROM - H };
+  assert.deepEqual(after(lifts, [monday, cards[1]!]), [['k2', 0]], 'the earlier window\'s card holds them; the later card is paid none');
+});
+
 /* ---- the edges: each case below is a boundary a one-character change would move ---- */
 
 const recorder = (): { rules: ClassRules; inputs: ClassInput[] } => {
