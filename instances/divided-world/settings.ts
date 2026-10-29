@@ -27,6 +27,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   /** Three open invites a player, each open for a week; an admin any number (the screens' design, section 12). */
   invitesPerPlayer: 3,
   inviteLifetime: { unit: 'day', count: 7 },
+  /** Two minutes to fix a typo without "Last edited" (the screens' design, section 6). */
+  editGrace: { unit: 'minute', count: 2 },
   /** Long enough for an effortpost; short enough that one post is never a page of its own. */
   postMaxLength: 20_000,
   titleMaxLength: 120,

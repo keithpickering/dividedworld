@@ -13,6 +13,7 @@ const settings: Settings = {
   viewCountCron: '41 * * * *',
   invitesPerPlayer: 3,
   inviteLifetime: { unit: 'day', count: 7 },
+  editGrace: { unit: 'minute', count: 2 },
   seasonLength: { unit: 'month', count: 3 },
   turnCooldown: { unit: 'day', count: 30 },
   registrationMode: 'invite',
@@ -84,6 +85,13 @@ test('a player holds a whole number of open invites, each open for a span', () =
   assert.match(settingsProblems({ ...settings, invitesPerPlayer: 2.5 }).join('\n'), /invitesPerPlayer/);
   assert.match(settingsProblems({ ...settings, inviteLifetime: { unit: 'day', count: 0 } }).join('\n'), /inviteLifetime/);
   assert.deepEqual(settingsProblems({ ...settings, invitesPerPlayer: 1, inviteLifetime: { unit: 'week', count: 2 } }), []);
+});
+
+test('an edit\'s grace is a span that may count minutes; the windows, seasons and cooldowns never do', () => {
+  assert.deepEqual(settingsProblems({ ...settings, editGrace: { unit: 'minute', count: 2 } }), []);
+  assert.deepEqual(settingsProblems({ ...settings, editGrace: { unit: 'day', count: 1 } }), []);
+  assert.match(settingsProblems({ ...settings, editGrace: { unit: 'second', count: 90 } } as unknown as Settings).join('\n'), /editGrace/);
+  assert.match(settingsProblems({ ...settings, settlementLength: { unit: 'minute', count: 5 } }).join('\n'), /settlementLength/);
 });
 
 test('two reactions with one key are a problem', () => {

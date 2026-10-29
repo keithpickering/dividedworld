@@ -7,11 +7,13 @@ import type { EconomyRead, Instance, Settings, Span } from './types.ts';
 import { INT4_MAX } from './cards.ts';
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
+/** A grace may be minutes long (editGrace); nothing else is. */
+const GRACE_UNITS: readonly Span['unit'][] = ['minute', ...SPAN_UNITS];
 /** The most of a unit a span counts, as settings_spans_hold (0007) holds it: past any instance's life, inside span_interval's integer. */
 export const SPAN_MOST = 1000;
 const isWhole = (n: unknown, min: number): n is number => Number.isSafeInteger(n) && (n as number) >= min;
-const isSpan = (s: unknown): s is Span =>
-  typeof s === 'object' && s !== null && SPAN_UNITS.includes((s as Span).unit) && isWhole((s as Span).count, 1) && (s as Span).count <= SPAN_MOST;
+const isSpan = (s: unknown, units: readonly Span['unit'][] = SPAN_UNITS): s is Span =>
+  typeof s === 'object' && s !== null && units.includes((s as Span).unit) && isWhole((s as Span).count, 1) && (s as Span).count <= SPAN_MOST;
 /**
  * Five fields of numbers, `*`, ranges, lists and steps, each inside its own range (minute,
  * hour, day of month, month, day of week with 0 and 7 both Sunday): what pg_cron and every
@@ -50,6 +52,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   registrationMode: (v) => (v === 'open' || v === 'invite' || v === 'closed' ? null : '"open", "invite" or "closed"'),
   invitesPerPlayer: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   inviteLifetime: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
+  editGrace: (v) => (isSpan(v, GRACE_UNITS) ? null : 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000'),
   postMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   economy: (v) => {

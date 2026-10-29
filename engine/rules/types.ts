@@ -33,7 +33,8 @@ export type Hundredths = number;
 
 /** A length of time in calendar units, so "3 months" stays three months in SQL too. */
 export interface Span {
-  readonly unit: 'day' | 'week' | 'month';
+  /** Minutes only where a setting says it takes them (editGrace); a window, a season and a cooldown count days or more. */
+  readonly unit: 'minute' | 'day' | 'week' | 'month';
   readonly count: number;
 }
 
@@ -71,6 +72,11 @@ export interface Settings {
   readonly invitesPerPlayer: number;
   /** How long an invite opens an account for, from when it was made or last reissued. */
   readonly inviteLifetime: Span;
+  /**
+   * How long after a post is made an edit records a version without setting "Last edited", so a
+   * typo fixed at once is not a confession. Every edit is still a public Act in the post's history.
+   */
+  readonly editGrace: Span;
   /** The longest a post's text may be, in characters (code points). */
   readonly postMaxLength: number;
   /** The longest a thread's title may be, in characters. */

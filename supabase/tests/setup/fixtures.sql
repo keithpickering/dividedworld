@@ -21,6 +21,7 @@ insert into settings (key, value) values
   ('registrationMode', '"invite"'),
   ('invitesPerPlayer', '3'),
   ('inviteLifetime', '{"unit": "day", "count": 7}'),
+  ('editGrace', '{"unit": "minute", "count": 2}'),
   ('postMaxLength', '20000'),
   ('titleMaxLength', '120'),
   ('economy', '{"sweetie.price": 100, "splat.price": 100, "blot.price": 100}'),
