@@ -33,10 +33,14 @@ const HARMLESS = { sslmode: 'PGSSLMODE', sslrootcert: 'PGSSLROOTCERT', connect_t
 /** Every secret a tool has been handed, so that scrub() can take each out of what it prints. */
 const secrets = new Set();
 
-/** A message with every password a tool was given, raw or encoded, replaced. */
+/**
+ * A message with every password a tool was given, raw or encoded, replaced. One shorter than four
+ * characters is left, since it would be found inside psql's own words (PL/pgSQL) and is no secret
+ * worth the garble; nothing prints a password in any case, since none reaches psql's command line.
+ */
 export function scrub(text) {
   let out = String(text);
-  for (const s of secrets) if (s) out = out.split(s).join('<password>');
+  for (const s of secrets) if (s.length >= 4) out = out.split(s).join('<password>');
   return out;
 }
 

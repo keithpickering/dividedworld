@@ -59,6 +59,8 @@ const foreignKeys = (names) => `do $$ declare k record; orphaned boolean; begin
       (select string_agg(format('c.%I is not null', a.attname), ' and ' order by u.i) from unnest(con.conkey) with ordinality u(n, i) join pg_attribute a on a.attrelid = con.conrelid and a.attnum = u.n) as present
     from pg_constraint con join pg_class cl on cl.oid = con.conrelid join pg_namespace ns on ns.oid = cl.relnamespace
     where con.contype = 'f' and format('%I.%I', ns.nspname, cl.relname) = any (array[${names.map(literal).join(', ')}]::text[])
+      -- A key into a table no export carries (one Auth might add) is Auth's to keep, not ours to judge.
+      and (select format('%I.%I', pn.nspname, pc.relname) from pg_class pc join pg_namespace pn on pn.oid = pc.relnamespace where pc.oid = con.confrelid) = any (array[${names.map(literal).join(', ')}]::text[])
   loop
     execute format('select exists (select 1 from %s c where %s and not exists (select 1 from %s p where (%s) = (%s)))', k.child, k.present, k.parent, k.parent_cols, k.child_cols) into orphaned;
     if orphaned then raise exception '% (%) references a row the export does not hold, in %', k.child, k.conname, k.parent; end if;
