@@ -15,8 +15,10 @@ code to copy: the plans say what is built. Open any of them in a browser; each i
 - `mock-q16-characters.html` and `mock-q16b-avatars.html`: My characters, the Turn modal, the two-crop avatar.
 - `mock-q18-index.html`: the index with The System's board, and a thread list.
 - `mock-q19-profile-reveal.html`: a character's profile and one post of the season reveal.
-- `proto-q14-stick-around.html`: Stick Around working, round 3: gravity between two holds, the eased-in pull with a
-  rubber-band landing, the struggle meter with touch and mouse tuning, the Struggle button, and a tuning panel.
+- `proto-q14-stick-around.html`: Stick Around working, round 6: gravity between two holds, the eased-in pull with a
+  rubber-band landing, and breaking free with a slingshot (cocked by distance, fired by a fierce release read along the
+  finger's arc), a handle for a mouse, the wheel's flick, the BREAK FREE button, and a tuning panel. Rounds 1 to 3
+  measured a struggle meter; the owner replaced it with the flick and then the slingshot (design, section 10).
 - `proto-q15-whoops.html`: Whoops! working, round 3: the seeded splat, the fixed scaled layout, reader scrubs and the
   author's wash and ink, the color picker with shading by the ink's luminance, stacking, and the accessible sweep. Its
   default is the owner's choice, a stroke scrubbing the top layer.

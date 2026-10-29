@@ -175,19 +175,40 @@ From the working prototype (`docs/research/2026-10-29-screens/proto-q14-stick-ar
    leaves the others.
 4. **An effect works wherever its Act appears**, a spun thread's ORIGIN box included. The owner: "the same logic should
    extend to other postcard effects."
-5. **The accessible path:** certifying is reading and ticking, at everyone's cost; a Struggle button on the frame,
-   pressed ten times within two and a half seconds, fills the same meter a fling does; holding PageDown fills it by
-   speed.
+5. **Breaking free is a slingshot.** The struggle meter of the first rounds let a phone's ordinary fling break free.
+   The owner: "What if it takes a 'flick', so you have to scroll quickly in the opposite direction of where you're
+   trying to escape to, and then immediately and fiercely in the intended direction, all as one quick motion", and then:
+   "lean more into the slingshot feel on touch - no minimum speed for the first gesture, but a minimum distance to
+   'cock' the slingshot. It stays valid in this state indefinitely as long as your finger stays on the screen and you
+   don't go back below that distance. Then the second gesture, the fierce flick, 'fires' the slingshot. This might even
+   work with click-and-drag if we add a little handle." So:
+   - **Touch:** dragging one way past a distance (0.12 of a screen) cocks it, at any speed, for as long as the finger
+     stays down; the frame stretches as it is drawn back. A fierce flick the other way fires it: the owner found 6 to 9
+     screens a second "the sweet spot". The release is read along the finger's path, so a thumb's arc counts, and only
+     when it is mostly vertical. Drifting back under the distance uncocks it only when slow, since a fire swings back
+     past it by nature; the speed is read once more as the finger lifts. While a finger is down the post does not pull,
+     and the page's own pull-to-refresh and overscroll are contained so a cock at the top of a page is not swallowed.
+   - **A mouse:** a small handle on the frame, dragged back to cock and flicked the other way to fire; the page launches
+     the way it was flicked. Dragging the handle never scrolls.
+   - **A wheel:** a quick nudge one way, then at once a fierce scroll the other (round 4's flick); untried by the owner.
+   - **Keyboard and screen reader:** a BREAK FREE button worked like the gesture: press to wind up (the frame tightens),
+     press again between 0.12 and 0.6 seconds later to release; too soon or too late and the band goes slack. Certifying
+     is reading and ticking, at everyone's cost.
+   - An ordinary hard scroll, however fast, never breaks free; after a post has pulled a reader back twice its tag says
+     "fire the slingshot to break free".
 
 **The pull.** The owner: "on a phone it's very easy to 'break free', and I also think rubber-band easing would enhance
 the effect", and "add a bit of ease-in to the scroll, so the user's natural scroll finishes (typically with an ease out
 from the browser), they start to get pulled toward the sticky post slowly at first, and they finally snap to it with the
 rubber band at the end." So the pull waits for the reader's own scroll to settle, eases in, gathers speed, and lands with
-a rubber band whose overshoot is a fixed number of pixels, so a long pull and a short one land alike. Struggle is
-measured in screens scrolled and fades over time, with a touch screen needing much more than a mouse; a single scroll
-event counts at most half a screen, so a jump (End, Home, a link) never breaks free. With reduced motion the pull is
-instant, and still happens. The prototype's numbers are starting points; the touch tuning waits for the owner's numbers
-from its sliders.
+a rubber band whose overshoot is a fixed number of pixels, so a long pull and a short one land alike. With reduced
+motion the pull is instant, and still happens.
+
+**Tuning on real devices is a session of its own.** The owner: "it is a bit finicky to get it registered in a way that
+feels right. My guess is that measuring the velocity is probably done based on Y position when a finger swipe can really
+be more like an arc", and "If this is too complex for the goal here we can take it to a dedicated session". Round 6 reads
+the release along the arc; how it feels on phones, on a mouse's handle and on a wheel is tuned with the owner on real
+devices, which no build session has. The numbers in the cards plan are starting points.
 
 ## 11. Whoops!
 
@@ -282,7 +303,7 @@ not its npm version, which is why currents' `impeccable:update` script cannot in
 
 - The Vending Machine's name, the rank names and thresholds, card art, the quadrant labels, each class's look on the
   reveal's timeline: instance content the owner names.
-- Stick Around's touch tuning: the owner's numbers from the prototype's sliders.
+- Stick Around's breakout tuned on real devices (section 10), in a session of its own with the owner.
 - Pip styles beyond the default, and how they are unlocked (with the gacha and trophies).
 - The player-made theme submission flow.
 - Open registration, after real moderation exists.

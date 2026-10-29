@@ -57,20 +57,36 @@ behavior the engine's.
 ### Task 4. Stick Around
 
 - `instances/divided-world/cards/stick-around/hold.ts` (pure): which Stick Around pulls (the nearest seen and unescaped,
-  by distance from the viewport's middle), the struggle (screens scrolled, each event counted at most half a screen,
-  forgiven over time: about 12 screens and 2.5 a second on a touch screen, 3.5 and 1.6 with a mouse), the Struggle
-  button (ten presses within 2.5 seconds), and the pull's curve (waits 160 ms for the reader's scroll to settle; eases in
-  as t^2.4 over 74% of its time; lands with a rubber band overshooting at most 48 px and settling with a damped bounce;
-  650 ms plus a fifth of a millisecond per pixel, at most 1300 ms). Each number is a constant named in one place.
-- `instances/divided-world/cards/stick-around/Effect.tsx`: the gold frame and its tag, the pull, the meter, the
-  Struggle button, the certification checkbox in the caster's words. Certifying calls `release_effect`, so the release
-  holds on every device; breaking free lasts this visit only; the author and the casters are never held. Reduced
-  motion: the pull is instant, and still happens.
-- **Tests first** (Node, on `hold.ts`): the nearest of two seen holds pulls; an escaped one never does; one jump of
-  ten screens adds half a screen of struggle; a touch fling of three screens does not break free and four in a row do;
-  the curve starts slowly, passes the target by at most 48 px and ends exactly on it. (Vitest and e2e on the effect): a
-  certified release holds after a reload; the Struggle button frees in ten presses and not in nine; a screen reader user
-  reaches the checkbox at the end of the post.
+  by distance from the viewport's middle); the pull's curve (waits 160 ms for the reader's scroll to settle; eases in as
+  t^2.4 over 74% of its time; lands with a rubber band overshooting at most 48 px and settling with a damped bounce;
+  650 ms plus a fifth of a millisecond per pixel, at most 1300 ms); and the breakout (design, section 10, point 5):
+  - the slingshot, for a finger and for the handle: cocked by dragging 0.12 of a screen one way at any speed, held
+    while the pointer is down; fired by a release the other way of at least 7.5 screens a second (the owner's 6 to 9)
+    over at least 0.08 of a screen, its speed read along the pointer's path over the last 70 ms (always reaching back
+    one earlier point), counting only a mostly vertical path; uncocked by drifting back under the distance only below
+    1 screen a second; read once more when the pointer lifts;
+  - the wheel's flick: a run one way of at least 0.06 of a screen at 1 screen a second within 450 ms, then within
+    140 ms a run the other way at 4 screens a second over 0.35 of a screen; a scroll event after a pause counts as at
+    most 50 ms of motion;
+  - the BREAK FREE button: a second press 0.12 to 0.6 seconds after the first.
+  Each number is a constant named in one place, kept in the instance's card so a later tuning session changes one file.
+  The prototype is the reference: `docs/research/2026-10-29-screens/proto-q14-stick-around.html`, round 6.
+- `instances/divided-world/cards/stick-around/Effect.tsx`: the gold frame and its tag (with the hint after two pulls),
+  the stretch while cocked, the handle, the pull, the BREAK FREE button, the certification checkbox in the caster's
+  words. Certifying calls `release_effect`, so the release holds on every device; breaking free lasts this visit only;
+  the author and the casters are never held; a finger down suppresses the pull; `overscroll-behavior` contains the
+  page so a cock at its top is not taken for a pull-to-refresh. Reduced motion: the pull is instant, and still happens;
+  the handle's launch jumps.
+- **Tests first** (Node, on `hold.ts`, fed pointer samples): the nearest of two seen holds pulls; an escaped one never
+  does; a slow cock held for seconds then a fierce release fires; a fierce flick never cocked does not; a release that
+  passes back through the cocking distance fires (the bug round 5 had: the drift rule uncocked the fire itself); a slow
+  drift back uncocks; an arced release fires where its vertical part alone would not; a sideways swipe does not; a hard
+  wheel scroll with no nudge first does not break free; the button frees at 250 ms and not at 30 ms or 900 ms; the
+  curve starts slowly, passes the target by at most 48 px and ends exactly on it. (Vitest and e2e on the effect): a
+  certified release holds after a reload; a screen reader user reaches the checkbox at the end of the post and the
+  button's name says how it works.
+- **Tuning is not this task's to finish.** Simulated pointers cannot move like a thumb, so the numbers ship as the
+  owner's starting points and a dedicated session tunes them with the owner on phones, a mouse and a wheel.
 
 ### Task 5. Whoops!
 
@@ -112,7 +128,7 @@ behavior the engine's.
 
 | State | Its way out |
 |---|---|
-| A reader held by Stick Around | Certify (holds on every device), break free (this visit), or the Struggle button |
+| A reader held by Stick Around | Certify (holds on every device), or break free for this visit: the slingshot, the handle, the wheel's flick or the BREAK FREE button |
 | A post under Whoops! | Any reader scrubs on their own screen; the author washes each layer for everyone |
 | An armed card | Esc, or play it |
 | The play form | Cancel, Esc, or play |
@@ -130,5 +146,7 @@ behavior the engine's.
 - A page of many splatted posts on a phone: canvas memory and redraw cost.
 - The author's saves at speed: the debounce, the bound, and a save racing a fourth play.
 - The pull fighting a screen reader's own scrolling, and a keyboard user's PageDown.
+- The slingshot on real phones: event spacing while the page scrolls, a release that ends at the page's edge, and iOS's
+  own gestures at the screen's edges.
 - Whether a theme can hide a splat or a hold for everyone who uses it.
 - The tuning numbers on a real phone, against the owner's slider numbers.
