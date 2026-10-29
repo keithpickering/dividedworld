@@ -14,7 +14,7 @@
 
 .kb-act {
   display: grid;
-  grid-template-columns: 22% minmax(0, 1fr);
+  grid-template-columns: minmax(8em, min(18%, 14em)) minmax(0, 1fr);
   grid-template-areas:
     "meta meta"
     "bit main";

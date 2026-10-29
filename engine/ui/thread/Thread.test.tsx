@@ -34,6 +34,9 @@ function see(el: Element | null, visible = true) {
 }
 const post = (seq: number) => document.getElementById(`post-${seq}`)!;
 const sentinel = () => document.querySelector('[data-kb-end]');
+/* The debounce is waited out on a fake clock, so a loaded machine cannot make it late. Call before the first `see`. */
+const clock = () => vi.useFakeTimers({ shouldAdvanceTime: true });
+const debounced = () => act(() => vi.advanceTimersByTimeAsync(READ_DEBOUNCE_MS + 50));
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeEach(() => {
@@ -43,7 +46,7 @@ beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute('data-kb-motion');
 });
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 /* ---------------------------------------------------------------------------- the world ---- */
 function world(acts: number) {
@@ -282,10 +285,11 @@ describe('mark_read', () => {
     const spy = vi.spyOn(w.fake, 'markRead');
     open(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    clock();
     see(post(3));
     see(post(5));
     expect(spy).not.toHaveBeenCalled();
-    await pause(READ_DEBOUNCE_MS + 150);
+    await debounced();
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0]![0]).toBe(w.thread);
     expect(spy.mock.calls[0]![1]).toBe(5);
@@ -298,14 +302,15 @@ describe('mark_read', () => {
     const spy = vi.spyOn(w.fake, 'markRead');
     open(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    clock();
     see(post(8));
-    await pause(READ_DEBOUNCE_MS + 150);
+    await debounced();
     see(post(2));
     see(post(8));
-    await pause(READ_DEBOUNCE_MS + 150);
+    await debounced();
     expect(spy).toHaveBeenCalledTimes(1);
     see(post(9));
-    await pause(READ_DEBOUNCE_MS + 150);
+    await debounced();
     expect(spy.mock.calls.map((c) => c[1])).toEqual([8, 9]);
   });
 
@@ -315,8 +320,9 @@ describe('mark_read', () => {
     const spy = vi.spyOn(w.fake, 'markRead');
     open(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    clock();
     see(post(4));
-    await pause(READ_DEBOUNCE_MS + 150);
+    await debounced();
     expect(spy).not.toHaveBeenCalled();
   });
 
@@ -535,6 +541,22 @@ describe('the announcer', () => {
     await pause(60);
     expect(region.textContent!.match(/New post by Spritey/gu)).toHaveLength(1);
     expect(region.textContent).not.toMatch(/fire|changed|edit/iu);
+  });
+
+  test('stays silent for a card, an unmask and a tally, which still appear', async () => {
+    const w = world(5);
+    const tapped = tap(w.fake);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 5 /u });
+    see(sentinel(), true);
+    deliver(() => tapped().onAct?.(live(w.thread, 6, w.pipe, { kind: 'card', targetActId: w.ids[1]!, payload: { card: 'whoops' }, currentPayload: { card: 'whoops' } })));
+    deliver(() => tapped().onAct?.(live(w.thread, 7, w.pipe, { kind: 'unmask', payload: { class: 'heel', message: '' }, currentPayload: { class: 'heel', message: '' } })));
+    deliver(() => tapped().onAct?.(live(w.thread, 8, null, { kind: 'tally', payload: { body: 'x' }, currentPayload: { body: 'x' } })));
+    await screen.findByRole('article', { name: /^Post 8 /u });
+    expect(post(6)).toBeInTheDocument();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    deliver(() => tapped().onAct?.(live(w.thread, 9, w.spritey)));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('New post by Spritey'));
   });
 
   test('says it for a post held back by the bar too, since the reader cannot see it', async () => {

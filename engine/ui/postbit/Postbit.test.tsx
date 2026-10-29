@@ -51,6 +51,8 @@ describe('the postbit', () => {
     expect(slot().querySelector('img')).toBeNull();
     expect(slot()).toHaveTextContent('P');
     expect(slot()).toHaveAttribute('aria-hidden', 'true');
+    /* The tall slot is for a portrait, or a square standing in for one: never an empty tall box. */
+    expect(slot()).toHaveAttribute('data-kb-slot', 'square');
   });
 
   test('the rank is the highest whose threshold the standing reaches, with that many pips filled', () => {

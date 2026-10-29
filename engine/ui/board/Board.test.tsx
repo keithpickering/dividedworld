@@ -33,6 +33,11 @@ function Switch() {
   return <BoardScreen slug={path.split('/').pop()!} />;
 }
 
+/** The new-thread form is a disclosure: the button opens it in place. */
+async function openForm() {
+  await userEvent.click(await screen.findByRole('button', { name: 'Start a thread' }));
+  return screen.findByRole('form', { name: 'Start a thread' });
+}
 const rowOf = (title: string) => screen.getByRole('link', { name: title }).closest('tr')!;
 
 beforeEach(() => localStorage.clear());
@@ -146,14 +151,26 @@ describe('The System\'s board', () => {
     });
     await screen.findByRole('link', { name: 'The Bulletin' });
     expect(screen.queryByRole('form', { name: 'Start a thread' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('textbox', { name: 'Title' })).toBeNull();
     expect(screen.getByText(/only The System posts here/i)).toBeInTheDocument();
     expect(rowOf('The Bulletin')).toHaveTextContent('The System');
   });
 
-  test('the ordinary board shows the form', async () => {
+  test('the ordinary board has a "Start a thread" button that opens the form in place, above the list, with focus on the title', async () => {
     renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f) });
-    expect(await screen.findByRole('form', { name: 'Start a thread' })).toBeInTheDocument();
+    const button = await screen.findByRole('button', { name: 'Start a thread' });
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('form', { name: 'Start a thread' })).toBeNull();
+    await userEvent.click(button);
+    const form = await screen.findByRole('form', { name: 'Start a thread' });
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(button).toHaveAttribute('aria-controls', form.id);
+    await waitFor(() => expect(within(form).getByRole('textbox', { name: 'Title' })).toHaveFocus());
+    expect(form.compareDocumentPosition(screen.getByRole('table')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await userEvent.click(button);
+    expect(screen.queryByRole('form', { name: 'Start a thread' })).toBeNull();
+    expect(button).toHaveAttribute('aria-expanded', 'false');
   });
 });
 
@@ -162,7 +179,7 @@ describe('a list of 0, 1 and 200 threads', () => {
     renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
     expect(await screen.findByText('No threads here yet.')).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
-    expect(screen.getByRole('form', { name: 'Start a thread' })).toBeInTheDocument();
+    await openForm();
   });
 
   test('one: a row and no pager', async () => {
@@ -212,7 +229,7 @@ describe('a list of 0, 1 and 200 threads', () => {
 describe('the new-thread form', () => {
   test('posts as the HUD\'s character and goes to the new thread', async () => {
     const { fake } = renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
-    const form = await screen.findByRole('form', { name: 'Start a thread' });
+    const form = await openForm();
     await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
     await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'A fresh start');
     await userEvent.type(within(form).getByRole('textbox', { name: 'First post' }), 'Hello.');
@@ -227,7 +244,7 @@ describe('the new-thread form', () => {
 
   test('a refusal shows the server\'s words and keeps the draft', async () => {
     renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
-    const form = await screen.findByRole('form', { name: 'Start a thread' });
+    const form = await openForm();
     await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
     await userEvent.type(within(form).getByRole('textbox', { name: 'First post' }), 'Body without a title');
     await userEvent.click(within(form).getByRole('button', { name: 'Start thread' }));
@@ -239,7 +256,7 @@ describe('the new-thread form', () => {
 
   test('with no character that can act, it says so and links to making one', async () => {
     renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { characters: false }) });
-    const form = await screen.findByRole('form', { name: 'Start a thread' });
+    const form = await openForm();
     expect(within(form).queryByRole('button', { name: 'Start thread' })).toBeNull();
     expect(within(form).getByRole('link', { name: 'Make a character' })).toHaveAttribute('href', '/characters/new');
   });
@@ -251,6 +268,7 @@ describe('a signed-out visitor', () => {
     expect(await screen.findByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in');
     expect(screen.queryByText('NEW')).toBeNull();
     expect(screen.queryByRole('form', { name: 'Start a thread' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
   });
 });
@@ -266,13 +284,13 @@ describe('a board that is not there', () => {
 describe('moving between boards', () => {
   test('the old rows and the draft do not follow the player to the other board', async () => {
     renderInWorld(<Switch />, { path: '/b/general', seed: (f) => { const w = world(f); f.seed.thread('off-topic', w.spritey, 'Elsewhere thread', 'x', { at: T0 }); return w; } });
-    const form = await screen.findByRole('form', { name: 'Start a thread' });
+    const form = await openForm();
     await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
     await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'Draft for general');
     act(() => { window.history.pushState(null, '', '/b/off-topic'); window.dispatchEvent(new PopStateEvent('popstate')); });
     expect(screen.queryByRole('link', { name: 'Thread 001' })).toBeNull();
     await screen.findByRole('link', { name: 'Elsewhere thread' });
-    const next = await screen.findByRole('form', { name: 'Start a thread' });
+    const next = await openForm();
     await waitFor(() => expect(within(next).getByText('Pipewrench')).toBeInTheDocument());
     expect(within(next).getByRole('textbox', { name: 'Title' })).toHaveValue('');
   });

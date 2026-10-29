@@ -1,9 +1,9 @@
 /**
- * The new-thread form above a board's list: the title and the first post, sent as the HUD's
+ * The new-thread form above a board's list, behind a "Start a thread" button that opens it in place (a disclosure: closed it takes one line, so the list is not pushed down; the draft survives closing): the title and the first post, sent as the HUD's
  * character. The character is never in the address; on success the player goes to the new thread.
  * A refusal is shown in the server's own words and the draft is kept.
  */
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link, useNavigate } from '../router.tsx';
@@ -17,6 +17,14 @@ export function NewThread({ board }: { readonly board: string }) {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const titleBox = useRef<HTMLInputElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+
+  /* Opening puts the cursor in the title (or, with no character to post as, on the way to making one). */
+  useEffect(() => {
+    if (open) (titleBox.current ?? form.current?.querySelector<HTMLElement>('a'))?.focus();
+  }, [open]);
 
   if (!loaded) return null;
 
@@ -38,7 +46,9 @@ export function NewThread({ board }: { readonly board: string }) {
   };
 
   return (
-    <form className="kb-box kb-new-thread" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
+    <div className="kb-new-thread-wrap">
+  <button type="button" className="kb-button kb-new-thread-toggle" aria-expanded={open} aria-controls={`${id}-form`} onClick={() => setOpen(!open)}>Start a thread</button>
+    <form id={`${id}-form`} ref={form} hidden={!open} className="kb-box kb-new-thread" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
       <h2 className="kb-box-head" id={`${id}-head`}>Start a thread</h2>
       {!hudCharacter ? (
         <p className="kb-new-thread-none">
@@ -49,7 +59,7 @@ export function NewThread({ board }: { readonly board: string }) {
           <p className="kb-new-thread-as kb-small">Posting as <strong>{hudCharacter.name}</strong></p>
           <div className="kb-field">
             <label htmlFor={`${id}-title`}>Title</label>
-            <input id={`${id}-title`} className="kb-input kb-new-thread-title" value={title} maxLength={settings.titleMaxLength} autoComplete="off" onChange={(e) => setTitle(e.target.value)} />
+            <input ref={titleBox} id={`${id}-title`} className="kb-input kb-new-thread-title" value={title} maxLength={settings.titleMaxLength} autoComplete="off" onChange={(e) => setTitle(e.target.value)} />
           </div>
           <div className="kb-field">
             <label htmlFor={`${id}-body`}>First post</label>
@@ -61,5 +71,6 @@ export function NewThread({ board }: { readonly board: string }) {
         </>
       )}
     </form>
+    </div>
   );
 }

@@ -56,3 +56,17 @@ test('"Continue to page 2" loads the next page below and updates the address, an
   await expect(page.locator('#post-1')).toHaveCount(1);
   expect(Math.abs((await page.evaluate(() => window.scrollY)) - before)).toBeLessThan(50);
 });
+
+test.describe('a desktop', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('the postbit column is narrow, and a character with no avatar gets a small square, not a tall empty box', async ({ page }) => {
+    const path = await openLongThread(page);
+    await page.goto(`${path}?page=1`);
+    const post = page.locator('#post-2');
+    const [bit, row] = [await post.locator('.kb-postbit').boundingBox(), await post.boundingBox()];
+    expect(bit!.width / row!.width).toBeLessThan(0.2);
+    const slot = await post.locator('.kb-postbit-avatar').boundingBox();
+    expect(slot!.height).toBeLessThan(80);
+  });
+});

@@ -11,7 +11,7 @@
  * (not under reduced motion). Otherwise the page never moves by itself: a bar above the HUD says
  * how many are waiting ("3 new posts", or "3 new posts on page 7" from an earlier page) and shows
  * them when clicked, or when the reader gets to the bottom. Tallies and edits update in place. One
- * polite live region says "New post by <name>" once per new Act, and nothing about a reaction or
+ * polite live region says "New post by <name>" once per new post, and nothing about a reaction or
  * an edit. The bar's way out: click it, or read on.
  *
  * Cost: a page is one read of the Acts, one each of its characters, stats, standings, reveals,
@@ -261,7 +261,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const authors = useRef(new Map<Id, Promise<Id | null>>());
   useEffect(() => {
     const announce = (a: Act) => {
-      if (announcedIds.current.has(a.id)) return;
+      /* New posts only: a card, an unmask or a tally still appears, and is not announced. */
+      if (a.kind !== 'post' || announcedIds.current.has(a.id)) return;
       announcedIds.current.add(a.id);
       const name = a.character === null ? 'The System' : people.current.get(a.character)?.character.name ?? 'a character';
       setLines((l) => [...l, { key: ++lineKey.current, text: `New post by ${name}` }].slice(-ANNOUNCED));

@@ -44,15 +44,23 @@
 }
 
 .kb-thread-main {
-  width: 46%;
+  width: 52%;
   overflow-wrap: anywhere;
 }
 
 .kb-thread-replies,
 .kb-thread-views {
   width: 8%;
-  text-align: center;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
+
+/* A fixed table takes its widths from its header row: say them there too. */
+.kb-thread-list th:nth-child(1) { width: 6%; }
+.kb-thread-list th:nth-child(2) { width: 52%; }
+.kb-thread-list th:nth-child(3),
+.kb-thread-list th:nth-child(4) { width: 9%; text-align: right; }
+.kb-thread-list th:nth-child(5) { width: 24%; }
 
 .kb-thread-last {
   width: 24%;
@@ -174,4 +182,16 @@
 /* Focus lands on the heading after a page turn; it is a place to start reading, not a control. */
 .kb-board-title:focus {
   outline: none;
+}
+
+.kb-new-thread-wrap {
+  margin: 0.6em 0;
+}
+
+.kb-new-thread-wrap .kb-new-thread {
+  margin-top: 0.4em;
+}
+
+.kb-new-thread[hidden] {
+  display: none;
 }

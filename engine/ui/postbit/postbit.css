@@ -109,6 +109,11 @@
   aspect-ratio: 1;
 }
 
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="square"] {
+  width: 3.2em;
+  aspect-ratio: 1;
+}
+
 @media (max-width: 40em) {
   .kb-postbit[data-kb-postbit="side"] {
     flex-direction: row;

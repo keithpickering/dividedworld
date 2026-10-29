@@ -34,7 +34,7 @@ function Avatar({ character, layout }: { readonly character: Character; readonly
   if (layout === 'stacked' || !portrait) {
     const src = layout === 'stacked' ? square : square ?? portrait;
     return (
-      <span className="kb-postbit-avatar" data-kb-slot={layout === 'side' ? 'tall' : 'square'} aria-hidden="true">
+      <span className="kb-postbit-avatar" data-kb-slot={layout === 'side' && src ? 'tall' : 'square'} aria-hidden="true">
         {src ? <img src={src} alt="" loading="lazy" decoding="async" /> : <span className="kb-postbit-none">{character.name.slice(0, 1)}</span>}
       </span>
     );
