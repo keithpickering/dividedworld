@@ -17,7 +17,11 @@ export interface Broadcast {
   readonly payload: unknown;
 }
 
-/** How a delivery ended: sent; refused, by a refusal that will not change (a 401, a 413); or unreachable (no answer, a 5xx or a 429, twice). */
+/**
+ * How a delivery ended: sent; refused, for something about the messages that will not change (a
+ * 413, a 422); or unreachable (no answer, a 5xx or a 429, twice; or a 401, 403 or 408, which say
+ * the key or the moment was wrong, not the messages, and so must not give them up).
+ */
 export type Delivery = 'sent' | 'refused' | 'unreachable';
 
 export function broadcaster(options: { url: string; key: string; fetch?: typeof globalThis.fetch; sleep?: (ms: number) => Promise<void> }) {
@@ -38,6 +42,7 @@ export function broadcaster(options: { url: string; key: string; fetch?: typeof 
           });
           await response.body?.cancel();
           if (response.ok) return 'sent';
+          if (response.status === 401 || response.status === 403 || response.status === 408) break;
           if (response.status < 500 && response.status !== 429) { refused = true; break; }
         } catch { /* no answer: once more, then give up */ }
       }

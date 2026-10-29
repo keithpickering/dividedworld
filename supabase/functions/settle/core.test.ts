@@ -155,6 +155,22 @@ test('a broadcast Realtime refuses for good is given up alone, and every other i
   assert.equal(waiting.length, 5);
 });
 
+test('a settlement whose tally or reveal could not be written says so in the log and the outcome', async () => {
+  const { db } = fakeDb();
+  const apply = db.rpc;
+  db.rpc = async <T>(fn: string, args: Record<string, unknown>) => {
+    const out = await apply<T>(fn, args);
+    return (fn === 'apply_settlement' ? { ...(out as object), masks: 'the instance gives no words for copy.turnsThreadTitle; seed them' } : out) as T;
+  };
+  const errors: unknown[] = [];
+  const log = console.error;
+  console.error = (...a: unknown[]) => { errors.push(a); };
+  let out;
+  try { out = await runSettlement(db, instance, new Date(TO).toISOString()); } finally { console.error = log; }
+  assert.equal(out.status === 'applied' && out.windows[0]!.masks, 'the instance gives no words for copy.turnsThreadTitle; seed them');
+  assert.ok(errors.some((e) => JSON.stringify(e).includes('copy.turnsThreadTitle')), 'logged for an operator');
+});
+
 test('a run that stops behind still sends what waits', async () => {
   const outbox = [{ id: 1, topic: 'thread:t', event: 'act', payload: { id: 'x' } }];
   const { db } = fakeDb(day, undefined, {}, [], outbox);

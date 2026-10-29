@@ -52,7 +52,7 @@ export interface AccountAnswer {
   readonly later?: () => Promise<void>;
 }
 
-const SENT_CODE = 'If this address can sign in here, a code and a link to sign in are on their way to it.';
+const SENT_CODE = 'If this address can sign in here, a code and a link to sign in are on their way to it. A new login needs an invite where this instance asks for one. If nothing comes in a few minutes, ask again.';
 const NO_MATCH = 'that code does not match, or it has expired: ask for a new one';
 
 const refused = (field: string, error: string): AccountAnswer => ({ status: 400, body: { field, error } });

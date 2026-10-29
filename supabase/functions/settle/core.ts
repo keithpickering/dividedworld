@@ -33,8 +33,11 @@ export type SettlementOutcome =
     readonly status: 'applied' | 'already settled';
     /** The last window this run settled. */
     readonly window: Window;
-    /** Every window this run settled, in order, each with whether this run applied it and its entries. */
-    readonly windows: readonly (Window & { readonly applied: boolean; readonly entries: number })[];
+    /**
+     * Every window this run settled, in order, each with whether this run applied it and its
+     * entries, and why its tally (masks) or its reveal could not be written, where one could not.
+     */
+    readonly windows: readonly (Window & { readonly applied: boolean; readonly entries: number; readonly masks?: string; readonly reveal?: string })[];
     readonly entries: number;
     /** Whether windows are still waiting, because this run settled as many as one run may. */
     readonly behind: boolean;
@@ -68,7 +71,7 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
   const clock = options.clock ?? Date.now;
   const deliver = options.deliver ?? (async (): Promise<Delivery> => 'unreachable');
   if (Number.isNaN(Date.parse(until))) throw new Error(`settle: until is not a time: ${JSON.stringify(until)}`);
-  const windows: (Window & { applied: boolean; entries: number })[] = [];
+  const windows: (Window & { applied: boolean; entries: number; masks?: string; reveal?: string })[] = [];
   const started = clock();
   let tuned: Instance | undefined;
   // Missed days are settled one window at a time, in order, each in its own transaction
@@ -84,14 +87,18 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     tuned ??= await withDatabaseSettings(instance, db);
     const input = await db.rpc<SettlementInput>('settlement_input', { window_start: window.start, window_end: window.end });
     const result = settle(input, tuned);
-    const applied = await db.rpc<{ applied: boolean }>('apply_settlement', {
+    const applied = await db.rpc<{ applied: boolean; masks?: string; reveal?: string }>('apply_settlement', {
       window_start: window.start,
       window_end: window.end,
       entries: result.entries.map((e) => ({ player: e.player, character: e.character, reason: e.reason, amount: e.amount })),
       class_totals: result.byClass,
       paid: result.paid,
     });
-    windows.push({ ...window, applied: applied.applied, entries: result.entries.length });
+    // A tally or a reveal that could not be written leaves what waited for the next settlement;
+    // said in the log, so an admin sees what to seed, and in the outcome.
+    if (applied.masks) console.error('settle: the masks did not change at', window.end, applied.masks);
+    if (applied.reveal) console.error('settle: the season was not revealed at', window.end, applied.reveal);
+    windows.push({ ...window, applied: applied.applied, entries: result.entries.length, ...(applied.masks ? { masks: applied.masks } : {}), ...(applied.reveal ? { reveal: applied.reveal } : {}) });
   }
   await sendWaiting(db, deliver);
   return windows.length ? outcome(windows, false) : { status: 'nothing to settle', until };
@@ -125,7 +132,7 @@ async function sendWaiting(db: Db, deliver: NonNullable<RunOptions['deliver']>):
   }
 }
 
-function outcome(windows: (Window & { applied: boolean; entries: number })[], behind: boolean): SettlementOutcome {
+function outcome(windows: (Window & { applied: boolean; entries: number; masks?: string; reveal?: string })[], behind: boolean): SettlementOutcome {
   const last = windows.at(-1)!;
   return {
     status: windows.some((w) => w.applied) ? 'applied' : 'already settled',

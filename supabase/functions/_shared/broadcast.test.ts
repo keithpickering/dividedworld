@@ -33,7 +33,7 @@ test('a fetch that throws is retried and never thrown; a transport failure then 
   assert.deepEqual(waits, [250]);
 });
 
-test('a refusal that will not change (a 401, a 413) is not retried', async () => {
+test('a 401 or a 413 is not retried', async () => {
   for (const status of [401, 413]) {
     let n = 0;
     const refusing = (async () => { n++; return new Response('no', { status }); }) as unknown as typeof globalThis.fetch;
@@ -48,7 +48,9 @@ test('a delivery says how it ended: sent, refused (a refusal that will not chang
   const opts = { url: 'https://p.example', key: 'k', sleep: async () => {} };
   assert.equal(await broadcaster({ ...opts, fetch: answering(202) }).deliver(one), 'sent');
   assert.equal(await broadcaster({ ...opts, fetch: answering(413) }).deliver(one), 'refused');
-  assert.equal(await broadcaster({ ...opts, fetch: answering(401) }).deliver(one), 'refused');
+  assert.equal(await broadcaster({ ...opts, fetch: answering(422) }).deliver(one), 'refused');
+  // A wrong or expired key, or a timeout, is no fact about the message: it waits, never given up.
+  for (const status of [401, 403, 408]) assert.equal(await broadcaster({ ...opts, fetch: answering(status) }).deliver(one), 'unreachable', String(status));
   assert.equal(await broadcaster({ ...opts, fetch: answering(503) }).deliver(one), 'unreachable');
   assert.equal(await broadcaster({ ...opts, fetch: answering(429) }).deliver(one), 'unreachable');
   const throwing = (async () => { throw new TypeError('reset'); }) as unknown as typeof globalThis.fetch;

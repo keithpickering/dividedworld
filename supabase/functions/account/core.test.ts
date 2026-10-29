@@ -51,6 +51,13 @@ test('asking for a code answers the same, in the same time, for an address with 
   }
 });
 
+test('the answer to a code request says what a new player needs and what to do if nothing comes, the same for every address', async () => {
+  const out = await world().answer({ action: 'requestCode', email: UNKNOWN });
+  const message = (out.body as { message: string }).message;
+  assert.match(message, /invite/);
+  assert.match(message, /ask again/);
+});
+
 test('a code asked for with an invite that opens may make a login; one asked for without, where an invite is needed, only signs one in', async () => {
   const w = world();
   await (await w.answer({ action: 'requestCode', email: UNKNOWN, invite: INVITE })).later?.();

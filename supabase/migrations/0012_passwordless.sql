@@ -16,4 +16,16 @@ end $$;
 create trigger no_password before insert or update of encrypted_password on auth.users
   for each row execute function auth_no_password();
 
-revoke execute on function auth_no_password() from public, anon, authenticated;
+-- A login made before this migration, through the sign-up that took a password, holds none after
+-- it: the trigger guards what is written from now on, and this clears what was written before.
+create function auth_forget_passwords() returns integer
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare cleared integer;
+begin
+  update auth.users set encrypted_password = '' where encrypted_password is distinct from '';
+  get diagnostics cleared = row_count;
+  return cleared;
+end $$;
+select auth_forget_passwords();
+
+revoke execute on function auth_no_password(), auth_forget_passwords() from public, anon, authenticated;
