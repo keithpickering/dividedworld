@@ -101,7 +101,7 @@ describe('what the adapter may request', () => {
     });
     const api = h.api;
     await Promise.allSettled([
-      api.settings(), api.boards(), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A),
+      api.settings(), api.boards(), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A]), api.cardsOn(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.standings(), api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
@@ -186,6 +186,21 @@ describe('reads and their rows', () => {
     const [req] = h.to('acts_public');
     expect(req?.url.searchParams.get('or')).toBe(`(id.eq.${A},and(kind.eq.edit,target_act_id.eq.${A}))`);
     expect(req?.url.searchParams.get('order')).toBe('created_at.asc');
+  });
+
+  it('reads the threads spun from several Acts in one request, and the card plays on one Act', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
+    const spun = await h.api.spunFromMany([A, B, A]);
+    expect(h.to('thread_list')).toHaveLength(1);
+    expect(h.to('thread_list')[0]?.url.searchParams.get('origin_act_id')).toBe(`in.(${A},${B})`);
+    expect(spun.map((t) => t.originActId)).toEqual([A]);
+    const cards = await h.api.cardsOn(A);
+    const p = h.to('acts_public')[0]?.url.searchParams;
+    expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order')]).toEqual(['eq.card', `eq.${A}`, 'created_at.asc']);
+    expect(cards.map((c) => c.kind)).toEqual(['card']);
+    expect(await h.api.spunFromMany(['x),y'])).toEqual([]);
+    expect(await h.api.cardsOn('x),y')).toEqual([]);
+    expect(h.to('thread_list')).toHaveLength(1);
   });
 
   it('refuses to put a non-id into a filter', async () => {

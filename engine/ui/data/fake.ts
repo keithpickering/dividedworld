@@ -69,6 +69,8 @@ export interface Seed {
   /** A tally Act in a thread of The System's board that announces a Turn of a character. */
   announceTurn(character: Id, thread: Id, options?: { was?: string; since?: string; at?: number }): Id;
   avatar(character: Id, urls: { square?: string; portrait?: string }): void;
+  /** A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action). */
+  card(character: Id, target: Id, card: string, options?: { message?: string; at?: number }): Id;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
 }
@@ -570,6 +572,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [{ ...publicAct(original), currentPayload: original.payload, editedAt: null, shownEditedAt: null }, ...versions];
     },
     spunFrom: (act) => [...threads.values()].filter((t) => t.origin === act).map(summary),
+    spunFromMany(ids) {
+      const wanted = new Set(ids);
+      return [...threads.values()].filter((t) => t.origin !== null && wanted.has(t.origin)).sort((a, b) => a.at - b.at).map(summary);
+    },
+    cardsOn: (act) => [...acts.values()].filter((a) => a.kind === 'card' && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).map(publicAct),
     characters: (ids) => ids.map((id) => characters.get(id)).filter((c): c is CharRec => c !== undefined && c.debutedAt !== null).map(publicCharacter),
     characterCounts(id) {
       const c = characters.get(id);
@@ -847,6 +854,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const c = characters.get(character)!;
       if (urls.square !== undefined) c.square = urls.square;
       if (urls.portrait !== undefined) c.portrait = urls.portrait;
+    },
+    card(character, target, card, o) {
+      const on = acts.get(target);
+      if (!on) throw new Error(`no such Act ${target}`);
+      const payload: Record<string, unknown> = { card };
+      if (o?.message !== undefined) payload.message = o.message;
+      return asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload })).id;
     },
     effect(thread, play) {
       const savedAt = iso(now());

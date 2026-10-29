@@ -346,6 +346,10 @@ export interface KayfaApi {
   history(post: Id): Promise<readonly Act[]>;
   /** The threads spun from an Act. */
   spunFrom(act: Id): Promise<readonly ThreadSummary[]>;
+  /** The threads spun from any of these Acts, in one read (a page asks once, not once per post); each names its origin in `originActId`. */
+  spunFromMany(acts: readonly Id[]): Promise<readonly ThreadSummary[]>;
+  /** The card plays on an Act, oldest first: the effects an ORIGIN box lists under the Act it shows. */
+  cardsOn(act: Id): Promise<readonly Act[]>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */
   characters(ids: readonly Id[]): Promise<readonly Character[]>;
   characterCounts(id: Id): Promise<CharacterCounts>;

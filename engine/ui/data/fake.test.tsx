@@ -672,6 +672,22 @@ describe('what a list row shows', () => {
     expect([plain?.originThread, plain?.originTitle, plain?.originSeq]).toEqual([null, null, null]);
   });
 
+  test('spunFromMany reads the threads spun from any of several Acts at once, and cardsOn the card plays on one', async () => {
+    const { fake, anaFace, boFace, thread, opener } = world();
+    const second = must(await fake.post(thread, anaFace, 'second', null));
+    const a = must(await fake.spin(opener, anaFace, 'From the first', ''));
+    const b = must(await fake.spin(second.id, anaFace, 'From the second', ''));
+    must(await fake.spin(a.act.id, anaFace, 'From a spin', ''));
+    const many = await fake.spunFromMany([opener, second.id]);
+    expect(many.map((t) => [t.id, t.originActId])).toEqual([[a.thread.id, opener], [b.thread.id, second.id]]);
+    expect(await fake.spunFromMany([])).toEqual([]);
+    fake.seed.card(boFace, second.id, 'whoops', { message: 'oops' });
+    fake.seed.card(boFace, opener, 'whoops');
+    const on = await fake.cardsOn(second.id);
+    expect(on.map((c) => [c.kind, c.targetActId, c.payload])).toEqual([['card', second.id, { card: 'whoops', message: 'oops' }]]);
+    expect(await fake.cardsOn(a.act.id)).toEqual([]);
+  });
+
   test('a player\'s seeded Act takes the time it is given, as The System\'s does', async () => {
     const { fake, anaFace, thread } = world();
     const old = fake.clock.now() - 20 * DAY;

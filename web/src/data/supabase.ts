@@ -498,6 +498,17 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const rows = await list(() => client.from('thread_list').select('*').eq('origin_act_id', actId).order('created_at', { ascending: true }));
       return rows.map(toThread);
     },
+    async spunFromMany(actIds) {
+      const wanted = [...new Set(actIds)].filter(idOk);
+      if (wanted.length === 0) return [];
+      const rows = await list(() => client.from('thread_list').select('*').in('origin_act_id', wanted).order('created_at', { ascending: true }));
+      return rows.map(toThread);
+    },
+    async cardsOn(actId) {
+      if (!idOk(actId)) return [];
+      const rows = await list(() => client.from('acts_public').select('*').eq('kind', 'card').eq('target_act_id', actId).order('created_at', { ascending: true }));
+      return rows.map(toAct);
+    },
     characters,
     async characterCounts(id): Promise<CharacterCounts> {
       const kind = (k: string) => count(() => client.from('acts_public').select('id', { count: 'exact', head: true }).eq('character', id).eq('kind', k));
