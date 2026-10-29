@@ -17,12 +17,15 @@ export interface Broadcast {
   readonly payload: unknown;
 }
 
+/** How a delivery ended: sent; refused, by a refusal that will not change (a 401, a 413); or unreachable (no answer, a 5xx or a 429, twice). */
+export type Delivery = 'sent' | 'refused' | 'unreachable';
+
 export function broadcaster(options: { url: string; key: string; fetch?: typeof globalThis.fetch; sleep?: (ms: number) => Promise<void> }) {
   const send = options.fetch ?? globalThis.fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  return {
-    async send(messages: readonly Broadcast[]): Promise<boolean> {
-      if (!messages.length) return true;
+  const deliver = async (messages: readonly Broadcast[]): Promise<Delivery> => {
+      if (!messages.length) return 'sent';
+      let refused = false;
       const body = JSON.stringify({ messages: messages.map((m) => ({ ...m, private: true })) });
       for (let attempt = 1; attempt <= 2; attempt++) {
         if (attempt > 1) await sleep(250);
@@ -34,12 +37,18 @@ export function broadcaster(options: { url: string; key: string; fetch?: typeof 
             signal: AbortSignal.timeout(5_000),
           });
           await response.body?.cancel();
-          if (response.ok) return true;
-          if (response.status < 500 && response.status !== 429) break;
+          if (response.ok) return 'sent';
+          if (response.status < 500 && response.status !== 429) { refused = true; break; }
         } catch { /* no answer: once more, then give up */ }
       }
       console.error('broadcast failed', messages.map((m) => `${m.topic}/${m.event}`).join(', '));
-      return false;
+      return refused ? 'refused' : 'unreachable';
+  };
+  return {
+    deliver,
+    /** Whether they went, for a caller that only logs (act/index.ts). */
+    async send(messages: readonly Broadcast[]): Promise<boolean> {
+      return (await deliver(messages)) === 'sent';
     },
   };
 }

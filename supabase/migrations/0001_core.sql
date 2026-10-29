@@ -85,6 +85,8 @@ create table characters (
 );
 -- One name per instance, whatever its case or its script: 0011_names.sql's name_key.
 create index characters_owner on characters (owner);
+-- The characters each settlement debuts, found without reading those that already have.
+create index characters_waiting on characters (created_at) where debuted_at is null;
 
 -- Every class a character has held, from when. Private until the season's reveal.
 create table class_history (
@@ -227,8 +229,10 @@ create view characters_public as
   select c.id, c.name from characters c where c.debuted_at is not null;
 
 -- That `who` plays `through`, and that it has debuted, for every action a character takes: the
--- same words whether the character is another player's or does not exist, so nobody learns a
--- waiting character is there; its own player is told it waits.
+-- same words whether the character is another player's or does not exist, so no action tells
+-- anyone a waiting character is there; its own player is told it waits. (Its name is held from
+-- when it was made, so a guess at that exact name is told it is taken: a question for the owner
+-- on PR #2.)
 create function played_by(through uuid, who uuid) returns void
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare waiting boolean;

@@ -176,7 +176,7 @@ test('the settlement of a season\'s last window posts its tally and its reveal, 
   sql(`insert into class_history (character, class_key, started_at) values ('${made}', 'face', '${at(2)}')`);
   sql(`update settings set value = jsonb_build_object('unit', 'day', 'count', (select extract(day from ('${at(24)}'::timestamptz - starts_at))::integer from seasons where ends_at is null)) where key = 'seasonLength'`);
   const sent: { topic: string; event: string; payload: { kind?: string; id?: string } }[] = [];
-  const out = await runSettlement(db, instance, at(24), { send: async (m) => { sent.push(...(m as typeof sent)); return true; } });
+  const out = await runSettlement(db, instance, at(24), { deliver: async (m) => { sent.push(...(m as typeof sent)); return 'sent' as const; } });
   assert.equal(out.status, 'applied', JSON.stringify(out));
   const tally = sql(`select id from acts where kind = 'tally' and payload -> 'debuts' @> '[{"name": "Debutante"}]'`);
   assert.ok(tally, 'the tally names the debut');

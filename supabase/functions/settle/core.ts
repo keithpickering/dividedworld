@@ -23,7 +23,7 @@
 import { settle } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
 import type { Db } from '../_shared/rpc.ts';
-import type { Broadcast } from '../_shared/broadcast.ts';
+import type { Broadcast, Delivery } from '../_shared/broadcast.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
 type Window = { readonly start: string; readonly end: string };
@@ -43,8 +43,8 @@ export type SettlementOutcome =
 /** What a run is given beside its database: a clock, and how it sends what waits to be broadcast. */
 export interface RunOptions {
   readonly clock?: () => number;
-  /** Sends live updates, true once they went (supabase/functions/_shared/broadcast.ts); none sends nothing, and leaves them waiting. */
-  readonly send?: (messages: readonly Broadcast[]) => Promise<boolean>;
+  /** Sends live updates and says how it ended (supabase/functions/_shared/broadcast.ts); none sends nothing, and leaves them waiting. */
+  readonly deliver?: (messages: readonly Broadcast[]) => Promise<Delivery>;
 }
 
 /** How many waiting broadcasts one send carries. */
@@ -66,7 +66,7 @@ export const MOST_RUN_MS = 60_000;
 
 export async function runSettlement(db: Db, instance: Instance, until: string, options: RunOptions = {}): Promise<SettlementOutcome> {
   const clock = options.clock ?? Date.now;
-  const send = options.send ?? (async () => false);
+  const deliver = options.deliver ?? (async (): Promise<Delivery> => 'unreachable');
   if (Number.isNaN(Date.parse(until))) throw new Error(`settle: until is not a time: ${JSON.stringify(until)}`);
   const windows: (Window & { applied: boolean; entries: number })[] = [];
   const started = clock();
@@ -78,7 +78,7 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     const window = await db.rpc<Window | null>('next_settlement_window', { until });
     if (!window) break;
     if (windows.length === MOST_WINDOWS_PER_RUN || (windows.length && clock() - started >= MOST_RUN_MS)) {
-      await sendWaiting(db, send);
+      await sendWaiting(db, deliver);
       return outcome(windows, true);
     }
     tuned ??= await withDatabaseSettings(instance, db);
@@ -93,17 +93,34 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     });
     windows.push({ ...window, applied: applied.applied, entries: result.entries.length });
   }
-  await sendWaiting(db, send);
+  await sendWaiting(db, deliver);
   return windows.length ? outcome(windows, false) : { status: 'nothing to settle', until };
 }
 
-/** Sends what waits in the outbox, a batch at a time, and clears each batch once it went; a batch that failed stays for the next run. */
-async function sendWaiting(db: Db, send: NonNullable<RunOptions['send']>): Promise<void> {
+/**
+ * Sends what waits in the outbox, a batch at a time, and clears each batch once it went. Where
+ * Realtime cannot be reached, everything stays for the next run. Where it refuses a batch for
+ * good (a 413, say), the batch is sent one message at a time, so one bad message never holds back
+ * every one after it, run after run: each that goes is cleared, and one refused alone is given
+ * up, logged by its topic, and cleared too. Its Act is on the board for the next load.
+ */
+async function sendWaiting(db: Db, deliver: NonNullable<RunOptions['deliver']>): Promise<void> {
+  const shape = (m: { topic: string; event: string; payload: unknown }) => ({ topic: m.topic, event: m.event, payload: m.payload });
   for (;;) {
     const due = await db.rpc<{ id: number; topic: string; event: string; payload: unknown }[]>('due_broadcasts', { most: BROADCASTS_PER_SEND });
     if (!due.length) return;
-    if (!(await send(due.map((m) => ({ topic: m.topic, event: m.event, payload: m.payload }))))) return;
-    await db.rpc('broadcasts_sent', { ids: due.map((m) => m.id) });
+    const outcome = await deliver(due.map(shape));
+    if (outcome === 'unreachable') return;
+    if (outcome === 'refused') {
+      for (const m of due) {
+        const one = await deliver([shape(m)]);
+        if (one === 'unreachable') return;
+        if (one === 'refused') console.error('broadcast given up: Realtime refuses it for good', m.topic, m.event, m.id);
+        await db.rpc('broadcasts_sent', { ids: [m.id] });
+      }
+    } else {
+      await db.rpc('broadcasts_sent', { ids: due.map((m) => m.id) });
+    }
     if (due.length < BROADCASTS_PER_SEND) return;
   }
 }

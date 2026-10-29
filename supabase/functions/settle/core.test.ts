@@ -112,12 +112,12 @@ test('what a settlement posted is sent live from the outbox, then cleared; a fai
   const { db, calls } = fakeDb(day, undefined, {}, [], outbox);
   const sent: unknown[][] = [];
   let up = false;
-  const send = async (m: readonly unknown[]) => { if (!up) return false; sent.push([...m]); return true; };
-  await runSettlement(db, instance, new Date(TO).toISOString(), { send });
+  const send = async (m: readonly unknown[]) => { if (!up) return 'unreachable' as const; sent.push([...m]); return 'sent' as const; };
+  await runSettlement(db, instance, new Date(TO).toISOString(), { deliver: send });
   assert.equal(outbox.length, 3, 'a send that failed leaves every broadcast waiting');
   assert.ok(!calls.some((c) => c.fn === 'broadcasts_sent'));
   up = true;
-  const out = await runSettlement(db, instance, new Date(TO).toISOString(), { send });
+  const out = await runSettlement(db, instance, new Date(TO).toISOString(), { deliver: send });
   assert.equal(out.status, 'nothing to settle');
   assert.deepEqual(sent, [[{ topic: 'thread:t', event: 'act', payload: { id: 'a0' } }, { topic: 'thread:t', event: 'act', payload: { id: 'a1' } }, { topic: 'thread:t', event: 'act', payload: { id: 'a2' } }]]);
   assert.equal(outbox.length, 0, 'sent, they are cleared');
@@ -126,9 +126,40 @@ test('what a settlement posted is sent live from the outbox, then cleared; a fai
 test('a reveal larger than one send goes out in batches, every one of it', async () => {
   const outbox = Array.from({ length: 1201 }, (_, i) => ({ id: i + 1, topic: 'thread:r', event: 'act', payload: { id: `r${i}` } }));
   const { db } = fakeDb(day, undefined, {}, [], outbox);
-  let messages = 0;
-  await runSettlement(db, instance, new Date(FROM).toISOString(), { send: async (m) => { messages += m.length; return true; } });
-  assert.equal(messages, 1201);
+  const batches: number[] = [];
+  await runSettlement(db, instance, new Date(FROM).toISOString(), { deliver: async (m) => { batches.push(m.length); return 'sent' as const; } });
+  assert.deepEqual(batches, [500, 500, 201]);
+  assert.equal(outbox.length, 0);
+});
+
+test('a broadcast Realtime refuses for good is given up alone, and every other is sent; an unreachable Realtime leaves them all waiting', async () => {
+  const make = () => Array.from({ length: 5 }, (_, i) => ({ id: i + 1, topic: 'thread:t', event: 'act', payload: { id: `a${i}`, bad: i === 1 } }));
+  const outbox = make();
+  const { db } = fakeDb(day, undefined, {}, [], outbox);
+  const sent: unknown[] = [];
+  const deliver = async (m: readonly { payload: unknown }[]) => {
+    if (m.some((x) => (x.payload as { bad: boolean }).bad)) return 'refused' as const;
+    sent.push(...m.map((x) => (x.payload as { id: string }).id));
+    return 'sent' as const;
+  };
+  const errors: unknown[] = [];
+  const log = console.error;
+  console.error = (...a: unknown[]) => { errors.push(a); };
+  try { await runSettlement(db, instance, new Date(FROM).toISOString(), { deliver }); } finally { console.error = log; }
+  assert.deepEqual(sent, ['a0', 'a2', 'a3', 'a4']);
+  assert.equal(outbox.length, 0, 'the refused one is given up, not left to block every run after');
+  assert.ok(errors.some((e) => JSON.stringify(e).includes('thread:t')), 'and its giving up is logged');
+  const waiting = make();
+  const down = fakeDb(day, undefined, {}, [], waiting);
+  await runSettlement(down.db, instance, new Date(FROM).toISOString(), { deliver: async () => 'unreachable' as const });
+  assert.equal(waiting.length, 5);
+});
+
+test('a run that stops behind still sends what waits', async () => {
+  const outbox = [{ id: 1, topic: 'thread:t', event: 'act', payload: { id: 'x' } }];
+  const { db } = fakeDb(day, undefined, {}, [], outbox);
+  const out = await runSettlement(db, instance, new Date(FROM + 40 * 24 * H).toISOString(), { deliver: async () => 'sent' as const });
+  assert.equal(out.status === 'applied' && out.behind, true);
   assert.equal(outbox.length, 0);
 });
 

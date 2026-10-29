@@ -41,3 +41,17 @@ test('a refusal that will not change (a 401, a 413) is not retried', async () =>
     assert.equal(n, 1, String(status));
   }
 });
+
+test('a delivery says how it ended: sent, refused (a refusal that will not change), or unreachable (a transport failure, twice)', async () => {
+  const one = [{ topic: 'thread:t', event: 'act', payload: {} }];
+  const answering = (status: number) => (async () => new Response('', { status })) as unknown as typeof globalThis.fetch;
+  const opts = { url: 'https://p.example', key: 'k', sleep: async () => {} };
+  assert.equal(await broadcaster({ ...opts, fetch: answering(202) }).deliver(one), 'sent');
+  assert.equal(await broadcaster({ ...opts, fetch: answering(413) }).deliver(one), 'refused');
+  assert.equal(await broadcaster({ ...opts, fetch: answering(401) }).deliver(one), 'refused');
+  assert.equal(await broadcaster({ ...opts, fetch: answering(503) }).deliver(one), 'unreachable');
+  assert.equal(await broadcaster({ ...opts, fetch: answering(429) }).deliver(one), 'unreachable');
+  const throwing = (async () => { throw new TypeError('reset'); }) as unknown as typeof globalThis.fetch;
+  assert.equal(await broadcaster({ ...opts, fetch: throwing }).deliver(one), 'unreachable');
+  assert.equal(await broadcaster({ ...opts, fetch: answering(202) }).deliver([]), 'sent');
+});

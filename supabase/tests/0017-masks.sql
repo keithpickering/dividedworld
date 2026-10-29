@@ -245,6 +245,123 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- The edges: what the settlement's window holds, and what it does not; a tally of any size ----
+do $$
+declare
+  ann uuid := tests.account('edge-ann');
+  start_at timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
+  window_end timestamptz := start_at + interval '1 day';
+  later uuid;
+  turner uuid := tests.character(ann, 'Edge Turner', 'alpha', now() - interval '60 days');
+  asked timestamptz;
+  said jsonb;
+  tallies integer;
+  due jsonb;
+  ids jsonb;
+  biggest integer;
+begin
+  -- A character made after the window's end, and a Turn asked then, wait for the next one.
+  insert into characters (owner, name, created_at) values (ann, 'Made After The Window', window_end + interval '1 minute') returning id into later;
+  perform tests.become(ann);
+  perform turn(turner, 'beta', 'announced');
+  perform tests.unbecome();
+  asked := (select asked_at from pending_turns where character = turner);
+  -- Asked again, the Turn is asked anew.
+  perform tests.become(ann);
+  perform turn(turner, 'beta', 'revealed');
+  perform tests.unbecome();
+  if (select asked_at from pending_turns where character = turner) <= asked then raise exception 'a changed Turn keeps the moment it was first asked'; end if;
+  perform tests.become(ann);
+  -- Asking for the class it holds while a Turn waits says the way to keep it.
+  if coalesce(pg_temp.refusal(format('select turn(%L, %L, %L)', turner, 'alpha', 'silent')), '') not like '%withdraw%' then
+    raise exception 'asking for the class it holds, with a Turn waiting, should say to withdraw it: %', pg_temp.refusal(format('select turn(%L, %L, %L)', turner, 'alpha', 'silent'));
+  end if;
+  perform tests.unbecome();
+  update pending_turns set asked_at = window_end where character = turner;
+  -- A tally of many debuts is several Acts of at most a hundred names each, never one payload holding all.
+  for i in 1..150 loop
+    insert into characters (owner, name, created_at) values (tests.account('edge-many-' || i), 'Many Masks ' || i, start_at + interval '1 hour');
+  end loop;
+  -- The season's first loud Turn or debut opens its Turns thread, and says so to its board.
+  update seasons set turns_thread = null where ends_at is null;
+  delete from broadcasts_due;
+  tallies := (select count(*) from acts where kind = 'tally');
+  said := pg_temp.settle_day();
+  if (select debuted_at from characters where id = later) is not null then raise exception 'a character made after the window debuted at its end'; end if;
+  if not exists (select 1 from pending_turns where character = turner) then raise exception 'a Turn asked at the window''s end took effect at it'; end if;
+  if (select count(*) from acts where kind = 'tally') - tallies < 2 then raise exception 'a tally of 150 debuts was one Act'; end if;
+  select max(jsonb_array_length(payload -> 'debuts') + jsonb_array_length(payload -> 'turns')) into biggest from acts where kind = 'tally';
+  if biggest > 100 then raise exception 'a tally Act names % masks', biggest; end if;
+  if (select count(*) from acts a, jsonb_array_elements(a.payload -> 'debuts') d where a.kind = 'tally' and d ->> 'name' like 'Many Masks %') is distinct from 150 then
+    raise exception 'every debut is named, once';
+  end if;
+  perform set_config('role', 'service_role', true);
+  due := due_broadcasts();
+  perform tests.unbecome();
+  if not exists (select 1 from jsonb_array_elements(due) m where m ->> 'event' = 'thread' and m ->> 'topic' = 'board:' || system_board()) then
+    raise exception 'a Turns thread the tally opened was not told to its board';
+  end if;
+  -- Oldest first, and only what was sent is cleared.
+  if (select array_agg((m ->> 'id')::bigint order by o) from jsonb_array_elements(due) with ordinality as x(m, o))
+     is distinct from (select array_agg(id order by id) from broadcasts_due) then
+    raise exception 'the outbox is not read oldest first';
+  end if;
+  ids := jsonb_build_array(due -> 0 -> 'id');
+  perform set_config('role', 'service_role', true);
+  perform broadcasts_sent(ids);
+  perform tests.unbecome();
+  if (select count(*) from broadcasts_due) is distinct from jsonb_array_length(due) - 1 then raise exception 'clearing one sent broadcast cleared others'; end if;
+  -- A reveal that is not due reveals nothing, however it is called.
+  if reveal_season(now()) is not null then raise exception 'a season not yet at its end was revealed'; end if;
+end $$;
+
+-- ---- A tally that cannot be written does not hold the settlement back ----
+do $$
+declare
+  ann uuid := tests.account('stuck-ann');
+  start_at timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
+  waiting uuid;
+  said jsonb;
+  words jsonb := (select value from settings where key = 'copy');
+begin
+  insert into characters (owner, name, created_at) values (ann, 'Stuck Debut', start_at + interval '1 hour') returning id into waiting;
+  -- The instance's words lost (only by hand: settings_copy_kept holds them otherwise).
+  alter table settings disable trigger settings_copy_kept;
+  delete from settings where key = 'copy';
+  -- A season with no Turns thread yet, whose tally needs the words to title one.
+  update seasons set turns_thread = null where ends_at is null;
+  said := pg_temp.settle_day();
+  if not (said ->> 'applied')::boolean then raise exception 'a settlement whose tally failed was not applied: %', said; end if;
+  if said ->> 'masks' is null or said ->> 'masks' not like '%copy%' then raise exception 'the settlement should say why its masks did not change: %', said; end if;
+  if (select debuted_at from characters where id = waiting) is not null then raise exception 'a debut went ahead with no tally to name it'; end if;
+  -- Once the words are back, the next settlement debuts it.
+  insert into settings (key, value) values ('copy', words);
+  alter table settings enable trigger settings_copy_kept;
+  said := pg_temp.settle_day();
+  if (select debuted_at from characters where id = waiting) is null then raise exception 'the next settlement should debut what waited'; end if;
+end $$;
+
+-- ---- An invite opened at the very instant a window ends is the next window's ----
+do $$
+declare
+  ann uuid := tests.account('inst-ann');
+  newcomer uuid;
+  made jsonb;
+  start_at timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
+begin
+  perform tests.become(ann);
+  made := create_invite();
+  perform tests.unbecome();
+  insert into auth.users (email) values ('inst-new@test.invalid') returning id into newcomer;
+  perform tests.become(newcomer);
+  perform open_account(made ->> 'code');
+  perform tests.unbecome();
+  update invites set used_at = start_at where id = (made ->> 'invite')::bigint;
+  perform tests.become(ann);
+  if (select used from my_invites where id = (made ->> 'invite')::bigint) then raise exception 'an invite opened as a window began read as used before that window settled'; end if;
+  perform tests.unbecome();
+end $$;
+
 -- ---- The reveal runs from the settlement of the season's last window, dated by window ----
 do $$
 declare

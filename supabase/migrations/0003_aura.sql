@@ -158,6 +158,8 @@ declare
   settled bigint;
   tally uuid;
   revealed jsonb;
+  masks_failed text;
+  reveal_failed text;
   bad integer;
   r record;
 begin
@@ -240,13 +242,28 @@ begin
   on conflict (account, act) do update set shares = excluded.shares, settlement = excluded.settlement;
 
   -- Masks change at the tally, and the season's last window reveals it, in this transaction:
-  -- written once with the window, so a retried window posts neither twice (0007).
-  tally := masks_change(window_end);
-  if season_end <= window_end then revealed := reveal_season(window_end); end if;
+  -- written once with the window, so a retried window posts neither twice (0007). Each is a
+  -- block of its own, so one that cannot be written (the instance's words lost, say) leaves
+  -- what waited for the next settlement and says why, and never holds back the Aura: the way
+  -- out is an admin's seed of what is missing, after which the next settlement does them. The
+  -- tally goes first, and a Turn it makes take effect at this window's end, the season's last,
+  -- is the next season's: the reveal reads only what began before its end.
+  begin
+    tally := masks_change(window_end);
+  exception when others then
+    masks_failed := sqlerrm;
+  end;
+  if season_end <= window_end then
+    begin
+      revealed := reveal_season(window_end);
+    exception when others then
+      reveal_failed := sqlerrm;
+    end;
+  end if;
 
-  return jsonb_build_object('applied', true, 'settlement', settled,
+  return jsonb_strip_nulls(jsonb_build_object('applied', true, 'settlement', settled,
     'entries', (select count(*) from ledger where settlement = settled),
-    'tally', tally, 'revealed', revealed -> 'season');
+    'tally', tally, 'revealed', revealed -> 'season', 'masks', masks_failed, 'reveal', reveal_failed));
 end $$;
 
 -- ------------------------------------------------------------------- who reads what ----

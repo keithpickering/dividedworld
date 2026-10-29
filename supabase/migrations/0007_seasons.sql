@@ -164,7 +164,12 @@ begin
   -- (masks_change locks the same row), so the cooldown is read from what took effect.
   perform 1 from characters where id = through for no key update;
   select class_key into was from class_now(through, 'infinity');
-  if was = to_class then raise exception 'this character already is one' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if was = to_class then
+    if exists (select 1 from pending_turns where character = through) then
+      raise exception 'this character already is one: withdraw its waiting Turn to keep it' using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+    raise exception 'this character already is one' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
   -- The cooldown runs from the last Turn's taking effect; a character's first class is not a Turn.
   select max(started_at) into last_turn from class_history h
   where h.character = through and h.started_at > (select min(started_at) from class_history where character = through);
@@ -191,34 +196,47 @@ end $$;
 
 -- What a settlement does to masks, at its window's end, in its transaction: debuts, Turns, and
 -- the tally that names them. Run once per window, since apply_settlement() runs it only when it
--- writes the window's settlement row.
+-- writes the window's settlement row; run again for a window, it finds nothing left to change.
+-- Set-based, so a launch day's thousands of debuts or a season's first day of Turns cost one
+-- pass each, and the tally is as many Acts as it takes at TALLY_MOST names each, never one
+-- payload holding all of them, as the reveal is many small rows. Returns the first tally Act.
 create function masks_change(window_end timestamptz) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
+  most constant integer := 100;
   open_season seasons%rowtype;
-  debuts jsonb;
-  turns jsonb := '[]';
-  r record;
   in_thread uuid;
+  first_tally uuid;
   written uuid;
+  parts integer;
 begin
-  -- The characters made in the window (or, made while a run read it, in one before) debut.
+  if to_regclass('pg_temp.masks_named') is null then
+    create temp table masks_named (n bigint, kind text, entry jsonb) on commit drop;
+    create temp table masks_turns (character uuid, class_key text, loudness text, name text, was text, since timestamptz) on commit drop;
+  end if;
+  truncate masks_named, masks_turns;
+  -- The characters made before the window's end, and still waiting, debut at it. One made in a
+  -- transaction this one could not see yet waits for the next settlement.
   with d as (
     update characters set debuted_at = window_end where debuted_at is null and created_at < window_end returning id, name
-  ) select coalesce(jsonb_agg(jsonb_build_object('character', id, 'name', name) order by name, id), '[]') into debuts from d;
-  -- The Turns asked in it take effect at its end; the rows of their characters are locked first,
-  -- in one order, so a turn() racing this one waits and then reads what took effect.
+  ) insert into masks_named (n, kind, entry)
+    select row_number() over (order by name, id), 'debut', jsonb_build_object('character', id, 'name', name) from d;
+  -- The Turns asked before the window's end take effect at it; their characters' rows are locked
+  -- first, in one order, so a turn() racing this one waits and then reads what took effect. What
+  -- a loud Turn says is read before the Turn is written.
   perform 1 from characters c where c.id in (select character from pending_turns where asked_at < window_end) order by c.id for no key update;
-  for r in select p.character, p.class_key, p.loudness, c.name from pending_turns p join characters c on c.id = p.character
-           where p.asked_at < window_end order by c.name, c.id loop
-    if r.loudness <> 'silent' then
-      turns := turns || jsonb_build_array(jsonb_build_object('character', r.character, 'name', r.name, 'loudness', r.loudness)
-        || case when r.loudness = 'revealed' then (select jsonb_build_object('was', n.class_key, 'since', n.since) from class_now(r.character, window_end) n) else '{}'::jsonb end);
-    end if;
-    insert into class_history (character, class_key, started_at) values (r.character, r.class_key, window_end);
-    delete from pending_turns where character = r.character;
-  end loop;
-  if jsonb_array_length(debuts) = 0 and jsonb_array_length(turns) = 0 then return null; end if;
+  insert into masks_turns
+    select p.character, p.class_key, p.loudness, c.name, n.class_key, n.since
+    from pending_turns p join characters c on c.id = p.character cross join lateral class_now(p.character, window_end) n
+    where p.asked_at < window_end;
+  insert into class_history (character, class_key, started_at) select character, class_key, window_end from masks_turns;
+  delete from pending_turns p using masks_turns t where p.character = t.character;
+  insert into masks_named (n, kind, entry)
+    select (select count(*) from masks_named) + row_number() over (order by name, character), 'turn',
+      jsonb_build_object('character', character, 'name', name, 'loudness', loudness)
+      || case when loudness = 'revealed' then jsonb_build_object('was', was, 'since', since) else '{}'::jsonb end
+    from masks_turns where loudness <> 'silent';
+  if not exists (select 1 from masks_named) then return null; end if;
 
   select * into open_season from seasons where starts_at < window_end and (ends_at is null or ends_at >= window_end) order by starts_at desc limit 1 for no key update;
   in_thread := open_season.turns_thread;
@@ -227,11 +245,18 @@ begin
     update seasons set turns_thread = in_thread where id = open_season.id;
     perform broadcast_later('board:' || (select board from threads where id = in_thread), 'thread', thread_projection(in_thread));
   end if;
-  insert into acts (character, kind, thread, payload, created_at)
-  values (null, 'tally', in_thread, jsonb_build_object('season', open_season.number, 'debuts', debuts, 'turns', turns), window_end)
-  returning id into written;
-  perform broadcast_later('thread:' || in_thread, 'act', act_projection(written));
-  return written;
+  parts := ((select count(*) from masks_named) + most - 1) / most;
+  for part in 1..parts loop
+    insert into acts (character, kind, thread, payload, created_at)
+    select null, 'tally', in_thread, jsonb_build_object('season', open_season.number, 'part', part, 'of', parts,
+        'debuts', coalesce(jsonb_agg(entry order by n) filter (where kind = 'debut'), '[]'),
+        'turns', coalesce(jsonb_agg(entry order by n) filter (where kind = 'turn'), '[]')), window_end
+    from masks_named where (n - 1) / most = part - 1
+    returning id into written;
+    first_tally := coalesce(first_tally, written);
+    perform broadcast_later('thread:' || in_thread, 'act', act_projection(written));
+  end loop;
+  return first_tally;
 end $$;
 
 -- A season's end, at its last window's end: every character's season, then the next season.

@@ -16,7 +16,7 @@ Deno.serve(async (request) => {
   if (typeof body.until !== 'string' || Number.isNaN(Date.parse(body.until))) return json(400, { error: 'until: the window\'s end, as a time' });
   const until = body.until;
   try {
-    const outcome = await runSettlement(serviceDb(env), chooseInstance(Deno.env.get('KAYFABB_PROFILE')), until, { send: broadcaster({ url: env.url, key: env.key }).send });
+    const outcome = await runSettlement(serviceDb(env), chooseInstance(Deno.env.get('KAYFABB_PROFILE')), until, { deliver: broadcaster({ url: env.url, key: env.key }).deliver });
     // Windows still waiting are settled by the next firing; said in the log, so a schedule that
     // never catches up is seen.
     if (outcome.status !== 'nothing to settle' && outcome.behind) console.warn('settle behind: windows wait for the next run', until, outcome.window.end);
