@@ -67,7 +67,7 @@ const live = (rpc: string, answer: unknown): Broadcast[] =>
  * change). Every other write is sent once; a saved effect's state among them, since a save
  * repeated after a newer one landed would bring the older strokes back.
  */
-const REPEATABLE = new Set(['whoami', 'card_target', 'card_of_play', 'open_account']);
+const REPEATABLE = new Set(['whoami', 'card_target', 'card_of_play', 'open_account', 'instance_settings']);
 export const SAFE_TO_REPEAT = (fn: string): boolean => REPEATABLE.has(fn);
 
 /** The act function's two connections: as the player, and as the service; each sends a write once. */

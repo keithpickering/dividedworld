@@ -37,8 +37,10 @@ end $$;
 create function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
+  -- The economy is merged, number by number: a card kind is never removed, so the price of one
+  -- the code no longer sells stays in the row with it (settings_economy_whole, 0006).
   insert into settings (key, value) select key, value from jsonb_each(payload -> 'settings')
-  on conflict (key) do update set value = excluded.value;
+  on conflict (key) do update set value = case when settings.key = 'economy' then settings.value || excluded.value else excluded.value end;
   insert into class_kinds (key, name) select e ->> 'key', e ->> 'name' from jsonb_array_elements(payload -> 'classes') e
   on conflict (key) do update set name = excluded.name;
   insert into reaction_kinds (key, emoji, quadrant) select e ->> 'key', e ->> 'emoji', e ->> 'quadrant' from jsonb_array_elements(payload -> 'reactions') e

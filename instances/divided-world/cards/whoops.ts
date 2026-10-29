@@ -21,7 +21,7 @@ export const whoops: CardRules<{ color: string }> = {
   name: 'Whoops!',
   alignment: 'salty',
   priceKey: 'whoops.price',
-  reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostInAll'],
+  reads: [{ key: 'whoops.perLength', whole: true, min: 0 }, { key: 'whoops.lengthStep', whole: true, min: 1 }, { key: 'whoops.mostInAll', whole: true, min: 1 }],
   playPrice: (settings, target) =>
     Math.max(0, Math.min(economyOf(settings, 'whoops.perLength') * Math.floor(target.length / economyOf(settings, 'whoops.lengthStep')),
       economyOf(settings, 'whoops.mostInAll') - basePrice(whoops, settings))),

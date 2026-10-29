@@ -24,6 +24,9 @@ test('a card\'s prices are settings: an override reaches what it sells for and w
   const tuned = withOverrides(settings, { economy: { 'whoops.price': 150, 'whoops.perLength': 50, 'whoops.mostInAll': 400 } });
   assert.equal(basePrice(whoops, tuned), 150);
   assert.equal(basePrice(stickAround, withOverrides(settings, { economy: { 'stickAround.price': 75 } })), 75);
+  assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.lengthStep': 250 } }), post(500), { color: 'red' }), 50, 'the step is a setting too');
+  assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.mostInAll': 50 } }), post(6000), { color: 'red' }), 0, 'a cap at or below the price never makes a play pay back');
+  assert.match(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'whoops.lengthStep': 0 } }) }).join('\n'), /whoops\.lengthStep/);
   assert.equal(whoops.playPrice(tuned, post(1000), { color: 'red' }), 100);
   assert.equal(basePrice(whoops, tuned) + whoops.playPrice(tuned, post(1_000_000), { color: 'red' }), 400);
 });

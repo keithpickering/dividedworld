@@ -25,7 +25,7 @@ const day: SettlementInput = {
 };
 
 /** A database that holds what has been settled, as apply_settlement() does. */
-function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = {}) {
+function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = { economy: instance.settings.economy }) {
   const settled = new Set<string>();
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
   let lastEnd: string | null = null;
@@ -80,6 +80,11 @@ test('the settings row\'s economy is the whole economy, as the SQL reads it: a n
   const { db, calls } = fakeDb(day, { economy: { 'lurker.earlyMatch': 40 } });
   await assert.rejects(runSettlement(db, instance, new Date(TO).toISOString()), /lurker\.earlyPlayers/);
   assert.ok(!calls.some((c) => c.fn === 'apply_settlement'));
+});
+
+test('a database with no economy row is refused, never settled on the code\'s numbers', async () => {
+  const { db } = fakeDb(day, { vote: 10 });
+  await assert.rejects(runSettlement(db, instance, new Date(TO).toISOString()), /economy/);
 });
 
 test('a run with nothing to settle reads no settings', async () => {

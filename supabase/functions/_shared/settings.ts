@@ -18,7 +18,8 @@ export async function withDatabaseSettings(instance: Instance, db: Db): Promise<
   // The System's words are their own row (copy), read by the SQL that posts them.
   const { copy: _copy, economy, ...settings } = rows;
   const laid = withOverrides(instance.settings, settings as Partial<Settings>);
-  const tuned: Instance = { ...instance, settings: economy === undefined ? laid : deepFreeze({ ...laid, economy: economy as Settings['economy'] }) };
+  if (economy === undefined) throw new Error('the settings rows hold no economy; seed the instance (supabase/functions/seed/)');
+  const tuned: Instance = { ...instance, settings: deepFreeze({ ...laid, economy: economy as Settings['economy'] }) };
   const problems = instanceProblems(tuned);
   if (problems.length) throw new Error(`the settings rows make the instance not whole: ${problems.join('; ')}`);
   return tuned;

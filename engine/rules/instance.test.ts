@@ -110,6 +110,15 @@ test('an economy override that is not an object of numbers reaches the check, ne
   }
 });
 
+test('a number a class reads can carry its bounds, and a price is a whole number a wallet can hold', () => {
+  const bounded = { ...good, classes: [{ key: 'a', name: 'A', reads: [{ key: 'a.bonus', whole: true, min: 6 }], earn: () => [] }] };
+  assert.match(instanceProblems(bounded).join('\n'), /class "a" reads economy "a\.bonus" as 5; it must be at least 6/);
+  assert.match(instanceProblems({ ...bounded, settings: { ...settings, economy: { ...settings.economy, 'a.bonus': 6.5 } } }).join('\n'), /a whole number/);
+  const card = { key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  assert.match(instanceProblems({ ...good, cards: [card], settings: { ...settings, economy: { ...settings.economy, 'splat.price': 700 } } }).join('\n'), /more than a wallet holds/);
+  assert.match(instanceProblems({ ...good, cards: [card], settings: { ...settings, economy: { ...settings.economy, 'splat.price': 2 ** 31 } } }).join('\n'), /splat\.price/);
+});
+
 test('an override of one economy number keeps the others', () => {
   const tuned = withOverrides(settings, { economy: { 'a.bonus': 9 } });
   assert.deepEqual(tuned.economy, { 'a.bonus': 9, 'splat.price': 100 });

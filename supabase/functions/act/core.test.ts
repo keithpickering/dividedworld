@@ -13,7 +13,11 @@ const recording = (answer: unknown = { id }) => {
 /** A player's Db and the service's, answering by function, recording which was asked. */
 function pair(answers: Record<string, unknown>) {
   const calls: string[] = [];
-  const make = (who: string): Db => ({ rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`${who}:${fn}:${JSON.stringify(args)}`); return answers[fn] as T; } });
+  // The settings rows, unless a case gives its own, hold the code's economy, as a seed writes it.
+  const make = (who: string): Db => ({ rpc: async <T>(fn: string, args: Record<string, unknown>) => {
+    calls.push(`${who}:${fn}:${JSON.stringify(args)}`);
+    return (fn === 'instance_settings' && !(fn in answers) ? { economy: instance.settings.economy } : answers[fn]) as T;
+  } });
   return { dbs: { player: make('player'), service: make('service') }, calls };
 }
 
@@ -152,7 +156,7 @@ test('a refused or failed action sends nothing live', async () => {
 });
 
 test('only the reads and the writes that find their own earlier effect are safe to repeat after a lost answer', () => {
-  for (const fn of ['whoami', 'card_target', 'card_of_play', 'open_account']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
+  for (const fn of ['whoami', 'card_target', 'card_of_play', 'open_account', 'instance_settings']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
   // A save repeated after a newer one landed would bring back the older strokes.
   for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'react', 'turn', 'buy_card', 'play_card', 'create_character', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
 });

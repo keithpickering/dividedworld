@@ -92,8 +92,9 @@ declare
   left_over integer;
 begin
   if not exists (select 1 from card_kinds where key = card) then raise exception 'the Vending Machine has no card "%"', card using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
-  -- Its price is the economy setting the card names: what the settings rows hold now.
-  select (setting('economy') ->> k.price_setting)::integer into listed from card_kinds k where k.key = card;
+  -- Its price is the economy setting the card names: what the settings rows hold now, a whole
+  -- number however it is written (20 and 20.0 alike), as the engine reads it.
+  select (setting('economy') ->> k.price_setting)::numeric::integer into listed from card_kinds k where k.key = card;
   if listed is null or listed <= 0 then raise exception 'the settings give "%" no price', card using errcode = 'P0002'; end if;
   if price is distinct from listed then raise exception 'the price is %, not %', listed, price using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   left_over := wallet_spend(who, listed, 'purchase', null);
@@ -169,6 +170,56 @@ create policy own on card_ledger for select to authenticated using (account = au
 grant select on effect_state to authenticated;
 create policy read on effect_state for select to authenticated using (true);
 
+-- The economy row holds the cards' prices (card_kinds.price_setting names each), so it is
+-- checked when it is written, never when a purchase meets it: an object of numbers, with a price
+-- for every card, each a whole number above 0 that an integer holds. A row that fails names what
+-- is wrong and changes nothing; the numbers the classes read are checked by the engine the same
+-- way (engine/rules/instance.ts), so a settlement refuses a row that lacks one and the way out is
+-- the same: write the row whole again, or seed the instance.
+create function economy_holds(economy jsonb) returns text
+language sql immutable set search_path = public, pg_temp as $$
+  select case
+    when jsonb_typeof(economy) is distinct from 'object' then 'the economy is an object of named numbers'
+    else (select string_agg(format('"%s" is not a number', e.key), ', ' order by e.key) from jsonb_each(economy) e where jsonb_typeof(e.value) <> 'number')
+  end
+$$;
+create function price_holds(economy jsonb, price_setting text) returns boolean
+language sql immutable set search_path = public, pg_temp as $$
+  -- Never null: a price that is missing is a price that does not hold.
+  select coalesce(jsonb_typeof(economy -> price_setting) = 'number'
+     and (economy ->> price_setting)::numeric = trunc((economy ->> price_setting)::numeric)
+     and (economy ->> price_setting)::numeric > 0 and (economy ->> price_setting)::numeric <= 2147483647, false)
+$$;
+create function settings_economy_whole() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+declare why text;
+begin
+  if tg_op = 'DELETE' then
+    if old.key = 'economy' and exists (select 1 from card_kinds) then raise exception 'the economy holds the cards'' prices; replace it, never delete it' using errcode = '23514'; end if;
+    return old;
+  end if;
+  if new.key <> 'economy' then return new; end if;
+  -- An insert that meets the row already there becomes an update (seed_instance merges), and is
+  -- checked as one, on the merged value.
+  if tg_op = 'INSERT' and exists (select 1 from settings where key = 'economy') then return new; end if;
+  why := economy_holds(new.value);
+  if why is not null then raise exception 'economy: %', why using errcode = '23514'; end if;
+  select string_agg(format('%s (%s)', k.price_setting, k.key), ', ' order by k.key) into why from card_kinds k where not price_holds(new.value, k.price_setting);
+  if why is not null then raise exception 'economy: no whole price above 0 for %', why using errcode = '23514'; end if;
+  return new;
+end $$;
+create trigger settings_economy_whole before insert or update or delete on settings for each row execute function settings_economy_whole();
+create function card_kinds_priced() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+begin
+  if not price_holds((select value from settings where key = 'economy'), new.price_setting) then
+    raise exception 'card "%" is priced by economy "%", which the economy does not hold as a whole number above 0', new.key, new.price_setting using errcode = '23514';
+  end if;
+  return new;
+end $$;
+create trigger card_kinds_priced before insert or update on card_kinds for each row execute function card_kinds_priced();
+
+revoke execute on function economy_holds(jsonb), price_holds(jsonb, text), settings_economy_whole(), card_kinds_priced() from public, anon, authenticated;
 revoke execute on function wallet_spend(uuid, integer, text, uuid), buy_card(uuid, text, integer),
   play_card(uuid, text, uuid, uuid, jsonb, integer), save_effect_state(uuid, uuid, uuid, jsonb), whoami(), card_target(uuid), card_of_play(uuid)
   from public, anon, authenticated;

@@ -10,14 +10,18 @@
 import type { ClassRules, Earning } from '../../../engine/rules/types.ts';
 import { economyOf } from '../../../engine/rules/cards.ts';
 
-const READS = ['lurker.earlyPlayers', 'lurker.earlyMatch', 'lurker.spunThreadRepliers', 'lurker.spunThread', 'lurker.postsAllowed', 'lurker.overPosting'] as const;
+const KEYS = ['lurker.earlyPlayers', 'lurker.earlyMatch', 'lurker.spunThreadRepliers', 'lurker.spunThread', 'lurker.postsAllowed', 'lurker.overPosting'] as const;
 
 export const lurker: ClassRules = {
   key: 'lurker',
   name: 'Lurker',
-  reads: READS,
+  reads: [
+    { key: 'lurker.earlyPlayers', whole: true, min: 1 }, 'lurker.earlyMatch',
+    { key: 'lurker.spunThreadRepliers', whole: true, min: 1 }, 'lurker.spunThread',
+    { key: 'lurker.postsAllowed', whole: true, min: 0 }, 'lurker.overPosting',
+  ],
   earn: (input, settings) => {
-    const [earlyPlayers, earlyMatch, spunThreadRepliers, spunThread, postsAllowed, overPosting] = READS.map((k) => economyOf(settings, k)) as [number, number, number, number, number, number];
+    const [earlyPlayers, earlyMatch, spunThreadRepliers, spunThread, postsAllowed, overPosting] = KEYS.map((k) => economyOf(settings, k)) as [number, number, number, number, number, number];
     return [
     ...input.given
       .filter((g) => g.rank >= 1 && g.rank <= earlyPlayers && g.quadrant === g.endsUp)

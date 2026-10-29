@@ -8,7 +8,7 @@
  * accepts. The browser runs these to preview; the server runs them to decide; the SQL
  * function re-checks what it can.
  */
-import type { ActKind, Alignment, Hundredths, Settings } from './types.ts';
+import type { ActKind, Alignment, EconomyRead, Hundredths, Settings } from './types.ts';
 import { safeColor } from '../bbcode/parse.ts';
 
 /** The post a card is played on, as its rules see it. */
@@ -34,7 +34,7 @@ export interface CardRules<Config = unknown> {
   /** The economy setting that holds what the Vending Machine sells it for. */
   readonly priceKey: string;
   /** The economy numbers its rules read beside its price. */
-  readonly reads?: readonly string[];
+  readonly reads?: readonly EconomyRead[];
   /** What playing it on this target costs from the wallet, on top of the base price already paid. */
   playPrice(settings: Settings, target: CardTarget, config: Config): Hundredths;
   canApply(target: CardTarget, effectsOnTarget: readonly CardEffect[]): Verdict;
@@ -44,10 +44,13 @@ export interface CardRules<Config = unknown> {
   validateState?(state: unknown): Verdict<unknown>;
 }
 
+/** The largest whole number Postgres's integer holds, which a price is read as there (0006_cards.sql). */
+export const INT4_MAX = 2_147_483_647;
+
 /** What the Vending Machine sells a card for, under these settings. */
 export function basePrice(rules: CardRules, settings: Settings): Hundredths {
   const price = settings.economy[rules.priceKey];
-  if (!Number.isSafeInteger(price) || price! <= 0) throw new Error(`card ${rules.key}'s price, economy "${rules.priceKey}", is ${price}`);
+  if (!Number.isSafeInteger(price) || price! <= 0 || price! > INT4_MAX) throw new Error(`card ${rules.key}'s price, economy "${rules.priceKey}", is ${price}`);
   return price!;
 }
 

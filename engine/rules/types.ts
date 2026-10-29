@@ -234,11 +234,14 @@ export interface Earning {
 }
 
 /** A class: a playstyle, and the rules that turn what a character did and received into Aura. */
+/** An economy number a class or card reads: its name, and the bounds it holds to, if any. */
+export type EconomyRead = string | { readonly key: string; readonly whole?: boolean; readonly min?: number };
+
 export interface ClassRules {
   readonly key: string;
   readonly name: string;
-  /** The economy numbers its rules read, so an instance missing one is refused before it settles. */
-  readonly reads?: readonly string[];
+  /** The economy numbers its rules read, so an instance missing one, or holding one out of its bounds, is refused before it settles. */
+  readonly reads?: readonly EconomyRead[];
   earn(input: ClassInput, settings: Settings): readonly Earning[];
 }
 

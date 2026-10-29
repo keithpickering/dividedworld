@@ -104,6 +104,19 @@ begin
   if pg_temp.refusal(format('select buy_card(%L, %L, %L)', eve, 'splat', 100)) is null then raise exception 'a card was bought at a price the settings no longer hold'; end if;
   if (buy_card(eve, 'splat', 40) ->> 'balance')::integer is distinct from 60 then raise exception 'a card is bought at the price its setting holds'; end if;
   perform tests.unbecome();
+  -- A whole number written with a decimal point is the same price, as the engine reads it.
+  update settings set value = jsonb_set(value, '{splat.price}', '20.0') where key = 'economy';
+  perform tests.become_service();
+  if (buy_card(eve, 'splat', 20) ->> 'balance')::integer is distinct from 40 then raise exception 'a price written 20.0 is 20'; end if;
+  perform tests.unbecome();
+  -- The economy row holds only numbers, a price for every card, each a whole number above 0: a
+  -- row that would leave a card with no price, or a number that is not one, is refused when it is
+  -- written, not when a settlement or a purchase meets it later.
+  if coalesce(pg_temp.refusal($q$update settings set value = value - 'splat.price' where key = 'economy'$q$), '') not like '%splat.price%' then raise exception 'a card''s price was taken out of the economy'; end if;
+  if coalesce(pg_temp.refusal($q$update settings set value = jsonb_set(value, '{splat.price}', '"lots"') where key = 'economy'$q$), '') not like '%splat.price%' then raise exception 'a price that is not a number was written'; end if;
+  if coalesce(pg_temp.refusal($q$update settings set value = jsonb_set(value, '{splat.price}', '2.5') where key = 'economy'$q$), '') not like '%splat.price%' then raise exception 'a price that is not whole was written'; end if;
+  if coalesce(pg_temp.refusal($q$update settings set value = '[1]' where key = 'economy'$q$), '') not like '%economy%' then raise exception 'an economy that is not an object was written'; end if;
+  if coalesce(pg_temp.refusal($q$insert into card_kinds (key, name, alignment, price_setting) values ('nada', 'Nada', 'sweet', 'nada.price')$q$), '') not like '%nada.price%' then raise exception 'a card with no price in the economy was added'; end if;
 end $$;
 
 -- ---- Two plays of one card on one post at once: one lands, the other is refused in words ----

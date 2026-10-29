@@ -91,12 +91,13 @@ test('an override of the Lurker\'s call changes what a call pays, and the class 
   assert.equal(heel.earn(input({ cardsPlayed: [card({ votes: 2, targetVotes: 1 })] }), tuned).find((e) => e.reason === 'heel.stoleThunder')?.amount, 50);
   assert.equal(face.earn(input({ cardsPlayed: [card({ votes: 2, targetVotes: 1 })] }), tuned).find((e) => e.reason === 'face.stoleThunder')?.amount, -70);
   assert.equal(jabroni.earn(input({ cardsLanded: [{ act: 'k', card: 'whoops', alignment: 'salty', at: 1, on: 'p' }] }), tuned)[0]?.amount, 40);
-  for (const c of classes) for (const key of c.reads ?? []) assert.ok(key in settings.economy, `${c.key} reads ${key}`);
+  for (const c of classes) for (const read of c.reads ?? []) { const key = typeof read === 'string' ? read : read.key; assert.ok(key in settings.economy, `${c.key} reads ${key}`); }
   // And each of the Lurker's other numbers, so none can turn back into a literal unseen.
   const lurkerTuned = withOverrides(settings, { economy: { 'lurker.earlyPlayers': 1, 'lurker.spunThreadRepliers': 1, 'lurker.spunThread': 70, 'lurker.postsAllowed': 0, 'lurker.overPosting': -30 } });
   assert.equal(lurker.earn(input({ given: [gave({ rank: 2 })] }), lurkerTuned).length, 0, 'second is no longer early');
   assert.equal(lurker.earn(input({ threadsSpun: [spin({ repliersBefore: 0, repliersNow: 1 })] }), lurkerTuned)[0]?.amount, 70);
   assert.equal(lurker.earn(input({ posts: [{ act: 'p', at: 1 }] }), lurkerTuned)[0]?.amount, -30);
+  assert.match(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'lurker.postsAllowed': -1 } }) }).join('\n'), /lurker\.postsAllowed/);
 });
 
 test('Lurker\'s early call is paid by its share, so hedging across quadrants pays a part', () => {

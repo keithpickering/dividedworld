@@ -3,7 +3,8 @@
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
 import { QUADRANTS } from './types.ts';
-import type { Instance, Settings, Span } from './types.ts';
+import type { EconomyRead, Instance, Settings, Span } from './types.ts';
+import { INT4_MAX } from './cards.ts';
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
 const isWhole = (n: unknown, min: number): n is number => Number.isSafeInteger(n) && (n as number) >= min;
@@ -98,12 +99,21 @@ export function instanceProblems(instance: Instance): string[] {
   out.push(...settingsSay);
   // Every economy number a class or card reads is one the settings hold.
   const economy = instance.settings?.economy;
-  if (economy && typeof economy === 'object') {
-    const has = (k: string) => typeof economy[k] === 'number' && Number.isFinite(economy[k]);
-    for (const c of instance.classes) for (const k of c.reads ?? []) if (!has(k)) out.push(`class "${c.key}" reads economy "${k}", which the settings do not hold`);
+  if (economy && typeof economy === 'object' && !Array.isArray(economy)) {
+    const check = (who: string, read: EconomyRead) => {
+      const { key, whole = false, min = undefined } = typeof read === 'string' ? { key: read } : read;
+      const n = economy[key];
+      if (typeof n !== 'number' || !Number.isFinite(n)) return `${who} reads economy "${key}", which the settings do not hold`;
+      if (whole && !Number.isSafeInteger(n)) return `${who} reads economy "${key}" as ${n}; it must be a whole number`;
+      if (min !== undefined && n < min) return `${who} reads economy "${key}" as ${n}; it must be at least ${min}`;
+      return null;
+    };
+    for (const c of instance.classes) for (const r of c.reads ?? []) { const why = check(`class "${c.key}"`, r); if (why) out.push(why); }
     for (const c of instance.cards) {
-      if (!has(c.priceKey) || !Number.isSafeInteger(economy[c.priceKey]) || economy[c.priceKey]! <= 0) out.push(`card "${c.key}" is priced by economy "${c.priceKey}", which the settings do not hold as a whole number above 0`);
-      for (const k of c.reads ?? []) if (!has(k)) out.push(`card "${c.key}" reads economy "${k}", which the settings do not hold`);
+      const price = economy[c.priceKey];
+      if (!Number.isSafeInteger(price) || price! <= 0 || price! > INT4_MAX) out.push(`card "${c.key}" is priced by economy "${c.priceKey}", which the settings do not hold as a whole number above 0`);
+      else if (Number.isSafeInteger(instance.settings.walletCap) && price! > instance.settings.walletCap) out.push(`card "${c.key}" costs ${price}, more than a wallet holds (${instance.settings.walletCap}), so nobody could buy it`);
+      for (const r of c.reads ?? []) { const why = check(`card "${c.key}"`, r); if (why) out.push(why); }
     }
   }
   return out;
