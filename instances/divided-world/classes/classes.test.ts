@@ -295,7 +295,7 @@ test('a Lurker is never paid for a reaction with no rank', () => {
   assert.equal(total(lurker, input({ held: [held({ rank: 0 })] })), 0);
 });
 
-test('the estimate hangs a lifted post on the reactions to the post, after the card, never on the card\'s own', () => {
+test('the estimate hangs a lifted post on the votes the lift counts, after the card, never on the card\'s own', () => {
   const H = 3_600_000;
   const FROM = 100 * H;
   const lines = estimateForOwner({
@@ -314,6 +314,10 @@ test('the estimate hangs a lifted post on the reactions to the post, after the c
       // Before Ann's card, Dee's cheer on the post lifts nothing; after it, Cat's does.
       { act: 'p', player: 'cat', character: 'cat-1', kind: 'fire', at: FROM + 3 * H },
       { act: 'p', player: 'dee', character: 'dee-1', kind: 'fire', at: FROM + 1.5 * H },
+      // Neither Bob's own cheer on his post nor one at the card's very instant lifts it: settle
+      // counts neither, so no line hangs on them.
+      { act: 'p', player: 'bob', character: 'bob-1', kind: 'fire', at: FROM + 4 * H },
+      { act: 'p', player: 'dee', character: 'dee-1', kind: 'fire', at: FROM + 2 * H },
       // Dee also cheers Ann's card itself, which is the card's draw, not the post's lift.
       { act: 'card', player: 'dee', character: 'dee-1', kind: 'fire', at: FROM + 9 * H },
     ],

@@ -427,7 +427,7 @@ export interface EstimateLine {
  * reaction there in the window, each with its time and an even whole-hundredths share, never who
  * left it: a reaction the character received when the Act is the character's own, one it gave
  * otherwise, and for a line that values reactions on another Act (a card's lift, Earning.valuing),
- * the reactions on that Act from that time. Even is each reaction's own amount wherever a rule values every reaction alike, as
+ * the votes settle counts on that Act after that time. Even is each reaction's own amount wherever a rule values every reaction alike, as
  * a whole vote does; a rule that values a reaction by its rank or its crowd is apportioned. The
  * lines add up to the entries. Run on the server, from estimate_input()
  * (supabase/migrations/0017_estimate.sql), which reads only what this player's estimate needs.
@@ -435,19 +435,23 @@ export interface EstimateLine {
 export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number }[]; lines: EstimateLine[] } {
   const s = settle(input, instance, { sharedVote: false, halving: false });
   const mine = new Set(input.characters.filter((c) => c.player === player).map((c) => c.id));
+  const playerOf = new Map(input.characters.map((c) => [c.id, c.player]));
   const authorOf = new Map(input.acts.map((a) => [a.id, a.character]));
   const quadrantOf = new Map(instance.reactions.map((r) => [r.key, r.quadrant]));
   const inWindow = (at: number) => at >= input.window.from && at < input.window.to;
   const lines: EstimateLine[] = [];
   for (const d of s.details.filter((x) => x.player === player)) {
     const { player: _who, valuing, ...line } = d;
-    // The reactions a line pays for: others' on the Act it values from when it says (a card's lift),
-    // others' on the character's own Act, or the character's own on another's.
+    // The reactions a line pays for: on the Act it values, after the time it names, the votes
+    // settle counts there (neither the caller's nor the Act's author's, a card's lift); others' on
+    // the character's own Act; or the character's own on another's.
     const on = valuing?.act ?? d.act;
-    const own = valuing !== undefined || (on !== undefined && mine.has(authorOf.get(on) ?? ''));
+    const own = on !== undefined && mine.has(authorOf.get(on) ?? '');
+    const pays = (r: SettlementInput['reactions'][number]) => valuing
+      ? r.at > valuing.from && r.player !== player && r.player !== playerOf.get(authorOf.get(on!) ?? '')
+      : own ? r.player !== player : r.character === d.character;
     const times = on === undefined || d.quadrant === undefined ? [] : input.reactions
-      .filter((r) => r.act === on && quadrantOf.get(r.kind) === d.quadrant && inWindow(r.at) && r.at >= (valuing?.from ?? -Infinity)
-        && (own ? r.player !== player : r.character === d.character))
+      .filter((r) => r.act === on && quadrantOf.get(r.kind) === d.quadrant && inWindow(r.at) && pays(r))
       .map((r) => r.at).sort((x, y) => x - y);
     if (!times.length) { lines.push(line); continue; }
     // Whole hundredths that add up to the line: the remainder to the earliest.
