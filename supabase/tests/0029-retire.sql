@@ -1,7 +1,8 @@
 -- Retiring a character (supabase/migrations/0021_characters_listed.sql): an admin retires one on
 -- its player's request, which frees a slot in the roster; it cannot act, every Act of it stays
 -- readable, and an admin can restore it unless its player's roster is full again. The screens'
--- engine plan, Task 10.
+-- engine plan, Task 10. A restore and a creation at once both take the roster's account lock, as
+-- two creations do (0001); that race is the cap's, held by its own lock, and not run again here.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -22,6 +23,7 @@ declare
   p uuid := tests.post(old, t, 'Before I go.');
   why text;
   seventh uuid;
+  waiting uuid;
 begin
   for i in 2..6 loop perform tests.character(ann, 'Ret Mask ' || i); end loop;
   insert into admins (account) values (boss);
@@ -33,8 +35,20 @@ begin
   perform tests.become(ann);
   if pg_temp.refusal(format('select retire_character(%L)', old)) is distinct from 'only an admin retires a character' then raise exception 'a player retired a character'; end if;
   perform tests.unbecome();
+  -- A waiting Turn goes with it, since it could no longer be withdrawn.
+  perform tests.become(ann);
+  perform turn(old, 'beta', 'silent');
+  perform tests.unbecome();
   perform tests.become(boss);
   perform retire_character(old);
+  if pg_temp.refusal(format('select retire_character(%L)', old)) is distinct from 'that character is already retired' then raise exception 'retiring one twice'; end if;
+  if pg_temp.refusal(format('select retire_character(%L)', gen_random_uuid())) is distinct from 'there is no such character' then raise exception 'retiring nothing'; end if;
+  perform tests.unbecome();
+  if exists (select 1 from pending_turns where character = old) then raise exception 'a retired character''s waiting Turn stayed'; end if;
+  -- One waiting to debut is not retired: it would debut at the next settlement all the same.
+  insert into characters (owner, name) values (bob, 'Ret Waiting') returning id into waiting;
+  perform tests.become(boss);
+  if pg_temp.refusal(format('select retire_character(%L)', waiting)) is distinct from 'that character debuts at the next settlement; it can be retired once it has' then raise exception 'a waiting character was retired'; end if;
   perform tests.unbecome();
 
   -- It frees a slot, cannot act by any path, and every Act of it stays readable.
@@ -57,6 +71,8 @@ begin
 
   -- Restored into a full roster: refused in plain words. With a slot, restored.
   seventh := (select id from characters where name = 'Ret Seventh');
+  -- It debuts, as its first settlement would make it.
+  update characters set debuted_at = now() where id = seventh;
   perform tests.become(boss);
   why := pg_temp.refusal(format('select restore_character(%L)', old));
   if why is distinct from 'its player already runs 6 characters; one retired frees a slot' then raise exception 'a restore into a full roster: %', why; end if;

@@ -102,6 +102,11 @@ begin
   if exists (select 1 from characters where id = of_character and retired_at is not null) then
     raise exception 'that character is already retired' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
+  -- One waiting to debut would debut at the next settlement all the same, named in the tally as a
+  -- mask nobody can play; it is retired once it has.
+  if exists (select 1 from characters where id = of_character and debuted_at is null) then
+    raise exception 'that character debuts at the next settlement; it can be retired once it has' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
   update characters set retired_at = now() where id = of_character;
   delete from pending_turns where character = of_character;
   return jsonb_build_object('character', of_character, 'retired', true);
@@ -120,7 +125,8 @@ begin
     if exists (select 1 from characters where id = of_character) then raise exception 'that character is not retired' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
     raise exception 'there is no such character' using hint = 'kayfabb.refusal', errcode = 'P0002';
   end if;
-  -- The roster's lock, as a creation takes it (characters_within_cap).
+  -- The roster's lock, as a creation takes it (characters_within_cap): a restore and a creation at
+  -- once count one after the other, so they never fill a roster past its cap together.
   perform 1 from accounts where id = its_owner for no key update;
   if (select count(*) from characters where owner = its_owner and retired_at is null) >= cap then
     raise exception 'its player already runs % characters; one retired frees a slot', cap using hint = 'kayfabb.refusal', errcode = 'P0001';
