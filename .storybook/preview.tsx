@@ -20,11 +20,11 @@ import { fallbackSettings } from '../web/src/data/settings.ts';
 const withWorld: Decorator = (Story, context) => {
   const { world, path } = context.parameters as WorldParameters;
   const api = useMemo(() => {
-    if (!world) return null;
+    if (!world && !path) return null;
     const fake = createFake({ instance, settings: fallbackSettings });
-    world(fake, instance);
+    world?.(fake, instance);
     return fake;
-  }, [world]);
+  }, [world, path]);
   if (!api) return <Story />;
   if (path) window.history.replaceState(null, '', path);
   return (
