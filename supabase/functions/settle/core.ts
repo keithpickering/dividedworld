@@ -33,14 +33,23 @@ export type SettlementOutcome =
   };
 
 /**
- * How many windows one run settles before it stops: a month of missed days, so a run fits in an
- * Edge Function's time, and the next firing carries on from where this one ended.
+ * How many windows one run settles before it stops: a month of missed days, and the next firing
+ * carries on from where this one ended. A cron that fires less often than this many lengths
+ * never catches up; a run that stops behind says so in the function's log (index.ts).
  */
 export const MOST_WINDOWS_PER_RUN = 31;
 
-export async function runSettlement(db: Db, instance: Instance, until: string): Promise<SettlementOutcome> {
+/**
+ * How long a run goes on starting windows, in milliseconds: well inside an Edge Function's
+ * wall clock, so a busy instance's slow windows stop the run between windows, each one whole,
+ * rather than a kill stopping it inside one. The next firing carries on.
+ */
+export const MOST_RUN_MS = 60_000;
+
+export async function runSettlement(db: Db, instance: Instance, until: string, clock: () => number = Date.now): Promise<SettlementOutcome> {
   if (Number.isNaN(Date.parse(until))) throw new Error(`settle: until is not a time: ${JSON.stringify(until)}`);
   const windows: (Window & { applied: boolean; entries: number })[] = [];
+  const started = clock();
   let tuned: Instance | undefined;
   // Missed days are settled one window at a time, in order, each in its own transaction
   // (apply_settlement), so a failure between two keeps the first and the next run resumes at
@@ -48,7 +57,7 @@ export async function runSettlement(db: Db, instance: Instance, until: string): 
   for (;;) {
     const window = await db.rpc<Window | null>('next_settlement_window', { until });
     if (!window) break;
-    if (windows.length === MOST_WINDOWS_PER_RUN) return outcome(windows, true);
+    if (windows.length === MOST_WINDOWS_PER_RUN || (windows.length && clock() - started >= MOST_RUN_MS)) return outcome(windows, true);
     tuned ??= await withDatabaseSettings(instance, db);
     const input = await db.rpc<SettlementInput>('settlement_input', { window_start: window.start, window_end: window.end });
     const result = settle(input, tuned);

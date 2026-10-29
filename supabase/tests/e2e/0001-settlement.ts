@@ -11,6 +11,20 @@ import { psqlDb, sql } from './psql-db.ts';
 import { runSettlement } from '../../functions/settle/core.ts';
 import { instanceSeed } from '../../functions/_shared/seed.ts';
 import { instance } from '../../functions/_shared/instance.ts';
+import { SPAN_MOST } from '../../../engine/rules/instance.ts';
+
+test('a span\'s largest count is one number in the code\'s settings and the database\'s', () => {
+  const write = (count: number) => sql(`do $$ begin
+    update settings set value = '{"unit": "week", "count": ${count}}' where key = 'turnCooldown';
+    raise notice 'written';
+  exception when check_violation then raise notice 'refused'; end $$; select 1`);
+  const kept = sql(`select value from settings where key = 'turnCooldown'`);
+  assert.doesNotThrow(() => write(SPAN_MOST));
+  assert.equal(JSON.parse(sql(`select value from settings where key = 'turnCooldown'`)).count, SPAN_MOST, 'the code\'s largest count is written');
+  write(SPAN_MOST + 1);
+  assert.equal(JSON.parse(sql(`select value from settings where key = 'turnCooldown'`)).count, SPAN_MOST, 'and one more is refused');
+  sql(`update settings set value = '${kept}' where key = 'turnCooldown'`);
+});
 
 test('a day on the board settles into wallets and standings, once', async () => {
   const db = psqlDb();

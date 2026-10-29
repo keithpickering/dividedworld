@@ -108,17 +108,27 @@ begin
     raise exception 'a season length that is no span was written';
   exception when check_violation then null;
   end;
-  -- A count no interval can hold would break every window; it is refused when written.
+  -- A count no interval can hold would break every window; past 1000 it is refused when written
+  -- (the bound the code's settings hold too: e2e/0001-settlement.ts holds the two to one number).
   begin
-    update settings set value = '{"unit": "day", "count": 3000000000}' where key = 'settlementLength';
+    update settings set value = '{"unit": "day", "count": 1001}' where key = 'settlementLength';
     raise exception 'a settlement length past any interval was written';
   exception when check_violation then null;
   end;
+  update settings set value = '{"unit": "month", "count": 1000}' where key = 'seasonLength';
+  update settings set value = '{"unit": "month", "count": 3}' where key = 'seasonLength';
   -- A season ending inside the window ends the window there.
   update seasons set ends_at = last_end + interval '6 hours' where number = 2;
   insert into seasons (number, starts_at) values (3, last_end + interval '6 hours');
   w := next_settlement_window(last_end + interval '1 day');
   if (w ->> 'end')::timestamptz <> last_end + interval '6 hours' then raise exception 'a window should stop at its season''s end: %', w; end if;
+  -- And the season that begins there, at an odd hour, falls back in step with the run: its first
+  -- window ends at the next run, not a whole day after the odd hour.
+  insert into settlements (starts_at, ends_at, season) select last_end, last_end + interval '6 hours', id from seasons where number = 2;
+  w := next_settlement_window(last_end + interval '1 day');
+  if (w ->> 'start')::timestamptz <> last_end + interval '6 hours' or (w ->> 'end')::timestamptz is distinct from last_end + interval '1 day' then
+    raise exception 'a season begun where a cut-short window ended should end its first window at the run: %', w;
+  end if;
 end $$;
 
 -- ---- A window's input: what the settlement reads, and nothing it does not ----

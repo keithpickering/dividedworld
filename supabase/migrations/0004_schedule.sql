@@ -111,7 +111,7 @@ begin
   first_of_season := start_at is null;
   if first_of_season then select min(starts_at) into start_at from seasons; end if;
   if start_at is null then return null; end if;
-  select true, s.ends_at into found, season_end from seasons s
+  select true, s.ends_at, first_of_season or s.starts_at = start_at into found, season_end, first_of_season from seasons s
   where s.starts_at <= start_at and (s.ends_at is null or s.ends_at > start_at);
   if not coalesce(found, false) then
     select s.starts_at, s.ends_at into start_at, season_end from seasons s where s.starts_at > start_at order by s.starts_at limit 1;
@@ -124,8 +124,8 @@ begin
   -- leaves no sliver after it. The cron says when a run comes (settlementCron); the length says
   -- how finely it settles.
   end_at := start_at + len;
-  -- A season that did not begin where a window ended (the instance's first, or one after a gap)
-  -- has a first window that ends in step with the run: at `until`, less whole lengths, so it is
+  -- A season's first window (the instance's first season, one after a gap, or one begun where a
+  -- window its predecessor's end cut short ended, at whatever hour that was) has a first window that ends in step with the run: at `until`, less whole lengths, so it is
   -- at most one length, and every window after it ends when the cron comes. Otherwise a season
   -- begun at 14:03 under an 08:17 cron would lag each of its windows by 18 hours. Only this
   -- and a season's end make a window shorter. A run reads the minute its cron fired, so this

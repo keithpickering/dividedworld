@@ -8,7 +8,7 @@ import { INT4_MAX } from './cards.ts';
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
 /** The most of a unit a span counts, as settings_spans_hold (0007) holds it: past any instance's life, inside span_interval's integer. */
-const SPAN_MOST = 1000;
+export const SPAN_MOST = 1000;
 const isWhole = (n: unknown, min: number): n is number => Number.isSafeInteger(n) && (n as number) >= min;
 const isSpan = (s: unknown): s is Span =>
   typeof s === 'object' && s !== null && SPAN_UNITS.includes((s as Span).unit) && isWhole((s as Span).count, 1) && (s as Span).count <= SPAN_MOST;
