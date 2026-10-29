@@ -22,8 +22,9 @@
 alter table characters drop constraint characters_debut_loudness_check;
 alter table characters add constraint characters_debut_loudness_check check (debut_loudness in ('silent', 'announced', 'with_class'));
 
--- The table's lock is taken by the first statement, so no turn() writes a "revealed" row between
--- the update and the check that refuses one.
+-- The table's lock is taken by the first statement and held to the end of the migration, run in one
+-- transaction as Supabase applies it, so no turn() writes a "revealed" row between the update and
+-- the check that refuses one.
 alter table pending_turns add column show_from boolean not null default false, add column show_to boolean not null default false;
 update pending_turns set loudness = 'announced', show_from = true where loudness = 'revealed';
 alter table pending_turns drop constraint pending_turns_loudness_check;
@@ -90,13 +91,15 @@ begin
   -- ones are named. One made in a transaction this one could not see yet waits for the next
   -- settlement. A drop locks its character's row first, so one dropped while this runs is either
   -- debuted here (and its drop refused, "it has debuted") or by its drop (and not here).
+  -- A retired character makes no Act: one owed its announcement across a gap and retired since is
+  -- named, as it was due to be, and never unmasked, or no settlement could write its tally.
   with d as (
-    update characters set debuted_at = window_end where debuted_at is null and created_at < window_end returning id, name, debut_loudness
+    update characters set debuted_at = window_end where debuted_at is null and created_at < window_end returning id, name, debut_loudness, retired_at
   ), owed as (
-    update characters set debut_announcement_due = false where debut_announcement_due and debuted_at < window_end returning id, name, debut_loudness
+    update characters set debut_announcement_due = false where debut_announcement_due and debuted_at < window_end returning id, name, debut_loudness, retired_at
   ) insert into masks_named (n, kind, entry, unmasks)
-    select row_number() over (order by name, id), 'debut', jsonb_build_object('character', id, 'name', name), debut_loudness = 'with_class'
-    from (select id, name, debut_loudness from d where debut_loudness <> 'silent' union all select id, name, debut_loudness from owed) named;
+    select row_number() over (order by name, id), 'debut', jsonb_build_object('character', id, 'name', name), debut_loudness = 'with_class' and retired_at is null
+    from (select id, name, debut_loudness, retired_at from d where debut_loudness <> 'silent' union all select id, name, debut_loudness, retired_at from owed) named;
   -- The Turns asked before the window's end take effect at it; their characters' rows are locked
   -- first, in one order, so a turn() racing this one waits and then reads what took effect. What
   -- a loud Turn says is read before the Turn is written.

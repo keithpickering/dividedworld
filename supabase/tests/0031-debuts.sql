@@ -266,6 +266,59 @@ begin
   if (select count(*) from acts where kind = 'unmask' and character = gap) is distinct from 1::bigint then raise exception 'an owed unmask was written twice'; end if;
 end $$;
 
+-- ---- A drop with its class owed across a gap and retired before the tally: named, never unmasked,
+-- and the settlement goes on (a retired character makes no Act) ----
+do $$
+declare
+  ann uuid := tests.account('gap-retired');
+  gone uuid;
+  said text;
+begin
+  if (select starts_at from seasons where ends_at is null) <= now() then
+    update seasons set ends_at = now() - interval '1 day' where ends_at is null;
+    insert into seasons (number, starts_at) values ((select max(number) + 1 from seasons), now() + interval '1 day');
+  end if;
+  perform tests.become(ann);
+  gone := (create_character('Gap Retired', 'beta', 'now', 'with_class') ->> 'id')::uuid;
+  perform tests.unbecome();
+  update characters set retired_at = now() where id = gone;
+  said := pg_temp.refusal(format('select masks_change(%L)', now() + interval '4 days'));
+  if said is not null then raise exception 'a retired character owed its announcement stops the tally: %', said; end if;
+  if (select d from acts a, jsonb_array_elements(a.payload -> 'debuts') d where a.kind = 'tally' and d ->> 'character' = gone::text)
+     is distinct from jsonb_build_object('character', gone, 'name', 'Gap Retired') then
+    raise exception 'a retired character owed its announcement is named, without its class';
+  end if;
+  if exists (select 1 from acts where kind = 'unmask' and character = gone) then raise exception 'a retired character was unmasked'; end if;
+end $$;
+
+-- ---- A tally of more than a hundred names: each unmask follows its own part, in that part's order ----
+do $$
+declare
+  who uuid;
+  made uuid;
+  window_end timestamptz := now() + interval '5 days';
+  first_tally uuid;
+  late_part integer;
+begin
+  for g in 1..26 loop
+    who := tests.account('many-unmasks-' || g);
+    for k in 1..6 loop
+      insert into characters (owner, name, created_at, debut_loudness) values (who, format('Many %s.%s', lpad(g::text, 2, '0'), k), now() - interval '1 hour', 'with_class') returning id into made;
+      insert into class_history (character, class_key, started_at) values (made, 'alpha', now() - interval '1 hour');
+    end loop;
+  end loop;
+  first_tally := masks_change(window_end);
+  -- Every unmask lies between its own part's tally and the next part's, and there is one for each name.
+  select count(*) into late_part from acts u
+  join acts t on t.thread = u.thread and t.kind = 'tally' and t.created_at = window_end
+    and exists (select 1 from jsonb_array_elements(t.payload -> 'debuts') d where d ->> 'character' = u.character::text)
+  where u.kind = 'unmask' and u.created_at = window_end and u.payload ->> 'via' = 'debut'
+    and not (u.seq > t.seq and u.seq < coalesce((select min(n.seq) from acts n where n.thread = t.thread and n.kind = 'tally' and n.seq > t.seq), 2147483647));
+  if late_part <> 0 then raise exception '% unmasks are not right after their own part''s tally', late_part; end if;
+  if (select count(*) from acts where kind = 'unmask' and created_at = window_end and payload ->> 'via' = 'debut') is distinct from 156::bigint then raise exception 'one unmask for each name'; end if;
+  if (select count(*) from acts where kind = 'tally' and created_at = window_end) < 2 then raise exception 'this case needs a tally in parts'; end if;
+end $$;
+
 -- ---- The season's reveal names every character, a silent drop among them ----
 do $$
 declare

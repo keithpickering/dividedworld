@@ -42,7 +42,7 @@ test('a season revealed before 0029 keeps its Acts, every class in them; the nex
     assert.match(before, /"classes": \[\{"from": "[^"]+", "class": "alpha"\}, \{"from": "[^"]+", "class": "beta"\}\]/, 'the old reveal showed every class, the silent Turn among them');
     for (const m of all.filter((f) => f >= '0029')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     assert.equal(psqlOn(db.toString(), `select jsonb_agg(to_jsonb(a) order by a.seq)::text from acts a where a.kind = 'reveal'`), before, 'the earlier season\'s reveal is as it was written');
-    // Season 2 revealed after it: the same character, its classes kept.
+    // Season 2 revealed after it: the same character, whose player made nothing public, shows no class.
     const after = psqlOn(db.toString(), `
       select reveal_season(starts_at + span_interval(setting('seasonLength'))) is not null from seasons where ends_at is null;
       select a.payload::text from acts a where a.kind = 'reveal' and a.payload ->> 'name' = 'Revealed Before' and a.payload ->> 'season' = '2';`).split('\n').at(-1)!;
