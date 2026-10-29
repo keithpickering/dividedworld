@@ -4,14 +4,16 @@
 -- open season. A mask appears in a list only from the settlement that debuts it (PR #7's Task F:
 -- masks change at the tally), so a new one never shows up live, and nobody's sitting can be read
 -- from when it does; a debuted character with nothing settled yet stands at 0. Ties share a place.
--- Standings move only at a settlement (0003), so the list does too. The view runs as its owner and
--- names only these four columns: never a player, never a class.
+-- Standings move only at a settlement (0003), so the list does too. Between seasons, which a gap
+-- in the calendar can leave, it is the season that ended last, as it stood at its end. The view
+-- runs as its owner and names only these four columns: never a player, never a class.
 
 create view season_standings as
   select c.id as character, c.name, coalesce(s.amount, 0) as standing,
     rank() over (order by coalesce(s.amount, 0) desc) as place
   from characters c
-  left join standings s on s.character = c.id and s.season = (select id from seasons where ends_at is null)
+  left join standings s on s.character = c.id
+    and s.season = coalesce((select id from seasons where ends_at is null), (select id from seasons order by starts_at desc limit 1))
   where c.debuted_at is not null;
 
 revoke all on season_standings from anon, authenticated;

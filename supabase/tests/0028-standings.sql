@@ -38,6 +38,11 @@ begin
   perform tests.become(bob);
   if (select standing from season_standings where character = waiting) is distinct from 0 then raise exception 'a character is listed from the settlement that debuts it'; end if;
   perform tests.unbecome();
+  -- Between seasons, the season that ended last, as it stood.
+  update seasons set ends_at = greatest(now(), starts_at + interval '1 second') where id = open_season;
+  perform tests.become(bob);
+  if (select standing from season_standings where character = a) is distinct from 2000000000 then raise exception 'between seasons the last season''s standings are shown'; end if;
+  perform tests.unbecome();
   perform tests.become_anon();
   begin
     perform 1 from season_standings;
