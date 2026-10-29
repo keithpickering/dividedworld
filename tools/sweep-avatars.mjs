@@ -63,7 +63,8 @@ async function main() {
   }
   console.log(`  originals listed by 0025: ${gone.length} removed`);
 
-  const rest = stale.filter((k) => !gone.includes(k));
+  const removed = new Set(gone);
+  const rest = stale.filter((k) => !removed.has(k));
   if (rest.length) await store.remove(avatars.bucket, rest);
   console.log(`  files in the bucket: ${objects.length}; named by no profile and written over an hour ago, removed: ${rest.length}`);
 }
