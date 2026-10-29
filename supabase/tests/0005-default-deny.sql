@@ -13,7 +13,7 @@ declare
                            'seasons', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state', 'my_invites', 'pending_turns', 'effect_releases',
                            'reading', 'thread_view_counts', 'my_reactions',
-                           'pip_styles', 'account_preferences', 'character_profiles'];
+                           'pip_styles', 'account_preferences', 'character_profiles', 'season_standings'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text)', 'post(uuid,uuid,text,uuid)',
                            'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text)', 'create_character(text,text)',
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text)', 'set_profile(uuid,text,text,text)', 'is_admin()'];
