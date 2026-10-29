@@ -170,3 +170,27 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
     expect(localStorage.getItem('kb-wallet-seen:acc-1')).toBe('240');
   });
 });
+
+describe('from the Task 7 re-review: drafts leave the device only with their account', () => {
+  function sessions() {
+    let listener: (s: Session) => void = () => {};
+    const { api } = stubApi({ onSession: ((l: (s: Session) => void) => { listener = l; return () => {}; }) as KayfaApi['onSession'] });
+    return { api, emit: (s: Session) => act(() => listener(s)) };
+  }
+  test('signed in with no account for a moment (a refresh, a failed whoami) keeps the drafts', async () => {
+    const w = sessions();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('hud').textContent).toBe('a'));
+    localStorage.setItem('kb-draft:acc-1:t1', JSON.stringify({ text: 'unsent', as: 'a' }));
+    w.emit({ signedIn: true, account: null });
+    expect(localStorage.getItem('kb-draft:acc-1:t1')).not.toBeNull();
+  });
+  test('signing out takes them', async () => {
+    const w = sessions();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('hud').textContent).toBe('a'));
+    localStorage.setItem('kb-draft:acc-1:t1', JSON.stringify({ text: 'unsent', as: 'a' }));
+    w.emit({ signedIn: false, account: null });
+    expect(localStorage.getItem('kb-draft:acc-1:t1')).toBeNull();
+  });
+});

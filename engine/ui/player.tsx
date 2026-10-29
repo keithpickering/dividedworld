@@ -96,9 +96,12 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
     let live = true;
     void api.session().then((s) => { if (live) setSession(s); });
     const off = api.onSession((s) => {
-      /* Signing out (or switching) takes the account's unsent drafts off this device. */
+      /*
+       * Signing out, or switching to another account, takes the account's unsent drafts off this
+       * device; signed in with no account for a moment (a token refresh, a whoami that failed) keeps them.
+       */
       const was = current.current;
-      if (was && s.account !== was) clearDrafts(was);
+      if (was && (!s.signedIn || (s.account !== null && s.account !== was))) clearDrafts(was);
       setSession(s);
     });
     return () => { live = false; off(); };
