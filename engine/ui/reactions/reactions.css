@@ -41,7 +41,7 @@
 .kb-picker-axis { text-align: center; }
 .kb-picker-grid { display: grid; grid-template-columns: 1fr 1fr; }
 .kb-picker-quad { border: 1px solid var(--kb-rule); margin: -1px 0 0 -1px; padding: 0.3em 0.4em; }
-.kb-picker-kinds { display: flex; flex-wrap: wrap; gap: 0.2em; }
+.kb-picker-kinds { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.2em; } /* two across: Picker.tsx's KIND_COLUMNS */
 .kb-picker-kind {
   font-size: 1.5em;
   line-height: 1;

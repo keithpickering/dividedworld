@@ -559,6 +559,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     thread: (id) => (threads.has(id) ? summary(threads.get(id)!) : null),
     acts: (thread, from, to) => placed(thread).filter((a) => a.seq! >= from && a.seq! <= to).map(publicAct),
     act: (id) => (acts.has(id) ? publicAct(acts.get(id)!) : null),
+    actsById: (ids) => [...new Set(ids)].filter((id) => acts.has(id)).map((id) => publicAct(acts.get(id)!)),
     history(id) {
       const original = acts.get(id);
       if (!original || original.kind !== 'post') return [];

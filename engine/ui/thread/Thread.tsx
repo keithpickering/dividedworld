@@ -28,8 +28,8 @@ import { usePlayer } from '../player.tsx';
 import type { PostbitLayout, PostbitPerson } from '../postbit/Postbit.tsx';
 import { reveals } from '../postbit/reveals.ts';
 import { Link, useLocation, useNavigate } from '../router.tsx';
-import { emptyFeed, feedReducer, ordered, shownEnd } from './feed.ts';
-import { ActIndex, type Located } from './locate.tsx';
+import { emptyFeed, feedReducer, newer, ordered, shownEnd } from './feed.ts';
+import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
 import { ActArticle, ThreadCtx, type ThreadContext } from './Post.tsx';
 import { createMine } from '../reactions/mine.ts';
@@ -40,6 +40,8 @@ import './thread.css';
 export const READ_DEBOUNCE_MS = 400;
 /** How long a live Act waits for the one before it before the gap is read from the server. */
 export const GAP_FILL_MS = 1500;
+/** The longest wait between two tries at reading a gap that will not fill. */
+export const GAP_RETRY_MAX_MS = 30_000;
 /** The announcer keeps the last few lines; a screen reader hears what is added. */
 const ANNOUNCED = 4;
 
@@ -140,8 +142,10 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const flush = useCallback(() => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
     if (seen.current > sent.current) {
+      const was = sent.current;
       sent.current = seen.current;
-      void api.markRead(thread, seen.current, hud.current);
+      /* A read that could not be sent (the reader signed out, the network went) is not sent: the next position, or this one again, is. */
+      Promise.resolve(api.markRead(thread, seen.current, hud.current)).catch(() => { if (sent.current === seen.current) sent.current = was; });
     }
   }, [api, thread]);
   const [observer] = useState<IntersectionObserver | null>(() => {
@@ -251,6 +255,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       /* Focus moves to the first new post and nothing scrolls: it is just below what the reader had. */
       const first = acts[0]?.seq;
       if (first != null) scrollTo.current = { seq: first, scroll: false, focus: true };
+      /* Nothing more after all: the link that had focus is gone, so focus stays with the last post. */
+      else { const last = ordered(feedRef.current.shown).at(-1)?.seq; if (last != null) scrollTo.current = { seq: last, scroll: false, focus: true }; }
     } catch {
       /* The link is still there to try again. */
     } finally {
@@ -264,7 +270,6 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   /* Acts whose characters are being read, with the latest version of each that has arrived since. */
   const inflight = useRef(new Map<Id, Act>());
   const lineKey = useRef(0);
-  const authors = useRef(new Map<Id, Promise<Id | null>>());
   useEffect(() => {
     const announce = (a: Act) => {
       /* New posts only: a card, an unmask or a tally still appears, and is not announced. */
@@ -279,7 +284,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
         if (f.shown.has(a.id) || f.held.has(a.id)) { dispatch({ type: 'live', act: a }); return; }
         if (a.seq === null) return;
         if (f.ready && a.seq <= f.baseEnd) return;
-        if (inflight.current.has(a.id)) { inflight.current.set(a.id, a); return; }
+        const pending = inflight.current.get(a.id);
+        if (pending) { inflight.current.set(a.id, newer(pending, a)); return; }
         inflight.current.set(a.id, a);
         void ensurePeople([a.character]).then(() => {
           const latest = inflight.current.get(a.id)!;
@@ -295,13 +301,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
         const here = f.shown.get(act) ?? f.held.get(act);
         const landed = (character: Id | null) => { if (character !== null && own.current.has(character)) reactionLanded.current(); };
         if (here) { landed(here.character); return; }
-        /* An Act on another page: who wrote it is read once. */
-        let author = authors.current.get(act);
-        if (!author) {
-          author = api.act(act).then((x) => x?.character ?? null, () => null);
-          authors.current.set(act, author);
-        }
-        void author.then(landed);
+        /* An Act on another page: who wrote it is read through the batching, bounded loader shared with the quotes. */
+        void actLoader(api).ask(act).then((x) => landed(x?.character ?? null));
       },
     };
     return api.subscribeThread(thread, listener);
@@ -312,20 +313,39 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     if (feed.ready && atBottom && feed.tailLoaded && feed.held.size > 0) dispatch({ type: 'release', slide: !motionReduced(), force: false });
   }, [feed, atBottom]);
 
-  /* A gap that does not fill (a broadcast that never came) is read from the server. */
-  const gap = useMemo(() => {
+  /* A gap that does not fill (a broadcast that never came) is read from the server. The effect depends
+     on where the gap starts and nothing that a live Act changes, so a busy thread does not restart its
+     timer with every Act; where it ends is read when it fires. */
+  const gapStart = useMemo(() => {
     if (!feed.ready || !feed.tailLoaded || feed.held.size === 0) return null;
     const first = ordered(feed.held)[0]!.seq!;
     const end = shownEnd(feed);
-    return first > end + 1 ? { start: end + 1, end: feed.knownLast } : null;
+    return first > end + 1 ? end + 1 : null;
   }, [feed]);
+  /* Which gap has waited its time: only then does the bar offer the held posts, so an Act a moment ahead of its predecessor does not flash it. */
+  const [gapWaited, setGapWaited] = useState<number | null>(null);
+  const readGap = useCallback(async (start: number) => {
+    const acts = await api.acts(thread, start, feedRef.current.knownLast);
+    await prepare(acts);
+    dispatch({ type: 'fill', acts });
+  }, [api, thread, prepare]);
   useEffect(() => {
-    if (!gap) return;
-    const t = setTimeout(() => {
-      void api.acts(thread, gap.start, gap.end).then(async (acts) => { await prepare(acts); dispatch({ type: 'fill', acts }); }, () => { /* the next Act asks again */ });
-    }, GAP_FILL_MS);
-    return () => clearTimeout(t);
-  }, [api, thread, gap, prepare]);
+    if (gapStart === null) { setGapWaited(null); return; }
+    let live = true;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const attempt = () => {
+      setGapWaited(gapStart);
+      /* Whether it failed or came back short, ask again later and less often; leaving or filling the gap ends it. */
+      readGap(gapStart).catch(() => { /* asked again below */ }).finally(() => {
+        if (!live) return;
+        tries += 1;
+        timer = setTimeout(attempt, Math.min(GAP_FILL_MS * 2 ** (tries - 1), GAP_RETRY_MAX_MS));
+      });
+    };
+    timer = setTimeout(attempt, GAP_FILL_MS);
+    return () => { live = false; clearTimeout(timer); };
+  }, [gapStart, readGap]);
 
   /* ---------------------------------------------------------------- derived things ---- */
   const index = useCallback((id: Id): Located | undefined => {
@@ -335,8 +355,13 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const context = useMemo<ThreadContext | null>(() => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, observer } : null), [thread, P, feed.summary, tallies, mine, observer]);
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
 
-  const showHeld = () => {
-    const first = ordered(feedRef.current.held)[0]?.seq ?? null;
+  /* The bar's way out: read what is missing before the held posts if there is a gap (and show them anyway if it cannot be read). */
+  const showHeld = async () => {
+    const f = feedRef.current;
+    let first = ordered(f.held)[0]?.seq ?? null;
+    if (gapStart !== null) {
+      try { await readGap(gapStart); first = gapStart; } catch { /* shown as they are; a reload reads the rest */ }
+    }
     dispatch({ type: 'release', slide: false, force: true });
     if (first !== null) scrollTo.current = { seq: first, scroll: true, focus: false };
   };
@@ -359,7 +384,9 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const waiting = heldList.length;
   const noun = `${waiting} new ${waiting === 1 ? 'post' : 'posts'}`;
   let bar: { readonly href: string | null; readonly text: string } | null = null;
-  if (waiting > 0 && !(atBottom && feed.tailLoaded)) {
+  /* Whenever posts are held and the screen is not about to show them by itself: at the bottom with no gap it does, and after a gap has waited its time it does not. */
+  const comesByItself = atBottom && feed.tailLoaded && (gapStart === null || gapWaited !== gapStart);
+  if (waiting > 0 && !comesByItself) {
     if (feed.tailLoaded) bar = { href: null, text: noun };
     else {
       /* On an earlier page: say which page the new posts are on, and lead there. */
@@ -412,7 +439,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
         <div className="kb-new-bar">
           {bar.href
             ? <Link className="kb-button" data-kb-primary="" to={bar.href}>{bar.text}</Link>
-            : <button type="button" className="kb-button" data-kb-primary="" onClick={showHeld}>{bar.text}</button>}
+            : <button type="button" className="kb-button" data-kb-primary="" onClick={() => void showHeld()}>{bar.text}</button>}
         </div>
       )}
     </div>

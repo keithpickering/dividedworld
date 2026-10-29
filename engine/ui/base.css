@@ -226,7 +226,7 @@ h1 {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: var(--kb-hud-height, 3.2em);
+  bottom: var(--kb-hud-measured, var(--kb-hud-height, 3.2em));
   background: var(--kb-bg);
   border-top: 2px solid var(--kb-rule);
   padding: 0.8em 4%;

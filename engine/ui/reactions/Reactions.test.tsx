@@ -2,7 +2,8 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Id } from '../data/api.ts';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import type { Instance, Quadrant } from '../../rules/types.ts';
+import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine } from './mine.ts';
 import { Reactions, readable } from './Reactions.tsx';
@@ -140,7 +141,7 @@ describe('the picker', () => {
     expect(p.queryAllByRole('button').map((b) => b.textContent)).toEqual(['Close']);
   });
 
-  test('moves with the arrow keys in reading order, Home and End, and Escape closes and returns focus', async () => {
+  test('moves with the arrow keys over the grid as it looks, Home and End, and Escape closes and returns focus', async () => {
     const w = world();
     show(w, w.theirs, w.spritey);
     const p = await open();
@@ -150,17 +151,19 @@ describe('the picker', () => {
     await userEvent.keyboard('{ArrowRight}');
     expect(p.getByRole('button', { name: 'Fire, Hype' })).toHaveFocus();
     await userEvent.keyboard('{ArrowDown}');
+    expect(p.getByRole('button', { name: 'Tea, Calm' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowLeft}');
     expect(p.getByRole('button', { name: 'Zzz, Groan' })).toHaveFocus();
-    await userEvent.keyboard('{ArrowRight}');
-    expect(p.getByRole('button', { name: 'Tea, Calm' })).toHaveFocus();
-    await userEvent.keyboard('{ArrowRight}');
-    expect(p.getByRole('button', { name: 'Tea, Calm' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(p.getByRole('button', { name: 'Zzz, Groan' })).toHaveFocus();
     await userEvent.keyboard('{ArrowUp}');
-    expect(p.getByRole('button', { name: 'Zzz, Groan' })).toHaveFocus();
-    await userEvent.keyboard('{Home}');
+    expect(p.getByRole('button', { name: 'Tomato, Heat' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowUp}');
     expect(p.getByRole('button', { name: 'Tomato, Heat' })).toHaveFocus();
     await userEvent.keyboard('{End}');
     expect(p.getByRole('button', { name: 'Tea, Calm' })).toHaveFocus();
+    await userEvent.keyboard('{Home}');
+    expect(p.getByRole('button', { name: 'Tomato, Heat' })).toHaveFocus();
     expect(focused()).toBeTruthy();
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -168,12 +171,79 @@ describe('the picker', () => {
     expect(button).toHaveAttribute('aria-expanded', 'false');
   });
 
+  describe('with sixteen kinds, four to a quadrant', () => {
+    /* Top left to bottom right: e (excited, negative), p (excited, positive), b (bored, negative), c (calm, positive). */
+    const big = (): Instance => ({
+      ...testInstance,
+      reactions: (['e:excitedNegative', 'p:excitedPositive', 'b:boredNegative', 'c:calmPositive'] as const).flatMap((q) => {
+        const [letter, quadrant] = q.split(':') as [string, Quadrant];
+        return [1, 2, 3, 4].map((n) => ({ key: `${letter}${n}`, emoji: `${letter}${n}`, quadrant }));
+      }),
+    });
+    const bigWorld = () => {
+      const fake = buildWorld(undefined, big());
+      const me = fake.seed.account('me');
+      const other = fake.seed.account('other');
+      const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+      const spritey = fake.seed.character(other, 'Spritey', 'face');
+      const { act: theirs } = fake.seed.thread('general', spritey, 'A thread', 'their post');
+      fake.signInAs(me);
+      return { fake, pipe, spritey, theirs };
+    };
+    const openBig = async (own: string[] = []) => {
+      const w = bigWorld();
+      const tallies = createTallies();
+      const mine = createMine();
+      for (const kind of own) mine.add({ act: w.theirs, kind, character: w.pipe });
+      renderIn(w.fake, <Reactions act={w.theirs} author={w.spritey} tallies={tallies} mine={mine} />, { instance: big() });
+      await userEvent.click(await screen.findByRole('button', { name: 'React' }));
+    };
+    const on = () => document.activeElement?.getAttribute('data-kb-reaction');
+    const press = async (...keys: string[]) => { for (const k of keys) await userEvent.keyboard(`{${k}}`); return on(); };
+
+    test('Left and Right go along a row of the whole grid, across into the next quadrant', async () => {
+      await openBig();
+      await waitFor(() => expect(on()).toBe('e1'));
+      expect(await press('ArrowRight')).toBe('e2');
+      expect(await press('ArrowRight')).toBe('p1');
+      expect(await press('ArrowRight')).toBe('p2');
+      expect(await press('ArrowRight')).toBe('p2');
+      expect(await press('ArrowLeft', 'ArrowLeft')).toBe('e2');
+    });
+
+    test('Up and Down go along a column of the whole grid, across into the quadrant below and above', async () => {
+      await openBig();
+      await waitFor(() => expect(on()).toBe('e1'));
+      expect(await press('ArrowDown')).toBe('e3');
+      expect(await press('ArrowDown')).toBe('b1');
+      expect(await press('ArrowDown')).toBe('b3');
+      expect(await press('ArrowDown')).toBe('b3');
+      expect(await press('ArrowUp', 'ArrowUp', 'ArrowUp')).toBe('e1');
+      expect(await press('ArrowUp')).toBe('e1');
+      expect(await press('ArrowRight', 'ArrowRight', 'ArrowRight')).toBe('p2');
+      expect(await press('ArrowDown', 'ArrowDown')).toBe('c2');
+      expect(await press('ArrowDown')).toBe('c4');
+      expect(await press('ArrowLeft')).toBe('c3');
+      expect(await press('ArrowLeft')).toBe('b4');
+    });
+
+    test('Home and End go to the first and the last, and a kind already left is stepped over', async () => {
+      await openBig(['c2']);
+      await waitFor(() => expect(on()).toBe('e1'));
+      expect(await press('End')).toBe('c4');
+      expect(await press('Home')).toBe('e1');
+      await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowDown');
+      expect(on()).toBe('p4');
+      expect(await press('ArrowDown')).toBe('c4');
+    });
+  });
+
   test('has one tab stop, and arrows skip a kind already left', async () => {
     const w = world();
     const v = show(w, w.theirs, w.spritey);
     act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
     const p = await open();
-    await userEvent.keyboard('{ArrowRight}');
+    await userEvent.keyboard('{ArrowDown}');
     expect(p.getByRole('button', { name: 'Zzz, Groan' })).toHaveFocus();
     const tabbable = p.getAllByRole('button').filter((b) => b.tabIndex === 0);
     expect(tabbable.filter((b) => b.closest('[role="group"]'))).toHaveLength(1);

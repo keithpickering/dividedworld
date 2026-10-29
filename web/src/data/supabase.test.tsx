@@ -101,7 +101,7 @@ describe('what the adapter may request', () => {
     });
     const api = h.api;
     await Promise.allSettled([
-      api.settings(), api.boards(), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.history(A), api.spunFrom(A),
+      api.settings(), api.boards(), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.standings(), api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
@@ -289,6 +289,16 @@ describe('failures', () => {
     expect(dead.to('acts_public')).toHaveLength(2);
     const err = await dead.api.act(A).catch((e: Error) => e.message);
     expect(err).not.toContain('down');
+  });
+
+  it('reads Acts by id in one acts_public read', async () => {
+    const h = harness(() => rows([ACT_ROW]));
+    expect(await h.api.actsById([A, B])).toEqual([ACT]);
+    expect(h.to('acts_public')).toHaveLength(1);
+    expect(h.to('acts_public')[0]?.url.searchParams.get('id')).toBe(`in.(${A},${B})`);
+    expect(await h.api.actsById(['not an id', "1),(2"])).toEqual([]);
+    expect(await h.api.actsById([])).toEqual([]);
+    expect(h.to('acts_public')).toHaveLength(1);
   });
 
   it('does not retry a read the server refused', async () => {

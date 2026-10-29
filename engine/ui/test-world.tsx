@@ -48,17 +48,19 @@ export interface WorldOptions {
   /** The address the screen opens at (a path, a query, a fragment). */
   readonly path?: string;
   readonly settings?: Partial<ScreenSettings>;
+  /** A different instance for the screen and its backend (a test of a bigger vocabulary); pass the same to `buildWorld`. */
+  readonly instance?: Instance;
 }
 
 /** The backend alone, for a test that must do something asynchronous (a spin) before it renders. */
-export function buildWorld(settingsOverride?: Partial<ScreenSettings>): Fake {
-  return createFake({ instance: testInstance, settings: settingsOverride });
+export function buildWorld(settingsOverride?: Partial<ScreenSettings>, instance: Instance = testInstance): Fake {
+  return createFake({ instance, settings: settingsOverride });
 }
 
 /** Render a screen on a backend made by `buildWorld`. */
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: testInstance, ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
   return {
     fake,
     ...render(
@@ -73,7 +75,7 @@ export function renderIn(fake: Fake, element: ReactElement, options: WorldOption
 
 /** Seed a backend, open the address and render: `seeded` is whatever the seed returned. */
 export function renderInWorld<T = undefined>(element: ReactElement, options: WorldOptions & { readonly seed?: (fake: Fake) => T } = {}) {
-  const fake = buildWorld(options.settings);
+  const fake = buildWorld(options.settings, options.instance);
   const seeded = options.seed?.(fake) as T;
   return { ...renderIn(fake, element, options), seeded };
 }

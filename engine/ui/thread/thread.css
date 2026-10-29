@@ -176,7 +176,7 @@
   position: fixed;
   left: 0;
   right: 0;
-  bottom: var(--kb-hud-height, 3.4em);
+  bottom: var(--kb-hud-measured, var(--kb-hud-height, 3.4em));
   display: flex;
   justify-content: center;
   padding: 0.4em 0;

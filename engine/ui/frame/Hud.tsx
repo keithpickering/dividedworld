@@ -19,6 +19,7 @@ export function Hud() {
   const [face, setFace] = useState<Character | null>(null);
   const [handOpen, setHandOpen] = useState(false);
   const handButton = useRef<HTMLButtonElement>(null);
+  const section = useRef<HTMLElement>(null);
   const drawerId = useId();
   const selectId = useId();
   const hud = player.hudCharacter;
@@ -44,6 +45,18 @@ export function Hud() {
     return () => clearTimeout(t);
   }, [balance, cap, walletSeen, markWalletSeen]);
 
+  /* What sits above the HUD (a sheet, the new-posts bar) needs the HUD's real height: on a narrow screen its controls wrap to a second line, and the hand drawer adds its own. */
+  useEffect(() => {
+    const el = section.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const root = document.documentElement;
+    const measure = () => root.style.setProperty('--kb-hud-measured', `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => { watch.disconnect(); root.style.removeProperty('--kb-hud-measured'); };
+  }, []);
+
   useEffect(() => {
     if (!handOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -60,7 +73,7 @@ export function Hud() {
   const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
 
   return (
-    <section className="kb-hud" aria-label="HUD">
+    <section ref={section} className="kb-hud" aria-label="HUD">
       {player.session.signedIn && (
         <div id={drawerId} className="kb-hand-drawer" role="region" aria-label="Your hand" hidden={!handOpen}>
           {held === 0 ? (

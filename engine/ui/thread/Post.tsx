@@ -75,13 +75,14 @@ function History({ post }: { readonly post: Id }) {
 
 function Edited({ act }: { readonly act: Act }) {
   const [open, setOpen] = useState(false);
+  const panel = `history-${act.id}`;
   if (!act.shownEditedAt) return null;
   return (
     <div className="kb-post-edited kb-small kb-muted">
       Last edited <time dateTime={act.shownEditedAt}>{when(act.shownEditedAt)}</time>
       {' · '}
-      <button type="button" className="kb-link-button" aria-expanded={open} onClick={() => setOpen(!open)}>History</button>
-      {open && <History post={act.id} />}
+      <button type="button" className="kb-link-button" aria-expanded={open} aria-controls={panel} onClick={() => setOpen(!open)}>History</button>
+      <div id={panel}>{open && <History post={act.id} />}</div>
     </div>
   );
 }
@@ -191,12 +192,13 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       id={`post-${seq}`}
       tabIndex={-1}
       className="kb-act"
-      aria-label={`Post ${seq} by ${name}`}
+      aria-labelledby={`post-${seq}-title`}
       data-kb-seq={seq}
       data-kb-kind={act.kind}
       data-kb-postbit={layout}
       data-kb-arrived={slid ? 'slide' : undefined}
     >
+      <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
       <header className="kb-act-meta kb-small">
         <time dateTime={act.createdAt}>{when(act.createdAt)}</time>
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>

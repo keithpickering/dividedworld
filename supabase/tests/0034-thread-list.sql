@@ -148,6 +148,7 @@ declare
   a uuid := tests.character(ann, 'Pc Ann');
   b uuid := tests.character(bob, 'Pc Bob');
   idle uuid := tests.character(bob, 'Pc Idle');
+  waiting uuid;
   th uuid := tests.thread('Counted');
   op uuid;
 begin
@@ -169,9 +170,13 @@ begin
   if (select posts from character_post_counts where character = a) is distinct from 2 or (select posts from character_post_counts where character = b) is distinct from 1 then
     raise exception 'the backfill counts the posts again';
   end if;
+  -- A character still waiting to debut is in no public list, and its count is no more readable than it is: the policy follows characters_public.
+  insert into characters (owner, name) values (bob, 'Pc Waiting') returning id into waiting;
+  insert into character_post_counts (character, posts) values (waiting, 7);
   -- A signed-in player reads it; a visitor does not, and nobody writes it.
   perform tests.become(bob);
   if (select posts from character_post_counts where character = a) is distinct from 2 then raise exception 'a player reads the counts'; end if;
+  if exists (select 1 from character_post_counts where character = waiting) then raise exception 'a player read the count of a character that has not debuted'; end if;
   begin update character_post_counts set posts = 99; raise exception 'a player wrote a count';
   exception when insufficient_privilege then null; end;
   perform tests.unbecome();

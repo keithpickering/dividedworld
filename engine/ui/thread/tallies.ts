@@ -11,6 +11,8 @@ const NONE: Tally = Object.freeze({});
 
 export interface Tallies {
   get(act: Id): Tally;
+  /** How many Acts have a listener: a key with none left is dropped. */
+  listening(): number;
   /** Keep each kind's largest; true when anything grew. */
   merge(act: Id, tally: Tally): boolean;
   subscribe(act: Id, listener: () => void): () => void;
@@ -21,6 +23,7 @@ export function createTallies(): Tallies {
   const listeners = new Map<Id, Set<() => void>>();
   return {
     get: (act) => counts.get(act) ?? NONE,
+    listening: () => listeners.size,
     merge(act, tally) {
       const now = counts.get(act) ?? NONE;
       let next: Record<string, number> | null = null;
@@ -35,7 +38,10 @@ export function createTallies(): Tallies {
     subscribe(act, listener) {
       const set = listeners.get(act) ?? new Set();
       listeners.set(act, set.add(listener));
-      return () => { set.delete(listener); };
+      return () => {
+        set.delete(listener);
+        if (set.size === 0 && listeners.get(act) === set) listeners.delete(act);
+      };
     },
   };
 }

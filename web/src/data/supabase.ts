@@ -483,6 +483,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const r = await list(() => client.from('acts_public').select('*').eq('id', id).limit(1));
       return r[0] ? toAct(r[0]) : null;
     },
+    async actsById(ids) {
+      const wanted = [...new Set(ids)].filter(idOk);
+      if (wanted.length === 0) return [];
+      const rows = await list(() => client.from('acts_public').select('*').in('id', wanted));
+      return rows.map(toAct);
+    },
     async history(post) {
       if (!idOk(post)) return [];
       const rows = await list(() => client.from('acts_public').select('*').or(`id.eq.${post},and(kind.eq.edit,target_act_id.eq.${post})`).order('created_at', { ascending: true }));

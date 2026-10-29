@@ -340,6 +340,8 @@ export interface KayfaApi {
   /** A thread's Acts from one seq to another, both included, edits left out (each shows through its post). */
   acts(thread: Id, fromSeq: number, toSeq: number): Promise<readonly Act[]>;
   act(id: Id): Promise<Act | null>;
+  /** Several Acts by id in one read; an id that is not an Act (or none the reader may see) is left out. Order is not promised. */
+  actsById(ids: readonly Id[]): Promise<readonly Act[]>;
   /** A post's every version, the original first, each as it was written. */
   history(post: Id): Promise<readonly Act[]>;
   /** The threads spun from an Act. */

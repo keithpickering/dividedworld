@@ -122,6 +122,14 @@ describe('editing', () => {
     expect(second.shownEditedAt).toBe(new Date(fake.clock.now()).toISOString());
     expect((await fake.act(post.id))!.shownEditedAt).toBe(second.shownEditedAt);
   });
+  test('actsById reads the Acts asked for in one call and leaves out those that are not there', async () => {
+    const { fake, anaFace, thread } = world();
+    const one = must(await fake.post(thread, anaFace, 'one', null));
+    const two = must(await fake.post(thread, anaFace, 'two', null));
+    const got = await fake.actsById([two.id, '00000000-0000-4000-8000-00000000ffff', one.id]);
+    expect(got.map((a) => a.id).sort()).toEqual([one.id, two.id].sort());
+    expect(await fake.actsById([])).toEqual([]);
+  });
   test('an edit is a version beside its post and no place in the thread', async () => {
     const { fake, anaFace, thread, opener } = world();
     const post = must(await fake.post(thread, anaFace, 'one', null));

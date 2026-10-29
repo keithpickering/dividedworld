@@ -53,7 +53,7 @@ export const shownEnd = (f: Feed): number => maxSeq(f.shown.values());
 export const ordered = (m: ReadonlyMap<Id, Act>): Act[] => [...m.values()].sort((a, b) => a.seq! - b.seq!);
 
 /** The incoming version replaces what is held unless what is held was edited later. */
-function newer(held: Act, incoming: Act): Act {
+export function newer(held: Act, incoming: Act): Act {
   if (held.editedAt && (!incoming.editedAt || Date.parse(held.editedAt) > Date.parse(incoming.editedAt))) return held;
   return incoming;
 }

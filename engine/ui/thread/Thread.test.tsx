@@ -7,6 +7,7 @@ import { buildWorld, renderIn } from '../test-world.tsx';
 import { pageOf, pageRange, threadHref } from './pages.ts';
 import { createTallies } from './tallies.ts';
 import { GAP_FILL_MS, READ_DEBOUNCE_MS, ThreadScreen } from './Thread.tsx';
+import { ACT_CACHE_SIZE, actLoader } from './locate.tsx';
 
 /* The HUD's estimate is asked for through the player; this test file watches that call. */
 const landed = vi.hoisted(() => vi.fn());
@@ -15,14 +16,27 @@ vi.mock('../player.tsx', async (original) => {
   return { ...m, usePlayer: () => ({ ...m.usePlayer(), reactionLanded: landed }) };
 });
 
+/* What a post's words cost to draw: every render of a body, and every parse of a long one. */
+const drawn = vi.hoisted(() => ({ bodies: [] as string[], parses: [] as string[] }));
+vi.mock('../bbcode/render.tsx', async (original) => {
+  const m = await original<typeof import('../bbcode/render.tsx')>();
+  const Inner = m.BbCode;
+  return { ...m, BbCode: (p: React.ComponentProps<typeof Inner>) => { drawn.bodies.push(p.text); return <Inner {...p} />; } };
+});
+vi.mock('../../bbcode/parse.ts', async (original) => {
+  const m = await original<typeof import('../../bbcode/parse.ts')>();
+  return { ...m, parse: (...a: Parameters<typeof m.parse>) => { drawn.parses.push(a[0]); return m.parse(...a); } };
+});
+
 /* ---------------------------------------------------------------- the browser's observer ---- */
 class MockObserver {
   static all: MockObserver[] = [];
   readonly els = new Set<Element>();
+  gone = false;
   constructor(readonly cb: IntersectionObserverCallback) { MockObserver.all.push(this); }
   observe(el: Element) { this.els.add(el); }
   unobserve(el: Element) { this.els.delete(el); }
-  disconnect() { this.els.clear(); }
+  disconnect() { this.els.clear(); this.gone = true; }
   takeRecords() { return []; }
 }
 /** The observer reports an element in view, or out of it. */
@@ -43,16 +57,18 @@ const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeEach(() => {
   MockObserver.all = [];
+  drawn.bodies = [];
+  drawn.parses = [];
   vi.stubGlobal('IntersectionObserver', MockObserver);
   Element.prototype.scrollIntoView = vi.fn();
   localStorage.clear();
   document.documentElement.removeAttribute('data-kb-motion');
 });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 /* ---------------------------------------------------------------------------- the world ---- */
-function world(acts: number) {
-  const fake = buildWorld();
+function world(acts: number, settings: Parameters<typeof buildWorld>[0] = undefined) {
+  const fake = buildWorld(settings);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
@@ -610,3 +626,331 @@ describe('the tally store', () => {
   });
 });
 
+
+/* ------------------------------------------------------- from the Task 5 quality review ---- */
+const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+const UNKNOWN = '00000000-0000-4000-8000-00000000ffff';
+
+describe('a gap in the live Acts', () => {
+  test('an Act every 500 ms past a gap does not keep the gap from being read', async () => {
+    const w = world(5);
+    const tapped = tap(w.fake);
+    clock();
+    open(w);
+    await screen.findByRole('article', { name: /^Post 5 /u });
+    see(sentinel(), true);
+    const read = vi.spyOn(w.fake, 'acts');
+    w.fake.seed.post(w.thread, w.pipe, 'post 6');
+    w.fake.seed.post(w.thread, w.spritey, 'post 7');
+    const seven = (await w.fake.acts(w.thread, 7, 7))[0]!;
+    read.mockClear();
+    deliver(() => tapped().onAct?.(seven));
+    for (let seq = 8; seq <= 12; seq++) {
+      await advance(500);
+      deliver(() => tapped().onAct?.(live(w.thread, seq, w.pipe)));
+    }
+    expect(read).toHaveBeenCalledWith(w.thread, 6, expect.any(Number));
+    await screen.findByRole('article', { name: /^Post 6 /u });
+  });
+
+  test('when the gap cannot be read, the bar offers the held posts, and clicking shows them', async () => {
+    const w = world(5);
+    const tapped = tap(w.fake);
+    clock();
+    open(w);
+    await screen.findByRole('article', { name: /^Post 5 /u });
+    see(sentinel(), true);
+    const read = vi.spyOn(w.fake, 'acts').mockRejectedValue(new Error('down'));
+    deliver(() => tapped().onAct?.(live(w.thread, 7, w.spritey)));
+    await advance(50);
+    await advance(GAP_FILL_MS + 100);
+    expect(read).toHaveBeenCalled();
+    const bar = await screen.findByRole('button', { name: '1 new post' });
+    expect(document.getElementById('post-7')).toBeNull();
+    await userEvent.click(bar);
+    await screen.findByRole('article', { name: /^Post 7 /u });
+    expect(screen.queryByRole('button', { name: /new post/u })).toBeNull();
+  });
+
+  test('a gap read that failed is tried again, with longer waits, until it fills', async () => {
+    const w = world(5);
+    const tapped = tap(w.fake);
+    clock();
+    open(w);
+    await screen.findByRole('article', { name: /^Post 5 /u });
+    see(sentinel(), true);
+    w.fake.seed.post(w.thread, w.pipe, 'post 6');
+    w.fake.seed.post(w.thread, w.spritey, 'post 7');
+    const seven = (await w.fake.acts(w.thread, 7, 7))[0]!;
+    const real = w.fake.acts.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'acts').mockRejectedValueOnce(new Error('down')).mockRejectedValueOnce(new Error('down')).mockImplementation(real);
+    deliver(() => tapped().onAct?.(seven));
+    await advance(50);
+    await advance(GAP_FILL_MS + 50);
+    expect(read).toHaveBeenCalledTimes(1);
+    await advance(GAP_FILL_MS + 50);
+    expect(read.mock.calls.length).toBeLessThanOrEqual(2);
+    await advance(GAP_FILL_MS * 4);
+    await screen.findByRole('article', { name: /^Post 6 /u });
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('an Act read while its author is read', () => {
+  test('an edited version is not overwritten by the original arriving late', async () => {
+    const w = world(5);
+    const stranger = w.fake.seed.character(w.fake.seed.account('stranger'), 'Newcomer', 'face');
+    const tapped = tap(w.fake);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 5 /u });
+    see(sentinel(), true);
+    let open_!: () => void;
+    const gate = new Promise<void>((r) => { open_ = r; });
+    const real = w.fake.characters.bind(w.fake);
+    vi.spyOn(w.fake, 'characters').mockImplementation(async (ids) => { await gate; return real(ids); });
+    const original = live(w.thread, 6, stranger);
+    const edited = { ...original, currentPayload: { body: 'edited words' }, editedAt: '2026-10-29T13:00:00Z', shownEditedAt: '2026-10-29T13:00:00Z' };
+    deliver(() => { tapped().onAct?.(original); tapped().onAct?.(edited); tapped().onAct?.(original); });
+    open_();
+    const added = await screen.findByRole('article', { name: /^Post 6 /u });
+    expect(added).toHaveTextContent('edited words');
+    expect(added).not.toHaveTextContent('live 6');
+  });
+});
+
+describe('quotes and tallies off the page', () => {
+  const quoting = (n: number) => {
+    const w = world(2);
+    const other = w.fake.seed.thread('general', w.spritey, 'Elsewhere', 'x');
+    const quoted = Array.from({ length: n }, (_, i) => w.fake.seed.post(other.thread, w.pipe, `elsewhere ${i}`));
+    for (const q of quoted) w.fake.seed.post(w.thread, w.pipe, `[quote=${q}]x[/quote]`);
+    return { w, other, quoted };
+  };
+
+  test('a page of quotes of other threads is one read', async () => {
+    const { w, other } = quoting(5);
+    const many = vi.spyOn(w.fake, 'actsById');
+    const one = vi.spyOn(w.fake, 'act');
+    open(w);
+    await screen.findByRole('article', { name: /^Post 7 /u });
+    await waitFor(() => expect(screen.getAllByRole('link', { name: /^Post #/u })).toHaveLength(5));
+    expect(many).toHaveBeenCalledTimes(1);
+    expect(one).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('link', { name: 'Post #2' })[0]).toHaveAttribute('href', `/t/${other.thread}?page=1#post-2`);
+  });
+
+  test('a quote whose read failed is asked again on a later render', async () => {
+    const { w } = quoting(1);
+    const many = vi.spyOn(w.fake, 'actsById').mockRejectedValueOnce(new Error('down'));
+    const first = open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    await waitFor(() => expect(many).toHaveBeenCalledTimes(1));
+    await pause(30);
+    expect(within(reply).queryByRole('link', { name: /^Post #/u })).toBeNull();
+    expect(reply).toHaveTextContent('Quoted post');
+    first.unmount();
+    renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}` });
+    const again = await screen.findByRole('article', { name: /^Post 3 /u });
+    await waitFor(() => expect(within(again).getByRole('link', { name: 'Post #2' })).toBeInTheDocument());
+  });
+
+  test('a quote of an Act that does not exist says "Quoted post" and links nowhere, and is not asked about again', async () => {
+    const w = world(2);
+    w.fake.seed.post(w.thread, w.pipe, `[quote=${UNKNOWN}]gone[/quote]reply`);
+    const many = vi.spyOn(w.fake, 'actsById');
+    open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    await waitFor(() => expect(many).toHaveBeenCalledTimes(1));
+    await pause(30);
+    expect(reply).toHaveTextContent('Quoted post');
+    expect(within(reply).queryByRole('link', { name: /^Post #/u })).toBeNull();
+    expect(await actLoader(w.fake).ask(UNKNOWN)).toBeNull();
+    expect(many).toHaveBeenCalledTimes(1);
+  });
+
+  test('tallies on Acts of other pages are one read for the author of each, in one call', async () => {
+    const w = world(45);
+    const tapped = tap(w.fake);
+    open(w, '', '?page=1');
+    await screen.findByRole('article', { name: /^Post 20 /u });
+    const many = vi.spyOn(w.fake, 'actsById');
+    const one = vi.spyOn(w.fake, 'act');
+    landed.mockClear();
+    deliver(() => { for (const i of [40, 41, 42, 43]) tapped().onTally?.(w.ids[i]!, { fire: 1 }); });
+    await waitFor(() => expect(landed).toHaveBeenCalled());
+    expect(many).toHaveBeenCalledTimes(1);
+    expect(one).not.toHaveBeenCalled();
+  });
+
+  test('what is remembered of the Acts read is bounded, the oldest asked for forgotten first', async () => {
+    const w = world(2);
+    const loader = actLoader(w.fake);
+    const many = vi.spyOn(w.fake, 'actsById');
+    const first = w.ids[0]!;
+    await loader.ask(first);
+    for (let i = 0; i < ACT_CACHE_SIZE + 5; i++) await loader.ask(`ffffffff-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    many.mockClear();
+    await loader.ask(w.ids[1]!);
+    expect(many).toHaveBeenCalledTimes(1);
+    many.mockClear();
+    await loader.ask(first);
+    expect(many).toHaveBeenCalledTimes(1);
+    many.mockClear();
+    await loader.ask(first);
+    expect(many).not.toHaveBeenCalled();
+  });
+});
+
+describe('what a tally storm and a long post cost', () => {
+  test('a storm of tallies re-renders the post it lands on and no other post body', async () => {
+    const w = world(5);
+    const tapped = tap(w.fake);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 5 /u });
+    see(sentinel(), false);
+    await pause(30);
+    const before = drawn.bodies.length;
+    /* A live post held by the bar changes the page itself in the middle of the storm. */
+    deliver(() => tapped().onAct?.(live(w.thread, 6, w.spritey)));
+    for (let i = 1; i <= 30; i++) {
+      deliver(() => tapped().onTally?.(w.ids[1]!, { fire: i }));
+      if (i === 15) deliver(() => tapped().onAct?.(live(w.thread, 7, w.pipe)));
+    }
+    await waitFor(() => expect(within(post(2)).getByText('Fire, 30')).toBeInTheDocument());
+    await screen.findByRole('button', { name: '2 new posts' });
+    expect(drawn.bodies.length).toBe(before);
+    expect(within(post(3)).queryByText(/^Fire, /u)).toBeNull();
+  });
+
+  test('a 20,000-character post is drawn once and parsed once, whatever happens around it', async () => {
+    const w = world(2, { postMaxLength: 30_000 });
+    const long = `${'word '.repeat(3999)}end`;
+    expect(long.length).toBeGreaterThan(19_000);
+    w.fake.seed.post(w.thread, w.pipe, long);
+    const tapped = tap(w.fake);
+    open(w);
+    const article = await screen.findByRole('article', { name: /^Post 3 /u });
+    see(sentinel(), false);
+    deliver(() => tapped().onAct?.(live(w.thread, 4, w.spritey)));
+    deliver(() => tapped().onTally?.(w.ids[1]!, { fire: 1 }));
+    deliver(() => tapped().onTally?.(w.ids[0]!, { fire: 1 }));
+    await screen.findByRole('button', { name: '1 new post' });
+    expect(drawn.bodies.filter((t) => t === long)).toHaveLength(1);
+    expect(drawn.parses.filter((t) => t === long)).toHaveLength(1);
+    expect(article).toHaveTextContent(/end$/u);
+  });
+});
+
+describe('reading when it cannot be sent', () => {
+  test('a read that fails while the reader signs out is caught, not left to throw on its own', async () => {
+    const w = world(10);
+    /* A rejection nobody handles surfaces in the browser; one `.then` or `.catch` is called on is handled. */
+    const failed = Promise.reject(new Error('signed out'));
+    failed.catch(() => { /* this one is the test's own */ });
+    const asked = vi.spyOn(failed, 'then');
+    const sent: unknown[][] = [];
+    /* Assigned, not spied: a spy attaches a handler of its own and would hide the defect. */
+    w.fake.markRead = ((...a: unknown[]) => { sent.push(a); return failed; }) as unknown as typeof w.fake.markRead;
+    open(w);
+    await screen.findByRole('article', { name: /^Post 10 /u });
+    await watched(post(10));
+    clock();
+    see(post(7));
+    asked.mockClear();
+    act(() => { w.fake.signInAs(null); });
+    await debounced();
+    await screen.findByRole('link', { name: 'Sign in' });
+    expect(sent[0]!.slice(0, 2)).toEqual([w.thread, 7]);
+    expect(asked).toHaveBeenCalled();
+  });
+
+  test('a read that failed is sent again with the next position', async () => {
+    const w = world(10);
+    const spy = vi.spyOn(w.fake, 'markRead').mockRejectedValueOnce(new Error('down'));
+    open(w);
+    await screen.findByRole('article', { name: /^Post 10 /u });
+    await watched(post(10));
+    clock();
+    see(post(4));
+    await debounced();
+    await advance(10);
+    see(post(4));
+    await debounced();
+    expect(spy.mock.calls.map((c) => c[1])).toEqual([4, 4]);
+  });
+});
+
+describe('the observers', () => {
+  test('a thread has one observer for what is read and one for the bottom, however many posts, and leaving lets go of both', async () => {
+    const w = world(20);
+    const tapped = tap(w.fake);
+    const { unmount } = open(w);
+    await screen.findByRole('article', { name: /^Post 20 /u });
+    await watched(post(20));
+    expect(MockObserver.all).toHaveLength(2);
+    see(sentinel(), true);
+    deliver(() => tapped().onAct?.(live(w.thread, 21, w.spritey)));
+    await screen.findByRole('article', { name: /^Post 21 /u });
+    await watched(post(21));
+    expect(MockObserver.all).toHaveLength(2);
+    const reading = MockObserver.all.find((o) => o.els.has(post(1)))!;
+    expect(reading.els.size).toBe(21);
+    unmount();
+    for (const o of MockObserver.all) { expect(o.els.size).toBe(0); expect(o.gone).toBe(true); }
+  });
+});
+
+describe('landmarks and focus', () => {
+  test('each post has a heading that names its author and number', async () => {
+    const w = world(3);
+    open(w);
+    const article = await screen.findByRole('article', { name: /^Post 2 by Pipewrench/u });
+    expect(within(article).getByRole('heading', { level: 2, name: 'Post 2 by Pipewrench' })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(3);
+  });
+
+  test('the History button controls the list it opens', async () => {
+    const w = world(3);
+    const mine = (await w.fake.myCharacters())[0]!.id;
+    const made = await w.fake.post(w.thread, mine, 'first words', null);
+    if (!made.ok) throw new Error(made.error);
+    w.fake.clock.advance(10 * 60_000);
+    await w.fake.edit(made.value.id, mine, 'second words');
+    open(w);
+    const article = await screen.findByRole('article', { name: /^Post 4 /u });
+    const button = within(article).getByRole('button', { name: 'History' });
+    const controlled = button.getAttribute('aria-controls');
+    expect(controlled).toBeTruthy();
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById(controlled!)).toContainElement(await within(article).findByRole('list', { name: 'Versions of this post' }));
+  });
+
+  test('"Continue" that loads nothing leaves focus on the last post and not on the page', async () => {
+    const w = world(25);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 20 /u });
+    const real = w.fake.acts.bind(w.fake);
+    vi.spyOn(w.fake, 'acts').mockImplementation(async (t, a, b) => (a === 21 ? [] : real(t, a, b)));
+    const link = screen.getAllByRole('link', { name: 'Continue to page 2' })[0]!;
+    link.focus();
+    await userEvent.click(link);
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Continue to page 2' })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(post(20)));
+  });
+});
+
+describe('the tally store keeps no empty sets', () => {
+  test('a key with no listener left is gone', () => {
+    const t = createTallies();
+    const off = t.subscribe('a', () => {});
+    const off2 = t.subscribe('a', () => {});
+    expect(t.listening()).toBe(1);
+    off();
+    expect(t.listening()).toBe(1);
+    off2();
+    expect(t.listening()).toBe(0);
+    t.subscribe('a', () => {})();
+    expect(t.listening()).toBe(0);
+  });
+});

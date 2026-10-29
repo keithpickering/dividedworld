@@ -65,6 +65,7 @@ export const Postbit = memo(function Postbit({ person, layout }: { readonly pers
   const index = rankIndex(instance.ranks, person.standing);
   const rank = instance.ranks[index]?.name ?? '';
   const className = (key: string | undefined) => (key === undefined ? undefined : instance.classes.find((k) => k.key === key)?.name ?? key);
+  const joined = monthYear(c.joined);
   const pipImages = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   return (
     <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={layout}>
@@ -78,7 +79,7 @@ export const Postbit = memo(function Postbit({ person, layout }: { readonly pers
         </span>
         <span className="kb-postbit-counts kb-small kb-muted">
           <span>Posts: {person.posts}</span>
-          <span>Joined {monthYear(c.joined)}</span>
+          {joined && <span>Joined {joined}</span>}
         </span>
         {person.revealed && (
           <span className="kb-postbit-class kb-small">

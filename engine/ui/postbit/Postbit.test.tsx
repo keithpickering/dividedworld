@@ -2,6 +2,7 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import type { Character } from '../data/api.ts';
 import { renderInWorld } from '../test-world.tsx';
+import { monthYear, shortDate } from './dates.ts';
 import { Postbit, Signature, type PostbitPerson } from './Postbit.tsx';
 import { reveals } from './reveals.ts';
 
@@ -112,5 +113,33 @@ describe('reveals(): which statement of its class a character has made', () => {
     expect(out.get('a')).toEqual({ revealed: { class: 'heel', at: '2026-10-03T00:00:00Z' }, turnedAt: '2026-10-20T00:00:00Z' });
     expect(out.get('b')).toEqual({ revealed: { class: 'face', at: '2026-10-05T00:00:00Z' }, turnedAt: null });
     expect(out.has('c')).toBe(false);
+  });
+});
+
+describe('dates', () => {
+  test('the tests run in a zone that is not UTC, so a local date and a UTC date can differ', () => {
+    expect(process.env.TZ).toBe('America/Los_Angeles');
+    expect(new Date('2026-10-04T03:00:00Z').getDate()).toBe(3);
+  });
+
+  test('a reveal or Turn date is the reader\'s local date, like every time in a thread', () => {
+    expect(shortDate('2026-10-04T03:00:00Z')).toBe('Oct 3');
+    show(person({ revealed: { class: 'heel', at: '2026-10-04T03:00:00Z' }, turnedAt: '2026-11-01T02:00:00Z' }));
+    expect(screen.getByRole('group')).toHaveTextContent('Revealed: Heel (Oct 3)');
+    expect(screen.getByRole('group')).toHaveTextContent('Has Turned since (Oct 31)');
+  });
+
+  test('"Joined" is the calendar month the server gave, whatever the reader\'s zone', () => {
+    expect(monthYear('2026-10-01')).toBe('Oct 2026');
+    show(person({}, { joined: '2026-10-01' }));
+    expect(screen.getByRole('group')).toHaveTextContent('Joined Oct 2026');
+  });
+
+  test('a date that cannot be read is nothing, and the postbit then says nothing about when it joined', () => {
+    expect(monthYear('')).toBe('');
+    expect(monthYear('not a date')).toBe('');
+    show(person({}, { joined: '' }));
+    expect(screen.getByRole('group')).not.toHaveTextContent(/Joined|undefined|NaN/u);
+    expect(screen.getByRole('group')).toHaveTextContent('Posts: 212');
   });
 });
