@@ -154,7 +154,7 @@ begin
   if exists (select 1 from acts where thread = in_thread and payload::text like '%beta%' and payload ->> 'character' <> says::text) then raise exception 'the reveal said what a silent Turn took'; end if;
   select payload into entry from acts where thread = in_thread and payload ->> 'character' = m::text;
   if entry -> 'shown' is distinct from '[]'::jsonb or entry ? 'classes' then raise exception 'a character made mid-season with nothing public shows nothing: %', entry; end if;
-  -- What its player made public, dated, in order: the reveal, then the Turn announced with its old class.
+  -- What its player made public, dated, in order: its reveal, the Turn announced with its old class, then the unmask that Turn wrote.
   select payload into entry from acts where thread = in_thread and payload ->> 'character' = says::text;
   -- At one instant, the Turn's tally before the unmask it wrote, as they stand in the thread.
   if entry -> 'shown' is distinct from jsonb_build_array(
