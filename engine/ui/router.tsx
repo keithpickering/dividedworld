@@ -34,7 +34,8 @@ export function RouterProvider({ children, window: w = globalThis.window }: { re
   const navigate = useCallback((to: string, options?: { readonly replace?: boolean }) => {
     const url = new URL(to, w.location.href);
     if (url.origin !== w.location.origin) { w.location.assign(url.href); return; }
-    if (options?.replace) w.history.replaceState(null, '', url.pathname + url.search + url.hash);
+    const same = url.pathname + url.search + url.hash === w.location.pathname + w.location.search + w.location.hash;
+    if (options?.replace || same) w.history.replaceState(null, '', url.pathname + url.search + url.hash);
     else w.history.pushState(null, '', url.pathname + url.search + url.hash);
     setLocation(read(w));
   }, [w]);
@@ -61,7 +62,7 @@ export function Link({ to, replace, onClick, ...rest }: { readonly to: string; r
   const navigate = useNavigate();
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
-    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || rest.target) return;
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || rest.target || rest.download !== undefined) return;
     e.preventDefault();
     navigate(to, { replace });
   };

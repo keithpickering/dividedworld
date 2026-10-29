@@ -23,26 +23,32 @@ export function Hud() {
   const selectId = useId();
   const hud = player.hudCharacter;
 
+  const hudId = hud?.id ?? null;
   useEffect(() => {
     let live = true;
-    if (!hud) { setFace(null); return; }
-    void api.characters([hud.id]).then((cs) => { if (live) setFace(cs[0] ?? null); });
+    setFace(null);
+    if (!hudId) return;
+    /* No face is the initial in the slot; a later page asks again. */
+    void api.characters([hudId]).then((cs) => { if (live) setFace(cs[0] ?? null); }, () => {});
     return () => { live = false; };
-  }, [api, hud]);
+  }, [api, hudId]);
 
   /* Once the cascade has played (or at once, under reduced motion), this device has seen the new wallet. */
-  const { wallet, walletSeen, markWalletSeen } = player;
+  const { walletSeen, markWalletSeen } = player;
+  const balance = player.wallet?.balance ?? null;
+  const cap = player.wallet?.cap ?? null;
   useEffect(() => {
-    if (walletSeen === null || !wallet) return;
-    const steps = cascade(walletSeen, wallet.balance, wallet.cap);
+    if (walletSeen === null || balance === null || cap === null) return;
+    const steps = cascade(walletSeen, balance, cap);
     const t = setTimeout(markWalletSeen, motionReduced() ? 0 : steps.length * CASCADE_BEAT_MS + 600);
     return () => clearTimeout(t);
-  }, [wallet, walletSeen, markWalletSeen]);
+  }, [balance, cap, walletSeen, markWalletSeen]);
 
   useEffect(() => {
     if (!handOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      /* An Esc another dialog or control has handled is its own. */
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
       setHandOpen(false);
       handButton.current?.focus();
     };
@@ -55,8 +61,8 @@ export function Hud() {
 
   return (
     <section className="kb-hud" aria-label="HUD">
-      {handOpen && (
-        <div id={drawerId} className="kb-hand-drawer" role="region" aria-label="Your hand">
+      {player.session.signedIn && (
+        <div id={drawerId} className="kb-hand-drawer" role="region" aria-label="Your hand" hidden={!handOpen}>
           {held === 0 ? (
             <p className="kb-muted">No cards in your hand.</p>
           ) : (

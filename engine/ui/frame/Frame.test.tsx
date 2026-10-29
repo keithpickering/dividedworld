@@ -98,3 +98,31 @@ describe('the frame', () => {
     await waitFor(() => expect(within(hud).getByRole('link', { name: 'Make a character' })).toBeInTheDocument());
   });
 });
+
+describe('from the Task 3 quality review', () => {
+  test('the hand button controls a drawer that is always there, hidden while closed', async () => {
+    setup();
+    const hand = await screen.findByRole('button', { name: 'Hand: 3 cards' });
+    const drawer = document.getElementById(hand.getAttribute('aria-controls')!);
+    expect(drawer).not.toBeNull();
+    expect(drawer).toHaveAttribute('hidden');
+  });
+  test('an Esc another control has already handled leaves the drawer and focus alone', async () => {
+    setup();
+    const hand = await screen.findByRole('button', { name: 'Hand: 3 cards' });
+    await userEvent.click(hand);
+    const other = document.createElement('input');
+    document.body.append(other);
+    other.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.preventDefault(); });
+    other.focus();
+    await userEvent.keyboard('{Escape}');
+    expect(hand).toHaveAttribute('aria-expanded', 'true');
+    expect(other).toHaveFocus();
+    other.remove();
+  });
+  test('moving to another page puts focus at the top of the new page', async () => {
+    setup();
+    await userEvent.click(screen.getByRole('link', { name: 'Characters' }));
+    expect(screen.getByRole('main')).toHaveFocus();
+  });
+});

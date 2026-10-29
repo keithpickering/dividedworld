@@ -75,3 +75,12 @@ describe('the cascade at a settlement', () => {
     ]);
   });
 });
+
+describe('a cap that is not whole orbs', () => {
+  test('the name says the cap as it is', () => {
+    expect(walletName(100, 0, 250)).toBe('Wallet 1.00 of 2.50 orbs');
+  });
+  test('the last orb fills to the cap, which is all of it', () => {
+    expect(orbFills(250, 0, 250).orbs.map((o) => o.solid)).toEqual([1, 1, 0.5]);
+  });
+});

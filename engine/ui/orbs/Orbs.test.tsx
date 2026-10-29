@@ -66,3 +66,29 @@ describe('the cascade at a settlement', () => {
     expect(screen.getByRole('img').getAttribute('aria-label')).toBe('Wallet 3.60 of 6 orbs');
   });
 });
+
+describe('from the Task 3 quality review', () => {
+  test('a spend drains from the last orb down, ending on the new wallet, with no flash', () => {
+    const { rerender } = render(<Orbs settled={360} pending={0} cap={600} />);
+    rerender(<Orbs settled={140} pending={0} cap={600} cascadeFrom={360} />);
+    expect(orbEls().map(solid)).toEqual([1, 1, 1, 0.6, 0, 0]);
+    act(() => vi.advanceTimersByTime(0));
+    expect(orbEls().map(solid)).toEqual([1, 1, 1, 0, 0, 0]);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(orbEls().map(solid)).toEqual([1, 0.4, 0, 0, 0, 0]);
+    expect(document.querySelectorAll('.kb-orb--flash')).toHaveLength(0);
+  });
+  test('a cascade from the wallet it already shows is no cascade', () => {
+    render(<Orbs settled={240} pending={0} cap={600} cascadeFrom={240} />);
+    expect(orbEls().map(solid)).toEqual([1, 1, 0.4, 0, 0, 0]);
+  });
+  test('the first frame of a cascade is the wallet it starts from, never the end', () => {
+    render(<Orbs settled={360} pending={0} cap={600} cascadeFrom={140} />);
+    expect(orbEls().map(solid)).toEqual([1, 0.4, 0, 0, 0, 0]);
+  });
+  test("the figure is held to the wallet's floor and cap, as the orbs and the name are", () => {
+    render(<Orbs settled={-50} pending={0} cap={600} />);
+    expect(screen.getByText('0.00')).toBeInTheDocument();
+    expect(screen.getByRole('img').getAttribute('aria-label')).toBe('Wallet 0.00 of 6 orbs');
+  });
+});

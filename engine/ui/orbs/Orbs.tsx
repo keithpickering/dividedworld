@@ -8,9 +8,9 @@
  * A screen reader hears the wallet's name (fill.ts's walletName), always the wallet as it now is,
  * never a frame of the animation.
  */
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useLayoutEffect, useState, type CSSProperties } from 'react';
 import { motionReduced } from '../appearance.ts';
-import { cascade, orbFills, walletName } from './fill.ts';
+import { cascade, clamp, orbFills, walletName } from './fill.ts';
 import './orbs.css';
 
 const figure = (h: number) => (h / 100).toFixed(2);
@@ -26,10 +26,11 @@ export interface OrbsProps {
 }
 
 export function Orbs({ settled, pending, cap, cascadeFrom = null }: OrbsProps) {
-  const [shown, setShown] = useState(settled);
+  /* The first frame of a cascade is the wallet it starts from, set before paint, so the end never flashes first. */
+  const [shown, setShown] = useState(() => (cascadeFrom !== null && !motionReduced() ? cascadeFrom : settled));
   const [flash, setFlash] = useState<number | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (cascadeFrom === null || cascadeFrom === settled || motionReduced()) {
       setShown(settled);
       setFlash(null);
@@ -63,7 +64,7 @@ export function Orbs({ settled, pending, cap, cascadeFrom = null }: OrbsProps) {
           />
         ))}
       </span>
-      <span className="kb-orbs-figure kb-mono kb-num" aria-hidden="true">{figure(Math.min(settled, cap))}</span>
+      <span className="kb-orbs-figure kb-mono kb-num" aria-hidden="true">{figure(clamp(settled, 0, cap))}</span>
       {pending !== 0 && (
         <span className="kb-orbs-pending kb-mono kb-num" aria-hidden="true">
           {pending > 0 ? `+${figure(pending)}` : `−${figure(-pending)}`} pending

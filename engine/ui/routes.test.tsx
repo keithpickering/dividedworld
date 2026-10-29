@@ -17,3 +17,9 @@ describe('the routes', () => {
     expect(screen.getByRole('link', { name: 'Back to the index' })).toHaveAttribute('href', '/');
   });
 });
+
+describe('from the Task 3 quality review', () => {
+  test('a malformed address matches nothing rather than throwing', () => {
+    expect(match('/t/:thread', '/t/%E0%A4%A')).toBeNull();
+  });
+});

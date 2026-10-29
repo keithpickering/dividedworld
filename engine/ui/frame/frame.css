@@ -159,3 +159,8 @@
     flex-basis: 100%;
   }
 }
+
+/* Focus moves to the page on a move between pages; the page itself draws no ring for it. */
+.kb-page:focus {
+  outline: none;
+}

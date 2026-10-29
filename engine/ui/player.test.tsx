@@ -99,3 +99,74 @@ describe('the estimate is asked for on events, never on a timer', () => {
     expect(screen.getByTestId('hud').textContent).toBe('none');
   });
 });
+
+describe('from the Task 3 quality review: an account switch, a failed read', () => {
+  function switchable() {
+    let listener: (s: Session) => void = () => {};
+    let resolveA: (e: Estimate) => void = () => {};
+    const estimate = vi.fn((): Promise<Estimate> => {
+      if (estimate.mock.calls.length === 1) return new Promise((r) => { resolveA = r; });
+      return Promise.resolve({ entries: [{ character: 'x', reason: 'face.cheered', amount: 7 }], lines: [], asOf: null, freshAfter: null });
+    });
+    const api = {
+      session: async () => ({ signedIn: true, account: 'acc-a' }),
+      onSession: (l: (s: Session) => void) => { listener = l; return () => {}; },
+      myCharacters: async () => [char('a')],
+      wallet: async () => ({ balance: 100, cap: 600 }),
+      myCards: async () => [],
+      estimate,
+    } as unknown as KayfaApi;
+    return { api, estimate, switchTo: (account: string | null) => act(() => listener({ signedIn: account !== null, account })), answerA: (amount: number) => resolveA({ entries: [{ character: 'a', reason: 'face.cheered', amount }], lines: [], asOf: null, freshAfter: null }) };
+  }
+  test('an estimate that answers after the account changed is dropped, and the new account asks at once', async () => {
+    const w = switchable();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await waitFor(() => expect(w.estimate).toHaveBeenCalledTimes(1));
+    w.switchTo('acc-b');
+    await waitFor(() => expect(w.estimate).toHaveBeenCalledTimes(2));
+    await act(async () => { w.answerA(999); });
+    await waitFor(() => expect(screen.getByTestId('pending').textContent).toBe('7'));
+  });
+  test('an estimate that answers after sign-out shows nothing', async () => {
+    const w = switchable();
+    render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
+    await waitFor(() => expect(w.estimate).toHaveBeenCalledTimes(1));
+    w.switchTo(null);
+    await act(async () => { w.answerA(999); });
+    expect(screen.getByTestId('pending').textContent).toBe('0');
+  });
+  test('a failed read of the player\'s rows still ends loading, so the HUD is never a blank bar', async () => {
+    const { api } = stubApi({ myCharacters: async () => { throw new Error('no answer came back'); } });
+    function Loaded() { const p = usePlayer(); return <span data-testid="loaded">{String(p.loaded)}</span>; }
+    render(<PlayerProvider api={api}><Loaded /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('loaded').textContent).toBe('true'));
+  });
+  test('signing in is not "loaded" until the player\'s rows have come', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const { api } = stubApi({ myCharacters: async () => { await gate; return [char('a')]; } });
+    function Loaded() { const p = usePlayer(); return <span data-testid="loaded">{String(p.loaded)}:{p.characters.length}</span>; }
+    render(<PlayerProvider api={api}><Loaded /></PlayerProvider>);
+    await act(async () => {});
+    expect(screen.getByTestId('loaded').textContent).toBe('false:0');
+    await act(async () => { release(); });
+    await waitFor(() => expect(screen.getByTestId('loaded').textContent).toBe('true:1'));
+  });
+  test('the wallet last seen on this device is where a cascade starts, until it is marked seen', async () => {
+    localStorage.setItem('kb-wallet-seen:acc-1', '140');
+    const { api } = stubApi();
+    function Seen() { const p = usePlayer(); return <><span data-testid="seen">{String(p.walletSeen)}</span><button onClick={p.markWalletSeen}>seen</button></>; }
+    render(<PlayerProvider api={api}><Seen /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('seen').textContent).toBe('140'));
+    act(() => screen.getByText('seen').click());
+    expect(screen.getByTestId('seen').textContent).toBe('null');
+    expect(localStorage.getItem('kb-wallet-seen:acc-1')).toBe('240');
+  });
+  test('a first visit on this device has nothing to cascade from', async () => {
+    const { api } = stubApi();
+    function Seen() { const p = usePlayer(); return <span data-testid="seen">{String(p.walletSeen)}:{String(p.wallet?.balance)}</span>; }
+    render(<PlayerProvider api={api}><Seen /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('seen').textContent).toBe('null:240'));
+    expect(localStorage.getItem('kb-wallet-seen:acc-1')).toBe('240');
+  });
+});

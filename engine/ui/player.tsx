@@ -69,16 +69,26 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
 
   const account = session.account;
 
+  /* The account the screen is on now: an answer for another one (a sign-out or a switch since it was asked) is dropped. */
+  const current = useRef<Id | null>(null);
+  current.current = account;
+
   const refresh = useCallback(async () => {
     if (!account) return;
-    const [mine, w, held] = await Promise.all([api.myCharacters(), api.wallet(), api.myCards()]);
-    setCharacters(mine);
-    setWallet(w);
-    setCards(held);
-    const seen = store.get(`kb-wallet-seen:${account}`);
-    setWalletSeen(seen !== null && Number(seen) !== w.balance ? Number(seen) : null);
-    setChosen(store.get(`kb-hud:${account}`));
-    setLoaded(true);
+    try {
+      const [mine, w, held] = await Promise.all([api.myCharacters(), api.wallet(), api.myCards()]);
+      if (current.current !== account) return;
+      setCharacters(mine);
+      setWallet(w);
+      setCards(held);
+      const seen = store.get(`kb-wallet-seen:${account}`);
+      setWalletSeen(seen !== null && Number(seen) !== w.balance ? Number(seen) : null);
+      setChosen(store.get(`kb-hud:${account}`));
+    } catch {
+      /* The rows as they were: the next action or page asks again. Loading still ends, so the HUD is never blank. */
+    } finally {
+      if (current.current === account) setLoaded(true);
+    }
   }, [api, account]);
 
   useEffect(() => {
@@ -89,39 +99,44 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   }, [api]);
 
   useEffect(() => {
-    if (!account) {
-      setCharacters([]);
-      setWallet(null);
-      setEstimate(null);
-      setCards([]);
-      setLoaded(true);
-      return;
-    }
+    setCharacters([]);
+    setWallet(null);
+    setWalletSeen(null);
+    setEstimate(null);
+    setCards([]);
+    setChosen(null);
+    if (!account) { setLoaded(true); return; }
+    setLoaded(false);
     void refresh();
   }, [account, refresh]);
 
-  /* The estimate's asks: one out at a time, none before freshAfter, a held ask answered once at freshAfter. */
-  const asking = useRef<{ out: boolean; held: boolean; timer: ReturnType<typeof setTimeout> | null; freshAt: number }>({ out: false, held: false, timer: null, freshAt: 0 });
+  /*
+   * The estimate's asks: one out at a time, none before freshAfter, a held ask answered once at
+   * freshAfter. Each account has its own generation: what an earlier one asked lands nowhere.
+   */
+  const asking = useRef<{ gen: number; out: boolean; held: boolean; timer: ReturnType<typeof setTimeout> | null; freshAt: number }>({ gen: 0, out: false, held: false, timer: null, freshAt: 0 });
   const ask = useCallback(() => {
     const a = asking.current;
     if (!account) return;
+    const gen = a.gen;
+    const later = (ms: number) => { a.timer = setTimeout(() => { if (a.gen !== gen) return; a.timer = null; a.held = false; ask(); }, ms); };
     const wait = a.freshAt - Date.now();
     if (a.out || wait > 0) {
       a.held = true;
-      if (!a.out && a.timer === null) a.timer = setTimeout(() => { a.timer = null; a.held = false; ask(); }, wait);
+      if (!a.out && a.timer === null) later(wait);
       return;
     }
     a.out = true;
     void api.estimate().then((e) => {
+      if (a.gen !== gen) return;
       setEstimate(e);
       /* Counted from receipt, as the function's header says: freshAfter - asOf from now. */
       const hold = e.asOf && e.freshAfter ? Date.parse(e.freshAfter) - Date.parse(e.asOf) : 0;
       a.freshAt = Date.now() + Math.max(0, hold);
     }, () => { /* No estimate is a ghost fill of nothing; the next event asks again. */ }).finally(() => {
+      if (a.gen !== gen) return;
       a.out = false;
-      if (a.held && a.timer === null) {
-        a.timer = setTimeout(() => { a.timer = null; a.held = false; ask(); }, Math.max(0, a.freshAt - Date.now()));
-      }
+      if (a.held && a.timer === null) later(Math.max(0, a.freshAt - Date.now()));
     });
   }, [api, account]);
 
@@ -131,7 +146,9 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
     const a = asking.current;
     return () => {
       if (a.timer) clearTimeout(a.timer);
+      a.gen += 1;
       a.timer = null;
+      a.out = false;
       a.held = false;
       a.freshAt = 0;
     };

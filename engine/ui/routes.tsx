@@ -20,8 +20,10 @@ export function match(pattern: string, path: string): Record<string, string> | n
   const params: Record<string, string> = {};
   for (let i = 0; i < p.length; i++) {
     const seg = p[i]!;
-    if (seg.startsWith(':')) params[seg.slice(1)] = decodeURIComponent(a[i]!);
-    else if (seg !== a[i]) return null;
+    if (seg.startsWith(':')) {
+      /* A malformed escape (a hand-typed %E0%A4%A) is an address that matches nothing, never a blank page. */
+      try { params[seg.slice(1)] = decodeURIComponent(a[i]!); } catch { return null; }
+    } else if (seg !== a[i]) return null;
   }
   return params;
 }

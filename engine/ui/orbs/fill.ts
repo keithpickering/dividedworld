@@ -15,7 +15,7 @@ export interface OrbFill {
 }
 
 const ORB = 100;
-const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+export const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 /** How much of orb i a span of hundredths [a, b] covers, as [from, to] fractions of it. */
 const within = (i: number, a: number, b: number): [number, number] => {
   const from = clamp(a - i * ORB, 0, ORB) / ORB;
@@ -42,7 +42,8 @@ const orbs = (h: number) => (h / ORB).toFixed(2);
 /** The wallet as a screen reader hears it: settled, then what is pending and that it is an estimate. */
 export function walletName(settled: number, pending: number, cap: number): string {
   const s = clamp(settled, 0, cap);
-  let name = `Wallet ${orbs(s)} of ${Math.ceil(cap / ORB)} orbs`;
+  const whole = cap % ORB === 0 ? String(cap / ORB) : orbs(cap);
+  let name = `Wallet ${orbs(s)} of ${whole} orbs`;
   if (pending > 0) name += `, ${orbs(pending)} pending until the next settlement (estimate)`;
   if (pending < 0) name += `, ${orbs(-pending)} to be lost at the next settlement (estimate)`;
   const over = s + pending - cap;
