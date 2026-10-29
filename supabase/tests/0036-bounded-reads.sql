@@ -26,17 +26,29 @@ do $$
 declare
   general uuid := (select id from boards where slug = 'general');
   system uuid := (select id from boards where slug = 'the-system');
-  before_general integer := (select thread_count from boards where slug = 'general');
+  before_general integer := (select threads from board_counts where board = (select id from boards where slug = 'general'));
+  why text;
 begin
   perform tests.thread('Bounded one');
   perform tests.thread('Bounded two');
-  if (select thread_count from boards where id = general) is distinct from before_general + 2 then raise exception 'a thread started on a board counts: %', (select thread_count from boards where id = general); end if;
-  if (select thread_count from boards where id = system) is distinct from (select count(*)::integer from threads where board = system) then raise exception 'another board''s count does not move'; end if;
+  if (select threads from board_counts where board = general) is distinct from before_general + 2 then raise exception 'a thread started on a board counts: %', (select threads from board_counts where board = general); end if;
+  if (select threads from board_counts where board = system) is distinct from (select count(*)::integer from threads where board = system) then raise exception 'another board''s count does not move'; end if;
+  -- A board made later has its counter too.
+  insert into boards (slug, name) values ('later', 'Later');
+  if (select threads from board_counts where board = (select id from boards where slug = 'later')) is distinct from 0 then raise exception 'a new board counts from 0'; end if;
+  -- Another session starting a thread on the same board does not wait for this transaction (which holds a shard of its counter)
+  -- to end: a counter row is locked until its transaction commits, and threads are started all the time.
+  perform tests.thread('Held open');
+  perform tests.commit(format($sql$
+    set lock_timeout = '3s';
+    insert into threads (board, title) values (%L, 'Started meanwhile');
+  $sql$, general));
+  if (select threads from board_counts where board = general) is distinct from (select count(*)::integer from threads where board = general) then raise exception 'the thread started meanwhile counts'; end if;
   -- Zeroed and replayed, the backfill says what the trigger kept.
-  update boards set thread_count = 0;
+  update board_thread_counts set threads = 0;
   perform backfill_board_counts();
-  if exists (select 1 from boards b where b.thread_count is distinct from (select count(*)::integer from threads t where t.board = b.id)) then
-    raise exception 'the backfill counts every board''s threads: %', (select jsonb_agg(to_jsonb(b)) from boards b);
+  if exists (select 1 from boards b where (select threads from board_counts c where c.board = b.id) is distinct from (select count(*)::integer from threads t where t.board = b.id)) then
+    raise exception 'the backfill counts every board''s threads: %', (select jsonb_agg(to_jsonb(c)) from board_counts c);
   end if;
 end $$;
 
@@ -44,23 +56,30 @@ end $$;
 do $$
 declare
   ann uuid := tests.account('bd-ann');
-  start_n integer := (select characters from debuted_count);
+  start_n integer := (select characters from season_size);
   waiting uuid;
 begin
   if start_n is distinct from (select count(*)::integer from characters where debuted_at is not null) then raise exception 'the counter starts at the debuted characters: %', start_n; end if;
   perform tests.character(ann, 'Bd Debuted');
-  if (select characters from debuted_count) is distinct from start_n + 1 then raise exception 'a character created debuted counts'; end if;
+  if (select characters from season_size) is distinct from start_n + 1 then raise exception 'a character created debuted counts'; end if;
   insert into characters (owner, name, created_at) values (ann, 'Bd Waiting', now()) returning id into waiting;
-  if (select characters from debuted_count) is distinct from start_n + 1 then raise exception 'a character waiting to debut does not count'; end if;
+  if (select characters from season_size) is distinct from start_n + 1 then raise exception 'a character waiting to debut does not count'; end if;
   update characters set debuted_at = now() where id = waiting;
-  if (select characters from debuted_count) is distinct from start_n + 2 then raise exception 'a character that debuts counts, once'; end if;
+  if (select characters from season_size) is distinct from start_n + 2 then raise exception 'a character that debuts counts, once'; end if;
   update characters set retired_at = now() where id = waiting;
   update characters set debuted_at = now() where id = waiting;
-  if (select characters from debuted_count) is distinct from start_n + 2 then raise exception 'a change that does not debut it moves nothing'; end if;
+  if (select characters from season_size) is distinct from start_n + 2 then raise exception 'a change that does not debut it moves nothing'; end if;
+  -- Another session creating a debuted character does not wait for this transaction, which holds a shard.
+  perform tests.commit($sql$
+    set lock_timeout = '3s';
+    insert into auth.users (id, email) values ('00000000-0000-4000-8000-0000000000a1', 'bd-other@test.invalid');
+    insert into accounts (id) values ('00000000-0000-4000-8000-0000000000a1');
+    insert into characters (owner, name, debuted_at) values ('00000000-0000-4000-8000-0000000000a1', 'Bd Meanwhile', now());
+  $sql$);
+  if (select characters from season_size) is distinct from (select count(*)::integer from characters where debuted_at is not null) then raise exception 'the character created meanwhile counts'; end if;
   update debuted_count set characters = 0;
   perform backfill_debuted_count();
-  if (select characters from debuted_count) is distinct from (select count(*)::integer from characters where debuted_at is not null) then raise exception 'the backfill counts the debuted characters'; end if;
-  if (select count(*) from debuted_count) is distinct from 1::bigint then raise exception 'one counter row, always'; end if;
+  if (select characters from season_size) is distinct from (select count(*)::integer from characters where debuted_at is not null) then raise exception 'the backfill counts the debuted characters'; end if;
 end $$;
 
 -- ---- standing_place agrees with the ranking it replaces, ties and negatives included ----
@@ -121,6 +140,9 @@ begin
   begin perform 1 from debuted_count; exception when insufficient_privilege then why := 'refused'; end;
   if why is distinct from 'refused' then raise exception 'a player read the counter table'; end if;
   if (select characters from season_size) is distinct from total then raise exception 'the season size is the counter: %', (select characters from season_size); end if;
+  why := null;
+  begin perform 1 from board_thread_counts; exception when insufficient_privilege then why := 'refused'; end;
+  if why is distinct from 'refused' then raise exception 'a player read the board counter shards'; end if;
   perform tests.unbecome();
 end $$;
 
@@ -159,8 +181,8 @@ begin
   end if;
 
   -- A board's page: its counter is one row of boards, its threads the (board, last_at) index (0034 reads the list itself).
-  plan := pg_temp.plan_of(format('select thread_count from boards where id = %L', board_id));
-  if pg_temp.scans(plan) then raise exception 'a board''s thread count is read from its row: %', plan; end if;
+  plan := pg_temp.plan_of(format('select threads from board_counts where board = %L', board_id));
+  if plan ~ 'Seq Scan on board_thread_counts' or plan not like '%board_thread_counts_pkey%' then raise exception 'a board''s thread count is read from its shards by key: %', plan; end if;
   plan := pg_temp.plan_of(format('select * from thread_list where board = %L order by last_at desc limit 20 offset 20', board_id));
   if pg_temp.scans(plan) or plan not like '%threads_board_last_at%' then raise exception 'a board''s page is not read from threads_board_last_at: %', plan; end if;
 
@@ -170,7 +192,7 @@ begin
   plan := pg_temp.plan_of(format('select character, posts, spins, cards from character_post_counts where character = %L', a));
   if pg_temp.scans(plan) then raise exception 'a character''s counts are not read from its row: %', plan; end if;
   plan := pg_temp.plan_of('select characters from season_size');
-  if plan ~ 'Seq Scan on characters' then raise exception 'the season size is read from the counter, never counted: %', plan; end if;
+  if plan ~ 'Seq Scan on characters|Seq Scan on standings' then raise exception 'the season size is read from the counter, never counted: %', plan; end if;
 
   -- The standings screen is the one read that ranks everyone, a page of it at a time. Its plan reads every
   -- debuted character (a window over all of them), which is the screen's job; it is not asserted bounded.

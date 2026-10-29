@@ -22,7 +22,7 @@
  *
  * No read counts rows. A count over a table that grows with the game (a board's threads, a character's
  * Acts, the season's characters) is work per view that grows with the instance, so every total a screen
- * shows is a counter a trigger keeps (boards.thread_count, character_post_counts, season_size) or comes
+ * shows is a counter a trigger keeps (board_counts, character_post_counts, season_size) or comes
  * from an index range on the server (standing_place); tools/check-web-reads.mjs refuses a `count` option.
  *
  * Nothing sent here carries the HUD's character beyond the request body the action needs: it is
@@ -464,12 +464,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     settings,
 
     async boards() {
-      const bs = await list(() => client.from('boards').select('id,slug,name,description,is_system,thread_count').order('created_at', { ascending: true }));
+      const [bs, counted] = await Promise.all([
+        list(() => client.from('boards').select('id,slug,name,description,is_system').order('created_at', { ascending: true })),
+        list(() => client.from('board_counts').select('board,threads')),
+      ]);
+      const threadCounts = new Map(counted.map((c) => [c['board'] as string, num(c['threads'])]));
       /* One read of each board's newest thread, by the (board, last_at) index: a handful of boards, a row each. */
       return Promise.all(
         bs.map(async (b): Promise<BoardSummary> => {
           const l = (await list(() => client.from('thread_list').select('*').eq('board', b['id']).order('last_at', { ascending: false }).limit(1)))[0];
-          return { ...toBoard(b), threadCount: num(b['thread_count']), lastAt: l?.['last_at'] ?? null, lastCharacter: l?.['last_character'] ?? null, lastThread: l?.['id'] ?? null };
+          return { ...toBoard(b), threadCount: threadCounts.get(b['id']) ?? 0, lastAt: l?.['last_at'] ?? null, lastCharacter: l?.['last_character'] ?? null, lastThread: l?.['id'] ?? null };
         }),
       );
     },
@@ -479,7 +483,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async threads(board, page) {
       /* The page is the list's rows; the total is the board's counter (a trigger keeps it), so a page turn counts nothing. */
-      const total = async () => num((await list(() => client.from('boards').select('thread_count').eq('id', board).limit(1)))[0]?.['thread_count']);
+      const total = async () => num((await list(() => client.from('board_counts').select('threads').eq('board', board).limit(1)))[0]?.['threads']);
       if (page.limit <= 0) return { threads: [], total: await total() };
       const [rows, all] = await Promise.all([
         list(() => client.from('thread_list').select('*').eq('board', board).order('last_at', { ascending: false }).range(page.offset, page.offset + page.limit - 1)),

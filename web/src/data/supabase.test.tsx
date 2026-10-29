@@ -79,7 +79,7 @@ const ACT: Act = { id: A, character: B, kind: 'post', thread: T, targetActId: nu
 const THREAD_ROW = { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00', last_at: '2026-10-01T10:00:00+00:00', last_seq: 2, first_act: A, first_character: B, last_act: A, last_character: B, replies: 3, replies_this_week: 4, origin_thread: null, origin_title: null, origin_seq: null };
 
 /** Everything a read can name, answered with an empty list or a plain value. */
-const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'season_standings', 'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
+const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'season_standings', 'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
 const ALLOWED_RPCS = new Set(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'set_profile', 'release_effect', 'card_target', 'standing_place']);
 
 import { beforeEach } from 'vitest';
@@ -136,14 +136,14 @@ describe('what the adapter may request', () => {
 
 describe('reads and their rows', () => {
   it('maps a thread page from thread_list, newest first, with the board\'s counter as the total and no count of the list', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/boards') ? rows([{ thread_count: 37 }]) : rows([THREAD_ROW])));
+    const h = harness((r) => (r.url.pathname.endsWith('/board_counts') ? rows([{ threads: 37 }]) : rows([THREAD_ROW])));
     const page = await h.api.threads(C, { offset: 10, limit: 10 });
     const [req] = h.to('thread_list');
     expect(req?.method).toBe('GET');
     expect(req?.headers.get('prefer') ?? '').not.toContain('count');
-    const [counter] = h.to('boards');
-    expect(counter?.url.searchParams.get('select')).toBe('thread_count');
-    expect(counter?.url.searchParams.get('id')).toBe(`eq.${C}`);
+    const [counter] = h.to('board_counts');
+    expect(counter?.url.searchParams.get('select')).toBe('threads');
+    expect(counter?.url.searchParams.get('board')).toBe(`eq.${C}`);
     expect(req?.url.searchParams.get('board')).toBe(`eq.${C}`);
     expect(req?.url.searchParams.get('order')).toBe('last_at.desc');
     expect(req?.url.searchParams.get('offset')).toBe('10');
@@ -153,9 +153,9 @@ describe('reads and their rows', () => {
   });
 
   it('reads only the counter for a page of no rows, and none of the list', async () => {
-    const h = harness(() => rows([{ thread_count: 37 }]));
+    const h = harness(() => rows([{ threads: 37 }]));
     expect(await h.api.threads(C, { offset: 0, limit: 0 })).toEqual({ threads: [], total: 37 });
-    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['boards']);
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['board_counts']);
     expect(await harness(() => rows([])).api.threads(C, { offset: 0, limit: 5 })).toEqual({ threads: [], total: 0 });
   });
 
@@ -375,11 +375,13 @@ describe('reads and their rows', () => {
 
   it('builds the board index from boards and thread_list', async () => {
     const h = harness((r) => {
-      if (r.url.pathname.endsWith('/boards')) return rows([{ id: C, slug: 'general', name: 'General', description: 'All', is_system: false, thread_count: 12, created_at: 'x' }]);
+      if (r.url.pathname.endsWith('/boards')) return rows([{ id: C, slug: 'general', name: 'General', description: 'All', is_system: false, created_at: 'x' }]);
+      if (r.url.pathname.endsWith('/board_counts')) return rows([{ board: C, threads: 12 }]);
       return rows([THREAD_ROW]);
     });
     const [board] = await h.api.boards();
-    expect(h.to('boards')[0]?.url.searchParams.get('select')).toBe('id,slug,name,description,is_system,thread_count');
+    expect(h.to('boards')[0]?.url.searchParams.get('select')).toBe('id,slug,name,description,is_system');
+    expect(h.to('board_counts')[0]?.url.searchParams.get('select')).toBe('board,threads');
     expect(h.to('thread_list').every((r) => r.method === 'GET' && !(r.headers.get('prefer') ?? '').includes('count'))).toBe(true);
     expect(board).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: false, threadCount: 12, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T });
     const latest = h.to('thread_list').find((r) => r.method === 'GET');

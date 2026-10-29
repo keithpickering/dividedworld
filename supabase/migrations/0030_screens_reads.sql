@@ -177,16 +177,36 @@ create view thread_list as
 
 -- How many threads a board holds, for the index and for a board's pager. A counter, kept by a trigger
 -- on a thread's creation (a thread is never deleted or moved, by append-only), and not a count of
--- thread_list: a board's page must cost its page however many threads the board has had. The price is
--- one more write, to the board's row, per thread started; threads are started far less often than
--- they are posted in, and the row is held only to the end of that one transaction. Public, as the
--- threads are; nothing in it depends on who started one.
-alter table boards add column thread_count integer not null default 0 check (thread_count >= 0);
+-- thread_list: a board's page must cost its page however many threads the board has had. Public, as
+-- the threads are; nothing in it depends on who started one.
+--
+-- Sharded, because one row per board would make every thread started on a board wait for the one
+-- before it to commit (and a settlement that debuts characters hold every other debut back, below):
+-- a counter row is locked until its transaction ends. A shard is taken with FOR UPDATE SKIP LOCKED, so
+-- a writer uses a shard no other open transaction holds, and a read is the sum of a board's four
+-- rows, a constant. Only if every shard is held by other open transactions does a writer wait, on the first.
+create table board_thread_counts (
+  board uuid not null references boards (id),
+  shard smallint not null check (shard >= 0),
+  threads integer not null default 0,
+  primary key (board, shard)
+);
+alter table board_thread_counts enable row level security;
+
+create function boards_make_thread_counts() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  insert into board_thread_counts (board, shard) select new.id, g from generate_series(0, 3) g;
+  return new;
+end $$;
+create trigger boards_make_thread_counts after insert on boards for each row execute function boards_make_thread_counts();
+insert into board_thread_counts (board, shard) select b.id, g from boards b, generate_series(0, 3) g;
 
 create function threads_count_board() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  update boards set thread_count = thread_count + 1 where id = new.board;
+  update board_thread_counts set threads = threads + 1
+   where board = new.board and shard = coalesce((select c.shard from board_thread_counts c where c.board = new.board order by c.shard for update skip locked limit 1), 0);
   return new;
 end $$;
 create trigger threads_count_board after insert on threads for each row execute function threads_count_board();
@@ -194,9 +214,13 @@ create trigger threads_count_board after insert on threads for each row execute 
 -- For boards that predate it; a function so a test can replay it, not callable by the API roles.
 create function backfill_board_counts() returns void
 language sql set search_path = public, pg_temp as $$
-  update boards b set thread_count = (select count(*) from threads t where t.board = b.id)
+  update board_thread_counts c set threads = case when c.shard = 0 then (select count(*) from threads t where t.board = c.board) else 0 end
 $$;
 select backfill_board_counts();
+
+-- A board's threads, one row each: the sum of its shards.
+create view board_counts as
+  select c.board, sum(c.threads)::integer as threads from board_thread_counts c group by c.board;
 
 -- ------------------------------------------------------------------ the season's standings ----
 
@@ -207,15 +231,16 @@ select backfill_board_counts();
 -- keeps reading season_standings.
 
 -- How many characters have debuted: the "of" in "Place 7 of 1,204", and the standings screen's pager.
--- A counter in a row of its own, kept by a trigger on a character's debut (a character created already
--- debuted, a waiting one that debuts), and not a count of characters. Debuts come in a batch at a
--- settlement, a few at a time, so one row is not contended. The same number season_standings lists.
+-- A counter, kept by a trigger on a character's debut (a character created already debuted, a waiting
+-- one that debuts), and not a count of characters; the same number season_standings lists. Sharded as
+-- board_thread_counts is, so a settlement that debuts characters, which holds its counter until it
+-- commits, does not make a character created at that moment wait for it.
 create table debuted_count (
-  only_row boolean primary key default true check (only_row),
-  characters integer not null default 0 check (characters >= 0)
+  shard smallint primary key check (shard >= 0),
+  characters integer not null default 0
 );
 alter table debuted_count enable row level security;
-insert into debuted_count default values;
+insert into debuted_count (shard) select g from generate_series(0, 3) g;
 
 create function characters_count_debuted() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -223,20 +248,23 @@ declare
   change integer := case when tg_op = 'DELETE' then 0 else (new.debuted_at is not null)::integer end
                   - case when tg_op = 'INSERT' then 0 else (old.debuted_at is not null)::integer end;
 begin
-  if change <> 0 then update debuted_count set characters = characters + change; end if;
+  if change <> 0 then
+    update debuted_count set characters = characters + change
+     where shard = coalesce((select d.shard from debuted_count d order by d.shard for update skip locked limit 1), 0);
+  end if;
   return null;
 end $$;
 create trigger characters_count_debuted after insert or update of debuted_at or delete on characters for each row execute function characters_count_debuted();
 
 create function backfill_debuted_count() returns void
 language sql set search_path = public, pg_temp as $$
-  update debuted_count set characters = (select count(*) from characters where debuted_at is not null)
+  update debuted_count set characters = case when shard = 0 then (select count(*) from characters where debuted_at is not null) else 0 end
 $$;
 select backfill_debuted_count();
 
 -- The count as a public view, for the standings screen's pager. A view runs as its owner, so the table
 -- stays unreadable by the API roles; the number is the length of a public list.
-create view season_size as select d.characters from debuted_count d;
+create view season_size as select sum(d.characters)::integer as characters from debuted_count d;
 
 -- A place is the number of characters standing higher, plus one; those counts are read from an index of
 -- the standings by amount, so they cost the characters ahead and never rank anyone.
@@ -258,7 +286,7 @@ create function standing_place(of_character uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   open_season bigint := coalesce((select id from seasons where ends_at is null), (select id from seasons order by starts_at desc limit 1));
-  size integer := (select d.characters from debuted_count d);
+  size integer := (select sum(d.characters) from debuted_count d);
   mine integer;
   ahead bigint;
 begin
@@ -325,12 +353,12 @@ create or replace view characters_public as
 
 -- --------------------------------------------------------------------------- grants ----
 
-revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_settings, thread_list, character_post_counts, debuted_count, season_size from anon, authenticated;
-grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list, character_post_counts, season_size to authenticated;
+revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_settings, thread_list, character_post_counts, board_thread_counts, board_counts, debuted_count, season_size from anon, authenticated;
+grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list, character_post_counts, board_counts, season_size to authenticated;
 create policy read_all on character_post_counts for select to authenticated using (true);
 grant select on screen_settings to anon, authenticated;
 revoke execute on function backfill_thread_counters(), backfill_character_post_counts(), acts_count_character(),
-  backfill_board_counts(), threads_count_board(), backfill_debuted_count(), characters_count_debuted(), standing_place(uuid) from public, anon, authenticated;
+  backfill_board_counts(), threads_count_board(), boards_make_thread_counts(), backfill_debuted_count(), characters_count_debuted(), standing_place(uuid) from public, anon, authenticated;
 grant execute on function standing_place(uuid) to authenticated;
 
 commit;

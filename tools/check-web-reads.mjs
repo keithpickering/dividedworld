@@ -31,7 +31,7 @@
  *   work per view that grows with the table ("Weigh a design at the scale of a busy instance"): a profile
  *   that counted a character's Acts to show a number it discarded, a board index that counted every board's
  *   threads, each paid more with every post. A total a screen shows is a counter a trigger keeps
- *   (boards.thread_count, character_post_counts, season_size) or an index range on the server. Options the
+ *   (board_counts, character_post_counts, season_size) or an index range on the server. Options the
  *   guard cannot read (a variable, a spread) fire as well, since they could hold a count.
  * - `@supabase/supabase-js` is imported, exported from, `import()`-ed or `require()`-d only in
  *   web/src/data/, the one place a client lives ("Portable by construction").
@@ -60,7 +60,7 @@ export const ALLOWED_READS = Object.freeze([
   // Public: what anyone could have watched.
   'boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'season_standings',
-  'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size',
+  'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',
   // The player's own.
   'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading',
   'account_preferences', 'effect_releases',
