@@ -101,7 +101,7 @@ describe('what the adapter may request', () => {
     });
     const api = h.api;
     await Promise.allSettled([
-      api.settings(), api.boards(), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A]), api.cardsOn(A),
+      api.settings(), api.boards(), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.standings(), api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
@@ -197,17 +197,28 @@ describe('reads and their rows', () => {
 
   it('reads the threads spun from several Acts in one request, and the card plays on one Act', async () => {
     const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
-    const spun = await h.api.spunFromMany([A, B, A]);
+    const spun = await h.api.spunFromMany([A, B, A], 50);
     expect(h.to('thread_list')).toHaveLength(1);
     expect(h.to('thread_list')[0]?.url.searchParams.get('origin_act_id')).toBe(`in.(${A},${B})`);
     expect(spun.map((t) => t.originActId)).toEqual([A]);
-    const cards = await h.api.cardsOn(A);
+    const cards = await h.api.cardsOn(A, 21);
     const p = h.to('acts_public')[0]?.url.searchParams;
     expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order')]).toEqual(['eq.card', `eq.${A}`, 'created_at.asc']);
     expect(cards.map((c) => c.kind)).toEqual(['card']);
-    expect(await h.api.spunFromMany(['x),y'])).toEqual([]);
-    expect(await h.api.cardsOn('x),y')).toEqual([]);
+    expect(await h.api.spunFromMany(['x),y'], 5)).toEqual([]);
+    expect(await h.api.cardsOn('x),y', 5)).toEqual([]);
     expect(h.to('thread_list')).toHaveLength(1);
+  });
+
+  it('limits every list read of spins and card plays: ordered, and never more than the row cap', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/thread_list') ? rows([{ ...THREAD_ROW, origin_act_id: A }]) : rows([{ ...ACT_ROW, kind: 'card', target_act_id: A }])));
+    await h.api.spunFromMany([A, B], 120);
+    await h.api.spunFrom(A);
+    await h.api.spunFromMany([A], 5000);
+    await h.api.cardsOn(A, 21);
+    const spun = h.to('thread_list').map((r) => [r.url.searchParams.get('order'), r.url.searchParams.get('limit')]);
+    expect(spun).toEqual([['created_at.asc', '120'], ['created_at.asc', '200'], ['created_at.asc', '1000']]);
+    expect([h.to('acts_public')[0]?.url.searchParams.get('order'), h.to('acts_public')[0]?.url.searchParams.get('limit')]).toEqual(['created_at.asc', '21']);
   });
 
   it('refuses to put a non-id into a filter', async () => {
@@ -332,17 +343,22 @@ describe('failures', () => {
   it('never resends a write: a 503 passes its words through, a thrown fetch says it may have gone through', async () => {
     const words = 'no answer came back, so this may have gone through: look before you try again';
     const lost = harness(() => json({ error: words }, 503));
-    expect(await lost.api.post(T, B, 'hi', null)).toEqual({ ok: false, error: words });
+    expect(await lost.api.post(T, B, 'hi', null)).toEqual({ ok: false, error: words, uncertain: true });
     expect(lost.log.filter((r) => r.url.pathname === '/functions/v1/act')).toHaveLength(1);
 
     const thrown = harness(() => new TypeError('network'));
     const r = await thrown.api.react(A, B, 'fire');
     expect(r.ok).toBe(false);
     expect(r.ok === false && r.error).toContain('may have gone through');
+    expect(r.ok === false && r.uncertain).toBe(true);
     expect(thrown.log.filter((x) => x.url.pathname === '/functions/v1/act')).toHaveLength(1);
 
     const rpcDown = harness(() => json({ message: 'down' }, 503));
-    expect((await rpcDown.api.setPreferences({ theme: 'dark' })).ok).toBe(false);
+    const down = await rpcDown.api.setPreferences({ theme: 'dark' });
+    expect(down.ok === false && down.uncertain).toBe(true);
+    /* A refusal in the server's words is no lost answer. */
+    const refused = harness(() => json({ error: 'you cannot do that' }, 409));
+    expect(await refused.api.post(T, B, 'hi', null)).toEqual({ ok: false, error: 'you cannot do that' });
     expect(rpcDown.to('rpc/set_preferences')).toHaveLength(1);
   });
 });

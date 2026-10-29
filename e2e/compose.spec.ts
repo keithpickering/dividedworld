@@ -22,6 +22,23 @@ test('replies with the keyboard only: Tab to the box, type, Send with Enter on t
   await page.keyboard.press('Enter');
   await expect(page.locator('.kb-act', { hasText: 'Reply from the keyboard.' })).toBeVisible();
   await expect(box).toHaveValue('');
+  /* Focus follows the reply: it lands on the new post, and the thread's polite region says so. */
+  const posted = page.locator('.kb-act', { hasText: 'Reply from the keyboard.' });
+  await expect(posted).toBeFocused();
+  await expect(page.locator('.kb-thread [aria-live="polite"]')).toContainText('Reply posted');
+});
+
+test('a toolbar press can be undone with Ctrl+Z', async ({ page }) => {
+  await page.goto('/b/general');
+  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  const box = page.getByRole('textbox', { name: 'Your reply' });
+  await box.fill('make this loud');
+  await box.evaluate((el: HTMLTextAreaElement) => { el.setSelectionRange(5, 9); });
+  await page.getByRole('button', { name: 'Bold' }).click();
+  await expect(box).toHaveValue('make [b]this[/b] loud');
+  await box.focus();
+  await page.keyboard.press('Control+z');
+  await expect(box).toHaveValue('make this loud');
 });
 
 test('spins a thread from a post and lands on its ORIGIN box', async ({ page }) => {
@@ -34,6 +51,7 @@ test('spins a thread from a post and lands on its ORIGIN box', async ({ page }) 
   await expect(page.getByRole('heading', { level: 1, name: 'A spin from the tea thread' })).toBeVisible();
   const origin = page.getByRole('group', { name: 'Origin' });
   await expect(origin).toBeVisible();
+  await expect(origin).toBeFocused();
   await expect(origin).toContainText('Every post I make');
   await expect(origin.getByRole('link', { name: /in Who keeps reacting with tea\?/ })).toBeVisible();
 });

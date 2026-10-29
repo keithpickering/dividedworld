@@ -21,6 +21,7 @@
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { sameName } from '../../rules/names.ts';
+import { LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Board, BoardListener, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness,
   DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
@@ -73,6 +74,11 @@ export interface Seed {
   card(character: Id, target: Id, card: string, options?: { message?: string; at?: number }): Id;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
+  /**
+   * The next post, edit or spin gets no answer, as when the network drops: it answers with an
+   * uncertain refusal. `went` says whether the server did it before the answer was lost.
+   */
+  loseNextAnswer(went: boolean): void;
 }
 
 interface SeedAct {
@@ -301,6 +307,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (c.retiredAt !== null) return refuse('that character is retired; an admin can restore it');
     return c;
   }
+  /* The next write whose answer is lost (see `Seed.loseNextAnswer`). */
+  let losing: { readonly went: boolean } | null = null;
+  const lossy = <A extends unknown[], R>(run: (...a: A) => Answer<R>) => (...a: A): Answer<R> => {
+    const lose = losing;
+    if (!lose) return run(...a);
+    losing = null;
+    if (lose.went) run(...a);
+    return { ok: false, error: LOST_ANSWER, uncertain: true };
+  };
   const isRefusal = (x: unknown): x is Refusal => typeof x === 'object' && x !== null && (x as Refusal).ok === false;
 
   /** The Edge Function's reading of a request: signed in, then well formed. */
@@ -571,12 +586,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }));
       return [{ ...publicAct(original), currentPayload: original.payload, editedAt: null, shownEditedAt: null }, ...versions];
     },
-    spunFrom: (act) => [...threads.values()].filter((t) => t.origin === act).map(summary),
-    spunFromMany(ids) {
+    spunFrom: (act, limit = SPUN_FROM_MAX) => [...threads.values()].filter((t) => t.origin === act).sort((a, b) => a.at - b.at).slice(0, limit).map(summary),
+    spunFromMany(ids, limit) {
       const wanted = new Set(ids);
-      return [...threads.values()].filter((t) => t.origin !== null && wanted.has(t.origin)).sort((a, b) => a.at - b.at).map(summary);
+      return [...threads.values()].filter((t) => t.origin !== null && wanted.has(t.origin)).sort((a, b) => a.at - b.at).slice(0, limit).map(summary);
     },
-    cardsOn: (act) => [...acts.values()].filter((a) => a.kind === 'card' && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).map(publicAct),
+    cardsOn: (act, limit) => [...acts.values()].filter((a) => a.kind === 'card' && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct),
     characters: (ids) => ids.map((id) => characters.get(id)).filter((c): c is CharRec => c !== undefined && c.debutedAt !== null).map(publicCharacter),
     characterCounts(id) {
       const c = characters.get(id);
@@ -700,7 +715,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     createInvite, reissueInvite,
 
-    startThread, post, edit, spin, react, turn, withdrawTurn, unmask, createCharacter, setDebut,
+    startThread, post: lossy(post), edit: lossy(edit), spin: lossy(spin), react, turn, withdrawTurn, unmask, createCharacter, setDebut,
     setProfile(character, title, signature, pipStyle) {
       const c = acting(character);
       if (isRefusal(c)) return c;
@@ -863,6 +878,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o?.message !== undefined) payload.message = o.message;
       return asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload })).id;
     },
+    loseNextAnswer(went) { losing = { went }; },
     effect(thread, play) {
       const savedAt = iso(now());
       send(`thread:${thread}`, 'effect', () => { for (const l of [...(threadListeners.get(thread) ?? [])]) l.onEffect?.(play, savedAt); });

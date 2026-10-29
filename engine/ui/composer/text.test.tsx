@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { applyTool, quoteText } from './text.ts';
+import { applyTool, diffRange, quoteText } from './text.ts';
 
 describe('what a toolbar press does to the text', () => {
   test('wraps the selection and keeps it selected inside the tags', () => {
@@ -26,5 +26,16 @@ describe('what a toolbar press does to the text', () => {
     expect(quoteText('', 'id1', 'words')).toBe('[quote=id1]words[/quote]\n');
     expect(quoteText('mine', 'id1', 'words')).toBe('mine\n[quote=id1]words[/quote]\n');
     expect(quoteText('mine\n', 'id1', 'words')).toBe('mine\n[quote=id1]words[/quote]\n');
+  });
+});
+
+describe('diffRange', () => {
+  test('is the one replacement that turns one text into the other', () => {
+    for (const [before, after] of [['hi', '[b]hi[/b]'], ['make this loud', 'make [b]this[/b] loud'], ['', 'abc'], ['abc', ''], ['aaa', 'aaaa'], ['a😀b', 'a😁b'], ['x😀', 'x😀😀']] as const) {
+      const d = diffRange(before, after);
+      expect(before.slice(0, d.start) + d.insert + before.slice(d.end)).toBe(after);
+    }
+    expect(diffRange('hi', '[b]hi[/b]')).toEqual({ start: 0, end: 2, insert: '[b]hi[/b]' });
+    expect(diffRange('abc\n', 'abc\n[quote=1]q[/quote]\n')).toEqual({ start: 4, end: 4, insert: '[quote=1]q[/quote]\n' });
   });
 });

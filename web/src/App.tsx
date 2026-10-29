@@ -7,20 +7,26 @@ import type { KayfaApi, ScreenSettings } from '../../engine/ui/data/api.ts';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
+import { Characters } from '../../engine/ui/characters/Characters.tsx';
+import { NewCharacter } from '../../engine/ui/characters/NewCharacter.tsx';
 import { Frame } from '../../engine/ui/frame/Frame.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
+import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
 import { RouterProvider } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 
-const LINKS = [{ to: '/', label: 'Index' }];
+const LINKS = [{ to: '/', label: 'Index' }, { to: '/characters', label: 'Characters' }];
 
 const ROUTES: readonly Route[] = [
   { path: '/', render: () => <IndexScreen /> },
   { path: '/b/:slug', render: ({ slug }) => <BoardScreen slug={slug!} /> },
+  { path: '/characters', render: () => <Characters /> },
+  { path: '/characters/new', render: () => <NewCharacter /> },
+  { path: '/characters/:id/edit', render: ({ id }) => <ProfileEdit id={id!} /> },
   { path: '/t/:thread', render: ({ thread }) => <ThreadScreen thread={thread!} /> },
 ];
 

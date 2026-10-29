@@ -40,11 +40,11 @@ export function debutPreview(o: { readonly name: string; readonly className: str
   };
 }
 
-export function turnPreview(o: { readonly name: string; readonly from: string; readonly to: string; readonly loudness: 'silent' | 'announced'; readonly showFrom: boolean; readonly showTo: boolean }): Preview {
+export function turnPreview(o: { readonly name: string; readonly was: string; readonly to: string; readonly loudness: 'silent' | 'announced'; readonly showFrom: boolean; readonly showTo: boolean }): Preview {
   if (o.loudness === 'silent') {
     return { lines: [], nothing: `Nothing is posted. Nobody is told that ${o.name} has Turned.`, where: 'At the next settlement' };
   }
-  const tally = `${o.name} has Turned${o.showFrom ? ` from ${o.from}` : ''}${o.showTo ? ` to ${o.to}` : ''}`;
+  const tally = `${o.name} has Turned${o.showFrom ? ` from ${o.was}` : ''}${o.showTo ? ` to ${o.to}` : ''}`;
   return {
     lines: o.showTo ? [say(tally), say(`${o.name} revealed: ${o.to}`)] : [say(tally)],
     nothing: null,

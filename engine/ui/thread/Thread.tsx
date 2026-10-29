@@ -79,6 +79,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const mine = useMemo(() => createMine(), []);
   /* Whether this is a thread of The System's board, where replies are spins and there is no reply box. */
   const [systemBoard, setSystemBoard] = useState<boolean | null>(null);
+  /* The boards could not be read, so which kind of board this is is unknown: neither the reply box nor the System's note is shown. */
+  const [boardUnread, setBoardUnread] = useState(false);
   const composer = useRef<ComposerHandle>(null);
 
   /* The player, read by callbacks that must not change when it does. */
@@ -195,13 +197,15 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const wanted = goal.current.seq !== null ? pageOf(goal.current.seq, P) : goal.current.page ?? 1;
       const page = Math.min(Math.max(1, wanted), last);
       const { start, end } = pageRange(page, P);
-      const [acts, reading, prefs, boards] = await Promise.all([api.acts(thread, start, end), api.reading([thread]), api.preferences(), api.boards().catch(() => [])]);
+      const [acts, reading, prefs, boards] = await Promise.all([api.acts(thread, start, end), api.reading([thread]), api.preferences(), api.boards().catch(() => null)]);
       await prepare(acts);
       if (!live) return;
       sent.current = Math.max(sent.current, reading[thread] ?? 0);
       setLayout(prefs.postbit);
       /* Known before the first post is drawn, so the reply box and the posts' Quote links do not change the page after it. */
-      setSystemBoard(boards.find((b) => b.id === summary.board)?.isSystem ?? false);
+      const board = boards?.find((b) => b.id === summary.board);
+      setSystemBoard(board ? board.isSystem : null);
+      setBoardUnread(!board);
       dispatch({ type: 'loaded', summary, firstPage: page, lastPage: page, acts, tailLoaded: acts.length < end - start + 1 });
       setStatus('ready');
       const seq = goal.current.seq !== null && goal.current.seq <= summary.lastSeq ? goal.current.seq : null;
@@ -371,7 +375,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
 
-  /* The latest post to quote from the toolbar. */
+  /* The last post shown, to quote from the toolbar (the thread's latest only when its tail is on screen). */
   const latest = useMemo(() => {
     for (let i = shown.length - 1; i >= 0; i--) {
       const a = shown[i]!;
@@ -380,12 +384,23 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     return null;
   }, [shown]);
 
-  /* A reply the player just made: shown at once at the foot, or, when the foot is not loaded, opened at its page. */
+  /* A reply the player just made: shown at once at the foot, or, when the foot is not loaded, opened at its page. Focus goes to it and the polite region says so. */
   const posted = async (a: Act) => {
-    await ensurePeople([a.character]);
+    announcedIds.current.add(a.id);
+    setLines((l) => [...l, { key: ++lineKey.current, text: 'Reply posted' }].slice(-ANNOUNCED));
+    try { await ensurePeople([a.character]); } catch { /* shown as "A character"; the post is not lost */ }
     dispatch({ type: 'live', act: a });
+    if (a.seq !== null) scrollTo.current = { seq: a.seq, scroll: false, focus: true };
     if (feedRef.current.tailLoaded) dispatch({ type: 'release', slide: !motionReduced(), force: true });
     else if (a.seq !== null) navigate(threadHref(thread, pageOf(a.seq, P), a.seq));
+  };
+  /* Which kind of board this is, read again after it could not be. */
+  const readBoard = async () => {
+    try {
+      const board = (await api.boards()).find((b) => b.id === feedRef.current.summary?.board);
+      setSystemBoard(board ? board.isSystem : null);
+      setBoardUnread(!board);
+    } catch { setBoardUnread(true); }
   };
 
   /* The bar's way out: read what is missing before the held posts if there is a gap (and show them anyway if it cannot be read). */
@@ -468,9 +483,14 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       {systemBoard !== null && (
         <ActIndex.Provider value={index}>
           <ThreadCtx.Provider value={context}>
-            {systemBoard ? <SystemBoardNote /> : <Composer ref={composer} thread={thread} latest={latest} onPosted={(a) => void posted(a)} />}
+            {systemBoard ? <SystemBoardNote /> : <Composer ref={composer} thread={thread} latest={latest} since={() => feedRef.current.knownLast} onPosted={(a) => void posted(a)} />}
           </ThreadCtx.Provider>
         </ActIndex.Provider>
+      )}
+      {systemBoard === null && boardUnread && (
+        <p className="kb-composer-note kb-notice" data-kb-tone="refusal">
+          The board this thread is on could not be read, so the reply box is left out. <button type="button" className="kb-link-button" onClick={() => void readBoard()}>Try again</button>
+        </p>
       )}
       <div className="kb-visually-hidden" role="status" aria-live="polite" aria-atomic="false">
         {lines.map((l) => <p key={l.key}>{l.text}</p>)}

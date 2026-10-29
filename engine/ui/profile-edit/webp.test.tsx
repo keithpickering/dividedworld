@@ -60,3 +60,29 @@ describe('webpProblem: nothing but pixels', () => {
     expect(webpProblem(Uint8Array.from(ascii('not a webp at all, not a webp at all')))).toBe('is not a WebP');
   });
 });
+
+describe('stripColorProfile: the canvas\'s own sRGB profile is dropped, and only that', async () => {
+  const { stripColorProfile } = await import('./webp.ts');
+  const { webpBytes } = await import('./fixtures.ts');
+
+  test('a browser\'s canvas file with a color profile is refused as it is, and clean once the profile is dropped', () => {
+    const canvasFile = webpBytes(256, 256, { icc: true });
+    expect(webpProblem(canvasFile)).toMatch(/ICCP/u);
+    const stripped = stripColorProfile(canvasFile);
+    expect(webpProblem(stripped)).toBeNull();
+    expect(webpSize(stripped)).toEqual({ width: 256, height: 256 });
+    const read = webpChunks(stripped);
+    expect(read.ok && read.chunks.map((c) => c.kind)).toEqual(['VP8X', 'VP8 ']);
+    expect(read.ok && read.flags).toBe(0);
+  });
+
+  test('leaves a file without one as it was', () => {
+    const plain = webpBytes(256, 256);
+    expect(stripColorProfile(plain)).toEqual(plain);
+  });
+
+  test('does not clean up metadata: a file with EXIF still fires after it', () => {
+    const both = stripColorProfile(webpBytes(256, 256, { icc: true, exif: true }));
+    expect(webpProblem(both)).toMatch(/EXIF/u);
+  });
+});

@@ -678,14 +678,33 @@ describe('what a list row shows', () => {
     const a = must(await fake.spin(opener, anaFace, 'From the first', ''));
     const b = must(await fake.spin(second.id, anaFace, 'From the second', ''));
     must(await fake.spin(a.act.id, anaFace, 'From a spin', ''));
-    const many = await fake.spunFromMany([opener, second.id]);
+    const many = await fake.spunFromMany([opener, second.id], 50);
     expect(many.map((t) => [t.id, t.originActId])).toEqual([[a.thread.id, opener], [b.thread.id, second.id]]);
-    expect(await fake.spunFromMany([])).toEqual([]);
+    expect(await fake.spunFromMany([], 50)).toEqual([]);
     fake.seed.card(boFace, second.id, 'whoops', { message: 'oops' });
     fake.seed.card(boFace, opener, 'whoops');
-    const on = await fake.cardsOn(second.id);
+    const on = await fake.cardsOn(second.id, 50);
     expect(on.map((c) => [c.kind, c.targetActId, c.payload])).toEqual([['card', second.id, { card: 'whoops', message: 'oops' }]]);
-    expect(await fake.cardsOn(a.act.id)).toEqual([]);
+    expect(await fake.cardsOn(a.act.id, 50)).toEqual([]);
+    /* Each read stops at its limit, oldest first. */
+    expect((await fake.spunFromMany([opener, second.id], 1)).map((t) => t.id)).toEqual([a.thread.id]);
+    expect(await fake.spunFrom(opener, 0)).toEqual([]);
+    fake.seed.card(boFace, second.id, 'whoops', { message: 'again' });
+    expect(await fake.cardsOn(second.id, 1)).toHaveLength(1);
+  });
+
+  test('loseNextAnswer: the next post answers with an uncertain refusal, done or not as asked, once', async () => {
+    const { fake, anaFace, thread } = world();
+    fake.seed.loseNextAnswer(true);
+    const lost = await fake.post(thread, anaFace, 'did go', null);
+    expect(lost).toEqual({ ok: false, error: expect.stringContaining('may have gone through'), uncertain: true });
+    fake.seed.loseNextAnswer(false);
+    expect((await fake.post(thread, anaFace, 'did not go', null)).ok).toBe(false);
+    expect((await fake.post(thread, anaFace, 'plain', null)).ok).toBe(true);
+    const bodies = (await fake.acts(thread, 1, 99)).map((a) => a.payload.body);
+    expect(bodies).toContain('did go');
+    expect(bodies).not.toContain('did not go');
+    expect(bodies).toContain('plain');
   });
 
   test('a player\'s seeded Act takes the time it is given, as The System\'s does', async () => {

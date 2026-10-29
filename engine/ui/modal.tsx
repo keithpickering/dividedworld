@@ -39,8 +39,11 @@ export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
     open.current = true;
     return () => {
       open.current = false;
-      if (opener?.isConnected && opener !== document.body) opener.focus();
-      else latest.current.returnFocusTo?.()?.focus();
+      /* After the commit that closes it: the control that opened it may be replaced by that same commit. */
+      queueMicrotask(() => {
+        if (opener?.isConnected && opener !== document.body) opener.focus();
+        else latest.current.returnFocusTo?.()?.focus();
+      });
     };
   }, []);
 

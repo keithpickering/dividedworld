@@ -109,3 +109,11 @@ export function cutRect(frame: Frame, within: Size): { readonly x: number; reado
 export function composeFrames(portrait: Frame, inside: Frame): Frame {
   return { x: portrait.x + inside.x * portrait.w, y: portrait.y + inside.y * portrait.h, w: inside.w * portrait.w, h: inside.h * portrait.h };
 }
+
+/** A square frame kept square in pixels after its portrait changed shape: its width kept where the portrait allows, then held inside. */
+export function reshapeSquare(square: Frame, portrait: Size): Frame {
+  const side = Math.min(square.w * portrait.width, portrait.width, portrait.height);
+  const w = side / portrait.width;
+  const h = side / portrait.height;
+  return { x: clamp(square.x, 0, 1 - w), y: clamp(square.y, 0, 1 - h), w, h };
+}

@@ -18,6 +18,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Estimate, HeldCard, Id, KayfaApi, MyCharacter, Session, Wallet } from './data/api.ts';
+import { clearDrafts } from './composer/draft.ts';
 
 export interface Player {
   readonly session: Session;
@@ -94,7 +95,12 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   useEffect(() => {
     let live = true;
     void api.session().then((s) => { if (live) setSession(s); });
-    const off = api.onSession((s) => setSession(s));
+    const off = api.onSession((s) => {
+      /* Signing out (or switching) takes the account's unsent drafts off this device. */
+      const was = current.current;
+      if (was && s.account !== was) clearDrafts(was);
+      setSession(s);
+    });
     return () => { live = false; off(); };
   }, [api]);
 

@@ -18,12 +18,13 @@ export async function createBackend(): Promise<KayfaApi> {
   if (import.meta.env.PROD && !e2e) {
     throw new Error('This build names no Supabase project: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY when building.');
   }
-  const [{ createFake }, { instance }, { seedDemo }] = await Promise.all([
+  const [{ createFake }, { instance }, { seedDemo, recordAvatarUploads }] = await Promise.all([
     import('../../../engine/ui/data/fake.ts'),
     import('../../../instances/divided-world/index.ts'),
     import('../demo.ts'),
   ]);
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
+  if (e2e) recordAvatarUploads(fake);
   return fake;
 }

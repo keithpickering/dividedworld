@@ -49,3 +49,21 @@ export function quoteText(draft: string, act: string, body: string): string {
   const lead = draft === '' || draft.endsWith('\n') ? draft : `${draft}\n`;
   return `${lead}[quote=${act}]${body}[/quote]\n`;
 }
+
+/**
+ * What differs between two texts as one replacement: the span of `before` from `start` to `end`
+ * becomes `insert`. The box applies a toolbar press or a quote as that one insertion so the
+ * browser keeps its undo; a pair of surrogates is never split.
+ */
+export function diffRange(before: string, after: string): { readonly start: number; readonly end: number; readonly insert: string } {
+  const surrogate = (s: string, i: number) => i > 0 && i < s.length && s.charCodeAt(i) >= 0xdc00 && s.charCodeAt(i) <= 0xdfff;
+  let start = 0;
+  const most = Math.min(before.length, after.length);
+  while (start < most && before.charCodeAt(start) === after.charCodeAt(start)) start += 1;
+  while (start > 0 && surrogate(before, start)) start -= 1;
+  let end = before.length;
+  let tail = after.length;
+  while (end > start && tail > start && before.charCodeAt(end - 1) === after.charCodeAt(tail - 1)) { end -= 1; tail -= 1; }
+  while (tail < after.length && (surrogate(before, end) || surrogate(after, tail))) { end += 1; tail += 1; }
+  return { start, end, insert: after.slice(start, tail) };
+}

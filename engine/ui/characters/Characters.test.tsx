@@ -46,11 +46,11 @@ describe('My characters', () => {
     expect(within(r).getByText('only you')).toBeInTheDocument();
     expect(within(r).getByText(/Face/u)).toBeInTheDocument();
     expect(within(r).getByText(/since Oct 1/u)).toBeInTheDocument();
-    expect(within(r).getByText('14.20')).toBeInTheDocument();
+    expect(await within(r).findByText('14.20')).toBeInTheDocument();
     expect(within(r).getByRole('img', { name: /^Rank \d of \d: / })).toBeInTheDocument();
     expect(within(r).getByRole('button', { name: 'Turn Pipewrench' })).toBeEnabled();
     expect(within(r).getByRole('link', { name: 'Edit profile' })).toBeInTheDocument();
-    expect(screen.getByText(/3 of 4 characters/u)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Your characters (3 of 4)' })).toBeInTheDocument();
   });
 
   test('says when a Turn opens instead of offering it, and why', async () => {

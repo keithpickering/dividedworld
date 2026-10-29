@@ -108,3 +108,20 @@ describe('what is cut and what is sent', () => {
     expect(outputSize({ width: 300, height: 601 }).height).toBeLessThanOrEqual(600);
   });
 });
+
+describe('the square follows its portrait', () => {
+  test('stays square in pixels when the portrait is reshaped, and inside it', async () => {
+    const { reshapeSquare } = await import('./frames.ts');
+    const portrait = { width: 400, height: 800 };
+    const sq = reshapeSquare({ x: 0.2, y: 0.1, w: 0.5, h: 0.25 }, { width: 400, height: 500 });
+    expect(framePixels(sq, { width: 400, height: 500 }).width).toBeCloseTo(framePixels(sq, { width: 400, height: 500 }).height);
+    const squeezed = reshapeSquare({ x: 0, y: 0, w: 1, h: 0.5 }, { width: 400, height: 300 });
+    expect(squeezed.w).toBeLessThanOrEqual(1);
+    expect(squeezed.h).toBeLessThanOrEqual(1);
+    expect(framePixels(squeezed, { width: 400, height: 300 }).width).toBeCloseTo(framePixels(squeezed, { width: 400, height: 300 }).height);
+    expect(reshapeSquare({ x: 0, y: 0, w: 1, h: 0.5 }, portrait)).toEqual({ x: 0, y: 0, w: 1, h: 0.5 });
+    const edge = reshapeSquare({ x: 0.5, y: 0.5, w: 0.5, h: 0.25 }, { width: 400, height: 800 });
+    expect(edge.x + edge.w).toBeLessThanOrEqual(1 + 1e-9);
+    expect(edge.y + edge.h).toBeLessThanOrEqual(1 + 1e-9);
+  });
+});

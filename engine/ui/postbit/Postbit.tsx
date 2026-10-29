@@ -50,7 +50,7 @@ function Avatar({ character, layout }: { readonly character: Character; readonly
 }
 
 /** The rank's pips: as many as the instance has ranks, the first (rank index + 1) filled. */
-function Pips({ ranks, index, name, style }: { readonly ranks: number; readonly index: number; readonly name: string; readonly style: { readonly full: string; readonly empty: string } | undefined }) {
+export function Pips({ ranks, index, name, style }: { readonly ranks: number; readonly index: number; readonly name: string; readonly style: { readonly full: string; readonly empty: string } | undefined }) {
   const images = style ? ({ '--kb-pip-full': `url("${style.full}")`, '--kb-pip-none': `url("${style.empty}")` } as CSSProperties) : undefined;
   return (
     <span className="kb-pips" role="img" aria-label={`Rank ${index + 1} of ${ranks}: ${name}`} style={images}>

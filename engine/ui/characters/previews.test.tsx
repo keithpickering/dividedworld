@@ -42,7 +42,7 @@ describe('the preview of a debut', () => {
 });
 
 describe('the preview of a Turn', () => {
-  const base = { name: 'Pipewrench', from: 'Heel', to: 'Face' };
+  const base = { name: 'Pipewrench', was: 'Heel', to: 'Face' };
 
   test('silent says nobody is told, and names no class', () => {
     const p = turnPreview({ ...base, loudness: 'silent', showFrom: false, showTo: false });
@@ -92,14 +92,14 @@ describe('the preview and the thread say the same words', () => {
     ] as const;
     for (const [entry, showFrom, showTo] of cases) {
       const said = lineOf({ turns: [entry] });
-      expect(text(turnPreview({ name: 'Pipewrench', from: 'Heel', to: 'Face', loudness: 'announced', showFrom, showTo }).lines)[0]).toBe(said);
+      expect(text(turnPreview({ name: 'Pipewrench', was: 'Heel', to: 'Face', loudness: 'announced', showFrom, showTo }).lines)[0]).toBe(said);
     }
   });
 
   test('a reveal', () => {
     renderInWorld(<UnmaskLine act={{ payload: { class: 'face', message: '' } } as unknown as Act} name="Pipewrench" />);
     const said = document.querySelector('p')!.textContent;
-    expect(text(turnPreview({ name: 'Pipewrench', from: 'Heel', to: 'Face', loudness: 'announced', showFrom: false, showTo: true }).lines)[1]).toBe(said);
+    expect(text(turnPreview({ name: 'Pipewrench', was: 'Heel', to: 'Face', loudness: 'announced', showFrom: false, showTo: true }).lines)[1]).toBe(said);
     render(<span />);
     expect(screen.queryByText('x')).toBeNull();
   });

@@ -189,7 +189,7 @@ describe('the quick reply', () => {
 });
 
 describe('the toolbar', () => {
-  const tools = ['Bold', 'Italic', 'Underline', 'Strikethrough', 'Link', 'Image', 'Quote the latest post', 'Code', 'List'];
+  const tools = ['Bold', 'Italic', 'Underline', 'Strikethrough', 'Link', 'Image', 'Quote the last post shown', 'Code', 'List'];
 
   test('has a labeled button for each tool, as one stop on the Tab order that the arrow keys move along', async () => {
     const w = threadWorld();
@@ -225,7 +225,7 @@ describe('the toolbar', () => {
     const w = threadWorld(3);
     openThread(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
-    await userEvent.click(await screen.findByRole('button', { name: 'Quote the latest post' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Quote the last post shown' }));
     expect(await replyBox()).toHaveValue(`[quote=${w.ids[2]}]post 3[/quote]\n`);
   });
 });
@@ -413,6 +413,6 @@ describe('editing', () => {
     fireEvent.select(box);
     await userEvent.click(within(mine).getByRole('button', { name: 'Italic' }));
     expect(box).toHaveValue('[i]post[/i] 2');
-    expect(within(mine).queryByRole('button', { name: 'Quote the latest post' })).toBeNull();
+    expect(within(mine).queryByRole('button', { name: 'Quote the last post shown' })).toBeNull();
   });
 });

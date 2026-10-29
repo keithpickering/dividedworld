@@ -24,6 +24,7 @@
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Board, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
   Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
@@ -45,9 +46,12 @@ export interface SupabaseApiOptions {
 type Row = Record<string, any>;
 
 const REFUSAL_HINT = 'kayfabb.refusal';
-const LOST = 'no answer came back, so this may have gone through: look before you try again';
+const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
 const NOT_READ = 'that could not be read right now; try again';
+/** PostgREST answers at most this many rows to one request unless told fewer; every list read here asks for fewer, ordered. */
+const ROW_CAP = 1000;
+const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /* ------------------------------------------------------------------- row mappers ---- */
@@ -212,6 +216,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   }
 
   const refusal = (error: string, field?: string): Refusal => (field ? { ok: false, error, field } : { ok: false, error });
+  /** No answer came back from a write: it may have gone through, and the caller looks before it tries again. */
+  const uncertain = (): Refusal => ({ ok: false, error: LOST, uncertain: true });
 
   /** One POST to an edge function. `resend` is true only for a read (the estimate), never for a write. */
   async function edge(fn: string, body: unknown, lost: string, resend = false): Promise<Answer<Row>> {
@@ -231,7 +237,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     };
     let got = await send();
     if (resend && (got === null || got.status >= 500)) got = await send();
-    if (got === null) return refusal(lost);
+    if (got === null) return resend || lost !== LOST ? refusal(lost) : uncertain();
     let parsed: Row | null = null;
     try {
       const p: unknown = JSON.parse(got.text);
@@ -241,6 +247,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     }
     if (got.status >= 200 && got.status < 300 && parsed) return { ok: true, value: parsed };
     const words = parsed ? str(parsed['error']) : null;
+    /* A 5xx from a write is an answer that may not say whether it was done: its words are shown, and the caller looks before it resends. */
+    if (got.status >= 500 && !resend && lost === LOST) return { ok: false, error: words ?? LOST, uncertain: true };
     if (words) return refusal(words, str(parsed?.['field']) ?? undefined);
     return refusal(got.status >= 500 ? lost : NOT_DONE);
   }
@@ -251,11 +259,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     try {
       r = (await run()) as Res;
     } catch {
-      return refusal(LOST);
+      return uncertain();
     }
     if (!r.error) return { ok: true, value: (r.data && typeof r.data === 'object' ? r.data : {}) as Row };
     if (r.error.hint === REFUSAL_HINT && r.error.message) return refusal(r.error.message);
-    return refusal(r.status === 0 || r.status >= 500 ? LOST : NOT_DONE);
+    return r.status === 0 || r.status >= 500 ? uncertain() : refusal(NOT_DONE);
   }
 
   /* ----------------------------------------------------------------- session ---- */
@@ -494,19 +502,20 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const rows = await list(() => client.from('acts_public').select('*').or(`id.eq.${post},and(kind.eq.edit,target_act_id.eq.${post})`).order('created_at', { ascending: true }));
       return rows.map(toAct);
     },
-    async spunFrom(actId) {
-      const rows = await list(() => client.from('thread_list').select('*').eq('origin_act_id', actId).order('created_at', { ascending: true }));
+    async spunFrom(actId, limit = SPUN_FROM_MAX) {
+      if (!idOk(actId)) return [];
+      const rows = await list(() => client.from('thread_list').select('*').eq('origin_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
       return rows.map(toThread);
     },
-    async spunFromMany(actIds) {
+    async spunFromMany(actIds, limit) {
       const wanted = [...new Set(actIds)].filter(idOk);
       if (wanted.length === 0) return [];
-      const rows = await list(() => client.from('thread_list').select('*').in('origin_act_id', wanted).order('created_at', { ascending: true }));
+      const rows = await list(() => client.from('thread_list').select('*').in('origin_act_id', wanted).order('created_at', { ascending: true }).limit(rowLimit(limit)));
       return rows.map(toThread);
     },
-    async cardsOn(actId) {
+    async cardsOn(actId, limit) {
       if (!idOk(actId)) return [];
-      const rows = await list(() => client.from('acts_public').select('*').eq('kind', 'card').eq('target_act_id', actId).order('created_at', { ascending: true }));
+      const rows = await list(() => client.from('acts_public').select('*').eq('kind', 'card').eq('target_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
       return rows.map(toAct);
     },
     characters,

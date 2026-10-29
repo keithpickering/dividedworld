@@ -40,3 +40,20 @@ export function seedDemo(fake: Fake): Demo {
   fake.signInAs(me);
   return { me, other, characters: { pipewrench, hooligan, spritey }, thread, longThread: long.thread };
 }
+
+/**
+ * For the end-to-end flows only: keep the bytes of each avatar upload on `globalThis.__kbAvatars`,
+ * so a test can read the files the browser's canvas really made and hold them to the same chunk
+ * check the server applies (e2e/avatar.spec.ts). The files are kept as plain numbers a page can
+ * hand to a test.
+ */
+export function recordAvatarUploads(fake: Fake): void {
+  const real = fake.setAvatar.bind(fake);
+  const bytes = async (b: Blob | null) => (b ? Array.from(new Uint8Array(await b.arrayBuffer())) : null);
+  const kept: { readonly square: number[] | null; readonly portrait: number[] | null; readonly keys: string[] }[] = [];
+  (globalThis as { __kbAvatars?: unknown }).__kbAvatars = kept;
+  fake.setAvatar = async (upload) => {
+    kept.push({ square: await bytes(upload.square), portrait: await bytes(upload.portrait), keys: Object.keys(upload) });
+    return real(upload);
+  };
+}

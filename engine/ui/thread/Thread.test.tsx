@@ -97,6 +97,9 @@ const live = (thread: Id, seq: number, character: Id | null, over: Partial<Act> 
 const deliver = (fn: () => void) => act(() => { fn(); });
 
 /* ------------------------------------------------------------------------------ pages ---- */
+/** The thread's own polite region (the reply box keeps status regions of its own). */
+const announcer = () => document.querySelector<HTMLElement>('.kb-thread > [aria-live="polite"]')!;
+
 describe('pages and permalinks', () => {
   test('page N holds seqs (N-1)*P+1..N*P, and post 142 is on page 8', () => {
     expect(pageOf(142, 20)).toBe(8);
@@ -478,14 +481,14 @@ describe('live updates', () => {
     const tapped = tap(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
-    const before = within(screen.getByRole('status')).queryAllByText(/./u).length;
+    const before = within(announcer()).queryAllByText(/./u).length;
     const original = (await w.fake.acts(w.thread, 3, 3))[0]!;
     expect(post(3)).not.toHaveTextContent('Last edited');
     deliver(() => tapped().onAct?.({ ...original, currentPayload: { body: 'post 3, fixed' }, editedAt: '2026-10-29T13:00:00Z', shownEditedAt: '2026-10-29T13:00:00Z' }));
     await waitFor(() => expect(post(3)).toHaveTextContent('post 3, fixed'));
     expect(post(3)).toHaveTextContent('Last edited');
     expect(within(post(3)).getByRole('button', { name: 'History' })).toBeInTheDocument();
-    expect(within(screen.getByRole('status')).queryAllByText(/./u)).toHaveLength(before);
+    expect(within(announcer()).queryAllByText(/./u)).toHaveLength(before);
   });
 
   test('History lists every version, so it leads somewhere', async () => {
@@ -553,7 +556,7 @@ describe('the announcer', () => {
     const tapped = tap(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
-    const region = screen.getByRole('status');
+    const region = announcer();
     expect(region).toHaveAttribute('aria-live', 'polite');
     expect(region).toBeEmptyDOMElement();
     const six = live(w.thread, 6, w.spritey);
@@ -578,9 +581,9 @@ describe('the announcer', () => {
     deliver(() => tapped().onAct?.(live(w.thread, 8, null, { kind: 'tally', payload: { body: 'x' }, currentPayload: { body: 'x' } })));
     await screen.findByRole('article', { name: /^Post 8 /u });
     expect(post(6)).toBeInTheDocument();
-    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(announcer()).toBeEmptyDOMElement();
     deliver(() => tapped().onAct?.(live(w.thread, 9, w.spritey)));
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('New post by Spritey'));
+    await waitFor(() => expect(announcer()).toHaveTextContent('New post by Spritey'));
   });
 
   test('says it for a post held back by the bar too, since the reader cannot see it', async () => {
@@ -590,7 +593,7 @@ describe('the announcer', () => {
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), false);
     deliver(() => tapped().onAct?.(live(w.thread, 6, w.pipe)));
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('New post by Pipewrench'));
+    await waitFor(() => expect(announcer()).toHaveTextContent('New post by Pipewrench'));
   });
 });
 

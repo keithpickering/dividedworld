@@ -103,3 +103,32 @@ export function webpProblem(bytes: Uint8Array): string | null {
   if (header && (header.width !== size.width || header.height !== size.height)) return 'says two sizes';
   return null;
 }
+
+/**
+ * The file without its color profile. A browser's canvas writes its own sRGB profile (an ICCP
+ * chunk and the header's flag for it) into the WebP it encodes, and an untagged picture is sRGB
+ * already, so dropping it changes no pixel; the avatar function refuses any profile, whose text can
+ * name its maker. Only the profile goes: an EXIF or XMP chunk, or any other part, stays for
+ * `webpProblem` to refuse. A file without a profile comes back as it was.
+ */
+export function stripColorProfile(bytes: Uint8Array): Uint8Array {
+  const read = webpChunks(bytes);
+  if (!read.ok || read.flags === null || (read.flags & FLAGS.icc) === 0) return bytes;
+  const out: number[] = [...bytes.subarray(0, 12)];
+  let at = 12;
+  for (const chunk of read.chunks) {
+    const end = at + 8 + chunk.size + (chunk.size % 2);
+    if (chunk.kind !== 'ICCP') {
+      const piece = [...bytes.subarray(at, end)];
+      if (chunk.kind === 'VP8X') piece[8] = piece[8]! & ~FLAGS.icc;
+      out.push(...piece);
+    }
+    at = end;
+  }
+  const size = out.length - 8;
+  out[4] = size & 255;
+  out[5] = (size >> 8) & 255;
+  out[6] = (size >> 16) & 255;
+  out[7] = (size >>> 24) & 255;
+  return Uint8Array.from(out);
+}

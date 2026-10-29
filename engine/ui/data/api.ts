@@ -27,7 +27,18 @@ export interface Refusal {
   readonly ok: false;
   readonly error: string;
   readonly field?: string;
+  /**
+   * Set when no answer came back from a write, so it may have gone through: the caller looks
+   * before it tries again (Acts are append-only, so a blind resend is a duplicate).
+   */
+  readonly uncertain?: true;
 }
+
+/** The words of a lost answer; the adapter and the in-memory backend both say them. */
+export const LOST_ANSWER = 'no answer came back, so this may have gone through: look before you try again';
+
+/** The most threads `spunFrom` reads for one Act when no smaller limit is asked. */
+export const SPUN_FROM_MAX = 200;
 
 export type Answer<T> = { readonly ok: true; readonly value: T } | Refusal;
 
@@ -344,12 +355,16 @@ export interface KayfaApi {
   actsById(ids: readonly Id[]): Promise<readonly Act[]>;
   /** A post's every version, the original first, each as it was written. */
   history(post: Id): Promise<readonly Act[]>;
-  /** The threads spun from an Act. */
-  spunFrom(act: Id): Promise<readonly ThreadSummary[]>;
-  /** The threads spun from any of these Acts, in one read (a page asks once, not once per post); each names its origin in `originActId`. */
-  spunFromMany(acts: readonly Id[]): Promise<readonly ThreadSummary[]>;
-  /** The card plays on an Act, oldest first: the effects an ORIGIN box lists under the Act it shows. */
-  cardsOn(act: Id): Promise<readonly Act[]>;
+  /** The threads spun from an Act, oldest first, at most `limit` (default `SPUN_FROM_MAX`): a result as long as the limit may be cut. */
+  spunFrom(act: Id, limit?: number): Promise<readonly ThreadSummary[]>;
+  /**
+   * The threads spun from any of these Acts, oldest first, in one read (a page asks once, not once
+   * per post), at most `limit` rows in all; each names its origin in `originActId`. A result as long
+   * as `limit` may be cut, and an Act with none in it may have some.
+   */
+  spunFromMany(acts: readonly Id[], limit: number): Promise<readonly ThreadSummary[]>;
+  /** The card plays on an Act, oldest first, at most `limit`: the effects an ORIGIN box lists under the Act it shows. A result as long as `limit` may be cut. */
+  cardsOn(act: Id, limit: number): Promise<readonly Act[]>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */
   characters(ids: readonly Id[]): Promise<readonly Character[]>;
   characterCounts(id: Id): Promise<CharacterCounts>;

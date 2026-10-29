@@ -19,7 +19,7 @@ const ENTRIES: readonly Entry[] = [
   { tool: 'strike', name: 'Strikethrough', show: <s>S</s> },
   { tool: 'link', name: 'Link', show: 'Link' },
   { tool: 'image', name: 'Image', show: 'Image' },
-  { tool: 'quote', name: 'Quote the latest post', show: 'Quote' },
+  { tool: 'quote', name: 'Quote the last post shown', show: 'Quote' },
   { tool: 'code', name: 'Code', show: 'Code' },
   { tool: 'list', name: 'List', show: 'List' },
 ];

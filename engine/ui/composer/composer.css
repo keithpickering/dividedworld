@@ -41,6 +41,10 @@
   margin-right: auto;
 }
 
+.kb-editor-note:empty {
+  display: none;
+}
+
 .kb-editor-over {
   font-weight: bold;
 }

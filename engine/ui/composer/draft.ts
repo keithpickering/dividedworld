@@ -24,6 +24,16 @@ export function readDraft(key: string): Draft | null {
   } catch { return null; }
 }
 
+/** Every draft an account kept on this device: it leaves with the account's sign-out. */
+export function clearDrafts(account: Id): void {
+  try {
+    const store = globalThis.localStorage;
+    if (!store) return;
+    const prefix = `kb-draft:${account}:`;
+    for (const key of Object.keys(store)) if (key.startsWith(prefix)) store.removeItem(key);
+  } catch { /* nothing kept, nothing to clear */ }
+}
+
 export function writeDraft(key: string, draft: Draft): void {
   try {
     if (draft.text === '') globalThis.localStorage?.removeItem(key);
