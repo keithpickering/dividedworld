@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>The game screen: the two worlds board</title>
+<!-- A board of the two-worlds design session, 1440 by 1120, as the owner approved it on 2026-10-29. A reference for the
+     look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what was decided. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+/* Glass type at game sizes (XAG 101/102 at 1080p): Barlow Condensed inks 0.90 of its em, so 20px is the floor that reaches 18px body height; every HUD label, number and button meets it. The 2003 board keeps its own Verdana sizes. */
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+.glass:focus-visible,.glass :focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.orb{position:relative;width:56px;height:56px;border-radius:50%;overflow:hidden;background:radial-gradient(circle at 50% 60%,#1c1533,#07060c 72%);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.22),inset 0 -8px 14px rgba(0,0,0,.65)}
+.orb .liq{position:absolute;left:0;right:0;bottom:0}
+.orb .ghost{position:absolute;left:0;right:0;animation:ghostpulse 2.4s ease-in-out infinite}
+.orb .gloss{position:absolute;left:17%;top:8%;width:48%;height:30%;border-radius:50%;background:radial-gradient(ellipse at 50% 40%,rgba(255,255,255,.9),rgba(255,255,255,0) 70%)}
+.c1{background:radial-gradient(circle at 38% 30%,#ead6ff,#b46cff 52%,#3d1475)}
+.c2{background:radial-gradient(circle at 38% 30%,#d6e9ff,#3d9bff 52%,#0c3275)}
+.c3{background:radial-gradient(circle at 38% 30%,#d6fff0,#2ef0a0 52%,#08603f)}
+.c4{background:radial-gradient(circle at 38% 30%,#fff7d6,#ffd93d 52%,#7a5c06)}
+.c5{background:radial-gradient(circle at 38% 30%,#ffe7d6,#ff9a3d 52%,#7a3406)}
+.c6{background:radial-gradient(circle at 38% 30%,#ffd6da,#ff4d5e 52%,#750815)}
+.h5{background:repeating-linear-gradient(135deg,rgba(255,224,190,.9) 0 2px,rgba(255,154,61,.22) 2px 6px)}
+.g1{box-shadow:0 0 20px rgba(180,108,255,.7)}.g2{box-shadow:0 0 20px rgba(61,155,255,.7)}.g3{box-shadow:0 0 20px rgba(46,240,160,.6)}.g4{box-shadow:0 0 20px rgba(255,217,61,.6)}.g5{box-shadow:0 0 14px rgba(255,154,61,.45)}
+.armed{animation:armed 1.8s ease-in-out infinite}
+.drift{animation:drift 28s linear infinite alternate}
+@keyframes ghostpulse{0%,100%{opacity:.75}50%{opacity:1}}
+@keyframes armed{0%,100%{box-shadow:0 0 0 2px #ff3d7f,0 0 26px rgba(255,61,127,.75),0 22px 34px rgba(0,0,0,.6)}50%{box-shadow:0 0 0 2px #ffb3cd,0 0 44px rgba(255,61,127,1),0 22px 34px rgba(0,0,0,.6)}}
+@keyframes drift{from{transform:translateX(0)}to{transform:translateX(-120px)}}
+@media (prefers-reduced-motion: reduce){.orb .ghost,.armed,.drift{animation:none}}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1120px; position: relative; overflow: hidden; background: {{f.bg}}; color: {{f.fg}}; font: 12px/1.5 Verdana, Geneva, sans-serif">
+
+  <!-- ===================== THE FORUM: 2003 ===================== -->
+  <header style="display: flex; justify-content: space-between; align-items: baseline; padding: 12px 2%; border-bottom: 1px solid {{f.fg}}">
+    <a href="#" style="font: bold 22px 'Courier New', Courier, monospace; letter-spacing: 1px; text-decoration: none">DIVIDED WORLD</a>
+    <span style="color: {{f.mute}}">dw.gripe</span>
+  </header>
+  <nav aria-label="Main" style="padding: 5px 2%; border-bottom: 1px solid {{f.fg}}; font-size: 11px">
+    <a href="#">Index</a> · <a href="#">Vending Machine</a> · <a href="#">My log</a> · <a href="#">My characters</a> · <a href="#">Settings</a> · <a href="#">Sign out</a>
+  </nav>
+
+  <main style="padding: 0 2%">
+    <p style="margin: 10px 0 4px; font-size: 11px"><a href="#"><b>Divided World</b></a> » <a href="#">General</a> » who keeps splatting my posts</p>
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 6px">
+      <h1 style="margin: 0; font: bold 18px 'Courier New', Courier, monospace">who keeps splatting my posts</h1>
+      <span style="font-size: 11px">Pages: <a href="#">1</a> <a href="#">2</a> <b>[3]</b> · <a href="#">Jump to latest</a></span>
+    </div>
+
+    <div style="display: flex; border: 1px solid {{f.fg}}; font: bold 11px 'Courier New', Courier, monospace">
+      <div style="width: 17%; padding: 3px 1%; border-right: 1px solid {{f.fg}}">Author</div>
+      <div style="flex: 1; padding: 3px 1%">Message</div>
+    </div>
+
+    <!-- Post 41: splatted -->
+    <article style="display: flex; border: 1px solid {{f.fg}}; border-top: 0">
+      <div style="width: 17%; padding: 8px 1%; border-right: 1px solid {{f.fg}}; box-sizing: border-box">
+        <a href="#" style="font-weight: bold">Spritey</a><br>
+        <span>Main Eventer</span>
+        <div role="img" aria-label="Rank: 4 of 6 pips" style="display: flex; gap: 4px; margin: 4px 0 8px 2px">
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+        </div>
+        <div style="width: 96px; height: 160px; border: 1px solid {{f.fg}}; display: flex; align-items: center; justify-content: center; color: {{f.mute}}; font-size: 10px; background: repeating-linear-gradient(45deg, {{f.hatch}} 0 6px, transparent 6px 12px)">avatar</div>
+        <p style="margin: 8px 0 0; font-size: 10px">Posts: 1,204<br>Joined Oct 2026</p>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative">
+        <div style="display: flex; justify-content: space-between; padding: 3px 1%; border-bottom: 1px solid {{f.fg}}; font-size: 10px; color: {{f.mute}}">
+          <span>Posted Oct 29, 2026 9:14 pm</span><a href="#">#41</a>
+        </div>
+
+        <!-- the card's Act: a game piece breaking the 1px frame -->
+        <div style="position: absolute; top: -18px; right: 3%; z-index: 2; transform: skewX(-12deg); background: #0b0712; border: 1px solid #ff3d7f; box-shadow: 0 0 18px rgba(255,61,127,.7); padding: 5px 16px 6px 12px; display: flex; gap: 10px; align-items: center">
+          <span style="transform: skewX(12deg); font: italic 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 1px; color: #ff6b9d">WHOOPS!</span>
+          <span style="transform: skewX(12deg); font: 600 21px 'Barlow Condensed', sans-serif; color: #f1ecff">Mrs. Hooligan: “you dropped your ink”</span>
+        </div>
+
+        <div style="position: relative; padding: 16px 1% 14px; min-height: 150px">
+          <p style="margin: 0 0 10px">Third time this week. I wrote four whole paragraphs about the level editor update and somebody dumped a bucket of ink on it before anyone got past the first sentence.</p>
+          <p style="margin: 0 0 10px">I'm not mad. I'm documenting. Whoever you are, I can see the color you picked, and I will remember it.</p>
+          <p style="margin: 0">Posting the full changelog again below in case it gets splatted a fourth time. Scroll down if you can still read.</p>
+          <svg aria-hidden="true" viewBox="0 0 960 170" preserveAspectRatio="xMinYMin slice" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none">
+            <defs>
+              <mask id="scrub">
+                <rect width="960" height="170" fill="#fff"></rect>
+                <path d="M120 70 C220 40 300 110 420 66 S600 40 700 92" fill="none" stroke="#000" stroke-width="26" stroke-linecap="round" opacity="0.82"></path>
+                <path d="M180 112 C260 100 330 132 430 112" fill="none" stroke="#000" stroke-width="18" stroke-linecap="round" opacity="0.6"></path>
+              </mask>
+              <filter id="inkgloss"><feGaussianBlur stdDeviation="0.6"></feGaussianBlur></filter>
+            </defs>
+            <g mask="url(#scrub)" fill="{{ink}}" filter="url(#inkgloss)">
+              <path transform="translate(150,-28) scale(4.4,2.05)" d="M50 8 C58 8 60 22 68 20 C78 17 80 6 88 12 C95 18 84 28 88 36 C92 44 104 44 100 54 C96 63 84 58 80 66 C76 75 88 86 78 92 C68 98 64 84 56 86 C48 88 46 100 36 96 C26 92 34 80 26 74 C18 68 4 74 4 62 C4 52 18 54 20 46 C22 38 10 30 18 22 C26 14 34 26 40 20 C46 14 42 8 50 8 Z"></path>
+              <path transform="translate(640,30) scale(1.3,1.1)" d="M50 8 C58 8 60 22 68 20 C78 17 80 6 88 12 C95 18 84 28 88 36 C92 44 104 44 100 54 C96 63 84 58 80 66 C76 75 88 86 78 92 C68 98 64 84 56 86 C48 88 46 100 36 96 C26 92 34 80 26 74 C18 68 4 74 4 62 C4 52 18 54 20 46 C22 38 10 30 18 22 C26 14 34 26 40 20 C46 14 42 8 50 8 Z"></path>
+              <circle cx="110" cy="30" r="9"></circle><circle cx="86" cy="58" r="5"></circle><circle cx="790" cy="24" r="7"></circle><circle cx="820" cy="140" r="11"></circle><circle cx="612" cy="160" r="6"></circle>
+              <rect x="356" y="120" width="12" height="60" rx="6"></rect><rect x="470" y="130" width="9" height="44" rx="4.5"></rect>
+            </g>
+            <g mask="url(#scrub)" fill="#fff" opacity="0.35">
+              <ellipse cx="320" cy="34" rx="70" ry="9"></ellipse><ellipse cx="690" cy="58" rx="22" ry="5"></ellipse>
+            </g>
+          </svg>
+        </div>
+        <p style="margin: 0 1% 8px; font-size: 11px; color: {{f.mute}}">This post is splatted. Drag across the ink to scrub it on your screen, or <button style="font: 11px Verdana, sans-serif; color: {{f.fg}}; background: {{f.bg}}; border: 1px solid {{f.fg}}; padding: 1px 6px; cursor: pointer">Scrub with the keyboard</button></p>
+        <div style="margin-top: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 4px 1%; border-top: 1px solid {{f.fg}}; font-size: 11px">
+          <span style="border: 1px solid {{f.fg}}; padding: 0 5px">🔥 4</span>
+          <span style="border: 1px solid {{f.fg}}; padding: 0 5px">🙄 2</span>
+          <span style="border: 2px solid {{f.fg}}; padding: 0 4px">☕ 1</span>
+          <button style="font: 11px Verdana, sans-serif; color: {{f.fg}}; background: {{f.bg}}; border: 1px solid {{f.fg}}; padding: 1px 6px; cursor: pointer">React</button>
+          <span style="color: {{f.mute}}">1 of 3 left</span>
+          <span style="margin-left: auto"><a href="#">Quote</a> · <a href="#">Spin thread</a> · <a href="#">Play card</a></span>
+        </div>
+      </div>
+    </article>
+
+    <!-- Post 42 -->
+    <article style="display: flex; border: 1px solid {{f.fg}}; border-top: 0">
+      <div style="width: 17%; padding: 8px 1%; border-right: 1px solid {{f.fg}}; box-sizing: border-box">
+        <a href="#" style="font-weight: bold">Mrs. Hooligan</a><br>
+        <span>Midcarder</span>
+        <div role="img" aria-label="Rank: 3 of 6 pips" style="display: flex; gap: 4px; margin: 4px 0 8px 2px">
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+        </div>
+        <div style="width: 96px; height: 120px; border: 1px solid {{f.fg}}; display: flex; align-items: center; justify-content: center; color: {{f.mute}}; font-size: 10px; background: repeating-linear-gradient(45deg, {{f.hatch}} 0 6px, transparent 6px 12px)">avatar</div>
+        <p style="margin: 8px 0 0; font-size: 10px">Posts: 388<br>Joined Oct 2026</p>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
+        <div style="display: flex; justify-content: space-between; padding: 3px 1%; border-bottom: 1px solid {{f.fg}}; font-size: 10px; color: {{f.mute}}">
+          <span>Posted Oct 29, 2026 9:20 pm</span><a href="#">#42</a>
+        </div>
+        <div style="padding: 10px 1% 14px">
+          <blockquote style="margin: 0 0 10px; border: 1px solid {{f.fg}}; background: {{f.quote}}; padding: 4px 8px; font-size: 11px"><b>Spritey wrote:</b><br>I can see the color you picked, and I will remember it.</blockquote>
+          <p style="margin: 0 0 10px">Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I'm not.</p>
+          <p style="margin: 0">Also you double-posted the changelog in the other thread so honestly it's a public service.</p>
+        </div>
+        <div style="margin-top: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 4px 1%; border-top: 1px solid {{f.fg}}; font-size: 11px">
+          <span style="border: 1px solid {{f.fg}}; padding: 0 5px">😡 3</span>
+          <span style="border: 1px solid {{f.fg}}; padding: 0 5px">🍅 2</span>
+          <span style="border: 1px solid {{f.fg}}; padding: 0 5px">🤝 1</span>
+          <button style="font: 11px Verdana, sans-serif; color: {{f.fg}}; background: {{f.bg}}; border: 1px solid {{f.fg}}; padding: 1px 6px; cursor: pointer">React</button>
+          <span style="margin-left: auto; display: flex; gap: 8px; align-items: center">
+            <a href="#" style="font-weight: bold; display: inline-flex; align-items: center; gap: 5px"><span aria-hidden="true" style="width: 8px; height: 8px; background: #ff3d7f; border: 1px solid {{f.fg}}"></span>Play Whoops! here</a>
+            <span>· <a href="#">Quote</a> · <a href="#">Spin thread</a></span>
+          </span>
+        </div>
+      </div>
+    </article>
+
+    <!-- Post 43: one of your own characters, so no React button -->
+    <article style="display: flex; border: 1px solid {{f.fg}}; border-top: 0">
+      <div style="width: 17%; padding: 8px 1%; border-right: 1px solid {{f.fg}}; box-sizing: border-box">
+        <a href="#" style="font-weight: bold">Pipewrench</a><br>
+        <span>Enhancement Talent</span>
+        <div role="img" aria-label="Rank: 2 of 6 pips" style="display: flex; gap: 4px; margin: 4px 0 8px 2px">
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+        </div>
+        <div style="width: 96px; height: 140px; border: 1px solid {{f.fg}}; display: flex; align-items: center; justify-content: center; color: {{f.mute}}; font-size: 10px; background: repeating-linear-gradient(45deg, {{f.hatch}} 0 6px, transparent 6px 12px)">avatar</div>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
+        <div style="display: flex; justify-content: space-between; padding: 3px 1%; border-bottom: 1px solid {{f.fg}}; font-size: 10px; color: {{f.mute}}">
+          <span>Posted Oct 29, 2026 9:31 pm</span><a href="#">#43</a>
+        </div>
+        <div style="padding: 10px 1% 14px">
+          <p style="margin: 0">Can confirm Mrs. Hooligan has never once been seen in the same thread as a bucket of ink. Suspicious in its own way, if you think about it.</p>
+        </div>
+      </div>
+    </article>
+  </main>
+
+  <!-- the forum's own live bar, still 2003 -->
+  <div role="status" style="position: absolute; left: 34%; bottom: 230px; z-index: 3; border: 1px solid {{f.fg}}; background: {{f.bg}}; padding: 3px 10px; font-size: 11px">
+    <b>3 new posts</b> · <a href="#">Show them</a>
+  </div>
+
+  <!-- ===================== THE PORTAL: the HUD ===================== -->
+  <svg aria-hidden="true" width="1440" height="40" style="position: absolute; left: 0; top: 902px; z-index: 5; overflow: visible; pointer-events: none">
+    <defs><filter id="seamglow" x="-5%" y="-200%" width="110%" height="500%"><feGaussianBlur stdDeviation="4"></feGaussianBlur></filter></defs>
+    <polyline points="0,30 452,30 480,6 972,6 1000,30 1440,30" fill="none" stroke="#19e3ff" stroke-width="6" opacity="0.7" filter="url(#seamglow)"></polyline>
+    <polyline points="0,30 452,30 480,6 972,6 1000,30 1440,30" fill="none" stroke="#c9f8ff" stroke-width="1.5"></polyline>
+  </svg>
+
+  <section class="glass" aria-label="Game HUD" style="position: absolute; left: 0; right: 0; top: 908px; height: 212px; z-index: 4; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif; clip-path: polygon(0 24px, 452px 24px, 480px 0, 972px 0, 1000px 24px, 100% 24px, 100% 100%, 0 100%)">
+    <!-- the smoke drifts inside a fixed frame, so the calm under the plate, the Aura readout and the clock
+         stays behind the text while the cloud moves; the smoke stays full under the hand -->
+    <svg aria-hidden="true" width="1440" height="212" style="position: absolute; left: 0; top: 0; overflow: hidden">
+      <defs>
+        <filter id="smokeA" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.0042 0.016" numOctaves="4" seed="11"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.6  0 0 0 0 0.16  0 0 0 0 1  1.9 0 0 0 -0.82"></feColorMatrix><feGaussianBlur stdDeviation="9"></feGaussianBlur></filter>
+        <filter id="smokeB" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.022" numOctaves="3" seed="4"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.02"></feColorMatrix><feGaussianBlur stdDeviation="9"></feGaussianBlur></filter>
+        <filter id="smokeC" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.008 0.02" numOctaves="3" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 0.17  0 0 0 0 0.84  0 0 2 0 -1.1"></feColorMatrix><feGaussianBlur stdDeviation="9"></feGaussianBlur></filter>
+        <filter id="hudsoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+        <mask id="hudcalm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="212">
+          <rect width="1440" height="212" fill="#ffffff"></rect>
+          <rect x="30" y="10" width="440" height="210" fill="#000000" opacity="0.8" filter="url(#hudsoft)"></rect>
+          <rect x="490" y="-40" width="472" height="250" fill="#000000" opacity="0.9" filter="url(#hudsoft)"></rect>
+          <rect x="966" y="20" width="270" height="170" fill="#000000" opacity="0.85" filter="url(#hudsoft)"></rect>
+        </mask>
+      </defs>
+      <rect width="1440" height="212" fill="#07050d"></rect>
+      <g mask="url(#hudcalm)">
+        <g class="drift">
+          <rect width="1560" height="212" filter="url(#smokeA)"></rect>
+          <rect width="1560" height="212" filter="url(#smokeB)" opacity="0.55"></rect>
+          <rect width="1560" height="212" filter="url(#smokeC)" opacity="0.5"></rect>
+        </g>
+      </g>
+    </svg>
+    <div aria-hidden="true" style="position: absolute; left: 546px; top: -60px; width: 360px; height: 220px; background: radial-gradient(ellipse at center, rgba(255,43,214,.32), rgba(255,43,214,0) 65%)"></div>
+
+    <!-- character plate -->
+    <div style="position: absolute; left: 36px; top: 40px; width: 420px; height: 150px; transform: skewX(-10deg); background: rgba(10,6,20,.72); border: 1px solid rgba(25,227,255,.55); box-shadow: inset 0 0 30px rgba(25,227,255,.12)">
+      <div style="transform: skewX(10deg); position: absolute; inset: 0">
+        <div style="position: absolute; left: 22px; top: 31px; width: 84px; height: 84px; border: 2px solid #19e3ff; box-shadow: 0 0 16px rgba(25,227,255,.6); background: repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 6px, transparent 6px 12px), #120b22; display: flex; align-items: center; justify-content: center; font: 600 20px 'Barlow Condensed', sans-serif; color: #e4def7">AVATAR</div>
+        <div style="position: absolute; left: 118px; top: 10px; font: 34px/1 Anton, Impact, sans-serif; letter-spacing: .5px; text-transform: uppercase; text-shadow: 0 0 18px rgba(25,227,255,.55)">Pipewrench</div>
+        <div style="position: absolute; left: 120px; top: 52px; display: flex; gap: 8px; align-items: center; font: 700 20px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px">
+          <span style="background: #ff3d57; color: #14030a; padding: 0 8px; transform: skewX(-10deg)">HEEL</span>
+          <span style="display: inline-flex; gap: 6px; align-items: center; color: #e4def7">
+            <svg aria-hidden="true" width="15" height="16" viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5" fill="none" stroke="currentColor" stroke-width="1.3"></path></svg>
+            ONLY YOU SEE THIS
+          </span>
+        </div>
+        <label style="position: absolute; left: 120px; top: 88px; display: flex; gap: 10px; align-items: center; font: 600 20px 'Barlow Condensed', sans-serif; letter-spacing: 1px; color: #e4def7">SWAP MASK
+          <select style="font: 700 22px 'Barlow Condensed', sans-serif; letter-spacing: .5px; color: #f1ecff; background: #160d2a; border: 1px solid #19e3ff; padding: 0 8px; min-height: 52px">
+            <option>Pipewrench</option><option>Mrs. Hooligan</option><option>Spritey</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <!-- Aura: the orbs, in the raised tab -->
+    <div style="position: absolute; left: 500px; top: 10px; width: 452px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; font: 700 20px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">
+        <span>AURA</span><span style="letter-spacing: 1px; color: #ffc48a">GHOST = ESTIMATE UNTIL SETTLEMENT</span>
+      </div>
+      <div role="img" aria-label="Aura: 4.62 of 6.00 settled, about 0.30 more estimated" style="display: flex; gap: 18px; margin-top: 8px">
+        <div class="orb g1"><div class="liq c1" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g2"><div class="liq c2" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g3"><div class="liq c3" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g4"><div class="liq c4" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g5"><div class="liq c5" style="height: 62%; border-top: 1px solid rgba(255,255,255,.8)"></div><div class="ghost h5" style="bottom: 62%; height: 30%"></div><div class="gloss"></div></div>
+        <div class="orb"><div class="gloss" style="opacity: .5"></div></div>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 10px; margin-top: 10px">
+        <span style="font: 46px/1 Anton, Impact, sans-serif; text-shadow: 0 0 20px rgba(255,217,61,.5)">4.62</span>
+        <span style="font: 700 22px 'Barlow Condensed', sans-serif; color: #e4def7">/ 6.00</span>
+        <span style="margin-left: auto; font: 700 22px 'Barlow Condensed', sans-serif; color: #ffc48a; border: 1px dashed rgba(255,196,138,.7); padding: 0 8px">+0.30 EST.</span>
+      </div>
+    </div>
+
+    <!-- settlement clock -->
+    <div style="position: absolute; left: 980px; top: 56px">
+      <div style="font: 700 20px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">NEXT SETTLEMENT</div>
+      <div style="font: 800 44px/1 'Barlow Condensed', sans-serif; font-variant-numeric: tabular-nums; color: #c9f8ff; text-shadow: 0 0 16px rgba(25,227,255,.7)">07:42:10</div>
+      <div style="font: 600 21px 'Barlow Condensed', sans-serif; color: #e4def7">The ghost turns solid then.</div>
+    </div>
+
+    <!-- hand button -->
+    <button aria-label="Hand, 3 postcards" style="position: absolute; left: 1236px; top: 142px; width: 170px; height: 52px; transform: skewX(-10deg); background: #ff3d7f; border: 0; color: #14030a; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; box-shadow: 0 0 24px rgba(255,61,127,.6)">
+      <span style="transform: skewX(10deg); font: 24px/1 Anton, Impact, sans-serif; letter-spacing: 1px">HAND</span>
+      <span style="transform: skewX(10deg); font: 800 22px/1 'Barlow Condensed', sans-serif; background: #14030a; color: #ff9cc0; padding: 2px 8px">3</span>
+    </button>
+  </section>
+
+  <!-- the hand: postcards rising through the seam into the forum -->
+  <button class="glass" aria-label="Stick Around, Sweet postcard" style="position: absolute; z-index: 6; left: 1176px; top: 790px; width: 150px; height: 225px; padding: 0; border: 0; border-radius: 9px; background: #0b0914; transform: rotate(-11deg); box-shadow: 0 0 0 1.5px #2ee6ff, 0 0 22px rgba(46,230,255,.55), 0 18px 30px rgba(0,0,0,.55); overflow: hidden; cursor: pointer; color: #fff; text-align: left">
+    <span style="position: absolute; left: 0; top: 0; right: 0; height: 150px; background: radial-gradient(circle at 50% 55%, rgba(46,230,255,.4), rgba(11,9,20,0) 70%)"></span>
+    <svg aria-hidden="true" viewBox="0 0 120 110" style="position: absolute; left: 15px; top: 26px; width: 120px; height: 110px">
+      <circle cx="60" cy="58" r="46" fill="none" stroke="#2ee6ff" stroke-width="1.5" opacity=".35"></circle>
+      <circle cx="60" cy="58" r="32" fill="none" stroke="#2ee6ff" stroke-width="2" opacity=".6"></circle>
+      <circle cx="60" cy="58" r="18" fill="none" stroke="#9ef4ff" stroke-width="2.5"></circle>
+      <circle cx="60" cy="40" r="11" fill="#2ee6ff"></circle><rect x="57" y="48" width="6" height="12" fill="#2ee6ff"></rect><path d="M60 60 L60 82" stroke="#e6fdff" stroke-width="2.5" stroke-linecap="round"></path>
+    </svg>
+    <span style="position: absolute; left: 8px; top: 8px; background: #2ee6ff; color: #03141a; font: italic 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 1px; padding: 1px 8px; transform: skewX(-12deg)">SWEET</span>
+    <span style="position: absolute; left: 10px; right: 10px; bottom: 66px; font: 24px/1 Anton, Impact, sans-serif; text-shadow: 0 0 12px rgba(46,230,255,.7)">STICK AROUND</span>
+    <span style="position: absolute; left: 10px; right: 10px; bottom: 10px; font: 600 21px/1.2 'Barlow Condensed', sans-serif; color: #e4def7">Hold a reader on a post.</span>
+  </button>
+  <button aria-label="Whoops!, Salty postcard, armed: pick a post" class="armed glass" style="position: absolute; z-index: 8; left: 1246px; top: 742px; width: 150px; height: 225px; padding: 0; border: 0; border-radius: 9px; background: #0b0914; transform: rotate(-1deg); overflow: hidden; cursor: pointer; color: #fff; text-align: left">
+    <span style="position: absolute; left: 0; top: 0; right: 0; height: 150px; background: radial-gradient(circle at 50% 55%, rgba(255,61,127,.45), rgba(11,9,20,0) 70%)"></span>
+    <svg aria-hidden="true" viewBox="0 0 108 104" style="position: absolute; left: 20px; top: 30px; width: 110px; height: 104px">
+      <path fill="#ff3d7f" d="M50 8 C58 8 60 22 68 20 C78 17 80 6 88 12 C95 18 84 28 88 36 C92 44 104 44 100 54 C96 63 84 58 80 66 C76 75 88 86 78 92 C68 98 64 84 56 86 C48 88 46 100 36 96 C26 92 34 80 26 74 C18 68 4 74 4 62 C4 52 18 54 20 46 C22 38 10 30 18 22 C26 14 34 26 40 20 C46 14 42 8 50 8 Z"></path>
+      <ellipse cx="42" cy="34" rx="14" ry="5" fill="#fff" opacity=".45"></ellipse>
+    </svg>
+    <span style="position: absolute; left: 8px; top: 8px; background: #ff3d7f; color: #14030a; font: italic 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 1px; padding: 1px 8px; transform: skewX(-12deg)">SALTY</span>
+    <span style="position: absolute; left: 10px; right: 10px; bottom: 66px; font: 28px/1 Anton, Impact, sans-serif; text-shadow: 0 0 12px rgba(255,61,127,.8)">WHOOPS!</span>
+    <span style="position: absolute; left: 10px; right: 10px; bottom: 10px; font: 600 21px/1.2 'Barlow Condensed', sans-serif; color: #e4def7">Splat a post in ink.</span>
+  </button>
+  <button class="glass" aria-label="Whoops!, Salty postcard" style="position: absolute; z-index: 7; left: 1308px; top: 800px; width: 150px; height: 225px; padding: 0; border: 0; border-radius: 9px; background: #0b0914; transform: rotate(10deg); box-shadow: 0 0 0 1.5px #ff3d7f, 0 0 18px rgba(255,61,127,.45), 0 18px 30px rgba(0,0,0,.55); overflow: hidden; cursor: pointer; color: #fff; text-align: left">
+    <span style="position: absolute; left: 0; top: 0; right: 0; height: 150px; background: radial-gradient(circle at 50% 55%, rgba(255,61,127,.35), rgba(11,9,20,0) 70%)"></span>
+    <span style="position: absolute; left: 8px; top: 8px; background: #ff3d7f; color: #14030a; font: italic 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 1px; padding: 1px 8px; transform: skewX(-12deg)">SALTY</span>
+    <span style="position: absolute; left: 10px; bottom: 30px; font: 28px/1 Anton, Impact, sans-serif">WHOOPS!</span>
+  </button>
+  <div aria-hidden="true" style="position: absolute; z-index: 9; left: 1190px; top: 704px; transform: skewX(-12deg); background: #0b0712; border: 1px solid #ff3d7f; padding: 2px 12px; box-shadow: 0 0 14px rgba(255,61,127,.6)">
+    <span style="display: block; transform: skewX(12deg); font: italic 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px; color: #ff9cc0">ARMED · PICK A POST</span>
+  </div>
+</div>
+</body>
+</html>

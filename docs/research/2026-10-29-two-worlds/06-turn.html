@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Turn a character: the two worlds board</title>
+<!-- A board of the two-worlds design session, 1440 by 1360, as the owner approved it on 2026-10-29. A reference for the
+     look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what was decided. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+/* Glass type at game sizes (XAG 101/102 at 1080p): Barlow Condensed inks 0.90 of its em, so 20px is the
+   floor that reaches 18px body height; nothing on the glass is smaller (the 2003 page and post preview keep
+   their own sizes). Blocks past two lines stay under 80 characters and set at 1.5. */
+body{margin:0}
+a{color:#c9f8ff}a:hover{color:#ffffff}
+button:focus-visible,input:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1360px; position: relative; overflow: hidden; background: #ffffff; color: #000000; font: 12px/1.5 Verdana, Geneva, sans-serif">
+
+  <!-- behind the glass: the out-of-character 2003 page -->
+  <div aria-hidden="true">
+    <div style="display: flex; justify-content: space-between; padding: 12px 2%; border-bottom: 1px solid #000"><span style="font: bold 22px 'Courier New', Courier, monospace; letter-spacing: 1px">DIVIDED WORLD</span><span style="color: #555">dw.gripe</span></div>
+    <div style="padding: 5px 2%; border-bottom: 1px solid #000; font-size: 11px"><u>Index</u> · <u>Vending Machine</u> · <u>My log</u> · <b>My characters</b> · <u>Settings</u></div>
+    <div style="padding: 10px 2%">
+      <div style="font: bold 18px 'Courier New', Courier, monospace; margin-bottom: 8px">My characters</div>
+      <div style="border: 1px solid #000">
+        <div style="display: flex; font: bold 11px 'Courier New', monospace; border-bottom: 1px solid #000"><span style="width: 30%; padding: 3px 1%">Character</span><span style="width: 20%; padding: 3px 1%">Class (only you)</span><span style="width: 25%; padding: 3px 1%">Rank</span><span style="padding: 3px 1%">Turn</span></div>
+        <div style="display: flex; border-bottom: 1px solid #000"><span style="width: 30%; padding: 6px 1%"><b>Pipewrench</b></span><span style="width: 20%; padding: 6px 1%">Heel</span><span style="width: 25%; padding: 6px 1%">Enhancement Talent</span><span style="padding: 6px 1%">[Turn]</span></div>
+        <div style="display: flex; border-bottom: 1px solid #000"><span style="width: 30%; padding: 6px 1%"><b>Mrs. Hooligan</b></span><span style="width: 20%; padding: 6px 1%">Jabroni</span><span style="width: 25%; padding: 6px 1%">Midcarder</span><span style="padding: 6px 1%">Opens Nov 14</span></div>
+        <div style="display: flex"><span style="width: 30%; padding: 6px 1%"><b>Spritey</b></span><span style="width: 20%; padding: 6px 1%">Face</span><span style="width: 25%; padding: 6px 1%">Main Eventer</span><span style="padding: 6px 1%">[Turn]</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- the glass -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(5,3,12,.84)"></div>
+  <svg aria-hidden="true" width="1440" height="1360" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="tA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.0038" numOctaves="5" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.8"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="tB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="7"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.12  0 0 0 0 0.7  0 0 0 0 1  0 2 0 0 -1.05"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+    </defs>
+    <rect width="1440" height="1360" filter="url(#tA)" opacity="0.6"></rect>
+    <rect width="1440" height="1360" filter="url(#tB)" opacity="0.4"></rect>
+  </svg>
+
+  <!-- the modal -->
+  <section role="dialog" aria-modal="true" aria-labelledby="turnTitle" style="position: absolute; left: 24px; top: 40px; width: 1392px; height: 1280px; box-sizing: border-box; background: rgba(9,5,18,.94); border: 1px solid #19e3ff; box-shadow: 0 0 50px rgba(25,227,255,.35), inset 0 0 60px rgba(25,227,255,.06); clip-path: polygon(0 0, calc(100% - 40px) 0, 100% 40px, 100% 100%, 40px 100%, 0 calc(100% - 40px)); color: #f1ecff; font-family: 'Barlow Condensed', sans-serif; padding: 36px 40px; display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto 1fr auto; column-gap: 40px; row-gap: 24px">
+
+    <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: flex-start">
+      <div>
+        <div style="font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #9ef4ff">MY CHARACTERS › TURN</div>
+        <h2 id="turnTitle" style="margin: 2px 0 0; font: 68px/1 Anton, Impact, sans-serif; letter-spacing: 1px">TURN PIPEWRENCH</h2>
+      </div>
+      <button aria-label="Close" style="width: 52px; height: 52px; margin-right: 24px; background: rgba(255,255,255,.05); border: 1px solid rgba(158,244,255,.6); color: #f1ecff; cursor: pointer; display: flex; align-items: center; justify-content: center">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16"><path d="M3 3 L13 13 M13 3 L3 13" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>
+      </button>
+    </div>
+
+    <!-- the character -->
+    <aside style="display: flex; flex-direction: column; gap: 14px">
+      <div style="position: relative; width: 300px; height: 420px; border: 2px solid #19e3ff; box-shadow: 0 0 26px rgba(25,227,255,.5); box-sizing: border-box; background: repeating-linear-gradient(45deg, rgba(255,255,255,.07) 0 8px, transparent 8px 16px), #120b22; display: flex; align-items: center; justify-content: center; font: 600 20px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #e4def7">
+        PORTRAIT CROP
+        <div style="position: absolute; left: -2px; right: -2px; bottom: -2px; padding: 34px 16px 12px; background: linear-gradient(rgba(9,5,18,0), rgba(9,5,18,.95))">
+          <div style="font: 44px/1 Anton, Impact, sans-serif; color: #fff; letter-spacing: .5px; text-shadow: 0 0 18px rgba(25,227,255,.6)">PIPEWRENCH</div>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center">
+        <span style="font: 700 21px 'Barlow Condensed', sans-serif">Enhancement Talent</span>
+        <span role="img" aria-label="Rank: 2 of 6 pips" style="display: flex; gap: 6px">
+          <span style="width: 10px; height: 10px; transform: rotate(45deg); background: #f5b301; box-shadow: 0 0 8px #f5b301"></span>
+          <span style="width: 10px; height: 10px; transform: rotate(45deg); background: #f5b301; box-shadow: 0 0 8px #f5b301"></span>
+          <span style="width: 10px; height: 10px; transform: rotate(45deg); border: 1px solid #b7afd6; box-sizing: border-box"></span>
+          <span style="width: 10px; height: 10px; transform: rotate(45deg); border: 1px solid #b7afd6; box-sizing: border-box"></span>
+          <span style="width: 10px; height: 10px; transform: rotate(45deg); border: 1px solid #b7afd6; box-sizing: border-box"></span>
+          <span style="width: 10px; height: 10px; transform: rotate(45deg); border: 1px solid #b7afd6; box-sizing: border-box"></span>
+        </span>
+      </div>
+      <dl style="margin: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 14px; row-gap: 8px; font: 600 21px 'Barlow Condensed', sans-serif">
+        <dt style="color: #e4def7">Season standing</dt><dd style="margin: 0; text-align: right">2.40</dd>
+        <dt style="color: #e4def7">Class now</dt><dd style="margin: 0; text-align: right"><span style="background: #ff3d57; color: #14030a; padding: 0 8px; font-weight: 800; letter-spacing: 1px">HEEL</span></dd>
+        <dt style="color: #e4def7">Who can see it</dt><dd style="margin: 0; text-align: right">Only you</dd>
+      </dl>
+    </aside>
+
+    <!-- the choice -->
+    <div style="display: flex; flex-direction: column; gap: 22px; min-width: 0">
+      <fieldset style="border: 0; margin: 0; padding: 0">
+        <legend style="padding: 0; font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">CHOOSE A CLASS</legend>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 10px">
+
+          <label style="position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(61,184,255,.12); border: 2px solid #3db8ff; box-shadow: 0 0 30px rgba(61,184,255,.55); cursor: pointer">
+            <input type="radio" name="cls" checked style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #3db8ff; margin: 0">
+            <span style="font: 40px/1 Anton, Impact, sans-serif; color: #9fdcff; text-shadow: 0 0 16px rgba(61,184,255,.8)">FACE</span>
+            <span role="img" aria-label="Earns from hype, hurt by the groan" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px">
+              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
+              <span style="height: 28px; background: #3db8ff; color: #03141a; font: 800 20px/28px 'Barlow Condensed'; text-align: center">+</span>
+              <span style="height: 28px; border: 1.5px dashed #ff8a96; box-sizing: border-box; color: #ff8a96; font: 800 20px/24px 'Barlow Condensed'; text-align: center">−</span>
+              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
+            </span>
+            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns from hype on its posts and cards, and from Sweet cards it plays on others' posts that then draw hype.</span>
+            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by the groan, and by a card of its own that outdraws the post it landed on.</span>
+          </label>
+
+          <label style="position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(10,6,20,.7); border: 1px solid rgba(255,61,87,.55); cursor: pointer">
+            <input type="radio" name="cls" style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #ff3d57; margin: 0">
+            <span style="display: flex; gap: 10px; align-items: baseline"><span style="font: 40px/1 Anton, Impact, sans-serif; color: #ff8a96">HEEL</span><span style="font: 800 20px 'Barlow Condensed'; letter-spacing: 2px; border: 1px solid #ff8a96; color: #ff8a96; padding: 0 6px">NOW</span></span>
+            <span role="img" aria-label="Earns from heat, hurt by the calm" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px">
+              <span style="height: 28px; background: #ff3d57; color: #14030a; font: 800 20px/28px 'Barlow Condensed'; text-align: center">+</span>
+              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
+              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
+              <span style="height: 28px; border: 1.5px dashed #ff8a96; box-sizing: border-box; color: #ff8a96; font: 800 20px/24px 'Barlow Condensed'; text-align: center">−</span>
+            </span>
+            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns from heat, and from a Salty card on someone else's post that outdraws it.</span>
+            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by the calm: the polite shrug.</span>
+          </label>
+
+          <label style="position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(10,6,20,.7); border: 1px solid rgba(46,240,160,.5); cursor: pointer">
+            <input type="radio" name="cls" style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #2ef0a0; margin: 0">
+            <span style="font: 40px/1 Anton, Impact, sans-serif; color: #8af7c9">LURKER</span>
+            <span role="img" aria-label="Earns by calling where any post ends up" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px">
+              <span style="height: 28px; border: 1.5px dotted #2ef0a0; box-sizing: border-box"></span>
+              <span style="height: 28px; border: 1.5px dotted #2ef0a0; box-sizing: border-box"></span>
+              <span style="height: 28px; border: 1.5px dotted #2ef0a0; box-sizing: border-box"></span>
+              <span style="height: 28px; border: 1.5px dotted #2ef0a0; box-sizing: border-box"></span>
+            </span>
+            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns by reacting early the way a post ends up, by spinning threads that draw replies, and from reactions to its cards.</span>
+            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by posting more than 3 times in a day.</span>
+          </label>
+
+          <label style="position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(10,6,20,.7); border: 1px solid rgba(255,217,61,.5); cursor: pointer">
+            <input type="radio" name="cls" style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #ffd93d; margin: 0">
+            <span style="font: 40px/1 Anton, Impact, sans-serif; color: #ffe27a">JABRONI</span>
+            <span role="img" aria-label="Earns from the groan, hurt by hype" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px">
+              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
+              <span style="height: 28px; border: 1.5px dashed #ff8a96; box-sizing: border-box; color: #ff8a96; font: 800 20px/24px 'Barlow Condensed'; text-align: center">−</span>
+              <span style="height: 28px; background: #ffd93d; color: #1a1403; font: 800 20px/28px 'Barlow Condensed'; text-align: center">+</span>
+              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
+            </span>
+            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns from the groan, and from Salty cards landing on its posts. Selling the L.</span>
+            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by being taken sincerely: hype.</span>
+          </label>
+        </div>
+        <p style="margin: 12px 0 0; font: 600 21px 'Barlow Condensed', sans-serif; letter-spacing: 1px; color: #e4def7">THE MAP: HEAT · HYPE on top, GROAN · CALM below, the same grid as the React picker.</p>
+      </fieldset>
+
+      <fieldset style="border: 0; margin: 0; padding: 0">
+        <legend style="padding: 0; font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">HOW LOUD</legend>
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.35fr); gap: 14px; margin-top: 10px">
+          <label style="display: flex; gap: 12px; align-items: flex-start; min-height: 52px; box-sizing: border-box; padding: 12px 14px; border: 1px solid rgba(241,236,255,.35); cursor: pointer">
+            <input type="radio" name="loud" style="width: 22px; height: 22px; margin: 2px 0 0; accent-color: #19e3ff">
+            <span><b style="display: block; font: 800 21px 'Barlow Condensed'; letter-spacing: 1px">SILENT</b><span style="display: block; margin-top: 2px; font: 500 21px/1.35 'Barlow Condensed'; color: #e4def7">Nothing is posted. The class changes quietly.</span></span>
+          </label>
+          <label style="display: flex; gap: 12px; align-items: flex-start; min-height: 52px; box-sizing: border-box; padding: 12px 14px; border: 1px solid rgba(241,236,255,.35); cursor: pointer">
+            <input type="radio" name="loud" style="width: 22px; height: 22px; margin: 2px 0 0; accent-color: #19e3ff">
+            <span><b style="display: block; font: 800 21px 'Barlow Condensed'; letter-spacing: 1px">ANNOUNCED</b><span style="display: block; margin-top: 2px; font: 500 21px/1.35 'Barlow Condensed'; color: #e4def7">The System posts the new class.</span></span>
+          </label>
+          <label style="display: flex; gap: 12px; align-items: flex-start; min-height: 52px; box-sizing: border-box; padding: 12px 14px; border: 2px solid #19e3ff; box-shadow: 0 0 20px rgba(25,227,255,.45); background: rgba(25,227,255,.08); cursor: pointer">
+            <input type="radio" name="loud" checked style="width: 22px; height: 22px; margin: 2px 0 0; accent-color: #19e3ff">
+            <span><b style="display: block; font: 800 21px 'Barlow Condensed'; letter-spacing: 1px">ANNOUNCED WITH OLD CLASS</b><span style="display: block; margin-top: 2px; font: 500 21px/1.35 'Barlow Condensed'; color: #e4def7">The System posts both. "Was a Heel" becomes public as of that day.</span></span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div>
+        <div style="font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7; margin-bottom: 8px">WHAT EVERYONE WILL SEE</div>
+        <div style="background: #ffffff; color: #000000; border: 1px solid #000; font: 12px/1.5 Verdana, Geneva, sans-serif; box-shadow: 0 0 0 1px rgba(201,248,255,.6), 0 0 26px rgba(25,227,255,.35)">
+          <div style="padding: 3px 8px; border-bottom: 1px solid #000; font: bold 11px 'Courier New', Courier, monospace">Divided World » The System » Season 1: Who Turned</div>
+          <div style="display: flex">
+            <div style="width: 18%; padding: 8px; border-right: 1px solid #000; box-sizing: border-box"><b>The System</b><br><span style="font-size: 11px; color: #555">Posted at the settlement</span></div>
+            <div style="flex: 1; padding: 8px 10px"><b>Pipewrench</b> has Turned. Now a <b>Face</b>. Before this, Pipewrench was a <b>Heel</b>.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="grid-column: 1 / -1; display: flex; gap: 30px; align-items: center; border-top: 1px solid rgba(158,244,255,.35); padding-top: 20px">
+      <p style="margin: 0 auto 0 0; flex: 1; max-width: 680px; font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Takes effect at the next settlement, in 7 h 42 min; today is still scored as a Heel. You can cancel it from My characters until then. Pipewrench's next Turn opens 30 days after this one.</p>
+      <button style="min-height: 60px; padding: 0 26px; transform: skewX(-10deg); background: transparent; border: 1px solid rgba(241,236,255,.6); color: #f1ecff; cursor: pointer">
+        <span style="display: inline-block; transform: skewX(10deg); font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">CANCEL</span>
+      </button>
+      <button style="min-height: 60px; padding: 0 40px; margin-right: 30px; transform: skewX(-10deg); background: #19e3ff; border: 0; color: #03141a; cursor: pointer; box-shadow: 0 0 30px rgba(25,227,255,.7)">
+        <span style="display: inline-block; transform: skewX(10deg); font: 26px/1 Anton, Impact, sans-serif; letter-spacing: .5px">CONFIRM TURN</span>
+      </button>
+    </div>
+  </section>
+</div>
+</body>
+</html>

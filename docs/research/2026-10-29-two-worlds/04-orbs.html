@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Aura orbs: the two worlds board</title>
+<!-- A board of the two-worlds design session, 1440 by 900, as the owner approved it on 2026-10-29. A reference for the
+     look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what was decided. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+/* Glass type at game sizes (XAG 101/102 at 1080p): Barlow Condensed inks 0.90 of its em, so 20px is the floor that reaches 18px body height; every caption and number here meets it, and captions past two lines set at 1.5. */
+body{margin:0}
+a{color:#c9f8ff}a:hover{color:#ffffff}
+a:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.orb{position:relative;width:56px;height:56px;border-radius:50%;overflow:hidden;flex:none;background:radial-gradient(circle at 50% 60%,#1c1533,#07060c 72%);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.22),inset 0 -8px 14px rgba(0,0,0,.65)}
+.orb .liq,.orb .ghost,.orb .pale{position:absolute;left:0;right:0}
+.orb .liq{bottom:0}
+.orb .pale{background:linear-gradient(rgba(255,255,255,.5),rgba(255,255,255,.3))}
+.orb .gloss{position:absolute;left:17%;top:8%;width:48%;height:30%;border-radius:50%;background:radial-gradient(ellipse at 50% 40%,rgba(255,255,255,.9),rgba(255,255,255,0) 70%)}
+.orb .shine{position:absolute;top:-20%;left:30%;width:22%;height:140%;transform:rotate(28deg);background:rgba(255,255,255,.75);filter:blur(3px)}
+.orb .burst{position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,#ffffff 0 22%,rgba(255,255,255,.6) 40%,rgba(255,255,255,0) 70%)}
+.c1{background:radial-gradient(circle at 38% 30%,#ead6ff,#b46cff 52%,#3d1475)}
+.c2{background:radial-gradient(circle at 38% 30%,#d6e9ff,#3d9bff 52%,#0c3275)}
+.c3{background:radial-gradient(circle at 38% 30%,#d6fff0,#2ef0a0 52%,#08603f)}
+.c4{background:radial-gradient(circle at 38% 30%,#fff7d6,#ffd93d 52%,#7a5c06)}
+.c5{background:radial-gradient(circle at 38% 30%,#ffe7d6,#ff9a3d 52%,#7a3406)}
+.c6{background:radial-gradient(circle at 38% 30%,#ffd6da,#ff4d5e 52%,#750815)}
+.h4{background:repeating-linear-gradient(135deg,rgba(255,244,190,.9) 0 3px,rgba(255,217,61,.22) 3px 9px)}
+.h5{background:repeating-linear-gradient(135deg,rgba(255,224,190,.9) 0 2px,rgba(255,154,61,.22) 2px 6px)}
+.h6{background:repeating-linear-gradient(135deg,rgba(255,200,205,.9) 0 2px,rgba(255,77,94,.22) 2px 6px)}
+.g1{box-shadow:0 0 20px rgba(180,108,255,.7)}.g2{box-shadow:0 0 20px rgba(61,155,255,.7)}.g3{box-shadow:0 0 20px rgba(46,240,160,.6)}.g4{box-shadow:0 0 22px rgba(255,217,61,.65)}.g5{box-shadow:0 0 20px rgba(255,154,61,.6)}.g6{box-shadow:0 0 20px rgba(255,77,94,.65)}
+.ghost{animation:ghostpulse 2.4s ease-in-out infinite}
+@keyframes ghostpulse{0%,100%{opacity:.75}50%{opacity:1}}
+@media (prefers-reduced-motion: reduce){.ghost{animation:none}}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 900px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+  <!-- smoke, weighted away from the text: the captions, the four states and the cascade each sit in a calm;
+       only the AURA heading and the hero orb stand on full smoke -->
+  <svg aria-hidden="true" width="1440" height="900" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="oA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="17"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.78"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="oB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="5"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.05"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="oC" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0035 0.006" numOctaves="4" seed="41"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 0.17  0 0 0 0 0.84  0 0 2 0 -1.12"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="osoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+      <mask id="ocalm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="900">
+        <rect width="1440" height="900" fill="#ffffff"></rect>
+        <rect x="20" y="-20" width="460" height="120" fill="#000000" opacity="0.85" filter="url(#osoft)"></rect>
+        <rect x="330" y="210" width="340" height="360" fill="#000000" opacity="0.9" filter="url(#osoft)"></rect>
+        <rect x="640" y="24" width="760" height="570" fill="#000000" opacity="0.8" filter="url(#osoft)"></rect>
+        <rect x="40" y="600" width="1360" height="300" fill="#000000" opacity="0.85" filter="url(#osoft)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#ocalm)">
+      <rect width="1440" height="900" filter="url(#oA)" opacity="0.85"></rect>
+      <rect width="1440" height="900" filter="url(#oB)" opacity="0.45"></rect>
+      <rect width="1440" height="900" filter="url(#oC)" opacity="0.45"></rect>
+    </g>
+  </svg>
+
+  <header style="position: absolute; left: 64px; top: 40px">
+    <div style="font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 4px; color: #ffc48a">THE WALLET · LIVE</div>
+    <h1 style="margin: 0; font: 112px/1 Anton, Impact, sans-serif; letter-spacing: 2px; color: transparent; -webkit-text-stroke: 1.5px #ffd93d; text-shadow: 0 0 34px rgba(255,217,61,.35)">AURA</h1>
+  </header>
+
+  <!-- anatomy: one hero orb -->
+  <div style="position: absolute; left: 64px; top: 210px; width: 590px; height: 340px">
+    <div class="orb g4" style="position: absolute; left: 0; top: 20px; width: 240px; height: 240px; box-shadow: 0 0 50px rgba(255,217,61,.55), inset 0 0 0 2px rgba(255,255,255,.25), inset 0 -16px 32px rgba(0,0,0,.6)">
+      <div class="liq c4" style="height: 46%; border-top: 1.5px solid rgba(255,255,255,.85)"></div>
+      <div class="pale" style="bottom: 46%; height: 10%"></div>
+      <div class="ghost h4" style="bottom: 56%; height: 20%"></div>
+      <div class="gloss"></div>
+    </div>
+    <svg aria-hidden="true" width="590" height="340" style="position: absolute; left: 0; top: 0; overflow: visible">
+      <g stroke="#f1ecff" stroke-width="1" fill="none" opacity=".7">
+        <polyline points="204,64 262,33 280,33"></polyline>
+        <polyline points="226,100 262,110 280,110"></polyline>
+        <polyline points="232,138 262,187 280,187"></polyline>
+        <polyline points="200,204 262,264 280,264"></polyline>
+      </g>
+      <g fill="#f1ecff"><circle cx="204" cy="64" r="3"></circle><circle cx="226" cy="100" r="3"></circle><circle cx="232" cy="138" r="3"></circle><circle cx="200" cy="204" r="3"></circle></g>
+    </svg>
+    <dl style="position: absolute; left: 290px; top: 20px; margin: 0; width: 300px; display: flex; flex-direction: column; gap: 24px">
+      <div><dt style="font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">GLASS</dt><dd style="margin: 0; font: 500 21px/1.35 'Barlow Condensed', sans-serif; color: #e4def7">Empty orb, room left.</dd></div>
+      <div><dt style="font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #ffe27a">GHOST</dt><dd style="margin: 0; font: 500 21px/1.35 'Barlow Condensed', sans-serif; color: #e4def7">Estimate. Can't be spent.</dd></div>
+      <div><dt style="font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">PALE BAND</dt><dd style="margin: 0; font: 500 21px/1.35 'Barlow Condensed', sans-serif; color: #e4def7">Drained by hostile reactions.</dd></div>
+      <div><dt style="font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #ffd93d">SOLID</dt><dd style="margin: 0; font: 500 21px/1.35 'Barlow Condensed', sans-serif; color: #e4def7">Settled. The only Aura you can spend.</dd></div>
+    </dl>
+  </div>
+
+  <!-- the four states -->
+  <div style="position: absolute; left: 660px; top: 48px; width: 716px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px">
+    <section style="background: rgba(10,6,20,.72); border: 1px solid rgba(201,248,255,.35); padding: 18px 22px; clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%)">
+      <h2 style="margin: 0 0 14px; font: 26px/1 Anton, Impact, sans-serif; letter-spacing: .5px">SETTLED</h2>
+      <div role="img" aria-label="4.62 of 6.00 settled" style="display: flex; gap: 8px">
+        <div class="orb g1" style="width: 42px; height: 42px"><div class="liq c1" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g2" style="width: 42px; height: 42px"><div class="liq c2" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g3" style="width: 42px; height: 42px"><div class="liq c3" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g4" style="width: 42px; height: 42px"><div class="liq c4" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g5" style="width: 42px; height: 42px"><div class="liq c5" style="height: 62%; border-top: 1px solid rgba(255,255,255,.8)"></div><div class="gloss"></div></div>
+        <div class="orb" style="width: 42px; height: 42px"><div class="gloss" style="opacity: .5"></div></div>
+      </div>
+      <p style="margin: 14px 0 0; font: 500 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7"><b style="font: 24px/1 Anton, Impact, sans-serif; color: #fff">4.62</b> / 6.00. What you can spend at the Vending Machine right now.</p>
+    </section>
+
+    <section style="background: rgba(10,6,20,.72); border: 1px solid rgba(255,196,138,.45); padding: 18px 22px; clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%)">
+      <h2 style="margin: 0 0 14px; font: 26px/1 Anton, Impact, sans-serif; letter-spacing: .5px; color: #ffc48a">GHOST</h2>
+      <div role="img" aria-label="4.62 settled, about 0.30 more estimated" style="display: flex; gap: 8px">
+        <div class="orb g1" style="width: 42px; height: 42px"><div class="liq c1" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g2" style="width: 42px; height: 42px"><div class="liq c2" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g3" style="width: 42px; height: 42px"><div class="liq c3" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g4" style="width: 42px; height: 42px"><div class="liq c4" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g5" style="width: 42px; height: 42px"><div class="liq c5" style="height: 62%; border-top: 1px solid rgba(255,255,255,.8)"></div><div class="ghost h5" style="bottom: 62%; height: 30%"></div><div class="gloss"></div></div>
+        <div class="orb" style="width: 42px; height: 42px"><div class="gloss" style="opacity: .5"></div></div>
+      </div>
+      <p style="margin: 14px 0 0; font: 500 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7"><b style="font: 24px/1 Anton, Impact, sans-serif; color: #ffc48a">+0.30</b> estimated. Each favored reaction shows as up to +0.10, before the shared vote and halving.</p>
+    </section>
+
+    <section style="background: rgba(10,6,20,.72); border: 1px solid rgba(255,255,255,.3); padding: 18px 22px; clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%)">
+      <h2 style="margin: 0 0 14px; font: 26px/1 Anton, Impact, sans-serif; letter-spacing: .5px">DRAINED</h2>
+      <div role="img" aria-label="4.62 settled, about 0.40 drained" style="display: flex; gap: 8px">
+        <div class="orb g1" style="width: 42px; height: 42px"><div class="liq c1" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g2" style="width: 42px; height: 42px"><div class="liq c2" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g3" style="width: 42px; height: 42px"><div class="liq c3" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g4" style="width: 42px; height: 42px"><div class="liq c4" style="height: 78%; border-top: 1px solid rgba(255,255,255,.8)"></div><div class="pale" style="bottom: 78%; height: 22%"></div><div class="gloss"></div></div>
+        <div class="orb" style="width: 42px; height: 42px"><div class="pale" style="bottom: 0; height: 62%"></div><div class="gloss"></div></div>
+        <div class="orb" style="width: 42px; height: 42px"><div class="gloss" style="opacity: .5"></div></div>
+      </div>
+      <p style="margin: 14px 0 0; font: 500 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7"><b style="font: 24px/1 Anton, Impact, sans-serif; color: #fff">−0.40</b> estimated. Hostile reactions turn solid fill pale until the settlement decides.</p>
+    </section>
+
+    <section style="background: rgba(10,6,20,.72); border: 1px solid rgba(255,77,94,.5); padding: 18px 22px; clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%)">
+      <h2 style="margin: 0 0 14px; font: 26px/1 Anton, Impact, sans-serif; letter-spacing: .5px; color: #ff8a96">PAST THE CAP</h2>
+      <div role="img" aria-label="6.00 of 6.00, 0.40 past the cap" style="display: flex; gap: 8px; align-items: center">
+        <div class="orb g1" style="width: 42px; height: 42px"><div class="liq c1" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g2" style="width: 42px; height: 42px"><div class="liq c2" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g3" style="width: 42px; height: 42px"><div class="liq c3" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g4" style="width: 42px; height: 42px"><div class="liq c4" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g5" style="width: 42px; height: 42px"><div class="liq c5" style="height: 100%"></div><div class="gloss"></div></div>
+        <div class="orb g6" style="width: 42px; height: 42px"><div class="liq c6" style="height: 100%"></div><div class="gloss"></div></div>
+      </div>
+      <p style="margin: 14px 0 0; font: 500 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7"><b style="font: 24px/1 Anton, Impact, sans-serif; color: #ff8a96">+0.40</b> past the cap. Spend some before the settlement, or it won't fit.</p>
+    </section>
+  </div>
+
+  <!-- the settlement cascade -->
+  <section aria-label="The settlement cascade" style="position: absolute; left: 64px; right: 64px; top: 620px; height: 240px; background: rgba(10,6,20,.78); border-top: 1px solid #c9f8ff; box-shadow: 0 -1px 18px rgba(25,227,255,.45)">
+    <div style="position: absolute; left: 24px; top: 18px; display: flex; gap: 18px; align-items: baseline">
+      <h2 style="margin: 0; font: 30px/1 Anton, Impact, sans-serif; letter-spacing: .5px">THE SETTLEMENT</h2>
+      <span style="font: 600 21px 'Barlow Condensed', sans-serif; color: #e4def7">Daily at 08:17 UTC. Orb by orb, the ghost turns solid: a flash, then a shine.</span>
+    </div>
+    <ol style="position: absolute; left: 24px; right: 24px; top: 74px; margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px">
+      <li style="display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; gap: 10px; align-items: center">
+          <div class="orb g4" style="width: 52px; height: 52px"><div class="liq c4" style="height: 100%"></div><div class="gloss"></div></div>
+          <div class="orb g5" style="width: 52px; height: 52px"><div class="liq c5" style="height: 62%; border-top: 1px solid rgba(255,255,255,.8)"></div><div class="ghost h5" style="bottom: 62%; height: 30%"></div><div class="gloss"></div></div>
+          <div class="orb" style="width: 52px; height: 52px"><div class="gloss" style="opacity: .5"></div></div>
+        </div>
+        <span style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #ffc48a">1 · GHOST WAITS</span>
+      </li>
+      <li style="display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; gap: 10px; align-items: center">
+          <div class="orb g4" style="width: 52px; height: 52px"><div class="liq c4" style="height: 100%"></div><div class="gloss"></div></div>
+          <div style="position: relative">
+            <div aria-hidden="true" style="position: absolute; left: -12px; top: -12px; width: 72px; height: 72px; border-radius: 50%; border: 2px solid rgba(255,255,255,.8); box-shadow: 0 0 24px #fff"></div>
+            <div class="orb" style="width: 52px; height: 52px; box-shadow: 0 0 40px #fff"><div class="liq c5" style="height: 92%"></div><div class="burst"></div></div>
+          </div>
+          <div class="orb" style="width: 52px; height: 52px"><div class="gloss" style="opacity: .5"></div></div>
+        </div>
+        <span style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">2 · FLASH</span>
+      </li>
+      <li style="display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; gap: 10px; align-items: center">
+          <div class="orb g4" style="width: 52px; height: 52px"><div class="liq c4" style="height: 100%"></div><div class="gloss"></div></div>
+          <div class="orb g5" style="width: 52px; height: 52px"><div class="liq c5" style="height: 92%; border-top: 1px solid rgba(255,255,255,.8)"></div><div class="shine"></div><div class="gloss"></div></div>
+          <div class="orb" style="width: 52px; height: 52px"><div class="gloss" style="opacity: .5"></div></div>
+        </div>
+        <span style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">3 · SHINE</span>
+      </li>
+      <li style="display: flex; flex-direction: column; gap: 6px">
+        <div style="display: flex; gap: 12px; align-items: baseline">
+          <span style="font: 52px/1 Anton, Impact, sans-serif; color: #ffd93d; text-shadow: 0 0 24px rgba(255,217,61,.6)">4.92</span>
+          <span style="font: 800 22px 'Barlow Condensed', sans-serif; color: #2ef0a0">+0.30</span>
+        </div>
+        <span style="font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">4 · SETTLED</span>
+        <a href="#" style="display: inline-flex; align-self: flex-start; align-items: center; min-height: 52px; font: 600 21px 'Barlow Condensed', sans-serif">See what earned it in your log</a>
+      </li>
+    </ol>
+  </section>
+</div>
+</body>
+</html>

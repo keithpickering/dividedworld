@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=900">
+<title>The React picker: the two worlds board</title>
+<!-- A board of the two-worlds design session, 900 by 700, as the owner approved it on 2026-10-29. A reference for the
+     look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what was decided. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+/* Glass type at game sizes (XAG 101/102 at 1080p): Barlow Condensed inks 0.90 of its em, so 20px is the floor that reaches 18px body height; the picker holds nothing smaller, and the board above keeps its 2003 Verdana. */
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+.rx{width:52px;height:52px;font-size:26px;line-height:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.18);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.rx:hover{background:rgba(255,255,255,.12)}
+.rx:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+</style>
+</head>
+<body>
+<div style="width: 900px; height: 700px; position: relative; overflow: hidden; background: #ffffff; color: #000000; font: 12px/1.5 Verdana, Geneva, sans-serif">
+
+  <div style="padding: 24px 32px 0">
+    <article style="display: flex; border: 1px solid #000">
+      <div style="width: 22%; padding: 8px; border-right: 1px solid #000; box-sizing: border-box">
+        <a href="#" style="font-weight: bold">Mrs. Hooligan</a><br><span>Midcarder</span>
+        <div style="width: 80px; height: 100px; margin-top: 8px; border: 1px solid #000; background: repeating-linear-gradient(45deg, rgba(0,0,0,.08) 0 6px, transparent 6px 12px)"></div>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
+        <div style="display: flex; justify-content: space-between; padding: 3px 8px; border-bottom: 1px solid #000; font-size: 10px; color: #555"><span>Posted Oct 29, 2026 9:20 pm</span><a href="#">#42</a></div>
+        <p style="margin: 0; padding: 10px 8px 14px">Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I'm not.</p>
+        <div style="margin-top: auto; display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-top: 1px solid #000; font-size: 11px">
+          <span style="border: 1px solid #000; padding: 0 5px">😡 3</span>
+          <span style="border: 1px solid #000; padding: 0 5px">🍅 2</span>
+          <span style="border: 2px solid #000; padding: 0 4px">☕ 1</span>
+          <button aria-expanded="true" aria-controls="picker" style="font: bold 11px Verdana, sans-serif; color: #fff; background: #000; border: 1px solid #000; padding: 1px 8px; cursor: pointer">React</button>
+          <span style="color: #555">2 of 3 left</span>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <!-- the picker: the game's map as the control -->
+  <section id="picker" role="dialog" aria-label="React to Mrs. Hooligan's post" style="position: absolute; left: 236px; top: 214px; width: 540px; height: 452px; box-sizing: border-box; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif; border: 1px solid #c9f8ff; box-shadow: 0 0 0 1px rgba(25,227,255,.3), 0 0 36px rgba(25,227,255,.5), 0 24px 40px rgba(0,0,0,.4); overflow: hidden; clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px))">
+    <!-- smoke thinned behind every label and the footer line; it stays thickest at the picker's edges -->
+    <svg aria-hidden="true" width="540" height="452" style="position: absolute; left: 0; top: 0">
+      <defs>
+        <filter id="rA" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.008" numOctaves="4" seed="44"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.8"></feColorMatrix><feGaussianBlur stdDeviation="10"></feGaussianBlur></filter>
+        <filter id="rsoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+        <mask id="rcalm" maskUnits="userSpaceOnUse" x="0" y="0" width="540" height="452">
+          <rect width="540" height="452" fill="#ffffff"></rect>
+          <rect x="-30" y="-30" width="600" height="512" fill="#000000" opacity="0.85" filter="url(#rsoft)"></rect>
+        </mask>
+      </defs>
+      <rect width="540" height="452" fill="#07050d"></rect>
+      <g mask="url(#rcalm)">
+        <rect width="540" height="452" filter="url(#rA)" opacity="0.8"></rect>
+      </g>
+    </svg>
+    <div aria-hidden="true" style="position: absolute; left: 20px; top: 0; width: 20px; height: 20px; transform: translateY(-11px) rotate(45deg); background: #07050d; border-left: 1px solid #c9f8ff; border-top: 1px solid #c9f8ff"></div>
+
+    <div style="position: relative; display: flex; justify-content: space-between; align-items: baseline; padding: 14px 20px 0">
+      <h2 style="margin: 0; font: 30px/1 Anton, Impact, sans-serif; letter-spacing: .5px">REACT</h2>
+      <span style="font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #c9f8ff">2 OF 3 LEFT</span>
+    </div>
+
+    <div style="position: relative; margin: 10px 20px 0; height: 330px">
+      <span aria-hidden="true" style="position: absolute; left: 50%; top: 0; transform: translateX(-50%); font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">EXCITED</span>
+      <span aria-hidden="true" style="position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">LOW-KEY</span>
+      <div style="position: absolute; left: 0; right: 0; top: 28px; bottom: 28px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 6px">
+        <div role="group" aria-label="Heat" style="padding: 10px; background: rgba(255,61,87,.14); box-shadow: inset 0 0 0 1px rgba(255,61,87,.6)">
+          <div style="font: 22px/1 Anton, Impact, sans-serif; color: #ff8a96; margin-bottom: 8px">HEAT</div>
+          <div style="display: grid; grid-template-columns: repeat(4, 52px); gap: 4px">
+            <button class="rx" aria-label="Tomato">🍅</button><button class="rx" aria-label="Angry">😡</button><button class="rx" aria-label="Cursing">🤬</button><button class="rx" aria-label="Thumbs down">👎</button>
+          </div>
+        </div>
+        <div role="group" aria-label="Hype" style="padding: 10px; background: rgba(61,184,255,.14); box-shadow: inset 0 0 0 1px rgba(61,184,255,.6)">
+          <div style="font: 22px/1 Anton, Impact, sans-serif; color: #9fdcff; margin-bottom: 8px; text-align: right">HYPE</div>
+          <div style="display: grid; grid-template-columns: repeat(4, 52px); gap: 4px">
+            <button class="rx" aria-label="Fire" style="box-shadow: 0 0 0 2px #ffffff, 0 0 16px rgba(61,184,255,.9); background: rgba(61,184,255,.25)">🔥</button><button class="rx" aria-label="Heart">❤️</button><button class="rx" aria-label="Raised hands">🙌</button><button class="rx" aria-label="Star-struck">🤩</button>
+          </div>
+        </div>
+        <div role="group" aria-label="Groan" style="padding: 10px; background: rgba(255,217,61,.11); box-shadow: inset 0 0 0 1px rgba(255,217,61,.55); display: flex; flex-direction: column; justify-content: flex-end">
+          <div style="display: grid; grid-template-columns: repeat(4, 52px); gap: 4px">
+            <button class="rx" aria-label="Zzz">💤</button><button class="rx" aria-label="Eye roll">🙄</button><button class="rx" aria-label="Trash">🗑️</button><button class="rx" aria-label="Yawn">🥱</button>
+          </div>
+          <div style="font: 22px/1 Anton, Impact, sans-serif; color: #ffe27a; margin-top: 8px">GROAN</div>
+        </div>
+        <div role="group" aria-label="Calm" style="padding: 10px; background: rgba(46,240,160,.1); box-shadow: inset 0 0 0 1px rgba(46,240,160,.5); display: flex; flex-direction: column; justify-content: flex-end">
+          <div style="display: grid; grid-template-columns: repeat(4, 52px); gap: 4px">
+            <button class="rx" aria-label="Relieved">😌</button><button class="rx" aria-label="Tea, your reaction" aria-pressed="true" style="border: 2px solid #ffffff">☕</button><button class="rx" aria-label="Handshake">🤝</button><button class="rx" aria-label="Meditating">🧘</button>
+          </div>
+          <div style="font: 22px/1 Anton, Impact, sans-serif; color: #8af7c9; margin-top: 8px; text-align: right">CALM</div>
+        </div>
+      </div>
+      <div aria-hidden="true" style="position: absolute; left: 50%; top: 28px; bottom: 28px; width: 1px; background: rgba(241,236,255,.35)"></div>
+      <div aria-hidden="true" style="position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: rgba(241,236,255,.35)"></div>
+    </div>
+
+    <p style="position: relative; margin: 8px 20px 0; font: 600 21px 'Barlow Condensed', sans-serif; color: #e4def7">Arrow keys move, Enter reacts. Outlined: yours.</p>
+  </section>
+</div>
+</body>
+</html>

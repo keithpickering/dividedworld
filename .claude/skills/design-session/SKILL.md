@@ -31,9 +31,13 @@ sessions ahead, and a session that takes up one of those areas starts from them.
   private fact, and how it is not (CLAUDE.md, "A response never proves a private fact").
 - **The layers.** The plan says, for each part, whether it is engine or instance, and which interface carries an
   instance's content into the engine (CLAUDE.md, "KayfaBB never knows which instance it runs").
-- **Screens.** A plan that adds a screen or a flow designs it with the owner inside the house style (a 2003 BBCode
-  message board: Verdana and Courier, black and white, color only on the game's own pieces). Once impeccable is
-  installed, its `shape` step runs with the owner, briefed on that style, and the confirmed brief goes into the plan.
+- **Screens.** A plan that adds a screen or a flow first says which world it is in
+  (`docs/plans/2026-10-29-two-worlds-design.md`): the board, the arena, in the house style (a 2003 BBCode message
+  board: Verdana and Courier, black and white, color only on the game's own pieces), or the glass, the game's own
+  interface (the smoky neon look of the boards in `docs/research/2026-10-29-two-worlds/`, plain and never in
+  character, with text by the game rules of that design's section 4). It designs the screen with the owner in that
+  world's look. Once impeccable is installed, its `shape` step runs with the owner, briefed on that look, and the
+  confirmed brief goes into the plan.
 
 ## What it writes
 

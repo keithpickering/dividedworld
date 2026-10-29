@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Settings: the two worlds board</title>
+<!-- A board of the two-worlds design session, 1440 by 1360, as the owner approved it on 2026-10-29. A reference for the
+     look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what was decided. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+/* Glass type at game sizes (XAG 101/102 at 1080p): Barlow Condensed inks 0.90 of its em, so 20px is the
+   floor that reaches 18px body height; nothing on this page is smaller. Blocks past two lines stay under
+   80 characters and set at 1.5. */
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+a:focus-visible,button:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.seg{display:flex;flex-wrap:wrap;gap:10px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:inline-flex;align-items:center;min-height:52px;padding:0 22px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.seg span b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.seg input:checked + span{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.seg input:focus-visible + span{outline:3px solid #ffffff;outline-offset:3px}
+.row{display:grid;grid-template-columns:230px 1fr;column-gap:32px;padding:24px 0;border-top:1px solid rgba(241,236,255,.22)}
+.row h3{margin:0;padding-top:12px;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.row p{margin:12px 0 0;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7;max-width:680px}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1360px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+
+  <!-- smoke, weighted away from the text: every line below sits in a calm, so its worst pixel stays dark
+       enough for 4.5:1; only the two Anton headings stand on full smoke, at large-text size -->
+  <svg aria-hidden="true" width="1440" height="1360" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+      <mask id="calm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="1360">
+        <rect width="1440" height="1360" fill="#ffffff"></rect>
+        <rect x="340" y="300" width="960" height="1010" fill="#000000" opacity="0.9" filter="url(#soft)"></rect>
+        <rect x="56" y="290" width="270" height="330" fill="#000000" opacity="0.8" filter="url(#soft)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calm)">
+      <rect width="1440" height="1360" filter="url(#sA)" opacity="0.95"></rect>
+      <rect width="1440" height="1360" filter="url(#sB)" opacity="0.5"></rect>
+    </g>
+  </svg>
+
+  <!-- the menu bar every glass page shares, in place of the board's header -->
+  <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 0 40px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+    <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 18px"><b><kbd style="display: inline-block; margin-right: 10px; padding: 0 6px; border: 1px solid #ffffff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>VENDING MACHINE</b></a>
+    <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+    <a href="#" class="tab"><b>RANKINGS</b></a>
+    <a href="#" class="tab"><b>MY LOG</b></a>
+    <a href="#" class="tab" aria-current="page" style="background: rgba(25,227,255,.16); box-shadow: inset 0 -3px 0 #19e3ff; color: #ffffff"><b>SETTINGS</b></a>
+  </nav>
+
+  <h1 style="position: absolute; left: 64px; top: 120px; margin: 0; font: 112px/1 Anton, Impact, sans-serif; letter-spacing: 1px; text-shadow: 0 0 30px rgba(25,227,255,.35)">SETTINGS</h1>
+
+  <nav aria-label="Settings sections" style="position: absolute; left: 64px; top: 300px; width: 250px">
+    <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px">
+      <li><a href="#" class="tab"><b>ACCOUNT</b></a></li>
+      <li><a href="#" class="tab" aria-current="page" style="background: #19e3ff; color: #03141a; box-shadow: 0 0 18px rgba(25,227,255,.55)"><b>ACCESSIBILITY</b></a></li>
+      <li><a href="#" class="tab"><b>NOTIFICATIONS</b></a></li>
+      <li><a href="#" class="tab"><b>PRIVACY</b></a></li>
+      <li><a href="#" class="tab"><b>EXPORT MY DATA</b></a></li>
+    </ul>
+  </nav>
+
+  <section aria-labelledby="accH" style="position: absolute; left: 370px; top: 300px; width: 920px">
+    <h2 id="accH" style="margin: 0 0 12px; font: 52px/1 Anton, Impact, sans-serif; letter-spacing: .5px">ACCESSIBILITY</h2>
+    <p style="margin: 0 0 22px; max-width: 680px; font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #f1ecff">These change how the board and the glass look, read and move. They never change how hard a card is to get through.</p>
+
+    <fieldset class="row" style="margin: 0; border-left: 0; border-right: 0; border-bottom: 0">
+      <legend style="float: left; padding: 0"><h3>MOTION</h3></legend>
+      <div>
+        <div class="seg" role="radiogroup" aria-label="Motion">
+          <label><input type="radio" name="mo" checked><span><b>FOLLOW MY DEVICE</b></span></label>
+          <label><input type="radio" name="mo"><span><b>REDUCED</b></span></label>
+          <label><input type="radio" name="mo"><span><b>FULL</b></span></label>
+        </div>
+        <p>Reduced stops the drifting smoke, the pulses and the orb shine. A card's effect stays: Stick Around still snaps you back, only instantly.</p>
+      </div>
+    </fieldset>
+
+    <fieldset class="row" style="margin: 0; border-left: 0; border-right: 0; border-bottom: 0">
+      <legend style="float: left; padding: 0"><h3>SMOKE</h3></legend>
+      <div>
+        <div class="seg" role="radiogroup" aria-label="Smoke">
+          <label><input type="radio" name="sm" checked><span><b>FULL</b></span></label>
+          <label><input type="radio" name="sm"><span><b>LOW</b></span></label>
+          <label><input type="radio" name="sm"><span><b>OFF</b></span></label>
+        </div>
+        <p>How much cloud sits behind the glass. Off leaves plain black. Text is readable at every setting.</p>
+      </div>
+    </fieldset>
+
+    <fieldset class="row" style="margin: 0; border-left: 0; border-right: 0; border-bottom: 0">
+      <legend style="float: left; padding: 0"><h3>CONTRAST</h3></legend>
+      <div>
+        <div class="seg" role="radiogroup" aria-label="Contrast">
+          <label><input type="radio" name="hc" checked><span><b>STANDARD</b></span></label>
+          <label><input type="radio" name="hc"><span><b>HIGH</b></span></label>
+        </div>
+        <p>High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen.</p>
+      </div>
+    </fieldset>
+
+    <fieldset class="row" style="margin: 0; border-left: 0; border-right: 0; border-bottom: 0">
+      <legend style="float: left; padding: 0"><h3>TEXT SIZE</h3></legend>
+      <div>
+        <div class="seg" role="radiogroup" aria-label="Text size">
+          <label><input type="radio" name="ts" checked><span><b>100%</b></span></label>
+          <label><input type="radio" name="ts"><span><b>125%</b></span></label>
+          <label><input type="radio" name="ts"><span><b>150%</b></span></label>
+          <label><input type="radio" name="ts"><span><b>200%</b></span></label>
+        </div>
+        <p>Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.</p>
+      </div>
+    </fieldset>
+
+    <fieldset class="row" style="margin: 0; border-left: 0; border-right: 0; border-bottom: 0">
+      <legend style="float: left; padding: 0"><h3>THE BOARD</h3></legend>
+      <div>
+        <div class="seg" role="radiogroup" aria-label="Board colors">
+          <label><input type="radio" name="bd" checked><span><b>BLACK ON WHITE</b></span></label>
+          <label><input type="radio" name="bd"><span><b>WHITE ON BLACK</b></span></label>
+        </div>
+        <p>The 2003 board stays 2003 either way. Only its two colors swap.</p>
+      </div>
+    </fieldset>
+
+    <div class="row">
+      <h3>READ-OUTS</h3>
+      <div>
+        <label style="display: flex; gap: 16px; align-items: center; min-height: 52px; cursor: pointer; font: 700 22px 'Barlow Condensed', sans-serif">
+          <input type="checkbox" checked style="width: 30px; height: 30px; margin: 0; accent-color: #19e3ff">
+          Announce card effects on the post I'm reading
+        </label>
+        <p>A screen reader hears one short line when a card lands, like "Whoops! splatted this post. Scrub it with the keyboard."</p>
+      </div>
+    </div>
+
+    <p style="margin: 20px 0 0; font: 600 21px 'Barlow Condensed', sans-serif; color: #e4def7">Changes save as you make them.</p>
+  </section>
+</div>
+</body>
+</html>
