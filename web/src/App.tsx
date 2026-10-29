@@ -7,6 +7,10 @@ import type { KayfaApi, ScreenSettings } from '../../engine/ui/data/api.ts';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
+import { AccountGate } from '../../engine/ui/account/OpenAccount.tsx';
+import { InvitesScreen } from '../../engine/ui/account/Invites.tsx';
+import { SettingsScreen } from '../../engine/ui/account/Settings.tsx';
+import { SignInScreen } from '../../engine/ui/account/SignIn.tsx';
 import { Characters } from '../../engine/ui/characters/Characters.tsx';
 import { NewCharacter } from '../../engine/ui/characters/NewCharacter.tsx';
 import { ProfileScreen } from '../../engine/ui/profile/Profile.tsx';
@@ -23,6 +27,8 @@ import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 
 const LINKS = [{ to: '/', label: 'Index' }, { to: '/standings', label: 'Standings' }, { to: '/characters', label: 'Characters' }];
+/** What only a player with an account has a use for. */
+const PLAYER_LINKS = [{ to: '/invites', label: 'Invites' }, { to: '/settings', label: 'Settings' }];
 
 const ROUTES: readonly Route[] = [
   { path: '/', render: () => <IndexScreen /> },
@@ -33,6 +39,10 @@ const ROUTES: readonly Route[] = [
   { path: '/standings', render: () => <StandingsScreen /> },
   { path: '/c/:id', render: ({ id }) => <ProfileScreen id={id!} /> },
   { path: '/c/:id/record', render: ({ id }) => <RecordScreen id={id!} /> },
+  { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
+  { path: '/register', render: () => <SignInScreen mode="register" /> },
+  { path: '/invites', render: () => <InvitesScreen /> },
+  { path: '/settings', render: () => <SettingsScreen /> },
   { path: '/t/:thread', render: ({ thread }) => <ThreadScreen thread={thread!} /> },
 ];
 
@@ -48,6 +58,18 @@ function Appearance({ api }: { readonly api: KayfaApi }) {
   return null;
 }
 
+/** The frame, with the links for a player who has an account. */
+function Page() {
+  const { session } = usePlayer();
+  return (
+    <Frame links={session.account ? [...LINKS, ...PLAYER_LINKS] : LINKS}>
+      <AccountGate>
+        <Routes routes={ROUTES} />
+      </AccountGate>
+    </Frame>
+  );
+}
+
 export function App({ api }: { readonly api: KayfaApi }) {
   const [settings, setSettings] = useState<ScreenSettings | null>(null);
   const [failed, setFailed] = useState(false);
@@ -61,9 +83,7 @@ export function App({ api }: { readonly api: KayfaApi }) {
       <KayfaProvider value={{ api, instance, ui: instanceUi, settings }}>
         <PlayerProvider api={api}>
           <Appearance api={api} />
-          <Frame links={LINKS}>
-            <Routes routes={ROUTES} />
-          </Frame>
+          <Page />
         </PlayerProvider>
       </KayfaProvider>
     </RouterProvider>

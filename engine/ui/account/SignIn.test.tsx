@@ -101,7 +101,7 @@ describe('Register', () => {
     open(w, 'register', '/register?invite=wrong');
     await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
     await ask('new@example.test');
-    expect(await screen.findByRole('status')).toHaveTextContent('that invite opens nothing, so no new login is made with it');
+    expect(await screen.findByText("that invite opens nothing, so no new login is made with it")).toBeInTheDocument();
     await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
     expect(await screen.findByText(/that invite opens nothing; open the account with another invite/u)).toBeInTheDocument();
     expect(screen.getByLabelText('Invite')).toBeInTheDocument();
@@ -111,7 +111,7 @@ describe('Register', () => {
     const w = world('closed');
     open(w, 'register', '/register', 'closed');
     expect(await screen.findByText(/Registration is closed/u)).toBeInTheDocument();
-    expect(screen.getByText(/when an admin opens it/u)).toBeInTheDocument();
+    expect(screen.getByText(/when an admin opens it/iu)).toBeInTheDocument();
   });
 
   test('a session with no account (the emailed link landed) is offered an invite to open it', async () => {

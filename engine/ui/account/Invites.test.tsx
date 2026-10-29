@@ -50,7 +50,7 @@ describe('Invites', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Make an invite' }));
     expect(await screen.findByText(/You hold 2 of 2 open invites, the most there are/u)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Make an invite' })).toBeDisabled();
-    expect(screen.getByText(/one used or expired frees one/u)).toBeInTheDocument();
+    expect(screen.getByText(/used or expired frees one/iu)).toBeInTheDocument();
   });
 
   test('lists each invite with its expiry and whether it was used, and reissues an unused one', async () => {

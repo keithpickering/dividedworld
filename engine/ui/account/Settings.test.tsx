@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { buildWorld, renderIn } from '../test-world.tsx';
@@ -19,9 +19,9 @@ describe('Settings', () => {
   test('offers the device, light, dark and the instance\'s other themes, with the account\'s choice selected', async () => {
     open(world().fake);
     const theme = await screen.findByRole('group', { name: 'Theme' });
-    for (const name of ['Device', 'Light', 'Dark', 'Sepia']) expect(await screen.findByRole('radio', { name: new RegExp(`^${name}`, 'u') })).toBeInTheDocument();
+    for (const name of ['Device', 'Light', 'Dark', 'Sepia']) expect(within(theme).getByRole('radio', { name: new RegExp(`^${name}`, 'u') })).toBeInTheDocument();
     expect(theme).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /^Device/u, checked: true })).toBeInTheDocument();
+    expect(within(theme).getByRole('radio', { name: /^Device/u, checked: true })).toBeInTheDocument();
   });
 
   test('a theme applies at once and persists across a fresh load', async () => {

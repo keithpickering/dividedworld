@@ -3,6 +3,7 @@
  * the end-to-end flows (playwright.config.ts builds with --mode e2e). Its names are made up for
  * the demo; nothing here is a real player or a real post.
  */
+import type { Preferences } from '../../engine/ui/data/api.ts';
 import type { Fake } from '../../engine/ui/data/fake.ts';
 
 export interface Demo {
@@ -38,6 +39,7 @@ export function seedDemo(fake: Fake): Demo {
   fake.seed.estimate(me, { entries: [{ character: pipewrench, reason: 'heel.drewHeat', amount: 85 }] });
   fake.seed.views(thread, 3);
   fake.signInAs(me);
+  keepPreferences(fake);
   return { me, other, characters: { pipewrench, hooligan, spritey }, thread, longThread: long.thread };
 }
 
@@ -55,5 +57,24 @@ export function recordAvatarUploads(fake: Fake): void {
   fake.setAvatar = async (upload) => {
     kept.push({ square: await bytes(upload.square), portrait: await bytes(upload.portrait), keys: Object.keys(upload) });
     return real(upload);
+  };
+}
+
+/**
+ * The demo world starts over on every load, so a player's saved preferences are kept for the tab
+ * (session storage) and put back on the demo account: "change the theme, reload, still dark"
+ * is then something the end-to-end flow can see. The real backend keeps them in the account.
+ */
+function keepPreferences(fake: Fake): void {
+  const key = 'kb-demo-preferences';
+  try {
+    const kept = globalThis.sessionStorage?.getItem(key);
+    if (kept) void fake.setPreferences(JSON.parse(kept) as Partial<Preferences>);
+  } catch { /* nothing kept: the defaults hold */ }
+  const real = fake.setPreferences.bind(fake);
+  fake.setPreferences = async (p) => {
+    const r = await real(p);
+    if (r.ok) { try { globalThis.sessionStorage?.setItem(key, JSON.stringify(r.value)); } catch { /* not kept */ } }
+    return r;
   };
 }
