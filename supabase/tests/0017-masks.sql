@@ -110,7 +110,8 @@ begin
   if not (said ->> 'pending')::boolean then raise exception 'a Turn waits for the settlement: %', said; end if;
   -- Changed before it takes effect: louder, and the change is the Turn.
   said := turn(loud, 'beta', 'revealed');
-  if (select loudness from pending_turns where character = loud) is distinct from 'revealed' then raise exception 'a waiting Turn is changed'; end if;
+  -- "revealed", from an older client, waits as announced naming the class it Turns from (0028).
+  if (select (loudness, show_from) from pending_turns where character = loud) is distinct from ('announced'::text, true) then raise exception 'a waiting Turn is changed'; end if;
   perform turn(shy, 'beta', 'silent');
   -- Nothing public moves while a Turn waits, announced or not.
   if (select class_key from class_history where character = loud order by started_at desc limit 1) is distinct from 'alpha' then raise exception 'a waiting Turn changed the class'; end if;
@@ -381,10 +382,11 @@ begin
   update settings set value = '{"unit": "month", "count": 3}' where key = 'seasonLength';
   update seasons set starts_at = next_start + interval '1 day 12 hours' - interval '3 months' where ends_at is null;
   perform tests.become(ann);
-  perform turn(quick, 'beta', 'silent');
-  perform turn(quick2, 'beta', 'silent');
-  perform turn(slow, 'beta', 'silent');
-  perform turn(slow2, 'beta', 'silent');
+  -- Announced, naming the class each leaves, so the reveal shows them (0029: a silent one it never does).
+  perform turn(quick, 'beta', 'announced', true, false);
+  perform turn(quick2, 'beta', 'announced', true, false);
+  perform turn(slow, 'beta', 'announced', true, false);
+  perform turn(slow2, 'beta', 'announced', true, false);
   perform tests.unbecome();
   update pending_turns set asked_at = next_start + interval '1 hour' where character = quick;
   update pending_turns set asked_at = next_start + interval '1 hour 3 minutes' where character = quick2;
@@ -417,12 +419,12 @@ begin
     raise exception 'the reveal counted a character that played no part in the season';
   end if;
   -- Two Turns made minutes apart read as two made hours apart: each is dated by its window.
-  select jsonb_object_agg(payload ->> 'name', payload -> 'classes') into revealed from acts
+  select jsonb_object_agg(payload ->> 'name', payload -> 'shown') into revealed from acts
   where kind = 'reveal' and payload ->> 'season' = season_no::text and payload ->> 'name' like '% Pair %';
-  if revealed -> 'Quick Pair One' <> revealed -> 'Quick Pair Two' or revealed -> 'Quick Pair One' <> revealed -> 'Slow Pair One' or revealed -> 'Slow Pair One' <> revealed -> 'Slow Pair Two' then
+  if revealed -> 'Quick Pair One' is distinct from revealed -> 'Quick Pair Two' or revealed -> 'Quick Pair One' is distinct from revealed -> 'Slow Pair One' or revealed -> 'Slow Pair One' is distinct from revealed -> 'Slow Pair Two' then
     raise exception 'Turns in one window are told apart in the reveal: %', revealed;
   end if;
-  if (revealed -> 'Quick Pair One' -> 1 ->> 'from')::timestamptz is distinct from next_start + interval '1 day' then raise exception 'a Turn is dated by the window it took effect at: %', revealed; end if;
+  if (revealed -> 'Quick Pair One' -> 0 ->> 'at')::timestamptz is distinct from next_start + interval '1 day' then raise exception 'a Turn is dated by the window it took effect at: %', revealed; end if;
   -- The reveal's Acts wait in the outbox, its thread for its board and each Act for the thread.
   perform set_config('role', 'service_role', true);
   due := due_broadcasts();

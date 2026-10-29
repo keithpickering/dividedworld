@@ -84,3 +84,14 @@ begin
   perform tests.unbecome();
   if n <> 0 then raise exception 'a player heard something on a channel that is not a broadcast'; end if;
 end $$;
+
+-- What a player made public of a class (0027) is read from Acts, and sent live as the Acts are:
+-- class_reveals and turns_announced are views, published nowhere.
+do $$
+begin
+  if (select string_agg(relname || ':' || relkind::text, ',' order by relname) from pg_class where relnamespace = 'public'::regnamespace and relname in ('class_reveals', 'turns_announced'))
+     is distinct from 'class_reveals:v,turns_announced:v' then
+    raise exception 'class_reveals and turns_announced are views';
+  end if;
+  if exists (select 1 from pg_publication_tables where schemaname = 'public' and tablename in ('class_reveals', 'turns_announced')) then raise exception 'a view of reveals is published'; end if;
+end $$;

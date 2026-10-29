@@ -184,3 +184,78 @@ begin
   if (turn(turner, 'beta', 'silent') -> 'takes_effect_at') is distinct from 'null'::jsonb then raise exception 'a Turn in a season''s first window guessed its time'; end if;
   perform tests.unbecome();
 end $$;
+
+-- ---- A Turn names the class it Turns to (show_to), from (show_from), both, or neither; naming
+-- the class it Turns to writes the character's unmask Act after the tally (the class reveal
+-- plan, Task 2) ----
+do $$
+declare
+  ann uuid := tests.account('show-ann');
+  bob uuid := tests.account('show-bob');
+  watcher uuid := tests.character(bob, 'Watches Turns', 'alpha', now() - interval '60 days');
+  plain uuid := tests.character(ann, 'Turns Plainly', 'alpha', now() - interval '60 days');
+  from_only uuid := tests.character(ann, 'Names What It Was', 'alpha', now() - interval '60 days');
+  to_only uuid := tests.character(ann, 'Names What It Is', 'alpha', now() - interval '60 days');
+  named_both uuid := tests.character(ann, 'Names Both', 'alpha', now() - interval '60 days');
+  window_end timestamptz := coalesce((select max(ends_at) from settlements), now()) + interval '1 minute';
+  first_tally uuid;
+  tally acts%rowtype;
+  said jsonb;
+  entry jsonb;
+  u acts%rowtype;
+begin
+  perform tests.become(ann);
+  said := turn(plain, 'beta', 'announced', false, false);
+  if said - 'takes_effect_at' is distinct from '{"pending": true, "class": "beta", "loudness": "announced", "show_from": false, "show_to": false}'::jsonb then raise exception 'a Turn says how loud it is: %', said; end if;
+  perform turn(from_only, 'beta', 'announced', true, false);
+  perform turn(to_only, 'beta', 'announced', false, true);
+  perform turn(named_both, 'beta', 'announced', true, true);
+  -- A silent Turn names nothing; asking it to is refused.
+  if pg_temp.refusal(format('select turn(%L, %L, %L, true, false)', plain, 'beta', 'silent')) is distinct from 'a silent Turn names no class' then raise exception 'a silent Turn named its old class'; end if;
+  if pg_temp.refusal(format('select turn(%L, %L, %L, false, true)', plain, 'beta', 'silent')) is distinct from 'a silent Turn names no class' then raise exception 'a silent Turn named its new class'; end if;
+  if pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', plain, 'beta', 'revealed')) is distinct from 'a Turn is silent or announced' then raise exception 'the new form takes no "revealed"'; end if;
+  if (select (show_from, show_to) from pending_turns where character = named_both) is distinct from (true, true) then raise exception 'its player reads what their Turn will name'; end if;
+  perform tests.unbecome();
+  update pending_turns set asked_at = window_end - interval '30 seconds' where character in (plain, from_only, to_only, named_both);
+  first_tally := masks_change(window_end);
+  select * into tally from acts where id = first_tally;
+  select x into entry from jsonb_array_elements(tally.payload -> 'turns') x where x ->> 'character' = plain::text;
+  if entry is distinct from jsonb_build_object('character', plain, 'name', 'Turns Plainly', 'loudness', 'announced') then raise exception 'a plain announced Turn names no class: %', entry; end if;
+  select x into entry from jsonb_array_elements(tally.payload -> 'turns') x where x ->> 'character' = from_only::text;
+  if entry ->> 'was' is distinct from 'alpha' or entry ? 'class' then raise exception 'a Turn naming its old class names it alone: %', entry; end if;
+  select x into entry from jsonb_array_elements(tally.payload -> 'turns') x where x ->> 'character' = to_only::text;
+  if entry ->> 'class' is distinct from 'beta' or entry ? 'was' then raise exception 'a Turn naming its new class names it alone: %', entry; end if;
+  select x into entry from jsonb_array_elements(tally.payload -> 'turns') x where x ->> 'character' = named_both::text;
+  if (entry ->> 'was', entry ->> 'class') is distinct from ('alpha'::text, 'beta'::text) then raise exception 'a Turn naming both names both: %', entry; end if;
+  -- Naming the new class writes the character's unmask, after the tally, dated at it.
+  for u in select * from acts where kind = 'unmask' and character in (to_only, named_both) loop
+    if u.thread is distinct from tally.thread or u.seq <= tally.seq or u.created_at is distinct from window_end or u.payload is distinct from '{"class": "beta", "message": "", "via": "turn"}'::jsonb then
+      raise exception 'a Turn naming its new class is unmasked after its tally, dated at it: %', to_jsonb(u);
+    end if;
+  end loop;
+  if (select count(*) from acts where kind = 'unmask' and character in (to_only, named_both)) is distinct from 2::bigint then raise exception 'each Turn naming its new class writes one unmask'; end if;
+  if exists (select 1 from acts where kind = 'unmask' and character in (plain, from_only)) then raise exception 'a Turn naming only its old class, or none, wrote an unmask'; end if;
+  if (select (class, at, via) from class_reveals where character = to_only) is distinct from ('beta'::text, window_end, 'turn'::text) then raise exception 'class_reveals reads a Turn''s unmask'; end if;
+  -- Reacted to and spun by another player, as any reveal is.
+  select * into u from acts where kind = 'unmask' and character = to_only;
+  perform tests.become(bob);
+  perform react(u.id, watcher, 'up');
+  perform spin(u.id, watcher, 'That Turn', '');
+  perform tests.unbecome();
+  if (select count from reaction_tallies where act = u.id and kind = 'up') is distinct from 1 then raise exception 'a Turn''s unmask is reacted to'; end if;
+  if not exists (select 1 from threads where origin_act_id = u.id and board = players_board()) then raise exception 'a thread is spun from a Turn''s unmask, on the players'' board'; end if;
+end $$;
+
+-- ---- The old three-argument turn() still takes an older client's "revealed": announced, naming its old class ----
+do $$
+declare
+  ann uuid := tests.account('show-old');
+  old uuid := tests.character(ann, 'Older Client', 'alpha', now() - interval '60 days');
+  said jsonb;
+begin
+  perform tests.become(ann);
+  said := turn(old, 'beta', 'revealed');
+  perform tests.unbecome();
+  if (said ->> 'loudness', (said ->> 'show_from')::boolean, (said ->> 'show_to')::boolean) is distinct from ('announced'::text, true, false) then raise exception 'an older client''s revealed Turn is announced with its old class: %', said; end if;
+  if (select (loudness, show_from, show_to) from pending_turns where character = old) is distinct from ('announced'::text, true, false) then raise exception 'it waits as announced, naming its old class'; end if;
+end $$;

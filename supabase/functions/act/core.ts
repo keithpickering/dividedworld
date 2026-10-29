@@ -32,7 +32,8 @@ const thread = (t: unknown): Broadcast[] => (t && typeof t === 'object' && (t as
 
 const announcement = (a: Row): Broadcast[] => {
   const told = a.announcement as Row | null | undefined;
-  return told ? [...thread(told.thread), ...act(told.act)] : [];
+  // A drop announced with its class: the character's own unmask follows the tally (0028_loud_classes.sql).
+  return told ? [...thread(told.thread), ...act(told.act), ...act(told.unmask)] : [];
 };
 
 /**
@@ -52,6 +53,7 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   play_card: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
   spin: (a) => [...thread(a.thread), ...act(a.act)],
+  unmask: (a) => act(a),
   // A Turn waits for the settlement, whose tally is sent from there (settle/core.ts).
   turn: () => [],
   withdraw_turn: () => [],

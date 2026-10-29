@@ -17,8 +17,8 @@
  * two forums or guesses at a column.
  *
  * The rows go in one transaction, as a replica writes them (session_replication_role), so the
- * triggers that number an Act, cap a player's characters or check a card's words do not run
- * again over rows they already ran over; the append-only guards fire on updates and deletes,
+ * triggers that number an Act, cap a player's characters, check a card's words or check that an
+ * unmask names the class its character held do not run again over rows they already ran over; the append-only guards fire on updates and deletes,
  * and an import makes neither. Since a replica checks no foreign key either, the import checks
  * them all itself once every row is in, and a file shorter or longer than the manifest says is
  * refused by name: a lost line never imports quietly. Then each identity's next value is set past
