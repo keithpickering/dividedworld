@@ -104,7 +104,7 @@ begin
   if (select debuted_at from characters where id = loud) is distinct from (select created_at from characters where id = loud) then raise exception 'a dropped character acts at once, debuted from its creation'; end if;
   perform tests.become(bob);
   if not exists (select 1 from characters_public where id = loud) then raise exception 'a dropped character is in the public list'; end if;
-  if not exists (select 1 from season_standings where character = loud) then raise exception 'a dropped character is in the season''s standings'; end if;
+  if not exists (select 1 from standings_page(0, 1000) p where p.character = loud) then raise exception 'a dropped character is in the season''s standings'; end if;
   perform tests.unbecome();
   -- One tally Act names it, at once, by The System, on The System's board, sent live by the answer.
   if pg_temp.named_in(loud) is distinct from 1::bigint then raise exception 'an announced drop is named in one tally: %', pg_temp.named_in(loud); end if;

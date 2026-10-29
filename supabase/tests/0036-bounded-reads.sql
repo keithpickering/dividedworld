@@ -100,6 +100,8 @@ declare
   r record;
   got jsonb;
   total integer;
+  ranked jsonb;
+  at_or_above_0 bigint;
   why text;
 begin
   insert into standings (character, season, amount) values
@@ -108,11 +110,14 @@ begin
   on conflict (season, character) do update set amount = excluded.amount;  -- a debut wrote each a row at 0 (0030's roster)
   insert into characters (owner, name, created_at) values (ann, 'Sp Waiting', now()) returning id into waiting;
   select count(*) into total from season_standings;
+  -- The ranking, read as its owner (no client reads season_standings), then asked of standing_place as a player.
+  ranked := (select jsonb_agg(to_jsonb(x)) from season_standings x);
+  at_or_above_0 := (select count(*) from season_standings where standing >= 0);
 
   perform tests.become(bob);
   perform auth.assert_impersonating();
   -- Every debuted character, against the view that ranks them all.
-  for r in select * from season_standings loop
+  for r in select * from jsonb_to_recordset(ranked) as x(character uuid, name text, standing integer, place bigint) loop
     got := standing_place(r.character);
     if got is distinct from jsonb_build_object('standing', r.standing, 'place', r.place, 'of', total) then
       raise exception 'standing_place of % is % but the ranking says standing %, place %, of %', r.name, got, r.standing, r.place, total;
@@ -121,7 +126,7 @@ begin
   -- The cases by name: ties share a place; no row stands at 0; a debt stands below every character with no row.
   if (standing_place(tied_b) ->> 'place')::integer is distinct from 2 then raise exception 'ties share the place above them'; end if;
   if (standing_place(nothing) ->> 'standing')::integer is distinct from 0 then raise exception 'no row stands at 0'; end if;
-  if (standing_place(owes) ->> 'place')::integer is distinct from (select count(*) from season_standings where standing >= 0) + 1 then raise exception 'a negative standing is below every standing at or above 0, the characters with no row among them: %', standing_place(owes); end if;
+  if (standing_place(owes) ->> 'place')::integer is distinct from at_or_above_0 + 1 then raise exception 'a negative standing is below every standing at or above 0, the characters with no row among them: %', standing_place(owes); end if;
   if (standing_place(owes_same) ->> 'place')::integer is distinct from (standing_place(owes) ->> 'place')::integer then raise exception 'equal debts share a place'; end if;
   if (standing_place(owes_more) ->> 'place')::integer is distinct from (standing_place(owes) ->> 'place')::integer + 2 then raise exception 'a larger debt is below the two smaller ones'; end if;
   -- A character waiting to debut and a character that does not exist answer alike (nothing), so the answer proves neither.

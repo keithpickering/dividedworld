@@ -56,27 +56,36 @@ begin
   if not has_row then raise exception 'a character that debuted while a season opened has no row in the new season''s standings'; end if;
 end $$;
 
--- The page of season_standings that standings_page(o, l) should be, and what it is, as two values.
-create function pg_temp.page_wanted(o integer, l integer) returns jsonb language sql as $$
-  select coalesce(jsonb_agg(jsonb_build_array(x.character, x.name, x.standing, x.place) order by x.place, x.name), '[]')
-  from (select * from season_standings order by place, name offset o limit l) x
+-- The ranking as season_standings lists it, ordered by place and then name, read as the view's owner: no
+-- client reads the view (0030 revokes it), so the comparison takes it before turning back into the player.
+create function pg_temp.ranked() returns jsonb language sql as $$
+  select coalesce(jsonb_agg(jsonb_build_array(x.character, x.name, x.standing, x.place) order by x.place, x.name), '[]') from season_standings x
+$$;
+-- The page of that ranking standings_page(o, l) should be, and what it is, as two values.
+create function pg_temp.page_wanted(ranked jsonb, o integer, l integer) returns jsonb language sql as $$
+  select coalesce(jsonb_agg(e order by i), '[]') from jsonb_array_elements(ranked) with ordinality r(e, i) where i > o and i <= o + l
 $$;
 create function pg_temp.page_got(o integer, l integer) returns jsonb language sql as $$
   select coalesce(jsonb_agg(jsonb_build_array(p.character, p.name, p.standing, p.place) order by p.n), '[]')
   from standings_page(o, l) with ordinality as p(character, name, standing, place, n)
 $$;
--- Every page of every size from 1 to 7, and one past the end, against the ranking.
-create function pg_temp.every_page(why text) returns void language plpgsql as $$
+-- Every page of every size from 1 to 7, and one past the end, read as the player `who` against the ranking.
+create function pg_temp.every_page(why text, who uuid) returns void language plpgsql as $$
 declare
-  total integer := (select count(*) from season_standings);
+  ranked jsonb;
+  total integer;
   l integer;
   o integer;
 begin
+  perform tests.unbecome();
+  ranked := pg_temp.ranked();
+  total := jsonb_array_length(ranked);
+  perform tests.become(who);
   for l in 1..7 loop
     o := 0;
     while o <= total + l loop
-      if pg_temp.page_got(o, l) is distinct from pg_temp.page_wanted(o, l) then
-        raise exception '%: the page at offset % of % rows is % but the ranking says %', why, o, l, pg_temp.page_got(o, l), pg_temp.page_wanted(o, l);
+      if pg_temp.page_got(o, l) is distinct from pg_temp.page_wanted(ranked, o, l) then
+        raise exception '%: the page at offset % of % rows is % but the ranking says %', why, o, l, pg_temp.page_got(o, l), pg_temp.page_wanted(ranked, o, l);
       end if;
       o := o + l;
     end loop;
@@ -122,7 +131,7 @@ begin
 
   perform tests.become(bob);
   perform auth.assert_impersonating();
-  perform pg_temp.every_page('the open season');
+  perform pg_temp.every_page('the open season', bob);
   -- The cases by name: three tied at 300 split over pages of two share place 2; no row and a settled 0 alike stand at 0; debts last.
   if pg_temp.page_got(1, 2) -> 1 ->> 3 is distinct from '2' or pg_temp.page_got(3, 2) -> 0 ->> 3 is distinct from '2' then
     raise exception 'ties split across a page boundary share their place: % then %', pg_temp.page_got(1, 2), pg_temp.page_got(3, 2);
@@ -139,7 +148,7 @@ begin
   update characters set debuted_at = now() where id = waiting;
   update characters set name = 'Pg Tied 0', name_key = name_skeleton('Pg Tied 0'), name_look = name_look('Pg Tied 0') where id = tied_c;
   perform tests.become(bob);
-  perform pg_temp.every_page('after a debut and a rename');
+  perform pg_temp.every_page('after a debut and a rename', bob);
   if (select p.n from standings_page(0, 1000) with ordinality p(c, nm, st, pl, n) where p.c = tied_a)
      is distinct from 1 + (select p.n from standings_page(0, 1000) with ordinality p(c, nm, st, pl, n) where p.c = tied_c) then
     raise exception 'a renamed character is ordered by its new name, just ahead of Pg Tied A: %', pg_temp.page_got(0, 8);
@@ -150,7 +159,7 @@ begin
   update seasons set ends_at = greatest(now(), starts_at + interval '1 second') where id = open_season;
   insert into seasons (number, starts_at) select max(number) + 1, greatest(now(), (select ends_at from seasons where id = open_season)) from seasons;
   perform tests.become(bob);
-  perform pg_temp.every_page('a new season');
+  perform pg_temp.every_page('a new season', bob);
   if exists (select 1 from standings_page(0, 1000) p where p.standing <> 0 or p.place <> 1) then raise exception 'a season with nothing settled has everyone at 0, in first place'; end if;
   if (select count(*) from standings_page(0, 1000)) is distinct from (select characters::bigint from season_size) then raise exception 'a new season lists every debuted character: % of %', (select count(*) from standings_page(0, 1000)), (select characters from season_size); end if;
   perform tests.unbecome();
@@ -158,7 +167,7 @@ begin
   -- Between seasons, the one that ended last, as it stood.
   update seasons set ends_at = greatest(now(), starts_at + interval '1 second') + interval '1 second' where ends_at is null;
   perform tests.become(bob);
-  perform pg_temp.every_page('between seasons');
+  perform pg_temp.every_page('between seasons', bob);
   perform tests.unbecome();
 
   -- A visitor does not read it.

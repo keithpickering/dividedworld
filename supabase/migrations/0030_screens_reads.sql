@@ -508,5 +508,9 @@ revoke execute on function backfill_thread_counters(), backfill_character_post_c
   standings_take_name(), characters_rename_standings(), standings_season(), standings_roster_lock(boolean), characters_join_standings(), seasons_open_standings(),
   backfill_standings_roster(), standings_page(integer, integer) from public, anon, authenticated;
 grant execute on function standing_place(uuid), standings_page(integer, integer) to authenticated;
+-- season_standings (0021) stays, as the definition of the ranking that standings_page and standing_place answer
+-- for (the SQL tests compare them against it), but no client reads it: it ranks every debuted character with a
+-- window whatever page is asked of it, so a player reads a page through standings_page, whose cost is the page.
+revoke select on season_standings from authenticated;
 
 commit;

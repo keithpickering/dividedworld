@@ -13,7 +13,7 @@ declare
                            'seasons', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state', 'my_invites', 'pending_turns', 'effect_releases',
                            'reading', 'my_reactions', 'thread_view_counts',
-                           'pip_styles', 'account_preferences', 'character_profiles', 'season_standings',
+                           'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
                            'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text)', 'post(uuid,uuid,text,uuid)',
