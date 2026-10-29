@@ -75,8 +75,11 @@ const sweep = (x: number) => Math.round(x * 1e9) / 1e9 || 0;
  * settlement in the same transaction, so a retried window never pays a difference twice.
  *
  * `reactions` are every reaction on each touched Act up to the window's end, earlier ones
- * included; a pair with an earlier reaction and nothing recorded as paid is refused, since
- * paying it as new would pay what an earlier window paid.
+ * included. A vote with nothing recorded as paid is new, however early its first reaction: one
+ * made where no window settled it (between seasons) is paid in full now, at this window's
+ * halving, rather than stalling every settlement after it. The window's difference is said in
+ * the voice of the player's latest reaction in the window, in the quadrant where it has one, so
+ * the giver a class reads can be a different mask of the same player than the first one.
  */
 export function payVotes<R extends { readonly act: string; readonly player: string; readonly character: string; readonly quadrant: Q; readonly at: number }>(
   reactions: readonly R[],
@@ -104,9 +107,6 @@ export function payVotes<R extends { readonly act: string; readonly player: stri
   const out: PaidVote[] = [];
   for (const [k, rs] of touched) {
     const prior = before.get(k);
-    if (!prior && rs.some((r) => r.at < window.from)) {
-      throw new Error(`settle: ${rs[0]!.player}'s vote on Act ${rs[0]!.act} began before the window, and nothing is recorded as paid for it`);
-    }
     const weight = prior?.weight ?? weightOf.get(k)!;
     const shares = Object.fromEntries(QUADRANT_KEYS.map((q) => [q, sweep(rs.filter((r) => r.quadrant === q).length / rs.length)])) as Record<Q, number>;
     const last = [...rs].filter(inWindow).sort((a, b) => a.at - b.at).at(-1)!;

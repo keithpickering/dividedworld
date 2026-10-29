@@ -232,8 +232,21 @@ test('the halving is fixed in the window of a player\'s first reaction, and neve
   assert.equal(tuesday.paid.find((v) => v.act === 'p1'), undefined, 'an Act nobody reacted to again is not written again');
 });
 
-test('a vote reacted to before the window with nothing recorded as paid is refused, never paid in full again', () => {
-  assert.throws(() => settle(day(W2, [react('p1', 'bob', 'bob-1', 'fire', FROM + H), react('p1', 'bob', 'bob-1', 'zzz', TO + H)]), instance), /paid/);
+test('a vote begun where no window settled it (between seasons) is paid as new, never a stall', () => {
+  // Bob's fire came in a gap no window holds, and nothing was paid for it: Tuesday pays his whole
+  // vote, split between his two reactions, at Tuesday's halving.
+  const tuesday = settle(day(W2, [react('p1', 'bob', 'bob-1', 'fire', FROM + H), react('p1', 'bob', 'bob-1', 'zzz', TO + H)]), instance);
+  assert.equal(amountOf(tuesday, 'ann-fan', 'fan.love'), 5);
+  assert.equal(amountOf(tuesday, 'ann-fan', 'fan.groan'), -5);
+  assert.deepEqual(tuesday.paid, [{ player: 'bob', act: 'p1', weight: 1, shares: { excitedPositive: 0.5, excitedNegative: 0, calmPositive: 0, boredNegative: 0.5 } }]);
+});
+
+test('a vote whose halving runs to nothing is paid nothing, and recorded so', () => {
+  const tiny = { ...instance, settings: { ...instance.settings, halving: 1e-200 } };
+  const acts = [...Array(4)].map((_, i) => post(`n${i}`, 'ann-fan', FROM + i));
+  const r = settle({ ...day(W1, acts.map((a) => react(a.id, 'bob', 'bob-1', 'fire', FROM + 10 * H))), acts }, tiny);
+  assert.ok(r.paid.every((v) => v.weight >= 0 && Number.isFinite(v.weight)));
+  assert.equal(r.paid.find((v) => v.act === 'n3')?.weight, 0);
 });
 
 test('the log\'s lines are whole hundredths that add up to their entry exactly', () => {

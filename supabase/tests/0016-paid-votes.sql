@@ -62,6 +62,10 @@ begin
     raise exception 'a weight above one vote was stored';
   end if;
 
+  -- A vote whose halving ran to nothing is stored at a weight of 0, never refused.
+  perform apply_settlement(w3, w3 + interval '1 day', '[]', '{}', jsonb_build_array(jsonb_build_object('player', ann, 'act', p, 'weight', 0, 'shares', whole)));
+  if (select weight from paid_votes where account = ann and act = p) is distinct from 0 then raise exception 'a weight of 0 is stored'; end if;
+
   -- Who voted how is private: no player reads it.
   perform tests.become(bob);
   begin

@@ -61,7 +61,8 @@ create index ledger_settlement on ledger (settlement);
 create table paid_votes (
   account uuid not null references accounts (id),
   act uuid not null references acts (id),
-  weight numeric not null check (weight > 0 and weight <= 1),
+  -- 0 where the halving has run a vote down to nothing; never above one vote.
+  weight numeric not null check (weight >= 0 and weight <= 1),
   shares jsonb not null,
   settlement bigint not null references settlements (id),
   primary key (account, act)
@@ -193,7 +194,7 @@ begin
   -- quadrants' shares of it, each from 0 to 1, together one vote. A vote paid before keeps its weight.
   if jsonb_typeof(coalesce(paid, '[]')) <> 'array' or exists (
     select 1 from jsonb_array_elements(coalesce(paid, '[]')) v
-    where jsonb_typeof(v -> 'weight') is distinct from 'number' or (v ->> 'weight')::numeric <= 0 or (v ->> 'weight')::numeric > 1
+    where jsonb_typeof(v -> 'weight') is distinct from 'number' or (v ->> 'weight')::numeric < 0 or (v ->> 'weight')::numeric > 1
        or jsonb_typeof(v -> 'shares') is distinct from 'object'
        or (select count(*) from jsonb_each(v -> 'shares')) <> 4
        or exists (select 1 from jsonb_each(v -> 'shares') s
