@@ -67,6 +67,10 @@ export interface Settings {
   readonly turnCooldown: Span;
   /** Who may open an account: anyone, someone with an invite, or nobody new. */
   readonly registrationMode: 'open' | 'invite' | 'closed';
+  /** The most unused, unexpired invites a player holds at once; an admin holds any number. */
+  readonly invitesPerPlayer: number;
+  /** How long an invite opens an account for, from when it was made or last reissued. */
+  readonly inviteLifetime: Span;
   /** The longest a post's text may be, in characters (code points). */
   readonly postMaxLength: number;
   /** The longest a thread's title may be, in characters. */

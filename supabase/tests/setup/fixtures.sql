@@ -19,6 +19,8 @@ insert into settings (key, value) values
   ('seasonLength', '{"unit": "month", "count": 1000}'),
   ('turnCooldown', '{"unit": "day", "count": 30}'),
   ('registrationMode', '"invite"'),
+  ('invitesPerPlayer', '3'),
+  ('inviteLifetime', '{"unit": "day", "count": 7}'),
   ('postMaxLength', '20000'),
   ('titleMaxLength', '120'),
   ('economy', '{"sweetie.price": 100, "splat.price": 100, "blot.price": 100}'),

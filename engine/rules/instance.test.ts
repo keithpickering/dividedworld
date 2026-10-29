@@ -11,6 +11,8 @@ const settings: Settings = {
   charactersPerPlayer: 6,
   settlementCron: '17 8 * * *',
   viewCountCron: '41 * * * *',
+  invitesPerPlayer: 3,
+  inviteLifetime: { unit: 'day', count: 7 },
   seasonLength: { unit: 'month', count: 3 },
   turnCooldown: { unit: 'day', count: 30 },
   registrationMode: 'invite',
@@ -75,6 +77,13 @@ test('pip styles hold a default, each with a key, a name and a full and an empty
   assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'default', name: 'Again', full: 'f', empty: 'e' }] }).join('\n'), /pip style "default" is used twice/);
   assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'Bad Key', name: 'Bad', full: 'f', empty: 'e' }] }).join('\n'), /pip style key "Bad Key"/);
   assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'blank', name: 'Blank', full: '', empty: 'e' }] }).join('\n'), /pip style "blank" has no full/);
+});
+
+test('a player holds a whole number of open invites, each open for a span', () => {
+  assert.match(settingsProblems({ ...settings, invitesPerPlayer: 0 }).join('\n'), /invitesPerPlayer/);
+  assert.match(settingsProblems({ ...settings, invitesPerPlayer: 2.5 }).join('\n'), /invitesPerPlayer/);
+  assert.match(settingsProblems({ ...settings, inviteLifetime: { unit: 'day', count: 0 } }).join('\n'), /inviteLifetime/);
+  assert.deepEqual(settingsProblems({ ...settings, invitesPerPlayer: 1, inviteLifetime: { unit: 'week', count: 2 } }), []);
 });
 
 test('two reactions with one key are a problem', () => {

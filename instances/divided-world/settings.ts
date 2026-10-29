@@ -24,6 +24,9 @@ export const defaults: Settings = deepFreeze<Settings>({
   seasonLength: { unit: 'month', count: 3 },
   turnCooldown: { unit: 'day', count: 30 },
   registrationMode: 'invite',
+  /** Three open invites a player, each open for a week; an admin any number (the screens' design, section 12). */
+  invitesPerPlayer: 3,
+  inviteLifetime: { unit: 'day', count: 7 },
   /** Long enough for an effortpost; short enough that one post is never a page of its own. */
   postMaxLength: 20_000,
   titleMaxLength: 120,
