@@ -27,30 +27,26 @@ begin
 end $$;
 create trigger settings_grace_holds before insert or update on settings for each row execute function settings_grace_holds();
 
--- acts_public (0001), with shown_edited_at last, so every column before it is as it was. The grace
--- is read from its row once per query and written out as span_interval reads it, since a view
--- calls a function with its caller's privileges; an instance not yet seeded with editGrace shows
--- every edit, as before.
+-- acts_public (0001), with shown_edited_at last, so every column before it is as it was. "Last
+-- edited" is the latest edit, where it came after the grace: an edit inside it is shown by no
+-- time, whatever came before it. The grace is read from its row once per query; an instance not
+-- yet seeded with editGrace shows every edit, as before. A view calls a function with its caller's
+-- privileges, so span_interval, which reads nothing and says only what an interval is, is
+-- granted to players.
+grant execute on function span_interval(jsonb) to authenticated;
+
 create or replace view acts_public as
   select a.id, a.character, a.kind, a.thread, a.target_act_id, a.seq, a.created_at,
          a.payload,
          coalesce(e.payload, a.payload) as current_payload,
          e.created_at as edited_at,
-         shown.created_at as shown_edited_at
+         case when e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')
+           then e.created_at end as shown_edited_at
   from acts a
   left join lateral (
     select x.payload, x.created_at from acts x
     where x.kind = 'edit' and x.target_act_id = a.id
     order by x.created_at desc, x.id desc limit 1
-  ) e on a.kind = 'post'
-  left join lateral (
-    select x.created_at from acts x
-    where x.kind = 'edit' and x.target_act_id = a.id
-      and x.created_at > a.created_at + coalesce((
-        select (g.value ->> 'count')::integer * case g.value ->> 'unit' when 'minute' then interval '1 minute' when 'day' then interval '1 day'
-          when 'week' then interval '1 week' when 'month' then interval '1 month' end
-        from settings g where g.key = 'editGrace'), interval '0')
-    order by x.created_at desc, x.id desc limit 1
-  ) shown on e.created_at is not null;
+  ) e on a.kind = 'post';
 
 revoke execute on function settings_grace_holds() from public, anon, authenticated;
