@@ -343,3 +343,11 @@ owner deciding, changed these:
 Act, and the postbit and profile show it as a dated fact. Section 13's reveal no longer shows a timeline of every
 character's classes: each character's post carries its place, rank and standing and only what its player made public,
 and class secrets roll over into the next season.
+
+## Amended 2026-10-29: after the settled log design
+
+`docs/plans/2026-10-29-settled-log-design.md` (#25) replaces section 7's "the per-Act settled amounts a settled line
+expands into are a day-after aggregate". After the clues design narrowed the rule's exception to each settled window's
+sums, a settled line expands into the day's estimate lines, frozen at the settlement (each a whole vote), and one plain
+line for what one vote per player and the halving took. Each reason's amount stays exact. A reason that settled to
+nothing is still listed, at 0.00.
