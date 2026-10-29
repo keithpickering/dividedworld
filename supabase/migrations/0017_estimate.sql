@@ -18,7 +18,8 @@
 -- reacted to; the posts the caller's cards and spins point at, and every card of the caller's on
 -- those posts; the cards others played on the caller's posts; and for each thread a caller's
 -- character spun that is active, its spin and each character's first post in it. With every
--- reaction on the Acts reacted to, earlier ones included, for a post's reactors and lean. Its
+-- reaction on the Acts reacted to, earlier ones included, for a post's reactors and lean, but
+-- none on The System's own Acts, which are named and pay nobody. Its
 -- cost is the caller's own activity and the reactions it drew, never the instance's: each of the
 -- caller's Acts is looked up by acts_character, its reactions and cards by the indexes that lead
 -- with the Act (reactions' unique index, acts_target), and the caller's own reactions by
@@ -81,11 +82,13 @@ begin
   ),
   all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null),
   system_acts as (select a.id from acts a join touched t on t.id = a.id where a.character is null),
-  -- Every reaction on an Act voted on, up to now, but a player's to their own character's.
+  -- Every reaction on an Act voted on, up to now, but a player's to their own character's, and none
+  -- on The System's own Acts: the settlement pays nobody for those (Task 3), and the tally every
+  -- player reacts to would hand each caller who reacted to it every other player's reaction.
   all_reactions as (
     select r.* from reactions r join voted v on v.id = r.act
-    join acts a on a.id = r.act left join characters c on c.id = a.character
-    where r.created_at < window_end and r.reactor_account is distinct from c.owner
+    join acts a on a.id = r.act join characters c on c.id = a.character
+    where r.created_at < window_end and r.reactor_account <> c.owner
   ),
   -- Each reaction's voter and mask as the engine reads them: the caller's own, as the caller's;
   -- any other's, under keys made up for this request.

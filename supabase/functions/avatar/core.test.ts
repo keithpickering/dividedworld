@@ -34,7 +34,7 @@ test('a file that is not a WebP, or a WebP carrying anything but its picture, is
   assert.deepEqual(readWebp(png), { ok: false, why: 'is not a WebP' });
   assert.deepEqual(readWebp(riff([vp8x(256, 256, 0x08), vp8(256, 256), chunk('EXIF', ascii('Exif\0\0GPS'))])), { ok: false, why: 'carries metadata (EXIF), which an avatar is sent without' });
   assert.deepEqual(readWebp(riff([vp8x(256, 256, 0x04), vp8(256, 256), chunk('XMP ', ascii('<x:xmpmeta/>'))])), { ok: false, why: 'carries metadata (XMP), which an avatar is sent without' });
-  // Metadata where the chunk check would not read it: a flag with no chunk, an unknown chunk, a colour profile, bytes after the file.
+  // Metadata where the chunk check would not read it: a flag with no chunk, an unknown chunk, a color profile, bytes after the file.
   assert.match(String((readWebp(riff([vp8x(256, 256, 0x08), vp8(256, 256)])) as { why: string }).why), /metadata/);
   assert.deepEqual(readWebp(riff([vp8(256, 256), chunk('NOTE', ascii('hello'))])), { ok: false, why: 'carries a part an avatar does not need (NOTE)' });
   assert.deepEqual(readWebp(riff([vp8x(256, 256, 0x20), chunk('ICCP', ascii('profile desc')), vp8(256, 256)])), { ok: false, why: 'carries a part an avatar does not need (ICCP)' });

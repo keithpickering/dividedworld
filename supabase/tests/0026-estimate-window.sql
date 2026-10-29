@@ -97,3 +97,37 @@ begin
   if estimate_kept(ann, 30) is distinct from given then raise exception 'a kept estimate is given again in a window opened between milliseconds'; end if;
   perform tests.unbecome();
 end $$;
+
+-- The System's own Acts are read as The System's and no further: a caller who reacted to the
+-- night's tally and spun from it is not handed every other reaction on it, nor a key for each of
+-- its reactors, since the settlement pays nobody for them. The tally is still named, so a spin
+-- from it is read as from The System.
+do $$
+declare
+  w timestamptz := greatest((select max(ends_at) from settlements), (select starts_at from seasons where ends_at is null));
+  ann uuid := tests.account('estk-sys-ann');
+  a uuid := tests.character(ann, 'Estk Sys Ann', 'alpha', w - interval '10 days');
+  t uuid;
+  spun uuid;
+  tally uuid;
+  other uuid;
+  input jsonb;
+begin
+  insert into threads (board, title) values (system_board(), 'Tallied') returning id into t;
+  insert into acts (character, kind, thread, payload, created_at) values (null, 'tally', t, '{}', w + interval '1 minute') returning id into tally;
+  insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values (tally, a, ann, 'up', 1, w + interval '2 minutes');
+  for i in 1..5 loop
+    other := tests.account('estk-sys-' || i);
+    insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at)
+    values (tally, tests.character(other, 'Estk Sys ' || i, 'alpha', w - interval '10 days'), other, 'up', 1, w + interval '3 minutes');
+  end loop;
+  insert into threads (board, title, origin_act_id) values (players_board(), 'Spun from the tally', tally) returning id into spun;
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (a, 'spin', spun, tally, '{"title": "Spun from the tally", "body": ""}', w + interval '4 minutes');
+  input := estimate_input(ann, w + interval '1 hour');
+  if input is null then raise exception 'the open window is estimated'; end if;
+  if exists (select 1 from jsonb_array_elements(input -> 'reactions') r where r ->> 'act' = tally::text) then
+    raise exception 'the reactions to The System''s own Act were read for the estimate: %', input -> 'reactions';
+  end if;
+  if jsonb_array_length(input -> 'characters') <> 1 then raise exception 'a key was made for each reactor to The System''s own Act: %', input -> 'characters'; end if;
+  if not (input -> 'systemActs') ? tally::text then raise exception 'The System''s own Act is still named as its: %', input -> 'systemActs'; end if;
+end $$;

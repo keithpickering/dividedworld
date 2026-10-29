@@ -13,9 +13,9 @@
  * only a picture's own chunks pass (one VP8 or VP8L, an extended header VP8X of exactly its size,
  * and one ALPH, only where the header says alpha and before a lossy picture), each where the
  * format puts it, with zero padding and nothing past the RIFF's own length. EXIF and XMP, where a
- * camera writes a place and a time, are refused by name; a colour profile (whose text can name its
+ * camera writes a place and a time, are refused by name; a color profile (whose text can name its
  * maker), an animation, the header's flags for any of those, and any chunk this does not know are
- * refused too. A canvas in sRGB, which is what a browser re-encodes into, carries no colour
+ * refused too. A canvas in sRGB, which is what a browser re-encodes into, carries no color
  * profile. What a picture chunk holds past its frame header is not decoded here, so the byte
  * bounds below are what bounds anything a hand-made file could hide inside one; what is stored is
  * exactly what the player's browser made, never stripped by this.
