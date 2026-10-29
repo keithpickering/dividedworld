@@ -32,7 +32,9 @@ export function debutPreview(o: { readonly name: string; readonly className: str
       where: now ? 'At once' : 'At the next settlement',
     };
   }
-  const lines = o.loudness === 'with_class' ? [say(`${o.name} debuts as ${o.className}`), say(`${o.name} revealed: ${o.className}`)] : [say(`${o.name} debuts`)];
+  /* Before a class card is chosen, the preview says where the class will go rather than reading broken. */
+  const cls = o.className || '(the class you choose)';
+  const lines = o.loudness === 'with_class' ? [say(`${o.name} debuts as ${cls}`), say(`${o.name} revealed: ${cls}`)] : [say(`${o.name} debuts`)];
   return {
     lines,
     nothing: null,

@@ -104,3 +104,10 @@ describe('the preview and the thread say the same words', () => {
     expect(screen.queryByText('x')).toBeNull();
   });
 });
+
+describe('from the Task 9 spec review', () => {
+  test('a preview that names a class before one is chosen says so, never a blank', () => {
+    const p = debutPreview({ name: 'Spritey', className: '', timing: 'tally', loudness: 'with_class' });
+    expect(p.lines.map((l) => l.text)).toEqual(['Spritey debuts as (the class you choose)', 'Spritey revealed: (the class you choose)']);
+  });
+});
