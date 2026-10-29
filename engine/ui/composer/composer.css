@@ -1,0 +1,56 @@
+/* The quick reply, the edit form, and the box they share. */
+.kb-composer {
+  margin: 1em 0;
+}
+
+.kb-composer-as {
+  margin: 0 0 0.4em;
+}
+
+.kb-composer-now {
+  margin: 0.4em 0;
+  border-style: dashed;
+}
+
+.kb-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25em;
+  padding: 0.25em 0;
+}
+
+.kb-toolbar-button {
+  min-width: 2.2em;
+  padding: 0.1em 0.5em;
+}
+
+.kb-editor-box {
+  display: block;
+  min-height: 7em;
+}
+
+.kb-editor-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  padding-top: 0.4em;
+}
+
+.kb-editor-count {
+  margin-right: auto;
+}
+
+.kb-editor-over {
+  font-weight: bold;
+}
+
+.kb-editor-preview {
+  border: 1px solid var(--kb-rule);
+  margin: 0.5em 0;
+  padding: 0.4em 2%;
+}
+
+.kb-composer-note {
+  margin: 1em 0;
+}

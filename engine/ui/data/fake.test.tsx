@@ -489,10 +489,10 @@ describe('reading', () => {
     await fake.markRead(thread, -5, null);
     expect(await fake.reading([thread])).toEqual({ [thread]: 2 });
   });
-  test('a refusal is dropped: a thread that does not exist changes nothing and says nothing', async () => {
+  test('a refusal is dropped: a thread that does not exist changes nothing, and the mark says only that it was not recorded', async () => {
     const { fake, thread } = world();
     const nowhere = '00000000-0000-4000-8000-00000000fffd';
-    await expect(fake.markRead(nowhere, 1, null)).resolves.toBeUndefined();
+    await expect(fake.markRead(nowhere, 1, null)).resolves.toBe(false);
     expect(await fake.reading([nowhere, thread])).toEqual({});
   });
   test('a tally and a view count answer for every id asked', async () => {

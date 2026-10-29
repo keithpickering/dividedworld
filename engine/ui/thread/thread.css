@@ -113,13 +113,6 @@
   min-width: 0;
 }
 
-.kb-origin {
-  border: 1px dashed var(--kb-rule);
-  padding: 0.3em 2%;
-  margin: 0 0 0.6em;
-  overflow-wrap: anywhere;
-}
-
 .kb-post-edited {
   margin-top: 0.6em;
 }
@@ -132,6 +125,13 @@
   color: var(--kb-link);
   text-decoration: underline;
   cursor: pointer;
+}
+
+.kb-act-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2em 1em;
+  margin-top: 0.6em;
 }
 
 .kb-post-history {

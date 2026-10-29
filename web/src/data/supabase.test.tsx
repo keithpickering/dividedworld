@@ -115,6 +115,13 @@ describe('what the adapter may request', () => {
     expect(h.log.filter((r) => r.url.pathname.startsWith('/auth/v1/otp') || r.url.pathname.startsWith('/auth/v1/verify'))).toEqual([]);
   });
 
+  it('says whether a read mark was recorded: true when it was, false when the server refused it', async () => {
+    const ok = harness((r) => (r.url.pathname.endsWith('/rpc/mark_read') ? json({ thread: T, furthest_seq: 3 }) : json({}, 404)));
+    expect(await ok.api.markRead(T, 3, B)).toBe(true);
+    const refused = harness((r) => (r.url.pathname.endsWith('/rpc/mark_read') ? json({ code: '28000', message: 'sign in with an account first', hint: 'kayfabb.refusal' }, 401) : json({}, 404)));
+    expect(await refused.api.markRead(T, 3, B)).toBe(false);
+  });
+
   it('sends the HUD character only in a body the action needs, never in a URL or a header', async () => {
     const h = harness((r) => (r.url.pathname.endsWith('/rpc/mark_read') ? json({ thread: T, furthest_seq: 3 }) : json({}, 404)));
     await h.api.markRead(T, 3, B);

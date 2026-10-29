@@ -598,7 +598,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return out;
     },
     async markRead(thread, seq, through) {
-      await rpcWrite(() => client.rpc('mark_read', { in_thread: thread, seq, through }));
+      return (await rpcWrite(() => client.rpc('mark_read', { in_thread: thread, seq, through }))).ok;
     },
     async preferences(): Promise<Preferences> {
       const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion').limit(1)))[0];

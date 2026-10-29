@@ -20,6 +20,7 @@
  * re-renders the posts it lands on and not the page.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
 import { Ago, SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
@@ -31,7 +32,9 @@ import { Link, useLocation, useNavigate } from '../router.tsx';
 import { emptyFeed, feedReducer, newer, ordered, shownEnd } from './feed.ts';
 import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
-import { ActArticle, ThreadCtx, type ThreadContext } from './Post.tsx';
+import { ActArticle } from './Post.tsx';
+import { ThreadCtx, type ThreadContext } from './context.ts';
+import { text } from './lines.tsx';
 import { createMine } from '../reactions/mine.ts';
 import { createTallies } from './tallies.ts';
 import './thread.css';
@@ -74,6 +77,9 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const [lines, setLines] = useState<readonly { readonly key: number; readonly text: string }[]>([]);
   const tallies = useMemo(() => createTallies(), []);
   const mine = useMemo(() => createMine(), []);
+  /* Whether this is a thread of The System's board, where replies are spins and there is no reply box. */
+  const [systemBoard, setSystemBoard] = useState<boolean | null>(null);
+  const composer = useRef<ComposerHandle>(null);
 
   /* The player, read by callbacks that must not change when it does. */
   const hud = useRef<Id | null>(null);
@@ -145,7 +151,9 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const was = sent.current;
       sent.current = seen.current;
       /* A read that could not be sent (the reader signed out, the network went) is not sent: the next position, or this one again, is. */
-      Promise.resolve(api.markRead(thread, seen.current, hud.current)).catch(() => { if (sent.current === seen.current) sent.current = was; });
+      const at = seen.current;
+      const unsent = () => { if (sent.current === at) sent.current = was; };
+      Promise.resolve(api.markRead(thread, at, hud.current)).then((ok) => { if (!ok) unsent(); }, unsent);
     }
   }, [api, thread]);
   const [observer] = useState<IntersectionObserver | null>(() => {
@@ -187,11 +195,13 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const wanted = goal.current.seq !== null ? pageOf(goal.current.seq, P) : goal.current.page ?? 1;
       const page = Math.min(Math.max(1, wanted), last);
       const { start, end } = pageRange(page, P);
-      const [acts, reading, prefs] = await Promise.all([api.acts(thread, start, end), api.reading([thread]), api.preferences()]);
+      const [acts, reading, prefs, boards] = await Promise.all([api.acts(thread, start, end), api.reading([thread]), api.preferences(), api.boards().catch(() => [])]);
       await prepare(acts);
       if (!live) return;
       sent.current = Math.max(sent.current, reading[thread] ?? 0);
       setLayout(prefs.postbit);
+      /* Known before the first post is drawn, so the reply box and the posts' Quote links do not change the page after it. */
+      setSystemBoard(boards.find((b) => b.id === summary.board)?.isSystem ?? false);
       dispatch({ type: 'loaded', summary, firstPage: page, lastPage: page, acts, tailLoaded: acts.length < end - start + 1 });
       setStatus('ready');
       const seq = goal.current.seq !== null && goal.current.seq <= summary.lastSeq ? goal.current.seq : null;
@@ -352,8 +362,31 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     const a = feedRef.current.shown.get(id) ?? feedRef.current.held.get(id);
     return a && a.seq !== null ? { thread: a.thread, seq: a.seq } : undefined;
   }, []);
-  const context = useMemo<ThreadContext | null>(() => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, observer } : null), [thread, P, feed.summary, tallies, mine, observer]);
+  const quote = useCallback((a: Act) => composer.current?.quote(a.id, text(a.currentPayload.body)), []);
+  const changed = useCallback((a: Act) => dispatch({ type: 'live', act: a }), []);
+  const canReply = systemBoard === false;
+  const context = useMemo<ThreadContext | null>(
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, mine, observer, canReply, quote, changed],
+  );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
+
+  /* The latest post to quote from the toolbar. */
+  const latest = useMemo(() => {
+    for (let i = shown.length - 1; i >= 0; i--) {
+      const a = shown[i]!;
+      if (a.kind === 'post' || a.kind === 'spin') return { id: a.id, body: text(a.currentPayload.body) };
+    }
+    return null;
+  }, [shown]);
+
+  /* A reply the player just made: shown at once at the foot, or, when the foot is not loaded, opened at its page. */
+  const posted = async (a: Act) => {
+    await ensurePeople([a.character]);
+    dispatch({ type: 'live', act: a });
+    if (feedRef.current.tailLoaded) dispatch({ type: 'release', slide: !motionReduced(), force: true });
+    else if (a.seq !== null) navigate(threadHref(thread, pageOf(a.seq, P), a.seq));
+  };
 
   /* The bar's way out: read what is missing before the held posts if there is a gap (and show them anyway if it cannot be read). */
   const showHeld = async () => {
@@ -432,6 +465,13 @@ function ThreadView({ thread }: { readonly thread: Id }) {
         </p>
       )}
       {pager('bottom')}
+      {systemBoard !== null && (
+        <ActIndex.Provider value={index}>
+          <ThreadCtx.Provider value={context}>
+            {systemBoard ? <SystemBoardNote /> : <Composer ref={composer} thread={thread} latest={latest} onPosted={(a) => void posted(a)} />}
+          </ThreadCtx.Provider>
+        </ActIndex.Provider>
+      )}
       <div className="kb-visually-hidden" role="status" aria-live="polite" aria-atomic="false">
         {lines.map((l) => <p key={l.key}>{l.text}</p>)}
       </div>

@@ -38,7 +38,7 @@ describe('the Spin thread link', () => {
     await userEvent.click(link);
     expect(link).toHaveAttribute('aria-expanded', 'true');
     const form = within(article).getByRole('form', { name: 'Spin a thread from post 2' });
-    expect(within(form).getByText('Spinning a thread from')).toBeInTheDocument();
+    expect(within(form).getByText(/Spinning a thread from/u)).toBeInTheDocument();
     expect(within(form).getByText('Pipewrench').tagName).toBe('STRONG');
     expect(within(form).getByLabelText('Thread title')).toHaveFocus();
     await userEvent.keyboard('{Escape}');
@@ -114,7 +114,7 @@ describe('the ORIGIN box', () => {
     expect(within(box).getByText('ORIGIN')).toBeInTheDocument();
     expect(within(box).getByRole('link', { name: /#2 in A short thread/u })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
     await waitFor(() => expect(box).toHaveTextContent('post 2'));
-    expect(box).toHaveTextContent('Pipewrench');
+    await waitFor(() => expect(box).toHaveTextContent('Pipewrench'));
   });
 
   test('shows an edit made to its Act after the spin, in place, with Last edited and a History', async () => {
@@ -172,7 +172,7 @@ describe('the ORIGIN box', () => {
     const fromCard = await spinFrom(w, card, 'About that card');
     const fromSystem = await spinFrom(w, said.act, 'About the tally');
     openSpun(w, fromCard);
-    expect(await within(await origin()).findByText(/Spritey played Whoops! on post #2/u)).toBeInTheDocument();
+    await waitFor(async () => expect(await origin()).toHaveTextContent('Spritey played Whoops! on post #2'));
     document.body.innerHTML = '';
     openSpun(w, fromSystem);
     expect(await within(await origin()).findByText('Settled in your favor.')).toBeInTheDocument();

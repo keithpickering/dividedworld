@@ -64,8 +64,9 @@ test.describe('a short desktop window', () => {
       const top = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 10));
       return !!top && el.contains(top);
     })).toBe(true);
-    /* And every kind can be reached: each lies inside the popover's own box. */
+    /* And every kind can be reached: where the room is short the popover scrolls, so each, scrolled to, lies inside its box. */
     for (const k of await picker.locator('.kb-picker-kind').all()) {
+      await k.scrollIntoViewIfNeeded();
       const box = (await k.boundingBox())!;
       expect(box.y).toBeGreaterThanOrEqual(p.y - 1);
       expect(box.y + box.height).toBeLessThanOrEqual(p.y + p.height + 1);

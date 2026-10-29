@@ -1,0 +1,34 @@
+/* The ORIGIN box, the spin form, and "Spun into". */
+.kb-origin {
+  border: 3px double var(--kb-rule);
+  padding: 0.3em 2%;
+  margin: 0 0 0.6em;
+  overflow-wrap: anywhere;
+}
+
+.kb-origin-head {
+  margin: 0 0 0.3em;
+  font-family: var(--kb-font-mono);
+}
+
+.kb-spin-form {
+  margin: 0.5em 0;
+}
+
+.kb-spin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  justify-content: flex-end;
+}
+
+.kb-spin-title {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.kb-spun {
+  border-top: 1px dashed var(--kb-rule);
+  margin: 0.6em 0 0;
+  padding-top: 0.3em;
+}

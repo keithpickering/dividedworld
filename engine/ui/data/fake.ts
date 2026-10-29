@@ -667,10 +667,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       // A refusal is dropped, as the adapter drops the server's.
       const account = me();
       const t = threads.get(thread);
-      if (!account || !t) return;
-      if (through !== null && isRefusal(acting(through))) return;
+      if (!account || !t) return false;
+      if (through !== null && isRefusal(acting(through))) return false;
       const clamped = Math.max(0, Math.min(seq, t.nextSeq - 1));
       account.reading.set(thread, Math.max(account.reading.get(thread) ?? 0, clamped));
+      return true;
     },
     preferences: () => me()?.prefs ?? { theme: 'system', postbit: 'side', motion: 'system' },
     setPreferences(p) {

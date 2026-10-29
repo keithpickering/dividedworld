@@ -499,7 +499,7 @@ describe('live updates', () => {
     const article = await screen.findByRole('article', { name: /^Post 4 /u });
     expect(article).toHaveTextContent('Last edited');
     await userEvent.click(within(article).getByRole('button', { name: 'History' }));
-    const list = await within(article).findByRole('list', { name: 'Versions of this post' });
+    const list = await within(article).findByRole('list', { name: 'Versions of this post, oldest first' });
     expect(within(list).getAllByRole('listitem')).toHaveLength(2);
     expect(list).toHaveTextContent('first words');
     expect(list).toHaveTextContent('second words');
@@ -837,7 +837,7 @@ describe('what a tally storm and a long post cost', () => {
     await screen.findByRole('button', { name: '1 new post' });
     expect(drawn.bodies.filter((t) => t === long)).toHaveLength(1);
     expect(drawn.parses.filter((t) => t === long)).toHaveLength(1);
-    expect(article).toHaveTextContent(/end$/u);
+    expect(article.querySelector('.kb-bb')).toHaveTextContent(/end$/u);
   });
 });
 
@@ -867,6 +867,20 @@ describe('reading when it cannot be sent', () => {
   test('a read that failed is sent again with the next position', async () => {
     const w = world(10);
     const spy = vi.spyOn(w.fake, 'markRead').mockRejectedValueOnce(new Error('down'));
+    open(w);
+    await screen.findByRole('article', { name: /^Post 10 /u });
+    await watched(post(10));
+    clock();
+    see(post(4));
+    await debounced();
+    await advance(10);
+    see(post(4));
+    await debounced();
+    expect(spy.mock.calls.map((c) => c[1])).toEqual([4, 4]);
+  });
+  test('a read the server refused is sent again with the next position', async () => {
+    const w = world(10);
+    const spy = vi.spyOn(w.fake, 'markRead').mockResolvedValueOnce(false);
     open(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
     await watched(post(10));
@@ -923,7 +937,7 @@ describe('landmarks and focus', () => {
     expect(controlled).toBeTruthy();
     await userEvent.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'true');
-    expect(document.getElementById(controlled!)).toContainElement(await within(article).findByRole('list', { name: 'Versions of this post' }));
+    expect(document.getElementById(controlled!)).toContainElement(await within(article).findByRole('list', { name: 'Versions of this post, oldest first' }));
   });
 
   test('"Continue" that loads nothing leaves focus on the last post and not on the page', async () => {

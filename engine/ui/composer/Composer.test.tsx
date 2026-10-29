@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { openThread, replyBox, threadWorld } from './support.tsx';
@@ -107,7 +107,7 @@ describe('the quick reply', () => {
     openThread(w);
     expect(await replyBox()).toHaveValue('Half a thought');
     const other = w.fake.seed.thread('general', w.spritey, 'Another', 'Elsewhere.');
-    view.unmount();
+    cleanup();
     openThread({ ...w, thread: other.thread });
     expect(await replyBox()).toHaveValue('');
   });
@@ -225,7 +225,7 @@ describe('the toolbar', () => {
     const w = threadWorld(3);
     openThread(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
-    await userEvent.click(screen.getByRole('button', { name: 'Quote the latest post' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Quote the latest post' }));
     expect(await replyBox()).toHaveValue(`[quote=${w.ids[2]}]post 3[/quote]\n`);
   });
 });
@@ -287,7 +287,7 @@ describe('the preview', () => {
     await userEvent.click(send());
     await waitFor(() => expect(post(3)).toBeInTheDocument());
     await waitFor(() => expect(post(3)).toHaveTextContent('Post #1'));
-    expect(post(3).querySelector('.kb-act-main .kb-bb')!.innerHTML).toBe(preview.querySelector('.kb-bb')!.innerHTML);
+    expect(post(3).querySelector('.kb-act-main .kb-bb')!.innerHTML).toBe(previewed);
   });
 
   test('toggles, says so to a screen reader, and says there is nothing to preview for an empty draft', async () => {

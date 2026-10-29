@@ -379,8 +379,12 @@ export interface KayfaApi {
   myCards(): Promise<readonly HeldCard[]>;
   /** The furthest seq read in each thread asked about; a thread never read is absent. */
   reading(threads: readonly Id[]): Promise<Readonly<Record<Id, number>>>;
-  /** Never lowers what was read; `through` is the HUD's character, if one is chosen. A refusal is dropped: a read mark is no action of the player's. */
-  markRead(thread: Id, seq: number, through: Id | null): Promise<void>;
+  /**
+   * Never lowers what was read; `through` is the HUD's character, if one is chosen. Says whether it
+   * was recorded, never with a refusal's words: a read mark is no action of the player's, and one
+   * not recorded (signed out, no answer) is simply sent again with the next position.
+   */
+  markRead(thread: Id, seq: number, through: Id | null): Promise<boolean>;
   preferences(): Promise<Preferences>;
   setPreferences(p: Partial<Preferences>): Promise<Answer<Preferences>>;
   estimate(): Promise<Estimate>;

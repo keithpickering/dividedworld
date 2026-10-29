@@ -14,7 +14,7 @@ describe('what a toolbar press does to the text', () => {
     expect(applyTool('bold', 'ab', 1, 1)).toEqual({ text: 'a[b][/b]b', start: 4, end: 4 });
   });
   test('a link: an address selected is the link, other words get an address to fill in, nothing selected a bare tag', () => {
-    expect(applyTool('link', 'see https://a.test now', 4, 17).text).toBe('see [url]https://a.test[/url] now');
+    expect(applyTool('link', 'see https://a.test now', 4, 18).text).toBe('see [url]https://a.test[/url] now');
     expect(applyTool('link', 'see here', 4, 8)).toEqual({ text: 'see [url=]here[/url]', start: 9, end: 9 });
     expect(applyTool('link', '', 0, 0)).toEqual({ text: '[url=][/url]', start: 5, end: 5 });
   });
