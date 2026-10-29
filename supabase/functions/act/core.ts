@@ -33,7 +33,7 @@ const thread = (t: unknown): Broadcast[] => (t && typeof t === 'object' && (t as
 /**
  * What each SQL function's answer sends live. Each is the public projection the function
  * returned, never more; a purchase, which is the player's alone, sends nothing, and so does a
- * silent Turn, which returns no Act.
+ * Turn, which waits for the settlement to send its tally.
  *
  * Broadcasts can arrive out of order or twice (a retry after a timeout may repeat one Realtime
  * took), so each carries what a client needs to converge: an Act its id and seq; a tally the
@@ -47,7 +47,9 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   play_card: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
   spin: (a) => [...thread(a.thread), ...act(a.act)],
-  turn: (a) => [...thread(a.thread), ...act(a.act)],
+  // A Turn waits for the settlement, whose tally is sent from there (settle/core.ts).
+  turn: () => [],
+  withdraw_turn: () => [],
   react: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   buy_card: () => [],

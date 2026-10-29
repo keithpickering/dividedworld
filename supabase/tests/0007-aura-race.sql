@@ -11,7 +11,7 @@ begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'twice@test.invalid');
     insert into accounts (id) values (%1$L);
-    insert into characters (id, owner, name) values (%2$L, %1$L, 'Twice');
+    insert into characters (id, owner, name, debuted_at) values (%2$L, %1$L, 'Twice', now());
     insert into class_history (character, class_key) values (%2$L, 'alpha');
   $sql$, ann, a));
   call := format($sql$select apply_settlement('2027-01-01T00:00:00Z', '2027-01-02T00:00:00Z', %L)$sql$,

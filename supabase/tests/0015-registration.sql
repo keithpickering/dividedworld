@@ -30,8 +30,8 @@ begin
   perform tests.become(ann);
   code := create_invite() ->> 'code';
   if code is null or length(code) < 16 then raise exception 'an invite is a code long enough not to guess: %', code; end if;
-  select id into invite from invites;
-  if (select count(*) from invites) is distinct from 1 then raise exception 'the inviter sees their invite'; end if;
+  select id into invite from my_invites;
+  if (select count(*) from my_invites) is distinct from 1 then raise exception 'the inviter sees their invite'; end if;
   perform tests.unbecome();
   if exists (select 1 from invites where code_hash = code or code_hash like '%' || code || '%') then raise exception 'an invite''s code is stored, not its hash'; end if;
 
@@ -63,12 +63,18 @@ begin
   if pg_temp.refusal(format('select open_account(%L)', fresh)) is distinct from 'that invite opens nothing' then raise exception 'a spent invite opened a second account'; end if;
   perform tests.unbecome();
 
-  -- A used invite cannot be sent again; nor can another player's.
+  -- A used invite cannot be sent again, once a settlement has shown it used (0017-masks.sql holds
+  -- the time before that); nor can another player's.
+  perform set_config('role', 'service_role', true);
+  perform apply_settlement(coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons)),
+    greatest(coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons)), now()) + interval '1 day', '[]');
+  perform tests.unbecome();
   perform tests.become(ann);
   if pg_temp.refusal(format('select reissue_invite(%s)', invite)) is null then raise exception 'a used invite was sent again'; end if;
   perform tests.unbecome();
   perform tests.become(newcomer);
-  if exists (select 1 from invites) then raise exception 'a player read an invite that is not theirs'; end if;
+  if exists (select 1 from my_invites) then raise exception 'a player read an invite that is not theirs'; end if;
+  if pg_temp.refusal('select id from invites') is null then raise exception 'a player read the invites table'; end if;
   perform tests.unbecome();
   -- Another player's unused invite is not theirs to send again.
   perform tests.become(ann);
@@ -83,7 +89,7 @@ begin
   if pg_temp.refusal('select used_by from invites') is null then raise exception 'the inviter read who used an invite'; end if;
   if pg_temp.refusal('select used_at from invites') is null then raise exception 'the inviter read when an invite was used'; end if;
   if pg_temp.refusal('select code_hash from invites') is null then raise exception 'the inviter read an invite''s hash'; end if;
-  if (select count(*) from invites where used) is distinct from 1 then raise exception 'the inviter sees which invites are used'; end if;
+  if (select count(*) from my_invites where used) is distinct from 1 then raise exception 'the inviter sees which invites are used, once a settlement has run'; end if;
   perform tests.unbecome();
 end $$;
 

@@ -107,6 +107,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (loudness !== 'silent' && loudness !== 'announced' && loudness !== 'revealed') throw new Refused('loudness', 'a Turn is silent, announced, or revealed');
     return { rpc: 'turn', args: { through: id(r, 'character'), to_class: to, loudness } };
   },
+  withdrawTurn: (r) => ({ rpc: 'withdraw_turn', args: { through: id(r, 'character') } }),
   buyCard: (r, instance) => {
     const key = card(r, instance);
     return { rpc: 'buy_card', args: { card: key, price: basePrice(instance.cards.find((c) => c.key === key)!, instance.settings) }, asService: true };

@@ -75,7 +75,7 @@ export interface Settings {
 }
 
 /** The kinds of Act the settlement reads. */
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'turn';
+export type ActKind = 'post' | 'spin' | 'card' | 'edit';
 
 /** A board the instance starts with. */
 export interface BoardSeed {

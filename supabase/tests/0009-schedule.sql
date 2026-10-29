@@ -116,7 +116,7 @@ begin
   exception when check_violation then null;
   end;
   update settings set value = '{"unit": "month", "count": 1000}' where key = 'seasonLength';
-  update settings set value = '{"unit": "month", "count": 3}' where key = 'seasonLength';
+  update settings set value = '{"unit": "month", "count": 999}' where key = 'seasonLength';
   -- A season ending inside the window ends the window there.
   update seasons set ends_at = last_end + interval '6 hours' where number = 2;
   insert into seasons (number, starts_at) values (3, last_end + interval '6 hours');

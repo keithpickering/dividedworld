@@ -29,7 +29,7 @@ const day: SettlementInput = {
 };
 
 /** A database that holds what has been settled, as apply_settlement() does. */
-function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = { economy: instance.settings.economy }, failInput: { at?: string } = {}, settledElsewhere: readonly string[] = []) {
+function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = { economy: instance.settings.economy }, failInput: { at?: string } = {}, settledElsewhere: readonly string[] = [], outbox: { id: number; topic: string; event: string; payload: unknown }[] = []) {
   const settled = new Set<string>();
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
   let lastEnd: string | null = null;
@@ -47,6 +47,8 @@ function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, u
         return { ...input, window: { ...input.window, from: Date.parse(String(args.window_start)), to: Date.parse(String(args.window_end)) } } as T;
       }
       if (fn === 'instance_settings') return databaseSettings as T;
+      if (fn === 'due_broadcasts') return outbox.slice(0, Number(args.most)) as T;
+      if (fn === 'broadcasts_sent') { const ids = args.ids as number[]; outbox.splice(0, outbox.length, ...outbox.filter((m) => !ids.includes(m.id))); return ids.length as T; }
       if (fn === 'apply_settlement') {
         const key = `${args.window_start}/${args.window_end}`;
         // Another run applied this window first.
@@ -66,7 +68,7 @@ test('a run settles the next window: reads its input, runs the instance\'s class
   const { db, calls } = fakeDb();
   const out = await runSettlement(db, instance, new Date(TO).toISOString());
   assert.equal(out.status, 'applied');
-  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement', 'next_settlement_window']);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement', 'next_settlement_window', 'due_broadcasts']);
   const apply = calls[3]!.args;
   assert.deepEqual(apply.entries, [
     // Heat: Cat's, Eve's and Fay's whole votes and half of Dee's; a shrug: the other half of Dee's.
@@ -99,10 +101,35 @@ test('a database with no economy row is refused, never settled on the code\'s nu
   await assert.rejects(runSettlement(db, instance, new Date(TO).toISOString()), /economy/);
 });
 
-test('a run with nothing to settle reads no settings', async () => {
+test('a run with nothing to settle reads no settings, and sends what still waits to be sent', async () => {
   const { db, calls } = fakeDb();
   await runSettlement(db, instance, new Date(FROM).toISOString());
-  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window']);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'due_broadcasts']);
+});
+
+test('what a settlement posted is sent live from the outbox, then cleared; a failed send leaves it for the next run', async () => {
+  const outbox = Array.from({ length: 3 }, (_, i) => ({ id: i + 1, topic: 'thread:t', event: 'act', payload: { id: `a${i}` } }));
+  const { db, calls } = fakeDb(day, undefined, {}, [], outbox);
+  const sent: unknown[][] = [];
+  let up = false;
+  const send = async (m: readonly unknown[]) => { if (!up) return false; sent.push([...m]); return true; };
+  await runSettlement(db, instance, new Date(TO).toISOString(), { send });
+  assert.equal(outbox.length, 3, 'a send that failed leaves every broadcast waiting');
+  assert.ok(!calls.some((c) => c.fn === 'broadcasts_sent'));
+  up = true;
+  const out = await runSettlement(db, instance, new Date(TO).toISOString(), { send });
+  assert.equal(out.status, 'nothing to settle');
+  assert.deepEqual(sent, [[{ topic: 'thread:t', event: 'act', payload: { id: 'a0' } }, { topic: 'thread:t', event: 'act', payload: { id: 'a1' } }, { topic: 'thread:t', event: 'act', payload: { id: 'a2' } }]]);
+  assert.equal(outbox.length, 0, 'sent, they are cleared');
+});
+
+test('a reveal larger than one send goes out in batches, every one of it', async () => {
+  const outbox = Array.from({ length: 1201 }, (_, i) => ({ id: i + 1, topic: 'thread:r', event: 'act', payload: { id: `r${i}` } }));
+  const { db } = fakeDb(day, undefined, {}, [], outbox);
+  let messages = 0;
+  await runSettlement(db, instance, new Date(FROM).toISOString(), { send: async (m) => { messages += m.length; return true; } });
+  assert.equal(messages, 1201);
+  assert.equal(outbox.length, 0);
 });
 
 test('settings rows that would make the instance not whole are refused before anything is settled', async () => {
@@ -143,7 +170,7 @@ test('a run stops starting windows once its time is spent, says it is behind, an
   let t = 0;
   // Each window takes a third of the run's time: the third starts at its limit, and waits.
   const clock = () => { const now = t; t += MOST_RUN_MS / 3; return now; };
-  const first = await runSettlement(db, instance, new Date(FROM + 5 * 24 * H).toISOString(), clock);
+  const first = await runSettlement(db, instance, new Date(FROM + 5 * 24 * H).toISOString(), { clock });
   assert.equal(first.status === 'applied' && first.behind, true);
   const settledFirst = calls.filter((c) => c.fn === 'apply_settlement').length;
   assert.ok(settledFirst >= 1 && settledFirst < 5, `the run stopped early: ${settledFirst}`);

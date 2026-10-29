@@ -14,7 +14,8 @@ insert into settings (key, value) values
   ('halving', '0.5'),
   ('settlementCron', '"17 8 * * *"'),
   ('settlementLength', '{"unit": "day", "count": 1}'),
-  ('seasonLength', '{"unit": "month", "count": 3}'),
+  -- Long enough that no file's settlement ends the season by chance; a file that reveals one sets its own.
+  ('seasonLength', '{"unit": "month", "count": 1000}'),
   ('turnCooldown', '{"unit": "day", "count": 30}'),
   ('registrationMode', '"invite"'),
   ('postMaxLength', '20000'),
@@ -41,11 +42,11 @@ begin
   return id;
 end $$;
 
--- A character of a player's, with its first class.
+-- A character of a player's, with its first class. It has debuted, as one a settlement has passed since; create_character() makes one that waits.
 create function tests.character(owner uuid, name text, class_key text default 'alpha', at timestamptz default now()) returns uuid language plpgsql as $$
 declare id uuid;
 begin
-  insert into characters (owner, name, created_at) values (owner, name, at) returning characters.id into id;
+  insert into characters (owner, name, created_at, debuted_at) values (owner, name, at, at) returning characters.id into id;
   insert into class_history (character, class_key, started_at) values (id, class_key, at);
   return id;
 end $$;

@@ -136,7 +136,7 @@ begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'race-card-a@test.invalid'), (%2$L, 'race-card-b@test.invalid'), (%3$L, 'race-card-c@test.invalid');
     insert into accounts (id) values (%1$L), (%2$L), (%3$L);
-    insert into characters (id, owner, name) values (%4$L, %1$L, 'Race Card A'), (%5$L, %2$L, 'Race Card B'), (%6$L, %3$L, 'Race Card C');
+    insert into characters (id, owner, name, debuted_at) values (%4$L, %1$L, 'Race Card A', now()), (%5$L, %2$L, 'Race Card B', now()), (%6$L, %3$L, 'Race Card C', now());
     insert into class_history (character, class_key) values (%4$L, 'alpha'), (%5$L, 'alpha'), (%6$L, 'alpha');
     insert into threads (id, board, title) select %7$L, id, 'Race card' from boards where slug = 'general';
     insert into acts (id, character, kind, thread) values (%8$L, %6$L, 'post', %7$L);

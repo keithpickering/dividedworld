@@ -12,10 +12,16 @@
  * leave the later failing on the window's start, and the next firing settles from there. A database error is
  * thrown, never swallowed: the window stays unsettled, and the next firing settles from where
  * the last settled window ended, so nothing is lost and nothing is counted twice.
+ *
+ * What a settlement posts (its tally, a season's reveal) is written with it into an outbox
+ * (supabase/migrations/0007_seasons.sql's broadcasts_due), and every run ends by sending what
+ * waits there and clearing what was sent. A run that fails between the two, or a send that
+ * fails, leaves it for the next run; a window is applied once, so nothing is queued twice.
  */
 import { settle } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
 import type { Db } from '../_shared/rpc.ts';
+import type { Broadcast } from '../_shared/broadcast.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
 type Window = { readonly start: string; readonly end: string };
@@ -32,6 +38,16 @@ export type SettlementOutcome =
     readonly behind: boolean;
   };
 
+/** What a run is given beside its database: a clock, and how it sends what waits to be broadcast. */
+export interface RunOptions {
+  readonly clock?: () => number;
+  /** Sends live updates, true once they went (supabase/functions/_shared/broadcast.ts); none sends nothing, and leaves them waiting. */
+  readonly send?: (messages: readonly Broadcast[]) => Promise<boolean>;
+}
+
+/** How many waiting broadcasts one send carries. */
+const BROADCASTS_PER_SEND = 500;
+
 /**
  * How many windows one run settles before it stops: a month of missed days, and the next firing
  * carries on from where this one ended. A cron that fires less often than this many lengths
@@ -46,7 +62,9 @@ export const MOST_WINDOWS_PER_RUN = 31;
  */
 export const MOST_RUN_MS = 60_000;
 
-export async function runSettlement(db: Db, instance: Instance, until: string, clock: () => number = Date.now): Promise<SettlementOutcome> {
+export async function runSettlement(db: Db, instance: Instance, until: string, options: RunOptions = {}): Promise<SettlementOutcome> {
+  const clock = options.clock ?? Date.now;
+  const send = options.send ?? (async () => false);
   if (Number.isNaN(Date.parse(until))) throw new Error(`settle: until is not a time: ${JSON.stringify(until)}`);
   const windows: (Window & { applied: boolean; entries: number })[] = [];
   const started = clock();
@@ -57,7 +75,10 @@ export async function runSettlement(db: Db, instance: Instance, until: string, c
   for (;;) {
     const window = await db.rpc<Window | null>('next_settlement_window', { until });
     if (!window) break;
-    if (windows.length === MOST_WINDOWS_PER_RUN || (windows.length && clock() - started >= MOST_RUN_MS)) return outcome(windows, true);
+    if (windows.length === MOST_WINDOWS_PER_RUN || (windows.length && clock() - started >= MOST_RUN_MS)) {
+      await sendWaiting(db, send);
+      return outcome(windows, true);
+    }
     tuned ??= await withDatabaseSettings(instance, db);
     const input = await db.rpc<SettlementInput>('settlement_input', { window_start: window.start, window_end: window.end });
     const result = settle(input, tuned);
@@ -70,7 +91,19 @@ export async function runSettlement(db: Db, instance: Instance, until: string, c
     });
     windows.push({ ...window, applied: applied.applied, entries: result.entries.length });
   }
+  await sendWaiting(db, send);
   return windows.length ? outcome(windows, false) : { status: 'nothing to settle', until };
+}
+
+/** Sends what waits in the outbox, a batch at a time, and clears each batch once it went; a batch that failed stays for the next run. */
+async function sendWaiting(db: Db, send: NonNullable<RunOptions['send']>): Promise<void> {
+  for (;;) {
+    const due = await db.rpc<{ id: number; topic: string; event: string; payload: unknown }[]>('due_broadcasts', { most: BROADCASTS_PER_SEND });
+    if (!due.length) return;
+    if (!(await send(due.map((m) => ({ topic: m.topic, event: m.event, payload: m.payload }))))) return;
+    await db.rpc('broadcasts_sent', { ids: due.map((m) => m.id) });
+    if (due.length < BROADCASTS_PER_SEND) return;
+  }
 }
 
 function outcome(windows: (Window & { applied: boolean; entries: number })[], behind: boolean): SettlementOutcome {

@@ -111,10 +111,13 @@ begin
   first_of_season := start_at is null;
   if first_of_season then select min(starts_at) into start_at from seasons; end if;
   if start_at is null then return null; end if;
-  select true, s.ends_at, first_of_season or s.starts_at = start_at into found, season_end, first_of_season from seasons s
+  -- An open season ends where its length runs out (apply_settlement reveals it there), unless the
+  -- length was shortened past what is settled, when the next window is whole and ends it.
+  select true, coalesce(s.ends_at, nullif(greatest(s.starts_at + span_interval(setting('seasonLength')), start_at), start_at)),
+         first_of_season or s.starts_at = start_at into found, season_end, first_of_season from seasons s
   where s.starts_at <= start_at and (s.ends_at is null or s.ends_at > start_at);
   if not coalesce(found, false) then
-    select s.starts_at, s.ends_at into start_at, season_end from seasons s where s.starts_at > start_at order by s.starts_at limit 1;
+    select s.starts_at, coalesce(s.ends_at, s.starts_at + span_interval(setting('seasonLength'))) into start_at, season_end from seasons s where s.starts_at > start_at order by s.starts_at limit 1;
     if start_at is null then return null; end if;
     first_of_season := true;
   end if;

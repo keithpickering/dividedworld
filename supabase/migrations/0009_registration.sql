@@ -27,9 +27,6 @@ create table invites (
   created_at timestamptz not null default now(),
   used_by uuid unique references accounts (id),
   used_at timestamptz,
-  -- What the inviter sees of an invite's use: whether, never who or when, since a mask that
-  -- appears just after an invite's use would point at the friend it was given to.
-  used boolean generated always as (used_by is not null) stored,
   check ((used_by is null) = (used_at is null))
 );
 create index invites_inviter on invites (inviter, created_at);
@@ -66,15 +63,31 @@ begin
   return jsonb_build_object('invite', made, 'code', code);
 end $$;
 
+-- Whether an invite reads as used to its inviter: once a settlement has run past the moment its
+-- account opened (the owner's answer 17, on #4), never to the minute, since a mask that appears
+-- just after an invite's use would point at the friend it was given to. Who used it, and when,
+-- the inviter never reads.
+create function invite_shown_used(used_at timestamptz) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select used_at is not null and used_at < coalesce((select max(ends_at) from settlements), '-infinity')
+$$;
+
+-- What an inviter sees of their invites: whether each is used, as invite_shown_used() reads it.
+create view my_invites as
+  select i.id, i.created_at, i.used_at is not null and i.used_at < coalesce((select max(ends_at) from settlements), '-infinity') as used
+  from invites i where i.inviter = auth.uid();
+
 -- Send an unused invite again: the same invite with a new code, the old code dead. The way out
--- of an invite whose code was lost.
+-- of an invite whose code was lost. One whose use the settlement has not yet shown answers as an
+-- unused one does, so the answer never shows its use early; its new code opens nothing, as the
+-- invite is spent, and the next settlement shows it used.
 create function reissue_invite(invite bigint) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   caller uuid := signed_in_account();
   code text := invite_code();
 begin
-  update invites set code_hash = invite_hash(code) where id = invite and inviter = caller and used_by is null;
+  update invites set code_hash = invite_hash(code) where id = invite and inviter = caller and not invite_shown_used(used_at);
   if not found then raise exception 'you have no unused invite %', invite using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   return jsonb_build_object('invite', invite, 'code', code);
 end $$;
@@ -117,7 +130,8 @@ begin
 end $$;
 
 -- Make a character, with its first class: held to the cap (characters_within_cap, 0001), to a
--- name nobody holds whatever its case, and to a class the instance has.
+-- name nobody holds whatever its case, and to a class the instance has. It waits to debut at the
+-- next settlement (characters.debuted_at, 0001), which is its way out.
 create function create_character(name text, class text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -143,15 +157,14 @@ begin
     raise exception 'that name is taken' using hint = 'kayfabb.refusal', errcode = '23505';
   end;
   insert into class_history (character, class_key, started_at) values (made, class, (select created_at from characters where id = made));
-  return jsonb_build_object('id', made, 'name', named, 'class', class);
+  return jsonb_build_object('id', made, 'name', named, 'class', class, 'waiting', true);
 end $$;
 
 alter table invites enable row level security;
-revoke all on invites from anon, authenticated;
-grant select (id, inviter, created_at, used) on invites to authenticated;
-create policy own on invites for select to authenticated using (inviter = auth.uid());
+revoke all on invites, my_invites from anon, authenticated;
+grant select on my_invites to authenticated;
 
-revoke execute on function invite_hash(text), invite_code(), signed_in_account(), create_invite(), reissue_invite(bigint),
+revoke execute on function invite_hash(text), invite_code(), signed_in_account(), invite_shown_used(timestamptz), create_invite(), reissue_invite(bigint),
   invite_open(text), open_account(text), create_character(text, text) from public, anon, authenticated;
 grant execute on function create_invite(), reissue_invite(bigint), open_account(text), create_character(text, text) to authenticated;
 grant execute on function invite_open(text) to service_role;

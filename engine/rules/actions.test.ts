@@ -98,6 +98,11 @@ test('a Turn names the character, a class the instance has, and how loud it is',
   assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'whispered' }) ?? '', /^loudness:/);
 });
 
+test('a waiting Turn is withdrawn by naming its character', () => {
+  assert.deepEqual(decide({ action: 'withdrawTurn', character: id }, instance), { ok: true, rpc: 'withdraw_turn', args: { through: id } });
+  assert.match(refusal({ action: 'withdrawTurn' }) ?? '', /^character:/);
+});
+
 test('a character is made with a name and one of the instance\'s classes; invites are made, sent again and spent', () => {
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Masked One', class: 'a' }, instance),
     { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a' } });

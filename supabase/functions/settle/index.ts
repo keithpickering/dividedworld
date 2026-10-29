@@ -6,6 +6,7 @@
 import { runSettlement } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';
 import { environment, fromTheService, json, serviceDb } from '../_shared/serve.ts';
+import { broadcaster } from '../_shared/broadcast.ts';
 
 Deno.serve(async (request) => {
   const env = environment((name) => Deno.env.get(name));
@@ -15,7 +16,7 @@ Deno.serve(async (request) => {
   if (typeof body.until !== 'string' || Number.isNaN(Date.parse(body.until))) return json(400, { error: 'until: the window\'s end, as a time' });
   const until = body.until;
   try {
-    const outcome = await runSettlement(serviceDb(env), chooseInstance(Deno.env.get('KAYFABB_PROFILE')), until);
+    const outcome = await runSettlement(serviceDb(env), chooseInstance(Deno.env.get('KAYFABB_PROFILE')), until, { send: broadcaster({ url: env.url, key: env.key }).send });
     // Windows still waiting are settled by the next firing; said in the log, so a schedule that
     // never catches up is seen.
     if (outcome.status !== 'nothing to settle' && outcome.behind) console.warn('settle behind: windows wait for the next run', until, outcome.window.end);

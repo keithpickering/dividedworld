@@ -154,7 +154,10 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   last_end timestamptz;
   open_season bigint;
+  season_end timestamptz;
   settled bigint;
+  tally uuid;
+  revealed jsonb;
   bad integer;
   r record;
 begin
@@ -172,8 +175,15 @@ begin
        and window_start = (select min(starts_at) from seasons where starts_at > last_end)) then
     raise exception 'this window starts at %, but the last settled window ended at %', window_start, last_end using errcode = '22023';
   end if;
-  select id into open_season from seasons where starts_at <= window_start and (ends_at is null or ends_at >= window_end);
-  if open_season is null then raise exception 'no season holds the window from % to %', window_start, window_end using errcode = 'P0002'; end if;
+  select id, coalesce(ends_at, starts_at + span_interval(setting('seasonLength'))) into open_season, season_end
+  from seasons where starts_at <= window_start and (ends_at is null or ends_at >= window_end);
+  -- An open season ends where its length runs out, and a window never runs past that: the one
+  -- that reaches it is the season's last (next_settlement_window, 0004, stops there too). Where
+  -- the length was shortened past the windows already settled, the next window is whole and the
+  -- season ends with it.
+  if open_season is null or (window_start < season_end and season_end < window_end) then
+    raise exception 'no season holds the window from % to %', window_start, window_end using errcode = 'P0002';
+  end if;
 
   if jsonb_typeof(entries) <> 'array' then raise exception 'entries are a list' using errcode = '22023'; end if;
   -- CASE, so the type is read before the cast; the range is an integer's.
@@ -229,8 +239,14 @@ begin
   select (v ->> 'player')::uuid, (v ->> 'act')::uuid, (v ->> 'weight')::numeric, v -> 'shares', settled from jsonb_array_elements(coalesce(paid, '[]')) v
   on conflict (account, act) do update set shares = excluded.shares, settlement = excluded.settlement;
 
+  -- Masks change at the tally, and the season's last window reveals it, in this transaction:
+  -- written once with the window, so a retried window posts neither twice (0007).
+  tally := masks_change(window_end);
+  if season_end <= window_end then revealed := reveal_season(window_end); end if;
+
   return jsonb_build_object('applied', true, 'settlement', settled,
-    'entries', (select count(*) from ledger where settlement = settled));
+    'entries', (select count(*) from ledger where settlement = settled),
+    'tally', tally, 'revealed', revealed -> 'season');
 end $$;
 
 -- ------------------------------------------------------------------- who reads what ----

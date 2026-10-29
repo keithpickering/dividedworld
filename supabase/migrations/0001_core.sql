@@ -76,7 +76,12 @@ create table characters (
   id uuid primary key default gen_random_uuid(),
   owner uuid not null references accounts (id),
   name text not null check (length(btrim(name)) between 1 and 40 and name = btrim(name)),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- A character debuts at the settlement after it was made (the owner's answer 16, on #4): until
+  -- then only its player sees it, and it cannot act. The settlement sets this, once, to its
+  -- window's end (0007's masks_change), so every mask made in a day appears together and nobody's
+  -- sitting can be picked out. Its way out is that settlement.
+  debuted_at timestamptz
 );
 -- One name per instance, whatever its case.
 create unique index characters_name_key on characters (lower(name));
@@ -135,9 +140,10 @@ create index threads_board on threads (board, created_at);
 
 create table acts (
   id uuid primary key default gen_random_uuid(),
-  -- Null only for The System's own Acts (the season's reveal): The System plays no mask.
+  -- Null only for The System's own Acts (a settlement's tally, the season's reveal): The System
+  -- plays no mask.
   character uuid references characters (id),
-  kind text not null check (kind in ('post', 'spin', 'card', 'edit', 'turn', 'reveal')),
+  kind text not null check (kind in ('post', 'spin', 'card', 'edit', 'tally', 'reveal')),
   thread uuid not null references threads (id),
   -- A quote's quoted Act, a spin's origin, a card's target post, an edit's post.
   target_act_id uuid references acts (id),
@@ -147,8 +153,8 @@ create table acts (
   created_at timestamptz not null default now(),
   unique (thread, seq),
   check ((kind = 'edit') = (seq is null)),
-  check (kind in ('post', 'turn', 'reveal') or target_act_id is not null),
-  check ((character is null) = (kind = 'reveal'))
+  check (kind in ('post', 'tally', 'reveal') or target_act_id is not null),
+  check ((character is null) = (kind in ('tally', 'reveal')))
 );
 -- A thread's page is read by the unique (thread, seq) index.
 create index acts_character on acts (character, created_at);
@@ -211,9 +217,26 @@ alter table acts enable always trigger acts_no_truncate;
 -- ------------------------------------------------------------------ public projections ----
 
 -- A character's id and name, and nothing else: not when it was made, since masks made in one
--- sitting would show themselves one player's. A character is known by what it does.
+-- sitting would show themselves one player's. A character is known by what it does, and is
+-- known at all only once it has debuted.
 create view characters_public as
-  select c.id, c.name from characters c;
+  select c.id, c.name from characters c where c.debuted_at is not null;
+
+-- That `who` plays `through`, and that it has debuted, for every action a character takes: the
+-- same words whether the character is another player's or does not exist, so nobody learns a
+-- waiting character is there; its own player is told it waits.
+create function played_by(through uuid, who uuid) returns void
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare waiting boolean;
+begin
+  select c.debuted_at is null into waiting from characters c where c.id = through and c.owner = who;
+  if waiting is null then
+    raise exception 'you do not play that character' using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if waiting then
+    raise exception 'that character debuts at the next settlement' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+end $$;
 
 -- Every Act, and for a post its current text: the latest edit's payload over the original's.
 create view acts_public as
@@ -245,7 +268,7 @@ revoke all on settings, class_kinds, reaction_kinds, card_kinds, accounts, chara
   from anon, authenticated;
 revoke all on characters_public, acts_public from anon, authenticated;
 revoke all on all sequences in schema public from anon, authenticated;
-revoke execute on function setting(text), characters_within_cap(), acts_well_formed(), acts_take_seq(), acts_append_only() from public, anon, authenticated;
+revoke execute on function setting(text), played_by(uuid, uuid), characters_within_cap(), acts_well_formed(), acts_take_seq(), acts_append_only() from public, anon, authenticated;
 
 -- The vocabulary and the public tables: any signed-in player reads them.
 grant select on class_kinds, reaction_kinds, card_kinds, boards, threads, acts to authenticated;

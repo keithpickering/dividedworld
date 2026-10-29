@@ -7,16 +7,13 @@
 -- cannot get through (supabase/tests/0011-actions.sql calls each with what the decision
 -- refuses). Each returns the public projection of what it wrote, and nothing else.
 
--- The caller, and that they play `through`: the same words whether the character is another
--- player's or does not exist, as react() says them.
+-- The caller, and that they play `through`, which has debuted (played_by, 0001).
 create function acting(through uuid) returns uuid
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare caller uuid := auth.uid();
 begin
   if caller is null then raise exception 'sign in to act' using hint = 'kayfabb.refusal', errcode = '28000'; end if;
-  if not exists (select 1 from characters c where c.id = through and c.owner = caller) then
-    raise exception 'you do not play that character' using hint = 'kayfabb.refusal', errcode = '42501';
-  end if;
+  perform played_by(through, caller);
   return caller;
 end $$;
 

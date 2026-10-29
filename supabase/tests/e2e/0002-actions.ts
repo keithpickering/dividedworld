@@ -15,7 +15,7 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   await psqlDb().rpc('seed_instance', { payload: instanceSeed(instance) });
   const make = (label: string, name: string) => {
     const account = sql(`with u as (insert into auth.users (email) values ('${label}@test.invalid') returning id) insert into accounts (id) select id from u returning id`);
-    const character = sql(`with c as (insert into characters (owner, name) values ('${account}', '${name}') returning id)
+    const character = sql(`with c as (insert into characters (owner, name, debuted_at) values ('${account}', '${name}', now()) returning id)
       insert into class_history (character, class_key) select id, 'heel' from c returning character`);
     return { account, character };
   };
@@ -67,10 +67,15 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   const again = await runAction(asAnn, instance, { action: 'playCard', card: 'whoops', character: ann.character, target: act.id, config: { color: 'red' } });
   assert.equal(again.status, 400, 'no card left, and the post carries one already');
 
-  // A Turn, announced: a public Act that says nothing of either class.
+  // A Turn, announced, waits for the settlement: nothing public yet, and nothing sent live. Bob
+  // may withdraw it until then.
   const turned = await runAction(asBob, instance, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'announced' });
   assert.equal(turned.status, 200, JSON.stringify(turned));
-  assert.deepEqual((turned.body as { act: { payload: unknown } }).act.payload, {});
+  assert.deepEqual(turned.body, { pending: true, class: 'jabroni', loudness: 'announced' });
+  assert.deepEqual(turned.broadcasts, []);
+  const withdrawn = await runAction(asBob, instance, { action: 'withdrawTurn', character: bob.character });
+  assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn));
+  assert.equal(sql(`select count(*) from pending_turns where character = '${bob.character}'`), '0');
 
   // Nothing any action answered, or sent live, names a player.
   for (const answer of [started, replied, edited, spun, reacted, own, bought, played, caster, notAuthor, again, turned]) {

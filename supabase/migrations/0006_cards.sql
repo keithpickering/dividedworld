@@ -111,9 +111,7 @@ declare
   in_thread uuid;
   written uuid;
 begin
-  if not exists (select 1 from characters c where c.id = through and c.owner = who) then
-    raise exception 'you do not play that character' using hint = 'kayfabb.refusal', errcode = '42501';
-  end if;
+  perform played_by(through, who);
   if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
   if price is null or price < 0 or price > (setting('walletCap'))::integer then raise exception 'a play costs between 0 and the wallet''s cap' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   -- One player's plays at a time, so two at once cannot both spend the last card.
@@ -147,9 +145,7 @@ create function save_effect_state(who uuid, through uuid, on_play uuid, state js
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare author uuid;
 begin
-  if not exists (select 1 from characters c where c.id = through and c.owner = who) then
-    raise exception 'you do not play that character' using hint = 'kayfabb.refusal', errcode = '42501';
-  end if;
+  perform played_by(through, who);
   select t.character into author from acts k join acts t on t.id = k.target_act_id where k.id = on_play and k.kind = 'card';
   if author is null then raise exception 'there is no such card on a post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   if author <> through then raise exception 'only the post''s author saves what is on it' using hint = 'kayfabb.refusal', errcode = '42501'; end if;

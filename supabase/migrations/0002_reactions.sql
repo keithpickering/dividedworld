@@ -57,10 +57,7 @@ declare
   free_slot integer;
 begin
   if caller is null then raise exception 'sign in to react' using hint = 'kayfabb.refusal', errcode = '28000'; end if;
-  if not exists (select 1 from characters c where c.id = through and c.owner = caller) then
-    -- The same words whether the character is another player's or does not exist.
-    raise exception 'you do not play that character' using hint = 'kayfabb.refusal', errcode = '42501';
-  end if;
+  perform played_by(through, caller);
   if not exists (select 1 from reaction_kinds k where k.key = reaction) then
     raise exception 'there is no reaction "%"', reaction using hint = 'kayfabb.refusal', errcode = '22023';
   end if;

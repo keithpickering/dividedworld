@@ -17,7 +17,7 @@ begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'race-ann@test.invalid'), (%2$L, 'race-bob@test.invalid');
     insert into accounts (id) values (%1$L), (%2$L);
-    insert into characters (id, owner, name) values (%3$L, %1$L, 'Racer One'), (%4$L, %1$L, 'Racer Two'), (%5$L, %2$L, 'Racer Post');
+    insert into characters (id, owner, name, debuted_at) values (%3$L, %1$L, 'Racer One', now()), (%4$L, %1$L, 'Racer Two', now()), (%5$L, %2$L, 'Racer Post', now());
     insert into class_history (character, class_key) values (%3$L, 'alpha'), (%4$L, 'alpha'), (%5$L, 'alpha');
     insert into threads (id, board, title) select %6$L, id, 'Race' from boards where slug = 'general';
   $sql$, ann, bob, a1, a2, b1, t));
@@ -54,7 +54,7 @@ begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'twin-ann@test.invalid'), (%2$L, 'twin-bob@test.invalid');
     insert into accounts (id) values (%1$L), (%2$L);
-    insert into characters (id, owner, name) values (%3$L, %1$L, 'Twin One'), (%4$L, %1$L, 'Twin Two'), (%5$L, %2$L, 'Twin Post');
+    insert into characters (id, owner, name, debuted_at) values (%3$L, %1$L, 'Twin One', now()), (%4$L, %1$L, 'Twin Two', now()), (%5$L, %2$L, 'Twin Post', now());
     insert into class_history (character, class_key) values (%3$L, 'alpha'), (%4$L, 'alpha'), (%5$L, 'alpha');
     insert into threads (id, board, title) select %6$L, id, 'Twins' from boards where slug = 'general';
   $sql$, ann, bob, a1, a2, b1, t));

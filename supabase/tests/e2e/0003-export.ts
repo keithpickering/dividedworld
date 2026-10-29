@@ -46,8 +46,8 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into invites (code_hash, inviter) values (invite_hash('exported'), ann);
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "splat", "config": {"color": "red"}}') returning id into play;
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
-      update seasons set starts_at = least(starts_at, now() - interval '200 days') where ends_at is null;
-      perform reveal_season();
+      -- The open season revealed at its end, as the settlement of its last window would.
+      perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
     end $$;
     -- A table holding what the instance's own do not yet: a type whose name has a comma, an
     -- array, an astral character. Made here and in the fresh database alike.
@@ -151,7 +151,7 @@ test('an instance exported and imported into a fresh database is the same instan
 
     // The jobs that run the instance are there: the reveal's from its migration, the
     // settlement's from the imported settings.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-reveal,kayfabb-settle');
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-settle');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = run('import-instance.mjs', ['--from', dir, '--to', fresh.toString()]);

@@ -121,10 +121,10 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread, tally: { fire: 1 } } }, [{ topic: `thread:${thread}`, event: 'tally', payload: { act: id, tally: { fire: 1 } } }]],
     [{ action: 'startThread', board: 'general', character: id, title: 't', body: 'b' }, { start_thread: { thread: { id: thread, board }, act: { id: 'a', thread } } },
       [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
-    [{ action: 'turn', character: id, class: 'heel', loudness: 'silent' }, { turn: { turned: true, loudness: 'silent' } }, []],
-    [{ action: 'turn', character: id, class: 'heel', loudness: 'announced' }, { turn: { turned: true, act: { id: 'a', thread } } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
-    [{ action: 'turn', character: id, class: 'heel', loudness: 'announced' }, { turn: { turned: true, thread: { id: thread, board }, act: { id: 'a', thread } } },
-      [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
+    // A Turn waits for the settlement, whose tally the settlement sends (settle/core.ts): nothing now.
+    [{ action: 'turn', character: id, class: 'heel', loudness: 'silent' }, { turn: { pending: true, class: 'heel', loudness: 'silent' } }, []],
+    [{ action: 'turn', character: id, class: 'heel', loudness: 'announced' }, { turn: { pending: true, class: 'heel', loudness: 'announced' } }, []],
+    [{ action: 'withdrawTurn', character: id }, { withdraw_turn: { withdrawn: true } }, []],
     [{ action: 'buyCard', card: 'whoops' }, { whoami: id, buy_card: { card: 'whoops', balance: 0, held: 1 } }, []],
     [{ action: 'saveEffect', play: id, character: id, state: { strokes: [] } }, { whoami: id, card_of_play: 'whoops', save_effect_state: { play: id, thread, state: { strokes: [] }, saved_at: 't1' } },
       [{ topic: `thread:${thread}`, event: 'effect', payload: { play: id, saved_at: 't1' } }]],
@@ -158,7 +158,7 @@ test('a refused or failed action sends nothing live', async () => {
 test('only the reads and the writes that find their own earlier effect are safe to repeat after a lost answer', () => {
   for (const fn of ['whoami', 'card_target', 'card_of_play', 'open_account', 'instance_settings']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
   // A save repeated after a newer one landed would bring back the older strokes.
-  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'react', 'turn', 'buy_card', 'play_card', 'create_character', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
+  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'react', 'turn', 'withdraw_turn', 'buy_card', 'play_card', 'create_character', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
 });
 
 test('a write whose answer was lost says plainly it may have gone through', async () => {

@@ -162,3 +162,31 @@ test('two missed days settle as two windows through the real migrations, the hal
   assert.equal(out.status === 'applied' && out.windows.length, 2);
   assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Missed Heel']}' and reason = 'heel.drewHeat'`)), 20, 'a whole vote each day, never halved across the two');
 });
+
+test('the settlement of a season\'s last window posts its tally and its reveal, and sends both live', async () => {
+  const db = psqlDb();
+  const start = sql(`select to_jsonb(max(ends_at))#>>'{}' from settlements`);
+  const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
+  const ids = JSON.parse(sql(`
+    with u as (insert into auth.users (email) values ('e2e-tally@test.invalid') returning id),
+    a as (insert into accounts (id) select id from u returning id)
+    select json_build_object('account', (select id from u))`));
+  // A character made in the window, which debuts at its end; the season's length runs out there.
+  const made = sql(`insert into characters (owner, name, created_at) values ('${ids.account}', 'Debutante', '${at(2)}') returning id`);
+  sql(`insert into class_history (character, class_key, started_at) values ('${made}', 'face', '${at(2)}')`);
+  sql(`update settings set value = jsonb_build_object('unit', 'day', 'count', (select extract(day from ('${at(24)}'::timestamptz - starts_at))::integer from seasons where ends_at is null)) where key = 'seasonLength'`);
+  const sent: { topic: string; event: string; payload: { kind?: string; id?: string } }[] = [];
+  const out = await runSettlement(db, instance, at(24), { send: async (m) => { sent.push(...(m as typeof sent)); return true; } });
+  assert.equal(out.status, 'applied', JSON.stringify(out));
+  const tally = sql(`select id from acts where kind = 'tally' and payload -> 'debuts' @> '[{"name": "Debutante"}]'`);
+  assert.ok(tally, 'the tally names the debut');
+  assert.ok(sent.some((m) => m.event === 'act' && m.payload.id === tally), 'the tally is sent live');
+  const reveals = sql(`select string_agg(id::text, ',' order by id) from acts where kind = 'reveal' and created_at = '${at(24)}'`).split(',');
+  assert.ok(reveals.length > 1, 'the season is revealed');
+  // An earlier test's runs sent nothing, so what they posted went out with this run too.
+  const sentIds = new Set(sent.filter((m) => m.event === 'act').map((m) => m.payload.id));
+  assert.deepEqual(reveals.filter((id) => !sentIds.has(id)), [], 'every Act of the reveal is sent live');
+  assert.ok(sent.some((m) => m.event === 'thread'), 'and its thread, for its board');
+  assert.equal(sql(`select count(*) from broadcasts_due`), '0', 'nothing is left waiting');
+  sql(`update settings set value = '{"unit": "month", "count": 3}' where key = 'seasonLength'`);
+});
