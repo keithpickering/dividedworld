@@ -172,6 +172,18 @@ describe('a list of 0, 1 and 200 threads', () => {
     expect(within(pages).getByRole('link', { name: 'Next' })).toHaveAttribute('href', '/b/general?page=2');
   });
 
+  test('turning a page keeps the list on screen while the next loads, and puts focus on the board, not the page\'s body', async () => {
+    renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f, { threads: 200 }) });
+    await screen.findByRole('link', { name: 'Thread 200' });
+    const next = within(screen.getByRole('navigation', { name: 'Pages, top' })).getByRole('link', { name: 'Next' });
+    next.focus();
+    await userEvent.click(next);
+    expect(screen.queryByRole('table')).not.toBeNull();
+    await screen.findByRole('link', { name: 'Thread 180' });
+    expect(document.activeElement).not.toBe(document.body);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveFocus();
+  });
+
   test('page 3 of the same list', async () => {
     renderInWorld(<BoardScreen slug="general" />, { path: '/b/general?page=3', seed: (f) => world(f, { threads: 200 }) });
     await screen.findByRole('link', { name: 'Thread 160' });

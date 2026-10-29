@@ -170,3 +170,8 @@
     display: inline-block;
   }
 }
+
+/* Focus lands on the heading after a page turn; it is a place to start reading, not a control. */
+.kb-board-title:focus {
+  outline: none;
+}

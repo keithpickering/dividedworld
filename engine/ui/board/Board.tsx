@@ -11,7 +11,7 @@
  * screen's own constant: `postsPerPage` counts posts inside a thread, and a list of threads is paged
  * for a different reason (the list's weight on a phone), so the two do not share a setting.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Board, Character, Id, ThreadSummary } from '../data/api.ts';
 import { Ago, Mini, SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
@@ -45,11 +45,16 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
   const signedIn = useSignedIn(api);
   const asked = Number.parseInt(query.get('page') ?? '1', 10);
   const [state, setState] = useState<State>({ status: 'loading' });
+  /* A page turn keeps the list on screen, marked busy, until the next page lands; a new board starts empty. */
+  const [turning, setTurning] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const shownPage = useRef<number | null>(null);
 
   useEffect(() => {
     if (!signedIn) return;
     let live = true;
-    setState({ status: 'loading' });
+    setState((s) => (s.status === 'ready' && s.board.slug === slug ? s : { status: 'loading' }));
+    setTurning(true);
     void (async () => {
       const board = (await api.boards()).find((b) => b.slug === slug);
       if (!board) { if (live) setState({ status: 'missing' }); return; }
@@ -77,9 +82,18 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
         characters: new Map(characters.map((c) => [c.id, c])),
         origins: new Map(origins.filter((o): o is NonNullable<typeof o> => o !== null)),
       });
-    })().catch(() => { if (live) setState({ status: 'failed' }); });
+    })().catch(() => { if (live) setState({ status: 'failed' }); }).finally(() => { if (live) setTurning(false); });
     return () => { live = false; };
   }, [api, slug, asked, signedIn]);
+
+  /* After a page turn, focus goes to the board's heading, so a keyboard starts the new page at its top, never on the page's body. */
+  const readyPage = state.status === 'ready' ? `${state.board.slug}:${state.page}` : null;
+  useEffect(() => {
+    if (readyPage === null) return;
+    const page = Number(readyPage.split(':')[1]);
+    if (shownPage.current !== null && shownPage.current !== page) heading.current?.focus();
+    shownPage.current = page;
+  }, [readyPage]);
 
   if (signedIn === null) return <div className="kb-board" aria-busy="true" />;
   if (!signedIn) return <div className="kb-board"><SignInPrompt /></div>;
@@ -99,9 +113,9 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
   const pager = (where: 'top' | 'bottom') => pages > 1 && <Pager slug={slug} page={page} pages={pages} where={where} />;
 
   return (
-    <div className="kb-board" data-kb-board={board.slug}>
+    <div className="kb-board" data-kb-board={board.slug} aria-busy={turning || undefined}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {board.name}</p>
-      <h1 className="kb-heading kb-board-title">{board.name}</h1>
+      <h1 ref={heading} tabIndex={-1} className="kb-heading kb-board-title">{board.name}</h1>
       <p className="kb-board-description kb-muted">{board.description}</p>
       {board.isSystem
         ? <p className="kb-board-readonly kb-small">Only The System posts here. You can react to what it says, and spin a thread from it.</p>
