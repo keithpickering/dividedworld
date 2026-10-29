@@ -73,3 +73,19 @@ test('one window with 500 players, 3,000 characters, 20,000 Acts and 100,000 rea
   }
   assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
 });
+
+test('one post that 20,000 players first react to in one window settles in seconds', () => {
+  // A hot post: the cost of every per-Act list (its reactors, its arrivals) must grow with the
+  // post's players, never with their square.
+  const players = 20_000;
+  const characters = [{ id: 'author', player: 'pa', classes: [{ class: 'counting', from: 0 }] },
+    ...Array.from({ length: players }, (_, i) => ({ id: `c${i}`, player: `p${i}`, classes: [{ class: 'counting', from: 0 }] }))];
+  const reactions: InputReaction[] = Array.from({ length: players }, (_, i) => ({ act: 'hot', player: `p${i}`, character: `c${i}`, kind: kinds[i % 4]!, at: 2_000 + i }));
+  const input: SettlementInput = { window: { id: 'hot', from: 0, to: 10_000_000 }, characters, acts: [{ id: 'hot', character: 'author', kind: 'post', at: 1_000, thread: 't' }], reactions };
+  const start = performance.now();
+  const r = settle(input, instance);
+  const ms = performance.now() - start;
+  console.log(`  settled ${players} first reactions on one post in ${Math.round(ms)} ms`);
+  assert.ok(r.entries.length > 0);
+  assert.ok(ms < 3_000, `took ${Math.round(ms)} ms`);
+});

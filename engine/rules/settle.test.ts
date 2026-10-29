@@ -42,6 +42,7 @@ const instance: Instance = {
 };
 
 const H = 3_600_000;
+const tidy = (x: number) => Math.round(x * 1e6) / 1e6;
 const FROM = 100 * H;
 const TO = 124 * H;
 const post = (id: string, character: string, at: number, thread = 't1'): InputAct => ({ id, character, kind: 'post', at, thread });
@@ -481,6 +482,12 @@ test('a vote is held out to its class only in a window another player first reac
   assert.deepEqual(held.filter((h) => h.by.startsWith('cat')).map((h) => [h.by, h.quadrant, h.share, h.othersBefore, h.othersNow]).sort(),
     [['cat-1', 'excitedPositive', 0.5, 1, 2], ['cat-2', 'calmPositive', 0.5, 1, 2]], 'each half said by the mask that reacted in its quadrant');
   assert.deepEqual(held.filter((h) => h.by === 'dee-1'), [], 'Dee arrived after both: no other player came after Dee, so Dee\'s crowd did not grow');
+  // Two of Cat's masks in one quadrant: the later one says the whole of it, as a share paid is said.
+  inputs.length = 0;
+  const sameQuadrant: SettlementInput = { ...arriving, reactions: [...arriving.reactions, react('old', 'cat', 'cat-2', 'fire', FROM + 9 * H + 1)] };
+  settle(sameQuadrant, withClasses(rules));
+  const cats = inputs.flatMap((i) => i.held.map((h) => ({ ...h, by: i.character }))).filter((h) => h.act === 'old' && h.by.startsWith('cat') && h.quadrant === 'excitedPositive');
+  assert.deepEqual(cats.map((h) => [h.by, tidy(h.share)]), [['cat-2', tidy(2 / 3)]]);
 });
 
 test('a reaction at the very instant a card is played is not "after" it; a reply at the window\'s start is in the window', () => {

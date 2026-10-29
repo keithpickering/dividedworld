@@ -155,7 +155,10 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     return top > 0 && leaders.length === 1 ? leaders[0]! : null;
   };
   /* Each held vote, on each Act another player first reached in the window: per Act, the work
-     is its reactors, so a busy post costs its own players and nothing beyond them. */
+     is its reactors, so a busy post costs its own players and nothing beyond them. Where the
+     Act leans is read at the window's end, as every direction here is ("at this settlement"),
+     not at the instant the crowd arrived. A quadrant is said by the player's latest mask to
+     react there, as a share paid is (votes.ts): which mask speaks is the player's choice. */
   const held = new Map<string, HeldVote[]>();
   for (const [act, a] of onAct) {
     const order = [...a.first].sort((x, y) => x[1] - y[1] || cmp(x[0], y[0]));
@@ -168,7 +171,10 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
       const othersNow = total - 1;
       const othersBefore = beforeAll - (mine ? 0 : 1);
       if (othersNow === othersBefore) return;
-      const at = arrivals.filter(([p]) => p !== player).at(-1)![1];
+      // The latest other arrival: the last one, or the one before it where the last is this
+      // player's own (there is another, since another player arrived). Never a scan per player.
+      const last = arrivals.at(-1)!;
+      const at = last[0] !== player ? last[1] : arrivals.at(-2)![1];
       const p = a.of.get(player)!;
       const without = zero();
       for (const q of QUADRANTS) without[q] = a.lean[q] - p.shares[q];
