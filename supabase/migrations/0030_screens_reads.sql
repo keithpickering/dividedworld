@@ -263,7 +263,8 @@ create trigger characters_count_debuted after insert or update of debuted_at or 
 create function backfill_debuted_count() returns void
 language sql set search_path = public, pg_temp as $$
   update debuted_count set characters = 0;
-  insert into debuted_count as d (shard, characters) values (0, (select count(*) from characters where debuted_at is not null))
+  -- No row for no characters: a fresh instance's tables are empty until something is written (see above).
+  insert into debuted_count as d (shard, characters) select 0, count(*) from characters where debuted_at is not null having count(*) > 0
   on conflict (shard) do update set characters = excluded.characters
 $$;
 select backfill_debuted_count();
