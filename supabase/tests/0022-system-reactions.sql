@@ -33,7 +33,9 @@ begin
   said := react(reveal, a1, 'up');
   if (said -> 'tally' ->> 'up')::integer is distinct from 1 then raise exception 'a reaction to the reveal is tallied: %', said; end if;
   if (said ->> 'thread')::uuid is distinct from t then raise exception 'the answer names its thread for the live update: %', said; end if;
-  perform react(tally, a1, 'calm');
+  said := react(tally, a1, 'calm');
+  if (said -> 'tally' ->> 'calm')::integer is distinct from 1 then raise exception 'a reaction to the tally is tallied: %', said; end if;
+  if pg_temp.refusal(format('select react(%L, %L, %L)', tally, a2, 'calm')) is distinct from 'you have already left that reaction here' then raise exception 'a second mask left the same reaction on the tally'; end if;
   -- One player, across their characters: each kind once, and at most the cap.
   if pg_temp.refusal(format('select react(%L, %L, %L)', reveal, a2, 'up')) is distinct from 'you have already left that reaction here' then raise exception 'a second mask left the same reaction on the reveal'; end if;
   perform react(reveal, a2, 'boo');
