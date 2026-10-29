@@ -101,6 +101,12 @@ async function load(db, dir, manifest) {
     await write(`insert into ${t.name} (${columns}) overriding system value select ${t.columns.map(([c]) => `r.${c}`).join(', ')} from import_rows, jsonb_populate_record(null::${t.name}, import_rows.j) r;\n`);
   }
   await write(foreignKeys(manifest.tables.map((t) => t.name)));
+  // A restore fires no trigger, so each character's name keys are the ones carried: each is
+  // computed again from its name and this database's folds, and one that differs is refused.
+  await write(`do $$ declare n bigint; begin
+    select count(*) into n from public.characters where name_key is distinct from public.name_skeleton(name) or name_look is distinct from public.name_look(name);
+    if n > 0 then raise exception '% character(s) carry a name_key or name_look that is not their name''s', n; end if;
+  end $$;\n`);
   // Each identity and serial column's next value past its rows.
   await write(`do $$ declare s record; most bigint; begin
     for s in select format('%I.%I', n.nspname, c.relname) as tbl, a.attname as col, pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) as seq

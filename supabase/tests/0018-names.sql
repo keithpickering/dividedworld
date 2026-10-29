@@ -22,8 +22,18 @@ begin
   perform tests.become(bob);
   -- A Cyrillic е (U+0435) in place of the Latin e is refused, in the words any taken name gets.
   if pg_temp.refusal(format('select create_character(%L, %L)', U&'Pipewr\0435nch', 'alpha')) is distinct from 'that name is taken' then
-    raise exception 'a Cyrillic lookalike was made: %', pg_temp.refusal(format('select create_character(%L, %L)', U&'Pipewr\0435nch', 'alpha'));
+    raise exception 'a Cyrillic lookalike was made';
   end if;
+  -- And a Cyrillic а (U+0430) for a Latin a.
+  perform tests.unbecome();
+  perform tests.become(ann);
+  perform create_character('Sandman', 'alpha');
+  perform tests.unbecome();
+  perform tests.become(bob);
+  if pg_temp.refusal(format('select create_character(%L, %L)', U&'S\0430ndman', 'alpha')) is distinct from 'that name is taken' then raise exception 'a Cyrillic а for a Latin a was made'; end if;
+  -- Marks in either order are one name.
+  if pg_temp.refusal(format('select create_character(%L, %L)', U&'Za\0301\0328', 'alpha')) is not null then raise exception 'a name with marks was refused'; end if;
+  if pg_temp.refusal(format('select create_character(%L, %L)', U&'Za\0328\0301', 'alpha')) is distinct from 'that name is taken' then raise exception 'the same marks in another order were made'; end if;
   if pg_temp.refusal(format('select create_character(%L, %L)', 'PIPEWRENCH', 'alpha')) is distinct from 'that name is taken' then raise exception 'a name differing only in case was made'; end if;
   -- A digit that looks like a letter is that letter; as written, a capital I is the l it looks like.
   if pg_temp.refusal(format('select create_character(%L, %L)', 'B0b', 'alpha')) is not null then raise exception '"B0b" was refused before any Bob'; end if;

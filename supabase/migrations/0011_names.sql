@@ -9,10 +9,10 @@
 -- nobody can see through can only be believed, not read.
 --
 -- The fix round's Task G. The data is 0010_name_folds.sql's, the client's copy
--- engine/rules/name-folds.data.ts, and engine/rules/names.ts gives the client the same key in
--- the same steps. Normalizing is Postgres's own (normalize, NFD), whose Unicode tables may be a
--- release behind the data's; a character new since then decomposes as the client's ICU says or
--- not at all, and the database's key is the one that decides.
+-- engine/rules/name-folds.data.ts, and engine/rules/names.ts gives the client the same keys in
+-- the same steps. Decomposing is the data's own (name_nfd), never Postgres's normalize(), whose
+-- Unicode is a release behind the data's and differs from a browser's: the two copies would key
+-- a name differently, and a lookalike Postgres did not yet decompose would pass.
 --
 -- A new release of the data comes in a migration of its own that reloads name_maps and
 -- recomputes every name_key; a pair of existing names it makes the same is shown by that
@@ -26,17 +26,57 @@ language sql stable security definer set search_path = public, pg_temp as $$
   left join name_maps m on m.kind = through and m.source = c.ch
 $$;
 
+-- A Hangul syllable's letters, by Unicode's algorithm (chapter 3.12); null for any other.
+create function name_hangul(ch text) returns text
+language sql immutable set search_path = public, pg_temp as $$
+  select case when s between 0 and 11171 then
+    chr(4352 + s / 588) || chr(4449 + (s % 588) / 28) || case when s % 28 = 0 then '' else chr(4519 + s % 28) end end
+  from (select ascii(ch) - 44032 as s) x
+$$;
+
+-- Canonical decomposition: each code point to its full decomposition, then each run of marks
+-- after a starter (combining class 0) put in order of class, keeping the order of marks of one
+-- class, as names.ts does: each mark is set in after the last code point of its run whose class
+-- is not greater, a starter's 0 ending the run. A loop of keyed lookups, so a name costs its
+-- length, not a pass over the tables.
+create function name_nfd(s text) returns text
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  chars text[] := '{}';
+  classes integer[] := '{}';
+  c text;
+  d text;
+  x text;
+  k integer;
+  i integer;
+begin
+  foreach c in array coalesce(string_to_array(s, null), '{}') loop
+    select target into d from name_maps where kind = 'decompose' and source = c;
+    foreach x in array string_to_array(coalesce(d, name_hangul(c), c), null) loop
+      select class into k from name_classes where source = x;
+      k := coalesce(k, 0);
+      i := coalesce(array_length(chars, 1), 0);
+      if k <> 0 then
+        while i >= 1 and classes[i] > k loop i := i - 1; end loop;
+      end if;
+      chars := chars[1:i] || x || chars[i + 1:];
+      classes := classes[1:i] || k || classes[i + 1:];
+    end loop;
+  end loop;
+  return array_to_string(chars, '');
+end $$;
+
 -- A name's key: decompose, fold case, decompose, fold lookalikes, decompose, fold case again (a
 -- prototype may be a capital), decompose.
 create function name_skeleton(name text) returns text
 language sql stable security definer set search_path = public, pg_temp as $$
-  select normalize(name_mapped(normalize(name_mapped(normalize(name_mapped(normalize(name, NFD), 'fold'), NFD), 'confusable'), NFD), 'fold'), NFD)
+  select name_nfd(name_mapped(name_nfd(name_mapped(name_nfd(name_mapped(name_nfd(name), 'fold')), 'confusable')), 'fold'))
 $$;
 
 -- A name's key as written: decompose, fold lookalikes, decompose.
 create function name_look(name text) returns text
 language sql stable security definer set search_path = public, pg_temp as $$
-  select normalize(name_mapped(normalize(name, NFD), 'confusable'), NFD)
+  select name_nfd(name_mapped(name_nfd(name), 'confusable'))
 $$;
 
 -- Held by the table, so no writer can skip them: one name per instance, whatever its case or script.
@@ -55,4 +95,4 @@ begin
 end $$;
 create trigger characters_name_key before insert or update of name on characters for each row execute function characters_name_key();
 
-revoke execute on function name_mapped(text, text), name_skeleton(text), name_look(text), characters_name_key() from public, anon, authenticated;
+revoke execute on function name_mapped(text, text), name_hangul(text), name_nfd(text), name_skeleton(text), name_look(text), characters_name_key() from public, anon, authenticated;

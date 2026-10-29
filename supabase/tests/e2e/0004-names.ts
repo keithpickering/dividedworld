@@ -13,7 +13,7 @@ import { NAME_FOLDS } from '../../../engine/rules/name-folds.data.ts';
 const NAMES = [
   'Pipewrench', 'PIPEWRENCH', 'Pipewrеnch', 'Ріpewrench', 'B0b', 'Café', 'Café', 'Straße', 'STRASSE',
   'ǅungla', 'ﬁre', 'Ⅻ', '\u{1d401}\u{1d428}\u{1d425}\u{1d41d}', 'Ꭺmy', 'ΑΣΚ', 'İstanbul', 'Ⓜario', 'mañana',
-  'ＷＩＤＥ', 'Ŀuigi', 'ǈ', 'PipewrenchI', 'Pipewrenchl',
+  'ＷＩＤＥ', 'Ŀuigi', 'ǈ', 'PipewrenchI', 'Pipewrenchl', 'Za\u0301\u0328', 'Za\u0328\u0301', '\ud55c', 'X\u{16D68}',
 ];
 
 test('the client\'s name keys are the database\'s, name by name', () => {
@@ -25,7 +25,27 @@ test('the client\'s name keys are the database\'s, name by name', () => {
   }
 });
 
+test('the client\'s keys are the database\'s for every code point that decomposes or has a class, for Hangul, and across the folds', () => {
+  // Every decomposition and combining class, where a platform's own normalizing would differ;
+  // every fifth mapping of the folds, whose lookup is one code path on each side.
+  const points = new Set<string>();
+  for (const [k, v] of Object.entries(NAME_FOLDS.decompose)) { points.add(k); for (const c of v) points.add(c); }
+  for (const k of Object.keys(NAME_FOLDS.ccc)) points.add(k);
+  for (const table of [NAME_FOLDS.fold, NAME_FOLDS.confusable]) {
+    Object.entries(table).forEach(([k, v], i) => { if (i % 5 === 0) { points.add(k); for (const c of v) points.add(c); } });
+  }
+  for (let c = 0xac00; c <= 0xd7a3; c += 37) points.add(String.fromCodePoint(c));
+  // Each after an A, so a mark has a letter before it.
+  const names = [...points].map((c) => `A${c}`);
+  const hex = (s: string) => Buffer.from(s, 'utf8').toString('hex');
+  const got = sql(`select string_agg(encode(convert_to(name_skeleton(n) || '|' || name_look(n), 'UTF8'), 'hex'), ',' order by i)
+    from unnest(array[${names.map((n) => `convert_from(decode('${hex(n)}', 'hex'), 'UTF8')`).join(', ')}]) with ordinality as x(n, i)`).split(',');
+  const wrong = names.filter((n, i) => got[i] !== hex(`${nameKeys(n).folded}|${nameKeys(n).look}`));
+  assert.deepEqual(wrong.slice(0, 5).map((n) => [...n].map((c) => c.codePointAt(0)!.toString(16))), [], `${wrong.length} of ${names.length} disagree`);
+});
+
 test('the database\'s copy of the data is the client\'s release', () => {
   assert.equal(sql(`select version from unicode_data where what = 'confusables'`), NAME_FOLDS.unicode);
   assert.equal(sql(`select version from unicode_data where what = 'case folding'`), NAME_FOLDS.caseFolding);
+  assert.equal(sql(`select source_sha256 from unicode_data where what = 'unicode data'`), NAME_FOLDS.unicodeDataSha256);
 });

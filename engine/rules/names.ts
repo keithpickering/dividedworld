@@ -15,11 +15,36 @@
  * name_skeleton and name_look); these are the same keys for the client's preview, from the
  * same data (name-folds.data.ts, which tools/check-name-folds.mjs holds the database's copy
  * to), in the database's steps, so a name the client says is free is one the database takes.
+ * Decomposing is the data's too, never String.prototype.normalize, whose Unicode is the
+ * browser's and not the database's.
  */
 import { NAME_FOLDS } from './name-folds.data.ts';
 
 const mapped = (s: string, table: Readonly<Record<string, string>>) => [...s].map((c) => table[c] ?? c).join('');
-const nfd = (s: string) => s.normalize('NFD');
+
+/* Hangul syllables decompose by Unicode's algorithm (chapter 3.12), not by a table. */
+const S_BASE = 0xac00, L_BASE = 0x1100, V_BASE = 0x1161, T_BASE = 0x11a7, T_COUNT = 28, N_COUNT = 21 * T_COUNT, S_COUNT = 19 * N_COUNT;
+const hangul = (c: string): string | undefined => {
+  const s = c.codePointAt(0)! - S_BASE;
+  if (s < 0 || s >= S_COUNT) return undefined;
+  const t = s % T_COUNT;
+  return String.fromCodePoint(L_BASE + Math.floor(s / N_COUNT), V_BASE + Math.floor((s % N_COUNT) / T_COUNT)) + (t ? String.fromCodePoint(T_BASE + t) : '');
+};
+
+/**
+ * Canonical decomposition: each code point to its full decomposition, then each run of marks
+ * after a starter (combining class 0) put in order of class, keeping the order of marks of one
+ * class. 0011_names.sql's name_nfd does the same, by the same ordering key.
+ */
+export function nfd(s: string): string {
+  const chars = [...s].flatMap((c) => [...(NAME_FOLDS.decompose[c] ?? hangul(c) ?? c)]);
+  let run = 0;
+  return chars
+    .map((c, i) => { const ccc = NAME_FOLDS.ccc[c] ?? 0; if (ccc === 0) run++; return { c, ccc, run, i }; })
+    .sort((a, b) => a.run - b.run || a.ccc - b.ccc || a.i - b.i)
+    .map((x) => x.c)
+    .join('');
+}
 
 /**
  * A name's two keys. Folded: decompose, fold case, decompose, fold lookalikes, decompose, fold

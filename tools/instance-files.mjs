@@ -130,10 +130,10 @@ export function tables(c) {
  * names their release instead (nameFolds), and an import into a database holding another is
  * refused, since every character's name keys are that release's.
  */
-export const MIGRATION_DATA = ['public.name_maps', 'public.unicode_data'];
+export const MIGRATION_DATA = ['public.name_maps', 'public.name_classes', 'public.unicode_data'];
 
-/** The release of each kind of name fold the database holds, as { confusables, 'case folding' }. */
-export const nameFolds = (c) => JSON.parse(psql(c, `select coalesce(json_object_agg(what, version order by what), '{}') from public.unicode_data`));
+/** The release of each kind of name fold the database holds, and the hash of the file it came from. */
+export const nameFolds = (c) => JSON.parse(psql(c, `select coalesce(json_object_agg(what, json_build_object('version', version, 'sha256', source_sha256) order by what), '{}') from public.unicode_data`));
 
 /** The one file name a table's rows are kept in. */
 export const fileOf = (name) => `${name}.jsonl`;
@@ -145,7 +145,7 @@ export function fail(e) {
 }
 
 export const NOT_EXPORTED = [
-  'the name folds (public.name_maps, public.unicode_data): the migrations load them, and the manifest names their release (nameFolds), which an import requires the new database to hold',
+  'the name folds (public.name_maps, public.name_classes, public.unicode_data): the migrations load them, and the manifest names their release and source files (nameFolds), which an import requires the new database to hold; every character\'s name keys are computed again there and must be the ones carried',
   'the two Vault secrets the scheduled jobs call the Edge Functions with, kayfabb_functions_url and kayfabb_service_key: secrets, which are set by hand on the new project, with select vault.create_secret(<the functions URL>, \'kayfabb_functions_url\') and select vault.create_secret(<the service key>, \'kayfabb_service_key\') (supabase/migrations/0004_schedule.sql reads them); until then the settlement job runs and calls nothing',
   'Supabase Auth\'s sessions and refresh tokens: they end, and each player signs in once more',
 ];

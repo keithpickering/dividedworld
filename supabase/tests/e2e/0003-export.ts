@@ -135,9 +135,22 @@ test('an instance exported and imported into a fresh database is the same instan
     manifest.tables.find((t: { name: string }) => t.name === 'public.accounts').file = 'public.accounts.jsonl';
     assert.ok(manifest.nameFolds?.confusables, 'the export names its release of the name folds');
     assert.ok(!manifest.tables.some((t: { name: string }) => t.name === 'public.name_maps' || t.name === 'public.unicode_data'), 'the name folds are not exported');
-    manifest.nameFolds = { ...manifest.nameFolds, confusables: '1.0.0' };
+    const folds = manifest.nameFolds;
+    manifest.nameFolds = { ...folds, confusables: { ...folds.confusables, version: '1.0.0' } };
     fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));
     assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /name folds/);
+    manifest.nameFolds = { ...folds, confusables: { ...folds.confusables, sha256: '0'.repeat(64) } };
+    fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));
+    assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /name folds/, 'the same release from other files is another release');
+    // A character whose carried key is not its name's is refused: an import keys every name again.
+    // From a clean copy of the export, but for that one row.
+    for (const f of ['manifest.json', 'public.accounts.jsonl']) fs.copyFileSync(path.join(dir, f), path.join(short, f));
+    const characters = fs.readFileSync(path.join(dir, 'public.characters.jsonl'), 'utf8').split('\n').filter(Boolean);
+    const forged = JSON.parse(characters[0]!);
+    forged.name_key = 'not its name';
+    fs.writeFileSync(path.join(short, 'public.characters.jsonl'), [JSON.stringify(forged), ...characters.slice(1)].join('\n') + '\n');
+    assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /name_key/);
+    fs.writeFileSync(path.join(short, 'public.characters.jsonl'), characters.join('\n') + '\n');
     fs.rmSync(short, { recursive: true, force: true });
     assert.equal(psqlOn(fresh.toString(), 'select count(*) from public.accounts'), '0', 'a refused import left rows behind');
 

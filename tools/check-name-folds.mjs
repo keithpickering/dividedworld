@@ -18,7 +18,7 @@ export { DATA, MIGRATION };
 export function foldFaults(dataText, migrationText) {
   let data;
   try { data = readData(dataText); } catch (e) { return [String(e.message)]; }
-  for (const k of ['unicode', 'confusablesDate', 'caseFolding', 'confusablesSha256', 'caseFoldingSha256']) {
+  for (const k of ['unicode', 'confusablesDate', 'caseFolding', 'confusablesSha256', 'caseFoldingSha256', 'unicodeDataSha256']) {
     if (typeof data[k] !== 'string' || !data[k]) return [`${DATA}: no ${k}`];
   }
   const want = migration(data).split('\n');
