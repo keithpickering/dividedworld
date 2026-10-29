@@ -77,7 +77,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
       )}
       {step === 'email' ? (
         <form aria-label={registering ? 'Register' : 'Sign in'} onSubmit={(e) => void ask(e)} noValidate>
-          <p className="kb-muted">There is no password. An email brings a code and a link to sign in; {registering ? 'registering and signing in are the same steps' : 'a first sign-in with an invite makes the login'}.</p>
+          <p className="kb-muted">There is no password. An email brings a code and a link to sign in; {registering ? 'registering and signing in are the same steps' : <>a new player registers first (<Link to="/register">Register</Link>), or gives an invite after the code</>}.</p>
           <label className="kb-field">
             <span>Email address</span>
             <input className="kb-input" type="email" name="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
