@@ -9,7 +9,9 @@ test('signs out, then signs in again with a code, by keyboard alone', async ({ p
   await page.getByRole('button', { name: 'Sign out' }).focus();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/$/u);
-  await page.goto('/sign-in');
+  /* A reload would start the demo world over, signed in; the HUD's own link is the way. */
+  await page.getByRole('link', { name: 'Sign in' }).first().focus();
+  await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
   await page.getByLabel('Email address').focus();
   await page.keyboard.type(EMAIL);
