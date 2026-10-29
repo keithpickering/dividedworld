@@ -83,9 +83,9 @@ begin
   update reading set first_read_at = (select ran_at from view_count_runs) - interval '5 minutes' where thread = quiet and account = bob;
   perform count_thread_views();
   if (select players from thread_view_counts where thread = quiet) is distinct from 2 then raise exception 'a read committed just after a run was never counted'; end if;
-  -- Everyone signed in reads the counts.
+  -- No player reads the counts until the owner answers #12: a count of players can say two masks are one.
   perform tests.become(bob);
-  if (select players from thread_view_counts where thread = t) is distinct from 2 then raise exception 'the counts are public'; end if;
+  if pg_temp.refusal('select count(*) from thread_view_counts') is null then raise exception 'a player read the view counts, which wait on #12'; end if;
   perform tests.unbecome();
   perform tests.become_anon();
   if pg_temp.refusal('select count(*) from reading') is null then raise exception 'a visitor read reading rows'; end if;

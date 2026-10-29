@@ -8,7 +8,8 @@
 -- broadcast. A live count would say whether a new poster's player had already read the thread,
 -- so counts move only when count_thread_views() runs, at the instance's viewCountCron (hourly by
 -- default). The row records the HUD's character at the player's first read, so a reveal of who
--- read something, if a card ever makes one, names a character, never a player.
+-- read something, if a card ever makes one, names a character, never a player. Until the owner
+-- answers #12, no player reads the counts (below).
 --
 -- Its way out is none needed: reading changes nothing a player can be held by.
 
@@ -116,7 +117,10 @@ alter table view_count_runs enable row level security;
 revoke all on reading, thread_view_counts, view_count_runs, my_reactions from anon, authenticated;
 grant select on reading to authenticated;
 create policy own on reading for select to authenticated using (account = auth.uid());
-grant select on thread_view_counts to authenticated;
+-- Withheld from players for now: a count of distinct players can say that two masks that posted
+-- in a thread are one player's, so it waits on the owner's answer to #12 (count the masks read
+-- through instead, or show none) before any player reads it. The rows and the job are kept, so
+-- the count is there to show once the answer is written into the design.
 create policy read on thread_view_counts for select to authenticated using (true);
 grant select on my_reactions to authenticated;
 
