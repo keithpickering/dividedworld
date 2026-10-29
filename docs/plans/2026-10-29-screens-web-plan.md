@@ -10,6 +10,20 @@ merged. A build session carries it out task by task, tests first, each red run r
 a new character waits to debut at the next settlement; a Turn is pending until then and can be changed or withdrawn;
 announced Turns and debuts appear in The System's tally. Tasks 9, 10 and 11 say so.
 
+**Amended 2026-10-29, after the clues design** (`docs/plans/2026-10-29-clues-design.md`, built by
+`docs/plans/2026-10-29-clues-plan.md`, which this plan starts after). Where a task below says otherwise, this wins:
+
+- Task 3: the estimate is asked for when the HUD opens, when a reaction lands on one of the player's own Acts, after
+  the player's own reaction (a line they earn by reacting, such as the Lurker's call, otherwise waits), and once more
+  at the answer's `freshAfter`; never on a timer.
+- Task 4: a thread's views are its character views (`thread_view_counts.views`), read by every signed-in player.
+- Task 8: the estimate's lines are each reaction's own amount at its own time; none says "about".
+- Task 9: New character offers drop now or debut at the tally, each silent or announced, with a preview of what
+  everyone will see (no class is ever shown); a waiting character offers Drop now and a change of loudness; a Turn
+  whose `takes_effect_at` is null says "at the next settlement". The cropper sends a portrait (256 to 512 wide, up to
+  twice as tall) and a square cut from inside it, and no original; a recrop of the square cuts it from the stored
+  portrait and sends the square alone.
+
 The mockups each screen follows are in `docs/research/2026-10-29-screens/`; the design's sections say what was decided
 and why. Where a mockup and the design disagree, the design wins. impeccable is installed (`.claude/skills/impeccable/`)
 with its product record (`PRODUCT.md`); a builder runs `.claude/skills/impeccable/scripts/impeccable context` once, then
