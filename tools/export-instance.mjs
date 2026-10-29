@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { FORMAT, NOT_EXPORTED, answered, args, connection, fail, fileOf, psql, tables } from './instance-files.mjs';
+import { FORMAT, NOT_EXPORTED, answered, args, connection, fail, fileOf, nameFolds, psql, tables } from './instance-files.mjs';
 
 const usage = 'usage: node tools/export-instance.mjs --from postgres://… --to <new directory>';
 
@@ -50,6 +50,7 @@ async function main() {
     exportedAt: new Date().toISOString(),
     from: db.named,
     tables: await Promise.all(all.map(async (t) => ({ name: t.name, file: fileOf(t.name), columns: t.columns, rows: await rowsIn(file(t)) }))),
+    nameFolds: nameFolds(db),
     notExported: NOT_EXPORTED,
   };
   fs.writeFileSync(path.join(to, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });

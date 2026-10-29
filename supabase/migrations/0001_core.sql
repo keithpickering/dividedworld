@@ -83,8 +83,7 @@ create table characters (
   -- sitting can be picked out. Its way out is that settlement.
   debuted_at timestamptz
 );
--- One name per instance, whatever its case.
-create unique index characters_name_key on characters (lower(name));
+-- One name per instance, whatever its case or its script: 0011_names.sql's name_key.
 create index characters_owner on characters (owner);
 
 -- Every class a character has held, from when. Private until the season's reveal.

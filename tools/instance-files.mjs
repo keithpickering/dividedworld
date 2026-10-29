@@ -5,7 +5,8 @@
  * An instance is every table in the public schema, private ones included, and the logins beside
  * them in Supabase Auth (auth.users, and auth.identities where Auth keeps one), so that an
  * imported instance's players sign in as before. What is not exported is said where it is left
- * out (NOT_EXPORTED): the two Vault secrets, and Auth's sessions, which end.
+ * out (NOT_EXPORTED): the two Vault secrets, Auth's sessions, which end, and the tables the
+ * migrations fill themselves (MIGRATION_DATA), whose release the manifest names instead.
  *
  * A connection's password never reaches psql's command line, where any user's `ps` reads it, nor
  * the terminal: the URL is taken apart here and handed to psql as libpq's variables, and every
@@ -119,8 +120,20 @@ export function tables(c) {
       from pg_class c join pg_namespace n on n.oid = c.relnamespace
       where c.relkind in ('r', 'p') and not c.relispartition
         and (n.nspname = 'public' or (n.nspname = 'auth' and c.relname in ('users', 'identities')))
+        and format('%I.%I', n.nspname, c.relname) <> all (array[${MIGRATION_DATA.map((t) => `'${t}'`).join(', ')}]::text[])
     ) t`));
 }
+
+/**
+ * The tables a migration fills, the same in every instance at one set of migrations: the name
+ * folds (supabase/migrations/0010_name_folds.sql). Not an instance's to carry; the manifest
+ * names their release instead (nameFolds), and an import into a database holding another is
+ * refused, since every character's name keys are that release's.
+ */
+export const MIGRATION_DATA = ['public.name_maps', 'public.unicode_data'];
+
+/** The release of each kind of name fold the database holds, as { confusables, 'case folding' }. */
+export const nameFolds = (c) => JSON.parse(psql(c, `select coalesce(json_object_agg(what, version order by what), '{}') from public.unicode_data`));
 
 /** The one file name a table's rows are kept in. */
 export const fileOf = (name) => `${name}.jsonl`;
@@ -132,6 +145,7 @@ export function fail(e) {
 }
 
 export const NOT_EXPORTED = [
+  'the name folds (public.name_maps, public.unicode_data): the migrations load them, and the manifest names their release (nameFolds), which an import requires the new database to hold',
   'the two Vault secrets the scheduled jobs call the Edge Functions with, kayfabb_functions_url and kayfabb_service_key: secrets, which are set by hand on the new project, with select vault.create_secret(<the functions URL>, \'kayfabb_functions_url\') and select vault.create_secret(<the service key>, \'kayfabb_service_key\') (supabase/migrations/0004_schedule.sql reads them); until then the settlement job runs and calls nothing',
   'Supabase Auth\'s sessions and refresh tokens: they end, and each player signs in once more',
 ];

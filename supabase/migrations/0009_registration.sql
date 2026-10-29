@@ -130,7 +130,7 @@ begin
 end $$;
 
 -- Make a character, with its first class: held to the cap (characters_within_cap, 0001), to a
--- name nobody holds whatever its case, and to a class the instance has. It waits to debut at the
+-- name nobody holds whatever its case or script (name_key, 0011), and to a class the instance has. It waits to debut at the
 -- next settlement (characters.debuted_at, 0001), which is its way out.
 create function create_character(name text, class text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -142,7 +142,7 @@ begin
   if named is null or char_length(named) not between 1 and 40 then
     raise exception 'a name is 1 to 40 characters' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
-  -- A name nobody's can be made to look like: unique whatever its case (0001), and holding no
+  -- A name nobody's can be made to look like: unique whatever its case or script (0011), and holding no
   -- invisible, control or direction character and no space but a single one. The same set as
   -- engine/rules/actions.ts's NAME_HIDDEN.
   if named ~ '[\u0001-\u001f\u007f-\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180e\u2000-\u200f\u2028-\u202f\u205f-\u206f\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\u2800\U0001d173-\U0001d17a\U000e0000-\U000e0fff]' or named like '%  %' then

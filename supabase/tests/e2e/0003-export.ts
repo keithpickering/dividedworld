@@ -129,6 +129,15 @@ test('an instance exported and imported into a fresh database is the same instan
     manifest.tables.find((t: { name: string }) => t.name === 'public.accounts').file = '../elsewhere.jsonl';
     fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));
     assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /names a file/);
+    // An export made at another release of the name folds is refused: its characters' name keys
+    // are that release's (supabase/migrations/0010_name_folds.sql). The folds themselves are the
+    // migrations', not the instance's, and are not carried.
+    manifest.tables.find((t: { name: string }) => t.name === 'public.accounts').file = 'public.accounts.jsonl';
+    assert.ok(manifest.nameFolds?.confusables, 'the export names its release of the name folds');
+    assert.ok(!manifest.tables.some((t: { name: string }) => t.name === 'public.name_maps' || t.name === 'public.unicode_data'), 'the name folds are not exported');
+    manifest.nameFolds = { ...manifest.nameFolds, confusables: '1.0.0' };
+    fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));
+    assert.match(run('import-instance.mjs', ['--from', short, '--to', fresh.toString()]).stderr, /name folds/);
     fs.rmSync(short, { recursive: true, force: true });
     assert.equal(psqlOn(fresh.toString(), 'select count(*) from public.accounts'), '0', 'a refused import left rows behind');
 

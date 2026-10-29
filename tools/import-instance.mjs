@@ -24,7 +24,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { FORMAT, NOT_EXPORTED, answered, args, connection, fail, fileOf, psql, psqlStream, scrub, tables } from './instance-files.mjs';
+import { FORMAT, NOT_EXPORTED, answered, args, connection, fail, fileOf, nameFolds, psql, psqlStream, scrub, tables } from './instance-files.mjs';
 
 const usage = 'usage: node tools/import-instance.mjs --from <export directory> --to postgres://…';
 
@@ -45,6 +45,9 @@ function check(db, manifest) {
   }
   for (const name of here.keys()) {
     if (!theirs.has(name)) throw new Error(`this database has ${name}, which the export does not: the export is from other migrations or another Auth`);
+  }
+  if (JSON.stringify(nameFolds(db)) !== JSON.stringify(manifest.nameFolds)) {
+    throw new Error(`this database holds the name folds ${JSON.stringify(nameFolds(db))} and the export ${JSON.stringify(manifest.nameFolds)}: apply the migrations the export was made with`);
   }
   const held = psql(db, manifest.tables.map((t) => `select ${literal(t.name)} where exists (select 1 from ${t.name});`).join('\n'));
   if (held) throw new Error(`the database is not empty (${held.split('\n').join(', ')}); an import goes into a fresh instance`);
