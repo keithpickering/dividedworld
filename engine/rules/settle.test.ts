@@ -370,6 +370,9 @@ test('two Sweet cards from one player on one post pay what one would: each vote 
   assert.deepEqual(after(lifts, [bobs, cards[1]!]), [['k0', 1], ['k2', 1]], 'each player\'s own card holds the votes after it');
   const salty: InputAct = { id: 'k0', character: 'cat-1', kind: 'card', at: FROM + 6 * H, thread: 't1', target: 'p1', card: 'splat' };
   assert.deepEqual(after(lifts, [salty, cards[1]!]), [['k0', 1], ['k2', 1]], 'a Salty card holds Salty counting, never a Sweet card\'s');
+  // A card whose kind the instance has since retired, from an earlier window, holds nothing.
+  const retired: InputAct = { id: 'k0', character: 'cat-1', kind: 'card', at: FROM - H, thread: 't1', target: 'p1', card: 'gone' };
+  assert.deepEqual(after(lifts, [retired, cards[1]!]), [['k2', 1]], 'the live card holds the votes');
 });
 
 /* ---- the edges: each case below is a boundary a one-character change would move ---- */

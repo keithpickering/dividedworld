@@ -61,7 +61,8 @@ export interface PaidVote {
 
 const QUADRANT_KEYS = ['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative'] as const;
 type Q = (typeof QUADRANT_KEYS)[number];
-const sweep = (x: number) => Math.round(x * 1e9) / 1e9 || 0;
+/** A difference smaller than any share a reaction count can make is no difference. */
+const nothing = (x: number) => Math.abs(x) < 1e-12;
 
 /**
  * One player, one vote per Act, whenever the reactions come (the owner's answer 2, on #4).
@@ -77,9 +78,9 @@ const sweep = (x: number) => Math.round(x * 1e9) / 1e9 || 0;
  * `reactions` are every reaction on each touched Act up to the window's end, earlier ones
  * included. A vote with nothing recorded as paid is new, however early its first reaction: one
  * made where no window settled it (between seasons) is paid in full now, at this window's
- * halving, rather than stalling every settlement after it. The window's difference is said in
- * the voice of the player's latest reaction in the window, in the quadrant where it has one, so
- * the giver a class reads can be a different mask of the same player than the first one.
+ * halving, rather than stalling every settlement after it. A share added is said by the
+ * player's latest reaction in its quadrant in the window; a share taken back, by the mask that
+ * gave it there, so spreading reactions over days never keeps a mask's pay for a vote it moved.
  */
 export function payVotes<R extends { readonly act: string; readonly player: string; readonly character: string; readonly quadrant: Q; readonly at: number }>(
   reactions: readonly R[],
@@ -108,12 +109,19 @@ export function payVotes<R extends { readonly act: string; readonly player: stri
   for (const [k, rs] of touched) {
     const prior = before.get(k);
     const weight = prior?.weight ?? weightOf.get(k)!;
-    const shares = Object.fromEntries(QUADRANT_KEYS.map((q) => [q, sweep(rs.filter((r) => r.quadrant === q).length / rs.length)])) as Record<Q, number>;
-    const last = [...rs].filter(inWindow).sort((a, b) => a.at - b.at).at(-1)!;
-    for (const q of QUADRANT_KEYS) {
-      const share = sweep(shares[q] - (prior?.shares[q] ?? 0));
-      if (share === 0) continue;
-      const voice = [...rs].filter((r) => inWindow(r) && r.quadrant === q).sort((a, b) => a.at - b.at).at(-1) ?? last;
+    // Shares as plain fractions of the player's reactions there (1, ½, ⅓, ⅔), which sum to one vote exactly.
+    const shares = Object.fromEntries(QUADRANT_KEYS.map((q) => [q, rs.filter((r) => r.quadrant === q).length / rs.length])) as Record<Q, number>;
+    const byTime = [...rs].sort((a, b) => a.at - b.at);
+    const last = byTime.filter(inWindow).at(-1)!;
+    const moved = QUADRANT_KEYS.map((q) => ({ q, share: shares[q] - (prior?.shares[q] ?? 0) })).filter((d) => !nothing(d.share));
+    // A vote already whole moves, never grows: its differences sum to exactly nothing, so no
+    // float dust tips a comparison of what a card or a post drew.
+    if (prior && moved.length) moved.at(-1)!.share = -moved.slice(0, -1).reduce((t, d) => t + d.share, 0);
+    for (const { q, share } of moved) {
+      if (nothing(share)) continue;
+      // A share added is said by the latest reaction in its quadrant this window; one taken back,
+      // by the mask that gave it there, at the moment it was taken back.
+      const voice = share > 0 ? byTime.filter((r) => inWindow(r) && r.quadrant === q).at(-1) ?? last : { ...(byTime.filter((r) => r.quadrant === q).at(-1) ?? last), at: last.at };
       votes.push({ ...voice, quadrant: q, share, votes: weight * share });
     }
     out.push({ player: rs[0]!.player, act: rs[0]!.act, weight, shares });

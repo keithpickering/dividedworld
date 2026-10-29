@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { halveAcrossActs, shareVotes } from './votes.ts';
+import { halveAcrossActs, payVotes, shareVotes } from './votes.ts';
 
 const r = (act: string, player: string, character = `${player}-c1`, kind = 'fire') => ({ act, player, character, kind });
 
@@ -109,4 +109,51 @@ test('no votes are no votes', () => {
 
 test('a vote on an Act the caller cannot place is an error, not a whole vote', () => {
   assert.throws(() => halveAcrossActs(shareVotes([r('nowhere', 'p1')]), actOf, 0.5), /no act nowhere/);
+});
+
+
+/* ---- payVotes: one vote per player per Act, across windows ---- */
+type Q = 'excitedPositive' | 'excitedNegative' | 'calmPositive' | 'boredNegative';
+const payActs = new Map([['p1', { character: 'author', at: 0 }], ['p2', { character: 'author', at: 5 }]]);
+const payActOf = (id: string) => payActs.get(id)!;
+const W1 = { from: 0, to: 100 };
+const W2 = { from: 100, to: 200 };
+const at = (act: string, quadrant: Q, when: number, character = 'bob-a', player = 'bob') => ({ act, player, character, quadrant, at: when });
+const sum = (xs: { share: number }[]) => xs.reduce((s, x) => s + x.share, 0);
+
+test('a three-way split paid across two windows sums to exactly one vote, with no dust to tip a comparison', () => {
+  const monday = payVotes([at('p1', 'excitedPositive', 10)], W1, [], payActOf, 0.5);
+  const tuesday = payVotes([at('p1', 'excitedPositive', 10), at('p1', 'calmPositive', 110), at('p1', 'boredNegative', 120)], W2, monday.paid, payActOf, 0.5);
+  assert.equal(sum(tuesday.votes), 0, 'the differences of a vote already whole sum to nothing at all');
+  assert.equal(sum(monday.votes) + sum(tuesday.votes), 1);
+  assert.equal(Object.values(tuesday.paid[0]!.shares).reduce((s, x) => s + x, 0), 1);
+});
+
+test('the same quadrant again in a later window pays exactly nothing', () => {
+  const monday = payVotes([at('p1', 'excitedPositive', 10)], W1, [], payActOf, 0.5);
+  const tuesday = payVotes([at('p1', 'excitedPositive', 10), at('p1', 'excitedPositive', 110)], W2, monday.paid, payActOf, 0.5);
+  assert.deepEqual(tuesday.votes, []);
+});
+
+test('a vote paid before keeps its weight and never counts in the halving of a new one beside it', () => {
+  const monday = payVotes([at('p1', 'excitedPositive', 10)], W1, [], payActOf, 0.5);
+  const tuesday = payVotes([at('p1', 'excitedPositive', 10), at('p1', 'boredNegative', 110), at('p2', 'excitedPositive', 120)], W2, monday.paid, payActOf, 0.5);
+  assert.deepEqual(tuesday.paid.map((v) => [v.act, v.weight]), [['p1', 1], ['p2', 1]], 'p2 is the first new vote on the author this window, whole');
+});
+
+test('a vote taken back from a quadrant is said by the mask that gave it there', () => {
+  const monday = payVotes([at('p1', 'excitedPositive', 10, 'bob-lurker')], W1, [], payActOf, 0.5);
+  const tuesday = payVotes([at('p1', 'excitedPositive', 10, 'bob-lurker'), at('p1', 'boredNegative', 110, 'bob-other')], W2, monday.paid, payActOf, 0.5);
+  assert.deepEqual(tuesday.votes.map((v) => [v.quadrant, v.share, v.character]).sort(), [['boredNegative', 0.5, 'bob-other'], ['excitedPositive', -0.5, 'bob-lurker']]);
+  // Of several reactions in the window, the latest says the window's part.
+  const two = payVotes([at('p1', 'excitedPositive', 10, 'bob-a'), at('p1', 'excitedPositive', 20, 'bob-b')], W1, [], payActOf, 0.5);
+  assert.equal(two.votes[0]!.character, 'bob-b');
+});
+
+test('what is paid comes back in one order whatever order the reactions came in, and nothing at the window\'s end is read', () => {
+  const rs = [at('p2', 'excitedPositive', 10, 'cat-a', 'cat'), at('p1', 'excitedPositive', 11), at('p1', 'boredNegative', 100)];
+  const one = payVotes(rs, W1, [], payActOf, 0.5);
+  assert.deepEqual(payVotes([...rs].reverse(), W1, [], payActOf, 0.5).paid, one.paid);
+  assert.deepEqual(one.paid.map((v) => [v.player, v.act]), [['bob', 'p1'], ['cat', 'p2']]);
+  assert.equal(one.paid[0]!.shares.excitedPositive, 1, 'the reaction at the window\'s end is the next window\'s');
 });

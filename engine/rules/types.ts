@@ -153,7 +153,11 @@ export interface ReceivedReaction {
   readonly actKind: ActKind;
   readonly quadrant: Quadrant;
   readonly at: number;
-  /** The reaction's share of its player's one vote on the Act, times the halving. */
+  /**
+   * What this window pays of the reacting player's one vote on the Act, in this quadrant, times
+   * its halving: the difference from what earlier windows paid, so a vote that moved from this
+   * quadrant to another is negative here (engine/rules/votes.ts's payVotes).
+   */
   readonly votes: number;
 }
 
@@ -162,7 +166,7 @@ export interface GivenReaction {
   readonly act: string;
   readonly quadrant: Quadrant;
   readonly at: number;
-  /** This reaction's share of its player's one vote on the Act. */
+  /** What this window adds (or, negative, takes back) of its player's one vote on the Act, in this quadrant. */
   readonly share: number;
   /** Where its player came among the players who reacted to the Act, by first reaction: 1 is first. */
   readonly rank: number;

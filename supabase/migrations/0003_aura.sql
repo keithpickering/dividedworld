@@ -67,7 +67,6 @@ create table paid_votes (
   settlement bigint not null references settlements (id),
   primary key (account, act)
 );
-create index paid_votes_act on paid_votes (act);
 
 create table wallets (
   account uuid primary key references accounts (id),

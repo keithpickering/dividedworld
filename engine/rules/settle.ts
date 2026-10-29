@@ -13,8 +13,11 @@
  *
  * The rules the design leaves to the engine, and how they are read here:
  *
- * - A reaction's share of its player's one vote on an Act counts every reaction that player
- *   has left there up to the window's end; the window pays the reactions made inside it.
+ * - One player, one vote per Act, whenever the reactions come: the vote's weight is fixed by
+ *   the halving in the window of the player's first reaction there, and each window pays the
+ *   difference between the shares now and those already paid (engine/rules/votes.ts).
+ * - A vote after a card counts once per player and alignment, for that player's earliest card
+ *   of that alignment on the target, so two Sweet cards pay what one would.
  * - "Early" is a rank: where the reacting player came among the players who reacted to the
  *   Act, by first reaction, with ties ordered by player. The class decides how early is early.
  * - Where a post "ends up" is its dominant quadrant by vote share at this settlement, over
@@ -192,12 +195,15 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
   }
   const played = new Map<string, PlayedCard[]>();
   const landed = new Map<string, LandedCard[]>();
-  const cardsOnTarget = group([...acts.values()].filter((a) => a.kind === 'card' && a.target && a.card && alignmentOf.has(a.card)), (a) => a.target!);
-  /** The card a vote at `at` on a target counts for, among one player's cards of one alignment there: the earliest before it. */
-  const holderOf = (target: string, player: string, alignment: string, at: number) =>
-    (cardsOnTarget.get(target) ?? [])
-      .filter((c) => c.at < at && playerOf(c.character) === player && alignmentOf.get(c.card!) === alignment)
-      .sort((x, y) => x.at - y.at || cmp(x.id, y.id))[0]?.id;
+  /* Each target's earliest card per player and alignment, an earlier window's included: the card
+     every later vote there counts for, per player and not per mask or class, as the plan's Task B
+     reads the owner's answer 3. A card whose kind the instance has since retired has no
+     alignment, and holds nothing. Built once; the acts are already in time order. */
+  const holder = new Map<string, string>();
+  for (const c of [...acts.values()].filter((a) => a.kind === 'card' && a.target && a.card && alignmentOf.has(a.card)).sort((x, y) => x.at - y.at || cmp(x.id, y.id))) {
+    const k = `${c.target}\u0000${playerOf(c.character)}\u0000${alignmentOf.get(c.card!)}`;
+    if (!holder.has(k)) holder.set(k, c.id);
+  }
   for (const a of windowActs.filter((a) => a.kind === 'card')) {
     if (!a.target) throw new Error(`settle: card Act ${a.id} has no target`);
     const target = actOf(a.target);
@@ -206,11 +212,13 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
     // Each vote after the card counts once per player and alignment: for the earliest of that
     // player's cards of this alignment on the target (an earlier window's included), so two
     // Sweet cards pay what one would (the owner's answer 3, on #4).
-    for (const v of windowVotesOn.get(target.id) ?? []) if (v.at > a.at && v.player !== player && holderOf(target.id, player, alignmentOf.get(a.card!)!, v.at) === a.id) after[v.quadrant] += v.share;
+    for (const v of windowVotesOn.get(target.id) ?? []) if (v.at > a.at && v.player !== player && holder.get(`${target.id}\u0000${player}\u0000${alignmentOf.get(a.card!)}`) === a.id) after[v.quadrant] += v.share;
     const alignment = alignmentOf.get(a.card!)!;
     const onOthers = playerOf(target.character) !== player;
     const list = played.get(a.character) ?? [];
-    list.push({ act: a.id, card: a.card!, alignment, at: a.at, target: target.id, onOthers, votes: votesOn.get(a.id) ?? 0, targetVotes: votesOn.get(target.id) ?? 0, targetAfter: after });
+    // Sums of share differences, tidied as the leaning is, so float dust never decides an outdraw.
+    for (const q of QUADRANTS) after[q] = tidy(after[q]);
+    list.push({ act: a.id, card: a.card!, alignment, at: a.at, target: target.id, onOthers, votes: tidy(votesOn.get(a.id) ?? 0), targetVotes: tidy(votesOn.get(target.id) ?? 0), targetAfter: after });
     played.set(a.character, list);
     if (onOthers) {
       const on = landed.get(target.character) ?? [];

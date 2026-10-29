@@ -55,7 +55,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   for (const t of ['public.accounts', 'public.characters', 'public.class_history', 'public.acts', 'public.reactions', 'public.card_ledger', 'public.effect_state',
-    'public.invites', 'public.settlements', 'public.ledger', 'public.wallet_events', 'public.seasons', 'auth.users']) {
+    'public.invites', 'public.settlements', 'public.paid_votes', 'public.ledger', 'public.wallet_events', 'public.seasons', 'auth.users']) {
     assert.notEqual(before.get(t), '[]', `${t} should hold something to carry across`);
   }
 
