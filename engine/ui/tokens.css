@@ -1,0 +1,89 @@
+/*
+ * The token names every screen reads, with plain defaults: black and white, Verdana and Courier
+ * New, gray orbs. An instance's theme sets them (instances/<name>/ui/), and a player's theme is a
+ * CSS file of the same overrides (docs/plans/2026-10-29-screens-design.md, section 12). This is the
+ * one file in engine/ui/ that may hold a color or a font family (tools/check-ui-tokens.mjs).
+ *
+ * Light and dark: a theme sets its light values on :root, its dark ones under the device's
+ * prefers-color-scheme unless the player chose light, and again for a player who chose dark. The
+ * engine sets data-kb-mode on <html> only when the player overrides the device (appearance.ts).
+ */
+:root {
+  /* The forum's chrome: black and white, 1px rules. */
+  --kb-fg: #000;
+  --kb-bg: #fff;
+  --kb-rule: #000;
+  --kb-muted: #555;
+  --kb-link: #000;
+  --kb-link-visited: #333;
+  --kb-focus: #000;
+  --kb-selection-fg: #fff;
+  --kb-selection-bg: #000;
+  --kb-hud-bg: #fff;
+  --kb-overlay: rgb(0 0 0 / 0.5);
+
+  --kb-font-body: Verdana, Geneva, sans-serif;
+  --kb-font-mono: "Courier New", Courier, monospace;
+  --kb-size-body: 0.8125rem;
+  --kb-size-small: 0.6875rem;
+  --kb-size-heading: 0.9375rem;
+  --kb-size-logo: 1.25rem;
+  --kb-line: 1.45;
+
+  /* The game's pieces: the only color on the board. */
+  --kb-orb-1: #777;
+  --kb-orb-2: #777;
+  --kb-orb-3: #777;
+  --kb-orb-4: #777;
+  --kb-orb-5: #777;
+  --kb-orb-6: #777;
+  --kb-orb-rim: #000;
+  --kb-orb-shine: rgb(255 255 255 / 0.55);
+  --kb-orb-loss: rgb(255 255 255 / 0.6);
+  --kb-pip: #000;
+  --kb-pip-empty: #bbb;
+  --kb-chip-bg: #fff;
+  --kb-chip-own: #000;
+  --kb-sweet: #777;
+  --kb-salty: #777;
+  --kb-pepperoni: #777;
+  --kb-gold: #777;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-kb-mode="light"]) {
+    --kb-fg: #fff;
+    --kb-bg: #000;
+    --kb-rule: #fff;
+    --kb-muted: #aaa;
+    --kb-link: #fff;
+    --kb-link-visited: #ccc;
+    --kb-focus: #fff;
+    --kb-selection-fg: #000;
+    --kb-selection-bg: #fff;
+    --kb-hud-bg: #000;
+    --kb-orb-rim: #fff;
+    --kb-pip: #fff;
+    --kb-pip-empty: #555;
+    --kb-chip-bg: #000;
+    --kb-chip-own: #fff;
+  }
+}
+
+:root[data-kb-mode="dark"] {
+  --kb-fg: #fff;
+  --kb-bg: #000;
+  --kb-rule: #fff;
+  --kb-muted: #aaa;
+  --kb-link: #fff;
+  --kb-link-visited: #ccc;
+  --kb-focus: #fff;
+  --kb-selection-fg: #000;
+  --kb-selection-bg: #fff;
+  --kb-hud-bg: #000;
+  --kb-orb-rim: #fff;
+  --kb-pip: #fff;
+  --kb-pip-empty: #555;
+  --kb-chip-bg: #000;
+  --kb-chip-own: #fff;
+}

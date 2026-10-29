@@ -99,7 +99,7 @@ check('an unquoted data: url is clean',
   fires(`.a { background: url(data:image/png;base64,AAAA); }`, 'engine/ui/base.css').length === 0);
 check('a bare relative url() is read against its file, so a folder named instances inside engine/ui is clean',
   fires(`.a { background: url(img/instances/pip.png); }`, 'engine/ui/base.css').length === 0);
-check('a bare relative url() that climbs into instances/ fires',
+check('a url() that climbs into instances/ fires, one level short is clean',
   fires(`.a { background: url(../../instances/divided-world/p.png); }`, 'engine/ui/x/y.css').length === 0
   && fires(`.a { background: url(../../../instances/divided-world/p.png); }`, 'engine/ui/x/y.css').length === 1);
 check('a protocol-relative or absolute URL naming instances/ fires, as a bare specifier does',
