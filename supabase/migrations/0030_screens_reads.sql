@@ -91,24 +91,35 @@ create view screen_settings as
 -- edits an Act's content.
 alter table threads add column last_at timestamptz;
 
+-- A thread's replies: its posts after the first. A counter and not a count, because a list of a
+-- busy instance's threads must never count a long thread's posts to show one number per row; it is
+-- kept by acts_take_seq() in the same UPDATE as the sequence number and last_at, so it is as
+-- race-free as they are. A card, a spin, an unmask, a tally and an edit are Acts that are no reply.
+alter table threads add column replies integer not null default 0;
+
 create or replace function acts_take_seq() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if new.kind = 'edit' then
     new.seq := null;
   else
-    update threads set next_seq = next_seq + 1, last_at = greatest(last_at, new.created_at) where id = new.thread returning next_seq - 1 into new.seq;
+    -- On the right of an assignment a column is its old value: a post that takes a seq above 1 is a reply.
+    update threads set next_seq = next_seq + 1, last_at = greatest(last_at, new.created_at),
+                       replies = replies + case when new.kind = 'post' and next_seq > 1 then 1 else 0 end
+     where id = new.thread returning next_seq - 1 into new.seq;
   end if;
   return new;
 end $$;
 
--- The column for threads that predate it: their latest Act that is no edit. Kept as a function so
--- a test can replay it (supabase/tests/0034-thread-list.sql); not callable by the API roles.
-create function backfill_threads_last_at() returns void
+-- The columns for threads that predate them: their latest Act that is no edit, and their posts
+-- after the first. Kept as a function so a test can replay it (supabase/tests/0034-thread-list.sql);
+-- not callable by the API roles.
+create function backfill_thread_counters() returns void
 language sql set search_path = public, pg_temp as $$
-  update threads t set last_at = (select max(a.created_at) from acts a where a.thread = t.id and a.kind <> 'edit')
+  update threads t set last_at = (select max(a.created_at) from acts a where a.thread = t.id and a.kind <> 'edit'),
+                       replies = (select count(*) from acts a where a.thread = t.id and a.kind = 'post' and a.seq > 1)
 $$;
-select backfill_threads_last_at();
+select backfill_thread_counters();
 
 -- The price of a list that never scans: last_at is in this index, so every non-edit Act's update of
 -- its thread (acts_take_seq() above) changes an indexed column, which makes it a non-HOT update that
@@ -120,22 +131,73 @@ create index acts_recent_posts on acts (thread, created_at) where kind = 'post' 
 
 -- A board's list of threads, one row each, as a screen shows it. The first and last Acts are read by
 -- the unique (thread, seq) index, the week's replies by acts_recent_posts. Replies this week are
--- posts (no spin, card or edit) made in the last 7 days, not counting the opening post. Public,
+-- posts (no spin, card or edit) made in the last 7 days, not counting the opening post; replies is
+-- the thread's counter (threads.replies, above), never a count of its posts. A spun thread's origin
+-- (the origin Act's thread, that thread's title and the Act's seq) is read in the same query, so a
+-- list never reads it row by row. Public,
 -- as threads and acts are: every column is a thread's or an Act's public one, a character's id as
 -- an Act already carries it (null for The System's own Acts), and nothing in it depends on who
 -- owns a character or who read a thread.
 create view thread_list as
-  select t.id, t.board, t.title, t.origin_act_id, t.created_at, t.last_at, t.next_seq - 1 as last_seq,
+  select t.id, t.board, t.title, t.origin_act_id, t.created_at, t.last_at, t.next_seq - 1 as last_seq, t.replies,
          f.id as first_act, f.character as first_character,
          l.id as last_act, l.character as last_character,
-         (select count(*) from acts r where r.thread = t.id and r.kind = 'post' and r.seq > 1 and r.created_at > now() - interval '7 days') as replies_this_week
+         (select count(*) from acts r where r.thread = t.id and r.kind = 'post' and r.seq > 1 and r.created_at > now() - interval '7 days') as replies_this_week,
+         o.thread as origin_thread, ot.title as origin_title, o.seq as origin_seq
   from threads t
   left join acts f on f.thread = t.id and f.seq = 1
-  left join acts l on l.thread = t.id and l.seq = t.next_seq - 1;
+  left join acts l on l.thread = t.id and l.seq = t.next_seq - 1
+  left join acts o on o.id = t.origin_act_id
+  left join threads ot on ot.id = o.thread;
+
+-- ------------------------------------------------------------- a character's post count ----
+
+-- How many posts a character has made, for a page of postbits ("Posts: 1,204" under every avatar).
+-- A counter in a row of its own, kept by a trigger after each post, and not a count of the Acts: a
+-- page of twenty postbits must cost twenty primary-key reads however many posts a busy character has
+-- made, where counting them would read all of them, on every page view. The price is one more
+-- write per post, to the row of the character that posted (a player's own character, so no two
+-- players' posts contend for it), chosen over a read that grows with the Acts. A card, a spin, an
+-- unmask, a tally and an edit are not posts. A character that never posted has no row, and the
+-- read says 0. Public, as an Act's author and kind already are; the table is not an Act and holds
+-- nothing an Act does not.
+create table character_post_counts (
+  character uuid primary key references characters (id),
+  posts integer not null check (posts >= 0)
+);
+alter table character_post_counts enable row level security;
+
+create function acts_count_post() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  insert into character_post_counts as c (character, posts) values (new.character, 1)
+  on conflict (character) do update set posts = c.posts + 1;
+  return new;
+end $$;
+create trigger acts_count_post after insert on acts for each row when (new.kind = 'post' and new.character is not null) execute function acts_count_post();
+
+-- For characters that predate it; kept as a function so a test can replay it, and not callable by the API roles.
+create function backfill_character_post_counts() returns void
+language sql set search_path = public, pg_temp as $$
+  insert into character_post_counts (character, posts)
+  select a.character, count(*) from acts a where a.kind = 'post' and a.character is not null group by a.character
+  on conflict (character) do update set posts = excluded.posts
+$$;
+select backfill_character_post_counts();
+
+-- ----------------------------------------------------------------- a character's month ----
+
+-- The month a character debuted, as a date on the first day of it, and never the time: two
+-- characters made a minute apart is a way of reading who owns them (the screens' design, section
+-- 4), and "Joined Oct 2026" is all a profile or a postbit says. Added last, so the view keeps the
+-- columns and the order it had; the month is UTC's, whatever the session's time zone. A character waiting to debut is in no list, so has no month.
+create or replace view characters_public as
+  select c.id, c.name, date_trunc('month', c.debuted_at at time zone 'UTC')::date as joined from characters c where c.debuted_at is not null;
 
 -- --------------------------------------------------------------------------- grants ----
 
-revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_settings, thread_list from anon, authenticated;
-grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list to authenticated;
+revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_settings, thread_list, character_post_counts from anon, authenticated;
+grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list, character_post_counts to authenticated;
+create policy read_all on character_post_counts for select to authenticated using (true);
 grant select on screen_settings to anon, authenticated;
-revoke execute on function backfill_threads_last_at() from public, anon, authenticated;
+revoke execute on function backfill_thread_counters(), backfill_character_post_counts(), acts_count_post() from public, anon, authenticated;

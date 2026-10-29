@@ -86,6 +86,7 @@ test('an instance exported and imported into a fresh database is the same instan
       p uuid := tests.post(a, t, 'Carried across, with a backslash \\ and a tab' || chr(9) || 'and a line' || chr(10) || 'break.');
       play uuid;
     begin
+      perform tests.post(b, t, 'A reply, counted on the thread and on its author');
       insert into reactions (act, reactor_account, reactor_character, kind, slot) values (p, bob, b, 'up', 1);
       insert into reaction_tallies (act, kind, count) values (p, 'up', 1);
       insert into wallets (account, balance) values (ann, 0) on conflict (account) do nothing;

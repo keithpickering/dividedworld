@@ -30,8 +30,6 @@ interface Loaded {
   readonly reading: Readonly<Record<Id, number>>;
   readonly views: Readonly<Record<Id, number>>;
   readonly characters: ReadonlyMap<Id, Character>;
-  /** A spun thread's origin: the thread it came out of, the title, and the seq of the Act. */
-  readonly origins: ReadonlyMap<Id, { readonly thread: Id; readonly title: string; readonly seq: number }>;
 }
 
 type State = { readonly status: 'loading' } | { readonly status: 'missing' } | { readonly status: 'failed' } | ({ readonly status: 'ready' } & Loaded);
@@ -65,22 +63,15 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
       if (page !== want) listed = await api.threads(board.id, { offset: (page - 1) * THREADS_PER_PAGE, limit: THREADS_PER_PAGE });
       const ids = listed.threads.map((t) => t.id);
       const people = [...new Set(listed.threads.flatMap((t) => [t.firstCharacter, t.lastCharacter]).filter((c): c is Id => c !== null))];
-      const originActs = [...new Set(listed.threads.map((t) => t.originActId).filter((a): a is Id => a !== null))];
-      const [reading, views, characters, origins] = await Promise.all([
+      const [reading, views, characters] = await Promise.all([
         ids.length ? api.reading(ids) : {},
         ids.length ? api.viewCounts(ids) : {},
         people.length ? api.characters(people) : [],
-        Promise.all(originActs.map(async (id) => {
-          const act = await api.act(id);
-          const from = act ? await api.thread(act.thread) : null;
-          return act && from && act.seq !== null ? ([id, { thread: from.id, title: from.title, seq: act.seq }] as const) : null;
-        })),
       ]);
       if (!live) return;
       setState({
         status: 'ready', board, threads: listed.threads, total: listed.total, page, reading, views,
         characters: new Map(characters.map((c) => [c.id, c])),
-        origins: new Map(origins.filter((o): o is NonNullable<typeof o> => o !== null)),
       });
     })().catch(() => { if (live) setState({ status: 'failed' }); }).finally(() => { if (live) setTurning(false); });
     return () => { live = false; };
@@ -148,7 +139,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
 }
 
 function ThreadRow({ t, loaded, perPage, hot }: { readonly t: ThreadSummary; readonly loaded: Loaded; readonly perPage: number; readonly hot: number }) {
-  const { reading, views, characters, origins } = loaded;
+  const { reading, views, characters } = loaded;
   const read = reading[t.id] ?? 0;
   const isNew = read < t.lastSeq;
   const firstUnread = read + 1;
@@ -157,7 +148,8 @@ function ThreadRow({ t, loaded, perPage, hot }: { readonly t: ThreadSummary; rea
   const name = (id: Id | null) => (id === null ? null : characters.get(id)?.name ?? 'A character');
   const starter = name(t.firstCharacter);
   const last = name(t.lastCharacter);
-  const origin = t.originActId ? origins.get(t.originActId) : undefined;
+  /* A spun thread's origin comes with its row: the thread it came out of, that thread's title and the Act's seq. */
+  const spun = t.originThread !== null && t.originTitle !== null && t.originSeq !== null ? { thread: t.originThread, title: t.originTitle, seq: t.originSeq } : null;
   const shownPages = pageList(1, pagesInThread);
 
   return (
@@ -168,9 +160,9 @@ function ThreadRow({ t, loaded, perPage, hot }: { readonly t: ThreadSummary; rea
       </td>
       <td role="cell" className="kb-thread-main">
         <Link to={threadHref(t.id, 1)} className="kb-thread-title"><b>{t.title}</b></Link>
-        {origin && (
+        {spun && (
           <span className="kb-thread-spun kb-small">
-            {' '}↳ spun from <Link to={threadHref(origin.thread, pageOf(origin.seq, perPage), origin.seq)}>#{origin.seq} in {origin.title}</Link>
+            {' '}↳ spun from <Link to={threadHref(spun.thread, pageOf(spun.seq, perPage), spun.seq)}>#{spun.seq} in {spun.title}</Link>
           </span>
         )}
         <div className="kb-thread-meta kb-small">
@@ -191,7 +183,7 @@ function ThreadRow({ t, loaded, perPage, hot }: { readonly t: ThreadSummary; rea
           )}
         </div>
       </td>
-      <td role="cell" className="kb-thread-replies kb-num"><span className="kb-num">{Math.max(0, t.lastSeq - 1)}</span><span className="kb-thread-unit"> replies</span></td>
+      <td role="cell" className="kb-thread-replies kb-num"><span className="kb-num">{t.replies}</span><span className="kb-thread-unit"> replies</span></td>
       <td role="cell" className="kb-thread-views kb-num"><span className="kb-num">{views[t.id] ?? 0}</span><span className="kb-thread-unit"> views</span></td>
       <td role="cell" className="kb-thread-last kb-small">
         <span className="kb-thread-last-label">last: </span>

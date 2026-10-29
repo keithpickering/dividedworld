@@ -195,3 +195,30 @@ begin
   end loop;
   perform tests.unbecome();
 end $$;
+
+-- ---- A character's public month: the first day of the month it debuted, never a time ----
+do $$
+declare
+  ann uuid := tests.account('jm-ann');
+  early uuid := tests.character(ann, 'Jm Early', 'alpha', timestamptz '2026-10-03 04:05:06.789+00');
+  late uuid := tests.character(ann, 'Jm Late', 'alpha', timestamptz '2026-10-31 23:59:59+00');
+  nextmonth uuid := tests.character(ann, 'Jm Next', 'alpha', timestamptz '2026-11-01 00:00:01+00');
+  waiting uuid;
+begin
+  -- Two characters made a minute apart, in one month, show the same value: it says who owns neither.
+  if (select joined from characters_public where id = early) is distinct from date '2026-10-01' then
+    raise exception 'joined is the first of the month: %', (select joined from characters_public where id = early);
+  end if;
+  if (select joined from characters_public where id = late) is distinct from date '2026-10-01' then raise exception 'the last day of a month is that month'; end if;
+  if (select joined from characters_public where id = nextmonth) is distinct from date '2026-11-01' then raise exception 'the next month is the next month'; end if;
+  if (select data_type from information_schema.columns where table_name = 'characters_public' and column_name = 'joined') is distinct from 'date' then
+    raise exception 'joined is a date, never a time';
+  end if;
+  -- A waiting character is in no list, so it has no month either.
+  insert into characters (owner, name) values (ann, 'Jm Waiting') returning id into waiting;
+  if exists (select 1 from characters_public where id = waiting) then raise exception 'a waiting character is public'; end if;
+  -- A player reads it.
+  perform tests.become(tests.account('jm-bob'));
+  if (select joined from characters_public where id = early) is distinct from date '2026-10-01' then raise exception 'a player reads the month'; end if;
+  perform tests.unbecome();
+end $$;

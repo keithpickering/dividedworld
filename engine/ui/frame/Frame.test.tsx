@@ -12,7 +12,7 @@ const mine = (id: string, name: string): MyCharacter => ({
   debutLoudness: 'silent', retiredAt: null, pendingTurn: null,
 });
 const pub = (id: string, name: string): Character => ({
-  id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default',
+  id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01',
 });
 
 function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan')]) {

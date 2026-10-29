@@ -81,12 +81,18 @@ export interface ThreadSummary {
   readonly lastAt: string;
   /** Its latest Act's seq: Acts are numbered from 1 in each thread. */
   readonly lastSeq: number;
+  /** Its posts after the first: a card, a spin, an unmask, a tally and an edit are no reply. */
+  readonly replies: number;
   readonly firstAct: Id | null;
   readonly firstCharacter: Id | null;
   readonly lastAct: Id | null;
   /** Null for The System's own Acts. */
   readonly lastCharacter: Id | null;
   readonly repliesThisWeek: number;
+  /** A spun thread's origin, read with the row: the thread of the Act it was spun from, that thread's title and the Act's seq. Null when it was not spun. */
+  readonly originThread: Id | null;
+  readonly originTitle: string | null;
+  readonly originSeq: number | null;
 }
 
 export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask';
@@ -129,6 +135,8 @@ export interface Character {
   readonly squareFrame: Frame | null;
   readonly portraitFrame: Frame | null;
   readonly pipStyle: string;
+  /** The first day of the month it debuted, "2026-10-01": the month and never the time ("Joined Oct 2026"). */
+  readonly joined: string;
 }
 
 /** A character's season standing (season_standings) and when it was last settled. */
@@ -339,6 +347,8 @@ export interface KayfaApi {
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */
   characters(ids: readonly Id[]): Promise<readonly Character[]>;
   characterCounts(id: Id): Promise<CharacterCounts>;
+  /** A page of postbits' counts in one read: each character's posts (kind post, edits not counted), every id asked about, 0 where none or not debuted. */
+  characterStats(ids: readonly Id[]): Promise<Readonly<Record<Id, { readonly posts: number }>>>;
   /** A character's public Acts of a kind, newest first, for its public record. */
   characterActs(id: Id, kinds: readonly ActKind[], page: { readonly offset: number; readonly limit: number }): Promise<{ readonly acts: readonly Act[]; readonly total: number }>;
   /** Every Act asked about, with an empty tally where none has been left. */
@@ -348,6 +358,8 @@ export interface KayfaApi {
   season(): Promise<Season | null>;
   /** The open season's standings, every debuted character, ranked. */
   standings(): Promise<readonly Standing[]>;
+  /** The open season's standings of those characters only, as `standings` ranks them (a place counts the whole season's), so a page of postbits never reads it all. */
+  standingsOf(ids: readonly Id[]): Promise<readonly Standing[]>;
   /** When the season's standings were last settled: the latest settlement's end. */
   lastSettledAt(): Promise<string | null>;
   classReveals(characters: readonly Id[]): Promise<readonly ClassReveal[]>;

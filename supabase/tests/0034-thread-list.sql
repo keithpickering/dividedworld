@@ -16,6 +16,8 @@ declare
   op2 uuid;
   fresh uuid;
   reply uuid;
+  card uuid;
+  spun uuid;
   r record;
   ln record;
   plan text := '';
@@ -57,6 +59,26 @@ begin
   perform tests.post(a, fresh, 'Only', now());
   if (select replies_this_week from thread_list where id = fresh) is distinct from 0 then raise exception 'an opening post is not a reply'; end if;
 
+  -- Replies are the posts after the first, a counter kept with the sequence number: a card, a spin,
+  -- an unmask, a tally and an edit never count, and a thread's own first post does not.
+  select * into r from thread_list where id = older;
+  if r.replies is distinct from 4 or r.last_seq is distinct from 5 then raise exception 'replies are the posts after the first: %', to_jsonb(r); end if;
+  card := tests.act(b, 'card', older, '{"card": "splat", "config": {"color": "red"}}', op, now());
+  perform tests.act(null, 'tally', older, '{"body": "x"}', null, now());
+  perform tests.act(a, 'edit', older, '{"body": "thrice"}', op, now());
+  select * into r from thread_list where id = older;
+  if r.replies is distinct from 4 or r.last_seq is distinct from 7 then raise exception 'a card, a tally and an edit are no replies: %', to_jsonb(r); end if;
+  if (select replies from thread_list where id = fresh) is distinct from 0 or (select replies from thread_list where id = newer) is distinct from 1 then
+    raise exception 'a one-post thread has no replies, and the other thread''s count is its own';
+  end if;
+  -- A thread opened by a spin, in the list's one query: the origin Act's thread, that thread's title and the Act's seq.
+  spun := tests.thread('Spun');
+  update threads set origin_act_id = card where id = spun;
+  select * into r from thread_list where id = spun;
+  if (r.origin_thread, r.origin_title, r.origin_seq) is distinct from (older, 'Older', (select seq from acts where id = card)) then raise exception 'a spun thread names its origin: %', to_jsonb(r); end if;
+  select * into r from thread_list where id = older;
+  if r.origin_thread is not null or r.origin_title is not null or r.origin_seq is not null then raise exception 'a thread that was not spun has no origin: %', to_jsonb(r); end if;
+
   -- The list never scans: a board's page is read from the (board, last_at) index, and the week's
   -- replies from the partial index of recent posts. A table this small would be scanned whatever
   -- the indexes were, so the sequential scan is off for the plans being looked at.
@@ -90,7 +112,7 @@ begin
   perform tests.unbecome();
   -- Its columns are public ones only.
   if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'thread_list')
-     is distinct from array['id', 'board', 'title', 'origin_act_id', 'created_at', 'last_at', 'last_seq', 'first_act', 'first_character', 'last_act', 'last_character', 'replies_this_week'] then
+     is distinct from array['id', 'board', 'title', 'origin_act_id', 'created_at', 'last_at', 'last_seq', 'replies', 'first_act', 'first_character', 'last_act', 'last_character', 'replies_this_week', 'origin_thread', 'origin_title', 'origin_seq'] then
     raise exception 'thread_list shows more or less than it should';
   end if;
 end $$;
@@ -108,8 +130,53 @@ begin
   perform tests.post(a, th, 'Two', stamp);
   perform tests.act(a, 'edit', th, '{"body": "x"}', (select id from acts where thread = th and seq = 1), now());
   -- As it stood before the migration: no last_at. The backfill is the migration's own statement, kept in a function.
-  update threads set last_at = null where id = th;
-  perform backfill_threads_last_at();
+  update threads set last_at = null, replies = 0 where id = th;
+  perform backfill_thread_counters();
   select last_at into filled from threads where id = th;
   if filled is distinct from stamp then raise exception 'the backfill takes the latest non-edit Act: %', filled; end if;
+  if (select replies from threads where id = th) is distinct from 1 then raise exception 'the backfill counts the posts after the first: %', (select replies from threads where id = th); end if;
+end $$;
+
+-- ---- A character's posts, counted for a page of postbits without counting its Acts ----
+-- character_post_counts is a counter kept by the trigger that follows an Act, so a page of postbits
+-- reads one row per character and never counts a busy character's posts. A card, a spin, an unmask,
+-- a tally and an edit are not posts. Public: an Act's author and kind already are.
+do $$
+declare
+  ann uuid := tests.account('pc-ann');
+  bob uuid := tests.account('pc-bob');
+  a uuid := tests.character(ann, 'Pc Ann');
+  b uuid := tests.character(bob, 'Pc Bob');
+  idle uuid := tests.character(bob, 'Pc Idle');
+  th uuid := tests.thread('Counted');
+  op uuid;
+begin
+  op := tests.post(a, th, 'One');
+  perform tests.post(a, th, 'Two');
+  perform tests.post(b, th, 'Three');
+  perform tests.act(a, 'edit', th, '{"body": "One, fixed"}', op);
+  perform tests.act(b, 'card', th, '{"card": "splat", "config": {"color": "red"}}', op);
+  perform tests.act(null, 'tally', th, '{"body": "x"}');
+  if (select posts from character_post_counts where character = a) is distinct from 2 then raise exception 'posts counted: %', (select posts from character_post_counts where character = a); end if;
+  if (select posts from character_post_counts where character = b) is distinct from 1 then raise exception 'a card is no post: %', (select posts from character_post_counts where character = b); end if;
+  if exists (select 1 from character_post_counts where character = idle) then raise exception 'a character that never posted has no row (the read says 0)'; end if;
+  if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'character_post_counts') is distinct from array['character', 'posts'] then
+    raise exception 'character_post_counts shows more than a character and its posts';
+  end if;
+  -- The backfill is the migration's own statement, kept in a function: counters lost are counted again from the Acts.
+  delete from character_post_counts;
+  perform backfill_character_post_counts();
+  if (select posts from character_post_counts where character = a) is distinct from 2 or (select posts from character_post_counts where character = b) is distinct from 1 then
+    raise exception 'the backfill counts the posts again';
+  end if;
+  -- A signed-in player reads it; a visitor does not, and nobody writes it.
+  perform tests.become(bob);
+  if (select posts from character_post_counts where character = a) is distinct from 2 then raise exception 'a player reads the counts'; end if;
+  begin update character_post_counts set posts = 99; raise exception 'a player wrote a count';
+  exception when insufficient_privilege then null; end;
+  perform tests.unbecome();
+  perform tests.become_anon();
+  begin perform 1 from character_post_counts; raise exception 'a visitor read the counts';
+  exception when insufficient_privilege then null; end;
+  perform tests.unbecome();
 end $$;

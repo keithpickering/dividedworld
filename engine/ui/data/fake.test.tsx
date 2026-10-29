@@ -639,3 +639,82 @@ describe('counts', () => {
     expect(record.acts.map((a) => a.kind)).toEqual(['spin']);
   });
 });
+
+describe('what a list row shows', () => {
+  test('replies are the posts after the first: a reveal, an edit and a spun thread count for nothing', async () => {
+    const { fake, anaFace, thread, opener } = world();
+    expect((await fake.thread(thread))?.replies).toBe(0);
+    const reply = must(await fake.post(thread, anaFace, 'a reply', null));
+    fake.seed.reveal(anaFace, thread);
+    await fake.edit(reply.id, anaFace, 'a reply, edited');
+    must(await fake.spin(opener, anaFace, 'Spun out', ''));
+    const row = await fake.thread(thread);
+    expect(row?.replies).toBe(1);
+    expect(row?.lastSeq).toBe(3);
+  });
+
+  test('a spun thread names its origin in the row: the thread, its title and the Act\'s seq', async () => {
+    const { fake, anaFace, thread } = world();
+    const second = must(await fake.post(thread, anaFace, 'second', null));
+    const spun = must(await fake.spin(second.id, anaFace, 'Spun out', 'body'));
+    const row = await fake.thread(spun.thread.id);
+    expect([row?.originThread, row?.originTitle, row?.originSeq]).toEqual([thread, 'Hello', 2]);
+    expect((await fake.spunFrom(second.id)).map((t) => [t.originThread, t.originSeq])).toEqual([[thread, 2]]);
+    const plain = await fake.thread(thread);
+    expect([plain?.originThread, plain?.originTitle, plain?.originSeq]).toEqual([null, null, null]);
+  });
+
+  test('a player\'s seeded Act takes the time it is given, as The System\'s does', async () => {
+    const { fake, anaFace, thread } = world();
+    const old = fake.clock.now() - 20 * DAY;
+    const id = fake.seed.post(thread, anaFace, 'long ago', { at: old });
+    expect((await fake.act(id))?.createdAt).toBe(new Date(old).toISOString());
+    const made = fake.seed.thread('general', anaFace, 'Old thread', 'x', { at: old });
+    const row = await fake.thread(made.thread);
+    expect([row?.createdAt, row?.lastAt]).toEqual([new Date(old).toISOString(), new Date(old).toISOString()]);
+    // A back-dated reply is not this week's.
+    expect((await fake.thread(thread))?.repliesThisWeek).toBe(0);
+    expect((await fake.thread(thread))?.replies).toBe(1);
+    // And a later one with no time is made now again.
+    const now = fake.seed.post(thread, anaFace, 'now');
+    expect((await fake.act(now))?.createdAt).toBe(new Date(fake.clock.now()).toISOString());
+  });
+});
+
+describe('a character\'s public month', () => {
+  test('joined is the first day of the month it debuted, never a time', async () => {
+    const { fake, ana } = world();
+    const early = fake.seed.character(ana, 'Early', 'face', { at: Date.UTC(2026, 9, 3, 4, 5, 6) });
+    const late = fake.seed.character(ana, 'Late', 'face', { at: Date.UTC(2026, 9, 31, 23, 59, 59) });
+    const next = fake.seed.character(ana, 'Next', 'face', { at: Date.UTC(2026, 10, 1, 0, 0, 1) });
+    const shown = await fake.characters([early, late, next]);
+    expect(shown.map((c) => c.joined)).toEqual(['2026-10-01', '2026-10-01', '2026-11-01']);
+  });
+});
+
+describe('counts for a page of postbits', () => {
+  test('characterStats counts each debuted character\'s posts only, 0 where none, for every id asked', async () => {
+    const { fake, ana, anaFace, anaHeel, boFace, thread, opener } = world();
+    const waiting = fake.seed.character(ana, 'Waiting', 'face', { debuted: false });
+    const mine = must(await fake.post(thread, anaFace, 'one', null));
+    await fake.post(thread, anaFace, 'two', null);
+    await fake.edit(mine.id, anaFace, 'one, edited');
+    must(await fake.spin(opener, anaFace, 'Spun', ''));
+    expect(await fake.characterStats([anaFace, anaHeel, boFace, waiting, 'nobody'])).toEqual({
+      [anaFace]: { posts: 2 }, [anaHeel]: { posts: 0 }, [boFace]: { posts: 1 }, [waiting]: { posts: 0 }, nobody: { posts: 0 },
+    });
+    expect(await fake.characterStats([])).toEqual({});
+  });
+});
+
+describe('the standings of a few', () => {
+  test('standingsOf is the same ranking, for those characters only', async () => {
+    const { fake, ana, anaFace, anaHeel, boFace } = world();
+    const waiting = fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500 }, debut: false });
+    const all = await fake.standings();
+    expect(await fake.standingsOf([anaHeel, boFace, waiting])).toEqual(all.filter((s) => s.character === anaHeel || s.character === boFace));
+    expect((await fake.standingsOf([anaHeel])).map((s) => [s.name, s.place])).toEqual([['Ana Heel', 2]]);
+    expect(await fake.standingsOf([])).toEqual([]);
+  });
+});

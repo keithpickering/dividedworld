@@ -76,10 +76,10 @@ function harness(router: Router) {
 
 const ACT_ROW = { id: A, character: B, kind: 'post', thread: T, target_act_id: null, seq: 2, created_at: '2026-10-01T10:00:00+00:00', payload: { body: 'hi' }, current_payload: { body: 'hello' }, edited_at: '2026-10-01T10:05:00+00:00', shown_edited_at: null };
 const ACT: Act = { id: A, character: B, kind: 'post', thread: T, targetActId: null, seq: 2, createdAt: '2026-10-01T10:00:00+00:00', payload: { body: 'hi' }, currentPayload: { body: 'hello' }, editedAt: '2026-10-01T10:05:00+00:00', shownEditedAt: null };
-const THREAD_ROW = { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00', last_at: '2026-10-01T10:00:00+00:00', last_seq: 2, first_act: A, first_character: B, last_act: A, last_character: B, replies_this_week: 4 };
+const THREAD_ROW = { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00', last_at: '2026-10-01T10:00:00+00:00', last_seq: 2, first_act: A, first_character: B, last_act: A, last_character: B, replies: 3, replies_this_week: 4, origin_thread: null, origin_title: null, origin_seq: null };
 
 /** Everything a read can name, answered with an empty list or a plain value. */
-const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'season_standings', 'class_reveals', 'turns_announced', 'screen_settings', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
+const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'season_standings', 'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
 const ALLOWED_RPCS = new Set(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'set_profile', 'release_effect', 'card_target']);
 
 import { beforeEach } from 'vitest';
@@ -102,7 +102,7 @@ describe('what the adapter may request', () => {
     const api = h.api;
     await Promise.allSettled([
       api.settings(), api.boards(), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.history(A), api.spunFrom(A),
-      api.characters([B]), api.characterCounts(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.tallies([A]), api.viewCounts([T]), api.season(),
+      api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingsOf([B]), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.standings(), api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
@@ -135,7 +135,37 @@ describe('reads and their rows', () => {
     expect(req?.url.searchParams.get('offset')).toBe('10');
     expect(req?.url.searchParams.get('limit')).toBe('10');
     expect(page.total).toBe(37);
-    expect(page.threads).toEqual([{ id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: '2026-10-01T10:00:00+00:00', lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, repliesThisWeek: 4 }]);
+    expect(page.threads).toEqual([{ id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: '2026-10-01T10:00:00+00:00', lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, replies: 3, repliesThisWeek: 4, originThread: null, originTitle: null, originSeq: null }]);
+  });
+
+  it('reads a spun thread\'s origin with its row, not in reads of its own', async () => {
+    const origin = { ...THREAD_ROW, origin_act_id: A, origin_thread: C, origin_title: 'Where it came from', origin_seq: 7 };
+    const h = harness(() => rows([origin]));
+    const row = await h.api.thread(T);
+    expect([row?.originActId, row?.originThread, row?.originTitle, row?.originSeq]).toEqual([A, C, 'Where it came from', 7]);
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['thread_list']);
+  });
+
+  it('counts a page of characters\' posts in one read of the counters, 0 for each without one', async () => {
+    const h = harness(() => rows([{ character: B, posts: 12 }]));
+    const stats = await h.api.characterStats([B, A]);
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['character_post_counts']);
+    const [req] = h.to('character_post_counts');
+    expect(req?.url.searchParams.get('select')).toBe('character,posts');
+    expect(req?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
+    expect(stats).toEqual({ [B]: { posts: 12 }, [A]: { posts: 0 } });
+    expect(await harness(() => rows([])).api.characterStats([])).toEqual({});
+  });
+
+  it('reads the standings of a few characters only, filtered where they are read', async () => {
+    const h = harness(() => rows([{ character: B, name: 'Bea', standing: 300, place: 2 }]));
+    expect(await h.api.standingsOf([B, A])).toEqual([{ character: B, name: 'Bea', standing: 300, place: 2 }]);
+    const [req] = h.to('season_standings');
+    expect(req?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
+    expect(req?.url.searchParams.get('order')).toBe('place.asc,name.asc');
+    const none = harness(() => rows([]));
+    expect(await none.api.standingsOf([])).toEqual([]);
+    expect(none.rest()).toEqual([]);
   });
 
   it('reads a thread range from acts_public by seq, leaving edits out', async () => {
@@ -166,15 +196,15 @@ describe('reads and their rows', () => {
 
   it('joins characters_public with character_profiles in two reads and defaults an absent profile', async () => {
     const h = harness((r) => {
-      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Bea' }, { id: A, name: 'Al' }]);
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Bea', joined: '2026-10-01' }, { id: A, name: 'Al', joined: '2026-09-01' }]);
       return rows([{ character: B, title: 'Champ', signature: '[b]hi[/b]', avatar_square: 'sq.webp', avatar_portrait: 'po.webp', square_frame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portrait_frame: null, pip_style: 'fancy' }]);
     });
     const list = await h.api.characters([B, A]);
     expect(h.to('characters_public')[0]?.url.searchParams.get('id')).toBe(`in.(${B},${A})`);
     expect(h.to('character_profiles')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
     expect(list).toEqual([
-      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy' },
-      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default' },
+      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy', joined: '2026-10-01' },
+      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-09-01' },
     ]);
   });
 
@@ -303,7 +333,7 @@ describe('writes through the act function', () => {
     expect(await h.api.edit(A, B, 'new')).toEqual({ ok: true, value: ACT });
     expect(await h.api.react(A, B, 'fire')).toEqual({ ok: true, value: { act: A, tally: { fire: 1 } } });
     const started = await h.api.startThread('general', B, 'A title', 'body');
-    expect(started).toEqual({ ok: true, value: { thread: { id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: ACT.createdAt, lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, repliesThisWeek: 0 }, act: ACT } });
+    expect(started).toEqual({ ok: true, value: { thread: { id: T, board: C, title: 'A title', originActId: null, createdAt: '2026-10-01T09:00:00+00:00', lastAt: ACT.createdAt, lastSeq: 2, firstAct: A, firstCharacter: B, lastAct: A, lastCharacter: B, replies: 0, repliesThisWeek: 0, originThread: null, originTitle: null, originSeq: null }, act: ACT } });
     expect(act(h).map((r) => r.body)).toEqual([
       { action: 'post', thread: T, character: B, body: 'hi', quote: A },
       { action: 'post', thread: T, character: B, body: 'hi' },

@@ -91,11 +91,11 @@ describe('the row', () => {
   test('HOT at the instance\'s replies-this-week setting, replies, hourly views and the spin', async () => {
     const fake = buildWorld();
     const w = world(fake, { threads: 4 });
-    /* The backend stamps a player's post with its clock, so the old replies come first and the clock then moves on. */
-    replies(fake, w.ids[3]!, w.spritey, 5); /* plenty, but they will be older than seven days */
-    fake.clock.advance(8 * DAY);
-    replies(fake, w.ids[2]!, w.spritey, 2); /* one short of hotReplies (3) */
-    replies(fake, w.ids[1]!, w.spritey, 3);
+    const old = fake.clock.now() - 10 * DAY;
+    const lately = fake.clock.now() - 2 * DAY;
+    replies(fake, w.ids[3]!, w.spritey, 5, old); /* plenty, but older than seven days */
+    replies(fake, w.ids[2]!, w.spritey, 2, lately); /* one short of hotReplies (3) */
+    replies(fake, w.ids[1]!, w.spritey, 3, lately);
     fake.seed.views(w.ids[1]!, 44);
     const origin = fake.seed.post(w.ids[0]!, w.spritey, 'a line to spin from', { at: T0 + 2 * DAY });
     const spun = await fake.spin(origin, w.mine!, 'Spun thread', 'x');
@@ -112,6 +112,17 @@ describe('the row', () => {
     const row = rowOf('Spun thread');
     expect(row).toHaveTextContent('spun from');
     expect(within(row).getByRole('link', { name: /Thread 001/ })).toHaveAttribute('href', `/t/${w.ids[0]}?page=1#post-2`);
+  });
+
+  test('replies count the posts after the first: a thread whose last Act is not a post counts only its posts', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 2 });
+    replies(fake, w.ids[0]!, w.spritey, 2);
+    fake.seed.reveal(w.spritey, w.ids[0]!); /* its last Act, which is no reply */
+    renderIn(fake, <BoardScreen slug="general" />);
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(within(rowOf('Thread 001')).getByText('2', { selector: '.kb-thread-replies .kb-num' })).toBeInTheDocument();
+    expect(within(rowOf('Thread 002')).getByText('0', { selector: '.kb-thread-replies .kb-num' })).toBeInTheDocument();
   });
 
   test('"started by" and "last post" name their characters, with the last post linked to its page', async () => {

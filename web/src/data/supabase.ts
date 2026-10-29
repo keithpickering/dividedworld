@@ -80,15 +80,23 @@ function toThread(r: Row): ThreadSummary {
     createdAt: r['created_at'],
     lastAt: r['last_at'],
     lastSeq: num(r['last_seq']),
+    replies: num(r['replies']),
     firstAct: r['first_act'] ?? null,
     firstCharacter: r['first_character'] ?? null,
     lastAct: r['last_act'] ?? null,
     lastCharacter: r['last_character'] ?? null,
     repliesThisWeek: num(r['replies_this_week']),
+    originThread: r['origin_thread'] ?? null,
+    originTitle: r['origin_title'] ?? null,
+    originSeq: r['origin_seq'] === null || r['origin_seq'] === undefined ? null : num(r['origin_seq']),
   };
 }
 
-/** The thread an `act` answer carries (it holds no list columns), with its first Act filled in. */
+/**
+ * The thread an `act` answer carries (it holds no list columns), with its first Act filled in. It
+ * does not know a spun thread's origin (the answer names the Act, not its thread's title), so those
+ * three are null here; the list reads them with the row.
+ */
 function toNewThread(t: Row, first: Act): ThreadSummary {
   return {
     id: t['id'],
@@ -98,11 +106,15 @@ function toNewThread(t: Row, first: Act): ThreadSummary {
     createdAt: t['created_at'],
     lastAt: first.createdAt,
     lastSeq: first.seq ?? 1,
+    replies: 0,
     firstAct: first.id,
     firstCharacter: first.character,
     lastAct: first.id,
     lastCharacter: first.character,
     repliesThisWeek: 0,
+    originThread: null,
+    originTitle: null,
+    originSeq: null,
   };
 }
 
@@ -289,12 +301,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     squareFrame: toFrame(p?.['square_frame']),
     portraitFrame: toFrame(p?.['portrait_frame']),
     pipStyle: p?.['pip_style'] ?? 'default',
+    joined: c['joined'] ?? '',
   });
 
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
     if (ids.length === 0) return [];
     const [cs, ps] = await Promise.all([
-      list(() => client.from('characters_public').select('id,name').in('id', [...ids])),
+      list(() => client.from('characters_public').select('id,name,joined').in('id', [...ids])),
       list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style').in('character', [...ids])),
     ]);
     const profile = new Map(ps.map((p) => [p['character'] as string, p]));
@@ -307,13 +320,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /** A profile an answer carries, with the name looked up (the answer holds none). */
   async function profileCharacter(p: Row): Promise<Character> {
-    let name = '';
+    let found: Row | undefined;
     try {
-      name = (await list(() => client.from('characters_public').select('id,name').eq('id', p['character']).limit(1)))[0]?.['name'] ?? '';
+      found = (await list(() => client.from('characters_public').select('id,name,joined').eq('id', p['character']).limit(1)))[0];
     } catch {
-      name = '';
+      found = undefined;
     }
-    return toCharacter({ id: p['character'], name }, p);
+    return toCharacter({ id: p['character'], name: found?.['name'] ?? '', joined: found?.['joined'] ?? '' }, p);
   }
 
   /* -------------------------------------------------------------------- live ---- */
@@ -485,6 +498,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const [posts, spins, cards] = await Promise.all([kind('post'), kind('spin'), kind('card')]);
       return { posts, spins, cards };
     },
+    async characterStats(ids) {
+      const out: Record<Id, { posts: number }> = Object.fromEntries(ids.map((id) => [id, { posts: 0 }]));
+      if (ids.length === 0) return out;
+      for (const r of await list(() => client.from('character_post_counts').select('character,posts').in('character', [...ids]))) out[r['character']] = { posts: num(r['posts']) };
+      return out;
+    },
     async characterActs(id, kinds, page) {
       if (kinds.length === 0 || page.limit <= 0) return { acts: [], total: 0 };
       const r = await read(() =>
@@ -515,6 +534,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async standings() {
       const rows = await list(() => client.from('season_standings').select('character,name,standing,place').order('place', { ascending: true }).order('name', { ascending: true }));
+      return rows.map((r): Standing => ({ character: r['character'], name: r['name'], standing: num(r['standing']), place: num(r['place']) }));
+    },
+    async standingsOf(ids) {
+      if (ids.length === 0) return [];
+      const rows = await list(() => client.from('season_standings').select('character,name,standing,place').in('character', [...ids]).order('place', { ascending: true }).order('name', { ascending: true }));
       return rows.map((r): Standing => ({ character: r['character'], name: r['name'], standing: num(r['standing']), place: num(r['place']) }));
     },
     async lastSettledAt() {

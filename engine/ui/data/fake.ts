@@ -234,11 +234,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const first = all[0];
     const last = all.at(-1);
     const week = now() - 7 * DAY;
+    const origin = t.origin === null ? undefined : acts.get(t.origin);
+    const from = origin ? threads.get(origin.thread) : undefined;
     // The greatest time of any placed (non-edit) Act, as threads.last_at is; the creation time with none, since lastAt is not null here.
     return {
       id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at), lastAt: iso(all.length ? Math.max(...all.map((a) => a.at)) : t.at), lastSeq: t.nextSeq - 1,
+      replies: all.filter((a) => a.kind === 'post' && a.seq! > 1).length,
       firstAct: first?.id ?? null, firstCharacter: first?.character ?? null, lastAct: last?.id ?? null, lastCharacter: last?.character ?? null,
       repliesThisWeek: all.filter((a) => a.kind === 'post' && a.seq! > 1 && a.at > week && a.at <= now()).length,
+      originThread: origin?.thread ?? null, originTitle: from?.title ?? null, originSeq: origin?.seq ?? null,
     };
   }
 
@@ -255,6 +259,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return {
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
       portraitFrame: c.portraitFrame, pipStyle: c.pipStyle,
+      joined: `${iso(c.debutedAt!).slice(0, 7)}-01`,
     };
   }
 
@@ -266,18 +271,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /* -------------------------------------------------------------------- writing ---- */
   let order = 0;
+  /** The time a seeded player's Act is dated, while the seed runs it through the action (the clock otherwise). */
+  let stamp: number | null = null;
   function write(a: { character: Id | null; kind: ActKind; thread: Id; target?: Id | null; payload: Record<string, unknown>; at?: number }): ActRec {
     const t = threads.get(a.thread)!;
     const placedAct = a.kind !== 'edit';
     const rec: ActRec = {
       id: uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target: a.target ?? null, seq: placedAct ? t.nextSeq++ : null,
-      at: a.at ?? now(), payload: a.payload,
+      at: a.at ?? stamp ?? now(), payload: a.payload,
     };
     acts.set(rec.id, rec);
     return rec;
   }
   function openThread(board: Id, title: string, origin: Id | null, at?: number): ThreadRec {
-    const t: ThreadRec = { id: uuid(), board, title, origin, at: at ?? now(), nextSeq: 1 };
+    const t: ThreadRec = { id: uuid(), board, title, origin, at: at ?? stamp ?? now(), nextSeq: 1 };
     threads.set(t.id, t);
     return t;
   }
@@ -575,6 +582,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }
       return counts satisfies CharacterCounts;
     },
+    characterStats(ids) {
+      const out: Record<Id, { posts: number }> = Object.fromEntries(ids.map((id) => [id, { posts: 0 }]));
+      for (const a of acts.values()) {
+        if (a.kind !== 'post' || a.character === null || characters.get(a.character)?.debutedAt == null) continue;
+        const counted = out[a.character];
+        if (counted) counted.posts++;
+      }
+      return out;
+    },
     characterActs(id, kinds, page) {
       const c = characters.get(id);
       const all = c && c.debutedAt !== null
@@ -585,6 +601,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     tallies: (ids) => Object.fromEntries(ids.map((id) => [id, tallyOf(id)])),
     viewCounts: (ids) => Object.fromEntries(ids.map((id) => [id, views.get(id) ?? 0])),
     season: () => [...seasons].sort((a, b) => b.number - a.number)[0] ?? null,
+    standingsOf(ids) {
+      const wanted = new Set(ids);
+      return core.standings().filter((s) => wanted.has(s.character));
+    },
     standings() {
       const listed = [...characters.values()].filter((c) => c.debutedAt !== null).map((c) => ({ character: c.id, name: c.name, standing: standingOf.get(c.id) ?? 0 }));
       return listed
@@ -723,6 +743,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     muted = true;
     try { return act(); } finally { session = before; muted = false; }
   }
+  /** `as`, with the Acts it makes dated `at` when one is given. */
+  function asAt<T>(account: Id, at: number | undefined, act: () => T): T {
+    stamp = at ?? null;
+    try { return as(account, act); } finally { stamp = null; }
+  }
   const accepted = <T,>(a: Answer<T>): T => {
     if (!a.ok) throw new Error(`the seed was refused: ${a.error}`);
     return a.value;
@@ -769,12 +794,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const t = openThread(board.id, title, null, o.at);
         return { thread: t.id, act: systemAct(t.id, o, body).id };
       }
-      const made = accepted(as(ownerOf(character), () => startThread(slug, character, title, body)));
+      const made = accepted(asAt(ownerOf(character), o.at, () => startThread(slug, character, title, body)));
       return { thread: made.thread.id, act: made.act.id };
     },
     post(thread, character, body, o = {}) {
       if (character === null) return systemAct(thread, o, body).id;
-      const made = accepted(as(ownerOf(character), () => post(thread, character, body, o.quote ?? null)));
+      const made = accepted(asAt(ownerOf(character), o.at, () => post(thread, character, body, o.quote ?? null)));
       return made.id;
     },
     react(account, character, act, kind) { accepted(as(account, () => react(act, character, kind))); },
