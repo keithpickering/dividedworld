@@ -206,6 +206,8 @@ export interface HeldVote {
   readonly quadrant: Quadrant;
   /** When the latest other player to arrive in the window first reacted. */
   readonly at: number;
+  /** When the reaction the vote is held through landed: the latest by the mask that says this quadrant. */
+  readonly reactedAt: number;
   /** The player's share of their one vote on the Act in this quadrant, unhalved, at this settlement. */
   readonly share: number;
   /** Where the player came among the players who reacted to the Act, by first reaction: 1 is first. */
@@ -288,6 +290,12 @@ export interface Earning {
    * names them here, or its lines hang on the wrong ones.
    */
   readonly valuing?: { readonly act: string; readonly from: number };
+  /**
+   * The time of the one reaction it pays for, where it pays for one. An earning for one reaction
+   * names it here, one for many alike votes names `valuing`, and one for no reaction names
+   * neither: the live estimate shows a line with `at` at that time, whole, and never apportions it.
+   */
+  readonly at?: number;
 }
 
 /** A class: a playstyle, and the rules that turn what a character did and received into Aura. */

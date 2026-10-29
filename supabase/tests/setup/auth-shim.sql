@@ -119,3 +119,16 @@ create table if not exists storage.buckets (
   file_size_limit bigint,
   allowed_mime_types text[]
 );
+-- And its objects table, row-level security on as Supabase ships it, so that a policy a migration
+-- writes on it is there for e2e/0006 to read: the avatars bucket is public by URL, and no policy
+-- may let anyone list it (supabase/migrations/0025_avatars.sql).
+create table if not exists storage.objects (
+  id uuid primary key default gen_random_uuid(),
+  bucket_id text references storage.buckets (id),
+  name text,
+  owner uuid,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  metadata jsonb
+);
+alter table storage.objects enable row level security;

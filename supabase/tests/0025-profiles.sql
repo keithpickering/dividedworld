@@ -1,8 +1,8 @@
--- Preferences, profiles and avatars (supabase/migrations/0019_profiles.sql): a player's own
+-- Preferences, profiles and avatars (supabase/migrations/0019_profiles.sql, 0025_avatars.sql): a player's own
 -- preferences, read by that account alone; a character's profile, set by its player and read by
 -- every signed-in player once it has debuted, never with when it was set; a pip style the instance
--- has; and the avatar's keys, written by the service for the character's player. The screens'
--- engine plan, Task 7.
+-- has; and the avatar's two crops, written by the service for the character's player, one first
+-- avatar after another. The screens' engine plan, Task 7; the clues plan, Task 4.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -57,28 +57,30 @@ begin
   if pg_temp.refusal('select count(*) from character_profiles') is null then raise exception 'a visitor read profiles'; end if;
   perform tests.unbecome();
 
-  -- The avatar's keys, written by the service for the player: the replaced keys come back, to remove.
+  -- The avatar's keys, written by the service for the player: two crops, and the replaced keys
+  -- come back, to remove.
   perform tests.become_service();
-  said := set_avatar(ann, a, 'src-1.webp', 'sq-1.webp', 'pt-1.webp', '{"x": 0, "y": 0, "w": 0.5, "h": 0.5}', '{"x": 0.1, "y": 0, "w": 0.5, "h": 1}');
+  said := set_avatar(ann, a, 'sq-1.webp', 'pt-1.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0.1, "y": 0, "w": 0.5, "h": 1}');
   if said -> 'replaced' is distinct from '[]'::jsonb then raise exception 'a first avatar replaces nothing: %', said; end if;
-  -- A recrop keeps the source it was cut from.
-  said := set_avatar(ann, a, null, 'sq-2.webp', 'pt-2.webp', '{"x": 0.2, "y": 0.2, "w": 0.5, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
-  if said -> 'replaced' is distinct from '["sq-1.webp", "pt-1.webp"]'::jsonb then raise exception 'a recrop replaces the two crops: %', said; end if;
-  if (select avatar_source from character_profiles where character = a) is distinct from 'src-1.webp' then raise exception 'a recrop kept its source'; end if;
-  if pg_temp.refusal(format('select set_avatar(%L, %L, null, %L, %L, %L, %L)', bob, a, 'x.webp', 'y.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}', '{"x": 0, "y": 0, "w": 1, "h": 1}')) is distinct from 'you do not play that character' then raise exception 'an avatar set for another''s character'; end if;
-  if pg_temp.refusal(format('select set_avatar(%L, %L, null, %L, %L, %L, %L)', ann, a, 'x.webp', 'y.webp', '{"x": 0.6, "y": 0, "w": 0.5, "h": 1}', '{"x": 0, "y": 0, "w": 1, "h": 1}')) is distinct from 'a crop frame lies inside its picture' then raise exception 'a frame off its picture'; end if;
-  -- A square alone: the portrait it replaces comes back to remove.
-  said := set_avatar(ann, a, null, 'sq-3.webp', null, '{"x": 0, "y": 0, "w": 0.5, "h": 0.5}', null);
-  if said -> 'replaced' is distinct from '["sq-2.webp", "pt-2.webp"]'::jsonb or (select avatar_portrait from character_profiles where character = a) is not null then raise exception 'a square alone: %', said; end if;
-  if pg_temp.refusal(format('select set_avatar(%L, %L, null, %L, %L, %L, null)', ann, a, 'x.webp', 'y.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}')) is distinct from 'an avatar has a square crop, and a portrait crop with its frame or neither' then raise exception 'a portrait with no frame'; end if;
-  if pg_temp.refusal(format('select set_avatar(%L, %L, null, %L, null, %L, null)', ann, a, 'z.webp', '{"x": 0, "y": 0, "w": 1, "h": 1, "note": "anything at all"}')) is distinct from 'a crop frame lies inside its picture' then raise exception 'a frame carrying more than where it was cut'; end if;
+  if said -> 'profile' ? 'avatar_source' then raise exception 'a profile names no original: %', said; end if;
+  -- A recrop sends a square alone, and keeps the portrait and its frame.
+  said := set_avatar(ann, a, 'sq-2.webp', null, '{"x": 0, "y": 0.2, "w": 1, "h": 0.5}', null);
+  if said -> 'replaced' is distinct from '["sq-1.webp"]'::jsonb then raise exception 'a recrop replaces the square alone: %', said; end if;
+  if (select (avatar_portrait, portrait_frame) from character_profiles where character = a) is distinct from ('pt-1.webp'::text, '{"x": 0.1, "y": 0, "w": 0.5, "h": 1}'::jsonb) then raise exception 'a recrop keeps the portrait'; end if;
+  -- A new portrait replaces both crops.
+  said := set_avatar(ann, a, 'sq-3.webp', 'pt-3.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 1, "h": 1}');
+  if said -> 'replaced' is distinct from '["sq-2.webp", "pt-1.webp"]'::jsonb then raise exception 'a new upload replaces both crops: %', said; end if;
+  if pg_temp.refusal(format('select set_avatar(%L, %L, %L, %L, %L, %L)', bob, a, 'x.webp', 'y.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}', '{"x": 0, "y": 0, "w": 1, "h": 1}')) is distinct from 'you do not play that character' then raise exception 'an avatar set for another''s character'; end if;
+  if pg_temp.refusal(format('select set_avatar(%L, %L, %L, %L, %L, %L)', ann, a, 'x.webp', 'y.webp', '{"x": 0.6, "y": 0, "w": 0.5, "h": 1}', '{"x": 0, "y": 0, "w": 1, "h": 1}')) is distinct from 'a crop frame lies inside its picture' then raise exception 'a frame off its picture'; end if;
+  if pg_temp.refusal(format('select set_avatar(%L, %L, %L, %L, %L, null)', ann, a, 'x.webp', 'y.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}')) is distinct from 'an avatar has a square crop, and a portrait crop with its frame or neither' then raise exception 'a portrait with no frame'; end if;
+  if pg_temp.refusal(format('select set_avatar(%L, %L, %L, null, %L, null)', ann, a, 'z.webp', '{"x": 0, "y": 0, "w": 1, "h": 1, "note": "anything at all"}')) is distinct from 'a crop frame lies inside its picture' then raise exception 'a frame carrying more than where it was cut'; end if;
   perform tests.unbecome();
-  -- No avatar yet and no source: a crop needs one to be cut from.
+  -- No avatar yet: a recrop has no portrait to be cut from.
   perform tests.become_service();
-  if pg_temp.refusal(format('select set_avatar(%L, %L, null, %L, %L, %L, %L)', bob, b, 'x.webp', 'y.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}', '{"x": 0, "y": 0, "w": 1, "h": 1}')) is distinct from 'an avatar is cut from a picture; send it' then raise exception 'crops with no source'; end if;
+  if pg_temp.refusal(format('select set_avatar(%L, %L, %L, null, %L, null)', bob, b, 'x.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}')) is distinct from 'an avatar is cut from a portrait; send it' then raise exception 'a square with no portrait to be cut from'; end if;
   perform tests.unbecome();
   perform tests.become(ann);
-  if pg_temp.refusal(format('select set_avatar(%L, %L, null, %L, %L, %L, %L)', ann, a, 'x.webp', 'y.webp', '{}', '{}')) is null then raise exception 'a player wrote an avatar''s keys past the function that checks its bytes'; end if;
+  if pg_temp.refusal(format('select set_avatar(%L, %L, %L, %L, %L, %L)', ann, a, 'x.webp', 'y.webp', '{}', '{}')) is null then raise exception 'a player wrote an avatar''s keys past the function that checks its bytes'; end if;
   perform tests.unbecome();
 end $$;
 
@@ -116,4 +118,49 @@ begin
   select count(*) into seen from character_profiles where character = waiting;
   perform tests.unbecome();
   if seen <> 1 then raise exception 'a debuted character''s profile is read by every player'; end if;
+end $$;
+
+-- ---- A profile with a square and no portrait, written before 0025, stays valid; a recrop of it
+-- has no portrait, and its player uploads again ----
+do $$
+declare
+  ann uuid := tests.account('legacy-sq-ann');
+  a uuid := tests.character(ann, 'Square Alone');
+begin
+  insert into character_profiles (character, avatar_square, square_frame) values (a, 'old-sq.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}');
+  perform tests.become_service();
+  if pg_temp.refusal(format('select set_avatar(%L, %L, %L, null, %L, null)', ann, a, 'x.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}')) is distinct from 'an avatar is cut from a portrait; send it' then raise exception 'a recrop of a square alone'; end if;
+  if (set_avatar(ann, a, 'new-sq.webp', 'new-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 1, "h": 1}') -> 'replaced') is distinct from '["old-sq.webp"]'::jsonb then raise exception 'an upload over a square alone replaces it'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- Two first avatars at once: one after the other, the second naming the first's files as replaced ----
+do $$
+declare
+  ann uuid := gen_random_uuid(); a uuid := gen_random_uuid();
+  said text[];
+  answers jsonb;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'race-avatar@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into characters (id, owner, name, debuted_at) values (%2$L, %1$L, 'Race Avatar', now());
+    insert into class_history (character, class_key) values (%2$L, 'alpha');
+    create table tests.avatar_answers (said jsonb);
+    grant usage on schema tests to service_role;
+    grant insert on tests.avatar_answers to service_role;
+  $sql$, ann, a));
+  said := tests.race_service(
+    format('insert into tests.avatar_answers select set_avatar(%L, %L, %L, %L, %L, %L)', ann, a, 'one-sq.webp', 'one-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 1, "h": 1}'),
+    format('insert into tests.avatar_answers select set_avatar(%L, %L, %L, %L, %L, %L)', ann, a, 'two-sq.webp', 'two-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 1, "h": 1}'));
+  if said[1] is not null or said[2] is not null then raise exception 'two first avatars at once: %', said; end if;
+  select jsonb_agg(x.said -> 'replaced' order by x.said -> 'replaced') into answers from tests.avatar_answers x;
+  -- Whichever came second names the first's files, so none is left that no profile names unreported.
+  if (select avatar_square from character_profiles where character = a) = 'two-sq.webp' then
+    if answers is distinct from '[[], ["one-sq.webp", "one-pt.webp"]]'::jsonb then raise exception 'the second first avatar names the first''s files: %', answers; end if;
+  elsif answers is distinct from '[[], ["two-sq.webp", "two-pt.webp"]]'::jsonb then
+    raise exception 'the second first avatar names the first''s files: %', answers;
+  end if;
+  -- The committed profile names files no Storage holds; it goes, so a later export is not asked for them.
+  perform tests.commit(format($sql$ delete from character_profiles where character = %L; $sql$, a));
 end $$;

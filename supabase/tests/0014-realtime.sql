@@ -1,7 +1,7 @@
 -- Live updates carry only public projections (supabase/migrations/0008_realtime.sql): no table
 -- in any publication has a private column, and only a signed-in player hears a private channel.
 -- Plan Task 13; the screens' engine plan, Task 12, adds what the screens keep private (reading,
--- releases, preferences, admins).
+-- releases, preferences, admins); the clues plan, Task 1, the masks that read a thread.
 
 -- What a publication carries that it must not, as one line per column; empty when nothing.
 create function pg_temp.published_leaks() returns text language plpgsql as $$
@@ -15,9 +15,9 @@ begin
     join pg_publication_tables t on t.pubname = p.pubname
     join pg_attribute a on a.attrelid = format('%I.%I', t.schemaname, t.tablename)::regclass and a.attnum > 0 and not a.attisdropped
     where a.attname in ('owner', 'class_key', 'account', 'player', 'reactor_account', 'reactor_character', 'balance', 'who',
-                        'first_character', 'released_at')
+                        'first_character', 'released_at', 'reader')
        or (t.tablename in ('reactions', 'wallets', 'wallet_events', 'ledger', 'card_ledger', 'class_history', 'characters', 'accounts', 'settlement_class_totals',
-                           'reading', 'effect_releases', 'account_preferences', 'admins', 'invites', 'pending_turns'))
+                           'reading', 'thread_reads', 'effect_releases', 'account_preferences', 'admins', 'invites', 'pending_turns'))
   loop
     bad := bad || format(E'\n  %s publishes %s.%s (%s)', r.pubname, r.schemaname, r.tablename, r.attname);
   end loop;
@@ -45,7 +45,7 @@ declare
   t text;
   bad text;
 begin
-  foreach t in array array['reading', 'effect_releases', 'account_preferences', 'admins'] loop
+  foreach t in array array['reading', 'thread_reads', 'effect_releases', 'account_preferences', 'admins'] loop
     execute format('alter publication supabase_realtime add table public.%I', t);
     bad := pg_temp.published_leaks();
     execute format('alter publication supabase_realtime drop table public.%I', t);

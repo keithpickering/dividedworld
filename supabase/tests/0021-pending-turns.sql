@@ -63,7 +63,7 @@ create function pg_temp.promise_kept(who uuid, name text, asked timestamptz) ret
 declare
   turner uuid := tests.character(who, name, 'alpha', now() - interval '60 days');
   promised timestamptz;
-  s timestamptz;
+  w jsonb;
   runs integer := 0;
 begin
   perform tests.become(who);
@@ -74,9 +74,10 @@ begin
   while exists (select 1 from pending_turns where character = turner) loop
     runs := runs + 1;
     if runs > 10 then return format('%s never took effect', name); end if;
-    s := (select max(ends_at) from settlements);
+    -- The window the job would settle once a whole length has passed: cut at its season's end.
+    w := next_settlement_window((select max(ends_at) from settlements) + span_interval(setting('settlementLength')));
     perform set_config('role', 'service_role', true);
-    perform apply_settlement(s, s + span_interval(setting('settlementLength')), '[]');
+    perform apply_settlement((w ->> 'start')::timestamptz, (w ->> 'end')::timestamptz, '[]');
     perform tests.unbecome();
   end loop;
   if (select max(started_at) from class_history where character = turner) is distinct from promised then
@@ -115,6 +116,40 @@ begin
   if next_settlement_at(last_end + len / 2) is distinct from last_end + len then raise exception 'a shortened season''s next window is promised %', next_settlement_at(last_end + len / 2); end if;
   why := pg_temp.promise_kept(ann, 'Kept Shortened', last_end + len / 2);
   if why is not null then raise exception 'in a shortened season: %', why; end if;
+end $$;
+
+-- A season whose end falls inside the open window: the window ends with the season, and a Turn
+-- asked in it is promised the season's end, which is when it takes effect (0014's cap; #11).
+do $$
+declare
+  ann uuid := tests.account('pend2-short');
+  turner uuid := tests.character(ann, 'Short Window Turner', 'alpha', now() - interval '60 days');
+  last_end timestamptz;
+  season_end timestamptz;
+  said jsonb;
+  why text;
+begin
+  -- A long season, past its first window, whose end the cron decides.
+  update settings set value = '{"unit": "month", "count": 1000}' where key = 'seasonLength';
+  if not exists (select 1 from settlements) or (select starts_at from seasons where ends_at is null) = (select max(ends_at) from settlements) then
+    perform set_config('role', 'service_role', true);
+    perform apply_settlement(coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons)), coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons)) + span_interval(setting('settlementLength')), '[]');
+    perform tests.unbecome();
+  end if;
+  last_end := (select max(ends_at) from settlements);
+  season_end := last_end + span_interval(setting('settlementLength')) / 2;
+  update seasons set ends_at = season_end where ends_at is null;
+  insert into seasons (number, starts_at) values ((select max(number) + 1 from seasons), season_end);
+  if next_settlement_at(last_end + interval '1 minute') is distinct from season_end then
+    raise exception 'a Turn in a season''s last, short window is promised %, not the season''s end %', next_settlement_at(last_end + interval '1 minute'), season_end;
+  end if;
+  perform tests.become(ann);
+  said := turn(turner, 'beta', 'silent');
+  perform tests.unbecome();
+  if (said ->> 'takes_effect_at')::timestamptz is distinct from season_end then raise exception 'turn() promises the season''s end: %', said; end if;
+  delete from pending_turns where character = turner;
+  why := pg_temp.promise_kept(ann, 'Kept Season End', last_end + interval '1 minute');
+  if why is not null then raise exception 'in a season''s last, short window: %', why; end if;
 end $$;
 
 -- Where the next window is a season's first, its end is the first run's, which the cron decides:
