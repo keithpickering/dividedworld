@@ -17,6 +17,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   charactersPerPlayer: 6,
   /** Daily, at 08:17 UTC: the small hours across the Americas, when the board is quietest. */
   settlementCron: '17 8 * * *',
+  /** One day a window, matching the daily settlement. */
+  settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 },
   turnCooldown: { unit: 'day', count: 30 },
   registrationMode: 'invite',

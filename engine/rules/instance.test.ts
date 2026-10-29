@@ -16,6 +16,7 @@ const settings: Settings = {
   postMaxLength: 20000,
   titleMaxLength: 120,
   economy: { 'a.bonus': 5, 'splat.price': 100 },
+  settlementLength: { unit: 'day', count: 1 },
 };
 
 const good: Instance = {
@@ -119,6 +120,10 @@ test('a number a class reads can carry its bounds, and a price is a whole number
   // the purchase, never a reason to stop every settlement.
   assert.deepEqual(instanceProblems({ ...good, cards: [card], settings: { ...settings, economy: { ...settings.economy, 'splat.price': 700 } } }), []);
   assert.match(instanceProblems({ ...good, cards: [card], settings: { ...settings, economy: { ...settings.economy, 'splat.price': 2 ** 31 } } }).join('\n'), /splat\.price/);
+});
+
+test('a settlement window\'s length is a span', () => {
+  assert.match(settingsProblems({ ...settings, settlementLength: { unit: 'hour', count: 1 } as never }).join('\n'), /settlementLength/);
 });
 
 test('an override of one economy number keeps the others', () => {

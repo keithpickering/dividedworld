@@ -51,6 +51,8 @@ export interface Settings {
   readonly charactersPerPlayer: number;
   /** When The System settles, as a five-field cron expression in UTC. */
   readonly settlementCron: string;
+  /** How long one settlement window is: a day for a daily settlement. A missed run's days are each settled as one. */
+  readonly settlementLength: Span;
   readonly seasonLength: Span;
   readonly turnCooldown: Span;
   /** Who may open an account: anyone, someone with an invite, or nobody new. */

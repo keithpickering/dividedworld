@@ -13,6 +13,7 @@ insert into settings (key, value) values
   ('vote', '10'),
   ('halving', '0.5'),
   ('settlementCron', '"17 8 * * *"'),
+  ('settlementLength', '{"unit": "day", "count": 1}'),
   ('seasonLength', '{"unit": "month", "count": 3}'),
   ('turnCooldown', '{"unit": "day", "count": 30}'),
   ('registrationMode', '"invite"'),

@@ -69,6 +69,12 @@ begin
   if next_settlement_window(last_end) is not null then raise exception 'a window ending where it starts is nothing to settle'; end if;
   w := next_settlement_window(last_end + interval '1 day');
   if (w ->> 'start')::timestamptz <> last_end or (w ->> 'end')::timestamptz <> last_end + interval '1 day' then raise exception 'the next window: %', w; end if;
+  -- Missed days are settled one at a time: the window is the instance's settlement length, however far behind.
+  w := next_settlement_window(last_end + interval '3 days');
+  if (w ->> 'end')::timestamptz is distinct from last_end + interval '1 day' then raise exception 'two missed days should settle as windows of a day each: %', w; end if;
+  update settings set value = '{"unit": "week", "count": 1}' where key = 'settlementLength';
+  if (next_settlement_window(last_end + interval '9 days') ->> 'end')::timestamptz is distinct from last_end + interval '7 days' then raise exception 'the window''s length is the setting'; end if;
+  update settings set value = '{"unit": "day", "count": 1}' where key = 'settlementLength';
   -- A season ending inside the window ends the window there.
   update seasons set ends_at = last_end + interval '6 hours' where number = 1;
   insert into seasons (number, starts_at) values (2, last_end + interval '6 hours');

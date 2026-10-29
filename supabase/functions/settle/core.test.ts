@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runSettlement } from './core.ts';
+import { MOST_WINDOWS_PER_RUN, runSettlement } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 import type { SettlementInput } from '../../../engine/rules/types.ts';
@@ -25,7 +25,7 @@ const day: SettlementInput = {
 };
 
 /** A database that holds what has been settled, as apply_settlement() does. */
-function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = { economy: instance.settings.economy }) {
+function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = { economy: instance.settings.economy }, failInputAt?: string) {
   const settled = new Set<string>();
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
   let lastEnd: string | null = null;
@@ -33,10 +33,15 @@ function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, u
     async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
       calls.push({ fn, args });
       if (fn === 'next_settlement_window') {
+        // As the SQL does: from the last settled end, a day at most, to the until.
         const start = lastEnd ?? new Date(FROM).toISOString();
-        return (Date.parse(String(args.until)) > Date.parse(start) ? { start, end: String(args.until) } : null) as T;
+        const end = Math.min(Date.parse(String(args.until)), Date.parse(start) + 24 * H);
+        return (end > Date.parse(start) ? { start, end: new Date(end).toISOString() } : null) as T;
       }
-      if (fn === 'settlement_input') return input as T;
+      if (fn === 'settlement_input') {
+        if (failInputAt === String(args.window_start)) throw new DatabaseError('settlement_input: the connection dropped', '08006', 500);
+        return { ...input, window: { ...input.window, from: Date.parse(String(args.window_start)), to: Date.parse(String(args.window_end)) } } as T;
+      }
       if (fn === 'instance_settings') return databaseSettings as T;
       if (fn === 'apply_settlement') {
         const key = `${args.window_start}/${args.window_end}`;
@@ -55,7 +60,7 @@ test('a run settles the next window: reads its input, runs the instance\'s class
   const { db, calls } = fakeDb();
   const out = await runSettlement(db, instance, new Date(TO).toISOString());
   assert.equal(out.status, 'applied');
-  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement']);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement', 'next_settlement_window']);
   const apply = calls[3]!.args;
   assert.deepEqual(apply.entries, [
     // Heat: Cat's whole vote and half of Dee's; a shrug: the other half of Dee's.
@@ -97,6 +102,32 @@ test('settings rows that would make the instance not whole are refused before an
   const { db, calls } = fakeDb(day, { economy: { 'lurker.earlyMatch': 'lots' } });
   await assert.rejects(runSettlement(db, instance, new Date(TO).toISOString()), /lurker\.earlyMatch/);
   assert.ok(!calls.some((c) => c.fn === 'apply_settlement'));
+});
+
+test('missed days are settled one window at a time, in order, until the run is caught up', async () => {
+  const { db, calls } = fakeDb();
+  const out = await runSettlement(db, instance, new Date(TO + 24 * H).toISOString());
+  const applied = calls.filter((c) => c.fn === 'apply_settlement').map((c) => [c.args.window_start, c.args.window_end]);
+  assert.deepEqual(applied, [[new Date(FROM).toISOString(), new Date(TO).toISOString()], [new Date(TO).toISOString(), new Date(TO + 24 * H).toISOString()]]);
+  assert.equal(out.status, 'applied');
+  assert.equal(out.status === 'applied' && out.windows.length, 2);
+});
+
+test('a run that fails between two missed windows keeps the first, and the next run resumes at the second', async () => {
+  const { db, calls } = fakeDb(day, undefined, new Date(TO).toISOString());
+  await assert.rejects(runSettlement(db, instance, new Date(TO + 24 * H).toISOString()), DatabaseError);
+  assert.deepEqual(calls.filter((c) => c.fn === 'apply_settlement').map((c) => c.args.window_start), [new Date(FROM).toISOString()]);
+});
+
+test('a run settles at most a month of missed windows, says it is behind, and the next run carries on', async () => {
+  const { db, calls } = fakeDb();
+  const first = await runSettlement(db, instance, new Date(FROM + 40 * 24 * H).toISOString());
+  assert.equal(first.status === 'applied' && first.windows.length, MOST_WINDOWS_PER_RUN);
+  assert.equal(first.status === 'applied' && first.behind, true);
+  const second = await runSettlement(db, instance, new Date(FROM + 40 * 24 * H).toISOString());
+  assert.equal(second.status === 'applied' && second.windows.length, 40 - MOST_WINDOWS_PER_RUN);
+  assert.equal(second.status === 'applied' && second.behind, false);
+  assert.equal(calls.filter((c) => c.fn === 'apply_settlement').length, 40);
 });
 
 test('a second run of the same firing is a no-op', async () => {
