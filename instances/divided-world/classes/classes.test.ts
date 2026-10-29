@@ -15,12 +15,12 @@ import { defaults as settings } from '../settings.ts';
 import { settle } from '../../../engine/rules/settle.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import type {
-  ClassInput, ClassRules, GivenReaction, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread,
+  ClassInput, ClassRules, HeldVote, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread,
 } from '../../../engine/rules/types.ts';
 
 const none: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
 const input = (over: Partial<ClassInput>): ClassInput => ({
-  character: 'c', from: 0, to: 100, posts: [], received: [], given: [], cardsPlayed: [], cardsLanded: [], threadsSpun: [], ...over,
+  character: 'c', from: 0, to: 100, posts: [], received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], threadsSpun: [], ...over,
 });
 const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1'): ReceivedReaction => ({ act, actKind, quadrant, at: 10, votes });
 const card = (over: Partial<PlayedCard>): PlayedCard => ({
@@ -78,31 +78,36 @@ test('a Heel\'s thunder-stealing Salty card pays and a Face\'s costs', () => {
 });
 
 /* ---- Lurker ---- */
-const gave = (over: Partial<GivenReaction>): GivenReaction => ({ act: 'p1', quadrant: 'excitedPositive', at: 10, share: 1, rank: 1, endsUp: 'excitedPositive', ...over });
-test('Lurker earns from reacting early in the direction a post ends up', () => {
-  assert.equal(total(lurker, input({ given: [gave({ rank: 3 })] })), 10, 'third to react is early');
-  assert.equal(total(lurker, input({ given: [gave({ rank: 4 })] })), 0, 'fourth is not');
-  assert.equal(total(lurker, input({ given: [gave({ endsUp: 'boredNegative' })] })), 0, 'the wrong direction pays nothing');
-  assert.equal(total(lurker, input({ given: [gave({ endsUp: null })] })), 0, 'a post with no direction pays nothing');
+const held = (over: Partial<HeldVote>): HeldVote => ({ act: 'p1', quadrant: 'excitedPositive', at: 10, share: 1, rank: 1, othersBefore: 2, othersNow: 3, endsUp: 'excitedPositive', ...over });
+test('Lurker earns from reacting early in the direction a post ends up, once three other players have reacted', () => {
+  assert.equal(total(lurker, input({ held: [held({ rank: 3 })] })), 10, 'third to react is early');
+  assert.equal(total(lurker, input({ held: [held({ rank: 4 })] })), 0, 'fourth is not');
+  assert.equal(total(lurker, input({ held: [held({ endsUp: 'boredNegative' })] })), 0, 'the wrong direction pays nothing');
+  assert.equal(total(lurker, input({ held: [held({ endsUp: null })] })), 0, 'a post with no direction pays nothing');
+  assert.equal(total(lurker, input({ held: [held({ othersBefore: 1, othersNow: 2 })] })), 0, 'two other players are not yet a crowd');
+  assert.equal(total(lurker, input({ held: [held({ othersBefore: 3, othersNow: 4 })] })), 0, 'a call is paid once, in the window its crowd arrives');
+  assert.equal(total(lurker, input({ held: [held({ othersBefore: 0, othersNow: 5 })] })), 10, 'a crowd arriving at once pays');
+  assert.equal(total(lurker, input({ held: [held({ share: 0.5 })] })), 5, 'a hedged call is paid the part that landed');
 });
 test('an override of the Lurker\'s call changes what a call pays, and the class reads every number it uses from settings', () => {
   const tuned = withOverrides(settings, { economy: { 'lurker.earlyMatch': 30, 'heel.saltyOutdraws': 50, 'face.cardOutdraws': -70, 'jabroni.saltyLanded': 40 } });
-  assert.equal(lurker.earn(input({ given: [gave({ rank: 1 })] }), tuned).reduce((s, e) => s + e.amount, 0), 30);
+  assert.equal(lurker.earn(input({ held: [held({ rank: 1 })] }), tuned).reduce((s, e) => s + e.amount, 0), 30);
   assert.equal(heel.earn(input({ cardsPlayed: [card({ votes: 2, targetVotes: 1 })] }), tuned).find((e) => e.reason === 'heel.stoleThunder')?.amount, 50);
   assert.equal(face.earn(input({ cardsPlayed: [card({ votes: 2, targetVotes: 1 })] }), tuned).find((e) => e.reason === 'face.stoleThunder')?.amount, -70);
   assert.equal(jabroni.earn(input({ cardsLanded: [{ act: 'k', card: 'whoops', alignment: 'salty', at: 1, on: 'p' }] }), tuned)[0]?.amount, 40);
   for (const c of classes) for (const read of c.reads ?? []) { const key = typeof read === 'string' ? read : read.key; assert.ok(key in settings.economy, `${c.key} reads ${key}`); }
   // And each of the Lurker's other numbers, so none can turn back into a literal unseen.
-  const lurkerTuned = withOverrides(settings, { economy: { 'lurker.earlyPlayers': 1, 'lurker.spunThreadRepliers': 1, 'lurker.spunThread': 70, 'lurker.postsAllowed': 0, 'lurker.overPosting': -30 } });
-  assert.equal(lurker.earn(input({ given: [gave({ rank: 2 })] }), lurkerTuned).length, 0, 'second is no longer early');
+  const lurkerTuned = withOverrides(settings, { economy: { 'lurker.crowd': 1, 'lurker.earlyPlayers': 1, 'lurker.spunThreadRepliers': 1, 'lurker.spunThread': 70, 'lurker.postsAllowed': 0, 'lurker.overPosting': -30 } });
+  assert.equal(lurker.earn(input({ held: [held({ rank: 2 })] }), lurkerTuned).length, 0, 'second is no longer early');
+  assert.equal(lurker.earn(input({ held: [held({ othersBefore: 0, othersNow: 1 })] }), lurkerTuned)[0]?.amount, 10, 'one other player is a crowd of one');
   assert.equal(lurker.earn(input({ threadsSpun: [spin({ repliersBefore: 0, repliersNow: 1 })] }), lurkerTuned)[0]?.amount, 70);
   assert.equal(lurker.earn(input({ posts: [{ act: 'p', at: 1 }] }), lurkerTuned)[0]?.amount, -30);
   assert.match(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'lurker.postsAllowed': -1 } }) }).join('\n'), /lurker\.postsAllowed/);
 });
 
 test('Lurker\'s early call is paid by its share, so hedging across quadrants pays a part', () => {
-  const hedged = [gave({ share: 1 / 3 }), gave({ quadrant: 'boredNegative', share: 1 / 3 }), gave({ quadrant: 'calmPositive', share: 1 / 3 })];
-  assert.ok(Math.abs(total(lurker, input({ given: hedged })) - 10 / 3) < 1e-9);
+  const hedged = [held({ share: 1 / 3 }), held({ quadrant: 'boredNegative', share: 1 / 3 }), held({ quadrant: 'calmPositive', share: 1 / 3 })];
+  assert.ok(Math.abs(total(lurker, input({ held: hedged })) - 10 / 3) < 1e-9);
 });
 const spin = (over: Partial<SpunThread>): SpunThread => ({ act: 's1', thread: 't', at: 10, fromOthers: true, repliersBefore: 0, repliersNow: 3, ...over });
 test('Lurker earns from a thread it spins from another\'s Act once three other players reply, in the window that happens', () => {
@@ -166,8 +171,59 @@ const sum = (s: ReturnType<typeof settle>, character: string) => s.entries.filte
 
 test('reactions to a card count for the card\'s player, under their class', () => {
   const r = settle(board(), world);
-  assert.equal(sum(r, 'lu'), 20 + 10, 'the Lurker: two votes on its card, and its early, matching tomato on p1');
+  assert.equal(sum(r, 'lu'), 20, 'the Lurker: two votes on its card; its tomato on p1, alone there, calls nothing');
   assert.equal(sum(r, 'he'), 10, 'the Heel: heat from the Lurker\'s tomato, nothing from the card\'s reactions');
+});
+
+/* A Lurker's call needs a crowd (the plan's Task E; the owner's answer 15, on #4). */
+function crowd(reactions: SettlementInput['reactions'], window = { id: 'w1', from: 0, to: 24 * H }, paid: SettlementInput['paid'] = []): SettlementInput {
+  return {
+    window,
+    characters: [
+      { id: 'lu', player: 'pl', classes: [{ class: 'lurker', from: -1 }] },
+      ...['au', 'o1', 'o2', 'o3', 'o4'].map((id) => ({ id, player: `p-${id}`, classes: [{ class: 'face', from: -1 }] })),
+    ],
+    acts: Array.from({ length: 60 }, (_, i) => ({ id: `p${i + 1}`, character: 'au', kind: 'post' as const, at: i + 1, thread: 't' })),
+    reactions,
+    paid,
+  };
+}
+const by = (who: string, kind: string, at: number, act = 'p1') => ({ act, player: who === 'lu' ? 'pl' : `p-${who}`, character: who, kind, at });
+const called = (s: ReturnType<typeof settle>) => s.entries.filter((e) => e.character === 'lu' && e.reason === 'lurker.calledIt').reduce((t, e) => t + e.amount, 0);
+const D2 = { id: 'w2', from: 24 * H, to: 48 * H };
+const D3 = { id: 'w3', from: 48 * H, to: 72 * H };
+const upTo = (...settled: ReturnType<typeof settle>[]) => [...new Map(settled.flatMap((s) => s.paid).map((p) => [`${p.player} ${p.act}`, p])).values()];
+
+test('a Lurker reacting alone to a post is never paid for the call', () => {
+  assert.equal(called(settle(crowd([by('lu', 'fire', H)]), world)), 0);
+});
+
+test('a Lurker\'s call is paid in the window the third other player arrives, by the direction then, and once', () => {
+  const day1 = [by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'zzz', 3 * H)];
+  const w1 = settle(crowd(day1), world);
+  assert.equal(called(w1), 0, 'two other players are not yet a crowd');
+  const day2 = [...day1, by('o3', 'fire', 25 * H)];
+  const w2 = settle(crowd(day2, D2, upTo(w1)), world);
+  assert.equal(called(w2), 10, 'the third arrives: the post leans excited-positive without the Lurker, as the Lurker called');
+  const w3 = settle(crowd([...day2, by('o4', 'fire', 49 * H)], D3, upTo(w1, w2)), world);
+  assert.equal(called(w3), 0, 'a fourth pays nothing more');
+  // Had the third leaned the other way, the call is judged by the direction then, and a later turn never rescues it.
+  const against = [...day1, by('o3', 'zzz', 25 * H)];
+  const w2x = settle(crowd(against, D2, upTo(w1)), world);
+  assert.equal(called(w2x), 0);
+  assert.equal(called(settle(crowd([...against, by('o4', 'fire', 49 * H), by('o4', 'heart', 49 * H)], D3, upTo(w1, w2x)), world)), 0);
+});
+
+test('where a post ends up is read without the calling Lurker\'s own vote', () => {
+  // Without the Lurker, one excited-positive, one bored-negative and one calm-positive: no direction,
+  // though the Lurker's own fire would have tipped it.
+  assert.equal(called(settle(crowd([by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'zzz', 3 * H), by('o3', 'tea', 4 * H)]), world)), 0);
+  assert.equal(called(settle(crowd([by('lu', 'fire', H), by('o1', 'fire', 2 * H), by('o2', 'fire', 3 * H), by('o3', 'tea', 4 * H)]), world)), 10);
+});
+
+test('a Lurker reacting first to sixty fresh posts earns nothing from them alone', () => {
+  const sixty = Array.from({ length: 60 }, (_, i) => by('lu', 'fire', 2 * H + i, `p${i + 1}`));
+  assert.deepEqual(settle(crowd(sixty), world).entries.filter((e) => e.character === 'lu'), []);
 });
 
 test('a Lurker\'s cards and reactions never count as posting', () => {
@@ -214,7 +270,7 @@ test('each class names what it paid in its own words, with the Act and the quadr
   const all = input({
     posts: [1, 2, 3, 4].map((n) => ({ act: `p${n}`, at: n })),
     received: [got('excitedPositive', 1, 'post', 'p1'), got('excitedNegative', 1, 'post', 'p2'), got('calmPositive', 1, 'post', 'p3'), got('boredNegative', 1, 'card', 'k1')],
-    given: [gave({ act: 'x1' })],
+    held: [held({ act: 'x1' })],
     cardsPlayed: [card({ act: 'k1', alignment: 'salty', votes: 3, targetVotes: 1 }), card({ act: 'k2', alignment: 'sweet', targetAfter: { ...none, excitedPositive: 1 } })],
     cardsLanded: [landed('salty')],
     threadsSpun: [spin({ act: 's1' })],
@@ -230,5 +286,5 @@ test('each class names what it paid in its own words, with the Act and the quadr
 });
 
 test('a Lurker is never paid for a reaction with no rank', () => {
-  assert.equal(total(lurker, input({ given: [gave({ rank: 0 })] })), 0);
+  assert.equal(total(lurker, input({ held: [held({ rank: 0 })] })), 0);
 });

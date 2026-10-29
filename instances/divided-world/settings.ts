@@ -31,6 +31,8 @@ export const defaults: Settings = deepFreeze<Settings>({
     'lurker.earlyPlayers': 3,
     /** An early reaction that matches where the post ends up. */
     'lurker.earlyMatch': 10,
+    /** An early call is paid once this many other players have reacted to the post. */
+    'lurker.crowd': 3,
     /** A spun thread pays once replies come from this many other players. */
     'lurker.spunThreadRepliers': 3,
     'lurker.spunThread': 20,

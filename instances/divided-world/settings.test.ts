@@ -29,7 +29,7 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
 
 test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
   assert.deepEqual(defaults.economy, {
-    'lurker.earlyPlayers': 3, 'lurker.earlyMatch': 10, 'lurker.spunThreadRepliers': 3, 'lurker.spunThread': 20,
+    'lurker.earlyPlayers': 3, 'lurker.earlyMatch': 10, 'lurker.crowd': 3, 'lurker.spunThreadRepliers': 3, 'lurker.spunThread': 20,
     'lurker.postsAllowed': 3, 'lurker.overPosting': -10,
     'heel.saltyOutdraws': 20,
     'face.cardOutdraws': -20,

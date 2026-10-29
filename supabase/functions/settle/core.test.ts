@@ -8,19 +8,23 @@ import type { SettlementInput } from '../../../engine/rules/types.ts';
 const H = 3_600_000;
 const FROM = Date.parse('2026-11-01T08:17:00Z');
 const TO = FROM + 24 * H;
-/** A day on the board: Bob's Heel posts; Cat reacts with heat; Dee, the Lurker, with heat and a polite shrug. */
+/** A day on the board: Bob's Heel posts; Cat reacts with heat; Dee, the Lurker, with heat and a polite shrug; Eve and Fay with heat after her. */
 const day: SettlementInput = {
   window: { id: '2026-11-01T08:17:00+00:00', from: FROM, to: TO },
   characters: [
     { id: 'he', player: 'bob', classes: [{ class: 'heel', from: 0 }] },
     { id: 'ca', player: 'cat', classes: [{ class: 'face', from: 0 }] },
     { id: 'de', player: 'dee', classes: [{ class: 'lurker', from: 0 }] },
+    { id: 'ev', player: 'eve', classes: [{ class: 'face', from: 0 }] },
+    { id: 'fa', player: 'fay', classes: [{ class: 'face', from: 0 }] },
   ],
   acts: [{ id: 'p1', character: 'he', kind: 'post', at: FROM + H, thread: 't' }],
   reactions: [
     { act: 'p1', player: 'cat', character: 'ca', kind: 'tomato', at: FROM + 2 * H },
     { act: 'p1', player: 'dee', character: 'de', kind: 'tea', at: FROM + 3 * H },
     { act: 'p1', player: 'dee', character: 'de', kind: 'angry', at: FROM + 3 * H + 1 },
+    { act: 'p1', player: 'eve', character: 'ev', kind: 'tomato', at: FROM + 4 * H },
+    { act: 'p1', player: 'fay', character: 'fa', kind: 'tomato', at: FROM + 5 * H },
   ],
 };
 
@@ -63,13 +67,14 @@ test('a run settles the next window: reads its input, runs the instance\'s class
   assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement', 'next_settlement_window']);
   const apply = calls[3]!.args;
   assert.deepEqual(apply.entries, [
-    // Heat: Cat's whole vote and half of Dee's; a shrug: the other half of Dee's.
-    { player: 'bob', character: 'he', reason: 'heel.drewHeat', amount: 15 },
+    // Heat: Cat's, Eve's and Fay's whole votes and half of Dee's; a shrug: the other half of Dee's.
+    { player: 'bob', character: 'he', reason: 'heel.drewHeat', amount: 35 },
     { player: 'bob', character: 'he', reason: 'heel.shrugged', amount: -5 },
-    // The post ends up excited-negative, and Dee was second to react: her heat was an early call.
+    // Dee was second to react; with Fay, three other players have, and without Dee the post
+    // leans excited-negative: her heat was an early call.
     { player: 'dee', character: 'de', reason: 'lurker.calledIt', amount: 5 },
   ]);
-  assert.deepEqual(apply.class_totals, { heel: 10, lurker: 5 });
+  assert.deepEqual(apply.class_totals, { heel: 30, lurker: 5 });
   assert.equal(apply.window_start, new Date(FROM).toISOString());
 });
 
@@ -77,7 +82,7 @@ test('the settings rows reach the settlement: an admin\'s tuning of a vote or a 
   const { db, calls } = fakeDb(day, { vote: 20, economy: { ...instance.settings.economy, 'lurker.earlyMatch': 40 }, copy: { turnsThreadTitle: 'x' } });
   await runSettlement(db, instance, new Date(TO).toISOString());
   const entries = calls.find((c) => c.fn === 'apply_settlement')!.args.entries as { reason: string; amount: number }[];
-  assert.equal(entries.find((e) => e.reason === 'heel.drewHeat')?.amount, 30);
+  assert.equal(entries.find((e) => e.reason === 'heel.drewHeat')?.amount, 70, 'three and a half votes of heat at 20 each');
   assert.equal(entries.find((e) => e.reason === 'lurker.calledIt')?.amount, 20);
 });
 

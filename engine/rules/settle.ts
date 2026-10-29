@@ -20,9 +20,13 @@
  *   of that alignment on the target, so two Sweet cards pay what one would.
  * - "Early" is a rank: where the reacting player came among the players who reacted to the
  *   Act, by first reaction, with ties ordered by player. The class decides how early is early.
- * - Where a post "ends up" is its dominant quadrant by vote share at this settlement, over
- *   every reaction up to the window's end; a tie is no direction. Reactions after the
- *   settlement do not reach back: a window is settled once.
+ * - A vote a player holds is given to its class (`held`) in each window in which another player
+ *   first reacted to the Act, with how many other players had reacted before the window and by
+ *   its end, so a class can pay the window a crowd arrives in, once (the owner's answer 15).
+ * - Where a post "ends up", for a player's held vote, is its dominant quadrant by vote share at
+ *   this settlement, over every reaction up to the window's end, without that player's own vote,
+ *   so nobody's call is proven by itself; a tie is no direction. Reactions after the settlement
+ *   do not reach back: a window is settled once.
  * - A card "outdraws" its target when it drew more votes in the window than the target did.
  *   A vote total is the shares, unhalved: the halving prices a character's further Acts to the
  *   character, and a card and its target are judged on how many players each drew.
@@ -35,7 +39,7 @@
  */
 import { payVotes, shareVotes, type PaidVote } from './votes.ts';
 import type {
-  Alignment, ClassInput, ClassRules, GivenReaction, InputAct, InputCharacter, InputReaction, Instance,
+  Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
   LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread,
 } from './types.ts';
 import { QUADRANTS } from './types.ts';
@@ -131,28 +135,53 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
   const votesOn = new Map<string, number>();
   for (const v of windowVotes) votesOn.set(v.act, (votesOn.get(v.act) ?? 0) + v.share);
 
-  /* Rank of each player among an Act's reactors, and where each Act ends up. */
-  const rankOf = new Map<string, number>();
-  const firstBy = new Map<string, Map<string, number>>();
-  const leaning = new Map<string, Record<Quadrant, number>>();
+  /* Each Act's reactors by first reaction, each player's shares there and the mask that says
+     each, and the Act's lean: one pass over the reactions, which are in time order. */
+  const zero = (): Record<Quadrant, number> => ({ excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 });
+  const onAct = new Map<string, { first: Map<string, number>; lean: Record<Quadrant, number>; of: Map<string, { shares: Record<Quadrant, number>; voice: Partial<Record<Quadrant, string>> }> }>();
   for (const r of shared) {
-    const first = firstBy.get(r.act) ?? new Map<string, number>();
-    if (!first.has(r.player)) first.set(r.player, r.at);
-    firstBy.set(r.act, first);
-    const lean = leaning.get(r.act) ?? { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
-    lean[r.quadrant] += r.share;
-    leaning.set(r.act, lean);
+    const a = onAct.get(r.act) ?? { first: new Map(), lean: zero(), of: new Map() };
+    if (!a.first.has(r.player)) a.first.set(r.player, r.at);
+    a.lean[r.quadrant] += r.share;
+    const p = a.of.get(r.player) ?? { shares: zero(), voice: {} };
+    p.shares[r.quadrant] += r.share;
+    p.voice[r.quadrant] = r.character;
+    a.of.set(r.player, p);
+    onAct.set(r.act, a);
   }
-  for (const [act, first] of firstBy) {
-    [...first].sort((a, b) => a[1] - b[1] || cmp(a[0], b[0])).forEach(([player], i) => rankOf.set(`${act}\u0000${player}`, i + 1));
-  }
-  const endsUp = (act: string): Quadrant | null => {
-    const lean = leaning.get(act);
-    if (!lean) return null;
+  const direction = (lean: Record<Quadrant, number>): Quadrant | null => {
     const top = Math.max(...QUADRANTS.map((q) => tidy(lean[q])));
     const leaders = QUADRANTS.filter((q) => tidy(lean[q]) === top);
     return top > 0 && leaders.length === 1 ? leaders[0]! : null;
   };
+  /* Each held vote, on each Act another player first reached in the window: per Act, the work
+     is its reactors, so a busy post costs its own players and nothing beyond them. */
+  const held = new Map<string, HeldVote[]>();
+  for (const [act, a] of onAct) {
+    const order = [...a.first].sort((x, y) => x[1] - y[1] || cmp(x[0], y[0]));
+    const arrivals = order.filter(([, at]) => inWindow(at));
+    if (!arrivals.length) continue;
+    const total = order.length;
+    const beforeAll = total - arrivals.length;
+    order.forEach(([player, firstAt], i) => {
+      const mine = inWindow(firstAt);
+      const othersNow = total - 1;
+      const othersBefore = beforeAll - (mine ? 0 : 1);
+      if (othersNow === othersBefore) return;
+      const at = arrivals.filter(([p]) => p !== player).at(-1)![1];
+      const p = a.of.get(player)!;
+      const without = zero();
+      for (const q of QUADRANTS) without[q] = a.lean[q] - p.shares[q];
+      const endsUp = direction(without);
+      for (const q of QUADRANTS) {
+        if (tidy(p.shares[q]) <= 0) continue;
+        const character = p.voice[q]!;
+        const list = held.get(character) ?? [];
+        list.push({ act, quadrant: q, at, share: tidy(p.shares[q]), rank: i + 1, othersBefore, othersNow, endsUp });
+        held.set(character, list);
+      }
+    });
+  }
 
   /* ---- each character's stretches of class inside the window ---- */
   const stretchesOf = (c: InputCharacter) => {
@@ -190,7 +219,7 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
   const given = new Map<string, GivenReaction[]>();
   for (const v of windowVotes) {
     const list = given.get(v.character) ?? [];
-    list.push({ act: v.act, quadrant: v.quadrant, at: v.at, share: v.share, rank: rankOf.get(`${v.act}\u0000${v.player}`) ?? 0, endsUp: endsUp(v.act) });
+    list.push({ act: v.act, quadrant: v.quadrant, at: v.at, share: v.share });
     given.set(v.character, list);
   }
   const played = new Map<string, PlayedCard[]>();
@@ -258,11 +287,12 @@ export function settle(input: SettlementInput, instance: Instance): Settlement {
         posts: inside((windowActsBy.get(c.id) ?? []).filter((a) => a.kind === 'post')).map((a) => ({ act: a.id, at: a.at })),
         received: inside(received.get(c.id)).sort(byTime),
         given: inside(given.get(c.id)).sort(byTime),
+        held: inside(held.get(c.id)).sort((x, y) => byTime(x, y) || cmp(x.quadrant, y.quadrant)),
         cardsPlayed: inside(played.get(c.id)).sort(byTime),
         cardsLanded: inside(landed.get(c.id)).sort(byTime),
         threadsSpun: inside(spun.get(c.id)).sort(byTime),
       };
-      const empty = !classInput.posts.length && !classInput.received.length && !classInput.given.length
+      const empty = !classInput.posts.length && !classInput.received.length && !classInput.given.length && !classInput.held.length
         && !classInput.cardsPlayed.length && !classInput.cardsLanded.length && !classInput.threadsSpun.length;
       if (empty) continue;
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {

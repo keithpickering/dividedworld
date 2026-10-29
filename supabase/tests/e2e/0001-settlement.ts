@@ -45,13 +45,29 @@ test('a day on the board settles into wallets and standings, once', async () => 
   const heel = Number(sql(`select balance from wallets where account = '${ids['e2e-heel']}'`));
   const lurk = Number(sql(`select balance from wallets where account = '${ids['e2e-lurk']}'`));
   assert.equal(heel, 20, 'two whole votes of heat on the Heel\'s post');
-  assert.equal(lurk, 10, 'the Lurker reacted early, in the direction the post ended up');
+  assert.equal(lurk, 0, 'the Lurker reacted early, but one other player is no crowd: no call is paid yet');
   assert.equal(Number(sql(`select amount from standings where character = '${characters.Pipewrench}'`)), 20);
   assert.equal(sql(`select string_agg(reason, ',' order by reason) from ledger where character = '${characters.Pipewrench}'`), 'heel.drewHeat');
 
   const again = await runSettlement(db, instance, until);
   assert.equal(again.status, 'nothing to settle');
   assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-heel']}'`)), 20, 'a second run changes nothing');
+
+  // The next day two more players bring the post its crowd of three others: the Lurker's call is
+  // paid in that window, by where the post leans then without the Lurker's own vote.
+  const crowd = JSON.parse(sql(`
+    with u as (insert into auth.users (email) values ('e2e-crowd-1@test.invalid'), ('e2e-crowd-2@test.invalid') returning id, email),
+    a as (insert into accounts (id) select id from u returning id),
+    c as (insert into characters (owner, name, created_at) select id, 'Crowd ' || split_part(email, '@', 1), '${at(-1)}' from u returning id, owner),
+    h as (insert into class_history (character, class_key, started_at) select id, 'face', '${at(-1)}' from c returning 1)
+    select json_agg(json_build_object('account', owner, 'character', id)) from c`)) as { account: string; character: string }[];
+  sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
+    ${crowd.map((c, i) => `('${post}', '${c.character}', '${c.account}', 'tomato', 1, '${at(26 + i)}')`).join(',\n    ')}`);
+  const second = await runSettlement(db, instance, at(48));
+  assert.equal(second.status, 'applied', JSON.stringify(second));
+  assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-lurk']}'`)), 10, 'the third other player arrived: the call is paid');
+  assert.equal(sql(`select string_agg(reason, ',') from ledger where character = '${characters.Shadow}'`), 'lurker.calledIt');
+  assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-heel']}'`)), 40, 'and the Heel two more votes of heat');
 });
 
 test('a spin from The System\'s reveal settles like any other, and the settlement goes on', async () => {

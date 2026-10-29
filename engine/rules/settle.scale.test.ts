@@ -16,7 +16,7 @@ const counting: ClassRules = {
   name: 'Counting',
   earn: (i) => [
     ...i.received.map((r) => ({ reason: 'busy.received', amount: r.votes, act: r.act, quadrant: r.quadrant })),
-    ...i.given.map((g) => ({ reason: 'busy.given', amount: g.rank <= 3 ? 1 : 0, act: g.act })),
+    ...i.held.map((g) => ({ reason: 'busy.held', amount: g.rank <= 3 ? 1 : 0, act: g.act })),
     ...i.cardsPlayed.map((c) => ({ reason: 'busy.card', amount: c.votes - c.targetVotes, act: c.act })),
     ...i.threadsSpun.map((t) => ({ reason: 'busy.spun', amount: t.repliersNow - t.repliersBefore, act: t.act })),
   ],

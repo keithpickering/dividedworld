@@ -426,7 +426,7 @@ test('a class that returns a number that is not one is refused, and a zero is no
   assert.ok(!r.entries.some((e) => e.reason === 'fan.nothing') && !r.details.some((d) => d.reason === 'fan.nothing'));
 });
 
-test('a reacting player\'s rank and where a post ends up reach the class, with ties settled the same way every time', () => {
+test('a vote a player holds reaches the class of the mask that says it, with the player\'s rank, the other players before and now, and the lean without them', () => {
   const { rules, inputs } = recorder();
   const b = base();
   const tie: SettlementInput = {
@@ -434,17 +434,53 @@ test('a reacting player\'s rank and where a post ends up reach the class, with t
     acts: [...b.acts, post('t1p', 'ann-quiet', FROM + H)],
     reactions: [
       ...b.reactions,
-      // Dee and Cat react at the same instant: Cat, the lower id, comes first. Their votes tie, so t1p has no direction.
+      // Dee and Cat react at the same instant: Cat, the lower id, comes first.
       react('t1p', 'dee', 'dee-1', 'zzz', FROM + 2 * H),
       react('t1p', 'cat', 'cat-1', 'fire', FROM + 2 * H),
     ],
   };
   settle(tie, withClasses(rules));
-  const given = inputs.flatMap((i) => i.given.map((g) => ({ ...g, by: i.character })));
-  assert.deepEqual(given.filter((g) => g.act === 't1p').map((g) => [g.by, g.rank, g.endsUp]).sort(), [['cat-1', 1, null], ['dee-1', 2, null]]);
-  // p1: Bob first (rank 1), Cat second; Bob's whole fire and Cat's half fire outweigh Cat's half zzz.
-  assert.deepEqual(given.filter((g) => g.act === 'p1').map((g) => [g.by, g.rank, g.endsUp]).sort(),
-    [['bob-1', 1, 'excitedPositive'], ['cat-1', 2, 'excitedPositive'], ['cat-1', 2, 'excitedPositive']]);
+  const held = inputs.flatMap((i) => i.held.map((h) => ({ ...h, by: i.character })));
+  const row = (h: (typeof held)[number]) => [h.by, h.quadrant, h.rank, h.endsUp ?? 'none', h.othersBefore, h.othersNow, h.at];
+  // Each sees where t1p leans without their own vote: Cat sees Dee's zzz, Dee sees Cat's fire.
+  assert.deepEqual(held.filter((h) => h.act === 't1p').map(row).sort(), [
+    ['cat-1', 'excitedPositive', 1, 'boredNegative', 0, 1, FROM + 2 * H],
+    ['dee-1', 'boredNegative', 2, 'excitedPositive', 0, 1, FROM + 2 * H],
+  ]);
+  // p1: without Bob, Cat's half fire and half zzz tie; without Cat, Bob's fire leads. Cat holds both halves.
+  assert.deepEqual(held.filter((h) => h.act === 'p1').map(row).sort(), [
+    ['bob-1', 'excitedPositive', 1, 'none', 0, 1, FROM + 5 * H],
+    ['cat-1', 'boredNegative', 2, 'excitedPositive', 0, 1, FROM + 4 * H],
+    ['cat-1', 'excitedPositive', 2, 'excitedPositive', 0, 1, FROM + 4 * H],
+  ]);
+  assert.deepEqual(held.filter((h) => h.act === 'p1' && h.by === 'cat-1').map((h) => h.share), [0.5, 0.5]);
+});
+
+test('a vote is held out to its class only in a window another player first reacted in, said by the mask that holds the quadrant', () => {
+  const { rules, inputs } = recorder();
+  const b = base();
+  const later: SettlementInput = {
+    ...b,
+    characters: [...b.characters, { id: 'cat-2', player: 'cat', classes: [{ class: 'quiet', from: 0 }] }],
+    acts: [...b.acts, post('old', 'ann-quiet', FROM - 10 * H)],
+    reactions: [
+      ...b.reactions,
+      react('old', 'bob', 'bob-1', 'fire', FROM - 9 * H),
+      react('old', 'cat', 'cat-1', 'fire', FROM - 8 * H),
+      // Cat reacts again in the window through another mask; nobody new arrives on 'old'.
+      react('old', 'cat', 'cat-2', 'tea', FROM + 9 * H),
+    ],
+  };
+  settle(later, withClasses(rules));
+  assert.deepEqual(inputs.flatMap((i) => i.held).filter((h) => h.act === 'old'), [], 'no other player arrived on it in the window');
+  inputs.length = 0;
+  const arriving: SettlementInput = { ...later, reactions: [...later.reactions, react('old', 'dee', 'dee-1', 'zzz', FROM + 10 * H)] };
+  settle(arriving, withClasses(rules));
+  const held = inputs.flatMap((i) => i.held.map((h) => ({ ...h, by: i.character }))).filter((h) => h.act === 'old');
+  assert.deepEqual(held.filter((h) => h.by === 'bob-1').map((h) => [h.othersBefore, h.othersNow, h.at]), [[1, 2, FROM + 10 * H]], 'Bob: Cat before the window, Dee in it');
+  assert.deepEqual(held.filter((h) => h.by.startsWith('cat')).map((h) => [h.by, h.quadrant, h.share, h.othersBefore, h.othersNow]).sort(),
+    [['cat-1', 'excitedPositive', 0.5, 1, 2], ['cat-2', 'calmPositive', 0.5, 1, 2]], 'each half said by the mask that reacted in its quadrant');
+  assert.deepEqual(held.filter((h) => h.by === 'dee-1'), [], 'Dee arrived after both: no other player came after Dee, so Dee\'s crowd did not grow');
 });
 
 test('a reaction at the very instant a card is played is not "after" it; a reply at the window\'s start is in the window', () => {

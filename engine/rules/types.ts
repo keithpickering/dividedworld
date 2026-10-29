@@ -173,9 +173,27 @@ export interface GivenReaction {
   readonly at: number;
   /** What this window adds (or, negative, takes back) of its player's one vote on the Act, in this quadrant. */
   readonly share: number;
-  /** Where its player came among the players who reacted to the Act, by first reaction: 1 is first. */
+}
+
+/**
+ * Where the character's player's vote on another's Act stands, in one quadrant, given in each
+ * window in which another player first reacted to the Act, to the mask whose reaction there is
+ * the player's latest: so a class can pay the window in which a crowd arrives, by the Act's
+ * direction then, whether or not its player reacted again.
+ */
+export interface HeldVote {
+  readonly act: string;
+  readonly quadrant: Quadrant;
+  /** When the latest other player to arrive in the window first reacted. */
+  readonly at: number;
+  /** The player's share of their one vote on the Act in this quadrant, unhalved, at this settlement. */
+  readonly share: number;
+  /** Where the player came among the players who reacted to the Act, by first reaction: 1 is first. */
   readonly rank: number;
-  /** The Act's dominant quadrant by vote weight at this settlement; null on a tie or none. */
+  /** How many other players had reacted to the Act before the window, and by its end. */
+  readonly othersBefore: number;
+  readonly othersNow: number;
+  /** The Act's dominant quadrant by vote share at this settlement, without this player's vote; null on a tie or none. */
   readonly endsUp: Quadrant | null;
 }
 
@@ -227,6 +245,7 @@ export interface ClassInput {
   readonly posts: readonly { readonly act: string; readonly at: number }[];
   readonly received: readonly ReceivedReaction[];
   readonly given: readonly GivenReaction[];
+  readonly held: readonly HeldVote[];
   readonly cardsPlayed: readonly PlayedCard[];
   readonly cardsLanded: readonly LandedCard[];
   readonly threadsSpun: readonly SpunThread[];
