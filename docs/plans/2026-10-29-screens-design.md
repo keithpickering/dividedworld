@@ -308,3 +308,18 @@ not its npm version, which is why currents' `impeccable:update` script cannot in
 - The player-made theme submission flow.
 - Open registration, after real moderation exists.
 - PR #2's issue #3 (Auth's own endpoints and whether an address has an account) is untouched here.
+
+## Amended 2026-10-29: after PR #7
+
+PR #7 (`docs/plans/2026-10-29-core-loop-build-answers.md`) answered the engine build's questions the same day, and
+the owner left this design to follow it where the two differ:
+
+- **Sign-in is passwordless** (a code or link by email), not email and password (section 12), which closes the timing
+  question of issue #3 for passwords.
+- **Masks change at the tally.** A new character debuts at the next settlement and cannot act until then; a Turn is
+  pending until it and may be changed or withdrawn; each settlement The System posts one tally Act naming the night's
+  debuts and announced Turns. This replaces section 8's "a pending Turn can be cancelled", section 13's "one Act per
+  announced Turn" and section 13's "listed from its first settlement or Act", which was this design's answer to issue
+  #4's question 16.
+- Invites: PR #7 keeps "no cap yet"; section 12's cap of three, expiring after seven days, is built on top by the
+  engine plan's Task 8.

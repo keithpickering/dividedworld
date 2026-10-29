@@ -9,6 +9,12 @@ read on its branch `ccr-1b539416-dzl89u` when this was written; a builder who fi
 version and lists any difference under `Plan gaps`. Migrations take the next free numbers after PR #2's last
 (`0009_registration.sql`); the names below say which.
 
+**Amended 2026-10-29, after PR #7** (`docs/plans/2026-10-29-core-loop-build-answers.md`, built into PR #2 as its fix
+round): the owner decided there that masks change at the tally. A new character debuts at the next settlement, a Turn
+is pending until it, and each settlement The System posts one tally Act naming the night's debuts and announced Turns;
+sign-in is passwordless. Tasks 2, 3 and 9 below are rewritten to build on that rather than repeat it; where this plan
+and PR #2's merged code disagree, the merged code is the base and the difference goes under `Plan gaps`.
+
 No instance is deployed with players, so no task migrates a live board ("Nobody is waiting on a hotfix"); each migration
 still runs on an instance that already holds PR #2's tables and rows, and each task's tests say what it does to them.
 
@@ -39,35 +45,26 @@ it runs").
   lands on the ordinary board; the season's Turns thread and the reveal open on the System's board; an instance seeded
   before the migration keeps its threads where they are.
 
-### Task 2. A Turn waits for the settlement
+### Task 2. The tally on The System's board
 
-- New `supabase/migrations/0011_pending_turns.sql`: `pending_turns` (character primary key, to_class, loudness,
-  requested_at), private (row-level security, read by its owner only through a `my_pending_turns` view). `turn()`
-  (`0007_seasons.sql`) no longer writes `class_history`: it checks the cooldown against when the Turn would take effect
-  (the end of the open window, from `next_settlement_window()`), and writes or replaces the character's pending Turn.
-  New `cancel_turn(through)`.
-- Applying them: `apply_settlement()` (`0003_aura.sql`) gains a final step in its transaction: for each pending Turn
-  requested before the window's end, a `class_history` row starting at the window's end, then announced Turns written
-  as `turn` Acts in the season's Turns thread on the System's board (PR #2's payload, `was` and `since` for a revealed
-  one), then the pending rows removed. A Turn requested after the window's end waits for the next.
-- `engine/rules/actions.ts`: `cancelTurn`; `turn`'s answer says it is pending and when it takes effect.
-  `supabase/functions/act/core.ts`: `turn` and `cancel_turn` broadcast nothing; the settlement's Turn Acts are seen on
-  the next load, as the reveal's are.
-- The reveal (`reveal_season()`) needs no change: every Turn now starts at a settlement, so its times are settlements'.
-- **Tests first:** a pending Turn changes no class until the settlement, and the window that was open settles under the
-  old class; the settlement starts the new class at the window's end and writes an announced Turn's Act; a silent one
-  writes none; `cancel_turn` removes it and nothing happens at the settlement; a second Turn before the settlement
-  replaces the first; the cooldown counts from when a Turn took effect; applying a window twice applies its Turns once;
-  two characters Turned in one sitting show the same settlement time in the reveal.
-- **Way out:** a pending Turn ends by itself at the settlement, or by `cancel_turn`.
-- This settles issue #4's question 17.
+PR #7's Task F makes a Turn pending until the settlement (its player may change or withdraw it) and posts The System's
+tally Act each settlement. What is left for the screens:
+
+- The tally, the season's reveal and anything else The System posts land on the System's board of Task 1, which
+  `system_board()` now returns.
+- `engine/rules/actions.ts` and `supabase/functions/act/core.ts`: whatever PR #7 named the change and withdraw actions,
+  their answers say plainly when the Turn takes effect (the window's end), so My characters can show it.
+- A `my_pending_turns` view (`security_invoker`, own rows) if PR #7 left the pending Turns readable only through a
+  function.
+- **Tests first:** the tally opens on the System's board; a player reads their own pending Turn and nobody else's.
+- **Way out:** a pending Turn ends at the settlement, or its player withdraws it (PR #7).
 
 ### Task 3. Reactions on The System's own Acts
 
-- `react()` (`0002_reactions.sql`): a target with no character (a `reveal` Act) is reacted to like any Act; the check
-  on the author's owner is skipped when there is no author. The settlement
+- `react()` (`0002_reactions.sql`): a target with no character (a `reveal` Act, or The System's tally) is reacted to
+  like any Act; the check on the author's owner is skipped when there is no author. The settlement
   already skips System Acts (`SettlementInput.systemActs`); it moves nobody's Aura.
-- **Tests first:** reacting to a reveal Act is accepted and tallied; the cap and the shared vote hold on it; the
+- **Tests first:** reacting to a reveal Act and to a tally is accepted and tallied; the cap and the shared vote hold on it; the
   settlement pays nobody for it. This settles the issue #5 line "Reacting to a reveal Act".
 
 ### Task 4. Cards: stacking, seeds, messages, releases
@@ -152,16 +149,17 @@ it runs").
   an unknown one; `reissue_invite()` gives a fresh expiry.
 - **Tests first:** a fourth open invite is refused for a player and allowed for an admin; an expired code reads like an
   unknown one, in words and timing; a reissued invite opens for another seven days.
-- **Way out:** an expired invite is reissued. This settles issue #4's question 14.
+- **Way out:** an expired invite is reissued. This adds the cap issue #4's question 14 left for later (PR #7 kept
+  "no cap yet").
 
-### Task 9. A new mask is listed from its first settlement or Act
+### Task 9. The season's standings
 
-- `characters_public` (`0001_core.sql`) in new `0017_characters_listed.sql` shows a character once it has an Act or a
-  standings row; a new view `season_standings` (character, name, standing, place) ranks the open season's settled
-  standings.
-- **Tests first:** a character made and never used appears in no public view; its first post shows it; its first
-  settlement lists it in `season_standings`. This is the screens' answer to issue #4's question 16; the inviter's
-  `invites.used` flag is left as PR #2 built it.
+PR #7's Task F debuts a new character at the next settlement, which answers issue #4's question 16; the screens' own
+answer ("listed from its first Act or settlement") is withdrawn.
+
+- New `0017_characters_listed.sql`: a view `season_standings` (character, name, standing, place) ranking the open
+  season's settled standings of debuted characters.
+- **Tests first:** a character waiting to debut is in no row of it; after its first settlement it is.
 
 ### Task 10. Retiring a character
 
@@ -195,7 +193,7 @@ it runs").
 
 | State | Its way out |
 |---|---|
-| A pending Turn | The next settlement applies it; the player cancels it |
+| A pending Turn | The next settlement applies it; the player withdraws it (PR #7) |
 | A retired character | An admin restores it |
 | An expired invite | The inviter reissues it |
 | A player at their invite cap | An invite used, expired or reissued frees one |
@@ -208,7 +206,7 @@ it runs").
 - `reading`, `my_reactions`, `effect_releases`, `account_preferences` and `my_pending_turns` are read by their own
   account only; nothing about them is broadcast.
 - View counts move only when the hourly job runs.
-- A character appears in a list only from its first Act or settlement; a Turn's time is a settlement's.
+- A character debuts, and a Turn takes effect, at a settlement (PR #7), so neither shows a sitting's minute.
 - An expired invite and an unknown one are refused alike.
 
 ## Review focus
@@ -217,7 +215,7 @@ it runs").
   in `class_history`, a card play under the old unique index.
 - The estimate at a busy instance's scale: `estimate_input()` for a player whose posts drew thousands of reactions, and
   how often the screens will call it.
-- Two settlements at once with pending Turns, and a Turn requested in the second a window closes.
+- The tally on the System's board: an instance whose earlier tallies or reveal opened on the first board.
 - The hashed player keys in `estimate_input()`: that no answer lets a caller tell two reactors apart across requests.
 - An avatar's bytes: a WebP with metadata hidden somewhere the chunk check does not read.
 - `count_thread_views()` at a busy instance: rows read per run.
