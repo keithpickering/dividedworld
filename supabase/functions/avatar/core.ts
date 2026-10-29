@@ -8,13 +8,17 @@
  * through the Storage it is given; and writes them as the character's avatar, as the service, for
  * the player whoami() reads the session as (set_avatar, supabase/migrations/0019_profiles.sql).
  *
- * The bytes are read, not trusted: a WebP is a RIFF file of chunks, and only the chunks a picture
- * needs are let through (VP8, VP8L, VP8X and ALPH). EXIF and XMP, where a camera writes a place
- * and a time, are refused by name, and so are a colour profile (whose text says who made it), an
- * animation, any chunk this does not know, the extended header's flags for any of those, and bytes
- * outside the RIFF's own length, so nothing can ride along where a chunk check would not look.
- * The browser strips metadata before sending; this refuses, rather than strips, so what is stored
- * is exactly what the player's browser made.
+ * The bytes are read, not trusted. The browser strips metadata when it re-encodes; this refuses
+ * every file that still carries any, by its own reading of the RIFF file of chunks a WebP is:
+ * only a picture's own chunks pass (one VP8 or VP8L, an extended header VP8X of exactly its size,
+ * and one ALPH, only where the header says alpha and before a lossy picture), each where the
+ * format puts it, with zero padding and nothing past the RIFF's own length. EXIF and XMP, where a
+ * camera writes a place and a time, are refused by name; a colour profile (whose text can name its
+ * maker), an animation, the header's flags for any of those, and any chunk this does not know are
+ * refused too. A canvas in sRGB, which is what a browser re-encodes into, carries no colour
+ * profile. What a picture chunk holds past its frame header is not decoded here, so the byte
+ * bounds below are what bounds anything a hand-made file could hide inside one; what is stored is
+ * exactly what the player's browser made, never stripped by this.
  */
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import type { Storage } from '../_shared/storage.ts';
@@ -41,36 +45,45 @@ export function readWebp(bytes: Uint8Array): Verdict<{ width: number; height: nu
   if (bytes.length < 20 || fourcc(bytes, 0) !== 'RIFF' || fourcc(bytes, 8) !== 'WEBP') return refuse('is not a WebP');
   if (u32(bytes, 4) + 8 !== bytes.length) return refuse('has bytes outside its picture');
   let at = 12;
-  let header: { width: number; height: number } | null = null;
+  let header: { width: number; height: number; alpha: boolean } | null = null;
+  let alpha = false;
   let picture: { width: number; height: number } | null = null;
   while (at < bytes.length) {
-    if (at + 8 > bytes.length) return refuse('is not a WebP');
+    if (at + 8 > bytes.length) return refuse('has bytes outside its picture');
     const kind = fourcc(bytes, at);
     const size = u32(bytes, at + 4);
     const data = at + 8;
-    if (data + size > bytes.length) return refuse('is not a WebP');
+    const next = data + size + (size % 2);
+    if (next > bytes.length) return refuse('is not a WebP');
+    if (size % 2 && bytes[data + size] !== 0) return refuse('has bytes outside its picture');
     if (kind === 'EXIF' || kind === 'XMP ') return refuse(`carries metadata (${kind.trim()}), which an avatar is sent without`);
     if (kind === 'VP8X') {
-      if (at !== 12 || size < 10) return refuse('is not a WebP');
+      if (at !== 12 || size !== 10) return refuse('is not a WebP');
       const flags = bytes[data]!;
       if (flags & (FLAGS.exif | FLAGS.xmp)) return refuse(`carries metadata (${flags & FLAGS.exif ? 'EXIF' : 'XMP'}), which an avatar is sent without`);
       if (flags & FLAGS.animation) return refuse('is animated');
       if (flags & FLAGS.icc) return refuse('carries a part an avatar does not need (ICCP)');
-      header = { width: u24(bytes, data + 4) + 1, height: u24(bytes, data + 7) + 1 };
+      header = { width: u24(bytes, data + 4) + 1, height: u24(bytes, data + 7) + 1, alpha: (flags & 0x10) !== 0 };
+    } else if (kind === 'ALPH') {
+      if (!header?.alpha || alpha || picture || size === 0) return refuse('is not a WebP');
+      alpha = true;
     } else if (kind === 'VP8 ' || kind === 'VP8L') {
       if (picture) return refuse('holds more than one picture');
       if (kind === 'VP8 ') {
-        if (size < 10 || bytes[data + 3] !== 0x9d || bytes[data + 4] !== 0x01 || bytes[data + 5] !== 0x2a) return refuse('is not a WebP');
+        // A key frame (the tag's low bit clear), then its start code.
+        if (size < 10 || (bytes[data]! & 1) !== 0 || bytes[data + 3] !== 0x9d || bytes[data + 4] !== 0x01 || bytes[data + 5] !== 0x2a) return refuse('is not a WebP');
         picture = { width: (bytes[data + 6]! | (bytes[data + 7]! << 8)) & 0x3fff, height: (bytes[data + 8]! | (bytes[data + 9]! << 8)) & 0x3fff };
       } else {
-        if (size < 5 || bytes[data] !== 0x2f) return refuse('is not a WebP');
+        if (size < 5 || bytes[data] !== 0x2f || alpha) return refuse('is not a WebP');
         const bits = u32(bytes, data + 1);
+        // Version 0, the only one there is.
+        if (Math.floor(bits / 2 ** 29) !== 0) return refuse('is not a WebP');
         picture = { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
       }
-    } else if (kind !== 'ALPH') {
+    } else {
       return refuse(`carries a part an avatar does not need (${kind.trim()})`);
     }
-    at = data + size + (size % 2);
+    at = next;
   }
   if (!picture) return refuse('is not a WebP');
   if (header && (header.width !== picture.width || header.height !== picture.height)) return refuse('says two sizes');

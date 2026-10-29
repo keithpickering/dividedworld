@@ -71,6 +71,7 @@ begin
   said := set_avatar(ann, a, null, 'sq-3.webp', null, '{"x": 0, "y": 0, "w": 0.5, "h": 0.5}', null);
   if said -> 'replaced' is distinct from '["sq-2.webp", "pt-2.webp"]'::jsonb or (select avatar_portrait from character_profiles where character = a) is not null then raise exception 'a square alone: %', said; end if;
   if pg_temp.refusal(format('select set_avatar(%L, %L, null, %L, %L, %L, null)', ann, a, 'x.webp', 'y.webp', '{"x": 0, "y": 0, "w": 1, "h": 1}')) is distinct from 'an avatar has a square crop, and a portrait crop with its frame or neither' then raise exception 'a portrait with no frame'; end if;
+  if pg_temp.refusal(format('select set_avatar(%L, %L, null, %L, null, %L, null)', ann, a, 'z.webp', '{"x": 0, "y": 0, "w": 1, "h": 1, "note": "anything at all"}')) is distinct from 'a crop frame lies inside its picture' then raise exception 'a frame carrying more than where it was cut'; end if;
   perform tests.unbecome();
   -- No avatar yet and no source: a crop needs one to be cut from.
   perform tests.become_service();

@@ -35,7 +35,8 @@ Deno.serve(async (request) => {
   let frames: unknown = null;
   try { frames = JSON.parse(String(form.get('frames') ?? 'null')); } catch { /* refused below as missing */ }
   const out = await runAvatar(
-    { player: postgrest({ url: env.url, key: anon, bearer: session }), service: postgrest({ url: env.url, key: env.key }) },
+    // The write is sent once: one repeated after it committed would answer that it replaced nothing.
+    { player: postgrest({ url: env.url, key: anon, bearer: session }), service: postgrest({ url: env.url, key: env.key, safeToRepeat: (fn) => fn !== 'set_avatar' }) },
     supabaseStorage({ url: env.url, key: env.key, bucket: 'avatars' }),
     { character: String(form.get('character') ?? ''), frames: frames as never, source: await file(form, 'source'), square: (await file(form, 'square')) as Uint8Array, portrait: await file(form, 'portrait') },
   );

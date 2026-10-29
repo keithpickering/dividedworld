@@ -45,6 +45,32 @@ test('a file that is not a WebP, or a WebP carrying anything but its picture, is
   assert.deepEqual(readWebp(riff([chunk('VP8 ', [1, 2])])), { ok: false, why: 'is not a WebP' });
 });
 
+test('a WebP\'s structure is read as the format lays it, so nothing rides along between its parts', () => {
+  const stopped = (b: Uint8Array) => readWebp(b).ok === false;
+  // A chunk whose size runs past the file, the largest sizes included, never reads backward or for ever.
+  for (const size of [0xfffffff0, 0x80000000, 0xffffffff]) assert.equal(stopped(riff([[...ascii('VP8L'), ...u32(size), 0x2f]])), true, `size ${size}`);
+  // An odd-sized part is padded with a zero, and the next part follows it.
+  assert.deepEqual(readWebp(riff([vp8x(256, 256, 0x10), chunk('ALPH', [1, 2, 3]), vp8(256, 256)])), { ok: true, value: { width: 256, height: 256 } });
+  const padded = riff([vp8x(256, 256, 0x10), chunk('ALPH', [1, 2, 3]), vp8(256, 256)]);
+  padded[12 + 18 + 8 + 3] = 0x41;
+  assert.deepEqual(readWebp(padded), { ok: false, why: 'has bytes outside its picture' }, 'a pad byte carrying something');
+  // A few bytes left inside the RIFF, too few to be a part.
+  const tail = riff([vp8(256, 256)], { trailing: [] });
+  const short = new Uint8Array([...tail.slice(0, 4), ...u32(u32ofLength(tail) + 4), ...tail.slice(8), 1, 2, 3, 4]);
+  assert.equal(stopped(short), true);
+  // The extended header once, first, of its own size; alpha once, only where it says alpha, before a lossy picture.
+  assert.equal(stopped(riff([vp8x(256, 256), vp8x(256, 256), vp8(256, 256)])), true, 'two headers');
+  assert.equal(stopped(riff([vp8(256, 256), vp8x(256, 256)])), true, 'a header after the picture');
+  assert.equal(stopped(riff([chunk('VP8X', [0, 0, 0, 0, ...u24(255), ...u24(255), 9, 9]), vp8(256, 256)])), true, 'a header with room to spare');
+  assert.equal(stopped(riff([vp8x(256, 256), chunk('ALPH', [1]), vp8(256, 256)])), true, 'alpha the header does not say');
+  assert.equal(stopped(riff([vp8x(256, 256, 0x10), chunk('ALPH', [1]), chunk('ALPH', [2]), vp8(256, 256)])), true, 'two alphas');
+  assert.equal(stopped(riff([vp8x(256, 256, 0x10), vp8(256, 256), chunk('ALPH', [1])])), true, 'alpha after the picture');
+  assert.equal(stopped(riff([vp8x(256, 256, 0x10), chunk('ALPH', [1]), vp8l(256, 256)])), true, 'alpha beside a lossless picture, which holds its own');
+  assert.equal(stopped(riff([chunk('VP8L', [0x2f, ...u32(255 | (255 << 14) | (1 << 29)), 0, 0])])), true, 'a lossless version that is not 0');
+  assert.equal(stopped(riff([chunk('VP8 ', [0x11, 0x02, 0x00, 0x9d, 0x01, 0x2a, 0, 1, 0, 1])])), true, 'a frame that is not a key frame');
+});
+const u32ofLength = (file: Uint8Array) => file.length - 8;
+
 /* ---- the function ---- */
 const me = '11111111-1111-4111-8111-111111111111';
 const character = '22222222-2222-4222-8222-222222222222';
@@ -56,16 +82,28 @@ function world(answers: Record<string, unknown>) {
   const removed: string[] = [];
   const make = (who: string): Db => ({ rpc: async <T>(fn: string, args: Record<string, unknown>) => {
     calls.push(`${who}:${fn}:${JSON.stringify(args)}`);
+    order.push(fn);
     const a = answers[fn];
     if (a instanceof Error) throw a;
     return a as T;
   } });
+  const order: string[] = [];
+  let puts = 0;
   const storage: Storage = {
-    put: async (name, bytes, type) => { assert.equal(type, 'image/webp'); stored.set(name, bytes.length); },
-    remove: async (names) => { removed.push(...names); for (const n of names) stored.delete(n); },
+    put: async (name, bytes, type) => {
+      assert.equal(type, 'image/webp');
+      puts += 1;
+      if (answers.putFails === puts) throw new Error('storage: HTTP 500');
+      order.push(`put ${name}`); stored.set(name, bytes.length);
+    },
+    remove: async (names) => {
+      order.push(`remove ${names.join(',')}`);
+      if (answers.removeFails) throw new Error('storage: HTTP 500');
+      removed.push(...names); for (const n of names) stored.delete(n);
+    },
   };
   let n = 0;
-  return { dbs: { player: make('player'), service: make('service') }, storage, calls, stored, removed, name: () => `k${++n}.webp` };
+  return { dbs: { player: make('player'), service: make('service') }, storage, calls, stored, removed, order, name: () => `k${++n}.webp` };
 }
 const request = (over: Partial<AvatarRequest> = {}): AvatarRequest => ({ character, frames, source: webp(1200, 900), square: webp(256, 256), portrait: webp(256, 512), ...over });
 
@@ -76,6 +114,19 @@ test('three checked WebPs are stored under random names and written as the chara
   assert.deepEqual([...w.stored.keys()], ['k1.webp', 'k2.webp', 'k3.webp']);
   assert.ok(w.calls.includes(`service:set_avatar:${JSON.stringify({ who: me, through: character, source: 'k1.webp', square: 'k2.webp', portrait: 'k3.webp', square_frame: frames.square, portrait_frame: frames.portrait })}`), w.calls.join('\n'));
   assert.deepEqual(w.removed, ['old-sq.webp', 'old-pt.webp']);
+  assert.deepEqual(w.order, ['whoami', 'put k1.webp', 'put k2.webp', 'put k3.webp', 'set_avatar', 'remove old-sq.webp,old-pt.webp'], 'stored, then written, then the replaced removed');
+});
+
+test('a store that fails part way, or a write that fails, removes what was stored; a removal that fails after the write still answers the avatar', async () => {
+  const halfway = world({ whoami: me, putFails: 2 });
+  assert.equal((await runAvatar(halfway.dbs, halfway.storage, request(), halfway.name)).status, 500);
+  assert.equal(halfway.stored.size, 0, 'the first file is removed');
+  assert.ok(!halfway.calls.some((c) => c.includes('set_avatar')));
+  const broken = world({ whoami: me, set_avatar: new DatabaseError('set_avatar: deadlock', '40P01', 500) });
+  assert.deepEqual(await runAvatar(broken.dbs, broken.storage, request(), broken.name), { status: 500, body: { error: 'the avatar could not be saved; try again' } });
+  assert.equal(broken.stored.size, 0);
+  const sticky = world({ whoami: me, removeFails: true, set_avatar: { profile: { character }, replaced: ['old.webp'] } });
+  assert.deepEqual(await runAvatar(sticky.dbs, sticky.storage, request(), sticky.name), { status: 200, body: { character } });
 });
 
 test('a recrop sends no original: the kept one is cut again', async () => {

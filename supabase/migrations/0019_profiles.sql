@@ -40,6 +40,7 @@ create table character_profiles (
   avatar_portrait text,
   square_frame jsonb,
   portrait_frame jsonb,
+  -- Every instance seeds a "default" style (instanceProblems holds it), before any profile is set.
   pip_style text not null default 'default' references pip_styles (key),
   updated_at timestamptz not null default now(),
   -- A portrait needs a square, and a square an original it was cut from; a square alone fills the
@@ -133,6 +134,7 @@ end $$;
 create function frame_holds(frame jsonb) returns boolean
 language sql immutable set search_path = public, pg_temp as $$
   select coalesce(jsonb_typeof(frame) = 'object'
+    and (select count(*) from jsonb_object_keys(frame)) = 4
     and (select bool_and(jsonb_typeof(frame -> k) = 'number') from unnest(array['x', 'y', 'w', 'h']) k)
     and (frame ->> 'x')::numeric >= 0 and (frame ->> 'y')::numeric >= 0 and (frame ->> 'w')::numeric > 0 and (frame ->> 'h')::numeric > 0
     and (frame ->> 'x')::numeric + (frame ->> 'w')::numeric <= 1 and (frame ->> 'y')::numeric + (frame ->> 'h')::numeric <= 1, false)
@@ -165,10 +167,12 @@ begin
 end $$;
 
 -- The bucket the avatar function stores into, where Supabase Storage is installed. Public: an
--- avatar is shown to every reader, under a random name that says nothing of its character.
+-- avatar is shown to every reader, under a random name that says nothing of its character. It
+-- takes WebP alone, no larger than the avatar function's largest file (LIMITS in its core.ts).
 do $$ begin
-  if exists (select 1 from information_schema.tables where table_schema = 'storage' and table_name = 'buckets') then
-    execute $b$insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true) on conflict (id) do nothing$b$;
+  if to_regclass('storage.buckets') is not null then
+    execute $b$insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+      values ('avatars', 'avatars', true, 1500000, array['image/webp']) on conflict (id) do nothing$b$;
   end if;
 end $$;
 
