@@ -1,0 +1,54 @@
+/**
+ * Export an instance: every table, private ones included, one JSON line per row, read in one
+ * snapshot so the files agree with each other ("Portable by construction"). An admin's act: it
+ * reads who plays every character and every class, so the directory it writes is as private as
+ * the database.
+ *
+ *   node tools/export-instance.mjs --from postgres://… --to <new directory>
+ *
+ * It says which database it reads before it reads it, and never prints the URL's credentials.
+ * tools/import-instance.mjs reads what it writes; supabase/tests/e2e/0003-export.ts holds the
+ * pair to a round trip that comes back the same, table by table.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { FORMAT, NOT_EXPORTED, args, named, psql, tables } from './instance-files.mjs';
+
+const usage = 'usage: node tools/export-instance.mjs --from postgres://… --to <new directory>';
+
+function main() {
+  const { from, to } = args(process.argv.slice(2), usage);
+  if (fs.existsSync(to) && fs.readdirSync(to).length) throw new Error(`${to} is not empty; an export goes into a new directory`);
+  console.log(`exporting from ${named(from)}`);
+  fs.mkdirSync(to, { recursive: true, mode: 0o700 });
+  const all = tables(from);
+  const file = (t) => path.join(path.resolve(to), `${t.name}.jsonl`);
+  const quoted = (p) => `'${p.replace(/'/g, "''")}'`;
+  psql(from, [
+    'begin transaction isolation level repeatable read read only;',
+    ...all.flatMap((t) => [`\\o ${quoted(file(t))}`, `select to_jsonb(t)::text from ${t.name} t order by ${t.order};`]),
+    '\\o',
+    'commit;',
+  ].join('\n'));
+  const manifest = {
+    format: FORMAT,
+    exportedAt: new Date().toISOString(),
+    from: named(from),
+    tables: all.map((t) => {
+      const text = fs.readFileSync(file(t), 'utf8');
+      return { name: t.name, file: path.basename(file(t)), columns: t.columns, rows: text ? text.split('\n').filter(Boolean).length : 0 };
+    }),
+    notExported: NOT_EXPORTED,
+  };
+  fs.writeFileSync(path.join(to, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
+  for (const t of manifest.tables) console.log(`  ${t.name}: ${t.rows} row(s)`);
+  console.log(`not exported:\n${NOT_EXPORTED.map((n) => `  - ${n}`).join('\n')}`);
+  console.log(`wrote ${path.resolve(to)}`);
+}
+
+try {
+  main();
+} catch (e) {
+  console.error(String(e.stderr || e.message || e).trim());
+  process.exit(1);
+}
