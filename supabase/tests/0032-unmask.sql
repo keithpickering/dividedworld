@@ -70,11 +70,13 @@ begin
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, '')) is distinct from 'that character is retired; an admin can restore it' then raise exception 'a retired character was unmasked'; end if;
   perform tests.unbecome();
   perform tests.become_anon();
-  if pg_temp.refusal(format('select unmask(%L, %L, %L)', b, t, '')) is null then raise exception 'a visitor unmasked a character'; end if;
+  if pg_temp.refusal(format('select unmask(%L, %L, %L)', b, t, '')) is distinct from 'permission denied for function unmask' then raise exception 'a visitor unmasked a character'; end if;
   perform tests.unbecome();
   -- The table holds a writer that forgets: an unmask names the class its character holds then, and points at nothing.
-  if pg_temp.refusal(format('select tests.act(%L, %L, %L, %L)', b, 'unmask', t, '{"class": "beta", "message": "", "via": "act"}')) is null then raise exception 'an unmask naming a class not held was written'; end if;
-  if pg_temp.refusal(format('select tests.act(%L, %L, %L, %L, %L)', b, 'unmask', t, '{"class": "alpha", "message": "", "via": "act"}', tests.post(b, t))) is null then raise exception 'an unmask pointing at an Act was written'; end if;
+  if pg_temp.refusal(format('select tests.act(%L, %L, %L, %L)', b, 'unmask', t, '{"class": "beta", "message": "", "via": "act"}')) is distinct from 'an unmask names the class its character holds' then raise exception 'an unmask naming a class not held was written'; end if;
+  if coalesce(pg_temp.refusal(format('select tests.act(%L, %L, %L, %L, %L)', b, 'unmask', t, '{"class": "alpha", "message": "", "via": "act"}', tests.post(b, t))), '') not like '%"acts_unmask_untargeted"' then raise exception 'an unmask pointing at an Act was written'; end if;
+  if coalesce(pg_temp.refusal(format('select tests.act(%L, %L, %L, %L)', b, 'unmask', t, '{"class": "alpha", "message": "", "via": "rumor"}')), '') not like '%"acts_unmask_said"' then raise exception 'an unmask made no known way was written'; end if;
+  if coalesce(pg_temp.refusal(format('select tests.act(%L, %L, %L, %L)', b, 'unmask', t, jsonb_build_object('class', 'alpha', 'message', repeat('x', 201), 'via', 'act'))), '') not like '%"acts_unmask_said"' then raise exception 'an unmask of 201 characters was written'; end if;
 end $$;
 
 -- ---- A reveal made while a Turn is pending names the class held, and keeps its date after the tally ----
@@ -146,19 +148,30 @@ begin
   return out;
 end $$;
 
--- With a sequential scan priced out, as a busy instance's acts would price it, a page of
--- postbits reads class_reveals by its characters, and a character's turns_announced probes the
--- tallies' index rather than reading every tally.
+-- At a busy instance's shape, thousands of tallies among many more posts, analyzed as the database
+-- would be, and with a sequential scan priced out (standing in for an acts table far larger than a
+-- test can fill): a page of postbits reads class_reveals by its characters, and turns_announced
+-- probes the tallies' index for each, never reading every tally. Rolled back with the file.
 do $$
 declare
+  in_thread uuid;
+  poster uuid := tests.character(tests.account('busy-poster'), 'Busy Poster');
+  posts_in uuid := tests.thread('A busy board');
   page text := format('(%L, %L)', gen_random_uuid(), gen_random_uuid());
   p text;
 begin
+  insert into threads (board, title) values (system_board(), 'A busy year of tallies') returning id into in_thread;
+  insert into acts (character, kind, thread, payload)
+  select null, 'tally', in_thread, jsonb_build_object('season', 1, 'part', 1, 'of', 1, 'debuts', '[]'::jsonb,
+    'turns', (select jsonb_agg(jsonb_build_object('character', gen_random_uuid(), 'name', 'Mask ' || g || '.' || k, 'loudness', 'announced')) from generate_series(1, 20) k))
+  from generate_series(1, 3000) g;
+  insert into acts (character, kind, thread, payload) select poster, 'post', posts_in, '{"body": "Again."}' from generate_series(1, 20000);
+  analyze acts;
   set local enable_seqscan = off;
   p := pg_temp.plan_of('select * from class_reveals where character in ' || page);
   if p !~ 'Index Cond: \("character" = ANY' then raise exception 'class_reveals for a page of characters is no probe by character:%', E'\n' || p; end if;
-  p := pg_temp.plan_of(format('select * from turns_announced where character = %L', gen_random_uuid()));
-  if p !~ 'Bitmap Index Scan on acts_tally_turns' then raise exception 'turns_announced for a character is no probe of acts_tally_turns:%', E'\n' || p; end if;
+  p := pg_temp.plan_of('select * from turns_announced where character in ' || page);
+  if p !~ 'Bitmap Index Scan on acts_tally_turns' then raise exception 'turns_announced for a page of characters is no probe of acts_tally_turns:%', E'\n' || p; end if;
 end $$;
 
 -- ---- The settlement and the estimate read a reveal as its character's Act ----

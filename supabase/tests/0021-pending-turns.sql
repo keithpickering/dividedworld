@@ -191,6 +191,8 @@ end $$;
 do $$
 declare
   ann uuid := tests.account('show-ann');
+  bob uuid := tests.account('show-bob');
+  watcher uuid := tests.character(bob, 'Watches Turns', 'alpha', now() - interval '60 days');
   plain uuid := tests.character(ann, 'Turns Plainly', 'alpha', now() - interval '60 days');
   from_only uuid := tests.character(ann, 'Names What It Was', 'alpha', now() - interval '60 days');
   to_only uuid := tests.character(ann, 'Names What It Is', 'alpha', now() - interval '60 days');
@@ -234,6 +236,14 @@ begin
   if (select count(*) from acts where kind = 'unmask' and character in (to_only, named_both)) is distinct from 2::bigint then raise exception 'each Turn naming its new class writes one unmask'; end if;
   if exists (select 1 from acts where kind = 'unmask' and character in (plain, from_only)) then raise exception 'a Turn naming only its old class, or none, wrote an unmask'; end if;
   if (select (class, at, via) from class_reveals where character = to_only) is distinct from ('beta'::text, window_end, 'turn'::text) then raise exception 'class_reveals reads a Turn''s unmask'; end if;
+  -- Reacted to and spun by another player, as any reveal is.
+  select * into u from acts where kind = 'unmask' and character = to_only;
+  perform tests.become(bob);
+  perform react(u.id, watcher, 'up');
+  perform spin(u.id, watcher, 'That Turn', '');
+  perform tests.unbecome();
+  if (select count from reaction_tallies where act = u.id and kind = 'up') is distinct from 1 then raise exception 'a Turn''s unmask is reacted to'; end if;
+  if not exists (select 1 from threads where origin_act_id = u.id and board = players_board()) then raise exception 'a thread is spun from a Turn''s unmask, on the players'' board'; end if;
 end $$;
 
 -- ---- The old three-argument turn() still takes an older client's "revealed": announced, naming its old class ----

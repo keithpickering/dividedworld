@@ -19,8 +19,11 @@ alter table acts drop constraint acts_kind_check;
 alter table acts add constraint acts_kind_check check (kind in ('post', 'spin', 'card', 'edit', 'tally', 'reveal', 'unmask'));
 alter table acts drop constraint acts_check1;
 alter table acts add constraint acts_check1 check (kind in ('post', 'tally', 'reveal', 'unmask') or target_act_id is not null);
--- An unmask points at nothing: it is the character's own statement, not an answer.
+-- An unmask points at nothing: it is the character's own statement, not an answer. It says how it
+-- was made, and its words are a caster's, at most 200 characters, whoever writes it.
 alter table acts add constraint acts_unmask_untargeted check (kind <> 'unmask' or target_act_id is null);
+alter table acts add constraint acts_unmask_said check (kind <> 'unmask'
+  or (payload ->> 'via' in ('act', 'debut', 'turn') and char_length(payload ->> 'message') <= 200));
 
 -- A character's reveals, newest first, for the postbit: one index probe per character on a page.
 create index acts_unmask on acts (character, created_at desc) where kind = 'unmask';
@@ -77,8 +80,11 @@ end $$;
 -- A reveal, as the character's player, at once, in a thread of a player's board. Its message is
 -- plain text of at most 200 characters, as a card's caster's (0016), and may be empty. The
 -- character's row is locked first, as turn() and masks_change() lock it, so a settlement making a
--- Turn take effect goes wholly before it or after it: the class named is the one that had taken
--- effect when the reveal was made, true on its date. A refusal is said only to the player who
+-- Turn take effect goes wholly before it or after it. A Turn takes effect at the end of the window
+-- it was asked in, which its settlement reaches only after that end: a reveal in between would name
+-- the class the Turn replaces, dated after the instant it is replaced at. So while a waiting Turn's
+-- end has passed, the reveal is refused until the settlement runs (its way out, by itself), and the
+-- class named is always the one held on the reveal's date. A refusal is said only to the player who
 -- asked, about a character they named.
 create function unmask(through uuid, in_thread uuid, message text default '') returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -92,6 +98,9 @@ begin
   if on_board is null then raise exception 'there is no such thread' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   perform not_the_systems(on_board);
   perform 1 from characters where id = through for no key update;
+  if exists (select 1 from pending_turns p where p.character = through and next_settlement_at(p.asked_at) <= now()) then
+    raise exception 'this character''s Turn takes effect at the settlement now due; reveal once it has run' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
   return write_unmask(through, in_thread, 'act', now(), said);
 end $$;
 

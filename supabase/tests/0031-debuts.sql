@@ -327,6 +327,12 @@ begin
      or settlement_input(now() - interval '1 hour', now() + interval '1 hour') -> 'systemActs' @> to_jsonb(array[u.id]) then
     raise exception 'a debut''s unmask is settled as its character''s Act, never The System''s';
   end if;
+  -- Bob's reaction reaches the settlement on it, which settles a reaction to a character's Act for
+  -- that character's class (engine/rules/settle.test.ts reads an unmask's).
+  if not exists (select 1 from jsonb_array_elements(settlement_input(now() - interval '1 hour', now() + interval '1 hour') -> 'reactions') x
+                 where x ->> 'act' = u.id::text and x ->> 'character' = b::text) then
+    raise exception 'a reaction to a debut''s unmask reaches the settlement';
+  end if;
   -- Players still post nothing on The System's board, a reveal included.
   perform tests.become(ann);
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', dropped, u.thread, '')) is distinct from 'only The System posts here; spin a thread from what it said' then raise exception 'a player unmasked on The System''s board'; end if;
