@@ -5,7 +5,8 @@
 -- height. Today's are measured in widths of the post's fixed layout (instances/divided-world/
 -- cards/whoops.ts), and an old stroke cannot be turned into one without the post's laid-out
 -- height, which only a browser knows. So each saved state holding a stroke with no `tool` becomes
--- `{"strokes": [], "legacy": <the old state>}`: the splat and its ink are untouched, the author's
+-- `{"strokes": [], "legacy": <the old state>}`, with the old state's `clean` kept beside them, so
+-- a layer its author washed clean stays clean: the splat and its ink are untouched, the author's
 -- old strokes are kept for an admin and no longer drawn, and the author's next save starts clean
 -- (a card's validateState takes no `legacy` from a save, so the save replaces it). The rows are
 -- found by their shape, not by the card's name, which the engine does not know; only Whoops!
@@ -18,14 +19,15 @@
 -- old state within it, and the wrapping beside it.
 alter table effect_state drop constraint effect_state_state_check;
 alter table effect_state add constraint effect_state_state_check check (octet_length(state::text) <= 262144
-  or (state - 'legacy' = '{"strokes": []}'::jsonb and octet_length((state -> 'legacy')::text) <= 262144));
+  or (jsonb_typeof(state) = 'object' and state - 'legacy' - 'clean' = '{"strokes": []}'::jsonb and octet_length((state -> 'legacy')::text) <= 262144));
 
 -- Run once below; a state already wrapped has no stroke without a tool, so a second run changes nothing.
 create function effect_states_of_0006() returns void
 language sql security definer set search_path = public, pg_temp as $$
   update effect_state set state = jsonb_build_object('strokes', '[]'::jsonb, 'legacy', state)
-  where jsonb_typeof(state -> 'strokes') = 'array'
-    and exists (select 1 from jsonb_array_elements(state -> 'strokes') s where jsonb_typeof(s) = 'object' and not s ? 'tool');
+    || case when state ? 'clean' then jsonb_build_object('clean', state -> 'clean') else '{}'::jsonb end
+  where case when jsonb_typeof(state -> 'strokes') = 'array'
+    then exists (select 1 from jsonb_array_elements(state -> 'strokes') s where jsonb_typeof(s) = 'object' and not s ? 'tool') else false end;
 $$;
 select effect_states_of_0006();
 

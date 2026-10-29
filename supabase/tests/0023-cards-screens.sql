@@ -183,6 +183,19 @@ begin
     end;
     if (select state -> 'legacy' from effect_state where play = edge_play) is distinct from edge then raise exception 'a state at the bound''s edge is wrapped'; end if;
   end;
+  -- One its author washed clean stays clean; a state whose strokes are not a list is no stroke of 0006's.
+  declare
+    washed_play uuid := tests.act(caster, 'card', t, '{"card": "splat", "config": {"color": "teal"}}', tests.post(author, t, 'Washed long ago.'));
+    odd_play uuid := tests.act(caster, 'card', t, '{"card": "splat", "config": {"color": "gray"}}', tests.post(author, t, 'Saved oddly.'));
+    washed jsonb := '{"strokes": [{"width": 0.05, "points": [[0.1, 0.2]]}], "clean": true}';
+  begin
+    insert into effect_state (play, state, saved_by) values (washed_play, washed, author), (odd_play, '{"strokes": "none"}', author);
+    perform effect_states_of_0006();
+    if (select state from effect_state where play = washed_play) is distinct from jsonb_build_object('strokes', '[]'::jsonb, 'clean', true, 'legacy', washed) then
+      raise exception 'a layer washed clean stays clean: %', (select state from effect_state where play = washed_play);
+    end if;
+    if (select state from effect_state where play = odd_play) is distinct from '{"strokes": "none"}'::jsonb then raise exception 'a state whose strokes are not a list was wrapped'; end if;
+  end;
   -- Run again, a wrapped state is not wrapped twice.
   perform effect_states_of_0006();
   if (select state -> 'legacy' from effect_state where play = old_play) is distinct from old_state then raise exception 'a legacy state was wrapped twice'; end if;
