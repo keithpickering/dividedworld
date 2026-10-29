@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Character, KayfaApi, MyCharacter } from '../data/api.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { PlayerProvider } from '../player.tsx';
@@ -31,7 +31,7 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
     ui: { copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine' } },
     settings: { walletCap: 600 },
   } as unknown as Kayfa;
-  render(
+  const view = render(
     <RouterProvider>
       <KayfaProvider value={kayfa}>
         <PlayerProvider api={api}>
@@ -40,7 +40,7 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
       </KayfaProvider>
     </RouterProvider>,
   );
-  return { api };
+  return { api, unmount: view.unmount };
 }
 
 beforeEach(() => localStorage.clear());
@@ -124,5 +124,32 @@ describe('from the Task 3 quality review', () => {
     setup();
     await userEvent.click(screen.getByRole('link', { name: 'Characters' }));
     expect(screen.getByRole('main')).toHaveFocus();
+  });
+});
+
+describe('the measured HUD height', () => {
+  /* What sits above the HUD reads --kb-hud-measured, so it is set from the HUD's real height and kept right as that changes. */
+  const measured = () => document.documentElement.style.getPropertyValue('--kb-hud-measured');
+  let height = 57.2;
+  let tell: () => void = () => {};
+  let disconnected = 0;
+  beforeEach(() => {
+    height = 57.2;
+    disconnected = 0;
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { tell = cb; } observe() {} disconnect() { disconnected += 1; } });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ height }) as DOMRect);
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  test('is set when the HUD mounts, follows it as it resizes, and is removed when it unmounts', async () => {
+    const { unmount } = setup();
+    await screen.findByRole('region', { name: 'HUD' });
+    expect(measured()).toBe('58px');
+    height = 96;
+    act(() => tell());
+    expect(measured()).toBe('96px');
+    unmount();
+    expect(measured()).toBe('');
+    expect(disconnected).toBe(1);
   });
 });

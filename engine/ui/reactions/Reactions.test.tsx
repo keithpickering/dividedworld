@@ -1,9 +1,10 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Id } from '../data/api.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
+import { usePlayer } from '../player.tsx';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine } from './mine.ts';
 import { Reactions, readable } from './Reactions.tsx';
@@ -248,13 +249,6 @@ describe('the picker', () => {
     const tabbable = p.getAllByRole('button').filter((b) => b.tabIndex === 0);
     expect(tabbable.filter((b) => b.closest('[role="group"]'))).toHaveLength(1);
   });
-
-  test('is a sheet above the HUD for a phone, and the same markup serves a desktop popover', async () => {
-    const w = world();
-    show(w, w.theirs, w.spritey);
-    await open();
-    expect(picker()).toHaveClass('kb-sheet', 'kb-picker');
-  });
 });
 
 describe('reacting', () => {
@@ -306,5 +300,150 @@ describe('in a thread', () => {
     expect(within(own).getByText('Fire, 1')).toBeInTheDocument();
     expect(within(own).queryByRole('button', { name: 'React' })).toBeNull();
     expect(within(screen.getByRole('article', { name: /^Post 1 /u})).getByRole('button', { name: 'React' })).toBeInTheDocument();
+  });
+});
+
+/** The same, with an outside control before and after, and a handle on the player's HUD. */
+function showAround(w: ReturnType<typeof world>) {
+  const tallies = createTallies();
+  const mine = createMine();
+  const probe: { player: ReturnType<typeof usePlayer> | null } = { player: null };
+  const Probe = () => { probe.player = usePlayer(); return null; };
+  renderIn(w.fake, (
+    <>
+      <input aria-label="before" />
+      <Reactions act={w.theirs} author={w.spritey} tallies={tallies} mine={mine} />
+      <button type="button">after</button>
+      <Probe />
+    </>
+  ));
+  return { tallies, mine, probe };
+}
+/** A react that waits to be let go, then does what the backend does. */
+function held(w: ReturnType<typeof world>) {
+  const real = w.fake.react.bind(w.fake);
+  let release = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  const react = vi.fn(async (...a: Parameters<typeof real>) => { await gate; return real(...a); });
+  w.fake.react = react as typeof w.fake.react;
+  return { react, release };
+}
+
+describe('from the Task 6 quality review', () => {
+  test('describes the dialog by what is left, in a status that is heard when it changes', async () => {
+    const w = world();
+    const v = show(w, w.theirs, w.spritey);
+    const p = await open();
+    expect(p.getByRole('status')).toHaveTextContent('3 of 3 left');
+    expect(picker()).toHaveAccessibleDescription('3 of 3 left');
+    act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
+    expect(p.getByRole('status')).toHaveTextContent('2 of 3 left');
+  });
+
+  test('after a refusal reads the player\'s own reactions again, so what another tab left is shown as left', async () => {
+    const w = world();
+    show(w, w.theirs, w.spritey);
+    w.fake.seed.react(w.me, w.pipe, w.theirs, 'tea');
+    w.fake.react = async () => ({ ok: false as const, error: 'you have already left that reaction here' });
+    const p = await open();
+    expect(p.getByText('3 of 3 left')).toBeInTheDocument();
+    await userEvent.click(p.getByRole('button', { name: 'Tea, Calm' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('you have already left that reaction here');
+    await waitFor(() => expect(p.getByText('2 of 3 left')).toBeInTheDocument());
+    expect(p.getByRole('button', { name: /^Tea, Calm/u })).toBeDisabled();
+  });
+
+  test('a reaction that lands after the picker was closed is still recorded, and takes focus nowhere', async () => {
+    const w = world();
+    const v = showAround(w);
+    const gate = held(w);
+    const p = await open();
+    await userEvent.click(p.getByRole('button', { name: 'Fire, Hype' }));
+    await userEvent.click(screen.getByLabelText('before'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    gate.release();
+    await waitFor(() => expect(screen.getByText('Fire, 1, including yours')).toBeInTheDocument());
+    expect(v.mine.get(w.theirs)).toHaveLength(1);
+    expect(landed).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('before')).toHaveFocus();
+  });
+
+  test('sends one reaction at a time: a second click while the first is in flight is ignored', async () => {
+    const w = world();
+    showAround(w);
+    const gate = held(w);
+    const p = await open();
+    await userEvent.click(p.getByRole('button', { name: 'Fire, Hype' }));
+    await userEvent.click(p.getByRole('button', { name: 'Tea, Calm' }));
+    await userEvent.click(p.getByRole('button', { name: 'Fire, Hype' }));
+    gate.release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(gate.react).toHaveBeenCalledTimes(1);
+  });
+
+  test('closes on a press outside, without taking focus', async () => {
+    const w = world();
+    showAround(w);
+    await open();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'React' })).not.toHaveFocus();
+  });
+
+  test('closes when focus moves to something outside it, and stays open when it moves to the React button', async () => {
+    const w = world();
+    showAround(w);
+    const p = await open();
+    await waitFor(() => expect(p.getByRole('button', { name: 'Tomato, Heat' })).toHaveFocus());
+    act(() => screen.getByRole('button', { name: 'React' }).focus());
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    act(() => p.getByRole('button', { name: 'Tomato, Heat' }).focus());
+    act(() => screen.getByLabelText('before').focus());
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  test('closes by its Close button and returns focus to React', async () => {
+    const w = world();
+    showAround(w);
+    const p = await open();
+    await userEvent.click(p.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'React' })).toHaveFocus();
+  });
+
+  test('puts Close after the grid: Tab from the grid reaches it, and Tab from it leaves and closes', async () => {
+    const w = world();
+    showAround(w);
+    const p = await open();
+    await waitFor(() => expect(p.getByRole('button', { name: 'Tomato, Heat' })).toHaveFocus());
+    await userEvent.tab();
+    expect(p.getByRole('button', { name: 'Close' })).toHaveFocus();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await userEvent.tab();
+    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  /* The choice: a picker belongs to the character it was opened for, so changing the HUD's character closes it (a reaction never goes out under a mask other than the one the label named). */
+  test('closes when the HUD\'s character changes, and does not come back', async () => {
+    const w = world();
+    const v = showAround(w);
+    await open();
+    expect(picker()).toHaveAccessibleName('React as Mrs. Hooligan');
+    act(() => v.probe.player!.setHudCharacter(w.pipe));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    act(() => v.probe.player!.setHudCharacter(w.hooligan));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  test('dims a kind already left by its emoji alone, so its border keeps its contrast', async () => {
+    const w = world();
+    const v = show(w, w.theirs, w.spritey);
+    act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
+    const p = await open();
+    const own = p.getByRole('button', { name: /^Fire, Hype/u });
+    expect(own).toBeDisabled();
+    expect(getComputedStyle(own).opacity).toBe('1');
+    expect(getComputedStyle(own.firstElementChild!).opacity).toBe('0.4');
   });
 });

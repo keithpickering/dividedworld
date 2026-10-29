@@ -3,7 +3,7 @@
  * a React button that opens the picker, unless the post is by one of the player's own characters.
  * Only the player's own screen knows which characters are theirs, and nothing here says who reacted.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -37,6 +37,9 @@ export function Reactions({ act, author, tallies, mine }: Props) {
   const theirs = author !== null && player.characters.some((c) => c.id === author);
   const as = player.hudCharacter;
   const canReact = !theirs && as !== null;
+  /* A picker is for the character it was opened for: another character in the HUD closes it. */
+  const asId = as?.id;
+  useEffect(() => { setOpen(false); }, [asId]);
   if (shown.length === 0 && !canReact) return null;
   return (
     <div className="kb-reactions">

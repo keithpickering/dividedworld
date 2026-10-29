@@ -4,16 +4,17 @@
  * the grid as it looks: Left and Right along a row of the whole grid, Up and Down along a column of it
  * (across into the quadrant above or below), Home and End to the first and last, Escape closes and returns focus to the React button. A
  * popover by the button on a desktop and a sheet above the HUD on a phone (the same element; the
- * stylesheet places it). It leaves when a choice is made, on Escape, on Close, on a tap outside, or
+ * stylesheet places it, and on a desktop `place.ts` keeps it clear of the window's edges and the HUD). It leaves when a choice is made, on Escape, on Close, on a tap outside, or
  * when focus moves away.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id, MyCharacter, MyReaction } from '../data/api.ts';
 import type { Quadrant } from '../../rules/types.ts';
 import { usePlayer } from '../player.tsx';
 import type { Tallies } from '../thread/tallies.ts';
 import type { Mine } from './mine.ts';
+import { placePopover } from './place.ts';
 import { readable } from './Reactions.tsx';
 
 /** Top-left, top-right, bottom-left, bottom-right. */
@@ -66,11 +67,45 @@ export function Picker({ act, as, own, tallies, mine, trigger, onClose }: Props)
   const root = useRef<HTMLDivElement>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const sending = useRef(false);
+  const alive = useRef(true);
+  const countId = useId();
   const cap = settings.reactionCap;
   const kinds = new Set(own.map((o) => o.kind));
   const left = Math.max(0, cap - kinds.size);
   const free = (k: string) => left > 0 && !kinds.has(k);
   const buttons = () => [...(root.current?.querySelectorAll<HTMLButtonElement>('.kb-picker-grid button:not(:disabled)') ?? [])];
+
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+
+  /* A desktop popover is placed by the button: below it if that clears the HUD, else above, inside the window's edges, scrolling if neither side holds it. A phone's sheet is the stylesheet's. */
+  useLayoutEffect(() => {
+    const el = root.current;
+    const box = el?.offsetParent as HTMLElement | null;
+    const button = trigger.current;
+    if (!el || !box || !button) return;
+    const place = () => {
+      for (const k of ['top', 'left', 'maxHeight', 'maxWidth', 'overflowY'] as const) el.style[k] = '';
+      if (typeof window.matchMedia !== 'function' || !window.matchMedia('(min-width: 40.01em)').matches) return;
+      const viewport = { width: document.documentElement.clientWidth, height: window.innerHeight };
+      const hud = document.querySelector('.kb-hud')?.getBoundingClientRect().top;
+      const r = el.getBoundingClientRect();
+      const p = placePopover({
+        button: button.getBoundingClientRect(), container: box.getBoundingClientRect(),
+        size: { width: r.width, height: el.scrollHeight + (r.height - el.clientHeight) }, viewport, hudTop: Math.min(hud ?? viewport.height, viewport.height),
+      });
+      el.style.top = `${p.top}px`;
+      el.style.left = `${p.left}px`;
+      el.style.maxWidth = `${p.maxWidth}px`;
+      if (p.maxHeight !== null) { el.style.maxHeight = `${p.maxHeight}px`; el.style.overflowY = 'auto'; }
+    };
+    place();
+    window.addEventListener('resize', place);
+    /* The page scrolling moves the button; the popover's own scrolling is not a reason to place it again. */
+    const onScroll = (e: Event) => { if (e.target !== el) place(); };
+    window.addEventListener('scroll', onScroll, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', onScroll, true); };
+  }, [trigger, left, refusal]);
 
   /* On open, focus the first kind that can be left; with none, the picker itself. */
   useEffect(() => { (buttons()[0] ?? root.current)?.focus(); }, []);
@@ -101,20 +136,28 @@ export function Picker({ act, as, own, tallies, mine, trigger, onClose }: Props)
   };
 
   const choose = async (kind: string) => {
-    if (!as || busy) return;
+    if (!as || sending.current) return;
+    sending.current = true;
     setBusy(true);
     setRefusal(null);
     try {
       const answer = await api.react(act, as.id, kind);
-      if (!answer.ok) { setRefusal(answer.error); return; }
+      if (!answer.ok) {
+        setRefusal(answer.error);
+        /* A refusal may mean what this screen holds is stale (another tab left that kind): read the player's own again. */
+        mine.merge(act, await api.myReactions([act]).catch(() => []));
+        return;
+      }
       mine.add({ act, kind, character: as.id });
       tallies.merge(act, answer.value.tally);
       player.reactionLanded();
-      onClose(true);
+      /* Closed meanwhile (a tap outside, focus elsewhere): the reaction still counts, but focus is not taken back. */
+      if (alive.current) onClose(true);
     } catch {
       setRefusal('The reaction could not be sent. Try again.');
     } finally {
-      setBusy(false);
+      sending.current = false;
+      if (alive.current) setBusy(false);
     }
   };
 
@@ -123,12 +166,11 @@ export function Picker({ act, as, own, tallies, mine, trigger, onClose }: Props)
   return (
     <div
       ref={root} className="kb-picker kb-sheet" role="dialog" aria-label={`React as ${as?.name ?? 'your character'}`} tabIndex={-1}
-      aria-busy={busy || undefined} onKeyDown={move}
+      aria-busy={busy || undefined} aria-describedby={countId} onKeyDown={move}
       onBlur={(e) => { const to = e.relatedTarget as Node | null; if (to && !root.current?.contains(to) && !trigger.current?.contains(to)) onClose(false); }}
     >
       <div className="kb-picker-head">
-        <span className="kb-picker-left">{left} of {cap} left</span>
-        <button type="button" className="kb-button kb-picker-close" onClick={() => onClose(true)}>Close</button>
+        <span id={countId} className="kb-picker-left" role="status">{left} of {cap} left</span>
       </div>
       {left === 0 && <p className="kb-picker-none kb-small">You have left all {cap} of your reactions on this post. You cannot leave another.</p>}
       {left > 0 && (
@@ -162,6 +204,9 @@ export function Picker({ act, as, own, tallies, mine, trigger, onClose }: Props)
         </>
       )}
       {refusal && <p className="kb-notice kb-picker-refusal" data-kb-tone="refusal" role="alert">{refusal}</p>}
+      <div className="kb-picker-foot">
+        <button type="button" className="kb-button kb-picker-close" onClick={() => onClose(true)}>Close</button>
+      </div>
     </div>
   );
 }

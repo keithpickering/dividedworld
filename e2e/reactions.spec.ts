@@ -36,3 +36,39 @@ test.describe('a phone', () => {
     }
   });
 });
+
+/* On a desktop the picker is a popover by its button: it must stay inside the window and clear of the HUD, even for a post at the page's foot. */
+test.describe('a short desktop window', () => {
+  test.use({ viewport: { width: 1000, height: 500 } });
+
+  test('the picker opened on the last post lies inside the window, above the HUD', async ({ page }) => {
+    await page.goto('/b/general');
+    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    const posts = page.getByRole('article');
+    await expect(posts.first()).toBeVisible();
+    /* The last post another player's character wrote has a React button; scroll to the very foot of the page first. */
+    const last = posts.filter({ has: page.getByRole('button', { name: 'React' }) }).last();
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await last.getByRole('button', { name: 'React' }).click();
+    const picker = page.getByRole('dialog', { name: /^React as / });
+    await expect(picker).toBeVisible();
+    const hud = page.getByRole('region', { name: 'HUD' });
+    const [p, h] = [(await picker.boundingBox())!, (await hud.boundingBox())!];
+    expect(p.y).toBeGreaterThanOrEqual(-1);
+    expect(p.y + p.height).toBeLessThanOrEqual(h.y + 1);
+    expect(p.x).toBeGreaterThanOrEqual(-1);
+    expect(p.x + p.width).toBeLessThanOrEqual(1001);
+    /* It is above the HUD in stacking too: its middle is not covered by the HUD or anything else. */
+    expect(await picker.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 10));
+      return !!top && el.contains(top);
+    })).toBe(true);
+    /* And every kind can be reached: each lies inside the popover's own box. */
+    for (const k of await picker.locator('.kb-picker-kind').all()) {
+      const box = (await k.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(p.y - 1);
+      expect(box.y + box.height).toBeLessThanOrEqual(p.y + p.height + 1);
+    }
+  });
+});
