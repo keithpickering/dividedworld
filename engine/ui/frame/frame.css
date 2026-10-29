@@ -148,4 +148,14 @@
   .kb-hud-select {
     max-width: 50%;
   }
+
+  /* Two rows on a phone: who is posting and the hand, then the orbs. */
+  .kb-hud-bar > .kb-hand-button {
+    order: 1;
+  }
+
+  .kb-hud-bar > .kb-orbs {
+    order: 2;
+    flex-basis: 100%;
+  }
 }
