@@ -6,7 +6,9 @@ import { useEffect, useState } from 'react';
 import type { KayfaApi, ScreenSettings } from '../../engine/ui/data/api.ts';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
+import { BoardScreen } from '../../engine/ui/board/Board.tsx';
 import { Frame } from '../../engine/ui/frame/Frame.tsx';
+import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { RouterProvider } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
@@ -16,7 +18,8 @@ import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 const LINKS = [{ to: '/', label: 'Index' }];
 
 const ROUTES: readonly Route[] = [
-  { path: '/', render: () => <h1 className="kb-heading">Index</h1> },
+  { path: '/', render: () => <IndexScreen /> },
+  { path: '/b/:slug', render: ({ slug }) => <BoardScreen slug={slug!} /> },
 ];
 
 /** The account's theme and motion, once it is known; the device decides until then. */
