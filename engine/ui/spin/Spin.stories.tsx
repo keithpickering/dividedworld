@@ -13,12 +13,18 @@ function useThread(title: string): ThreadSummary | null {
   const { api } = useKayfa();
   const [found, setFound] = useState<ThreadSummary | null>(null);
   useEffect(() => {
+    let live = true;
     void (async () => {
-      for (const board of await api.boards()) {
-        const hit = (await api.threads(board.id, { offset: 0, limit: 50 })).threads.find((t) => t.title === title);
-        if (hit) { setFound(hit); return; }
+      /* The world's spin may still be under way when the story first reads: look again a few times. */
+      for (let attempt = 0; attempt < 20 && live; attempt++) {
+        for (const board of await api.boards()) {
+          const hit = (await api.threads(board.id, { offset: 0, limit: 50 })).threads.find((t) => t.title === title);
+          if (hit) { if (live) setFound(hit); return; }
+        }
+        await new Promise((r) => setTimeout(r, 25));
       }
     })();
+    return () => { live = false; };
   }, [api, title]);
   return found;
 }
