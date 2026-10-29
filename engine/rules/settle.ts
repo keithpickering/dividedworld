@@ -186,6 +186,10 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     if (!arrivals.length) continue;
     const total = order.length;
     const beforeAll = total - arrivals.length;
+    /* With the shared vote off, a voter's key is the engine's own, so reactions at one instant share
+       a rank (1 + those strictly earlier) rather than being ordered by it. */
+    const tiedFrom: number[] = [];
+    order.forEach(([, at], i) => tiedFrom.push(i > 0 && order[i - 1]![1] === at ? tiedFrom[i - 1]! : i));
     order.forEach(([player, firstAt], i) => {
       const mine = inWindow(firstAt);
       const othersNow = total - 1;
@@ -205,7 +209,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         if (p.shares[q] <= 0) continue;
         const character = p.voice[q]!;
         const list = held.get(character) ?? [];
-        list.push({ act, quadrant: q, at, share: p.shares[q], rank: i + 1, othersBefore, othersNow, endsUp });
+        list.push({ act, quadrant: q, at, share: p.shares[q], rank: (sharedVote ? i : tiedFrom[i]!) + 1, othersBefore, othersNow, endsUp });
         held.set(character, list);
       }
     });
@@ -418,9 +422,11 @@ export interface EstimateLine {
  * is valued as a whole vote alone ("up to +0.10, before the shared vote and halving"), so no
  * amount says two reactions were one player's, or that a reactor reacted elsewhere; the
  * settlement is exact. A line the class paid on an Act and quadrant is split into one line per
- * reaction there in the window, each with its time and its whole-hundredths share, never who
+ * reaction there in the window, each with its time and an even whole-hundredths share, never who
  * left it: a reaction the character received when the Act is the character's own, one it gave
- * otherwise. The lines add up to the entries. Run on the server, from estimate_input()
+ * otherwise. Even is each reaction's own amount wherever a rule values every reaction alike, as
+ * a whole vote does; a rule that values a reaction by its rank or its crowd is apportioned. The
+ * lines add up to the entries. Run on the server, from estimate_input()
  * (supabase/migrations/0017_estimate.sql), which reads only what this player's estimate needs.
  */
 export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number }[]; lines: EstimateLine[] } {

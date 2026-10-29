@@ -655,3 +655,14 @@ test('the estimate carries the caller\'s own characters only, never who reacted,
     assert.equal(sum, entry.amount, `${entry.character} ${entry.reason}`);
   }
 });
+
+test('the estimate ranks reactions at the same instant alike, whatever keys their reactors are given', () => {
+  const b = counting(base());
+  const world = withClasses(counter);
+  const tied: SettlementInput = { ...b, reactions: [...b.reactions, react('q1', 'ann', 'ann-quiet', 'fire', FROM + 9 * H), react('q1', 'cat', 'cat-1', 'tea', FROM + 9 * H), react('q1', 'dee', 'dee-1', 'zzz', FROM + 10 * H)] };
+  // Cat's key sorts after Ann's; renamed, before it.
+  const renamed: SettlementInput = { ...tied, characters: tied.characters.map((c) => (c.player === 'cat' ? { ...c, player: 'aaa' } : c)), reactions: tied.reactions.map((r) => (r.player === 'cat' ? { ...r, player: 'aaa' } : r)) };
+  const crowd = (i: SettlementInput) => estimateForOwner(i, world, 'ann').lines.filter((l) => l.reason === 'counter.crowd');
+  assert.ok(crowd(tied).length > 0);
+  assert.deepEqual(crowd(renamed), crowd(tied));
+});
