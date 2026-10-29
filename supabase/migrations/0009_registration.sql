@@ -9,12 +9,16 @@
 -- an invite is spent, so a code given for an address nobody confirms is never wasted.
 --
 -- No login is stuck without an account: open_account() can be called again with another
--- invite, and the inviter can send an unused invite again or make another. A login with no
--- account can do nothing else here: every action needs a character, and a character needs an
--- account.
+-- invite, and the inviter can send an unused invite again or make another. While registration
+-- is closed the way out is an admin's: seeding registrationMode open or invite again
+-- (seed_instance, 0004), after which the login opens its account at its next sign-in. A login
+-- with no account can do nothing else here: every action needs a character, and a character
+-- needs an account.
 --
--- An invite is a random code the inviter hands to a friend themselves; only its hash is stored,
--- so a read of the table gives no code that opens anything.
+-- An invite is a random code the inviter hands to a friend themselves; only its hash is stored
+-- here, so a read of this table gives no code that opens anything. The login that signed up
+-- with a code also carries it in its own Auth metadata, readable by that login alone, and spent
+-- once the account opens.
 
 create table invites (
   id bigint generated always as identity primary key,
@@ -72,13 +76,14 @@ begin
   return jsonb_build_object('invite', invite, 'code', code);
 end $$;
 
--- Whether a code would open an account now, for the sign-up answer. Says nothing of any address.
-create function invite_open(code text) returns boolean
+-- Whether a code would open an account now, for the sign-up answer: 'opens', 'closed' (no code
+-- opens one), or 'nothing' (this code opens nothing). Says nothing of any address.
+create function invite_open(code text) returns text
 language sql stable security definer set search_path = public, pg_temp as $$
   select case setting('registrationMode') #>> '{}'
-    when 'open' then true
-    when 'invite' then exists (select 1 from invites where code_hash = invite_hash(coalesce(code, '')) and used_by is null)
-    else false end
+    when 'open' then 'opens'
+    when 'invite' then case when exists (select 1 from invites where code_hash = invite_hash(coalesce(code, '')) and used_by is null) then 'opens' else 'nothing' end
+    else 'closed' end
 $$;
 
 -- The caller's login opens its account, spending the invite where registration needs one. A

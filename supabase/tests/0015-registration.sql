@@ -37,8 +37,8 @@ begin
 
   -- The register function asks whether a code would open an account; it says nothing of any address.
   perform tests.become_service();
-  if not invite_open(code) then raise exception 'a fresh invite should open an account'; end if;
-  if invite_open('not-a-code') or invite_open(null) then raise exception 'a code nobody made opens nothing'; end if;
+  if invite_open(code) <> 'opens' then raise exception 'a fresh invite should open an account'; end if;
+  if invite_open('not-a-code') <> 'nothing' or invite_open(null) <> 'nothing' then raise exception 'a code nobody made opens nothing'; end if;
   perform tests.unbecome();
 
   -- Sent again: the same invite, a new code; the old one is dead.
@@ -47,7 +47,7 @@ begin
   perform tests.unbecome();
   if fresh = code then raise exception 'an invite sent again has a new code'; end if;
   perform tests.become_service();
-  if invite_open(code) then raise exception 'the old code still opens an account'; end if;
+  if invite_open(code) <> 'nothing' then raise exception 'the old code still opens an account'; end if;
   perform tests.unbecome();
 
   -- A login opens its account with the invite, which is then spent.
@@ -84,7 +84,7 @@ begin
   perform tests.unbecome();
   update settings set value = '"closed"' where key = 'registrationMode';
   perform tests.become_service();
-  if invite_open(null) then raise exception 'closed registration opens nothing'; end if;
+  if invite_open(null) <> 'closed' or invite_open('anything') <> 'closed' then raise exception 'closed registration opens nothing, and says so'; end if;
   perform tests.unbecome();
   perform tests.become(shut_one);
   if pg_temp.refusal('select open_account(null)') not like '%closed%' then raise exception 'closed registration should say so'; end if;

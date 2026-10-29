@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { ANSWER_FLOOR_MS, runAccount, type Auth, type Session } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { REFUSAL_HINT } from '../act/core.ts';
-import { instance } from '../_shared/instance.ts';
 
 const KNOWN = 'known@test.invalid';
 const UNKNOWN = 'nobody@test.invalid';
@@ -25,12 +24,11 @@ function world(options: { mode?: 'open' | 'invite' | 'closed' } = {}) {
     signIn: async (email, password) => { work(email); calls.push(`signIn:${email}`); return email === KNOWN && password === 'right password' ? { session } : { refused: 'credentials' }; },
   };
   const mode = options.mode ?? 'invite';
-  const service: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`service:${fn}:${JSON.stringify(args)}`); return (fn === 'invite_open' ? (mode === 'open' || (mode === 'invite' && args.code === INVITE)) : null) as T; } };
+  const service: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`service:${fn}:${JSON.stringify(args)}`); return (fn === 'invite_open' ? (mode === 'closed' ? 'closed' : mode === 'open' || args.code === INVITE ? 'opens' : 'nothing') : null) as T; } };
   const player = (token: string): Db => ({ rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`player(${token}):${fn}:${JSON.stringify(args)}`); return { account: 'u1', opened: true } as T; } });
-  const inst = { ...instance, settings: { ...instance.settings, registrationMode: mode } };
   const answer = async (request: unknown) => {
     const start = now;
-    const out = await runAccount({ auth, service, player, clock }, inst, request);
+    const out = await runAccount({ auth, service, player, clock }, request);
     return { ...out, took: now - start };
   };
   return { answer, calls, clock };
@@ -86,11 +84,26 @@ test('a login whose invite was spent signs in with no account, and is told the w
     service: { rpc: async () => { throw new Error('unused'); } },
     player: () => ({ rpc: async () => { throw spent; } }),
     clock: w.clock,
-  }, instance, { action: 'signIn', email: KNOWN, password: 'right password' });
+  }, { action: 'signIn', email: KNOWN, password: 'right password' });
   assert.equal(out.status, 200);
   const body = out.body as { account: boolean; why: string };
   assert.equal(body.account, false);
   assert.match(body.why, /that invite opens nothing.*another invite/);
+});
+
+test('a login signing in while registration is closed is told its way out is an admin\'s, not another invite', async () => {
+  const w = world();
+  const closed = new DatabaseError('open_account: registration is closed', 'P0001', 400, 'registration is closed', REFUSAL_HINT);
+  const out = await runAccount({
+    auth: { signUp: async () => {}, recover: async () => {}, signIn: async () => ({ session: { access_token: 't', refresh_token: 'r', expires_in: 1, user: { id: 'u', user_metadata: {} } } }) },
+    service: { rpc: async () => { throw new Error('unused'); } },
+    player: () => ({ rpc: async () => { throw closed; } }),
+    clock: w.clock,
+  }, { action: 'signIn', email: KNOWN, password: 'right password' });
+  const body = out.body as { account: boolean; why: string };
+  assert.equal(body.account, false);
+  assert.match(body.why, /registration is closed.*admin opens registration.*next sign-in/);
+  assert.doesNotMatch(body.why, /another invite/);
 });
 
 test('whether a sign-up is refused turns on the invite and the instance\'s mode, never on the address', async () => {
@@ -126,7 +139,7 @@ test('work that runs past the floor is rounded up to the next whole floor, so it
   let now = 0;
   const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
   const slow: Auth = { signUp: async () => {}, recover: async () => {}, signIn: async () => { now += ANSWER_FLOOR_MS + 7; return { refused: 'credentials' }; } };
-  const out = await runAccount({ auth: slow, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, instance, { action: 'signIn', email: KNOWN, password: 'x' });
+  const out = await runAccount({ auth: slow, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, { action: 'signIn', email: KNOWN, password: 'x' });
   assert.equal(out.status, 400);
   assert.equal(now, 2 * ANSWER_FLOOR_MS);
 });
@@ -135,6 +148,6 @@ test('Auth failing to answer a sign-in is a plain retry-later, in the same time'
   let now = 0;
   const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
   const down: Auth = { signUp: async () => {}, recover: async () => {}, signIn: async () => { throw new Error('upstream 503'); } };
-  const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, instance, { action: 'signIn', email: KNOWN, password: 'x' });
+  const out = await runAccount({ auth: down, service: { rpc: async () => null as never }, player: () => ({ rpc: async () => null as never }), clock }, { action: 'signIn', email: KNOWN, password: 'x' });
   assert.deepEqual([out.status, out.body, now], [503, { error: 'signing in is not working right now; try again' }, ANSWER_FLOOR_MS]);
 });

@@ -5,13 +5,13 @@
  * opens anything, a player's session for opening their account, the clock, and the work handed
  * on to run after the answer.
  *
- * Supabase Auth's own endpoints stay reachable with the public key, so the client signs in
- * through here and the project's Auth settings say the rest (the deploy notes in the PR that
- * added this, and the plan's registration task).
+ * This guards the client that uses it. Supabase Auth's own endpoints stay reachable with the
+ * public key: supabase/config.toml keeps email confirmation on, so Auth's own sign-up answers
+ * alike for an address it knows, and whether its password sign-in takes the same time for both
+ * is Auth's, an open question for the owner (issue #3).
  */
 import { runAccount } from './core.ts';
 import { gotrue } from '../_shared/gotrue.ts';
-import { chooseInstance } from '../_shared/instance.ts';
 import { postgrest } from '../_shared/rpc.ts';
 import { CORS, boundedJson, environment } from '../_shared/serve.ts';
 
@@ -33,7 +33,7 @@ Deno.serve(async (request) => {
     service: postgrest({ url: env.url, key: env.key }),
     player: (token) => postgrest({ url: env.url, key: anon, bearer: token }),
     clock,
-  }, chooseInstance(Deno.env.get('KAYFABB_PROFILE')), body);
+  }, body);
   if (out.later) {
     const work = out.later().catch((e) => console.error('account work after the answer threw', e));
     // Never awaited: the answer must not wait on what Auth does with the address.

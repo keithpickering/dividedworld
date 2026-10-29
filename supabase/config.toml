@@ -1,0 +1,15 @@
+# The Supabase project's settings that the code relies on, for `supabase config push` and the
+# local stack. Only what a guarantee here rests on is set; everything else is Supabase's default.
+project_id = "dividedworld"
+
+[auth]
+# Accounts open only through open_account() (supabase/migrations/0009_registration.sql), so a
+# login made straight through Auth can do nothing; sign-up stays on for the account function.
+enable_signup = true
+minimum_password_length = 8
+
+[auth.email]
+# On, so Auth's own sign-up answers an address it already knows as it answers a new one, and a
+# login is confirmed before it can open an account (supabase/functions/account/core.ts).
+enable_signup = true
+enable_confirmations = true

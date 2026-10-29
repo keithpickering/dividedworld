@@ -18,7 +18,6 @@
  * Where that fails (the invite was spent meanwhile), the sign-in still succeeds and says the way
  * out: the openAccount action, with another invite.
  */
-import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { REFUSAL_HINT } from '../act/core.ts';
 
@@ -70,7 +69,7 @@ const password = (r: Fields, least: number): string | AccountAnswer => {
   return v;
 };
 
-async function answer(deps: { auth: Auth; service: Db; player: (token: string) => Db }, instance: Instance, request: unknown): Promise<AccountAnswer> {
+async function answer(deps: { auth: Auth; service: Db; player: (token: string) => Db }, request: unknown): Promise<AccountAnswer> {
   if (typeof request !== 'object' || request === null) return refused('action', 'a request is an object naming its action');
   const r = request as Fields;
   switch (r.action) {
@@ -80,11 +79,9 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
       const secret = password(r, 8);
       if (typeof secret !== 'string') return secret;
       const code = typeof r.invite === 'string' && r.invite.length <= 64 ? r.invite : null;
-      if (!(await deps.service.rpc<boolean>('invite_open', { code }))) {
-        return instance.settings.registrationMode === 'closed'
-          ? { status: 403, body: { error: 'registration is closed' } }
-          : refused('invite', 'that invite opens nothing');
-      }
+      const opens = await deps.service.rpc<'opens' | 'closed' | 'nothing'>('invite_open', { code });
+      if (opens === 'closed') return { status: 403, body: { error: 'registration is closed' } };
+      if (opens !== 'opens') return refused('invite', 'that invite opens nothing');
       return { status: 202, body: { message: SENT_SIGN_UP }, later: () => deps.auth.signUp(address, secret, { invite: code }) };
     }
     case 'reset': {
@@ -110,7 +107,10 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
         return { status: 200, body: { session: out.session, account: true } };
       } catch (e) {
         if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) {
-          return { status: 200, body: { session: out.session, account: false, why: `${e.reason}; open the account with another invite` } };
+          // The way out, said plainly: another invite, or, while registration is closed, an
+          // admin opening it, after which the next sign-in opens the account.
+          const way = /closed/.test(e.reason) ? 'it opens when an admin opens registration again, and your next sign-in opens the account' : 'open the account with another invite';
+          return { status: 200, body: { session: out.session, account: false, why: `${e.reason}; ${way}` } };
         }
         throw e;
       }
@@ -120,11 +120,11 @@ async function answer(deps: { auth: Auth; service: Db; player: (token: string) =
   }
 }
 
-export async function runAccount(deps: { auth: Auth; service: Db; player: (token: string) => Db; clock: Clock }, instance: Instance, request: unknown): Promise<AccountAnswer> {
+export async function runAccount(deps: { auth: Auth; service: Db; player: (token: string) => Db; clock: Clock }, request: unknown): Promise<AccountAnswer> {
   const start = deps.clock.now();
   let out: AccountAnswer;
   try {
-    out = await answer(deps, instance, request);
+    out = await answer(deps, request);
   } catch (e) {
     console.error('account failed', e);
     out = { status: 503, body: { error: (request as Fields | null)?.action === 'signIn' ? 'signing in is not working right now; try again' : 'that could not be done right now; try again' } };
