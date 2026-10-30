@@ -25,6 +25,12 @@ test('a thread with its reply box: every stop shows a focus indicator', async ({
   expect(await controlsWithoutFocusIndicator(page)).toEqual([]);
 });
 
+test('Stick Around\'s view: the post\'s scroller, the checkbox and the button each show a focus indicator', async ({ page }) => {
+  await page.goto('/?fixture=boards&moment=08-hold');
+  await expect(page.getByRole('dialog', { name: 'Stick Around' })).toBeVisible({ timeout: 10_000 });
+  expect(await controlsWithoutFocusIndicator(page)).toEqual([]);
+});
+
 test('the reaction picker: every kind the arrows reach shows a focus indicator', async ({ page }) => {
   await page.goto('/b/general');
   await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();

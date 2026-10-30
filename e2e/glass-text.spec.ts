@@ -162,6 +162,18 @@ const OVERLAYS: readonly Screen[] = [
 ];
 
 /**
+ * An overlay that opens on its own on the boards' fixture, whose account is the fixture's and not the demo world's: read in
+ * the first run only, as the stories are (the runs below sign in as the demo's player, which this fixture has no use for).
+ */
+const FIXTURE_OVERLAYS: readonly Screen[] = [
+  {
+    name: 'Stick Around\'s view, taking the reader over on the Hold board\'s moment',
+    path: '/?fixture=boards&moment=08-hold',
+    then: async (page) => { await expect(page.getByRole('dialog', { name: 'Stick Around' })).toBeVisible({ timeout: 10_000 }); },
+  },
+];
+
+/**
  * The settlement's surface, which no screen draws until the glass build's Part 4: a stand-in story
  * draws it (engine/ui/glass/Surfaces.board.stories.tsx), so its `calmAll` recipe is held now. The
  * other board stories are the boards' drawings for the board match (the Orbs board's anatomy, the
@@ -202,7 +214,7 @@ const SIZES = [['1920×1080', { width: 1920, height: 1080 }], ['a phone, 390×84
 for (const [label, viewport] of SIZES) {
   test.describe(`at ${label}`, () => {
     test.use({ viewport });
-    for (const s of [...PAGES, ...OVERLAYS, ...STORIES]) {
+    for (const s of [...PAGES, ...OVERLAYS, ...FIXTURE_OVERLAYS, ...STORIES]) {
       test(`${s.name}: every line of glass text is legible on its smoke`, async ({ page }) => {
         await open(page, s);
         expect(await measure(page)).toEqual([]);

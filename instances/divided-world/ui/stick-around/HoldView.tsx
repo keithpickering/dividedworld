@@ -10,9 +10,11 @@
  * drain, so the way for a keyboard or a screen reader costs about what scrolling does.
  *
  * It is a dialog with no Close: its ways out are the bar, the checkbox, and leaving the page, and it says so. Esc, which
- * would otherwise close it, answers with those words, since an Esc that closed it would be a free way out.
+ * would otherwise close it, breaks free instead (the owner's answer on the view's story, #74): each Esc keydown is one press
+ * of BREAK FREE, through the same press gap and against the same drain, so Esc costs what the button costs and a held key's
+ * auto-repeat counts no more than as many presses would. An Esc that closed it would be a free way out.
  */
-import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode, type TouchEvent, type WheelEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode, type TouchEvent, type WheelEvent } from 'react';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Act } from '../../../../engine/ui/data/api.ts';
@@ -27,6 +29,9 @@ const ARROW = 48;
 const PAGE = 0.9;
 
 const WAYS_OUT = 'Scroll past either end of the post, press Break free, or check the box.';
+/** What the view says after an Esc, and after a press on the dimmed page behind: the first is a way out, the second is not. */
+const ON_ESC = `Esc breaks free, like the Break free button: each press fills the bar a little, and it drains when you stop. ${WAYS_OUT}`;
+const ON_PAGE = `Pressing the page behind does not close this. ${WAYS_OUT}`;
 
 const sentenceOf = (play: CardPlay): string => {
   const given = stickAround.validateConfig(play.config);
@@ -50,7 +55,7 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
   const [names, setNames] = useState<{ author: string; caster: string }>({ author: 'A character', caster: 'A character' });
   const [checked, setChecked] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
-  const [nudged, setNudged] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const touchY = useRef<number | null>(null);
   /* What the reader has done since the last frame, and where the bar has got to: read by the frame loop, written by events. */
@@ -148,13 +153,32 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
     if (!done.ok) { setChecked(false); setRefused(done.error); }
   };
 
-  /* Esc, or a press on the dimmed page behind: no way out, and it says which are. */
+  /*
+   * Esc is a press of BREAK FREE. The glass's modal layer answers Esc first, on the document in the capture phase, by calling
+   * `onClose` (which a press on the dimmed page calls too); this listener, added before the layer's (a layout effect runs
+   * before the layer's), notes the Esc so `onClose` knows which it was, and counts the keydown as a press. Every keydown
+   * counts, repeats included: the press gap is what keeps a held key from filling the bar faster than tapping would.
+   */
   const hint = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const nudge = () => {
-    setNudged(true);
+  const escaping = useRef(false);
+  const say = (words: string) => {
+    setSaid(words);
     if (hint.current !== null) clearTimeout(hint.current);
-    hint.current = setTimeout(() => setNudged(false), 3500);
+    hint.current = setTimeout(() => setSaid(null), 3500);
   };
+  useLayoutEffect(() => {
+    const onEsc = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      escaping.current = true;
+      /* Cleared by a timer: a real key event's microtasks run between its listeners, so a microtask would clear it before the layer's. */
+      setTimeout(() => { escaping.current = false; }, 0);
+      input.current.presses.push(e.timeStamp);
+      say(ON_ESC);
+    };
+    document.addEventListener('keydown', onEsc, true);
+    return () => document.removeEventListener('keydown', onEsc, true);
+  }, []);
+  const onClose = () => { if (!escaping.current) say(ON_PAGE); };
   useEffect(() => () => { if (hint.current !== null) clearTimeout(hint.current); }, []);
 
   const percent = Math.round(Math.min(Math.max(level, 0), FULL) * 100);
@@ -163,7 +187,7 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
   const why = `${id}-why`;
   return (
     <Overlay
-      title="Stick Around" label="Stick Around" className="kb-hold-view" surface="effect" closeAt="none" onClose={nudge}
+      title="Stick Around" label="Stick Around" className="kb-hold-view" surface="effect" closeAt="none" onClose={onClose}
       aside={<p className="kb-hold-tag"><span className="kb-calm">{names.caster}{play.message ? `: “${play.message}”` : ''}</span></p>}
     >
       <div className="kb-hold-inner" onWheel={onWheel} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onKeyDown={onKeyDown}>
@@ -199,7 +223,7 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
           <button type="button" className="kb-hold-button kb-glass-cut-button" onClick={press} aria-describedby={why}>Break free</button>
           <p id={why} className="kb-visually-hidden">Press it again and again to fill the bar, as fast scrolling does. The bar drains whenever you stop.</p>
         </div>
-        <p className="kb-hold-ways" role="status">{nudged ? `Esc does not close this. ${WAYS_OUT}` : ''}</p>
+        <p className="kb-hold-ways" role="status">{said ?? ''}</p>
       </div>
     </Overlay>
   );

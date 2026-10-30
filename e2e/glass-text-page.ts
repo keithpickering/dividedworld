@@ -38,9 +38,10 @@ export const INK_SAMPLE = 'Hg';
 /**
  * The board drawn inside the glass: the post a Turn or a debut previews as the thread will show it
  * (characters/PreviewBox.tsx), in the board's own ground and type, opaque, which the board's rules
- * and axe hold, not the glass's.
+ * and axe hold, not the glass's; and the post Stick Around lifts into its full-screen view, still the
+ * board's 2003 post, white, with the release and the bar (the glass's, read) around it.
  */
-const BOARD = '.kb-preview-post';
+const BOARD = '.kb-preview-post, .kb-hold-post';
 const SKIP = `.kb-smoke, script, style, noscript, template, option, ${BOARD}`;
 
 /** A line as gathered, before its pixels are read: the judgment's fact less `brightest` and `smoke`. */

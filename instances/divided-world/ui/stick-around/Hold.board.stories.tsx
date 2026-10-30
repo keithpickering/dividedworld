@@ -105,3 +105,6 @@ export const Phone: Story = {
 
 /** The page itself, on a longer page: the post pulls the reader in when they stop with it in view, and a push past its end fills the bar. Try it. */
 export const Live: Story = { args: { stage: { mode: 'live' } } };
+
+/** The page itself with a long post, which the view has to scroll to its end before a push past it counts (e2e/hold.spec.ts reads it so). */
+export const LiveLongPost: Story = { args: { stage: { mode: 'live' }, long: true } };
