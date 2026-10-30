@@ -257,7 +257,7 @@ slower is not fighting the product.
 
 A permission a session relies on is a rule like any other, and a rule lives in this file. The owner starts each
 session from the app: a design session designs with the owner and commits a design and a plan; a build session builds
-one plan, reviews it and owns its PR. The owner merges.
+one plan, reviews it and owns its PR. The owner merges, except as Merging below allows.
 
 - **Closing an issue.** An issue is closed with the kind of close and a link to where its work went. *Fixed*: a merged
   PR's `Closes #N` closes it, and where a PR did not say so, a session closes it with the merged PR's link once main is
@@ -269,3 +269,7 @@ one plan, reviews it and owns its PR. The owner merges.
   on localhost.
 - **Secrets** are never printed, pasted or asked for.
 - **Tidying.** A change may tidy what it passes through, and leaves it cleaner than it found it.
+- **Merging.** While no instance is deployed, a session that dispatches build sessions merges their PRs, and its own
+  design and plan PRs, once the PR's head is green in CI, it has no merge conflict, its review findings are answered,
+  and no question to the owner waits on it. A PR that changes this file, or that turns on a rule the owner was asked
+  about, still waits on the owner. This bullet is rewritten when an instance is first deployed.
