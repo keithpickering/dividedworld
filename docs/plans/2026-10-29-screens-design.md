@@ -210,6 +210,36 @@ be more like an arc", and "If this is too complex for the goal here we can take 
 the release along the arc; how it feels on phones, on a mouse's handle and on a wheel is tuned with the owner on real
 devices, which no build session has. The numbers in the cards plan are starting points.
 
+**Amended 2026-10-30, the breakout redesigned** (the owner, in the planning session). The slingshot, the handle and
+the wheel's flick (point 5) are retired. The owner: "in the prototype we were trying out a "flick" mechanic which never
+really worked right. I think your newer design is more interesting: it suggests that scrolling the post into the
+viewport pulls the player + post out of the rest of the thread and into a full screen minigame of sorts, where they must
+simply scroll rapidly to make a bar go up to be released back into the regular thread." Points 1 to 4 and the pull
+stand. What replaces point 5:
+
+- **When it takes over.** The owner chose "When it settles in view": once the held post is mostly on screen and the
+  reader's own scroll has settled, the pull (above) eases in and snaps, and then the post is lifted out of the thread
+  into a full-screen view of its own, the thread dimmed and inert behind it. A reader flicking past is caught when they
+  stop.
+- **The bar.** In the full-screen view a bar fills with rapid scrolling, and the owner chose "It drains": it falls back
+  steadily whenever the reader slows or stops, so only a sustained burst frees them. Wheel, touch, trackpad and the
+  keyboard's scrolling keys all count, by the distance they would have scrolled.
+- **Long posts.** The owner: "let's make sure to take long posts (which require actual scrolling to read the whole
+  thing, depending on window height) into account". The full-screen view scrolls the post itself, so a long post is
+  read whole there; only scrolling pushed past either end of the post fills the bar. Reading never frees anyone, and a
+  short post that fits is at both ends at once.
+- **The release.** The owner chose "Just past the post": a full bar puts the reader back in the thread just past the
+  post, on the side they were pushing toward (down past its end, or up past its start), with the post behind them, and
+  it does not hold them again this visit.
+- **Certifying** stays the release that holds on every device: the caster's checkbox sits at the end of the post in the
+  full-screen view.
+- **Keyboard and screen reader.** The view is a dialog that takes focus, with the post, the checkbox, the bar
+  (`progressbar "Break free"`) and a BREAK FREE button that fills the bar as a burst of scrolling does, against the same
+  drain: about as long and as costly as the scroll ("An accessible path costs what the obstacle costs").
+- **Reduced motion.** The pull and the lift are instant, and the bar still drains; nothing about the cost changes.
+- **Ways out.** Fill the bar (this visit), certify (for good), or leave the page. Tuning the fill and drain rates on real
+  devices stays a session of its own with the owner.
+
 ## 11. Whoops!
 
 From the working prototype (`docs/research/2026-10-29-screens/proto-q15-whoops.html`). The owner of the old pens: "Do
