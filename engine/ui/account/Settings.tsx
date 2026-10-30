@@ -151,8 +151,6 @@ export function SettingsScreen() {
   useEffect(() => {
     if (!account) return;
     let live = true;
-    current.current = null;
-    confirmed.current = null;
     void api.preferences().then((p) => { if (live) { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); } }, () => { if (live) setRefusal({ account, text: 'Your settings could not be read right now. Reload the page to try again.' }); });
     void api.signInAddress().then((a) => { if (live) setAddressRead({ account, address: a }); }, () => { if (live) setAddressRead({ account, address: null }); });
     return () => { live = false; };
@@ -200,6 +198,9 @@ export function SettingsScreen() {
       if (r.ok) { confirmed.current = { ...confirmed.current!, [key]: r.value[key] }; setSaved(madeFor); return; }
       if (current.current![key] === asked) show({ ...current.current!, [key]: confirmed.current![key] });
       setRefusal({ account: madeFor, text: r.error });
+    }).catch(() => {
+      /* Nothing in the line may end it: a choice after a throw is still sent, and the throw is said. */
+      if (showing.current === madeFor) setRefusal({ account: madeFor, text: LOST_ANSWER });
     });
   };
 

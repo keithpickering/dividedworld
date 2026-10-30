@@ -32,6 +32,25 @@ test('signing out puts the page back to the device\'s look', async () => {
   expect(await within(await screen.findByRole('region', { name: 'Game HUD' })).findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
 });
 
+/*
+ * A device shared by two players: the session changes under an open screen (another tab signed the
+ * other in), and nothing the last account typed or was told stays on the screen for the next one.
+ * Each signed-in screen starts afresh for the account signed in now.
+ */
+test('another account signing in starts the open screen afresh: the last account\'s draft is not left for the next', async () => {
+  window.history.pushState(null, '', '/characters/new');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedDemo(fake);
+  render(<App api={fake} />);
+  const field = await screen.findByRole('textbox', { name: /name/iu });
+  await userEvent.click(field);
+  await userEvent.paste('Zzyzx the Draft');
+  expect(field).toHaveValue('Zzyzx the Draft');
+  fake.signInAs(fake.seed.account('next'));
+  await waitFor(() => expect(screen.getByRole('textbox', { name: /name/iu })).not.toHaveValue('Zzyzx the Draft'));
+  expect(screen.queryByDisplayValue('Zzyzx the Draft')).toBeNull();
+}, 15_000);
+
 test('the instance\'s glass is on the page: its standard key on the root, and its fonts in the font set', async () => {
   /* jsdom has no font set and no FontFace; the browser's are stood in for, as far as the app reaches. */
   const fonts = new Set<{ family: string }>();

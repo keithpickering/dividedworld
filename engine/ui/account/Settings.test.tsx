@@ -265,6 +265,55 @@ describe('Settings, as board 11 draws it', () => {
     });
   }
 
+  test('the same account signing out and back in, a choice made before its read answers keeps every other choice and is sent', async () => {
+    const w = world();
+    await w.fake.setPreferences({ smoke: 'off', textSize: 150 });
+    open(w.fake);
+    await screen.findByRole('radiogroup', { name: 'Smoke' });
+    const reads: (() => void)[] = [];
+    const real = w.fake.preferences.bind(w.fake);
+    w.fake.preferences = () => new Promise((done) => { reads.push(() => done(real())); });
+    w.fake.signInAs(null);
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    w.fake.signInAs(w.me);
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    /* The account's own choices, read before it signed out, stand while its read is out again. */
+    await userEvent.click(radio('Contrast', 'High'));
+    expect(radio('Text size', '150%')).toBeChecked();
+    expect(radio('Smoke', 'Off')).toBeChecked();
+    await act(async () => { for (const r of reads) r(); await new Promise((r) => setTimeout(r, 0)); });
+    await waitFor(async () => expect(await real()).toMatchObject({ contrast: 'high', textSize: 150, smoke: 'off' }));
+  });
+
+  test('a save whose answer cannot be read ends nothing: it is said, and the next choice is still sent', async () => {
+    const w = world();
+    open(w.fake);
+    await screen.findByRole('radiogroup', { name: 'Smoke' });
+    const real = w.fake.setPreferences.bind(w.fake);
+    let first = true;
+    w.fake.setPreferences = (patch) => {
+      if (first) { first = false; return Promise.resolve(undefined as unknown as Answer<Preferences>); }
+      return real(patch);
+    };
+    await userEvent.click(radio('Smoke', 'Off'));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    await userEvent.click(radio('Contrast', 'High'));
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ contrast: 'high' }));
+  });
+
+  test('the next account\'s choices answered but its address still out, Settings › Account shows no address of the last account', async () => {
+    const w = world();
+    const mine = (await w.fake.signInAddress())!;
+    open(w.fake, '/settings?section=account');
+    expect(await screen.findByText(mine)).toBeInTheDocument();
+    w.fake.signInAddress = () => new Promise(() => {});
+    w.fake.signInAs(w.fake.seed.account('other'));
+    await screen.findByRole('heading', { name: 'Account' });
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(screen.queryByText(mine)).toBeNull();
+    expect(screen.queryByText(/could not be read/u)).toBeNull();
+  });
+
   test('a refused save that answers after the screen is gone puts nothing back', async () => {
     const { calls, view } = await leaving('signed out');
     view.unmount();
