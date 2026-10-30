@@ -52,9 +52,18 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('the names tokens.css declares are the names the glass writes: two lists that must agree are one list', () => {
     const css = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../engine/ui/glass/tokens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     const declared = [...css.matchAll(/(--kb-glass-[\w-]+)\s*:/g)].map((m) => m[1]!).sort();
+    /* The orbs' and the classes' properties are named by the instance's own orbs and class keys, so
+       tokens.css cannot declare them; they are held to the instance's lists instead. */
+    const keyed = /^--kb-glass-(orb|class)-/;
+    const fromInstance = [
+      ...instanceUi.glass.orbs.gradients.flatMap((_, i) => ['highlight', 'color', 'shade'].map((s) => `--kb-glass-orb-${i + 1}-${s}`)),
+      ...(['from', 'to'] as const).filter((e) => instanceUi.glass.orbs.body[e]).map((e) => `--kb-glass-orb-body-${e}`),
+      ...Object.keys(instanceUi.glass.classes).flatMap((c) => ['fill', 'ink', 'large'].map((s) => `--kb-glass-class-${c}-${s}`)),
+    ].sort();
     for (const key of ['standard', 'high'] as const) {
       const written = Object.keys(glassVars(instanceUi.glass, key)).sort();
-      expect(written, `${key} key writes what tokens.css declares`).toEqual(declared);
+      expect(written.filter((n) => !keyed.test(n)), `${key} key writes what tokens.css declares`).toEqual(declared);
+      expect(written.filter((n) => keyed.test(n)), `${key} key writes each orb and class the instance gives`).toEqual(fromInstance);
     }
   });
   test('the surfaces the glass names are the surfaces the engine lists', () => {
