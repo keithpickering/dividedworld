@@ -462,6 +462,11 @@ and the thread's earlier posts above; `article "Held post: Spritey, #44"` in the
 caster's sentence; `progressbar "Break free"` at 40%; `button "Break free"`; "Keep scrolling away to break free for
 this visit. Next visit, it holds you again until you check." Full.
 
+**Amended 2026-10-30.** Stick Around now lifts the held post into a full-screen view (screens design, section 10's
+amendment of this date), which board 08 does not draw. Board 08 stays the reference for the frame, the tag, the release
+checkbox in the caster's words and the bar's look. The full-screen view is drawn first as a story for the owner, and
+08's manifest is rewritten from the approved story, as Rankings' board 13 was.
+
 ### 09 settlement (1440×960): web Task 8
 
 The app at the first load after the settlement. No menu bar: a results screen whose ways out are Open my log and Back
