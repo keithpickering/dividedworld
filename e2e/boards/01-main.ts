@@ -13,12 +13,10 @@
  * and "React" and "1 of 3 left" on #41 and #42, which are the player's own characters' posts
  * (section 3, the first departure).
  *
- * Waiting on the owner (Task 1.5's report): the 2003 board's type and the postbit's layout. The
- * board sets the thread in 12px Verdana with 18px titles, bold Verdana names and a 10px grey
- * permalink, and its thread head has no "Started" line; the built board (web Task 5, after the
- * screens' design and PRODUCT.md's "bold Courier New for headers") sets 13px Verdana, 15px bold
- * Courier New names and a 20px title. Which is the 2003 board is the owner's call, so the title's
- * and the posts' rows stay compared and fail until it is made.
+ * The thread's type and the postbit are the board's: the two-worlds design decides Verdana and bold
+ * Courier New in black and white, and the board how they look (docs/research/2026-10-29-two-worlds/
+ * README.md), so the build sets 12px Verdana words, an 18px Courier New title, bold Verdana names
+ * with the rank under them, and a 10px post line in the muted ink (engine/ui/tokens.css).
  */
 import type { BoardManifest, Landmark } from '../board-match.ts';
 

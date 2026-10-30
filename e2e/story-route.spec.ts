@@ -6,11 +6,9 @@ import { snapshotPage } from './board-snapshot.ts';
  * The end-to-end build's story route (web/src/data/fixtures/stories.tsx), in the browser: a board's
  * story opened at `?fixture=boards&story=<id>` is the story alone, with no app around it, and the
  * board match finds its landmarks by role and name there as it does in the app; an id the build
- * does not have is the start error's plain words, naming it and the ones there are. The glass's
- * fonts are installed by a style the site's policy refuses (the boards spec opens its pages the
- * same way), so the policy is set aside here as there.
+ * does not have is the start error's plain words, naming it and the ones there are. Both run
+ * under the site's policy, which a story must keep like any page.
  */
-test.use({ bypassCSP: true });
 
 const manifest: BoardManifest = {
   board: 'x',
@@ -24,6 +22,8 @@ const manifest: BoardManifest = {
 };
 
 test('a board story is opened alone, and the board match finds its landmarks by name', async ({ page }) => {
+  const violations: string[] = [];
+  page.on('console', (m) => { if (/content security policy/iu.test(m.text())) violations.push(m.text()); });
   await page.setViewportSize(manifest.size);
   await page.goto('/?fixture=boards&story=boards-04-orbs--board');
   await expect(page.getByRole('heading', { name: 'Aura' })).toBeVisible();
@@ -32,6 +32,7 @@ test('a board story is opened alone, and the board match finds its landmarks by 
   /* The story alone: no Game HUD, no board navigation. */
   await expect(page.getByRole('region', { name: 'Game HUD' })).toHaveCount(0);
   await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0);
+  expect(violations).toEqual([]);
 });
 
 test('an id the build does not have says so, naming the ones it has', async ({ page }) => {

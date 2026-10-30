@@ -1,10 +1,11 @@
 /**
- * The glass's applier and its font-face builder: the instance's keys become `--kb-glass-*`
- * properties on a root, and each font file becomes an @font-face with `font-display: swap`.
+ * The glass's applier and its fonts: the instance's keys become `--kb-glass-*` properties on a
+ * root, and each font file becomes a FontFace in the document's font set with `display: swap`
+ * (a face the site's policy allows under font-src, where an injected style is refused).
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { GlassTheme } from '../types.ts';
-import { applyGlass, fontFaceCss, glassVars, installGlassFonts } from './apply.ts';
+import { applyGlass, glassVars, installGlassFonts } from './apply.ts';
 
 const glass = {
   keys: {
@@ -20,10 +21,6 @@ const glass = {
   ],
   classes: {}, orbs: { gradients: [], body: { from: '', to: '' } },
 } as unknown as GlassTheme;
-
-afterEach(() => {
-  document.getElementById('kb-glass-fonts')?.remove();
-});
 
 describe('glassVars', () => {
   it('names each token of the chosen key by its own name', () => {
@@ -87,35 +84,53 @@ describe('applyGlass', () => {
   });
 });
 
-describe('fontFaceCss', () => {
-  const css = fontFaceCss(glass);
-
-  it('writes one @font-face per font file', () => {
-    expect(css.match(/@font-face/g)).toHaveLength(2);
+/** A document's font set and its FontFace constructor, as far as installGlassFonts reaches; jsdom has neither. */
+class FakeFace {
+  constructor(readonly family: string, readonly source: string, readonly descriptors: FontFaceDescriptors) {}
+}
+function fakeDoc() {
+  const fonts = new Set<FakeFace>();
+  const own = { fonts, defaultView: { FontFace: FakeFace } };
+  /* The rest of the document is jsdom's, so a style element put in it would show. */
+  return new Proxy(own, {
+    get: (target, key) => {
+      if (key in target) return target[key as keyof typeof target];
+      const value = (document as unknown as Record<PropertyKey, unknown>)[key];
+      return typeof value === 'function' ? value.bind(document) : value;
+    },
   });
-
-  it('names the family, the file as woff2, the weight and the style', () => {
-    expect(css).toContain('font-family: "Anton"');
-    expect(css).toContain('src: url("/assets/Anton-Regular.woff2") format("woff2")');
-    expect(css).toContain('font-weight: 400');
-    expect(css).toContain('font-style: italic');
-  });
-
-  it('swaps: text shows in the fallback while a font loads', () => {
-    expect(css.match(/font-display: swap/g)).toHaveLength(2);
-  });
-
-  it('says nothing for a glass with no fonts', () => {
-    expect(fontFaceCss({ ...glass, fonts: [] } as unknown as GlassTheme)).toBe('');
-  });
-});
+}
+const install = (doc: ReturnType<typeof fakeDoc>) => installGlassFonts(doc as unknown as Document, glass);
 
 describe('installGlassFonts', () => {
-  it('adds one style element, and replaces it rather than adding another', () => {
-    installGlassFonts(document, glass);
-    installGlassFonts(document, glass);
-    const styles = document.querySelectorAll('style#kb-glass-fonts');
-    expect(styles).toHaveLength(1);
-    expect(styles[0]!.textContent).toContain('Anton-Regular.woff2');
+  it('adds one face per font file to the document, through the font set and never a style element', () => {
+    const doc = fakeDoc();
+    install(doc);
+    const faces = [...doc.fonts];
+    expect(faces.map((f) => [f.family, f.source])).toEqual([
+      ['Anton', 'url("/assets/Anton-Regular.woff2") format("woff2")'],
+      ['Barlow Condensed', 'url("/assets/BarlowCondensed-BoldItalic.woff2") format("woff2")'],
+    ]);
+    expect(document.getElementById('kb-glass-fonts')).toBeNull();
+  });
+
+  it('names the weight and the style, and swaps: text shows in the fallback while a font loads', () => {
+    const doc = fakeDoc();
+    install(doc);
+    expect([...doc.fonts].map((f) => f.descriptors)).toEqual([
+      { weight: '400', style: 'normal', display: 'swap' },
+      { weight: '700', style: 'italic', display: 'swap' },
+    ]);
+  });
+
+  it('adds each face once, however often it is called', () => {
+    const doc = fakeDoc();
+    install(doc);
+    install(doc);
+    expect(doc.fonts.size).toBe(2);
+  });
+
+  it('does nothing where the document has no font set (a test document)', () => {
+    expect(() => installGlassFonts(document, glass)).not.toThrow();
   });
 });

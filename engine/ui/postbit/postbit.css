@@ -1,7 +1,8 @@
 /*
- * The postbit. Side by side (the default on a wide screen): a text column with a tall avatar slot,
- * 1:2. Stacked: a band with a square avatar beside the text, above the post. A phone (40em and
- * under) is always stacked, whatever the reader chose. Percentages and em throughout.
+ * The postbit. Side by side (the default on a wide screen): the name, the title and the rank over
+ * a tall avatar slot, 1:2, as the Main board draws it, then the counts. Stacked: a band with a
+ * square avatar beside the text, above the post. A phone (40em and under) is always stacked,
+ * whatever the reader chose. Percentages and em throughout.
  */
 .kb-postbit {
   display: flex;
@@ -18,8 +19,9 @@
   min-width: 0;
 }
 
+/* The name in the board's own words, bold, as the Main board sets it. */
 .kb-postbit-name {
-  font: bold var(--kb-size-heading) / 1.2 var(--kb-font-mono);
+  font-weight: bold;
 }
 
 .kb-postbit-counts,
@@ -28,11 +30,12 @@
   flex-direction: column;
 }
 
+/* The rank's name on its line, its pips under it. */
 .kb-postbit-rank {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.2em 0.5em;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2em;
 }
 
 .kb-pips {
@@ -84,7 +87,6 @@
   display: contents;
 }
 
-.kb-postbit[data-kb-postbit="side"] .kb-postbit-rank,
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-counts,
 .kb-postbit[data-kb-postbit="side"] .kb-postbit-class {
   order: 2;

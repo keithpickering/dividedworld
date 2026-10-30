@@ -1,7 +1,7 @@
 /**
  * Putting an instance's glass on the page: its key's tokens as `--kb-glass-*` properties on a
- * root, and its fonts as @font-face rules. The engine knows the token names (tokens.css) and
- * reads the values from `InstanceUi.glass`; it names no color and no family itself.
+ * root, and its fonts as faces in the document's font set. The engine knows the token names
+ * (tokens.css) and reads the values from `InstanceUi.glass`; it names no color and no family itself.
  *
  * A key is the standard values or the high-contrast ones; both name the same tokens
  * (tools/check-glass-contrast.mjs holds that), so swapping the key re-colors the glass and
@@ -46,29 +46,24 @@ export function applyGlass(root: HTMLElement, glass: GlassTheme, key: GlassKeyNa
   root.setAttribute('data-kb-glass-key', key);
 }
 
-/** One @font-face per font file, `font-display: swap` so text shows in the fallback while a font loads. */
-export function fontFaceCss(glass: GlassTheme): string {
-  return glass.fonts
-    .map((f) => [
-      '@font-face {',
-      `  font-family: ${JSON.stringify(f.family)};`,
-      `  src: url(${JSON.stringify(f.file)}) format("woff2");`,
-      `  font-weight: ${f.weight};`,
-      `  font-style: ${f.style};`,
-      '  font-display: swap;',
-      '}',
-    ].join('\n'))
-    .join('\n');
-}
+/** The faces put in each document, by file, so a second call adds none. */
+const installed = new WeakMap<object, Set<string>>();
 
-/** Puts the glass's @font-face rules in one `<style id="kb-glass-fonts">`, replacing it if it is there. */
+/**
+ * Puts each of the glass's font files in the document's font set as a FontFace, with `display:
+ * swap` so text shows in the fallback while a font loads. A face added this way is fetched under
+ * the site's font-src, where an injected `<style>` of @font-face rules would be refused by its
+ * style-src (web/headers.ts; e2e/csp.spec.ts holds it). Each file is added once per document,
+ * however often this is called; a document with no font set (a test's) is left alone.
+ */
 export function installGlassFonts(doc: Document, glass: GlassTheme): void {
-  let style = doc.getElementById('kb-glass-fonts');
-  if (!style) {
-    style = doc.createElement('style');
-    style.id = 'kb-glass-fonts';
-    doc.head.append(style);
+  const Face = doc.defaultView?.FontFace;
+  if (!doc.fonts || !Face) return;
+  let done = installed.get(doc);
+  if (!done) installed.set(doc, (done = new Set()));
+  for (const f of glass.fonts) {
+    if (done.has(f.file)) continue;
+    done.add(f.file);
+    doc.fonts.add(new Face(f.family, `url(${JSON.stringify(f.file)}) format("woff2")`, { weight: String(f.weight), style: f.style, display: 'swap' }));
   }
-  const css = fontFaceCss(glass);
-  if (style.textContent !== css) style.textContent = css;
 }

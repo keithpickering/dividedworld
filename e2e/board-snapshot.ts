@@ -8,8 +8,9 @@
  * that is not ARIA's: a part a board drew with no role at all (the HUD's clock label, a legend, a
  * class tag) is found by its own words (`getByText`), matched the same way. What a landmark's type is
  * is read from its first text-bearing element: the element itself, or its first descendant that
- * holds a non-blank text node, skipping any `aria-hidden` (below the landmark) or `display:none` subtree and any
- * `visibility:hidden` text, so a decorative glyph or a hidden span is not the text. The boards
+ * holds a non-blank text node, skipping any `aria-hidden` (below the landmark), `display:none` or
+ * visually hidden (a clipped 1px box) subtree and any `visibility:hidden` text, so a decorative
+ * glyph, a hidden span or a heading only a screen reader hears is not the text. The boards
  * load Anton and Barlow Condensed from Google Fonts, which an offline run cannot reach and a
  * fallback face could pass or fail by luck, so `routeBoardFonts` answers those requests from the
  * instance's own files, described in instances/divided-world/ui/glass.json. The system faces both
@@ -115,6 +116,9 @@ async function readType(locator: Locator): Promise<TypeRead | null> {
     /* The landmark itself is read whatever its aria-hidden: a text found by its own words is on screen. */
     const first = (e: Element, root = false): Element | null => {
       if ((!root && e.getAttribute('aria-hidden') === 'true') || getComputedStyle(e).display === 'none') return null;
+      /* Visually hidden (a 1px box that clips what it holds): read by a screen reader, seen by no eye. */
+      const box = e.getBoundingClientRect();
+      if (!root && box.width <= 1 && box.height <= 1 && getComputedStyle(e).overflow === 'hidden') return null;
       /* A hidden element's own text is not seen, but a child may show itself again. */
       if (hasText(e) && getComputedStyle(e).visibility === 'visible') return e;
       for (const child of e.children) {

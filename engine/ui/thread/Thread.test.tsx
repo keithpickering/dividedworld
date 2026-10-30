@@ -221,12 +221,51 @@ describe('pages and permalinks', () => {
 });
 
 /* ------------------------------------------------------------------------------ postbit ---- */
+describe('the thread\'s head, as the Main board draws it', () => {
+  test('the title and the pages share one head, and no line says when the thread started', async () => {
+    const w = world(45);
+    open(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 41 /u });
+    const title = screen.getByRole('heading', { level: 1 });
+    const pages = screen.getByRole('navigation', { name: 'Pages, top' });
+    expect(title.parentElement).toHaveClass('kb-thread-head');
+    expect(pages.parentElement).toBe(title.parentElement);
+    expect(screen.queryByText(/^Started/u)).toBeNull();
+  });
+
+  test('side by side, a column head names the Author and the Message, outside the reading order', async () => {
+    const w = world(3);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    const head = document.querySelector('.kb-acts-head');
+    expect(head).toHaveTextContent(/^AuthorMessage$/u);
+    expect(head).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  test('stacked, the postbit heads each post, and there is no column head', async () => {
+    const w = world(3);
+    await w.fake.setPreferences({ postbit: 'stacked' });
+    open(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    expect(document.querySelector('.kb-acts-head')).toBeNull();
+  });
+});
+
 describe('the postbit in a thread', () => {
   test('side by side by default, stacked by the reader\'s preference', async () => {
     const w = world(3);
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     expect(within(post(2)).getByRole('group', { name: 'About Pipewrench' })).toHaveAttribute('data-kb-postbit', 'side');
+  });
+
+  test('a post is read author first, then its line (when, and the permalink), then its words', async () => {
+    const w = world(3);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    const bit = within(post(2)).getByRole('group', { name: 'About Pipewrench' });
+    const permalink = within(post(2)).getByRole('link', { name: 'Permalink to post #2' });
+    expect(bit.compareDocumentPosition(permalink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   test('stacked when the reader chose it', async () => {

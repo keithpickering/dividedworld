@@ -695,10 +695,12 @@
     padding: 6px 16px;
   }
 
+  /* Boards is set in the board's words, as the Phone board draws it, not at a control's smaller size. */
   .kb-menu-button {
     display: inline-block;
     min-height: 44px;
     padding: 0 12px;
+    font-size: var(--kb-size-body);
   }
 
   .kb-tagline {

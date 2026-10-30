@@ -56,7 +56,7 @@ h1, h2, h3 {
 
 h1.kb-heading,
 h1 {
-  font-size: var(--kb-size-logo);
+  font-size: var(--kb-size-title);
 }
 
 .kb-mono {

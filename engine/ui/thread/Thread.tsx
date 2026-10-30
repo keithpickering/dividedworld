@@ -15,6 +15,9 @@
  * polite live region says "New post by <name>" once per new post, and nothing about a reaction or
  * an edit. The bar's way out: click it, or read on.
  *
+ * The head is the Main board's: the title with the pages beside it, then the table's Author and
+ * Message column head over side-by-side posts.
+ *
  * Cost: a page is one read of the Acts, one each of its characters, stats, standings, reveals,
  * turns and tallies for the characters and Acts it holds, never one per post; a character that
  * first appears live costs the same, once. Tallies live in a keyed store, so a storm of them
@@ -24,7 +27,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
-import { Ago, SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
+import { SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
 import { motionReduced } from '../appearance.ts';
 import { usePlayer } from '../player.tsx';
 import type { PostbitLayout, PostbitPerson } from '../postbit/Postbit.tsx';
@@ -462,12 +465,20 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   return (
     <div className="kb-thread" data-kb-thread={thread} aria-busy={busy || undefined}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {summary.title}</p>
-      <h1 className="kb-heading kb-thread-title">{summary.title}</h1>
-      <p className="kb-thread-info kb-small kb-muted">Started <Ago at={summary.createdAt} /></p>
-      {pager('top')}
+      <div className="kb-thread-head">
+        <h1 className="kb-heading kb-thread-title">{summary.title}</h1>
+        {pager('top')}
+      </div>
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
           <div className="kb-acts">
+            {/* The 2003 table's column head, over side-by-side posts; each article names its own author for a screen reader. */}
+            {layout === 'side' && (
+              <div className="kb-acts-head" aria-hidden="true">
+                <span>Author</span>
+                <span>Message</span>
+              </div>
+            )}
             {shown.map((a) => <ActArticle key={a.id} act={a} person={a.character ? people.current.get(a.character) : undefined} layout={layout} slid={feed.slid.has(a.id)} />)}
           </div>
         </ThreadCtx.Provider>

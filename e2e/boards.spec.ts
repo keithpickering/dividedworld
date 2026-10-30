@@ -15,7 +15,9 @@ import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInF
  *
  * The board's Google Fonts requests are routed to the instance's own files (the build serves the
  * same files itself), the system faces both name first are set in one stand-in where the machine
- * lacks them, and both pages are opened at device scale 1 and reduced motion. The build is
+ * lacks them, and both pages are opened at device scale 1 and reduced motion. The stand-in and the
+ * report's outlines are styles put into the page, which the site's policy would refuse, so it is
+ * set aside here (e2e/csp.spec.ts holds the policy). The build is
  * pressed where the manifest says the board draws a state reached by a press, and read once it has
  * rendered (e2e/board-snapshot.ts). A report goes to e2e/report/boards/<board>/ on a
  * pass as well as a failure: both screenshots with the manifest's boxes outlined, side by side in an

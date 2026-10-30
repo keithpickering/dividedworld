@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 import { createFake } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
 import { App } from './App.tsx';
@@ -31,14 +31,23 @@ test('signing out puts the page back to the device\'s look', async () => {
   expect(await within(await screen.findByRole('region', { name: 'Game HUD' })).findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
 });
 
-test('the instance\'s glass is on the page: its standard key on the root, and its fonts', async () => {
-  const fake = createFake({ instance, settings: fallbackSettings });
-  seedDemo(fake);
-  render(<App api={fake} />);
-  await screen.findByRole('region', { name: 'Game HUD' });
-  expect(document.documentElement.getAttribute('data-kb-glass-key')).toBe('standard');
-  expect(document.documentElement.style.getPropertyValue('--kb-glass-ground')).toBe('#07050d');
-  expect(document.getElementById('kb-glass-fonts')?.textContent).toContain('font-family: "Anton"');
+test('the instance\'s glass is on the page: its standard key on the root, and its fonts in the font set', async () => {
+  /* jsdom has no font set and no FontFace; the browser's are stood in for, as far as the app reaches. */
+  const fonts = new Set<{ family: string }>();
+  Object.defineProperty(document, 'fonts', { value: fonts, configurable: true });
+  vi.stubGlobal('FontFace', class { constructor(readonly family: string) {} });
+  try {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    render(<App api={fake} />);
+    await screen.findByRole('region', { name: 'Game HUD' });
+    expect(document.documentElement.getAttribute('data-kb-glass-key')).toBe('standard');
+    expect(document.documentElement.style.getPropertyValue('--kb-glass-ground')).toBe('#07050d');
+    expect([...fonts].map((f) => f.family)).toContain('Anton');
+  } finally {
+    vi.unstubAllGlobals();
+    delete (document as { fonts?: unknown }).fonts;
+  }
 });
 
 /* Each glass route and what only its own screen shows, so the wrapped content is that screen's, unchanged. */

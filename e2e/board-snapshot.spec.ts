@@ -156,6 +156,13 @@ test('the first text skips an aria-hidden subtree and hidden spans ahead of the 
   expect(shots[1]!.type).toBeUndefined();
 });
 
+test('the first text skips a visually hidden heading, which a screen reader hears and no eye sees', async ({ page }) => {
+  await page.setContent(`<style>.sr{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;font-size:30px} .n{font-size:12px;color:rgb(4,5,6)}</style>
+    <article aria-label="Post 1"><h2 class="sr">Post 1 by Spritey</h2><a class="n" href="#">Spritey</a></article>`);
+  const { shots } = await snapshotPage(page, manifest(lm('p', { role: 'article', name: 'Post 1' })), 'board');
+  expect(shots[0]!.type).toMatchObject({ size: 12, color: 'rgb(4, 5, 6)' });
+});
+
 test('a landmark with no text has no type, and type:false skips reading it', async ({ page }) => {
   await page.setContent(`<button aria-label="Icon"><span aria-hidden="true">x</span></button>`);
   const { shots } = await snapshotPage(page, manifest(lm('i', { name: 'Icon' }), lm('j', { name: 'Icon', type: false })), 'board');
