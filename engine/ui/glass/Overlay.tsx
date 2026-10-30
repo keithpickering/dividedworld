@@ -107,8 +107,11 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
       frame = null;
       const target = anchor.current;
       if (!target) return;
+      /* Unplaced for the measuring, the box is no scroller (its overflow is the placement's), so where it was scrolled to is put back after. */
+      const scrolled = el.scrollTop;
       const at = place(el, target, sheetBelow);
       el.setAttribute('data-kb-place', at);
+      el.scrollTop = scrolled;
       told.current?.(at);
       /* Popover to sheet or back: what it holds is laid out anew for it (the picker's kinds two or four across), so it is measured again once that has landed. */
       if (last !== null && at !== last) soon();

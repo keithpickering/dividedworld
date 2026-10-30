@@ -287,6 +287,23 @@ describe('placing a popover overlay', () => {
     expect(px(d.style.top)).toBe(124 + 30);
   });
 
+  test('a height-capped popover keeps where it was scrolled to when it is placed again', async () => {
+    geo.hud = rect(0, 500, 900, 200);
+    geo.anchor = rect(100, 200, 300, 20);
+    const d = await openIt();
+    expect(d.style.maxHeight).not.toBe('');
+    /* As a browser does: the box loses its scroll when it stops being a scroller, which it does while it has no placement (shell.css's overflow is the placement's). */
+    let scrolled = 0;
+    Object.defineProperty(d, 'scrollTop', { configurable: true, get: () => scrolled, set: (v: number) => { scrolled = v; } });
+    const remove = d.removeAttribute.bind(d);
+    d.removeAttribute = (name: string) => { if (name === 'data-kb-place') scrolled = 0; remove(name); };
+    d.scrollTop = 120;
+    window.dispatchEvent(new Event('resize'));
+    await frame();
+    expect(d).toHaveAttribute('data-kb-place', 'below');
+    expect(d.scrollTop).toBe(120);
+  });
+
   test('its own content growing or shrinking places it again', async () => {
     windowOf(900, 800);
     geo.hud = rect(0, 700, 900, 100);

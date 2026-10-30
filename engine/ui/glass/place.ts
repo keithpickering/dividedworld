@@ -6,7 +6,7 @@
  * window's left and right edges. Everything is in viewport pixels in, and out relative to
  * the popover's containing block (the container's top-left), which is what an absolute element needs.
  */
-/**
+/*
  * The HUD, docked at the foot of the window (engine/ui/frame/Hud.tsx gives its element this class): an
  * anchored overlay stays clear of its top edge, and a sheet stands on it.
  */
