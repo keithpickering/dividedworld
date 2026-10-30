@@ -1,41 +1,119 @@
 /**
- * Settings: theme, post style and motion, each saved to the account the moment it is chosen and
- * applied to the page at once, and sign out. The thread reads the post style when it opens, so a
- * change shows on the next thread view with no reload.
+ * Settings, on the glass, as the Settings board draws it (docs/research/2026-10-29-two-worlds/11-settings.html;
+ * the glass plan, sections 7 and 8, and its choices 2, 3 and 4): the heading, a navigation of its
+ * sections, Account and Accessibility (the board's Notifications, Privacy and Export my data wait
+ * for a design), and the section beside it.
+ *
+ * Accessibility: motion, smoke, contrast, text size, the board's colors (the device's, black on
+ * white, white on black, then the instance's own themes) and the post style, each a row of skewed
+ * choices with its sentence. Each is saved to the account the moment it is chosen and applied to the
+ * page at once (applyAppearance): the theme restyles the board only, the smoke, contrast and text
+ * size the glass and the board together. The thread reads the post style when it opens, so a change
+ * shows on the next thread view with no reload.
+ *
+ * Account: the address the session signed in with, plainly and not as a field (it is changed nowhere
+ * here), the player's invites (Invites.tsx), and Sign out at its foot. `/invites`, the page invites
+ * had before, opens this section (web/src/App.tsx).
+ *
+ * The section is the address's `?section=`, so the menu bar's Settings stays current on both and the
+ * page does not move its focus from the link the player chose.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER, type Answer, type Preferences } from '../data/api.ts';
 import { applyAppearance } from '../appearance.ts';
-import { Link, useNavigate } from '../router.tsx';
+import { Link, useLocation, useNavigate } from '../router.tsx';
+import { Invites } from './Invites.tsx';
 import { useSession } from './session.ts';
 import './account.css';
 
-interface Option<V extends string> { readonly value: V; readonly label: string; readonly note?: string }
+interface Option<V extends string | number> { readonly value: V; readonly label: string }
 
-const POSTBIT: readonly Option<Preferences['postbit']>[] = [
-  { value: 'side', label: 'Side', note: 'the character beside each post, as on a classic forum' },
-  { value: 'stacked', label: 'Stacked', note: 'the character above each post, for narrow screens' },
-];
 const MOTION: readonly Option<Preferences['motion']>[] = [
-  { value: 'system', label: 'Device', note: 'follow the device\'s reduced-motion setting' },
-  { value: 'reduce', label: 'Reduce', note: 'less movement; every game obstacle still costs what it did' },
-  { value: 'full', label: 'Full', note: 'all the movement, whatever the device says' },
+  { value: 'system', label: 'Follow my device' },
+  { value: 'reduce', label: 'Reduced' },
+  { value: 'full', label: 'Full' },
+];
+const SMOKE: readonly Option<Preferences['smoke']>[] = [
+  { value: 'full', label: 'Full' },
+  { value: 'low', label: 'Low' },
+  { value: 'off', label: 'Off' },
+];
+const CONTRAST: readonly Option<Preferences['contrast']>[] = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'high', label: 'High' },
+];
+const TEXT_SIZE: readonly Option<Preferences['textSize']>[] = [100, 125, 150, 200].map((n) => ({ value: n as Preferences['textSize'], label: `${n}%` }));
+const POSTBIT: readonly Option<Preferences['postbit']>[] = [
+  { value: 'side', label: 'Side by side' },
+  { value: 'stacked', label: 'Stacked' },
 ];
 
-function Choice<V extends string>({ legend, name, options, value, onChange }: {
-  readonly legend: string; readonly name: string; readonly options: readonly Option<V>[]; readonly value: V; readonly onChange: (v: V) => void;
-}) {
+type Section = 'account' | 'accessibility';
+const SECTIONS: readonly { readonly key: Section; readonly label: string }[] = [
+  { key: 'account', label: 'Account' },
+  { key: 'accessibility', label: 'Accessibility' },
+];
+const sectionHref = (s: Section) => (s === 'accessibility' ? '/settings' : `/settings?section=${s}`);
+
+/** One of the board's rows: its label in the 230px column, and what it holds with its sentence under it. */
+function Row({ label, children, sentence }: { readonly label: string; readonly children: ReactNode; readonly sentence?: ReactNode }) {
   return (
-    <fieldset className="kb-setting">
-      <legend>{legend}</legend>
-      {options.map((o) => (
-        <label key={o.value} className="kb-setting-option">
-          <input type="radio" name={name} value={o.value} checked={value === o.value} onChange={() => onChange(o.value)} /> {o.label}
-          {o.note && <span className="kb-muted kb-small"> ({o.note})</span>}
-        </label>
-      ))}
+    <div className="kb-acct-row">
+      <h3 className="kb-acct-row-label">{label}</h3>
+      <div className="kb-acct-row-body">
+        {children}
+        {sentence && <p className="kb-acct-row-sentence">{sentence}</p>}
+      </div>
+    </div>
+  );
+}
+
+/** A row of skewed choices, one radio each, as the board draws them; its fieldset's legend is the row's label. */
+function Choice<V extends string | number>({ legend, options, value, onChange, sentence }: {
+  readonly legend: string; readonly options: readonly Option<V>[]; readonly value: V; readonly onChange: (v: V) => void; readonly sentence: string;
+}) {
+  const name = useId();
+  return (
+    <fieldset className="kb-acct-row kb-acct-choice">
+      <legend className="kb-acct-row-legend"><h3 className="kb-acct-row-label">{legend}</h3></legend>
+      <div className="kb-acct-row-body">
+        <div className="kb-acct-seg" role="radiogroup" aria-label={legend}>
+          {options.map((o) => (
+            <label key={o.value} className="kb-acct-seg-option">
+              <input type="radio" name={name} value={o.value} checked={value === o.value} onChange={() => onChange(o.value)} />
+              <span className="kb-acct-seg-face kb-glass-skew"><b className="kb-glass-upright">{o.label}</b></span>
+            </label>
+          ))}
+        </div>
+        <p className="kb-acct-row-sentence">{sentence}</p>
+      </div>
     </fieldset>
+  );
+}
+
+/** The Settings board's frame: the heading, the sections' navigation, and the section. */
+function Frame({ section, children }: { readonly section: Section | null; readonly children: ReactNode }) {
+  return (
+    <div className="kb-acct kb-settings">
+      <h1 className="kb-acct-title kb-glass-display">Settings</h1>
+      <div className="kb-settings-body">
+        {section && (
+          <nav className="kb-settings-nav kb-calm" aria-label="Settings sections">
+            <ul>
+              {SECTIONS.map((s) => (
+                <li key={s.key}>
+                  <Link to={sectionHref(s.key)} className="kb-settings-tab kb-glass-skew" aria-current={s.key === section ? 'page' : undefined}>
+                    <b className="kb-glass-upright">{s.label}</b>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -43,7 +121,10 @@ export function SettingsScreen() {
   const { api, ui } = useKayfa();
   const session = useSession(api);
   const navigate = useNavigate();
+  const { query } = useLocation();
+  const section: Section = query.get('section') === 'account' ? 'account' : 'accessibility';
   const [prefs, setPrefs] = useState<Preferences | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const account = session?.account ?? null;
@@ -55,20 +136,25 @@ export function SettingsScreen() {
     if (!account) return;
     let live = true;
     void api.preferences().then((p) => { if (live) { current.current = p; setPrefs(p); } }, () => { if (live) setRefusal('Your settings could not be read right now. Reload the page to try again.'); });
+    void api.signInAddress().then((a) => { if (live) setAddress(a); }, () => { /* the row says it could not be read */ });
     return () => { live = false; };
   }, [api, account]);
 
-  if (session === null) return <div className="kb-account" aria-busy="true" />;
-  if (!session.signedIn || !account) return <div className="kb-account"><h1 className="kb-heading">Settings</h1><p><Link to="/sign-in">Sign in</Link> to change your settings.</p></div>;
-  if (prefs === null) return <div className="kb-account" aria-busy="true"><h1 className="kb-heading">Settings</h1>{refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}</div>;
+  if (session === null) return <div className="kb-acct" aria-busy="true" />;
+  if (!session.signedIn || !account) {
+    return <Frame section={null}><p className="kb-acct-lead kb-calm"><Link to="/sign-in">Sign in</Link> to change your settings.</p></Frame>;
+  }
+  if (prefs === null) {
+    return <Frame section={section}><div className="kb-settings-section" aria-busy="true">{refusal && <p role="alert" className="kb-acct-refusal kb-calm">{refusal}</p>}</div></Frame>;
+  }
 
   /* An account's theme that this instance does not offer is shown as the device's. */
   const offered = new Set<string>(['system', 'light', 'dark', ...ui.themes.slice(1).map((t) => t.key)]);
   const theme = offered.has(prefs.theme) ? prefs.theme : 'system';
   const themeOptions: readonly Option<string>[] = [
-    { value: 'system', label: 'Device', note: 'light or dark as the device is set' },
-    { value: 'light', label: 'Light' },
-    { value: 'dark', label: 'Dark' },
+    { value: 'system', label: 'Follow my device' },
+    { value: 'light', label: 'Black on white' },
+    { value: 'dark', label: 'White on black' },
     ...ui.themes.slice(1).map((t) => ({ value: t.key, label: t.name })),
   ];
 
@@ -79,7 +165,7 @@ export function SettingsScreen() {
   const change = (patch: Partial<Preferences>) => {
     const key = Object.keys(patch)[0] as keyof Preferences;
     const was = current.current![key];
-    const show = (next: Preferences) => { current.current = next; setPrefs(next); applyAppearance(document, next, ui.themes); };
+    const show = (next: Preferences) => { current.current = next; setPrefs(next); applyAppearance(document, next, ui.themes, ui.glass); };
     show({ ...current.current!, ...patch });
     setRefusal(null);
     setSaved(false);
@@ -101,17 +187,52 @@ export function SettingsScreen() {
     }
   };
 
+  const said = (
+    <>
+      {refusal && <p role="alert" className="kb-acct-refusal kb-calm">{refusal}</p>}
+      <p role="status" className="kb-acct-note">{saved && !refusal ? 'Saved to your account.' : ''}</p>
+    </>
+  );
+
+  if (section === 'account') {
+    return (
+      <Frame section={section}>
+        <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-account">
+          <h2 id="kb-settings-account" className="kb-acct-section-title kb-glass-display">Account</h2>
+          <p className="kb-acct-lead">Out of character: what you sign in with, and who you bring in.</p>
+          <Row label="Sign-in address" sentence="The address the code and the link come to. It is not shown to anyone else.">
+            <p className="kb-acct-value">{address ?? 'Your address could not be read right now. Reload the page to try again.'}</p>
+          </Row>
+          <Row label="Invites"><Invites /></Row>
+          {said}
+          <Row label="Sign out" sentence="Ends this session on this device. Your characters and settings stay with your account.">
+            <p><button type="button" className="kb-acct-button kb-glass-skew" onClick={() => void signOut()}><b className="kb-glass-upright">Sign out</b></button></p>
+          </Row>
+        </section>
+      </Frame>
+    );
+  }
+
   return (
-    <div className="kb-account kb-settings">
-      <h1 className="kb-heading">Settings</h1>
-      <p className="kb-muted">Each choice is saved to your account as you make it, so it follows you to other devices.</p>
-      <Choice legend="Theme" name="theme" options={themeOptions} value={theme} onChange={(v) => change({ theme: v })} />
-      <Choice legend="Post style" name="postbit" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })} />
-      <Choice legend="Motion" name="motion" options={MOTION} value={prefs.motion} onChange={(v) => change({ motion: v })} />
-      {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-      <p role="status" className="kb-small kb-muted">{saved && !refusal ? 'Saved to your account.' : ''}</p>
-      <h2 className="kb-heading">Sign out</h2>
-      <p><button type="button" className="kb-button" onClick={() => void signOut()}>Sign out</button></p>
-    </div>
+    <Frame section={section}>
+      <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-accessibility">
+        <h2 id="kb-settings-accessibility" className="kb-acct-section-title kb-glass-display">Accessibility</h2>
+        <p className="kb-acct-lead">These change how the board and the glass look, read and move. They never change how hard a card is to get through.</p>
+        <Choice legend="Motion" options={MOTION} value={prefs.motion} onChange={(v) => change({ motion: v })}
+          sentence="Reduced stops the drifting smoke, the pulses and the orb shine. A card's effect stays: one that snaps you back still does, only instantly." />
+        <Choice legend="Smoke" options={SMOKE} value={prefs.smoke} onChange={(v) => change({ smoke: v })}
+          sentence="How much cloud sits behind the glass. Off leaves plain black. Text is readable at every setting." />
+        <Choice legend="Contrast" options={CONTRAST} value={prefs.contrast} onChange={(v) => change({ contrast: v })}
+          sentence="High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen." />
+        <Choice legend="Text size" options={TEXT_SIZE} value={prefs.textSize} onChange={(v) => change({ textSize: v })}
+          sentence="Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off." />
+        <Choice legend="The board" options={themeOptions} value={theme} onChange={(v) => change({ theme: v })}
+          sentence="The 2003 board stays 2003 whichever you choose: only its colors change. Follow my device takes light or dark from the device." />
+        <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
+          sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />
+        {said}
+        <p className="kb-acct-foot">Changes save as you make them.</p>
+      </section>
+    </Frame>
   );
 }

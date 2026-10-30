@@ -1,45 +1,536 @@
-/* Sign in, Register, Invites, Settings: plain forms on the board's own boxes. */
-.kb-account {
-  max-width: 40em;
+/*
+ * The account screens and Settings on the glass (the glass plan, sections 7 and 8; the Settings
+ * board, docs/research/2026-10-29-two-worlds/11-settings.html): the heading in Anton at the board's
+ * 112px, the sections' navigation of skewed tabs, and rows of a 230px label column, the controls and
+ * the sentence under them, over a rule. Choices are skewed segments, the chosen one in the neon fill
+ * and its ink; fields are the HUD's field (--kb-glass-field, a cyan border, 52px tall); buttons are
+ * the segments' shape. Every color is a glass token and every font size a size token or a rem, so the
+ * player's text size scales all of it (engine/ui/glass/board.test.tsx reads this file for both).
+ *
+ * The words stand in calms (calm.css): the section and the sections' navigation each carry one, as
+ * the board draws its two calms behind them; only the Anton headings stand on the full smoke, at
+ * large-text size. On the Phone board's layout, which is also the glass's one column past 150% text
+ * (engine/ui/glass/board.ts), the rows are one column at the phone's sizes, controls 48px tall, and
+ * the calm's feather is clipped at the window's edge so the page never scrolls sideways.
+ */
+
+.kb-acct {
   min-width: 0;
 }
 
-.kb-account .kb-input {
+.kb-acct-title {
+  margin: 36px 0 0;
+  font-size: 7rem;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+/* The sections' navigation beside the section, at the board's 250px and 56px apart. */
+.kb-settings-body {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 920px);
+  column-gap: 56px;
+  align-items: start;
+  margin-top: 68px;
+}
+
+/* A page with no sections (signed out, or the account screens): the one column, under the heading. */
+.kb-settings-body > :only-child,
+.kb-acct-panel {
+  grid-column: 1 / -1;
+  max-width: 920px;
+}
+
+.kb-acct-panel {
+  margin-top: 68px;
+}
+
+.kb-settings-nav ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-settings-tab {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 20px;
+  box-sizing: border-box;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-settings-tab > b,
+.kb-acct-seg-face > b,
+.kb-acct-button > b {
+  font-weight: 800;
+}
+
+.kb-settings-tab[aria-current='page'] {
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+}
+
+/* ---- the section ---- */
+
+.kb-acct-section-title {
+  margin: 0 0 12px;
+  font-size: var(--kb-glass-size-display-l);
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+}
+
+.kb-acct-lead {
+  max-width: 680px;
+  margin: 0 0 22px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-acct-row {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  column-gap: 32px;
+  min-width: 0;
+  margin: 0;
+  padding: 24px 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+/* A floated legend is a plain box, so it takes the grid's label column as the board's does. */
+.kb-acct-row-legend {
+  float: left;
+  padding: 0;
+}
+
+.kb-acct-row-label {
+  margin: 0;
+  padding-top: 12px;
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+.kb-acct-row-body {
+  min-width: 0;
+}
+
+.kb-acct-row-sentence {
+  max-width: 680px;
+  margin: 12px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+/* The skewed segments: the radio is hidden in its label, and its face carries the choice and the focus. */
+.kb-acct-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.kb-acct-seg-option {
+  position: relative;
+  cursor: pointer;
+}
+
+.kb-acct-seg-option > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.kb-acct-seg-face,
+.kb-acct-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 22px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+.kb-acct-seg-option > input:checked + .kb-acct-seg-face,
+.kb-acct-button[data-kb-primary] {
+  background: var(--kb-glass-neon);
+  border-color: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+}
+
+.kb-acct-seg-option > input:focus-visible + .kb-acct-seg-face {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-acct-button {
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.kb-acct-button:disabled {
+  cursor: default;
+  border-style: dashed;
+  background: transparent;
+  color: var(--kb-glass-text-2);
+  box-shadow: none;
+}
+
+.kb-acct-foot {
+  margin: 20px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- what the account screens and Settings › Account hold ---- */
+
+.kb-acct-text {
+  max-width: 680px;
+  margin: 0 0 16px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-acct-value {
+  margin: 12px 0 0;
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 700;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  color: var(--kb-glass-text);
+}
+
+.kb-acct a {
+  color: var(--kb-glass-pale);
+  text-underline-offset: 4px;
+}
+
+.kb-acct .kb-settings-tab {
+  color: var(--kb-glass-text-2);
+}
+
+.kb-acct .kb-settings-tab[aria-current='page'] {
+  color: var(--kb-glass-ink-neon);
+}
+
+/* A field: its label in the row's label column, the HUD's field beside it. */
+.kb-acct-field {
+  align-items: center;
+}
+
+.kb-acct-field > .kb-acct-row-label {
+  padding-top: 0;
+}
+
+.kb-acct-input {
   box-sizing: border-box;
   width: 100%;
-  max-width: 24em;
+  max-width: 560px;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 1.5px solid var(--kb-glass-neon);
+  border-radius: 0;
+  background: var(--kb-glass-field);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text);
 }
 
-.kb-account .kb-invite-link {
-  max-width: 100%;
+.kb-acct-input:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
 }
 
-.kb-ack {
+.kb-acct-input[aria-invalid='true'] {
+  border-color: var(--kb-glass-over);
+}
+
+.kb-acct-code {
+  max-width: 320px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 4px;
+}
+
+/* A sentence under a field, set under the field and not under its label. */
+.kb-acct-indent {
+  margin: 0 0 0 262px;
+}
+
+.kb-acct-ack {
   display: flex;
-  gap: 0.5em;
-  align-items: baseline;
+  gap: 16px;
+  align-items: center;
+  min-height: 52px;
+  margin: 8px 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kb-glass-text);
+  cursor: pointer;
 }
 
-.kb-setting {
-  border: 1px solid var(--kb-rule);
-  margin: 0.8em 0;
-  padding: 0.4em 0.8em 0.6em;
+.kb-acct-ack > input {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  accent-color: var(--kb-glass-neon);
 }
 
-.kb-setting legend {
-  font-weight: bold;
-  padding: 0 0.3em;
+.kb-acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin: 24px 0 0;
 }
 
-.kb-setting-option {
-  display: block;
-  margin: 0.3em 0;
+.kb-acct-notice,
+.kb-acct-refusal {
+  max-width: 680px;
+  margin: 16px 0;
+  padding-left: 14px;
+  border-left: 3px solid var(--kb-glass-neon);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-acct-refusal {
+  border-left-color: var(--kb-glass-over);
+  color: var(--kb-glass-over);
+}
+
+/* The saves' and the invites' notes, said in a region that is always there. */
+.kb-acct-note {
+  min-height: 1.5em;
+  margin: 8px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-acct-note:empty {
+  min-height: 0;
+}
+
+/* ---- invites ---- */
+
+.kb-invites > p:first-child {
+  margin-top: 12px;
 }
 
 .kb-invite-new {
-  margin: 1em 0;
+  --kb-cut: var(--kb-glass-chamfer-2);
+  margin: 16px 0;
+  padding: 20px 24px;
+}
+
+.kb-invite-new-head {
+  margin: 0 0 12px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-invite-new .kb-acct-field-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  color: var(--kb-glass-text);
+}
+
+.kb-invite-link {
+  max-width: 100%;
 }
 
 .kb-invite-table {
   width: 100%;
+  margin-top: 16px;
+  border-collapse: collapse;
+}
+
+.kb-invite-table th {
+  padding: 0 16px 12px 0;
+  text-align: left;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
+}
+
+.kb-invite-table td {
+  padding: 12px 16px 12px 0;
+  vertical-align: middle;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+.kb-invite-table td:last-child {
+  padding-right: 0;
+  text-align: right;
+}
+
+.kb-invite-when {
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- the Phone board's layout, and the one column past 150% text ---- */
+
+:where(:root[data-kb-layout='phone']) .kb-acct {
+  overflow-x: clip;
+  overflow-clip-margin: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-title {
+  margin-top: 16px;
+  font-size: var(--kb-glass-size-display-l);
+  overflow-wrap: anywhere;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settings-body {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 24px;
+  margin-top: 24px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-panel {
+  margin-top: 24px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settings-nav ul {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settings-tab,
+:where(:root[data-kb-layout='phone']) .kb-acct-seg-face,
+:where(:root[data-kb-layout='phone']) .kb-acct-button {
+  min-height: 48px;
+  padding: 0 16px;
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-section-title {
+  font-size: var(--kb-glass-size-display-m);
+  overflow-wrap: anywhere;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-row {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 12px;
+  padding: 16px 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-row-legend {
+  float: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-row-label {
+  padding-top: 0;
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-lead,
+:where(:root[data-kb-layout='phone']) .kb-acct-row-sentence,
+:where(:root[data-kb-layout='phone']) .kb-acct-foot,
+:where(:root[data-kb-layout='phone']) .kb-acct-text,
+:where(:root[data-kb-layout='phone']) .kb-acct-notice,
+:where(:root[data-kb-layout='phone']) .kb-acct-refusal,
+:where(:root[data-kb-layout='phone']) .kb-acct-note,
+:where(:root[data-kb-layout='phone']) .kb-acct-ack,
+:where(:root[data-kb-layout='phone']) .kb-acct-input,
+:where(:root[data-kb-layout='phone']) .kb-invite-table td {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-value {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-input {
+  min-height: 48px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-indent {
+  margin-left: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-invite-table th,
+:where(:root[data-kb-layout='phone']) .kb-invite-new-head,
+:where(:root[data-kb-layout='phone']) .kb-invite-new .kb-acct-field-label {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+/* Each invite a block of its own lines, since three columns and a button do not fit a phone. */
+:where(:root[data-kb-layout='phone']) .kb-invite-table,
+:where(:root[data-kb-layout='phone']) .kb-invite-table tbody,
+:where(:root[data-kb-layout='phone']) .kb-invite-table tr,
+:where(:root[data-kb-layout='phone']) .kb-invite-table td {
+  display: block;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-invite-table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-invite-table tr {
+  padding: 12px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-invite-table td {
+  padding: 0;
+  border: 0;
+  text-align: left;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-invite-table td:last-child {
+  margin-top: 8px;
+  text-align: left;
 }

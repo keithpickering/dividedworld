@@ -8,7 +8,7 @@
  *
  * Under the `low` preference each layer is drawn at a third of its opacity; under `off` no smoke
  * element is drawn and the ground remains. The preference is the player's, read from the root's
- * `data-kb-smoke` (engine/ui/appearance.ts) and followed as it changes. A recipe with a `drift` is a strip wider than its
+ * `data-kb-smoke-level` (engine/ui/appearance.ts) and followed as it changes. A recipe with a `drift` is a strip wider than its
  * frame that slides back and forth (base.css holds the keyframes and stops them under reduced
  * motion, the device's or the player's override, so the strip and its crop are the same either
  * way). A recipe's `narrow` layers are drawn too, and base.css shows one set or the other at 600px. The filters work in sRGB: the boards were drawn there, and SVG's default

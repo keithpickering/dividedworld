@@ -8,7 +8,7 @@
  * (engine/ui/tokens.css says the shape every theme follows).
  *
  * The glass's three preferences (the web plan's glass amendment to Task 11) are marked the same
- * way, only when they leave their default: `data-kb-smoke` (low or off; Smoke.tsx reads it),
+ * way, only when they leave their default: `data-kb-smoke-level` (low or off; Smoke.tsx reads it),
  * `data-kb-contrast` (high; contrast.css puts solid ground under the glass's text) and
  * `data-kb-text-size` (125, 150 or 200; base.css sets the root's font size from it, every size on
  * the board and the glass is in rem or a glass size token, which is rem, so all of it follows; and
@@ -69,7 +69,7 @@ export function applyAppearance(doc: Document, pref: AppearancePreference, theme
   const smoke = pref.smoke === 'low' || pref.smoke === 'off' ? pref.smoke : null;
   const high = pref.contrast === 'high';
   const size = pref.textSize === 125 || pref.textSize === 150 || pref.textSize === 200 ? pref.textSize : null;
-  mark(root, 'data-kb-smoke', smoke);
+  mark(root, 'data-kb-smoke-level', smoke);
   mark(root, 'data-kb-contrast', high ? 'high' : null);
   mark(root, 'data-kb-text-size', size === null ? null : String(size));
   if (glass) applyGlass(root, glass, high ? 'high' : 'standard');
@@ -83,7 +83,7 @@ function mark(root: HTMLElement, name: string, value: string | null): void {
 
 /** The smoke the player chose, as the root is marked now. */
 export function smokeLevel(doc: Document = document): 'full' | 'low' | 'off' {
-  const v = doc.documentElement.getAttribute('data-kb-smoke');
+  const v = doc.documentElement.getAttribute('data-kb-smoke-level');
   return v === 'low' || v === 'off' ? v : 'full';
 }
 
@@ -101,7 +101,7 @@ export function textSize(doc: Document = document): 100 | 125 | 150 | 200 {
 function subscribeRoot(onChange: () => void): () => void {
   if (typeof MutationObserver !== 'function') return () => {};
   const watch = new MutationObserver(onChange);
-  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-smoke', 'data-kb-text-size'] });
+  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-smoke-level', 'data-kb-text-size'] });
   return () => watch.disconnect();
 }
 

@@ -38,7 +38,7 @@ const opacities = (c: HTMLElement, narrow = false) => rects(c, narrow).map((r) =
 
 afterEach(() => {
   document.documentElement.removeAttribute('data-kb-motion');
-  document.documentElement.removeAttribute('data-kb-smoke');
+  document.documentElement.removeAttribute('data-kb-smoke-level');
 });
 
 describe('Smoke', () => {
@@ -71,13 +71,13 @@ describe('Smoke', () => {
 
   it('takes the player\'s preference from the root when no level is given, and follows it when it changes', async () => {
     const root = document.documentElement;
-    root.setAttribute('data-kb-smoke', 'off');
+    root.setAttribute('data-kb-smoke-level', 'off');
     const { container } = render(inWorld(<Smoke surface="hud" />));
     expect(container.querySelector('[data-kb-smoke]')).toBeNull();
     expect(container.querySelector('[data-kb-ground]')).not.toBeNull();
-    await act(async () => { root.setAttribute('data-kb-smoke', 'low'); await Promise.resolve(); });
+    await act(async () => { root.setAttribute('data-kb-smoke-level', 'low'); await Promise.resolve(); });
     expect(opacities(container)[0]).toBeCloseTo(1 / 3, 6);
-    await act(async () => { root.removeAttribute('data-kb-smoke'); await Promise.resolve(); });
+    await act(async () => { root.removeAttribute('data-kb-smoke-level'); await Promise.resolve(); });
     expect(opacities(container)).toEqual([1, 0.55]);
   });
 

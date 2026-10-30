@@ -80,7 +80,7 @@ describe('the glass\'s three preferences on the page', () => {
     },
     smoke: { recipes: {}, surfaces: {} }, calm: { opacity: 0.85, feather: 32 }, sizes: {}, fonts: [], classes: {}, orbs: { gradients: [], body: {} },
   } as unknown as GlassTheme;
-  const marks = () => ['data-kb-smoke', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'].map((a) => root.getAttribute(a));
+  const marks = () => ['data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'].map((a) => root.getAttribute(a));
 
   test('their defaults set no mark, and the glass keeps its standard key', () => {
     applyAppearance(document, { theme: 'system', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100 }, themes, glass);
