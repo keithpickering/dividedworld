@@ -115,6 +115,16 @@ overlay's content and the focus's return; that it neither selects nor spends.
 the Vending Machine; the play form's price is what the card's rules add for that post (Whoops!'s long-post fee), and
 the form says the card is paid. The glass plan's section 2.1 amendment of this date moves the boards' timeline with it.
 
+**Amended 2026-10-30, the owner's answer on #80 (an armed card on a phone), and the owner's notes on its screenshot.**
+On #80: "Agreed with your rec for the question". While a card is armed, the Hand button reads "Armed · Whoops!" and one
+press puts the card back; the screen reader's line says to press Armed on a phone and Esc on a wide screen. Of the play
+tag, the owner: "the custom note from the card user is wrapping to too many lines, which will scale even worse with a longer message. This should break to its own line in a smaller font. The chip overlays the date line of the post itself, so it will need to be moved. At this screen size ui elements can stand to be a little smaller." So, at every width, the caster's message stands on its own line under the card's name and the
+caster, in a smaller size, and wraps there; the tag never covers the post's line (its date and permalink); on the Phone
+board's layout the tag and the other glass controls are a step smaller, within the size floors. And the principle the
+owner's notes give, which holds for every card: game state and its controls never live in the 2003 chrome, so an effect
+can cover a post freely. Whether "Play Whoops! here" in the post's action row (board 01 draws it there) goes against it
+is raised in PR #71, not moved without the owner's word.
+
 ### Task 4. Stick Around
 
 - `instances/divided-world/cards/stick-around/hold.ts` (pure): which Stick Around pulls (the nearest seen and unescaped,
@@ -218,6 +228,14 @@ view's tests and board 08's manifest follow from the approved stories.
 for the splat". The fixed layout's scale is capped at 1×, not 1.5×: a splatted post keeps the board's 12px type in its
 360px column on a wide screen, and is scaled down, never up, on a narrow one. Board 01's #42, #43 and "Hold to scrub"
 are compared as fully as the 1× layout allows.
+
+**Amended 2026-10-30, the owner's notes on #80's screenshot (Whoops! on a post).** The owner: "there is 2003 verdana with a glass button inline in the same paragraph, doesn't fit the break between the two styles. A description of a postcard effect is pure glass, only the effect itself should be integrated with the game world's copy and styling." And: "whoops spill looks odd when it's not actually filling a whole bordered container (another reason why game state data should not be in the 2003 chrome - we should be able to cover posts up without worrying about hiding controls)" So
+the effect's copy and controls ("This post is splatted. Drag across the ink…", Hold to scrub, and the author's Wash and
+Write in ink) leave the post's 2003 body for one glass element attached to the post, outside its chrome: a strip under
+the post or a part of the tag. The 2003 post keeps only the effect itself, and no 2003 paragraph holds a glass control.
+The splat covers the post's whole bordered body, edge to edge, since no control a player needs sits in it any more.
+Stick Around's in-thread frame and tag hold to the same principle. Board 01 draws the scrub sentence in the post; its
+manifest names that region as differing by this answer.
 
 ### Task 6. The log's card lines, and the audit
 

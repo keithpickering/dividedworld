@@ -304,6 +304,12 @@ In `engine/ui/glass/base.css` (web Task 1), as tokens a component sets and class
 - **Motion,** all stopped under reduced motion with the end state shown: the HUD smoke's drift (28s, a 1560px strip
   moving 120px), `ghostpulse`, `armed`, and the Vending sign's `flicker`.
 
+**Amended 2026-10-30, the owner's notes on #80's screenshot.** A card's tag over a post holds the card's name and its
+caster on one line and the caster's message on its own line under them, a size smaller, and stands clear of the post's
+line; an effect's words and controls are one glass element attached to the post, outside its 2003 chrome (the cards
+plan's Task 3 and 5 amendments of this date). On the Phone board's layout these are a step smaller, within the size
+floors.
+
 ## 6. The smoke: a recipe per surface
 
 The design and web Task 1 describe one smoke of two layers. The boards draw nine recipes, each tuned to its screen.
@@ -407,6 +413,11 @@ build's where section 3 changed it.
 | `button "Menu"` (`aria-keyshortcuts="Escape"`, `aria-haspopup`), its Esc key cap | web Task 3 | full |
 | `button "Hand, 3 postcards"` | web Task 3, cards Task 2 | full |
 | the fanned postcards, each a `button` by its name, the armed one's tag | cards Task 2 (hand), Task 3 (armed) | full |
+
+**Amended 2026-10-30, the owner's notes on #80's screenshot.** Board 01 draws #41's scrub sentence, with its keyboard
+button, inside the 2003 post; the build draws Whoops!'s words and controls as a glass element outside the post, and the
+splat over the post's whole body, by the owner's word (the cards plan's Task 5 amendment of this date). The manifest
+names that region as differing.
 
 ### 02 phone (390×844): web Task 3; cards Task 2
 
