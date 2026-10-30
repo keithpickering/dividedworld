@@ -4,6 +4,6 @@
  * are written against one definition; this re-exports them.
  */
 export type {
-  GlassClassColor, GlassFont, GlassKey, GlassOrbStops, GlassSize, GlassSurface, GlassTag, GlassTheme, GlassToken,
+  ClassLargeDraw, GlassClassColor, GlassFont, GlassKey, GlassOrbStops, GlassSize, GlassSurface, GlassTag, GlassTheme, GlassToken,
   SmokeDrift, SmokeLayer, SmokeRecipe,
 } from '../types.ts';

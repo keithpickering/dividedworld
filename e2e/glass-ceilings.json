@@ -209,6 +209,21 @@
           "--kb-glass-over": {
             "body": 0.0536
           }
+        },
+        "classLarge": "full",
+        "classes": {
+          "face": {
+            "large": 0.1705
+          },
+          "heel": {
+            "large": 0.1175
+          },
+          "lurker": {
+            "large": 0.2335
+          },
+          "jabroni": {
+            "large": 0.2235
+          }
         }
       },
       "turn": {
@@ -259,6 +274,21 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          }
+        },
+        "classLarge": "full",
+        "classes": {
+          "face": {
+            "large": 0.1705
+          },
+          "heel": {
+            "large": 0.1175
+          },
+          "lurker": {
+            "large": 0.2335
+          },
+          "jabroni": {
+            "large": 0.2235
           }
         }
       },
@@ -667,6 +697,21 @@
           },
           "--kb-glass-over": {
             "body": 0.0536
+          }
+        },
+        "classLarge": "calmed",
+        "classes": {
+          "face": {
+            "large": 0.1705
+          },
+          "heel": {
+            "large": 0.1175
+          },
+          "lurker": {
+            "large": 0.2335
+          },
+          "jabroni": {
+            "large": 0.2235
           }
         }
       }
