@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Turn classes: three layouts</title>
+<!-- A mock of the Technician design session, 2026-10-30: the Turn modal's "Choose a class" with five classes and
+     more, in the Turn board's look (docs/research/2026-10-29-two-worlds/06-turn.html). Only the class region is
+     drawn; the portrait, how loud and the preview stay as the board has them. Colors are option A of q2-colors.html. -->
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#07050d;color:#f1ecff;font-family:'Barlow Condensed',sans-serif}
+.board{padding:28px 40px 40px;border-bottom:1px solid rgba(201,248,255,.35);background:radial-gradient(70% 60% at 20% 10%,rgba(140,36,250,.22),transparent 60%),radial-gradient(60% 60% at 90% 90%,rgba(25,227,255,.08),transparent 60%),#07050d}
+.board h1{font:44px/1 Anton,Impact,sans-serif;margin:0 0 4px}
+.board .sub{font-weight:600;font-size:21px;color:#e4def7;margin:0 0 22px;max-width:1100px}
+.row{display:flex;gap:48px;align-items:flex-start}
+.desk{width:970px}
+.legend{font:800 21px 'Barlow Condensed';letter-spacing:3px;color:#e4def7;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center}
+.card{position:relative;display:flex;flex-direction:column;gap:10px;min-height:300px;padding:18px 16px;box-sizing:border-box;background:rgba(10,6,20,.7);border:1px solid var(--edge)}
+.card.on{background:var(--tint);border:2px solid var(--fill);box-shadow:0 0 30px var(--glow)}
+.radio{position:absolute;right:14px;top:14px;width:20px;height:20px;border-radius:50%;border:2px solid #e4def7;box-sizing:border-box}
+.on .radio{border-color:var(--fill);background:radial-gradient(var(--fill) 45%,transparent 50%)}
+.nm{font:40px/1 Anton,Impact,sans-serif;color:var(--large)}
+.now{font:800 18px 'Barlow Condensed';letter-spacing:2px;border:1px solid var(--large);color:var(--large);padding:0 6px;margin-left:8px;vertical-align:middle}
+.marks{display:grid;grid-template-columns:repeat(2,var(--m,28px));gap:4px}
+.marks span{height:var(--m,28px);box-sizing:border-box;border:1px solid rgba(255,255,255,.3);font:800 20px/1 'Barlow Condensed';display:flex;align-items:center;justify-content:center}
+.marks .e{background:var(--fill);color:var(--ink);border:0}
+.marks .h{border:1.5px dashed #ff959f;color:#ff959f}
+.marks .c{border:1.5px dotted var(--fill)}
+.earn{font:600 21px/1.5 'Barlow Condensed';color:#e4def7}
+.hurt{font:600 21px/1.5 'Barlow Condensed';color:#ffb3bb}
+.arrow{width:48px;height:48px;border:1px solid #c9f8ff;color:#c9f8ff;font:800 26px/46px 'Barlow Condensed';text-align:center;box-sizing:border-box;background:rgba(7,5,13,.8)}
+.dots{display:flex;gap:8px;align-items:center;font:700 19px 'Barlow Condensed';color:#c9f8ff;letter-spacing:1px}
+.dots i{width:10px;height:10px;border:1px solid #c9f8ff;display:inline-block}
+.dots i.f{background:#c9f8ff}
+.tile{position:relative;display:flex;flex-direction:column;gap:8px;padding:12px 12px 14px;box-sizing:border-box;background:rgba(10,6,20,.7);border:1px solid var(--edge);min-height:118px}
+.tile.on{background:var(--tint);border:2px solid var(--fill);box-shadow:0 0 24px var(--glow)}
+.tile .nm{font-size:28px}
+.tile .now{font-size:16px;padding:0 4px}
+.ghost{opacity:.35}
+.detail{margin-top:14px;padding:20px 22px;border:2px solid var(--fill);background:var(--tint);box-shadow:0 0 30px var(--glow);display:grid;grid-template-columns:auto 1fr;gap:6px 24px;align-items:start}
+.phone{width:390px;flex:none;border:1px solid rgba(201,248,255,.5);padding:16px;box-sizing:border-box;background:#07050d}
+.phone .ttl{font:800 17px 'Barlow Condensed';letter-spacing:3px;color:#c9f8ff;margin:0 0 10px}
+.ptiles .nm{font-size:24px}
+.cap{font:600 19px/1.4 'Barlow Condensed';color:#c9f8ff;margin:10px 0 0}
+</style>
+</head>
+<body>
+<script>
+const C = {
+  face:{n:'Face',fill:'#3db8ff',ink:'#03141a',large:'#8fd6ff',m:{e:['EP'],h:['BN']},earn:'Earns from hype on its posts and cards, and from Sweet cards it plays on others’ posts that then draw hype.',hurt:'Hurt by the groan, and by a card of its own that outdraws the post it landed on.'},
+  heel:{n:'Heel',fill:'#ff3d57',ink:'#14030a',large:'#ff959f',m:{e:['EN'],h:['CP']},earn:'Earns from heat, and from a Salty card on someone else’s post that outdraws it.',hurt:'Hurt by the calm: the polite shrug.'},
+  lurker:{n:'Lurker',fill:'#b97aff',ink:'#12051f',large:'#d4b0ff',m:{c:['EN','EP','BN','CP']},earn:'Earns by reacting early the way a post ends up, by spinning threads that draw replies, and from reactions to its cards.',hurt:'Hurt by posting more than 3 times in a day.'},
+  jabroni:{n:'Jabroni',fill:'#ffd93d',ink:'#1a1403',large:'#ffe27a',m:{e:['BN'],h:['EP']},earn:'Earns from the groan, and from Salty cards landing on its posts. Selling the L.',hurt:'Hurt by being taken sincerely: hype.'},
+  technician:{n:'Technician',fill:'#2ef0a0',ink:'#03141a',large:'#7dffc8',m:{e:['CP'],h:['EN']},earn:'Earns from the calm, the nod, on its posts and cards, and more when a post 3 days old still draws it.',hurt:'Hurt by heat: being dragged into a flame war.'},
+};
+const FUT = ['Wizard','Tweener','Opportunist','Booker','Manager'];
+const ORDER = ['face','heel','lurker','jabroni','technician'];
+const rgba=(h,a)=>{const n=parseInt(h.slice(1),16);return `rgba(${n>>16},${(n>>8)&255},${n&255},${a})`};
+const vars=k=>{const c=C[k];return `--fill:${c.fill};--ink:${c.ink};--large:${c.large};--edge:${rgba(c.fill,.55)};--tint:${rgba(c.fill,.12)};--glow:${rgba(c.fill,.5)}`};
+const marks=(k,size)=>{const m=C[k].m;return `<span class="marks" style="--m:${size||28}px">`+['EN','EP','BN','CP'].map(q=>m.e?.includes(q)?'<span class="e">+</span>':m.h?.includes(q)?'<span class="h">−</span>':m.c?.includes(q)?'<span class="c"></span>':'<span></span>').join('')+'</span>'};
+const card=(k,on,extra='')=>`<div class="card${on?' on':''}" style="${vars(k)};${extra}"><span class="radio"></span><span><span class="nm">${C[k].n.toUpperCase()}</span>${k==='heel'?'<span class="now">NOW</span>':''}</span>${marks(k)}<span class="earn">${C[k].earn}</span><span class="hurt">${C[k].hurt}</span></div>`;
+const tile=(k,on)=>`<div class="tile${on?' on':''}" style="${vars(k)}"><span class="radio"></span><span><span class="nm">${C[k].n.toUpperCase()}</span>${k==='heel'?'<span class="now">NOW</span>':''}</span>${marks(k,22)}</div>`;
+const ghostTile=n=>`<div class="tile ghost" style="--edge:rgba(255,255,255,.4)"><span class="radio"></span><span class="nm" style="--large:#e4def7">${n.toUpperCase()}</span><span class="marks" style="--m:22px"><span></span><span></span><span></span><span></span></span></div>`;
+const detail=k=>`<div class="detail" style="${vars(k)}"><div>${marks(k,40)}</div><div><div class="nm" style="font-size:48px;margin-bottom:8px">${C[k].n.toUpperCase()}</div><div class="earn">${C[k].earn}</div><div class="hurt">${C[k].hurt}</div></div></div>`;
+let html='';
+
+// 1. Carousel
+html+=`<section class="board"><h1>1. CAROUSEL</h1><p class="sub">Four full cards at a time, as the board draws them; arrows and a scroll-snap row show the rest, the next card peeking at the edge. The arrow keys move the choice, and the row follows it.</p><div class="row"><div class="desk"><div class="legend"><span>CHOOSE A CLASS</span><span class="dots"><span>1–4 OF 5</span><i class="f"></i><i></i></span></div><div style="position:relative"><div style="display:grid;grid-template-columns:repeat(4,226px) 120px;gap:14px;align-items:start;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,#000 88%,transparent)">${ORDER.map(k=>card(k,k==='technician')).join('')}</div><div class="arrow" style="position:absolute;right:-24px;top:126px">›</div><div class="arrow" style="position:absolute;left:-24px;top:126px;opacity:.35">‹</div></div></div>`+
+`<div class="phone"><p class="ttl">PHONE, 390 WIDE</p><div style="display:grid;grid-template-columns:300px 300px;gap:10px;align-items:start;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent)">${card('face',false)}${card('heel',false)}</div><div class="dots" style="justify-content:center;margin-top:10px"><i class="f"></i><i></i><i></i><i></i><i></i></div><p class="cap">One card and a peek; swipe or the arrows.</p></div></div></section>`;
+
+// 2. Select screen
+html+=`<section class="board"><h1>2. SELECT SCREEN</h1><p class="sub">A fighting game's character select: every class as a compact tile (its name and its marks on the map), and the chosen one's whole card beneath. Every class is in view at once to compare by the map; the words are read one at a time. At ten classes the tiles wrap to two rows.</p><div class="row"><div class="desk"><div class="legend"><span>CHOOSE A CLASS</span></div><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">${ORDER.map(k=>tile(k,k==='technician')).join('')}</div>${detail('technician')}`+
+`<p class="cap" style="margin-top:22px">The same at ten classes (the five candidates on issues #27 and #29 to #32, greyed):</p><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:8px">${ORDER.map(k=>tile(k,k==='technician')).join('')}${FUT.map(ghostTile).join('')}</div></div>`+
+`<div class="phone"><p class="ttl">PHONE, 390 WIDE</p><div class="ptiles" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${ORDER.map(k=>tile(k,k==='technician')).join('')}</div><div style="zoom:.92">${detail('technician')}</div><p class="cap">Two tiles a row, the chosen card under them; the Turn's other parts scroll below.</p></div></div></section>`;
+
+// 3. Wrap
+html+=`<section class="board"><h1>3. WRAP THE FULL CARDS</h1><p class="sub">The board's full cards, three to a row, wrapping onto as many rows as there are classes. Nothing is hidden, but the modal grows a row taller for each three classes, and How loud and the preview move below the fold.</p><div class="row"><div class="desk"><div class="legend"><span>CHOOSE A CLASS</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">${ORDER.map(k=>card(k,k==='technician')).join('')}</div></div></div></section>`;
+document.body.innerHTML=html;
+</script>
+</body>
+</html>
