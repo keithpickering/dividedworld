@@ -43,6 +43,12 @@ export interface Landmark {
   readonly box?: BoxMode;
   /** `false` for a landmark whose type is not the glass's to compare (an image). */
   readonly type?: boolean;
+  /**
+   * The build's font size in px where a decision moves it off the board's (the React picker's
+   * quadrant labels, 24px by the owner's answer on #54, where the board draws 22px): the build is
+   * held to it, and the rest of its type to the board's.
+   */
+  readonly buildSize?: number;
 }
 
 export interface BoardManifest {
@@ -127,10 +133,12 @@ function compareBox(id: string, mode: BoxMode, board: Box, build: Box, origin?: 
 /** A box's place as an offset from another's top-left. */
 const offsetFrom = (box: Box, origin: Box): Box => ({ ...box, x: box.x - origin.x, y: box.y - origin.y });
 
-function compareType(id: string, board: TypeRead, build: TypeRead): Mismatch[] {
+function compareType(id: string, board: TypeRead, build: TypeRead, decidedSize?: number): Mismatch[] {
   const out: Mismatch[] = [];
   if (firstFamily(board.family) !== firstFamily(build.family)) out.push(mismatch(id, 'font-family', board.family, build.family));
-  if (board.size !== build.size) out.push(mismatch(id, 'font-size', String(board.size), String(build.size)));
+  if (decidedSize !== undefined) {
+    if (build.size !== decidedSize) out.push({ ...mismatch(id, 'font-size', String(decidedSize), String(build.size)), message: `${id}: font-size is ${build.size} in the build, ${decidedSize} by decision` });
+  } else if (board.size !== build.size) out.push(mismatch(id, 'font-size', String(board.size), String(build.size)));
   if (board.weight !== build.weight) out.push(mismatch(id, 'font-weight', String(board.weight), String(build.weight)));
   const a = parseColor(board.color);
   const b = parseColor(build.color);
@@ -168,7 +176,7 @@ export function compareBoard(board: Snapshot, build: Snapshot, manifest: BoardMa
       } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', offsetFrom(b.box, ob.box), offsetFrom(u.box, ou.box), l.origin));
     } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', b.box, u.box));
     if (l.type !== false) {
-      if (b.type && u.type) out.push(...compareType(l.id, b.type, u.type));
+      if (b.type && u.type) out.push(...compareType(l.id, b.type, u.type, l.buildSize));
       else if (b.type || u.type) out.push(mismatch(l.id, 'font', b.type ? 'text' : 'no text', u.type ? 'text' : 'no text', 'one side has no text to read'));
     }
   }

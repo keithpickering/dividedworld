@@ -144,8 +144,9 @@
   flex-direction: column-reverse;
 }
 
+/* 24px, WCAG's large size, 2px over the React board's 22px: a class's large color may stand at 3:1 on the react smoke from there (the owner's answer on #54). */
 .kb-picker-label {
-  font-size: 1.375rem;
+  font-size: 1.5rem;
   line-height: 1;
   color: var(--kb-picker-large);
 }
@@ -206,6 +207,17 @@
 .kb-picker[data-kb-place='sheet'] .kb-glass-dialog-head,
 .kb-picker[data-kb-place='sheet'] .kb-picker-label {
   font-size: var(--kb-glass-size-phone-display);
+  /* Room in its own box for its descender, inside its calm's interior. */
+  line-height: 1.15;
+}
+
+/*
+ * The labels' calm: at 24px they are large (#54) and stand bare on the popover's smoke, as the React
+ * board draws them; on the phone's sheet they are the phone's display size, under the large size,
+ * so there they stand in their calm, as body text does.
+ */
+.kb-picker:not([data-kb-place='sheet']) .kb-picker-label.kb-calm::before {
+  content: none;
 }
 
 .kb-picker[data-kb-place='sheet'] .kb-picker-left,

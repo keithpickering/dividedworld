@@ -451,6 +451,8 @@
 
 .kb-class-card input {
   position: absolute;
+  /* Above the title, which its calm positions and which runs under the radio's corner. */
+  z-index: 1;
   right: 14px;
   top: 14px;
   width: 22px;
@@ -468,6 +470,15 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 10px;
+}
+
+/*
+ * A class's name and its Now tag are its large colors. At the Main board's 40px they are large and
+ * stand bare on the smoke, as the Turn board draws them; on the phone they are under WCAG's large
+ * size, body text by the owner's answer on #54, so there they stand in their calm.
+ */
+:where(:root:not([data-kb-layout='phone'])) .kb-class-title.kb-calm::before {
+  content: none;
 }
 
 .kb-class-name {
@@ -1176,6 +1187,8 @@
 
 :where(:root[data-kb-layout='phone']) .kb-class-name {
   font-size: var(--kb-glass-size-phone-display);
+  /* Room in its own box for a descender, inside its title's calm (#54). */
+  line-height: 1.15;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-turn-dialog .kb-glass-dialog-head,

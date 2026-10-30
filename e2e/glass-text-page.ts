@@ -276,7 +276,7 @@ export async function gather(): Promise<Gathered[]> {
       const inView = intersect(box, view)?.width === box.width && intersect(box, view)?.height === box.height;
       out.push({
         key: `${idOf(n)}:${i}`, inView, name: nameOf(n.data, el), surface: ground.surface, box, color,
-        family: s.fontFamily.split(',')[0]!.replace(/["']/g, '').trim(), size, ink, calm, calmOpacity, panels,
+        family: s.fontFamily.split(',')[0]!.replace(/["']/g, '').trim(), size, weight: parseFloat(s.fontWeight), ink, calm, calmOpacity, panels,
       });
     });
   }

@@ -15,8 +15,9 @@
  * - **Opaque type.** Its color, times every opacity above it, has no alpha under 1.
  * - **A glass text color.** Its color is one of the active key's text tokens, a class's large text,
  *   or an ink; any other has no ceiling and fails by name.
- * - **Large, or where the worst is under the ceiling.** Text that inks 36px or more (the design:
- *   Anton at 37px, Barlow Condensed at 40px) in a token tagged `large` may stand on the full
+ * - **Large, or where the worst is under the ceiling.** Large text (the design's 36px of ink,
+ *   Anton at 37px and Barlow Condensed at 40px, or WCAG's large size, 24px or 18.66px at weight 700
+ *   or more, by the owner's answer on #54) in a token tagged `large` may stand on the full
  *   smoke, under that token's large ceiling. Everything else stands where the worst pixel its
  *   surface can put under it is under its token's body ceiling (or waiting, for a token that has
  *   no body tag): inside its calm's interior (the backing inset by its feather, where the backing
@@ -27,9 +28,8 @@
  *   no calm, and that recipe is dim enough for its tokens. On a
  *   `calmAll` surface every node needs a calm (or such a panel), large or not. A class's large text has a ceiling only
  *   on a surface the engine's `classLargeText` says draws it (apply.ts; the guard writes `classes`
- *   only there), and needs a calm where that says `calmed`. It is read by its color at any size,
- *   as the engine's list reads it (the React picker's quadrant labels are a class's large text at
- *   22px of Anton).
+ *   only there), and needs a calm where that says `calmed`. Under the large size a class's large color is
+ *   body text (#54): it takes the body path, at the 4.5:1 ceiling worked out from its own color.
  * - **Ink** (a token tagged `ink`, or a class's ink) stands on an opaque fill, and is not held to a
  *   ceiling over the smoke: the guard holds it to 4.5:1 on its fill.
  * - **The brightest pixel.** With all text made transparent, the brightest pixel under the line's
@@ -67,6 +67,8 @@ export interface TextFact {
   readonly family: string;
   /** Its computed size in px, times its zoom. */
   readonly size: number;
+  /** Its computed weight. */
+  readonly weight: number;
   /** What its face inks at that size, ascender to descender, measured by the canvas. */
   readonly ink: number;
   /** Its nearest calm, or none. */
@@ -117,6 +119,17 @@ export interface Palette { readonly key: string; readonly roles: ReadonlyMap<str
 export const INK_FLOOR = 18;
 export const PHONE_FLOOR = 16;
 export const LARGE_INK = 36;
+/** WCAG's large text, by the owner's answer on #54: 24px, or 18.66px (14pt) at a weight of 700 or more. */
+export const WCAG_LARGE = 24;
+export const WCAG_LARGE_BOLD = 18.66;
+
+/** Text that may stand at 3:1 as large: the design's 36px of ink, or WCAG's large size (#54). */
+export function isLarge(fact: Pick<TextFact, 'ink' | 'size' | 'weight'>): boolean {
+  return fact.ink >= LARGE_INK || fact.size >= WCAG_LARGE - 0.01 || (fact.size >= WCAG_LARGE_BOLD - 0.01 && fact.weight >= 700);
+}
+
+/** The brightest background a color of luminance `lum` still meets `need`:1 on, as the guard works out a token's ceiling. */
+const ceilingOf = (lum: number, need: number) => Math.round(((lum + 0.05) / need - 0.05) * 10000) / 10000;
 /** A box may run past its container by this much: subpixel layout, not a defect. */
 const SLACK = 0.5;
 
@@ -270,7 +283,7 @@ function grounded(fact: TextFact, at: string, why: string, dim?: Dim): string | 
 }
 
 function reading(fact: TextFact, role: ColorRole, s: SurfaceCeilings, at: string, phone: boolean): string[] {
-  const large = fact.ink >= LARGE_INK;
+  const large = isLarge(fact);
   const where = `on surface ${fact.surface} (recipe ${s.recipe})`;
   const calmAllWhy = `surface ${fact.surface} (recipe ${s.recipe}) is calmAll: every text node on it stands in a calm, large or not`;
   /* The most the surface's smoke can put under a line: on the phone, its narrow layers' too. */
@@ -281,7 +294,14 @@ function reading(fact: TextFact, role: ColorRole, s: SurfaceCeilings, at: string
   let ceiling: number | undefined;
   let as: string;
   const faults: string[] = [];
-  if (role.kind === 'class') {
+  if (role.kind === 'class' && !large) {
+    /* Under WCAG's large size a class's large color is body text (#54): its 4.5:1 ceiling, from its own color. */
+    ceiling = ceilingOf(luminance(fact.color[0], fact.color[1], fact.color[2]), 4.5);
+    as = `class ${role.name}'s large color as body text`;
+    const why = `a class's large color under WCAG's large size (this is ${round1(fact.size)}px at weight ${fact.weight}) stands in a calm ${where}`;
+    const f = s.calmAll ? grounded(fact, at, calmAllWhy) : grounded(fact, at, why, { worst, ceiling, as, where });
+    if (f) faults.push(f);
+  } else if (role.kind === 'class') {
     const own = s.classes?.[role.name]?.large;
     if (own === undefined || !s.classLarge) {
       return [`${at}: is class ${role.name}'s large text, and surface ${fact.surface} draws no class's large text (classLargeText says none), so it has no ceiling there`];
@@ -304,7 +324,7 @@ function reading(fact: TextFact, role: ColorRole, s: SurfaceCeilings, at: string
     } else if (!onSmoke) {
       const why = large
         ? `${role.name} is not a large token, so it stands in a calm at any size`
-        : `text that inks under ${LARGE_INK}px (this inks ${round1(fact.ink)}px) stands in a calm ${where}`;
+        : `text under the large size (this inks ${round1(fact.ink)}px at ${round1(fact.size)}px) stands in a calm ${where}`;
       const f = grounded(fact, at, why, { worst, ceiling, as, where });
       if (f) faults.push(f);
     }

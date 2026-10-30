@@ -44,6 +44,7 @@ const body: TextFact = {
   color: TEXT_2,
   family: 'Barlow Condensed',
   size: 21,
+  weight: 600,
   ink: 18.9,
   calm: calmAround(),
   calmOpacity: 0.85,
@@ -53,7 +54,7 @@ const body: TextFact = {
 };
 /** A 52px Anton heading of --kb-glass-text on the full smoke of the rankings page: large, so no calm, under the large ceiling. */
 const heading: TextFact = {
-  ...body, name: '"Rankings" in h1.kb-rankings-title', color: TEXT, family: 'Anton', size: 52, ink: 51.5, calm: null, brightest: 0.23,
+  ...body, name: '"Rankings" in h1.kb-rankings-title', color: TEXT, family: 'Anton', size: 52, ink: 51.5, weight: 400, calm: null, brightest: 0.23,
 };
 const judged = (fact: TextFact, surface = fact.surface, opts: { phone?: boolean; palette?: typeof standard; high?: boolean } = {}) =>
   judge(fact, { ceilings: ceilings[surface], palette: opts.palette ?? standard, phone: opts.phone ?? false, high: opts.high ?? false });
@@ -74,10 +75,25 @@ describe('the clean nodes pass', () => {
     expect(judged(face)).toEqual([]);
   });
 
-  test('a class\'s large color is read by its color at any size, as the engine\'s list reads it', () => {
-    /* The React picker's quadrant labels: a class's large colors at 22px of Anton (apply.ts). */
-    const label: TextFact = { ...heading, name: '"Hype" in div.kb-picker-label', surface: 'react', color: [143, 214, 255, 1], size: 22, ink: 21.8, brightest: 0.08 };
+  test('a class\'s large color at WCAG\'s large size stands on its surface\'s smoke, as the React picker\'s labels do (#54)', () => {
+    /* The quadrant labels: a class's large colors at 24px of Anton, bare on the react smoke. */
+    const heat: TextFact = { ...heading, name: '"Heat" in div.kb-picker-label', surface: 'react', color: [255, 149, 159, 1], size: 24, ink: 23.8, weight: 400, brightest: 0.08 };
+    expect(judged(heat)).toEqual([]);
+  });
+
+  test('under that size a class\'s large color takes the body path, and Heel\'s fails bare on the react smoke', () => {
+    /* #ff959f's 4.5:1 ceiling, worked out from its color, is 0.0617; the react recipe's full worst is 0.0875. */
+    const heat: TextFact = { ...heading, name: '"Heat" in div.kb-picker-label', surface: 'react', color: [255, 149, 159, 1], size: 22, ink: 21.8, weight: 400, brightest: 0.04 };
+    expect(judged(heat)).toEqual([
+      '"Heat" in div.kb-picker-label (surface react): stands in no calm and on no panel as solid as the calm (0.85), and its recipe\'s full worst, 0.0875, is not under the ceiling 0.0617 for class heel\'s large color as body text on surface react (recipe react); a class\'s large color under WCAG\'s large size (this is 22px at weight 400) stands in a calm on surface react (recipe react)',
+    ]);
+    expect(judged({ ...heat, calm: calmAround() })).toEqual([]);
+  });
+
+  test('a token tagged large stands on the full smoke from WCAG\'s large size: 18.66px at weight 700 or more', () => {
+    const label: TextFact = { ...body, name: '"Season 1" in p.kb-rankings-season', color: TEXT, size: 20, ink: 18.4, weight: 800, calm: null, brightest: 0.2 };
     expect(judged(label)).toEqual([]);
+    expect(judged({ ...label, weight: 600 })[0]).toMatch(/stands in no calm/);
   });
 
   test('a color a token and a class share reads as whichever the surface allows', () => {
@@ -145,7 +161,7 @@ describe('a recipe dim enough (the owner\'s answer on #53)', () => {
 
   test('the same line on a brighter recipe still needs one, and says the worst and the ceiling', () => {
     expect(judged({ ...bare, surface: 'characters' })).toEqual([
-      '"Every character this season" in p.kb-rankings-lead (surface characters): stands in no calm and on no panel as solid as the calm (0.85), and its recipe\'s full worst, 0.196, is not under the ceiling 0.1288 for --kb-glass-text-2 as body text on surface characters (recipe characters); text that inks under 36px (this inks 18.9px) stands in a calm on surface characters (recipe characters)',
+      '"Every character this season" in p.kb-rankings-lead (surface characters): stands in no calm and on no panel as solid as the calm (0.85), and its recipe\'s full worst, 0.196, is not under the ceiling 0.1288 for --kb-glass-text-2 as body text on surface characters (recipe characters); text under the large size (this inks 18.9px at 21px) stands in a calm on surface characters (recipe characters)',
     ]);
   });
 

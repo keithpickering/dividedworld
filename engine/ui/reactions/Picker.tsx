@@ -159,7 +159,7 @@ export function Picker({ act, authorName, as, own, tallies, mine, anchor, onClos
                 } as CSSProperties);
                 return (
                   <div key={q} className="kb-picker-quad" role="group" aria-labelledby={`${countId}-${q}`} data-kb-quadrant={q} style={worn}>
-                    <div id={`${countId}-${q}`} className="kb-picker-label kb-glass-display">{ui.quadrantLabels[q]}</div>
+                    <div id={`${countId}-${q}`} className="kb-picker-label kb-glass-display kb-calm">{ui.quadrantLabels[q]}</div>
                     <div className="kb-picker-kinds">
                       {instance.reactions.filter((r) => r.quadrant === q).map((r, ki) => {
                         const ok = free(r.key);

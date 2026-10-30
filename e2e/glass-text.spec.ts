@@ -314,6 +314,13 @@ test.describe('the poisons, planted in a real page', () => {
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): its color rgba\(228, 222, 247, 0\.8\) is translucent/u));
   });
 
+  test('a class\'s large color under WCAG\'s large size, bare on the react smoke (#54)', async ({ page }) => {
+    /* The picker's quadrant labels back at the board's 22px: Heel's #ff959f is then body text, and the react recipe's worst is over its 4.5:1 ceiling. */
+    await open(page, OVERLAYS.find((o) => o.name.startsWith('The React picker'))!);
+    await plant(page, '.kb-picker-label { font-size: 22px !important; }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Heat" in .*div\.kb-picker-label[^(]* \(surface react\): stands in no calm and on no panel as solid as the calm \(0\.85\), and its recipe's full worst, 0\.0875, is not under the ceiling 0\.0617 for class heel's large color as body text .* \(this is 22px at weight 400\)/u));
+  });
+
   test('a translucent text color', async ({ page }) => {
     await open(page, rankings);
     await plant(page, '.kb-rankings-lead { color: rgba(228, 222, 247, 0.8) !important; }');

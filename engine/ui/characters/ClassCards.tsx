@@ -64,7 +64,7 @@ export function ClassCards({ legend, value, onChange, current, large = false }: 
           const described = [look?.description && ids.words, look?.marks && ids.marks].filter(Boolean).join(' ') || undefined;
           const inside = (
             <>
-              <span className="kb-class-title">
+              <span className="kb-class-title kb-calm">
                 <b id={ids.name} className="kb-class-name" data-kb-large={large || undefined}>{c.name}</b>
                 {c.key === current && <span className="kb-class-now">Now</span>}
               </span>
