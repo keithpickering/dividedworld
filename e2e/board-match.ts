@@ -210,6 +210,25 @@ export function compareBoard(board: Snapshot, build: Snapshot, manifest: BoardMa
 }
 
 /**
+ * Every build side of a board compared, the board's own first and then each of `also` in order, each
+ * with its own manifest (its build, presses and landmarks; its ids stand alone) and the report folder
+ * `<board>-<side>`. `compare` reads one side and returns its mismatches' words; a further side's are
+ * led by its name, so a finding says which screen of the board it is about. A side is never skipped:
+ * the list is the manifest's, whatever the first side found.
+ */
+export async function compareSides(
+  manifest: BoardManifest,
+  compare: (side: BoardManifest, folder: string, label: string | null) => Promise<string[]>,
+): Promise<string[]> {
+  const out = await compare(manifest, manifest.board, null);
+  for (const side of manifest.also ?? []) {
+    const found = await compare({ ...manifest, build: side.build, press: side.press, landmarks: side.landmarks, also: undefined }, `${manifest.board}-${side.name}`, side.name);
+    out.push(...found.map((m) => `${side.name}: ${m}`));
+  }
+  return out;
+}
+
+/**
  * Which boards the spec runs, from the folder's file names, the boards that have a manifest and the
  * pending map (board id to the part that builds it). The list is the folder's, so a board cannot be
  * left out by forgetting it: a board with no manifest that is not pending is a problem, a pending

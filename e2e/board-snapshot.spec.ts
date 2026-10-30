@@ -71,6 +71,23 @@ test('the build is pressed in order before it is read, and a control that is not
   await expect(pressControls(page, [{ role: 'button', name: 'Nowhere' }], 300)).rejects.toThrow(/button named "Nowhere"/);
 });
 
+test('the build side searches buildRole, the board side role: right passes, wrong fails', async ({ page }) => {
+  await page.setContent(`<a href="#">Go</a>`);
+  const m = (buildRole: string) => manifest(lm('g', { role: 'button', name: 'Go', buildRole }));
+  expect((await snapshotPage(page, m('link'), 'build')).shots[0]!.found).toBe(true);
+  expect((await snapshotPage(page, m('heading'), 'build')).shots[0]!.found).toBe(false);
+  /* The board side ignores it: the board draws what the manifest's role says. */
+  expect((await snapshotPage(page, m('link'), 'board')).shots[0]!.found).toBe(false);
+});
+
+test('a press with nth -1 presses the last match, and a press with fill types its text', async ({ page }) => {
+  await page.setContent(`<button onclick="this.dataset.hit='1'">Go</button><button onclick="this.dataset.hit='1'">Go</button><button onclick="this.dataset.hit='1'">Go</button>
+    <input aria-label="Your message">`);
+  await pressControls(page, [{ role: 'button', name: 'Go', nth: -1 }, { role: 'textbox', name: 'Your message', fill: 'ink everywhere' }]);
+  expect(await page.locator('button').evaluateAll((all) => all.map((b) => (b as HTMLElement).dataset.hit ?? ''))).toEqual(['', '', '1']);
+  expect(await page.locator('input').inputValue()).toBe('ink everywhere');
+});
+
 test('a page that renders after it loads is read once every landmark is found and still', async ({ page }) => {
   await page.setContent(`<div id="r"></div><script>
     setTimeout(() => { document.querySelector('#r').innerHTML = '<button style="margin-top:0">Late</button>'; }, 150);

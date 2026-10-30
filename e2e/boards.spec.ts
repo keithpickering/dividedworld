@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { boardsToRun, compareBoard, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
+import { boardsToRun, compareBoard, compareSides, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
 import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
@@ -72,10 +72,10 @@ function reportPage(board: string, mismatches: readonly Mismatch[], error?: stri
 
 /**
  * One build side of a board compared with the board page: both pages opened at the board's size, the
- * build pressed to its state, both read, and the report written. Returns the mismatches' words, each
- * led by the side's name when it is a further side (`BoardManifest.also`).
+ * build pressed to its state, both read, and the report written. Returns the mismatches' words;
+ * `compareSides` (e2e/board-match.ts) leads a further side's with its name (`BoardManifest.also`).
  */
-async function compareSide(browser: Browser, baseURL: string | undefined, id: string, manifest: BoardManifest, folder: string, label: string | null): Promise<string[]> {
+async function compareSide(browser: Browser, baseURL: string | undefined, id: string, manifest: BoardManifest, folder: string): Promise<string[]> {
   const context = await browser.newContext({ baseURL, viewport: manifest.size, deviceScaleFactor: 1, reducedMotion: 'reduce', timezoneId: 'UTC', bypassCSP: true });
   try {
     await standInFaces(context);
@@ -109,7 +109,7 @@ async function compareSide(browser: Browser, baseURL: string | undefined, id: st
       fs.writeFileSync(path.join(dir, 'index.html'), reportPage(folder, mismatches, failure === undefined ? undefined : String(failure instanceof Error ? failure.message : failure)));
     }
     if (failure !== undefined) throw failure;
-    return mismatches.map((m) => (label === null ? m.message : `${label}: ${m.message}`));
+    return mismatches.map((m) => m.message);
   } finally {
     await context.close();
   }
@@ -121,10 +121,7 @@ for (const id of run) {
     expect(manifest.board).toBe(id);
     const baseURL = testInfo.project.use.baseURL;
     /* The board's own build side, then each further one (the Cards board's play form is the app, its hand sheet a story). */
-    const mismatches = await compareSide(browser, baseURL, id, manifest, id, null);
-    for (const side of manifest.also ?? []) {
-      mismatches.push(...await compareSide(browser, baseURL, id, { ...manifest, build: side.build, press: side.press, landmarks: side.landmarks, also: undefined }, `${id}-${side.name}`, side.name));
-    }
+    const mismatches = await compareSides(manifest, (side, folder) => compareSide(browser, baseURL, id, side, folder));
     expect(mismatches, `${id} differs from its board; see e2e/report/boards/${id}/index.html`).toEqual([]);
   });
 }
