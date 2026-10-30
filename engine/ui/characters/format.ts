@@ -1,5 +1,4 @@
 import type { Span } from '../../rules/types.ts';
-import { shortDate } from '../postbit/dates.ts';
 
 /** Aura in hundredths as the board writes it: 1420 is "14.20". */
 export const figure = (hundredths: number) => (hundredths / 100).toFixed(2);
@@ -16,8 +15,8 @@ export function spanWords(span: Span): string {
 /** "Oct 30, 1:17 AM": a day and a time in the reader's zone. */
 export const dayAndTime = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-/** "Nov 28 (in 13 days)": a date and how far off it is. */
-export function dateAndDistance(iso: string, nowMs = Date.now()): string {
+/** "in 13 days": how far off a time is, in whole days, never under one. */
+export function inDays(iso: string, nowMs = Date.now()): string {
   const days = Math.max(1, Math.ceil((Date.parse(iso) - nowMs) / 86_400_000));
-  return `${shortDate(iso)} (in ${days} ${days === 1 ? 'day' : 'days'})`;
+  return `in ${days} ${days === 1 ? 'day' : 'days'}`;
 }

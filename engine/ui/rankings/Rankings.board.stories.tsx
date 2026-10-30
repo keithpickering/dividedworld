@@ -8,16 +8,14 @@
  * reader's Thwompson and the crowd's four, seeded onto the fake through `fake.seed`. Two other
  * characters have said their class in public, so both ways a stranger's class shows are on the
  * page: Gloomba revealed on Oct 12, and Thwompson revealed on Oct 8 and Turned, announced, on
- * Oct 20. The page is read as the screen will read it (`standingsPage`, `classReveals`,
- * `turnsAnnounced`, `myCharacters`, `season`, `lastSettledAt`) and drawn by the view, signed in
- * as the player. The classes are the instance's, by their place in its list, so the story names
+ * Oct 20. The page is the screen itself (`RankingsScreen`) in the glass's page shell, as the
+ * route /rankings puts it (web/src/App.tsx), signed in as the player. The classes are the instance's, by their place in its list, so the story names
  * none: the first is the player's two Faces' and the second Gloomba's.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useState } from 'react';
-import { useKayfa } from '../context.tsx';
+import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { Rankings, type RankingsProps } from './Rankings.tsx';
+import { RankingsScreen } from './Rankings.tsx';
 
 const utc = (day: number, hour = 12, minute = 0) => Date.UTC(2026, 9, day, hour, minute);
 const SETTLED = utc(30, 8, 17);
@@ -60,27 +58,15 @@ const empty: World = (fake) => {
   fake.signInAs(fake.seed.account('player'));
 };
 
-/** Reads the page as the screen will, and draws it once read. */
+/** The screen at /rankings, in its page shell. */
 function RankingsStory() {
-  const { api } = useKayfa();
-  const [props, setProps] = useState<RankingsProps | null>(null);
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      const [standings, mine, season, settledAt] = await Promise.all([api.standingsPage(0, 50), api.myCharacters(), api.season(), api.lastSettledAt()]);
-      const ids = standings.map((s) => s.character);
-      const [reveals, turns] = await Promise.all([api.classReveals(ids), api.turnsAnnounced(ids)]);
-      if (live) setProps({ standings, mine, season, settledAt, reveals, turns });
-    })();
-    return () => { live = false; };
-  }, [api]);
-  return props ? <Rankings {...props} /> : null;
+  return <Page surface="rankings" restyled><RankingsScreen /></Page>;
 }
 
 const meta: Meta<typeof RankingsStory> = {
   title: 'Boards/13 Rankings',
   component: RankingsStory,
-  parameters: { world: season, layout: 'fullscreen' },
+  parameters: { world: season, path: '/rankings', layout: 'fullscreen' },
 };
 export default meta;
 

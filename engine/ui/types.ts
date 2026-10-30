@@ -27,6 +27,19 @@ export interface ClassLook {
   readonly pattern?: string;
   /** How the class earns and what hurts it, in plain words, for the class cards. */
   readonly description: string;
+  /**
+   * The class's marks on the reaction map, as the Turn board draws them on its class cards: the
+   * quadrants it earns from (a plus), is hurt by (a minus), or earns by calling where a post ends up
+   * (a dotted cell), and the same said in words, which is the marks' accessible name.
+   */
+  readonly marks?: ClassMarks;
+}
+
+export interface ClassMarks {
+  readonly label: string;
+  readonly earns?: readonly Quadrant[];
+  readonly hurts?: readonly Quadrant[];
+  readonly calls?: readonly Quadrant[];
 }
 
 /**

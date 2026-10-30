@@ -172,15 +172,21 @@ test('Back from "Make a character" in the reply box returns to the same post in 
   await backAtOneOf(page, seen);
 });
 
-test('a crumb out of the glass forgets the thread, and Back lands on the one the glass was last entered from', async ({ page }) => {
+test('a link out of the glass forgets the thread, and Back lands on the one the glass was last entered from', async ({ page }) => {
   await page.goto('/b/general');
   await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Who keeps reacting with tea?' })).toBeVisible();
   await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
   await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
-  /* Out of the glass by the page's own crumb, not by Back. */
-  await page.locator('.kb-crumb').getByRole('link', { name: 'Index', exact: true }).click();
-  await expect(page.getByRole('main').getByRole('link', { name: 'General', exact: true })).toBeVisible();
+  /*
+   * Out of the glass by a link that is not Back: a character's name on Rankings, which opens its
+   * profile on the board. (My characters' crumb, then the Rankings tab while it stood in on the
+   * board's standings, were this link until the glass build's Tasks 2.2 and 2.3.)
+   */
+  await page.getByRole('navigation', { name: 'Menu' }).getByRole('link', { name: 'Rankings' }).click();
+  await page.getByRole('main').getByRole('table').getByRole('link').first().click();
+  await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Menu' })).toHaveCount(0);
   /*
    * The crumb forgot the thread, which entering again would overwrite anyway; a glass page opened and
    * then reloaded, with no move into the glass, reads what the tab kept, and shows it was forgotten.

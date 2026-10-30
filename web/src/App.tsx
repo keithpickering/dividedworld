@@ -21,6 +21,7 @@ import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
+import { RankingsScreen } from '../../engine/ui/rankings/Rankings.tsx';
 import { StandingsScreen } from '../../engine/ui/standings/Standings.tsx';
 import { RouterProvider, useLocation, useNavigate } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
@@ -35,6 +36,7 @@ const ROUTES: readonly Route[] = [
   { path: '/characters/new', render: () => <NewCharacter /> },
   { path: '/characters/edit', render: () => <ProfileEdit /> },
   { path: '/standings', render: () => <StandingsScreen /> },
+  { path: '/rankings', render: () => <RankingsScreen /> },
   { path: '/c/:id', render: ({ id }) => <ProfileScreen id={id!} /> },
   { path: '/c/:id/record', render: ({ id }) => <RecordScreen id={id!} /> },
   { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
@@ -59,12 +61,13 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/settings': 'settings',
   '/sign-in': 'account',
   '/register': 'account',
+  '/rankings': 'rankings',
 };
 
-/** The glass routes whose screens Part 2 has restyled: drawn in the glass's own type, with no board panel. */
-const RESTYLED: ReadonlySet<string> = new Set(['/settings', '/invites', '/sign-in', '/register']);
-
 const isGlass = (path: string): boolean => Object.hasOwn(GLASS, path);
+
+/** The glass routes whose screens Part 2 has restyled, drawn on the glass with no board panel (Page's `restyled`). */
+const RESTYLED: ReadonlySet<string> = new Set(['/characters', '/characters/new', '/characters/edit', '/rankings', '/settings', '/invites', '/sign-in', '/register']);
 
 /** Every move into the glass keeps the board's place for Back, and every move out forgets it (engine/ui/glass/back.ts). */
 const keepPlace = keepBoardPlace(isGlass);

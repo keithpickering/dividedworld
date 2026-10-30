@@ -17,6 +17,12 @@
  * content changes size, or it has just changed from popover to sheet or back (what it holds is laid
  * out anew for that). It tells its opener which it took (`onPlace`), so what it holds can be laid
  * out for it. Each placement is measured from the box's unplaced state, never from the last one's.
+ *
+ * Over a glass page it leaves the menu bar in view (the web plan's 2026-10-30 amendment to Task 9;
+ * the Turn board draws it so): the overlay starts under the bar's foot, and the bar is dimmed
+ * (`data-kb-dimmed`, shell.css) and inert with the rest of the page, so the player sees where
+ * Close and Esc put them and cannot reach it until they do. A bar scrolled out of the window is not
+ * made room for. Nested overlays share one dimming: the bar is lit again when the last one closes.
  */
 import { useId, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -50,6 +56,19 @@ export interface OverlayProps {
   readonly onPlace?: (place: Placed) => void;
   /** The dialog's own class, for its size and its parts. */
   readonly className?: string;
+  /** A line over the title that says where the overlay is ("My characters › Turn"); not part of its name. */
+  readonly kicker?: ReactNode;
+}
+
+/* The overlays open now, so the menu bar is dimmed while any is and lit when the last one closes. */
+const opened = new Set<object>();
+
+const menuBar = () => document.querySelector<HTMLElement>('.kb-glass-page .kb-glass-menu');
+
+/** How far down the window the overlay starts: under the menu bar's foot while any of the bar is in view, else at the top. */
+function overlayTop(): number {
+  const bar = menuBar()?.getBoundingClientRect();
+  return bar && bar.bottom > 0 ? Math.round(bar.bottom) : 0;
 }
 
 /** Where an anchored overlay stands. */
@@ -91,10 +110,24 @@ function place(box: HTMLElement, anchor: HTMLElement, sheetBelow: number): Place
   return p.side;
 }
 
-export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', anchor, sheetBelow = 0, onPlace, className }: OverlayProps) {
+export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', anchor, sheetBelow = 0, onPlace, className, kicker }: OverlayProps) {
   const id = useId();
   const { overlay, box, closeButton } = useModalLayer({ onClose, returnFocusTo });
   const calm = useSurfaceStyle(surface);
+
+  useLayoutEffect(() => {
+    const self = {};
+    opened.add(self);
+    const under = () => overlay.current?.style.setProperty('--kb-glass-overlay-top', `${overlayTop()}px`);
+    under();
+    menuBar()?.setAttribute('data-kb-dimmed', '');
+    window.addEventListener('resize', under);
+    return () => {
+      window.removeEventListener('resize', under);
+      opened.delete(self);
+      if (opened.size === 0) menuBar()?.removeAttribute('data-kb-dimmed');
+    };
+  }, []);
 
   const told = useRef(onPlace);
   told.current = onPlace;
@@ -148,7 +181,12 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
       >
         <Smoke surface={surface} />
         <div className="kb-glass-dialog-bar">
-          <h2 id={id} className="kb-glass-dialog-head kb-glass-display">{title}</h2>
+          {kicker ? (
+            <div className="kb-glass-dialog-titles">
+              <p className="kb-glass-dialog-kicker">{kicker}</p>
+              <h2 id={id} className="kb-glass-dialog-head kb-glass-display">{title}</h2>
+            </div>
+          ) : <h2 id={id} className="kb-glass-dialog-head kb-glass-display">{title}</h2>}
           {aside}
           {closeAt === 'bar' && close}
         </div>

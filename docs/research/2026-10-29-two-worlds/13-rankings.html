@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Rankings: the two worlds board</title>
+<!-- A board drawn after the two-worlds design session, 1440 by 1034, from Rankings' story
+     (engine/ui/rankings/Rankings.board.stories.tsx), which the owner approved as drawn on 2026-10-30 (issue #50).
+     It shows the boards fixture's 13-rankings moment: the player at 08:30 on Oct 30, thirteen minutes after the
+     settlement. A reference for the look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md and the
+     web plan's glass amendment to Task 10 say what was decided. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+/* Glass type at game sizes (XAG 101/102): nothing under 20px Barlow, which inks 18px; table cells set at 1.5.
+   The heading is the Settings board's, the table the Log board's. */
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+a:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+table{border-collapse:collapse;width:100%}
+th[scope="col"]{padding:0 16px 12px 0;text-align:left;font:800 20px/29px 'Barlow Condensed',sans-serif;letter-spacing:2px;text-transform:uppercase;color:#9ef4ff;border-bottom:1px solid rgba(201,248,255,.55)}
+tbody td,tbody th{vertical-align:top;padding:12px 16px 12px 0;border-bottom:1px solid rgba(241,236,255,.2);font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.place{width:110px;padding-left:16px!important}
+td.place{font:700 22px/1.4 'Barlow Condensed',sans-serif;color:#f1ecff;font-variant-numeric:tabular-nums}
+th.name{text-align:left;font:800 22px/1.4 'Barlow Condensed',sans-serif;letter-spacing:.5px;color:#f1ecff}
+th.name a{text-decoration-color:rgba(201,248,255,.6);text-underline-offset:4px}
+td.rank{width:240px;font-weight:600}
+.num{width:140px;padding-right:48px!important;text-align:right!important;white-space:nowrap}
+td.num{font:700 22px/1.4 'Barlow Condensed',sans-serif;color:#f1ecff;font-variant-numeric:tabular-nums}
+td.cls{width:400px;padding-right:0}
+tr.own td:first-child{box-shadow:inset 3px 0 0 #19e3ff}
+.yours{display:inline-block;margin-left:10px;padding:1px 8px;transform:skewX(-12deg);font:italic 800 20px/1.2 'Barlow Condensed',sans-serif;letter-spacing:1px;text-transform:uppercase;vertical-align:2px;background:#19e3ff;color:#03141a}
+.yours b,.chip b{display:inline-block;transform:skewX(12deg);font-weight:800}
+.chip{display:inline-block;padding:0 8px;transform:skewX(-12deg);font:800 20px/1.5 'Barlow Condensed',sans-serif;letter-spacing:1.5px;text-transform:uppercase}
+.chip.said{padding:0 7px;background:transparent;border:1.5px solid;color:#f1ecff}
+.stated{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 12px}
+.when{font-weight:600;color:#e4def7}
+.when + .when{flex-basis:100%}
+.hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1034px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+
+  <!-- smoke, the page recipe the Log board draws: the season line, the lead and the table each sit in a calm;
+       only the Anton heading stands on full smoke, at large-text size -->
+  <svg aria-hidden="true" width="1440" height="1034" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="rA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="57"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="rB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="8"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="rsoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="16"></feGaussianBlur></filter>
+      <mask id="rcalm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="1034">
+        <rect width="1440" height="1034" fill="#ffffff"></rect>
+        <rect x="1030" y="174" width="362" height="56" fill="#000000" opacity="0.85" filter="url(#rsoft)"></rect>
+        <rect x="48" y="242" width="712" height="124" fill="#000000" opacity="0.85" filter="url(#rsoft)"></rect>
+        <rect x="48" y="375" width="1344" height="616" fill="#000000" opacity="0.85" filter="url(#rsoft)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#rcalm)">
+      <rect width="1440" height="1034" filter="url(#rA)" opacity="0.95"></rect>
+      <rect width="1440" height="1034" filter="url(#rB)" opacity="0.5"></rect>
+    </g>
+  </svg>
+
+  <!-- the menu bar every glass page shares, in place of the board's header -->
+  <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 0 40px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+    <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 18px"><b><kbd style="display: inline-block; margin-right: 10px; padding: 0 6px; border: 1px solid #ffffff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>VENDING MACHINE</b></a>
+    <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+    <a href="#" class="tab" aria-current="page" style="background: rgba(25,227,255,.16); box-shadow: inset 0 -3px 0 #19e3ff; color: #ffffff"><b>RANKINGS</b></a>
+    <a href="#" class="tab"><b>MY LOG</b></a>
+    <a href="#" class="tab"><b>SETTINGS</b></a>
+  </nav>
+
+  <main style="position: absolute; left: 64px; width: 1312px; top: 84px; padding-top: 32px">
+    <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 32px">
+      <h1 style="margin: 0; font: 112px/1 Anton, Impact, sans-serif; letter-spacing: 1px; text-transform: uppercase; text-shadow: 0 0 30px rgba(25,227,255,.35)">Rankings</h1>
+      <p style="margin: 0 0 12px; font: 800 20px/29px 'Barlow Condensed', sans-serif; letter-spacing: 2px; text-transform: uppercase; color: #9ef4ff">Season 1 · Settled Oct 30, 8:17 AM</p>
+    </div>
+    <p style="max-width: 680px; margin: 28px 0 0; font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #f1ecff">The season's standings, as the last settlement left them. Your own characters are marked, with their classes, which only you see here. Anyone else's class shows only once its player has revealed it.</p>
+
+    <div style="margin-top: 40px">
+      <table>
+        <caption class="hidden">Season 1 rankings, highest standing first</caption>
+        <thead><tr><th scope="col" class="place">Place</th><th scope="col">Character</th><th scope="col">Rank</th><th scope="col" class="num">Standing</th><th scope="col">Class</th></tr></thead>
+        <tbody>
+          <tr class="own"><td class="place">1</td><th scope="row" class="name"><a href="#">Spritey</a> <span class="yours"><b>Yours</b></span></th><td class="rank">Main Eventer</td><td class="num">6.50</td><td class="cls"><span class="chip" style="background: #ffd93d; color: #1a1403"><b>Jabroni</b></span></td></tr>
+          <tr class="own"><td class="place">2</td><th scope="row" class="name"><a href="#">Mrs. Hooligan</a> <span class="yours"><b>Yours</b></span></th><td class="rank">Midcarder</td><td class="num">4.20</td><td class="cls"><span class="chip" style="background: #3db8ff; color: #03141a"><b>Face</b></span></td></tr>
+          <tr class="own"><td class="place">3</td><th scope="row" class="name"><a href="#">Pipewrench</a> <span class="yours"><b>Yours</b></span></th><td class="rank">Midcarder</td><td class="num">3.30</td><td class="cls"><span class="chip" style="background: #3db8ff; color: #03141a"><b>Face</b></span></td></tr>
+          <tr><td class="place">4</td><th scope="row" class="name"><a href="#">Gloomba</a></th><td class="rank">Enhancement Talent</td><td class="num">1.80</td><td class="cls"><span class="stated"><span class="chip said" style="border-color: #ff3d57"><b>Heel</b></span><span class="when">Revealed Oct 30</span></span></td></tr>
+          <tr><td class="place">5</td><th scope="row" class="name"><a href="#">Thwompson</a></th><td class="rank">Jobber</td><td class="num">0.40</td><td class="cls"><span class="stated"><span class="chip said" style="border-color: #2ef0a0"><b>Lurker</b></span><span class="when">Revealed Oct 8</span><span class="when">Has Turned since Oct 30</span></span></td></tr>
+          <tr><td class="place">6</td><th scope="row" class="name"><a href="#">Ringside 1</a></th><td class="rank">Jobber</td><td class="num">0.00</td><td class="cls"><span aria-hidden="true">—</span><span class="hidden">Not revealed</span></td></tr>
+          <tr><td class="place">6</td><th scope="row" class="name"><a href="#">Ringside 2</a></th><td class="rank">Jobber</td><td class="num">0.00</td><td class="cls"><span aria-hidden="true">—</span><span class="hidden">Not revealed</span></td></tr>
+          <tr><td class="place">6</td><th scope="row" class="name"><a href="#">Ringside 3</a></th><td class="rank">Jobber</td><td class="num">0.00</td><td class="cls"><span aria-hidden="true">—</span><span class="hidden">Not revealed</span></td></tr>
+          <tr><td class="place">6</td><th scope="row" class="name"><a href="#">Ringside 4</a></th><td class="rank">Jobber</td><td class="num">0.00</td><td class="cls"><span aria-hidden="true">—</span><span class="hidden">Not revealed</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+</body>
+</html>

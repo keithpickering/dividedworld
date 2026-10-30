@@ -12,10 +12,13 @@ async function tabTo(page: Page, target: ReturnType<Page['locator']>) {
 /* The Turn, by keyboard only: open the modal, choose, confirm, see it pending, change it, withdraw it. */
 test('asks for a Turn, sees it pending, and withdraws it, with the keyboard alone', async ({ page }) => {
   await page.goto('/characters');
-  const row = page.getByRole('row', { name: /^Pipewrench/u });
+  /* On the glass a character's controls are in its panel, chosen by its card (the Roster board); before, its table row. */
+  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+  const row = page.getByRole('region', { name: 'Pipewrench' });
   const turn = row.getByRole('button', { name: 'Turn Pipewrench' });
   await expect(turn).toBeVisible();
-  await page.getByRole('link', { name: 'Index' }).first().focus();
+  /* The glass page has no crumb: the keyboard starts from the menu bar's Back, as a player's does. */
+  await page.getByRole('link', { name: 'Back to the board' }).focus();
   await tabTo(page, turn);
   await page.keyboard.press('Enter');
 
@@ -38,7 +41,7 @@ test('asks for a Turn, sees it pending, and withdraws it, with the keyboard alon
     await page.keyboard.press('Tab');
     expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
   }
-  const confirm = dialog.getByRole('button', { name: 'Turn Pipewrench' });
+  const confirm = dialog.getByRole('button', { name: 'Confirm Turn' });
   await tabTo(page, confirm);
   await page.keyboard.press('Enter');
 
@@ -73,9 +76,38 @@ test('a phone shows My characters without scrolling sideways', async ({ page }) 
   await page.setViewportSize({ width: 320, height: 640 });
   await page.goto('/characters');
   await expect(page.getByRole('heading', { level: 1, name: /Your characters/u })).toBeVisible();
+  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
   await expect(page.getByRole('button', { name: 'Turn Pipewrench' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   await page.goto('/characters/new');
   await expect(page.getByRole('heading', { level: 1, name: 'New character' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
 });
+
+/*
+ * The Turn modal from My characters leaves the menu bar in view, dimmed and inert (the web plan's
+ * 2026-10-30 amendment to Task 9), as the Turn board draws it: the overlay starts at the bar's foot,
+ * so nothing covers the bar, and the bar is drawn at 0.6. Close puts the page back as it was.
+ */
+for (const width of [1440, 1280]) {
+  test(`at ${width}px the Turn modal leaves the menu bar in view, dimmed and inert, and Close lights it again`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto('/characters');
+    await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+    await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
+    await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
+    const bar = page.locator('nav.kb-glass-menu');
+    const got = await bar.evaluate((nav) => {
+      const box = nav.getBoundingClientRect();
+      const overlay = document.querySelector('.kb-glass-overlay')!.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      /* An inert element is passed over by hit testing, so what is under the bar's middle is the page's root, never the overlay. */
+      return { opacity: getComputedStyle(nav).opacity, inert: nav.closest('[inert]') !== null, uncovered: !hit?.closest('.kb-glass-overlay'), gap: Math.round(overlay.top - box.bottom) };
+    });
+    expect(got).toEqual({ opacity: '0.6', inert: true, uncovered: true, gap: 0 });
+    await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
+    await expect(page.getByRole('dialog')).toBeHidden();
+    expect(await bar.evaluate((nav) => ({ opacity: getComputedStyle(nav).opacity, inert: nav.closest('[inert]') !== null }))).toEqual({ opacity: '1', inert: false });
+    await expect(page.getByRole('button', { name: 'Turn Pipewrench' })).toBeFocused();
+  });
+}

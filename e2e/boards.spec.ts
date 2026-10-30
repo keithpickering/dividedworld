@@ -15,7 +15,9 @@ import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInF
  *
  * The board's Google Fonts requests are routed to the instance's own files (the build serves the
  * same files itself), the system faces both name first are set in one stand-in where the machine
- * lacks them, and both pages are opened at device scale 1 and reduced motion. The stand-in and the
+ * lacks them, and both pages are opened at device scale 1, reduced motion and in UTC: the boards
+ * draw their times in UTC and the build shows the reader's own, so the browser's zone is pinned
+ * rather than left to the machine's. The stand-in and the
  * report's outlines are styles put into the page, which the site's policy would refuse, so it is
  * set aside here (e2e/csp.spec.ts holds the policy). The build is
  * pressed where the manifest says the board draws a state reached by a press, and read once it has
@@ -30,8 +32,6 @@ const REPORT = path.join(here, 'report', 'boards');
 
 /** The boards not built yet, each with the part of docs/plans/2026-10-30-glass-build-plan.md that builds it. */
 const PENDING: Readonly<Record<string, string>> = {
-  '06-turn': 'Part 2',
-  '10-roster': 'Part 2',
   '05-cards': 'Part 3',
   '07-vending': 'Part 3',
   '08-hold': 'Part 3',
@@ -78,7 +78,7 @@ for (const id of run) {
     const manifest = (await import(pathToFileURL(path.join(MANIFESTS, `${id}.ts`)).href) as { default: BoardManifest }).default;
     expect(manifest.board).toBe(id);
     const baseURL = testInfo.project.use.baseURL;
-    const context = await browser.newContext({ baseURL, viewport: manifest.size, deviceScaleFactor: 1, reducedMotion: 'reduce', bypassCSP: true });
+    const context = await browser.newContext({ baseURL, viewport: manifest.size, deviceScaleFactor: 1, reducedMotion: 'reduce', timezoneId: 'UTC', bypassCSP: true });
     try {
       await standInFaces(context);
       const boardPage = await context.newPage();

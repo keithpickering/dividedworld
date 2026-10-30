@@ -62,6 +62,9 @@ describe('New character', () => {
     const mine = await w.fake.myCharacters();
     expect(mine.find((c) => c.name === 'Spritey')).toMatchObject({ debutedAt: null, class: 'heel' });
     expect((await w.fake.characters(mine.map((c) => c.id))).map((c) => c.name)).toEqual(['Pipewrench']);
+    /* My characters opens on the new one: the navigation carries it in history.state, never in the address. */
+    expect(window.location.search + window.location.hash).toBe('');
+    expect(window.history.state).toEqual({ character: mine.find((c) => c.name === 'Spritey')!.id });
   });
 
   test('can drop at once, silently', async () => {

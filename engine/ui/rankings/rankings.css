@@ -206,16 +206,50 @@
   color: var(--kb-glass-text-2);
 }
 
-/* ---- the Phone board's layout ---- */
+/* ---- the pages, when the season is longer than one ---- */
 
 /*
- * A calm's feather reaches 32px past its words, and the phone's gutter is 16px: the page is clipped
- * at the window's edge, so the feather never makes the page scroll sideways.
+ * The standings' pager (engine/ui/mini.tsx's PageLinks), set in the glass's label type: each page a
+ * control at least 52px tall, the current one framed in the pale rule.
  */
+.kb-rankings-pages {
+  margin-top: 32px;
+}
+
+.kb-rankings-pages .kb-pager {
+  gap: 4px 16px;
+  margin: 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-rankings-pages .kb-pager-where {
+  color: var(--kb-glass-neon-text);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.kb-rankings-pages .kb-pager a,
+.kb-rankings-pages .kb-pager-here {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  min-height: 52px;
+  padding: 0 12px;
+  color: var(--kb-glass-text);
+}
+
+.kb-rankings-pages .kb-pager-here {
+  border: 1.5px solid color-mix(in srgb, var(--kb-glass-pale) 70%, transparent);
+}
+
+/* ---- the Phone board's layout ---- */
+
 :where(:root[data-kb-layout='phone']) .kb-rankings {
   padding-top: 16px;
-  overflow-x: clip;
-  overflow-clip-margin: 16px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-rankings-title {
@@ -291,6 +325,16 @@
 :where(:root[data-kb-layout='phone']) .kb-rankings-yours,
 :where(:root[data-kb-layout='phone']) .kb-rankings-class {
   font-size: var(--kb-glass-size-phone-small);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-pages .kb-pager {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-pages .kb-pager a,
+:where(:root[data-kb-layout='phone']) .kb-rankings-pages .kb-pager-here {
+  min-width: 48px;
+  min-height: 48px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-rankings-yours {

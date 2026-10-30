@@ -64,6 +64,15 @@ const STICK_AROUND_AT = utc(29, 21, 41);
 const BOUGHT_AT = utc(29, 20, 10);
 const PLAYED_AT = utc(29, 21, 52);
 const TURNED_AT = utc(30, 0, 35);
+/*
+ * The two classes said in public, which only Rankings draws (board 13): Thwompson's long before the
+ * night (it posts nowhere the boards show), and Gloomba's after the last board of its thread, 06-turn
+ * at 00:35, so no postbit of Gloomba's on boards 01 to 05 says it. Thwompson's player asks a Turn,
+ * announced, after the Hold board's 21:41, and the Oct 30 settlement makes it and announces it.
+ */
+const THWOMPSON_REVEALED_AT = utc(8, 9, 31);
+const GLOOMBA_REVEALED_AT = utc(30, 1, 13);
+const THWOMPSON_TURNS_AT = utc(30, 2, 5);
 
 /**
  * Each board that has a moment: its UTC clock time, its account and the route it opens on (the thread's
@@ -87,7 +96,8 @@ export const MOMENTS = Object.freeze({
   '03-react': moment(POSTED[42] + 10 * MINUTE, 'rival', (id) => thread(id, 42)),
   // The minute before the play, which the form is open for.
   '05-cards': moment(PLAYED_AT - MINUTE, 'player', (id) => thread(id, 46)),
-  '06-turn': moment(TURNED_AT, 'player', () => '/characters'),
+  // The minute before the Turn, which the modal is open to choose.
+  '06-turn': moment(TURNED_AT - MINUTE, 'player', () => '/characters'),
   // The minute before the buy.
   '07-vending': moment(BOUGHT_AT - MINUTE, 'player', () => '/vending'),
   '08-hold': moment(STICK_AROUND_AT, 'reader', (id) => thread(id, 44)),
@@ -97,6 +107,8 @@ export const MOMENTS = Object.freeze({
   '10-roster': moment(SETTLE_2 + 13 * MINUTE, 'player', () => '/characters'),
   '11-settings': moment(SETTLE_2 + 13 * MINUTE, 'player', () => '/settings'),
   '12-log': moment(SETTLE_2 + 13 * MINUTE, 'player', () => '/log'),
+  // Rankings, at the Roster board's time: the standings as the Oct 30 settlement left them.
+  '13-rankings': moment(SETTLE_2 + 13 * MINUTE, 'player', () => '/rankings'),
 });
 export type MomentName = keyof typeof MOMENTS;
 
@@ -262,9 +274,21 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
     seed.estimate(player, { entries: SCORED.map(([reason, amount]) => ({ character: pipewrench, reason, amount })) });
   });
   when(TURNED_AT, () => seed.turn(pipewrench, 'face', { loudness: 'announced', showFrom: true, showTo: false }));
+  /* ---- the classes said in public, and Thwompson's Turn ---- */
+  when(THWOMPSON_REVEALED_AT, (at) => {
+    const lurking = seed.thread('general', thwompson, 'i read everything', 'Someone has to. Since you ask, here is what I am.', { at: at - MINUTE });
+    seed.reveal(thwompson, lurking.thread, { at });
+  });
+  when(GLOOMBA_REVEALED_AT, (at) => {
+    const said = seed.thread('general', gloomba, 'cards on the table', 'Fine. You want to know who I am? Here it is.', { at: at - MINUTE });
+    seed.reveal(gloomba, said.thread, { at });
+  });
+  when(THWOMPSON_TURNS_AT, () => seed.turn(thwompson, 'heel', { loudness: 'announced', showFrom: false, showTo: false }));
+
   when(SETTLE_2, (at) => {
     seed.settle({ at, debut: false, turns: true, wallet: { [player]: WALLET_SETTLED }, standings: { [pipewrench]: 330 } });
     seed.announceTurn(pipewrench, turns.thread, { was: 'heel', at });
+    seed.announceTurn(thwompson, turns.thread, { at });
     seed.nextSettlementAt(SETTLE_3);
     seed.estimate(player, {});
   });

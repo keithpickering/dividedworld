@@ -5,7 +5,7 @@
  * The quadrant labels, each class's look and description, and the shop's name are placeholders
  * the owner has not yet named (the web plan's brief, item 7); each is marked where it stands.
  */
-import type { GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
+import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
 import glassData from './glass.json';
 import theme from './theme.css?url';
 import pipFull from './pips/default-full.svg?url';
@@ -63,12 +63,12 @@ export const instanceUi: InstanceUi = Object.freeze({
     boredNegative: 'jabroni',
     calmPositive: 'lurker',
   }),
-  // Placeholder looks; each class's look on the reveal's bar is the owner's to give.
-  classLooks: Object.freeze({
-    face: { color: '#2e86de', description: 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.' },
-    heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on. Hurt by the polite shrug, calm and positive.' },
-    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: 'Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards. Hurt by posting more than three times a day.' },
-    jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts. Hurt by being taken sincerely, excited and positive.' },
+  // Placeholder looks; each class's look on the reveal's bar is the owner's to give. The marks are the Turn board's.
+  classLooks: Object.freeze<Record<string, ClassLook>>({
+    face: { color: '#2e86de', description: 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } },
+    heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on. Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
+    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: 'Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards. Hurt by posting more than three times a day.', marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
+    jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts. Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
   }),
   reasonWords: (reason: string) => REASONS[reason] ?? `Settled under "${reason}"`,
   copy: Object.freeze({
