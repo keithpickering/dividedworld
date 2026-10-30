@@ -199,8 +199,10 @@ export function SettingsScreen() {
       if (current.current![key] === asked) show({ ...current.current!, [key]: confirmed.current![key] });
       setRefusal({ account: madeFor, text: r.error });
     }).catch(() => {
-      /* Nothing in the line may end it: a choice after a throw is still sent, and the throw is said. */
-      if (showing.current === madeFor) setRefusal({ account: madeFor, text: LOST_ANSWER });
+      /* Nothing in the line may end it: a choice after a throw is still sent, and it is said and put back as a lost answer is. */
+      if (showing.current !== madeFor) return;
+      if (current.current && confirmed.current && current.current[key] === asked) show({ ...current.current, [key]: confirmed.current[key] });
+      setRefusal({ account: madeFor, text: LOST_ANSWER });
     });
   };
 

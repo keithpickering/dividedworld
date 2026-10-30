@@ -297,6 +297,8 @@ describe('Settings, as board 11 draws it', () => {
     };
     await userEvent.click(radio('Smoke', 'Off'));
     expect(await screen.findByRole('alert')).toBeInTheDocument();
+    /* Put back, as a lost answer is. */
+    expect(radio('Smoke', 'Full')).toBeChecked();
     await userEvent.click(radio('Contrast', 'High'));
     await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ contrast: 'high' }));
   });

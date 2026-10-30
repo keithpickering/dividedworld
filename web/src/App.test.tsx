@@ -51,6 +51,18 @@ test('another account signing in starts the open screen afresh: the last account
   expect(screen.queryByDisplayValue('Zzyzx the Draft')).toBeNull();
 }, 15_000);
 
+test('a signed-in page load mounts its screen once: each of its reads is asked once, not again when the session becomes known', async () => {
+  window.history.pushState(null, '', '/standings');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedDemo(fake);
+  const asked = vi.spyOn(fake, 'standingsPage');
+  render(<App api={fake} />);
+  await screen.findByRole('heading', { level: 1 });
+  await waitFor(() => expect(asked).toHaveBeenCalled());
+  await new Promise((r) => setTimeout(r, 50));
+  expect(asked).toHaveBeenCalledTimes(1);
+});
+
 test('the instance\'s glass is on the page: its standard key on the root, and its fonts in the font set', async () => {
   /* jsdom has no font set and no FontFace; the browser's are stood in for, as far as the app reaches. */
   const fonts = new Set<{ family: string }>();

@@ -103,16 +103,22 @@ function Appearance({ api }: { readonly api: KayfaApi }) {
  */
 function Shell() {
   const { path } = useLocation();
-  const { session } = usePlayer();
+  const { session, sessionKnown } = usePlayer();
   const surface = isGlass(path) ? GLASS[path] : undefined;
   /*
    * The routed screen is the signed-in account's: when the session changes under it (another tab
    * signed someone else in, on a device two players share), it starts afresh in the same render, so
-   * nothing the last account typed, chose or was told is drawn for the next.
+   * nothing the last account typed, chose or was told is drawn for the next. The first reading of the
+   * session on a load is no change of account: the screen mounted while it was unknown is kept, and
+   * asks for nothing twice.
    */
+  const [mountedFor, setMountedFor] = useState<{ readonly known: boolean; readonly account: string | null; readonly n: number }>({ known: false, account: null, n: 0 });
+  if (sessionKnown && (!mountedFor.known || mountedFor.account !== session.account)) {
+    setMountedFor({ known: true, account: session.account, n: mountedFor.known ? mountedFor.n + 1 : mountedFor.n });
+  }
   const content = (
     <AccountGate>
-      <Routes key={session.account ?? ''} routes={ROUTES} />
+      <Routes key={mountedFor.n} routes={ROUTES} />
     </AccountGate>
   );
   return surface ? <GlassPage surface={surface}>{content}</GlassPage> : <Frame>{content}</Frame>;

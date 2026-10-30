@@ -22,6 +22,8 @@ import { clearDrafts } from './composer/draft.ts';
 
 export interface Player {
   readonly session: Session;
+  /** Whether the session has been read yet: until then `session` stands signed out without being known to be. */
+  readonly sessionKnown: boolean;
   /** Every character the player plays, waiting and retired ones included. */
   readonly characters: readonly MyCharacter[];
   /** Those that can act now: debuted and not retired. */
@@ -63,6 +65,7 @@ const canAct = (c: MyCharacter) => c.debutedAt !== null && c.retiredAt === null;
 
 export function PlayerProvider({ api, children }: { readonly api: KayfaApi; readonly children: ReactNode }) {
   const [session, setSession] = useState<Session>(SIGNED_OUT);
+  const [sessionKnown, setSessionKnown] = useState(false);
   const [characters, setCharacters] = useState<readonly MyCharacter[]>([]);
   const [chosen, setChosen] = useState<Id | null>(null);
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -97,7 +100,7 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
 
   useEffect(() => {
     let live = true;
-    void api.session().then((s) => { if (live) setSession(s); });
+    void api.session().then((s) => { if (live) { setSession(s); setSessionKnown(true); } });
     const off = api.onSession((s) => {
       /*
        * Signing out, or switching to another account, takes the account's unsent drafts off this
@@ -106,6 +109,7 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
       const was = current.current;
       if (was && (!s.signedIn || (s.account !== null && s.account !== was))) clearDrafts(was);
       setSession(s);
+      setSessionKnown(true);
     });
     return () => { live = false; off(); };
   }, [api]);
@@ -188,9 +192,9 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   const pending = estimate ? estimate.entries.reduce((s, e) => s + e.amount, 0) : 0;
 
   const value = useMemo<Player>(() => ({
-    session, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen,
+    session, sessionKnown, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen,
     pending, estimate, cards, reactionLanded: ask, refresh, loaded,
-  }), [session, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, loaded]);
+  }), [session, sessionKnown, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, loaded]);
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }
