@@ -39,13 +39,31 @@ export function excerpt(body: string, max = 100): string {
   return plain.length > max ? `${plain.slice(0, max).trimEnd()}…` : plain;
 }
 
-export function actRow(a: Act, w: Words): RecordRow {
+/**
+ * Where each card play landed, from one batched read of the posts they target: a play has no seq
+ * of its own (it shows as a tag on its post), so its row links to that post's permalink, the place
+ * the thread's tag does. A page reads its targets once, never one read per row; a play whose target
+ * cannot be read has no entry and its row falls back to the thread.
+ */
+export async function playLinks(api: KayfaApi, acts: readonly Act[], perPage: number): Promise<ReadonlyMap<Id, string>> {
+  const out = new Map<Id, string>();
+  const targets = [...new Set(acts.flatMap((a) => (a.kind === 'card' && a.targetActId !== null ? [a.targetActId] : [])))];
+  if (targets.length === 0) return out;
+  const by = new Map((await api.actsById(targets)).map((t) => [t.id, t]));
+  for (const a of acts) {
+    const t = a.kind === 'card' && a.targetActId !== null ? by.get(a.targetActId) : undefined;
+    if (t && t.seq !== null) out.set(a.id, threadHref(t.thread, pageOf(t.seq, perPage), t.seq));
+  }
+  return out;
+}
+
+export function actRow(a: Act, w: Words, plays: ReadonlyMap<Id, string> = new Map()): RecordRow {
   const where = a.seq === null ? `/t/${a.thread}` : threadHref(a.thread, pageOf(a.seq, w.perPage), a.seq);
   switch (a.kind) {
     case 'spin': return { key: a.id, at: a.createdAt, text: `Spun a thread: ${str(a.currentPayload.title) || str(a.payload.title)}`, href: `/t/${a.thread}` };
     case 'card': {
       const message = str(a.payload.message);
-      return { key: a.id, at: a.createdAt, text: `Played ${w.cardName(str(a.payload.card))}${message ? `: “${message}”` : ''}`, href: where };
+      return { key: a.id, at: a.createdAt, text: `Played ${w.cardName(str(a.payload.card))}${message ? `: “${message}”` : ''}`, href: plays.get(a.id) ?? where };
     }
     default: return { key: a.id, at: a.createdAt, text: `Posted: ${excerpt(str(a.currentPayload.body))}`, href: where };
   }

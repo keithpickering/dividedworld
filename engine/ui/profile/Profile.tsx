@@ -22,7 +22,7 @@ import { Pips } from '../postbit/Postbit.tsx';
 import { monthYear, shortDate } from '../postbit/dates.ts';
 import { reveals } from '../postbit/reveals.ts';
 import { Link } from '../router.tsx';
-import { PROFILE_ROWS, actRow, mergeWindow, newest, revealRow, seasonRow, turnLinks, turnRow, type RecordRow, type Words } from './record.ts';
+import { PROFILE_ROWS, actRow, mergeWindow, newest, playLinks, revealRow, seasonRow, turnLinks, turnRow, type RecordRow, type Words } from './record.ts';
 import { NotFound, recordHref } from './Record.tsx';
 import { useCharacter } from './useCharacter.ts';
 import './profile.css';
@@ -73,11 +73,11 @@ function Profile({ character: c }: { readonly character: Character }) {
       api.classReveals([c.id]), api.turnsAnnounced([c.id]), api.characterActs(c.id, ['post', 'spin', 'card'], { offset: 0, limit: PROFILE_ROWS }),
       api.characterReveals(c.id),
     ]).then(async ([counts, standing, settledAt, season, revealed, turns, acts, seasons]) => {
-      /* The Turns' tallies are placed with one batched read, which needs the Turns first. */
-      const links = await turnLinks(api, turns, words.perPage);
+      /* The Turns' tallies and the card plays' target posts are each placed with one batched read. */
+      const [links, plays] = await Promise.all([turnLinks(api, turns, words.perPage), playLinks(api, acts, words.perPage)]);
       /* The newest few of everything: the newest few Acts, with every reveal and Turn, hold the newest few overall. */
       const extras = newest([...revealed.map((r) => revealRow(r, words)), ...turns.map((t) => turnRow(t, words, links)), ...seasons.map((a) => seasonRow(a, words))]);
-      const rows = mergeWindow(extras, acts.map((a) => actRow(a, words)), 0, 0, PROFILE_ROWS);
+      const rows = mergeWindow(extras, acts.map((a) => actRow(a, words, plays)), 0, 0, PROFILE_ROWS);
       if (live) setLoaded({ counts, standing, settledAt, season: season?.number ?? null, reveals: revealed, turns, rows });
     }, () => { if (live) setLoaded('failed'); });
     return () => { live = false; };
