@@ -20,10 +20,6 @@
  *    still snaps you back" is "one that snaps you back still does"; and The board's sentence, with
  *    more than two choices, says "whichever you choose" for "either way".
  *
- * Board 11's menu bar is drawn as boards 06, 07, 10 and 12 draw it (an 84px bar, skewed tabs, Back
- * as a bordered box with an ESC cap), which Task 2.2 builds; until it merges, the menu bar's
- * landmarks differ, and every other landmark here is held in full.
- *
  * Not compared: the smoke and its calms, which are the guards' (tools/check-glass-contrast.mjs and
  * e2e/glass-text.spec.ts). "Changes save as you make them." follows the Posts row where the board's
  * follows Read-outs, so it is held by its place (`position`), which the two rows' like heights keep
@@ -47,12 +43,16 @@ const manifest: BoardManifest = {
   size: { width: 1440, height: 1360 },
   build: { moment: '11-settings' },
   landmarks: [
-    /* The menu bar, as the board draws it; Task 2.2 makes the build's match. */
+    /*
+     * The menu bar, Settings current. The build's tabs after Back stand one tab along from the
+     * board's, with no Vending Machine before them (Part 3) and Rankings among them where the board
+     * has none, so each is compared by its size and type, not its place, as board 10 compares them.
+     */
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
     { id: 'menu-back', role: 'link', name: 'ESC BACK TO THE BOARD', buildName: 'Back to the board', within: 'menu' },
-    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu' },
-    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu' },
-    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu' },
+    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu', box: 'size' },
+    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu', box: 'size' },
+    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu', box: 'size' },
 
     { id: 'title', role: 'heading', name: 'Settings', nth: 0 },
 

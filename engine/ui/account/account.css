@@ -103,7 +103,8 @@
   color: var(--kb-glass-text);
 }
 
-.kb-acct-row {
+/* Scoped to the screen, so it outranks a glass-wide rule for a fieldset or a legend. */
+.kb-acct .kb-acct-row {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
   column-gap: 32px;
@@ -115,7 +116,7 @@
 }
 
 /* A floated legend is a plain box, so it takes the grid's label column as the board's does. */
-.kb-acct-row-legend {
+.kb-acct .kb-acct-row-legend {
   float: left;
   padding: 0;
 }
@@ -463,13 +464,13 @@
   overflow-wrap: anywhere;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-acct-row {
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-acct-row {
   grid-template-columns: minmax(0, 1fr);
   row-gap: 12px;
   padding: 16px 0;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-acct-row-legend {
+:where(:root[data-kb-layout='phone']) .kb-acct .kb-acct-row-legend {
   float: none;
 }
 

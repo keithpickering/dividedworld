@@ -174,7 +174,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
       test('signed out: sign-in and register have none', async ({ page }) => {
         /* The demo world starts signed in and starts over on a load, so sign out in the app and go on from there. */
-        await page.goto('/settings');
+        await page.goto('/settings?section=account');
         await page.getByRole('button', { name: 'Sign out' }).click();
         await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
         await page.getByRole('link', { name: 'Sign in' }).first().click();
