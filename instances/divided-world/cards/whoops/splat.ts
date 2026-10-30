@@ -10,18 +10,16 @@
  * fixed width scaled as a whole, so a splat is never stretched: its blob keeps the proportions it was
  * drawn with, whatever the post's height.
  *
- * Where the splat sits is the seed's too. The blob's center is across the middle of the post (0.42 to
- * 0.58) and anywhere down it that keeps the blob (arms and droplets aside) inside the post, where the post
- * is tall enough to hold it: the blob is never under half a width tall, so on a post of a line or two it
- * runs past the post's top and bottom into the margins, as ink may; its radius
- * across is 0.42 to 0.56 widths, and down it is about two fifths of the post's height, never more than
- * 1.3 times the radius across, so a tall post is splattered in one place, not smeared along its length.
- * The post's height counts only to 64 widths, the deepest a stroke reaches: an unbounded height is that deepest, and
- * only NaN is read as no height.
+ * Where the splat sits is the seed's too, and nothing else's: not the post's height, which an edit changes ("an
+ * edit leaves the splat and the saved strokes where they are; new text reflows under them", design section 11).
+ * Its center is across the middle of the post (0.42 to 0.58) and down in the first band of it, near the top (about
+ * half a radius to a whole one from it, so the blob reaches the post's top rows and a post of a line is inked as a tall
+ * one is); its radius across is 0.42 to 0.56 widths and down it is 0.75 to 1.3 times that. The ink may run past the
+ * post's top and bottom into the margins, as it may past its sides, and a tall post is splattered in one place at its
+ * top, not smeared along its length.
  *
  * A splat's path is about 13 KB, so the Effect draws only the splats near the viewport, never every one on a page.
  */
-import { STROKES } from '../whoops.ts';
 
 /** A 32-bit PRNG (mulberry32): the same seed always gives the same run of numbers in [0, 1). */
 export function mulberry32(seed: number): () => number {
@@ -54,15 +52,13 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 const SWELL = { lowest: 0.55, highest: 1.35 };
 const POINTS = 160;
 
-/** The splat for a seed, on a post laid out `postHeight` widths tall. */
-export function makeSplat(seed: number, postHeight: number): Splat {
+/** The splat for a seed, in widths of the layout from the post's top. */
+export function makeSplat(seed: number): Splat {
   const r = mulberry32(seed);
-  const height = clamp(Number.isNaN(postHeight) ? 0 : postHeight, 0, STROKES.deepest);
   const rx = 0.42 + r() * 0.14;
-  const ry = clamp(height * (0.34 + r() * 0.12), 0.25, rx * 1.3);
+  const ry = rx * (0.75 + r() * 0.55);
   const cx = 0.42 + r() * 0.16;
-  const room = Math.max(0, height / 2 - ry * SWELL.highest);
-  const cy = height / 2 + (r() * 2 - 1) * room;
+  const cy = ry * (0.5 + r() * 0.5);
 
   const harmonics = [2, 3, 4, 5, 7, 9].map((k) => ({ k, a: ((0.05 + r() * 0.16) / Math.sqrt(k / 2)) * 0.7, p: r() * Math.PI * 2 }));
   const blob: [number, number][] = [];

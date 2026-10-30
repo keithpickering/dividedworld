@@ -299,6 +299,8 @@ export async function gather(): Promise<Gathered[]> {
   const overlays = [...document.querySelectorAll('.kb-glass-overlay')];
   const overlay = overlays.at(-1) ?? null;
   const view: Box = { x: 0, y: 0, width: innerWidth, height: innerHeight };
+  const hudEl = document.querySelector('[aria-label="Game HUD"]');
+  const hud = hudEl && getComputedStyle(hudEl).position === 'fixed' ? Object.assign(hudEl.getBoundingClientRect(), { contains: (n: Node) => hudEl.contains(n) }) : null;
   const out: Gathered[] = [];
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
@@ -329,7 +331,9 @@ export async function gather(): Promise<Gathered[]> {
     lines.forEach((line, i) => {
       const box = visiblePart(inkBand(toBox(line), m), el);
       if (!box || box.width < 2 || box.height < 2) return;
-      const inView = intersect(box, view)?.width === box.width && intersect(box, view)?.height === box.height;
+      /* The HUD is docked over the window's foot: a line of the page lying behind it is read in a later window, where it is clear. */
+      const seen = hud && hud.top > 0 && hud.top < view.height && !hud.contains(el) ? { ...view, height: hud.top } : view;
+      const inView = intersect(box, seen)?.width === box.width && intersect(box, seen)?.height === box.height;
       out.push({
         key: `${idOf(n)}:${i}`, inView, name: nameOf(n.data, el), surface: ground.surface, box, color,
         family: s.fontFamily.split(',')[0]!.replace(/["']/g, '').trim(), size, weight: parseFloat(s.fontWeight), ink, calm, calmOpacity, panels,

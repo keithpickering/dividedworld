@@ -13,8 +13,9 @@
  *
  * Left out until the part that builds them (the glass build plan, Part 3, the cards):
  *  - the armed card's tag and place, "Play Whoops! here" on #42 (cards Task 3);
- *  - "Hold to scrub" on #41 and the splat it scrubs (cards Task 5). The Whoops! tag over #41 is built
- *    (cards Task 3), as the card's tag on its post.
+ *  - the splat itself on #41, which is pixels (the board's is a drawing in the same ink, the build's a
+ *    seeded one: e2e/whoops.spec.ts reads it). "Hold to scrub" on #41 is compared, and #41 carries its
+ *    tag (cards Task 3) and its hint line as the board draws them (cards Task 5).
  * Left out because the fixture cannot hold it: the "3 new posts" bar, which is the thread's answer
  * to posts that arrive while the reader is higher up, and a seeded page has nothing arriving.
  * Not compared: the post counts and the avatars (the fixture's numbers and the board's placeholders),
@@ -66,15 +67,24 @@ const manifest: BoardManifest = {
 
     /*
      * The posts, by position and type. A card play takes no number and shows as its tag on its post
-     * (cards Task 3), so the page holds #41 to #46 and nothing else. Where #42 and #43 start still
-     * waits on cards Task 5 (Part 3): #41's height on the board is its splat's 150px and the line
-     * under it ("This post is splatted..."), which the build draws only when Whoops!'s effect is
-     * built (measured with the tag in: #42 starts 77px above the board's), so they are compared by
-     * type until then and Task 5 turns them to `position`.
+     * (cards Task 3), so the page holds #41 to #46 and nothing else. #41 is splatted (cards Task 5), and
+     * where #42 and #43 start waits on a decision the board cannot settle: the board draws #41's splat
+     * in a 150px frame (the body at full width, three lines) and the card's design lays the body out at
+     * 360px scaled up to 1.5 times (design section 11), which at this width is a 540px column of ten
+     * lines: #41 is 97px taller than the board's, so #42 starts 104px below the board's and #43, whose
+     * own post is shorter than the board's, 13px. They are compared by type until the owner says whether
+     * the board or the layout is what holds (the report names this as a design question).
      */
     ...post(41, 0, 'Spritey', 4, 'Main Eventer', 'position'),
     ...post(42, 1, 'Mrs. Hooligan', 3, 'Midcarder', 'none'),
     ...post(43, 2, 'Pipewrench', 2, 'Enhancement Talent', 'none'),
+    /*
+     * Whoops!'s keyboard path, a piece of glass in the hint line under the splat; the board calls it
+     * "Scrub with the keyboard". Found by its name and kind: where it lies follows #41's frame (above)
+     * down the page and the build's content column across it (its author column is narrower than the
+     * board's), and its type is the glass's, in the card's tag's family, not the 2003 button's.
+     */
+    { id: 'post-41-scrub', role: 'button', name: 'Scrub with the keyboard', buildName: 'Hold to scrub', within: 'post-41', box: 'none', type: false },
 
     /*
      * The Game HUD, docked at the bottom of the window, is compared in full. The thread below #46 is

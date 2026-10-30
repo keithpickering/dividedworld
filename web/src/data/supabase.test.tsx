@@ -28,6 +28,7 @@ const FALLBACK: ScreenSettings = {
   titleMaxLength: 120,
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
+  cardSettings: { 'whoops.clean': 95 },
 };
 
 const B64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');

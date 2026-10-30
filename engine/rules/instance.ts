@@ -37,6 +37,13 @@ const isCron = (v: unknown): boolean => {
   return fields.length === 5 && fields.every((f, i) => cronFieldOk(f, CRON_RANGES[i]!));
 };
 
+/** An object of named numbers: the economy's shape, and a card's screen settings'. */
+function namedNumbers(v: unknown): string | null {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return 'an object of named numbers';
+  const bad = Object.entries(v).filter(([, n]) => typeof n !== 'number' || !Number.isFinite(n)).map(([k]) => k);
+  return bad.length ? `an object of named numbers, and ${bad.map((k) => `"${k}"`).join(', ')} is not a number` : null;
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -57,11 +64,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   postsPerPage: (v) => (isWhole(v, 1) ? null : 'a whole number of posts, at least 1'),
   hotReplies: (v) => (isWhole(v, 1) ? null : 'a whole number of replies, at least 1'),
-  economy: (v) => {
-    if (typeof v !== 'object' || v === null || Array.isArray(v)) return 'an object of named numbers';
-    const bad = Object.entries(v).filter(([, n]) => typeof n !== 'number' || !Number.isFinite(n)).map(([k]) => k);
-    return bad.length ? `an object of named numbers, and ${bad.map((k) => `"${k}"`).join(', ')} is not a number` : null;
-  },
+  economy: namedNumbers,
+  cardSettings: namedNumbers,
 };
 
 export function settingsProblems(settings: Settings): string[] {
@@ -144,6 +148,21 @@ export function instanceProblems(instance: Instance): string[] {
       const price = economy[c.priceKey];
       if (!Number.isSafeInteger(price) || price! <= 0 || price! > INT4_MAX) out.push(`card "${c.key}" is priced by economy "${c.priceKey}", which the settings do not hold as a whole number above 0`);
       for (const r of c.reads ?? []) { const why = check(`card "${c.key}"`, r); if (why) out.push(why); }
+    }
+  }
+  // Every number a card reads for the screens is one the card settings hold, within the card's bounds.
+  const held = instance.settings?.cardSettings;
+  if (held && typeof held === 'object' && !Array.isArray(held)) {
+    for (const c of instance.cards ?? []) {
+      for (const r of c.screenReads ?? []) {
+        const { key, whole = false, min = undefined, max = undefined } = typeof r === 'string' ? { key: r } : r;
+        const n = held[key];
+        const who = `card "${c.key}" reads card setting "${key}"`;
+        if (typeof n !== 'number' || !Number.isFinite(n)) out.push(`${who}, which the settings do not hold`);
+        else if (whole && !Number.isSafeInteger(n)) out.push(`${who} as ${n}; it must be a whole number`);
+        else if (min !== undefined && n < min) out.push(`${who} as ${n}; it must be at least ${min}`);
+        else if (max !== undefined && n > max) out.push(`${who} as ${n}; it must be at most ${max}`);
+      }
     }
   }
   return out;

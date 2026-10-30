@@ -147,6 +147,8 @@ const FILLER = [
  */
 const economy = instance.settings.economy;
 const WHOOPS = economy['whoops.price']!;
+/** The ink of the board's Whoops!: magenta, the Cards board's first swatch, and the seed the server chose for the play. */
+const WHOOPS_INK = { color: '#ff2bd6', seed: 20261029 };
 const LONG_POST_COST = economy['whoops.perLength']! * Math.floor(LONG_POST_LENGTH / economy['whoops.lengthStep']!);
 const WALLET_START = 562;
 const WALLET_BOUGHT = WALLET_START - WHOOPS;
@@ -196,7 +198,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   const when = (at: number, run: (at: number) => void) => steps.push({ at, run });
   /* A card play takes no number in its thread, so it is written where it happened, between the posts. */
   const play = (at: number, character: string, target: number, card: string, message: string, config?: Readonly<Record<string, unknown>>) =>
-    when(at, (when_) => { seed.card(character, posts[target]!, card, { message, at: when_, ...(config === undefined ? {} : { config }) }); });
+    when(at, (when_) => { seed.card(character, posts[target]!, card, { message, at: when_, ...(card === 'whoops' ? { layer: 1, config: WHOOPS_INK } : config === undefined ? {} : { config }) }); });
   const post = (n: keyof typeof POSTED, character: string, body: string, quote?: number) =>
     when(POSTED[n], (at) => { posts[n] = seed.post(opener.thread, character, body, { at, ...(quote === undefined ? {} : { quote: posts[quote]! }) }); });
 

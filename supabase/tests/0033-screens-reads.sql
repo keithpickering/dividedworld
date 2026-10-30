@@ -160,7 +160,7 @@ do $$
 declare
   seen jsonb;
   listed text[] := array['postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime', 'turnCooldown',
-                         'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength'];
+                         'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings'];
   k text;
 begin
   perform tests.become_anon();
@@ -174,6 +174,8 @@ begin
   if seen -> 'postsPerPage' is distinct from '20'::jsonb or seen -> 'registrationMode' is distinct from '"invite"'::jsonb or seen -> 'turnCooldown' is distinct from '{"unit": "day", "count": 30}'::jsonb then
     raise exception 'values are the settings'' own: %', seen;
   end if;
+  -- The numbers the cards give the screens are a screen's (0036); the economy still is not.
+  if seen -> 'cardSettings' is distinct from '{"whoops.clean": 95}'::jsonb then raise exception 'cardSettings is the setting''s own: %', seen; end if;
   -- Signed in, the same.
   perform tests.become(tests.account('ss-ann'));
   if (select settings from screen_settings) is distinct from seen then raise exception 'a signed-in player reads the same settings'; end if;

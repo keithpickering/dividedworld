@@ -18,7 +18,7 @@ const settings: Settings = {
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 },
-  postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, economy: { 'whoops.price': 100 },
+  postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, cardSettings: {}, economy: { 'whoops.price': 100 },
 };
 
 const earn = () => [];

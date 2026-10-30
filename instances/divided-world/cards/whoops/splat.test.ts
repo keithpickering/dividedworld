@@ -7,22 +7,22 @@ import { contrast, covers, luminance, makeSplat, mulberry32, shading, tagText } 
 import { NAMED_COLORS } from '../../../../engine/bbcode/parse.ts';
 
 test('the generator is deterministic: one seed and one post height always give one splat', () => {
-  assert.deepEqual(makeSplat(20261029, 12), makeSplat(20261029, 12));
-  assert.equal(makeSplat(7, 3).path, makeSplat(7, 3).path);
+  assert.deepEqual(makeSplat(20261029), makeSplat(20261029));
+  assert.equal(makeSplat(7).path, makeSplat(7).path);
   const a = mulberry32(5), b = mulberry32(5);
   assert.deepEqual([a(), a(), a()], [b(), b(), b()]);
   assert.notEqual(mulberry32(5)(), mulberry32(6)());
 });
 
 test('different seeds give different splats', () => {
-  const paths = new Set([1, 2, 3, 4, 5, 2 ** 31 - 1].map((s) => makeSplat(s, 12).path));
+  const paths = new Set([1, 2, 3, 4, 5, 2 ** 31 - 1].map((s) => makeSplat(s).path));
   assert.equal(paths.size, 6);
-  assert.notEqual(makeSplat(1, 12).placement.cx, makeSplat(2, 12).placement.cx);
+  assert.notEqual(makeSplat(1).placement.cx, makeSplat(2).placement.cx);
 });
 
 test('a splat is one closed path in widths of the layout, with a lumpy blob, arms and droplets', () => {
   for (const seed of [0, 1, 99, 2 ** 31 - 1]) {
-    const s = makeSplat(seed, 10);
+    const s = makeSplat(seed);
     assert.match(s.path, /^M[-\d. ,MLAZa-z]+Z$/);
     assert.equal(s.path.includes('NaN'), false);
     assert.ok(s.blob.length >= 100);
@@ -36,49 +36,38 @@ test('a splat is one closed path in widths of the layout, with a lumpy blob, arm
   }
 });
 
-test('the splat sits on the post: its blob keeps inside the post laid out that tall, however tall', () => {
-  for (const seed of [3, 4, 5, 6]) {
-    const s = makeSplat(seed, 8);
-    assert.ok(s.placement.cy - s.placement.ry >= -1e-9 && s.placement.cy + s.placement.ry <= 8 + 1e-9);
-    assert.deepEqual(makeSplat(seed, 500), makeSplat(seed, 64), 'the post counts only to the 64 widths a stroke can reach');
+test('the splat is the seed\'s alone: where it sits does not depend on how tall the post is, so an edit never moves it', () => {
+  // The signature takes no height; a second argument a caller still passes changes nothing.
+  const loose = makeSplat as unknown as (seed: number, height?: number) => ReturnType<typeof makeSplat>;
+  for (const seed of [3, 4, 5, 6, 1234567]) {
+    for (const height of [0.05, 1, 8, 64, Infinity, NaN]) assert.deepEqual(loose(seed, height), makeSplat(seed), `at ${height}`);
   }
 });
 
-test('on a tall post the blob is one place, not a smear: its height is at most 1.3 times its width', () => {
+test('the blob is one place, not a smear: its height is at most 1.3 times its width, and its width is the seed\'s', () => {
   for (let seed = 1; seed <= 40; seed++) {
-    const { rx, ry } = makeSplat(seed, 64).placement;
-    assert.ok(ry <= 1.3 * rx + 1e-3, `seed ${seed}: ry ${ry} against rx ${rx}`);
+    const { rx, ry } = makeSplat(seed).placement;
+    assert.ok(ry <= 1.3 * rx + 1e-3 && ry >= 0.7 * rx - 1e-3, `seed ${seed}: ry ${ry} against rx ${rx}`);
     assert.ok(rx >= 0.42 - 1e-3 && rx <= 0.56 + 1e-3);
   }
 });
 
-test('where the splat sits down a tall post is the seed\'s, and the whole blob stays inside the post', () => {
+test('the splat sits in the first band of the post: across its middle, and down from its top, so a post of a line is inked as a tall one is', () => {
   const centers = new Set<number>();
   for (let seed = 1; seed <= 200; seed++) {
-    for (const height of [8, 20, 64]) {
-      const s = makeSplat(seed, height);
-      let top = Infinity, bottom = -Infinity;
-      for (const [, y] of s.blob) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
-      assert.ok(top >= -1e-9 && bottom <= height + 1e-9, `seed ${seed}, ${height} tall: blob from ${top} to ${bottom}`);
-    }
-    centers.add(makeSplat(seed, 64).placement.cy);
+    const s = makeSplat(seed);
+    assert.ok(s.placement.cx >= 0.42 - 1e-3 && s.placement.cx <= 0.58 + 1e-3);
+    assert.ok(s.bounds.minY < 0.1, `seed ${seed} starts at ${s.bounds.minY}: it reaches the post's top rows`);
+    assert.ok(s.bounds.maxY < 3, `seed ${seed} ends at ${s.bounds.maxY}: within the first three widths`);
+    assert.ok(s.placement.cy > 0 && s.placement.cy < 1.3, `seed ${seed}'s center is at ${s.placement.cy}`);
+    centers.add(s.placement.cy);
   }
   assert.ok(centers.size > 150, 'the center falls in different places for different seeds');
-  const ys = [...centers];
-  assert.ok(Math.max(...ys) - Math.min(...ys) > 20, 'and over a wide stretch of the post');
-});
-
-test('a post of any height, or a height that is not a number, still gives a finite splat', () => {
-  assert.deepEqual(makeSplat(5, Infinity), makeSplat(5, 64), 'an unbounded height is the deepest, not zero');
-  assert.notDeepEqual(makeSplat(5, Infinity), makeSplat(5, 0));
-  assert.deepEqual(makeSplat(5, NaN), makeSplat(5, 0));
-  assert.deepEqual(makeSplat(5, -Infinity), makeSplat(5, 0));
-  assert.equal(makeSplat(5, Infinity).path.includes('NaN'), false);
 });
 
 test('covers holds the blob and every arm and droplet circle, and nothing outside', () => {
   for (const seed of [1, 2, 3, 99]) {
-    const s = makeSplat(seed, 12);
+    const s = makeSplat(seed);
     const blobOnly = { blob: s.blob, circles: [], bounds: s.bounds };
     const outside = s.circles.filter(([x, y]) => !covers(blobOnly, x, y));
     assert.ok(outside.length > 0, 'some arm or droplet sits outside the blob');
@@ -99,7 +88,7 @@ test('covers holds the blob and every arm and droplet circle, and nothing outsid
 
 test('the arcs turn the way the blob does, so the nonzero rule fills the union and no overlap cuts a hole', () => {
   for (const seed of [1, 2, 3, 99]) {
-    const s = makeSplat(seed, 12);
+    const s = makeSplat(seed);
     let area = 0;
     for (let i = 0, j = s.blob.length - 1; i < s.blob.length; j = i++) area += s.blob[j]![0] * s.blob[i]![1] - s.blob[i]![0] * s.blob[j]![1];
     assert.ok(area > 0, 'the blob is clockwise on a y-down plane (positive shoelace area)');

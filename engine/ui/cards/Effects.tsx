@@ -15,7 +15,7 @@
  * in play order, so the latest is outermost. A post with no plays, or whose plays' cards draw no
  * effect, is drawn untouched.
  */
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, type CSSProperties, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -23,7 +23,7 @@ import { Link } from '../router.tsx';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import { when } from '../thread/lines.tsx';
 import { usePlays, type Plays } from './plays.ts';
-import type { CardPlay, EffectPlace, EffectProps } from './types.ts';
+import type { CardPlay, CardUi, EffectPlace, EffectProps } from './types.ts';
 import './cards.css';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
@@ -69,7 +69,7 @@ export function PostEffects({ plays, post, place, children }: { readonly plays: 
 }
 
 /** One play's tag: the card, who played it with their words, and when. */
-export function PlayTag({ play, caster, to }: { readonly play: CardPlay; readonly caster: string; readonly to: string | null }) {
+export function PlayTag({ play, caster, to, tint }: { readonly play: CardPlay; readonly caster: string; readonly to: string | null; readonly tint?: ReturnType<NonNullable<CardUi['tag']>> }) {
   const { instance } = useKayfa();
   const rules = instance.cards.find((c) => c.key === play.card);
   const card = rules?.name ?? play.card;
@@ -78,9 +78,11 @@ export function PlayTag({ play, caster, to }: { readonly play: CardPlay; readonl
   /* One sentence to read; the drawn pieces (the card's name over its caster's words) are for the eye, so a screen reader hears it once. */
   const sentence = `${caster} played ${card} on this post${said}`;
   const words = <><span className="kb-visually-hidden">{sentence}</span><span aria-hidden="true">{caster}{said}</span></>;
+  /* A card that chooses its tag's colors fills it solid with them, so its text stands on a fill it knows, with no smoke under it. */
+  const style = tint ? { ...calm, '--kb-tag-fill': tint.fill, '--kb-tag-ink': tint.text } as CSSProperties : calm;
   return (
-    <li className="kb-glass kb-play-tag" data-kb-card={play.card} data-kb-alignment={rules?.alignment} data-kb-play={play.id} style={calm}>
-      <Smoke surface="effect" />
+    <li className="kb-glass kb-play-tag" data-kb-card={play.card} data-kb-alignment={rules?.alignment} data-kb-tinted={tint ? 'true' : undefined} data-kb-play={play.id} style={style}>
+      {!tint && <Smoke surface="effect" />}
       <span className="kb-play-tag-card kb-calm" aria-hidden="true">{card}</span>
       <span className="kb-play-tag-words kb-calm">{to ? <Link to={to}>{words}</Link> : words}</span>
       <time className="kb-play-tag-when kb-calm" dateTime={play.playedAt}>{when(play.playedAt)}</time>
@@ -93,11 +95,12 @@ export function PlayTag({ play, caster, to }: { readonly play: CardPlay; readonl
  * post's own address, which each tag links to; `nameOf` says the caster's name.
  */
 export function PlayTags({ plays, post, to, nameOf }: { readonly plays: Plays; readonly post: Id; readonly to: string | null; readonly nameOf: (character: Id | null) => string }) {
+  const { ui } = useKayfa();
   const here = usePlays(plays, post);
   if (here.plays.length === 0) return null;
   return (
     <ul className="kb-play-tags" aria-label="Cards played on this post">
-      {here.plays.map((p) => <PlayTag key={p.id} play={p} caster={nameOf(p.caster)} to={to} />)}
+      {here.plays.map((p) => <PlayTag key={p.id} play={p} caster={nameOf(p.caster)} to={to} tint={ui.cards.find((c) => c.key === p.card)?.tag?.(p, here.plays.filter((o) => o.card === p.card))} />)}
     </ul>
   );
 }

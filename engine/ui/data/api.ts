@@ -60,6 +60,8 @@ export interface ScreenSettings {
   readonly titleMaxLength: number;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
+  /** The numbers the instance's cards give the screens, by name (`Settings.cardSettings`). */
+  readonly cardSettings: Readonly<Record<string, number>>;
 }
 
 /* ------------------------------------------------------------- public reads ---- */

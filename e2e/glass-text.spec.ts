@@ -447,6 +447,49 @@ test.describe('the poisons, planted in a real page', () => {
     expect(await measure(page)).toContainEqual('"A line the window always cuts" in div.kb-glass > p.kb-planted: never lies wholly in the window, so it is cut off');
   });
 
+  /** The fixed HUD the boards dock at the window's foot, drawn bright so a line read under it is read over the wrong pixels. */
+  const dockHud = (page: Page) => page.locator('.kb-glass-page').evaluate((glassPage) => {
+    const hud = document.createElement('div');
+    hud.setAttribute('role', 'region');
+    hud.setAttribute('aria-label', 'Game HUD');
+    hud.style.cssText = 'position: fixed; left: 0; right: 0; bottom: 0; height: 120px; z-index: 50; background: #ffffff';
+    glassPage.append(hud);
+  });
+
+  test('a line always behind the fixed HUD is named as cut off, not read over the HUD', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await open(page, rankings);
+    await dockHud(page);
+    await page.locator('.kb-glass-page').evaluate((glassPage) => {
+      const p = document.createElement('p');
+      p.className = 'kb-calm kb-planted';
+      p.style.cssText = 'position: fixed; left: 40px; bottom: 30px; margin: 0; z-index: 1';
+      p.textContent = 'A line the HUD always covers';
+      glassPage.append(p);
+    });
+    expect(await measure(page)).toContainEqual('"A line the HUD always covers" in div.kb-glass > p.kb-planted: never lies wholly in the window, so it is cut off');
+  });
+
+  test('a line behind the fixed HUD at one scroll position is read at another, where it is clear', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await open(page, rankings);
+    await dockHud(page);
+    await page.locator('main').evaluate((main) => {
+      /* In the first window the line lies under the HUD; a window down it stands clear on the smoke. */
+      const spacer = document.createElement('div');
+      const p = document.createElement('p');
+      p.className = 'kb-calm kb-planted';
+      p.textContent = 'A line the HUD covers at first';
+      const tail = document.createElement('div');
+      tail.style.height = '1800px';
+      main.append(spacer, p, tail);
+      spacer.style.height = `${Math.max(0, innerHeight - 70 - p.getBoundingClientRect().top)}px`;
+    });
+    const found = await measure(page);
+    /* Read in the clear it is a legible line on the smoke; read under the HUD it would be judged over the HUD's white. */
+    expect(found.filter((f) => f.includes('A line the HUD covers at first'))).toEqual([]);
+  });
+
   test('a line on a page longer than the window is found by reading it a window at a time', async ({ page }) => {
     await open(page, rankings);
     await page.locator('main').evaluate((main) => {

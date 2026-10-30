@@ -20,4 +20,5 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   titleMaxLength: defaults.titleMaxLength,
   registrationMode: defaults.registrationMode,
   settlementLength: defaults.settlementLength,
+  cardSettings: defaults.cardSettings,
 });

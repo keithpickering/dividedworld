@@ -14,7 +14,7 @@ const settings: Settings = {
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 },
-  postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, economy: {},
+  postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, cardSettings: {}, economy: {},
 };
 
 const earn = () => [];
@@ -782,6 +782,12 @@ describe('what a list row shows', () => {
     const row = await fake.thread(thread);
     expect([row?.lastSeq, row?.lastAct, row?.replies]).toEqual([3, third.id, 2]);
     expect((await fake.cardsOn(second.id, 5)).map((c) => c.seq)).toEqual([null]);
+  });
+
+  test('a card seeded with a layer and the server\'s config carries them in its payload, as a seeded card\'s play does', async () => {
+    const { fake, boFace, opener } = world();
+    const play = fake.seed.card(boFace, opener, 'whoops', { message: 'inked', layer: 2, config: { color: '#ff2bd6', seed: 41 } });
+    expect((await fake.act(play))?.payload).toEqual({ card: 'whoops', message: 'inked', layer: 2, config: { color: '#ff2bd6', seed: 41 } });
   });
 
   test('cardsOnMany reads the card plays on any of several posts in one read, oldest first, at most the limit', async () => {

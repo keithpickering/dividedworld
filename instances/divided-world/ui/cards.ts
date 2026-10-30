@@ -2,9 +2,8 @@
  * How Divided World's two cards look and read to the engine's screens (`InstanceUi.cards`): each
  * card's face, and its rules in plain words for the Vending Machine and the hand. A card's rules
  * themselves are `instances/divided-world/cards/`, whose settings these read, so a number said
- * here is the one the instance runs on. Stick Around's hold is drawn
- * (ui/stick-around/Effect.tsx); Whoops!'s ink is the cards plan's Task 5 and is added to its entry
- * then; until it is, a play of it is shown as its tag on the post.
+ * here is the one the instance runs on. Stick Around's hold is drawn (ui/stick-around/Effect.tsx),
+ * and Whoops!'s ink: its effect, its ink form, and the tag of its top layer, which takes the layer's ink.
  *
  * The faces' colors are the Cards board's: Sweet is the cyan, Salty the pink, each with the dark
  * ink the board sets on it (docs/research/2026-10-29-two-worlds/05-cards.html).
@@ -14,6 +13,9 @@ import type { Settings } from '../../../engine/rules/types.ts';
 import { StickAroundEffect } from './stick-around/Effect.tsx';
 import stickAroundFace from './cards/stick-around.svg?url';
 import whoopsFace from './cards/whoops.svg?url';
+import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
+import { Effect as WhoopsEffect } from '../cards/whoops/Effect.tsx';
+import { luminance, tagText } from '../cards/whoops/splat.ts';
 
 /** A price of a whole number of hundredths, as the shop says it: "1.00". */
 const orbs = (hundredths: number) => (hundredths / 100).toFixed(2);
@@ -31,6 +33,19 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     key: 'whoops',
     art: { color: '#ff3d7f', ink: '#14030a', image: whoopsFace, tagline: 'Splat a post in ink.' },
     summary: 'Splats a post in your ink. Readers scrub it; only the author can wash it.',
+    Effect: WhoopsEffect,
+    ConfigForm: WhoopsConfigForm,
+    /* The top layer's tag is the color it splatted, with black or white text, whichever reads better on it; the layers under keep their alignment's. */
+    tag: (play, plays) => {
+      const ink = play.config.color;
+      if (play !== plays[plays.length - 1] || typeof ink !== 'string') return undefined;
+      try {
+        luminance(ink);
+      } catch {
+        return undefined;
+      }
+      return { fill: ink, text: tagText(ink) };
+    },
     describe: (settings: Settings) => {
       const e = settings.economy;
       return `A Salty card. It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone. Up to three can stack on one post, each in its own ink. It costs ${orbs(e['whoops.price'] ?? 0)} to buy, and playing it on a long post costs ${orbs(e['whoops.perLength'] ?? 0)} more for every ${e['whoops.lengthStep'] ?? 0} characters, ${orbs(e['whoops.mostInAll'] ?? 0)} at most in all.`;

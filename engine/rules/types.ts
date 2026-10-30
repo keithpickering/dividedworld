@@ -86,6 +86,13 @@ export interface Settings {
   /** A thread is HOT when it has had at least this many replies in the last 7 days. */
   readonly hotReplies: number;
   /**
+   * The numbers a card gives the screens, each named by the instance ("whoops.clean"): a card's effect
+   * decides something on the client (how much of a layer counts as washed clean), so the number is one the
+   * screens read (`screen_settings`), which the economy never is. The engine checks each is a number; the
+   * cards that name them in `screenReads` check their range.
+   */
+  readonly cardSettings: Readonly<Record<string, number>>;
+  /**
    * The instance's own numbers (a class's bonus, a card's price), each named by the instance
    * ("lurker.earlyMatch"). The engine checks each is a number and never reads one; the classes
    * and cards that name them do, so an override or a settings row retunes them without a deploy.
@@ -308,7 +315,7 @@ export interface Earning {
 
 /** A class: a playstyle, and the rules that turn what a character did and received into Aura. */
 /** An economy number a class or card reads: its name, and the bounds it holds to, if any. */
-export type EconomyRead = string | { readonly key: string; readonly whole?: boolean; readonly min?: number };
+export type EconomyRead = string | { readonly key: string; readonly whole?: boolean; readonly min?: number; readonly max?: number };
 
 export interface ClassRules {
   readonly key: string;
