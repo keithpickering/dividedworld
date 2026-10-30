@@ -47,7 +47,7 @@ function Body({ act, name, person, editing, onDone }: { readonly act: Act; reado
       return (
         <>
           <SystemPost act={act} />
-          <Reactions act={act.id} author={null} tallies={tallies} mine={mine} />
+          <Reactions act={act.id} author={null} authorName={name} tallies={tallies} mine={mine} />
         </>
       );
     default: {
@@ -60,7 +60,7 @@ function Body({ act, name, person, editing, onDone }: { readonly act: Act; reado
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
             : <BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} />}
           <LastEdited act={act} />
-          <Reactions act={act.id} author={act.character} tallies={tallies} mine={mine} />
+          <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
         </>
       );

@@ -22,17 +22,20 @@ interface Props {
   readonly act: Id;
   /** Who wrote the Act; null for The System. */
   readonly author: Id | null;
+  /** The author's name as the thread shows it, which the picker is named by ("React to Alex's post"). */
+  readonly authorName?: string;
   readonly tallies: Tallies;
   readonly mine: Mine;
 }
 
-export function Reactions({ act, author, tallies, mine }: Props) {
+export function Reactions({ act, author, authorName = 'this character', tallies, mine }: Props) {
   const { instance } = useKayfa();
   const player = usePlayer();
   const tally = useTally(tallies, act);
   const own = useMine(mine, act);
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
+  const row = useRef<HTMLDivElement>(null);
   const shown = instance.reactions.filter((r) => (tally[r.key] ?? 0) > 0);
   const theirs = author !== null && player.characters.some((c) => c.id === author);
   const as = player.hudCharacter;
@@ -42,7 +45,7 @@ export function Reactions({ act, author, tallies, mine }: Props) {
   useEffect(() => { setOpen(false); }, [asId]);
   if (shown.length === 0 && !canReact) return null;
   return (
-    <div className="kb-reactions">
+    <div ref={row} className="kb-reactions">
       {shown.length > 0 && (
         <ul className="kb-chips" aria-label="Reactions">
           {shown.map((r) => {
@@ -63,9 +66,8 @@ export function Reactions({ act, author, tallies, mine }: Props) {
       )}
       {open && canReact && (
         <Picker
-          act={act} as={as} own={own} tallies={tallies} mine={mine}
+          act={act} authorName={authorName} as={as} own={own} tallies={tallies} mine={mine} anchor={row}
           onClose={(refocus) => { setOpen(false); if (refocus) button.current?.focus(); }}
-          trigger={button}
         />
       )}
     </div>
