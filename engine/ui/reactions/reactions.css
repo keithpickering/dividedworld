@@ -1,4 +1,4 @@
-/* Reactions under a post: chips (a game piece, so color is allowed through tokens) and the picker. */
+/* Reactions under a post: chips (a game piece, so color is allowed through tokens), the board's own, and the picker, the glass's. */
 .kb-reactions {
   position: relative;
   display: flex;
@@ -35,40 +35,209 @@
   border-style: dashed;
 }
 
-/* The picker is a .kb-sheet (fixed above the HUD, z-index 35 over the HUD's 30) on a phone; above that width a popover by the button, placed by place.ts on open. */
-.kb-picker:focus { outline: none; }
-.kb-picker-head { display: flex; justify-content: space-between; align-items: center; gap: 1em; }
-.kb-picker-axis { text-align: center; }
-.kb-picker-grid { display: grid; grid-template-columns: 1fr 1fr; }
-.kb-picker-quad { border: 1px solid var(--kb-rule); margin: -1px 0 0 -1px; padding: 0.3em 0.4em; }
-.kb-picker-kinds { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.2em; } /* two across: Picker.tsx's KIND_COLUMNS */
-.kb-picker-kind {
-  font-size: 1.5em;
+/*
+ * The picker: a glass overlay (Picker.tsx through engine/ui/glass/Overlay.tsx), at the React board's
+ * sizes (docs/research/2026-10-29-two-worlds/03-react.html, 540 by 452 at the 900 by 700 board). Its
+ * cut is the third chamfer with a 1px pale border, as the board's; every word that is not a
+ * quadrant's label stands in a calm. Each quadrant reads its class's colors from the two properties
+ * Picker.tsx sets on it (--kb-picker-large, --kb-picker-fill), and the glass's text where it sets none.
+ */
+.kb-glass-dialog.kb-picker {
+  --kb-cut: var(--kb-glass-chamfer-3);
+  line-height: normal; /* the board's: its words set at the face's own line */
+  --kb-border: 1px;
+  width: 540px; /* Picker.tsx's POPOVER_WIDTH */
+  max-width: 100%;
+  padding: 14px 20px 34px;
+  background: var(--kb-glass-pale);
+}
+
+.kb-picker .kb-glass-dialog-bar {
+  align-items: baseline;
+}
+
+.kb-picker .kb-glass-dialog-head {
+  font-size: 30px;
   line-height: 1;
-  min-width: 2em;
-  min-height: 2em;
-  background: var(--kb-chip-bg);
-  border: 1px solid transparent;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+}
+
+.kb-picker-left {
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-pale);
+}
+
+/* Close stands at the foot's right, beside the hint, where the board leaves room. */
+.kb-picker .kb-glass-dialog-foot {
+  position: absolute;
+  right: 20px;
+  bottom: 12px;
+}
+
+.kb-picker .kb-glass-dialog-close {
+  min-height: 52px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+/* The field: the two axes' words above and below, the quadrants between, and the cross through them. */
+.kb-picker-field {
+  position: relative;
+  margin: 10px 0 0;
+  padding: 28px 0;
+}
+
+.kb-picker-axis {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-picker-axis[data-kb-axis='top'] { top: 0; }
+.kb-picker-axis[data-kb-axis='bottom'] { bottom: 0; }
+
+.kb-picker-cross {
+  position: absolute;
+  background: color-mix(in srgb, var(--kb-glass-text) 35%, transparent);
+  pointer-events: none;
+}
+
+.kb-picker-cross[data-kb-cross='down'] { left: 50%; top: 28px; bottom: 28px; width: 1px; }
+.kb-picker-cross[data-kb-cross='across'] { top: 50%; left: 0; right: 0; height: 1px; }
+
+.kb-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(134px, auto); /* the board's quadrant, room for a row of kinds under its label and more */
+  gap: 6px;
+}
+
+.kb-picker-quad {
+  --kb-picker-large: var(--kb-glass-text);
+  --kb-picker-fill: var(--kb-glass-text-2);
+  --kb-picker-tint: 14%;
+  --kb-picker-ring: 60%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--kb-picker-fill) var(--kb-picker-tint), transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kb-picker-fill) var(--kb-picker-ring), transparent);
+}
+
+/* The bottom quadrants hold their kinds low, the label under them, as the board does. */
+.kb-picker-quad[data-kb-quadrant='boredNegative'] { --kb-picker-tint: 11%; --kb-picker-ring: 55%; }
+.kb-picker-quad[data-kb-quadrant='calmPositive'] { --kb-picker-tint: 10%; --kb-picker-ring: 50%; }
+.kb-picker-quad[data-kb-quadrant='boredNegative'],
+.kb-picker-quad[data-kb-quadrant='calmPositive'] {
+  flex-direction: column-reverse;
+}
+
+.kb-picker-label {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--kb-picker-large);
+}
+
+.kb-picker-quad[data-kb-quadrant='excitedPositive'] .kb-picker-label,
+.kb-picker-quad[data-kb-quadrant='calmPositive'] .kb-picker-label {
+  text-align: right;
+}
+
+.kb-picker-kinds {
+  display: grid;
+  grid-template-columns: repeat(var(--kb-picker-columns, 4), 52px); /* Picker.tsx's KIND_COLUMNS for the layout */
+  gap: 4px;
+}
+
+.kb-picker-kind {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-glass-text-hi) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text-hi) 18%, transparent);
   cursor: pointer;
 }
-.kb-picker-kind:disabled { cursor: default; }
-.kb-picker-kind:disabled > span { opacity: 0.4; } /* the emoji only: a kind already left keeps its border's contrast */
-.kb-picker-kind[data-kb-own] { border: 2px solid var(--kb-chip-own); }
-.kb-picker-none, .kb-picker-refusal { margin: 0.5em 0 0; }
-.kb-picker-foot { display: flex; justify-content: flex-end; margin: 0.5em 0 0; }
 
-@media (min-width: 40.01em) {
-  /* :root twice: base.css's motion rules for .kb-sheet are three classes deep and would otherwise slide the popover in from below. */
-  :root:root .kb-picker.kb-sheet {
-    position: absolute;
-    left: 0;
-    right: auto;
-    bottom: auto;
-    top: calc(100% + 0.3em);
-    box-sizing: border-box; /* so place.ts's height cap is the whole box */
-    width: min(24em, 96%);
-    border: 2px solid var(--kb-rule);
-    padding: 0.4em 0.6em;
-    animation: none;
-  }
+.kb-picker-kind:hover:not(:disabled) { background: color-mix(in srgb, var(--kb-glass-text-hi) 12%, transparent); }
+.kb-picker-kind:disabled { cursor: default; }
+.kb-picker-kind:disabled > span { opacity: 0.4; } /* the emoji only: a kind already left keeps its outline's contrast */
+.kb-picker-kind[data-kb-own] { border: 2px solid var(--kb-glass-text-hi); }
+
+.kb-picker-hint,
+.kb-picker-none,
+.kb-picker-refusal {
+  margin: 8px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-picker-refusal {
+  color: var(--kb-glass-salty-text);
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+/* In a window without the popover's room (a phone): a sheet above the HUD (Overlay.tsx), the kinds two across, at the phone's sizes, Close in the flow. */
+.kb-glass-dialog.kb-picker[data-kb-place='sheet'] {
+  width: auto;
+  padding: 12px 16px;
+}
+
+.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-head,
+.kb-picker[data-kb-place='sheet'] .kb-picker-label {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+.kb-picker[data-kb-place='sheet'] .kb-picker-left,
+.kb-picker[data-kb-place='sheet'] .kb-picker-hint,
+.kb-picker[data-kb-place='sheet'] .kb-picker-none,
+.kb-picker[data-kb-place='sheet'] .kb-picker-refusal,
+.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-close {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+.kb-picker[data-kb-place='sheet'] .kb-picker-axis {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+.kb-picker[data-kb-place='sheet'] .kb-picker-grid {
+  grid-auto-rows: auto;
+}
+
+.kb-picker[data-kb-place='sheet'] .kb-picker-kinds {
+  grid-template-columns: repeat(var(--kb-picker-columns, 2), 48px);
+}
+
+.kb-picker[data-kb-place='sheet'] .kb-picker-kind {
+  width: 48px;
+  height: 48px;
+}
+
+.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-foot {
+  position: static;
+  margin: 8px 0 0;
+}
+
+.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-close {
+  min-height: 48px;
 }

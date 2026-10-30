@@ -126,7 +126,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         await page.locator('#post-1').getByRole('button', { name: 'Spin thread' }).click();
         await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
-        await expect(page.getByRole('dialog', { name: /^React as / })).toBeVisible();
+        await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
       });
 

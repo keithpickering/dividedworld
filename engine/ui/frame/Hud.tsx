@@ -39,6 +39,7 @@ import { Link, searchOf, useLocation, useNavigate } from '../router.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { motionReduced } from '../appearance.ts';
+import { HUD_CLASS } from '../glass/place.ts';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import { pageEscape } from '../glass/keys.ts';
 import { GLASS_NAV } from '../glass/nav.ts';
@@ -195,7 +196,7 @@ export function Hud() {
           )}
         </div>
       )}
-      <section ref={section} className="kb-hud" aria-label="Game HUD" style={tabVars}>
+      <section ref={section} className={HUD_CLASS} aria-label="Game HUD" style={tabVars}>
         <div className="kb-glass kb-hud-glass" style={hudCalm}>
           <div className="kb-hud-ground kb-glass-hud-tab" aria-hidden="true"><Smoke surface="hud" /></div>
           <svg className="kb-hud-seam" aria-hidden="true" focusable="false" preserveAspectRatio="none">

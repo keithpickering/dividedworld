@@ -129,6 +129,17 @@ and leaves `web/e2e/**/*.spec.ts` to Playwright), driven red before the comparat
 - a box 9px off the board's passes nothing, and 8px off passes (the tolerance's own edge, both ways);
 - a `buildName` that matches nothing in the build: a mismatch, never a silent skip.
 
+**Amended 2026-10-30, after Task 2.1 (the React picker).** The comparator gains a fifth box mode and one landmark
+option. The `size` mode compares a box's width and height only. A landmark's `origin` names another landmark, earlier
+in the manifest, and the landmark's x and y are then compared as offsets from that one's top-left corner on each side;
+its width and height are compared as before. A missing origin is a mismatch, never a silent pass. Board 03 needs both.
+The post under its picker is the board's drawing on one side and the app's own thread article on the other, so the
+reactions row the picker opens by stands elsewhere, and the picker lands about 102px left and 36px up of the board's,
+while every part inside it sits at the board's offsets. Board 03 therefore compares the picker by `size` and each of its
+parts from the picker's corner, in full. Where the picker stands against its post is held by `e2e/reactions.spec.ts`
+instead. Both were driven red in `e2e/board-match.test.ts` first: a whole popover moved with its parts is clean, a part
+9px off within it fails and 8px passes, `size` never compares the place, and a missing or unknown origin is a mismatch.
+
 ### 2.4 The e2e spec
 
 `web/e2e/boards.spec.ts`, in `npm run test:e2e` and `.github/workflows/web.yml` (web Task 0):
@@ -371,6 +382,12 @@ Type at the phone's sizes (body 17px, nothing under 16px), controls 48px tall.
 A story: the rival's view of Mrs. Hooligan's #42 with the picker open. `dialog "React to Mrs. Hooligan's post"`,
 "2 of 3 left", `group` Heat, Hype, Groan and Calm, each emoji `button` by its name ("Tea, your reaction" outlined),
 the hint "Arrow keys move, Enter reacts. Outlined: yours." All full.
+
+Amended 2026-10-30, after Task 2.1: the picker is compared by `size` and its parts from its corner (`origin`), as
+section 2.3's amendment says. The emoji buttons are `type: false`, since an emoji is set in the system's face and not
+the glass's. Heat, Hype and Calm's groups are `type: false`, since the board drew their labels in shades that differ
+from `glass.json`'s class large text, which wins as section 4's instance class data (Heel's by the owner's lift);
+Groan's label matches and is compared.
 
 ### 04 orbs (1440×900): web Task 3
 

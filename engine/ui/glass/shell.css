@@ -226,7 +226,31 @@
   cursor: pointer;
 }
 
-.kb-glass-dialog-body {
+.kb-glass-dialog-body,
+.kb-glass-dialog-foot {
   position: relative;
   z-index: 1;
+}
+
+.kb-glass-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* An overlay opened by an anchor (Overlay.tsx places it): out of the middle of the window, at the anchor on the Main board's layout, a sheet on the HUD on the Phone board's. */
+.kb-glass-overlay[data-kb-anchored] {
+  display: block;
+  padding: 0;
+}
+
+.kb-glass-dialog[data-kb-place='sheet'] {
+  left: 0;
+  right: 0;
+  width: auto;
+  overflow-y: auto;
+}
+
+.kb-glass-dialog[data-kb-place='below'],
+.kb-glass-dialog[data-kb-place='above'] {
+  overflow-y: auto;
 }
