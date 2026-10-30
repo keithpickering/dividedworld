@@ -23,6 +23,11 @@ posts, the author held by Stick Around, a Stick Around in the log, "your Whoops!
 and a hand that counts one card too many), so the build's fixture departs from them there; that plan's section 3 lists
 each departure.
 
+**Amended 2026-10-30, Rankings.** No board of the session drew Rankings. `13-rankings.html` was drawn after it, from
+the story the owner approved as drawn (`engine/ui/rankings/Rankings.board.stories.tsx`, issue #50), in this folder's
+style, showing the boards fixture's `13-rankings` moment; `e2e/boards/13-rankings.ts` holds the build to it. Its menu
+bar is the build's, without the Vending Machine, which joins the bar with its screen.
+
 - `01-main.html`: the game screen: the 2003 board with the HUD docked at the bottom as glass (the character being
   played and its swap, the orbs and the next settlement, the hand), a card armed with "Play Whoops! here" on the
   eligible posts. Drawn before the pause menu was decided, so its banner still lists the glass's pages and its HUD has
@@ -42,3 +47,5 @@ each departure.
 - `11-settings.html`: Settings, Accessibility: motion, smoke, contrast, text size and the board's colors. Its other
   sections and the read-out are placeholders no design has decided (design, Open).
 - `12-log.html`: My log, plain and true, one row per line, a tab per character.
+- `13-rankings.html`: Rankings, a glass page under the menu bar: the season's standings in their order, the player's
+  own characters marked with their classes, and another character's class only as its player revealed it.
