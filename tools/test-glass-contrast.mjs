@@ -265,6 +265,9 @@ check('a recipe calm of 0 fires', poisoned((g) => { g.smoke.recipes.react.calm =
 check('a negative recipe calm fires', poisoned((g) => { g.smoke.recipes.react.calm = -0.2; }, 'recipe react', 'own calm').length === 1);
 check('a recipe calm that is not a number fires', poisoned((g) => { g.smoke.recipes.react.calm = '0.9'; }, 'recipe react', 'own calm').length === 1);
 
+/** A class large text list that draws it on `surface` alone, as `draw`. */
+const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s === surface ? draw : 'none']));
+
 /* The narrow layers' calmed worst, in the ceilings and in the class check. */
 {
   const hud = glassCeilings(real).surfaces.hud;
@@ -272,7 +275,6 @@ check('a recipe calm that is not a number fires', poisoned((g) => { g.smoke.reci
   check('the ceilings carry the narrow layers\' worst and calmed worst', near(hud.narrowWorst, w.full.luminance, 0.0001) && near(hud.narrowCalmedWorst, w.calmed.luminance, 0.0001) && hud.narrowCalmedWorst < hud.narrowWorst, JSON.stringify(hud));
   check('a surface whose recipe has no narrow layers carries none', glassCeilings(real).surfaces.react.narrowWorst === undefined && glassCeilings(real).surfaces.react.narrowCalmedWorst === undefined);
   /* The hud draws no class large text in the engine's list, so each of these reads it under a list that says it does. */
-  const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s === surface ? draw : 'none']));
   const g = fresh();
   g.smoke.recipes.hud.calm = 0.001;
   for (const l of g.smoke.recipes.hud.layers) l.color = '#000000';
@@ -293,13 +295,20 @@ check('a recipe calm that is not a number fires', poisoned((g) => { g.smoke.reci
  * the guard reads each class against that and writes a class ceiling only where it is drawn.
  */
 {
-  const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s === surface ? draw : 'none']));
   const list = CLASS_LARGE?.entries ?? {};
+  /* A list's names are its own, never an object's inherited ones. */
+  const inherited = readClassLarge("export const classLargeText = { toString: 'none' };");
+  check('a name an object inherits is read as the list\'s own name once, not as named twice', inherited?.unreadable.length === 0, JSON.stringify(inherited));
+  check('a surface an object inherits a name for is still left out when the list does not name it',
+    classLargeFaults({ entries: {}, unreadable: [] }, ['constructor']).some((x) => x.why.startsWith('leaves out')));
   check('the engine\'s class large list is read from engine/ui/glass/apply.ts: every surface, each full, calmed or none',
     CLASS_LARGE !== null && SURFACES.every((s) => ['full', 'calmed', 'none'].includes(list[s])) && Object.keys(list).length === SURFACES.length && CLASS_LARGE.unreadable.length === 0,
     JSON.stringify(CLASS_LARGE));
   check('the engine\'s own list is clean', classLargeFaults(CLASS_LARGE).length === 0, text(classLargeFaults(CLASS_LARGE)));
-  check('the turn modal draws class large text on the full smoke, and the settlement in a calm', CLASS_LARGE?.entries.turn === 'full' && CLASS_LARGE?.entries.settlement === 'calmed', JSON.stringify(CLASS_LARGE?.entries));
+  /* The boards' reading, the amendment's: turn and react on the full smoke, settlement in a calm, and none drawn anywhere else. */
+  const boards = { turn: 'full', react: 'full', settlement: 'calmed' };
+  check('the engine\'s list is the boards\': turn and react on the full smoke, the settlement in a calm, none elsewhere',
+    SURFACES.every((s) => CLASS_LARGE?.entries[s] === (boards[s] ?? 'none')), JSON.stringify(CLASS_LARGE?.entries));
 
   /* Heel's large text back at #ff8a96: 2.80:1 on the turn recipe's full worst. */
   const heel = fresh();
@@ -335,7 +344,7 @@ check('a recipe calm that is not a number fires', poisoned((g) => { g.smoke.reci
   check('it passes on a calmed surface that uses the recipe', named(glassFaults(g, only('log', 'calmed')), 'class heel').length === 0, text(named(glassFaults(g, only('log', 'calmed')), 'class heel')));
   const onFull = named(glassFaults(g, only('log', 'full')), 'class heel', 'surface log', 'recipe page', 'full worst');
   check('and fails on a full surface that uses it', onFull.length === 1 && onFull[0].why.includes('1.79'), text(glassFaults(g, only('log', 'full'))));
-  check('a none surface reads nothing, however bright its smoke', glassFaults(g, only('log', 'none')).length === 0);
+  check('a none surface reads nothing, on a recipe whose full worst its class colors fail', glassFaults(g, only('log', 'none')).length === 0);
   check('a full surface on a calmAll recipe is read calmed, as a large token is', named(glassFaults(g, only('settlement', 'full')), 'class ').length === 0, text(glassFaults(g, only('settlement', 'full'))));
 
   /* The ceilings: a class ceiling per class where the list draws it, none where it does not. */

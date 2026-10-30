@@ -42,9 +42,8 @@
  * gives a draw other than those three. A class's large text is read at 3:1 against its surface's
  * recipe's full worst where the list says full (calmed where the recipe is `calmAll`, as a large
  * token is), against the calmed worst where it says calmed, the narrow layers' too in each case,
- * and not at all where it says none. Each
- * size step: its px times its face's ink ratio at 18 or more, a phone step at 16px of computed size.
- * Each font has a family, a file, a weight, a style and an ink ratio. Every `GlassSurface` the engine
+ * and not at all where it says none. Each size step: its px times its face's ink ratio at 18 or
+ * more, a phone step at 16px of computed size. Each font has a family, a file, a weight, a style and an ink ratio. Every `GlassSurface` the engine
  * lists (read from engine/ui/types.ts) names a recipe the theme has, and no other surface is named.
  * The high key names exactly the tokens the standard key does, each text token at 7:1 against its own
  * bare ground and each ink at 7:1 on its fill.
@@ -57,7 +56,9 @@
  * is committed; the check fails when it no longer matches glass.json, so a change to the smoke is a
  * change to the file Part 2 measures against.
  *
- * Read from git, so an untracked scratch file neither fails the build nor makes it pass. The
+ * The glass files are read from git, so an untracked scratch file neither fails the build nor makes
+ * it pass; the engine's two lists (`GlassSurface`, `classLargeText`) are read from the working tree,
+ * as the type check reads them. The
  * detection is exported and pure so tools/test-glass-contrast.mjs drives every branch red.
  */
 
@@ -87,11 +88,16 @@ const TEXT_TAGS = ['body', 'large', 'waiting', 'ink'];
 const HIGH = 7;
 const NEED = { standard: { body: 4.5, large: 3, waiting: 3, ink: 4.5 }, high: { ink: HIGH } };
 
+/** A repository file's TypeScript source, or null when it does not exist. */
+function sourceOf(rel) {
+  const file = path.join(repoRoot, rel);
+  return fs.existsSync(file) ? ts.createSourceFile(rel, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true) : null;
+}
+
 /** The engine's closed list of surfaces, read from the `GlassSurface` union in engine/ui/types.ts. */
 function readSurfaces() {
-  const file = path.join(repoRoot, TYPES_FILE);
-  if (!fs.existsSync(file)) return [];
-  const source = ts.createSourceFile(TYPES_FILE, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+  const source = sourceOf(TYPES_FILE);
+  if (!source) return [];
   const out = [];
   for (const st of source.statements) {
     if (ts.isTypeAliasDeclaration(st) && st.name.text === 'GlassSurface' && ts.isUnionTypeNode(st.type)) {
@@ -111,7 +117,9 @@ export const SURFACES = readSurfaces();
  * it is what the guard reads.
  */
 export function readClassLarge(text) {
-  const source = ts.createSourceFile(CLASS_LARGE_FILE, text, ts.ScriptTarget.Latest, true);
+  return classLargeOf(ts.createSourceFile(CLASS_LARGE_FILE, text, ts.ScriptTarget.Latest, true));
+}
+function classLargeOf(source) {
   for (const st of source.statements) {
     if (!ts.isVariableStatement(st)) continue;
     for (const d of st.declarationList.declarations) {
@@ -119,7 +127,7 @@ export function readClassLarge(text) {
       let init = d.initializer;
       while (ts.isAsExpression(init) || ts.isSatisfiesExpression(init) || ts.isParenthesizedExpression(init)) init = init.expression;
       if (!ts.isObjectLiteralExpression(init)) return { entries: {}, unreadable: [`${CLASS_LARGE_NAME} is not an object literal`] };
-      const entries = {};
+      const entries = Object.create(null);
       const unreadable = [];
       for (const p of init.properties) {
         if (!ts.isPropertyAssignment(p) || !(ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) || !ts.isStringLiteral(p.initializer)) { unreadable.push(p.getText(source)); continue; }
@@ -132,11 +140,8 @@ export function readClassLarge(text) {
   }
   return null;
 }
-function readClassLargeFile() {
-  const file = path.join(repoRoot, CLASS_LARGE_FILE);
-  return fs.existsSync(file) ? readClassLarge(fs.readFileSync(file, 'utf8')) : null;
-}
-export const CLASS_LARGE = readClassLargeFile();
+const classLargeSource = sourceOf(CLASS_LARGE_FILE);
+export const CLASS_LARGE = classLargeSource ? classLargeOf(classLargeSource) : null;
 
 /**
  * Every departure of the engine's class large text list from the surfaces, as `{ where, why }`: no
@@ -148,7 +153,7 @@ export function classLargeFaults(list, surfaces = SURFACES) {
   if (!list) return [{ where, why: 'cannot be found; the engine says, for every surface, whether a class\'s large text is drawn there on the full smoke, in a calm, or not at all' }];
   const out = [];
   for (const u of list.unreadable) out.push({ where, why: `cannot read ${JSON.stringify(u)}; each entry is a surface's name and a string` });
-  for (const s of surfaces) if (!(s in list.entries)) out.push({ where: `${where}: surface ${s}`, why: 'leaves out this surface, which the engine lists (GlassSurface in engine/ui/types.ts)' });
+  for (const s of surfaces) if (!Object.hasOwn(list.entries, s)) out.push({ where: `${where}: surface ${s}`, why: 'leaves out this surface, which the engine lists (GlassSurface in engine/ui/types.ts)' });
   for (const [s, draw] of Object.entries(list.entries)) {
     if (!surfaces.includes(s)) out.push({ where: `${where}: surface ${s}`, why: 'is not one the engine lists (GlassSurface in engine/ui/types.ts)' });
     else if (!CLASS_LARGE_DRAWS.includes(draw)) out.push({ where: `${where}: surface ${s}`, why: `draws class large text ${JSON.stringify(draw)}, which is not full, calmed or none` });
@@ -424,6 +429,8 @@ export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}) {
 /* ---- the ceilings ---- */
 
 const round4 = (v) => Math.round(v * 10000) / 10000;
+/** The brightest background luminance a color of luminance `lum` still meets `need`:1 on. */
+const ceilingFor = (lum, need) => round4((lum + 0.05) / need - 0.05);
 
 /**
  * The numbers the rendered measurement holds the page to: for each surface its recipe's worst and
@@ -447,7 +454,7 @@ export function glassCeilings(glass, classLarge = CLASS_LARGE?.entries ?? {}) {
       const tags = textTags(def).filter((t) => t !== 'ink');
       if (!c || !tags.length) continue;
       const lum = luminance([c.r, c.g, c.b]);
-      tokens[token] = Object.fromEntries(tags.map((t) => [t, round4((lum + 0.05) / NEED.standard[t] - 0.05)]));
+      tokens[token] = Object.fromEntries(tags.map((t) => [t, ceilingFor(lum, NEED.standard[t])]));
     }
     const draw = classLarge[s];
     const drawn = draw === 'full' || draw === 'calmed';
@@ -455,7 +462,7 @@ export function glassCeilings(glass, classLarge = CLASS_LARGE?.entries ?? {}) {
     if (drawn) {
       for (const [key, look] of Object.entries(glass.classes ?? {})) {
         const c = parseColor(look.large);
-        if (c) classes[key] = { large: round4((luminance([c.r, c.g, c.b]) + 0.05) / NEED.standard.large - 0.05) };
+        if (c) classes[key] = { large: ceilingFor(luminance([c.r, c.g, c.b]), NEED.standard.large) };
       }
     }
     surfaces[s] = {
@@ -535,4 +542,3 @@ function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }
-
