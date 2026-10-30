@@ -69,14 +69,17 @@ public Acts; and a **hard expiry**. Every move is an Act signed by the Director'
 - **No Aura from The System.** Aura comes from performing a class to other players, and that economy is the game's
   core; Aura paid by The System would make playing to the robot a farming strategy. A demand may involve Aura players
   pay in (a petition's signatures), because players spend it.
-- **The crowd judges, not the parties.** A condition between two characters counts reactions from characters outside
-  the pair. Two named characters may be one player's two masks, which can't react to each other, so a condition on
-  reactions between them would fail for a reason that proves a private fact.
+- **The crowd judges, not the parties.** A condition between two characters is met by the crowd's reactions to what
+  they post, never by their reactions to each other: two named characters may be one player's two masks, which can't
+  react to each other, so a condition on reactions between them would fail for a reason that proves a private fact.
+  The count reads only the public tally, since excluding the pair's own reactions would read who reacted. Instead,
+  every reaction threshold is set above the reaction cap (3 per player per Act), so meeting it always takes at least
+  one player outside the pair. Found while planning, after the session; the owner's call stands on the intent.
 - **A way out is always reachable.** A demand nobody can meet would trap everyone ("No player is ever stuck"), so a
   move ends at its expiry or carries a fallback a player can always reach (the lock's petition, section 11).
 
 The whitelist for Part 1 is in the plan; it starts with counts of posts, of distinct characters, of reactions in a
-quadrant from characters outside a named set, a named character posting in a named thread, and Aura paid in.
+quadrant on a post or a board, a named character posting in a named thread, and Aura paid in.
 
 Weighed: revert only, with no memory; revert plus Aura paid by The System.
 
@@ -292,7 +295,7 @@ instance seed, as classes and cards do ("KayfaBB never knows which instance it r
 ## What could slip a mask
 
 - **The digest** is read by a role without the private columns (section 5).
-- **Demands** count reactions from outside a named set, never between its members (section 3).
+- **Demands** read only public tallies, with every reaction threshold above the reaction cap (section 3).
 - **The Unban** is bound to the character that finds it (section 10).
 - **The Minus Ball cap** is per account and seen only by its player (section 10).
 - **The Director's opinions** come only from the digest, so its favor and its grudges are computed from public play.
