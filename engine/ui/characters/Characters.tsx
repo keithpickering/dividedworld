@@ -75,7 +75,8 @@ export function Characters() {
   const selected = mine.find((c) => c.id === picked) ?? mine.find((c) => c.id === player.hudCharacter?.id) ?? mine[0] ?? null;
 
   useEffect(() => {
-    if (!signedIn) return;
+    /* Asked once the account's characters are read, so a load asks with them and not again when they arrive. */
+    if (!signedIn || !player.loaded) return;
     let live = true;
     setFailed(false);
     void (async () => {
@@ -96,7 +97,7 @@ export function Characters() {
     })().catch(() => { if (live) setFailed(true); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, signedIn, key]);
+  }, [api, signedIn, player.loaded, key]);
 
   /* The selected character's posts, read for it alone when it is chosen. */
   const countsFor = selected && selected.debutedAt !== null ? selected.id : null;
