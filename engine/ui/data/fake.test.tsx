@@ -835,3 +835,14 @@ describe('a page of the standings', () => {
     expect(await fake.standingsPage(0, 0)).toEqual([]);
   });
 });
+
+describe('the season a screen names', () => {
+  test('is the open season, else the one that started last, as the standings read it: never the highest number', async () => {
+    const { fake } = world();
+    const open = await fake.season();
+    fake.seed.season({ number: 9, startsAt: '2020-01-01T00:00:00.000Z', endsAt: '2020-02-01T00:00:00.000Z' });
+    expect((await fake.season())?.number).toBe(open?.number);
+    fake.seed.season({ number: open!.number, endsAt: new Date(Date.parse(open!.startsAt) + 86_400_000).toISOString() });
+    expect((await fake.season())?.number).toBe(open?.number);
+  });
+});

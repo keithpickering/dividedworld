@@ -10,6 +10,7 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "allowImportingTsExtensions": true,
+    "allowJs": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },

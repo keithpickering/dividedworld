@@ -5,7 +5,8 @@
  * itself is not driven (the channel the adapter opens, how it authorizes it and what it does with
  * a broadcast are).
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ALLOWED_READS, ALLOWED_RPCS as GUARD_RPCS } from '../../../tools/check-web-reads.mjs';
 import type { Act, KayfaApi, ScreenSettings } from '../../../engine/ui/data/api.ts';
 import { createSupabaseApi } from './supabase.ts';
 
@@ -78,11 +79,9 @@ const ACT_ROW = { id: A, character: B, kind: 'post', thread: T, target_act_id: n
 const ACT: Act = { id: A, character: B, kind: 'post', thread: T, targetActId: null, seq: 2, createdAt: '2026-10-01T10:00:00+00:00', payload: { body: 'hi' }, currentPayload: { body: 'hello' }, editedAt: '2026-10-01T10:05:00+00:00', shownEditedAt: null };
 const THREAD_ROW = { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00', last_at: '2026-10-01T10:00:00+00:00', last_seq: 2, first_act: A, first_character: B, last_act: A, last_character: B, replies: 3, replies_this_week: 4, origin_thread: null, origin_title: null, origin_seq: null };
 
-/** Everything a read can name, answered with an empty list or a plain value. */
-const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'current_standings', 'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
-const ALLOWED_RPCS = new Set(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page']);
-
-import { beforeEach } from 'vitest';
+/** Everything a read can name: the web-reads guard's own lists, so the adapter is held to the allowlist the build checks its source against. */
+const ALLOWED_TABLES = new Set(ALLOWED_READS);
+const ALLOWED_RPCS = new Set(GUARD_RPCS);
 
 beforeEach(() => {
   try {
@@ -201,6 +200,15 @@ describe('reads and their rows', () => {
     expect(req?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
     expect(stats).toEqual({ [B]: { posts: 12 }, [A]: { posts: 0 } });
     expect(await harness(() => rows([])).api.characterStats([])).toEqual({});
+  });
+
+  it('reads the season a screen names through current_season, the season the standings read, never by its number', async () => {
+    const h = harness(() => rows([{ id: 4, number: 2, starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, turns_thread: T, reveal_act: null }]));
+    expect(await h.api.season()).toEqual({ id: 4, number: 2, startsAt: '2026-10-01T00:00:00+00:00', endsAt: null, turnsThread: T, revealAct: null });
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['current_season']);
+    expect(h.to('current_season')[0]?.url.searchParams.has('order')).toBe(false);
+    expect(h.to('seasons')).toEqual([]);
+    expect(await harness(() => rows([])).api.season()).toBeNull();
   });
 
   it('reads a page of postbits\' standings through current_standings, which picks the season on the server, 0 for a character with no row, never through the ranking', async () => {

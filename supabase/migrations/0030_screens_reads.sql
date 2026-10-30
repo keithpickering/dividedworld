@@ -461,6 +461,12 @@ $$;
 create view current_standings as
   select s.character, s.amount as standing from standings s where s.season = standings_season();
 
+-- The season a screen names over the standings it shows ("Season 3", its Turns thread): the season
+-- standings_season() names, read by its key. A season's number is not tied to when it began, so "the
+-- highest number" would be a second rule, and a screen could name one season over another's ranking.
+create view current_season as
+  select s.* from seasons s where s.id = standings_season();
+
 -- ------------------------------------------------------------- a character's post count ----
 
 -- How many posts, spins and cards a character has made, for a page of postbits ("Posts: 1,204" under
@@ -514,8 +520,8 @@ create or replace view characters_public as
 
 -- --------------------------------------------------------------------------- grants ----
 
-revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_settings, thread_list, character_post_counts, board_thread_counts, board_counts, debuted_count, season_size, current_standings from anon, authenticated;
-grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list, character_post_counts, board_counts, season_size, current_standings to authenticated;
+revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_settings, thread_list, character_post_counts, board_thread_counts, board_counts, debuted_count, season_size, current_standings, current_season from anon, authenticated;
+grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list, character_post_counts, board_counts, season_size, current_standings, current_season to authenticated;
 create policy read_all on character_post_counts for select to authenticated using (true);
 grant select on screen_settings to anon, authenticated;
 revoke execute on function backfill_thread_counters(), backfill_character_post_counts(), acts_count_character(),

@@ -634,7 +634,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .sort((x, y) => y.at - x.at || y.order - x.order).slice(0, Math.max(1, limit)).map(publicAct),
     tallies: (ids) => Object.fromEntries(ids.map((id) => [id, tallyOf(id)])),
     viewCounts: (ids) => Object.fromEntries(ids.map((id) => [id, views.get(id) ?? 0])),
-    season: () => [...seasons].sort((a, b) => b.number - a.number)[0] ?? null,
+    /* The open season, else the one that started last: standings_season()'s rule, never the highest number. */
+    season: () => seasons.find((s) => s.endsAt === null) ?? [...seasons].sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))[0] ?? null,
     standingAmounts: (ids) => Object.fromEntries(ids.map((id) => [id, standingOf.get(id) ?? 0])),
     standingPlace(id) {
       const s = ranking().find((x) => x.character === id);

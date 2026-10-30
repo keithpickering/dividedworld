@@ -571,7 +571,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return out;
     },
     async season() {
-      const r = (await list(() => client.from('seasons').select('*').order('number', { ascending: false }).limit(1)))[0];
+      /* The season the standings read, named on the server (standings_season()), so a screen never names one season over another's ranking. */
+      const r = (await list(() => client.from('current_season').select('*').limit(1)))[0];
       return r
         ? ({ id: r['id'], number: r['number'], startsAt: r['starts_at'], endsAt: r['ends_at'] ?? null, turnsThread: r['turns_thread'] ?? null, revealAct: r['reveal_act'] ?? null } satisfies Season)
         : null;
