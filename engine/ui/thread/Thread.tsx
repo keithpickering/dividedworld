@@ -133,7 +133,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     await Promise.all(wanted.map((id) => asked.current.get(id)));
   }, [api]);
 
-  /** A character's name as the thread knows it: read before the posts that name it are drawn. */
+  /* A character's name as the thread knows it: read before the posts that name it are drawn. */
   const nameOf = useCallback((id: Id | null) => (id === null ? 'The System' : people.current.get(id)?.character.name ?? 'A character'), []);
 
   /* The posts of a read, with their tallies and the plays on them, ready to show. */
@@ -146,7 +146,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const ids = acts.map((a) => a.id);
       const own = await api.myReactions(ids).catch(() => []);
       for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
-      /* Every play on the page's posts in one read; a play takes no number, so it is found through its post. Its caster is named before it is drawn. */
+      /* Every play on the page's posts in one read; a play takes no number, so it is found through its post.
+         Its caster is named before it is drawn. */
       const played = await readPlays(api, plays, acts.filter((a) => a.kind === 'post').map((a) => a.id), effects);
       await ensurePeople(played.map((a) => a.character));
     }
@@ -228,7 +229,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       /* Known before the first post is drawn, so the reply box and the posts' Quote links do not change the page after it. */
       setSystemBoard(board ? board.isSystem : null);
       setBoardUnread(!board);
-      dispatch({ type: 'loaded', summary, firstPage: page, lastPage: page, acts, tailLoaded: pageEndsThread(acts.length, { start, end }, summary.lastSeq), back: reloaded.current ? null : back.current });
+      const ends = pageEndsThread(acts.length, { start, end }, summary.lastSeq);
+      dispatch({ type: 'loaded', summary, firstPage: page, lastPage: page, acts, tailLoaded: ends, through: ends ? summary.lastSeq : end, back: reloaded.current ? null : back.current });
       setStatus('ready');
       const seq = goal.current.seq !== null && goal.current.seq <= summary.lastSeq ? goal.current.seq : null;
       /* The canonical address of where this landed: the page, and the post when one was asked for. */
@@ -290,7 +292,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const now = feedRef.current;
       const from = shownEnd(now) + 1;
       const heldNext = [...now.held.values()].some((a) => a.seq === from);
-      dispatch({ type: 'more', page, acts, tailLoaded: pageEndsThread(acts.length, { start, end }, f.serverLast) });
+      const ends = pageEndsThread(acts.length, { start, end }, f.serverLast);
+      dispatch({ type: 'more', page, acts, tailLoaded: ends, through: ends ? f.serverLast : end });
       const href = threadHref(thread, page);
       selfNav.current = href.slice(href.indexOf('?'));
       navigate(href, { replace: true });

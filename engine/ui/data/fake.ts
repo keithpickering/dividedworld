@@ -296,7 +296,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let stamp: number | null = null;
   function write(a: { character: Id | null; kind: ActKind; thread: Id; target?: Id | null; payload: Record<string, unknown>; at?: number }): ActRec {
     const t = threads.get(a.thread)!;
-  /* An edit is a version of its post and a card is a tag on its post: neither takes a place in the thread (0035_card_takes_no_seq.sql). */
+    /* An edit is a version of its post and a card is a tag on its post: neither takes a place in the thread (0035_card_takes_no_seq.sql). */
     const placedAct = a.kind !== 'edit' && a.kind !== 'card';
     const rec: ActRec = {
       id: uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target: a.target ?? null, seq: placedAct ? t.nextSeq++ : null,

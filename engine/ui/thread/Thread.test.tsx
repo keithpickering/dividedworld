@@ -562,6 +562,35 @@ describe('live updates', () => {
     expect(post(6).nextElementSibling).toBe(post(7));
   });
 
+  /* A card numbered before cards took none (0035_card_takes_no_seq.sql) is a seq no read returns: the fake cannot hold
+     one, so the read is stubbed to leave it out, as the server's reads leave cards out. */
+  const withoutSeq = (w: ReturnType<typeof world>, gone: number) => {
+    const real = w.fake.acts.bind(w.fake);
+    vi.spyOn(w.fake, 'acts').mockImplementation(async (t, a, b) => (await real(t, a, b)).filter((x) => x.seq !== gone));
+  };
+
+  test('a page with a legacy numbered card missing from it is short but is not the end of the thread', async () => {
+    const w = world(30);
+    withoutSeq(w, 4);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 20 /u });
+    expect(post(4)).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'Continue to page 2' }).length).toBeGreaterThan(0);
+  });
+
+  test('a post that follows a legacy numbered card at the tail is shown at the bottom as any next post is', async () => {
+    const w = world(4);
+    withoutSeq(w, 4);
+    const tapped = tap(w.fake);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    see(sentinel(), true);
+    w.fake.seed.post(w.thread, w.pipe, 'post 5');
+    const five = (await w.fake.acts(w.thread, 5, 5))[0]!;
+    deliver(() => tapped().onAct?.(five));
+    await screen.findByRole('article', { name: /^Post 5 /u });
+  });
+
   test('a gap that never fills is read from the server', async () => {
     const w = world(5);
     const tapped = tap(w.fake);

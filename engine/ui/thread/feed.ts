@@ -3,6 +3,10 @@
  * how far it has read. A reducer, so every case of a broadcast arriving twice, late, out of order
  * or for a page the reader is not on is one tested rule.
  *
+ * A read covers a range of seqs and returns the Acts in it. A number no Act answers to (a card
+ * numbered before cards took none) is a gap in the run, not an Act that is missing: the read says
+ * how far it reached (`through`), and the run counts as shown through that number.
+ *
  * `shown` is a contiguous run of seqs, read from the server a page at a time, plus the live Acts
  * released after its end. `held` is the live Acts not yet shown: they wait for the reader to reach
  * the bottom (or ask for them), so the page never moves by itself. A held Act is released only
@@ -30,6 +34,8 @@ export interface Feed {
   readonly lastPage: number;
   /** The highest seq read from the server. */
   readonly baseEnd: number;
+  /** The highest seq the shown run covers, numbers no Act answers to included. */
+  readonly through: number;
   /** The highest seq the server has told this screen about by a read. */
   readonly serverLast: number;
   /** The run reaches the thread's last Act as the server last said. */
@@ -46,21 +52,21 @@ export interface Feed {
 
 export type FeedAction =
   /** `back`: what the thread showed and knew of when the reader left it for the glass, on the read Back opens. */
-  | { readonly type: 'loaded'; readonly summary: ThreadSummary; readonly firstPage: number; readonly lastPage: number; readonly acts: readonly Act[]; readonly tailLoaded: boolean; readonly back?: ThreadReturn | null }
-  | { readonly type: 'more'; readonly page: number; readonly acts: readonly Act[]; readonly tailLoaded: boolean }
+  | { readonly type: 'loaded'; readonly summary: ThreadSummary; readonly firstPage: number; readonly lastPage: number; readonly acts: readonly Act[]; readonly tailLoaded: boolean; readonly through?: number; readonly back?: ThreadReturn | null }
+  | { readonly type: 'more'; readonly page: number; readonly acts: readonly Act[]; readonly tailLoaded: boolean; readonly through?: number }
   | { readonly type: 'live'; readonly act: Act }
   | { readonly type: 'fill'; readonly acts: readonly Act[] }
   | { readonly type: 'release'; readonly slide: boolean; readonly force: boolean };
 
 export const emptyFeed: Feed = {
-  ready: false, summary: null, firstPage: 1, lastPage: 1, baseEnd: 0, serverLast: 0, tailLoaded: false,
+  ready: false, summary: null, firstPage: 1, lastPage: 1, baseEnd: 0, through: 0, serverLast: 0, tailLoaded: false,
   shown: new Map(), held: new Map(), slid: new Set(), knownLast: 0, newFrom: null,
 };
 
 const maxSeq = (acts: Iterable<Act>, from = 0) => { let m = from; for (const a of acts) if (a.seq !== null && a.seq > m) m = a.seq; return m; };
 
-/** The seq of the last Act shown. */
-export const shownEnd = (f: Feed): number => maxSeq(f.shown.values());
+/** The seq the shown run reaches: its last Act, or the last number its read covered when that is further. */
+export const shownEnd = (f: Feed): number => maxSeq(f.shown.values(), f.through);
 
 /** The Acts in the order they read: by seq. */
 export const ordered = (m: ReadonlyMap<Id, Act>): Act[] => [...m.values()].sort((a, b) => a.seq! - b.seq!);
@@ -96,7 +102,7 @@ export function feedReducer(f: Feed, a: FeedAction): Feed {
       if (back) newFrom = a.acts.some((x) => x.seq !== null && x.seq > back.shown) ? back.shown + 1 : knownLast > back.known ? back.known + 1 : null;
       else if (f.newFrom !== null) newFrom = f.newFrom > baseEnd ? f.newFrom : knownLast > baseEnd ? baseEnd + 1 : null;
       return {
-        ready: true, summary: a.summary, firstPage: a.firstPage, lastPage: a.lastPage, baseEnd, serverLast,
+        ready: true, summary: a.summary, firstPage: a.firstPage, lastPage: a.lastPage, baseEnd, through: back ? 0 : a.through ?? 0, serverLast,
         tailLoaded: a.tailLoaded || baseEnd >= serverLast, shown, held, slid: new Set(), knownLast, newFrom,
       };
     }
@@ -110,7 +116,7 @@ export function feedReducer(f: Feed, a: FeedAction): Feed {
       const knownLast = Math.max(f.knownLast, serverLast);
       const newFrom = f.newFrom === null ? null : f.newFrom > baseEnd ? f.newFrom : knownLast > baseEnd ? baseEnd + 1 : null;
       return {
-        ...f, lastPage: a.page, baseEnd, serverLast, tailLoaded: a.tailLoaded || baseEnd >= serverLast, shown,
+        ...f, lastPage: a.page, baseEnd, through: Math.max(f.through, a.through ?? 0), serverLast, tailLoaded: a.tailLoaded || baseEnd >= serverLast, shown,
         held: pruned(f.held, shown, baseEnd), knownLast, newFrom,
       };
     }
