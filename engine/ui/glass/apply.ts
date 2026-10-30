@@ -60,9 +60,9 @@ export function surfaceCalm(glass: GlassTheme, surface: GlassSurface): Record<st
  * that is the ready-text or the over token, not a class, does not count. The guard
  * (tools/check-glass-contrast.mjs) reads this list from the source, holds each class's large text to
  * 3:1 against the full or the calmed worst of the surface's recipe, and writes a class ceiling only
- * for a surface that draws it, so Part 2's rendered measurement (e2e/glass-text.spec.ts, not yet
- * built) can fail class large text anywhere else; until it lands, review holds a screen that comes to
- * draw a class's large text where this says `none` to change this list first.
+ * for a surface that draws it, so Part 2's rendered measurement (e2e/glass-text.spec.ts) fails
+ * class large text anywhere else: a screen that comes to draw a class's large text where this says
+ * `none` changes this list first.
  */
 export const classLargeText: Readonly<Record<GlassSurface, ClassLargeDraw>> = {
   /* 01 main and 02 phone show the played character's class as a fill-and-ink chip; 04 orbs' bright words are the over and ready-text tokens. */

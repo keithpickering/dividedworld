@@ -63,7 +63,8 @@ const manifest: BoardManifest = {
     { id: 'heat', role: 'group', name: 'Heat', within: 'picker', origin: 'picker', type: false },
     { id: 'hype', role: 'group', name: 'Hype', within: 'picker', origin: 'picker', type: false },
     { id: 'groan', role: 'group', name: 'Groan', within: 'picker', origin: 'picker', type: false },
-    { id: 'groan-label', role: 'text', name: 'Groan', within: 'groan', origin: 'picker' },
+    /* 24px where the board draws 22px: WCAG's large size, so a class's large color stands at 3:1 on the react smoke (the owner's answer on #54). */
+    { id: 'groan-label', role: 'text', name: 'Groan', within: 'groan', origin: 'picker', buildSize: 24 },
     { id: 'calm', role: 'group', name: 'Calm', within: 'picker', origin: 'picker', type: false },
     ...buttons,
     { id: 'kind-tea', role: 'button', name: 'Tea, your reaction', buildName: 'Tea, Calm, your reaction', within: 'picker', origin: 'picker', type: false },

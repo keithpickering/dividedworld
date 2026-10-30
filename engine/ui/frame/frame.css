@@ -125,6 +125,24 @@
   pointer-events: none;
 }
 
+/*
+ * The calms under the HUD's words reach their feather past their blocks (calm.css), which would
+ * darken the page beside the tab and above it. The bar is cut to the glass's own shape, the tab's
+ * polygon moved by where the bar starts in the glass (Hud.tsx measures it), so a calm stops where
+ * the glass does. On the phone the glass is a plain band and clips what it holds.
+ */
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-bar {
+  --kb-hud-cut: var(--kb-hud-bar-shift, 0px);
+  clip-path: polygon(
+    0 24px, calc(var(--tab-a) - var(--kb-hud-cut)) 24px, calc(var(--tab-b) - var(--kb-hud-cut)) 0,
+    calc(var(--tab-c) - var(--kb-hud-cut)) 0, calc(var(--tab-d) - var(--kb-hud-cut)) 24px, 100% 24px, 100% 100%, 0 100%
+  );
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-glass {
+  overflow: clip;
+}
+
 .kb-hud-bar {
   position: relative;
   display: grid;
@@ -189,6 +207,8 @@
   place-items: center;
   height: 100%;
   font-family: var(--kb-glass-font-display);
+  /* The display face's one weight: the glass's 600 would draw it in a faux bold. */
+  font-weight: 400;
   font-size: var(--kb-glass-size-display-s);
   color: var(--kb-glass-text-2);
 }
@@ -456,10 +476,21 @@
   min-height: 52px;
   padding: 0 20px;
   font-family: var(--kb-glass-font-display);
+  font-weight: 400;
   font-size: var(--kb-glass-size-lead);
   text-transform: uppercase;
   text-decoration: none;
   color: var(--kb-glass-text-hi);
+}
+
+/*
+ * Signed out, or with no character yet, the plate holds only this link and no calm; the HUD's
+ * smoke is too bright for its words to stand on bare (e2e/glass-text.spec.ts), so its panel is the
+ * strong one, at least as solid as the calm.
+ */
+.kb-hud-sign-in::after,
+.kb-hud-make::after {
+  background: var(--kb-glass-panel-strong);
 }
 
 /*
@@ -575,6 +606,17 @@
 :where(:root[data-kb-layout='phone']) .kb-hud-side,
 :where(:root[data-kb-layout='phone']) .kb-hud-actions {
   display: contents;
+}
+
+/*
+ * The calms: the Main board calms the plate, the Aura readout and the clock, the Phone board the
+ * whole bar. On the Main board's layout the plate's calm holds the mask picker; on the phone the
+ * plate is not drawn (display: contents), so neither is its calm, and the picker and the aura row
+ * carry their own.
+ */
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-swap.kb-calm::before,
+:where(:root[data-kb-layout='phone']) .kb-hud-plate--cast.kb-calm::before {
+  content: none;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-plate--cast .kb-hud-avatar {

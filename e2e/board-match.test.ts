@@ -199,6 +199,20 @@ describe('compareBoard: a landmark measured from another one, and one compared b
   });
 });
 
+describe('compareBoard: a size a decision moved off the board', () => {
+  /* The React picker's quadrant labels are 24px where the board draws 22px, by the owner's answer on #54. */
+  const at = (size: number) => snap(...board.shots.map((x) => (x.id === 'line' ? { ...x, type: { ...BARLOW, size } } : x)));
+  const decided = manifest(lm('menu-bar'), lm('tab-boards'), lm('hud-menu'), lm('line', { buildSize: 24 }));
+
+  test('the build at the decided size matches; the board keeps its own', () => {
+    expect(compareBoard(at(22), at(24), decided)).toEqual([]);
+  });
+
+  test('a build still at the board\'s size no longer matches, so the decision is held', () => {
+    expect(compareBoard(at(22), at(22), decided).map((m) => m.message)).toEqual(['line: font-size is 22 in the build, 24 by decision']);
+  });
+});
+
 describe('boardsToRun: the folder\'s boards against the manifests and the pending map', () => {
   const folder = ['01-main.html', '02-phone.html', '03-react.html', 'README.md'];
 

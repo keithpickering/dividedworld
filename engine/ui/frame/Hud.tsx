@@ -133,6 +133,9 @@ export function Hud() {
         const right = Math.round((a.left - s.left + a.width) / zoom) + TAB_OUT;
         setTab((t) => (t && t[1] === left && t[2] === right ? t : [left - SLOPE, left, right, right + SLOPE]));
       }
+      /* Where the bar starts in the glass, so the bar can cut what it draws to the tab's shape (frame.css). */
+      const bar = el.querySelector('.kb-hud-bar')?.getBoundingClientRect();
+      if (bar) el.style.setProperty('--kb-hud-bar-shift', `${Math.round((bar.left - s.left) / zoom)}px`);
     };
     measure();
     const watch = new ResizeObserver(measure);
@@ -204,7 +207,7 @@ export function Hud() {
             <polyline className="kb-glass-seam-core" points={seam} />
           </svg>
           <div className="kb-hud-bar">
-            <div className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast' : ''}`}>
+            <div className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
               <div className="kb-hud-plate-in">
                 {!signedIn ? (
                   <Link to={signInHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-glass-cut-button">Sign in</Link>
@@ -231,7 +234,7 @@ export function Hud() {
                         </span>
                       </span>
                     </span>
-                    <span className="kb-hud-swap">
+                    <span className="kb-hud-swap kb-calm">
                       <label htmlFor={selectId} className="kb-hud-swap-label">{wide ? 'Swap mask' : 'Posting as'}</label>
                       <select id={selectId} className="kb-hud-select" value={hud.id} onChange={(e) => player.setHudCharacter(e.target.value)}>
                         {player.actingCharacters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -242,7 +245,7 @@ export function Hud() {
               </div>
             </div>
             {signedIn && (
-              <div ref={aura} className="kb-hud-aura">
+              <div ref={aura} className="kb-hud-aura kb-calm">
                 <p className="kb-hud-aura-legend"><span>Aura</span><span className="kb-hud-aura-ghost">Ghost = estimate until settlement</span></p>
                 {player.wallet && (
                   <Link
@@ -257,7 +260,7 @@ export function Hud() {
             )}
             {signedIn && (
               <div className="kb-hud-side">
-                <p className="kb-hud-clock">
+                <p className="kb-hud-clock kb-calm">
                   <span className="kb-hud-clock-label">Next settlement</span>
                   {next ? <time className="kb-hud-clock-time kb-num" dateTime={next}>{dayAndTime(next)}</time> : <span className="kb-hud-clock-time">not yet set</span>}
                 </p>

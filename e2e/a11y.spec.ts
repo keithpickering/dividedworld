@@ -4,12 +4,20 @@ import { expect, test, type Page } from '@playwright/test';
 import type { Fake } from '../engine/ui/data/fake.ts';
 import { boardSwitch, MAIN_BOARD_WIDTH } from '../engine/ui/glass/board.ts';
 import type { Demo } from '../web/src/demo.ts';
+import { boardStoryIds, routeStoryIds } from './board-stories.ts';
 
 /**
  * axe-core in the real browser, over the built demo world, with the color-contrast rule jsdom
  * cannot run (engine/ui/a11y.ts says why), in the device's light and dark, on the Phone board's
  * layout wide and narrow and on the Main board's just above the switch. The token pairs are held
  * separately in engine/ui/contrast.test.tsx.
+ *
+ * Every board story (`engine/ui/**\/*.board.stories.tsx`) is read the same way, through the
+ * end-to-end build's story route, so a story the board match opens is held as a page is; the ids
+ * are worked out from the story files (e2e/board-stories.ts) and checked against the route's own
+ * list, so a new story is never left out. Over the glass's smoke axe cannot read contrast and
+ * reports it as incomplete, not as a violation: tools/check-glass-contrast.mjs and
+ * e2e/glass-text.spec.ts decide it there.
  */
 const axePath = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
@@ -77,6 +85,21 @@ const PAGES: readonly [string, string][] = [
   ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['standings', '/standings'], ['rankings', '/rankings'], ['settings', '/settings'], ['invites', '/invites'],
 ];
 
+const STORIES = boardStoryIds();
+
+/** A story is ready once the route has rendered it and its faces have loaded. */
+async function openStory(page: Page, id: string) {
+  await page.goto(`/?fixture=boards&story=${id}`);
+  await expect(page.locator('#root > *').first()).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+}
+
+test('every board story the route serves is one the axe case reads', async ({ page }) => {
+  await page.goto('/?fixture=boards&story=boards-none--listed');
+  await expect(page.getByRole('heading', { name: 'This site could not start' })).toBeVisible();
+  expect(routeStoryIds(await page.locator('body').innerText())).toEqual(STORIES);
+});
+
 for (const scheme of ['light', 'dark'] as const) {
   for (const [name, width] of [['phone layout, wide', 1000], ['Main board layout, just above the switch', ABOVE_SWITCH], ['phone layout, narrow', 360]] as const) {
     test.describe(`${scheme}, ${name}`, () => {
@@ -98,6 +121,13 @@ for (const scheme of ['light', 'dark'] as const) {
           await expect(ready(page, path)).toBeVisible();
           await expect(page.locator('.kb-hud-orbs .kb-orb').first()).toBeVisible();
           expect(await hudCut(page)).toEqual([]);
+        });
+      }
+
+      for (const id of STORIES) {
+        test(`the board story ${id} has no axe violation, color contrast included`, async ({ page }) => {
+          await openStory(page, id);
+          expect(await pageViolations(page)).toEqual([]);
         });
       }
 

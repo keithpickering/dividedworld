@@ -296,7 +296,7 @@ export function Characters() {
   return (
     <div className="kb-characters">
       <div className="kb-characters-head">
-        <h1 className="kb-characters-title kb-glass-display">Your characters <span className="kb-characters-count">({active.length} of {per})</span></h1>
+        <h1 className="kb-characters-title kb-glass-display kb-calm">Your characters <span className="kb-characters-count">({active.length} of {per})</span></h1>
         <p className="kb-characters-lead kb-calm">This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them.</p>
       </div>
       <div role="status" className="kb-flash">{flash && <p className="kb-notice kb-calm">{flash}</p>}</div>
