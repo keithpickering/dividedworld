@@ -17,7 +17,10 @@
  *   :root[data-kb-mode="light"] { … }               light, if the theme needs it
  *   @media (prefers-color-scheme: dark) { :root:not([data-kb-mode="light"]) { … } }   dark as the device gets it
  *
- * and every declaration in them is a `--kb-*` custom property. A size token (`--kb-size-*`, `--kb-line`)
+ * each at most once, and every declaration in them is a `--kb-*` custom property. A second block with the
+ * same selector is refused: the browser lays it over the first, so a reader of the file (and a reviewer of a
+ * diff that touches only the first) sees colors the page does not show. engine/ui/contrast.ts reads every
+ * block in order as the browser does, so contrast holds either way; this keeps the file saying what it does. A size token (`--kb-size-*`, `--kb-line`)
  * must be a plain positive number with an optional unit: a `calc()` or a `var()` cannot be shown
  * positive, so it is refused, and 0 or less hides the text it sizes. A theme may add a size token the
  * engine does not name; the engine ignores it.
@@ -134,6 +137,8 @@ export function themeFaults(files) {
     if (!THEME_FILE.test(file)) continue;
     const text = withoutComments(raw);
     const lineOf = (i) => text.slice(0, i).split('\n').length;
+    /** each selector's first block, by line: a repeat is refused */
+    const firstAt = new Map();
 
     /** Rules of one level: `inMedia` allows only the device-dark selector, else only the three top-level ones. */
     const rules = (from, to, inMedia) => {
@@ -166,6 +171,9 @@ export function themeFaults(files) {
             ? `"${sel.slice(0, 50)}" inside the dark query; the only selector there is ${DEVICE_SELECTOR}`
             : `selector "${sel.slice(0, 50)}" is not :root, :root[data-kb-mode="dark"] or :root[data-kb-mode="light"]; a theme styles nothing but the tokens` });
         } else {
+          const key = inMedia ? DEVICE_SELECTOR : sel.replace(/\s*([\[\]=])\s*/g, '$1');
+          if (firstAt.has(key)) out.push({ file, line, why: `a second block for ${key} (the first is at line ${firstAt.get(key)}); the browser lays it over the first, so the file would show colors the page does not` });
+          else firstAt.set(key, line);
           declarationFaults(text.slice(body[0], body[1]), body[0], lineOf, file, out);
         }
         i = close + 1;

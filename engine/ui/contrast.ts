@@ -2,7 +2,8 @@
  * Color contrast, held on the tokens. jsdom paints nothing, so axe's color-contrast rule cannot
  * run in the story test (a11y.ts); the colors the screens read are all tokens, so the pairs are
  * checked here directly with the WCAG 2.x relative-luminance ratio, for the engine's defaults
- * (tokens.css) and for each theme, light and dark. e2e/a11y.spec.ts runs axe's own rule in a real
+ * (tokens.css) and for each theme, light and dark, each read as the browser reads it: every block, a
+ * later one over an earlier. e2e/a11y.spec.ts runs axe's own rule in a real
  * browser over the built app as the second check.
  *
  * Text pairs need 4.5:1; the pairs that are not text (a rule, a focus ring, the chip's own-reaction
@@ -10,50 +11,91 @@
  * carry no text and say what they mean in words beside them, so they are not held to a ratio.
  */
 
-export type Mode = 'light' | 'dark' | 'dark (device)';
+/** Light as the device shows it, light as a player who chose it, and dark both ways. */
+export type Mode = 'light' | 'light (chosen)' | 'dark' | 'dark (device)';
 export type Tokens = Readonly<Record<string, string>>;
 
 function declarations(body: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const m of body.matchAll(/(--kb-[a-z0-9-]+)\s*:\s*([^;]+);/gu)) out[m[1]!] = m[2]!.trim();
+  /* The last declaration of a block may omit its semicolon. */
+  for (const m of body.matchAll(/(--kb-[a-z0-9-]+)\s*:\s*([^;]+)(?:;|$)/gu)) out[m[1]!] = m[2]!.trim();
   return out;
 }
 
-/** The declarations of the first block that opens after `selector`. */
-function blockAfter(css: string, selector: string): Record<string, string> {
-  const at = css.indexOf(selector);
-  if (at < 0) return {};
-  const open = css.indexOf('{', at + selector.length - 1);
-  return declarations(css.slice(open + 1, css.indexOf('}', open)));
+const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//gu, '');
+
+/** Where a block applies: the four places the theme contract allows (tools/check-theme.mjs). */
+type Place = 'light' | 'chosen light' | 'chosen dark' | 'device dark';
+
+const squash = (s: string) => s.replace(/'/gu, '"').replace(/\s+/gu, '');
+const TOP: Readonly<Record<string, Place>> = {
+  ':root': 'light',
+  ':root[data-kb-mode="light"]': 'chosen light',
+  ':root[data-kb-mode="dark"]': 'chosen dark',
+};
+const DEVICE_QUERY = '@media(prefers-color-scheme:dark)';
+const DEVICE_SELECTOR = ':root:not([data-kb-mode="light"])';
+
+/**
+ * Every block of one stylesheet (comments removed), in source order, with where it applies. Every block is
+ * read, not only the first for each selector, because the browser lays a later block over an earlier one of
+ * the same specificity; reading only the first would check colors the page does not show. A rule in any
+ * other place is not one the contract allows and is left to check-theme to refuse.
+ */
+function blocks(css: string): { place: Place; tokens: Record<string, string> }[] {
+  const out: { place: Place; tokens: Record<string, string> }[] = [];
+  const walk = (from: number, to: number, inDeviceDark: boolean) => {
+    let i = from;
+    while (i < to) {
+      const open = css.indexOf('{', i);
+      if (open < 0 || open >= to) return;
+      let depth = 0;
+      let close = open;
+      for (; close < to; close++) {
+        if (css[close] === '{') depth++;
+        else if (css[close] === '}' && --depth === 0) break;
+      }
+      const prelude = squash(css.slice(i, open).replace(/^[\s;}]+/u, ''));
+      if (!inDeviceDark && prelude.toLowerCase() === DEVICE_QUERY) walk(open + 1, close, true);
+      else {
+        const place = inDeviceDark ? (prelude === DEVICE_SELECTOR ? 'device dark' : undefined) : TOP[prelude];
+        if (place) out.push({ place, tokens: declarations(css.slice(open + 1, close)) });
+      }
+      i = close + 1;
+    }
+  };
+  walk(0, css.length, false);
+  return out;
 }
 
-const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//gu, '');
-const LIGHT = ':root {';
-const DEVICE_DARK = ':root:not([data-kb-mode="light"])';
-const CHOSEN_DARK = ':root[data-kb-mode="dark"]';
+/** The tokens of every block in `place`, across the sheets in load order, later over earlier. */
+const merged = (sheets: ReturnType<typeof blocks>[], place: Place): Record<string, string> =>
+  Object.assign({}, ...sheets.flatMap((b) => b.filter((x) => x.place === place).map((x) => x.tokens)));
 
 /**
  * The tokens a page sees, from stylesheets in the order they load (the engine's, then a theme's).
- * Light is each file's `:root`. Dark, as a player who chose it gets it, is the light values with
- * every file's explicit-dark block over them; dark as the device gets it is the same through the
- * prefers-color-scheme block. The dark blocks outrank any `:root`, so the engine's dark block
- * beats a theme's light value and only the theme's own dark block beats it back.
+ * Light is every file's `:root` blocks; light as a player who chose it adds every `:root[data-kb-mode="light"]`
+ * block over them. Dark, as a player who chose it gets it, is the light values with every file's explicit-dark
+ * blocks over them; dark as the device gets it is the same through the prefers-color-scheme blocks. The
+ * attribute and dark blocks outrank any `:root`, so the engine's dark block beats a theme's light value and
+ * only the theme's own dark block beats it back. Within a place, a later block wins, as in the browser.
  */
 export function tokensOf(...sheets: string[]): Record<Mode, Tokens> {
-  const css = sheets.map(strip);
-  const light = Object.assign({}, ...css.map((c) => blockAfter(c, LIGHT)));
-  const withDark = (selector: string) => {
-    const lights = css.map((c) => blockAfter(c, LIGHT));
-    return Object.assign({}, ...lights, ...css.map((c) => blockAfter(c, selector)));
+  const all = sheets.map((s) => blocks(strip(s)));
+  const light = merged(all, 'light');
+  return {
+    light,
+    'light (chosen)': { ...light, ...merged(all, 'chosen light') },
+    dark: { ...light, ...merged(all, 'chosen dark') },
+    'dark (device)': { ...light, ...merged(all, 'device dark') },
   };
-  return { light, dark: withDark(CHOSEN_DARK), 'dark (device)': withDark(DEVICE_DARK) };
 }
 
-/** A file whose device-dark block and chosen-dark block set different tokens would show two dark modes. */
+/** A file whose device-dark blocks and chosen-dark blocks set different tokens would show two dark modes. */
 export function darkBlocksDisagree(sheet: string): string[] {
-  const css = strip(sheet);
-  const device = blockAfter(css, DEVICE_DARK);
-  const chosen = blockAfter(css, CHOSEN_DARK);
+  const all = [blocks(strip(sheet))];
+  const device = merged(all, 'device dark');
+  const chosen = merged(all, 'chosen dark');
   const lines: string[] = [];
   for (const k of new Set([...Object.keys(device), ...Object.keys(chosen)])) {
     if (device[k] !== chosen[k]) lines.push(`dark: ${k} is ${device[k] ?? 'unset'} for the device and ${chosen[k] ?? 'unset'} when chosen`);
