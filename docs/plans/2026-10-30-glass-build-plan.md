@@ -178,6 +178,10 @@ Waits on issue #25, whose design settles what the log is. Its plan then carries 
 amendment (the log, `engine/ui/log/Settlement.tsx`) and the cards plan's Task 6, and empties the board match's
 `PENDING` map with boards 09 and 12.
 
+**Amended 2026-10-30, after issue #25's design.** The design is `docs/plans/2026-10-30-log-shares-design.md` and its
+plan `docs/plans/2026-10-30-log-shares-plan.md`, which carries this part in two halves and wins where it differs: 4a,
+the shares (migration `0034_ledger_shares.sql`), once Part A is merged; 4b, the log, once Part 3 is merged.
+
 ## The layers
 
 Engine: everything under `engine/ui/glass/`, the frame, the screens, `GlassTheme`, the guards, the board match, the

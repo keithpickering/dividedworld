@@ -40,6 +40,9 @@ Whoops!'s tag draw the `effect` smoke recipe.
 **Amended 2026-10-30, after PR #24 merged.** Tasks 1 to 5 are Part 3 of `docs/plans/2026-10-30-glass-build-plan.md`,
 which says where they start and wins where it differs; Task 6 waits on issue #25's design of the log.
 
+**Amended 2026-10-30, after issue #25's design.** Task 6 is Task 6 of `docs/plans/2026-10-30-log-shares-plan.md`, on
+the log that plan builds.
+
 ## The layers
 
 The card-effect interface is engine (`engine/ui/cards/`); Stick Around's and Whoops!'s effects are Divided World's
