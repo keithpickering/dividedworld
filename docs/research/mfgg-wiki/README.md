@@ -36,8 +36,10 @@ same pages again.
 **People.** The wiki is about real people, many of them teenagers when it was written, and some of them may play
 Divided World. Staff are named only for what they did as staff. A member is named only where the item is affectionate
 or neutral (a beloved mask, a catchphrase the community owns), marked *(individual: owner's call)* so the owner can
-decide whether it reaches the game. Where an item is unflattering to a member (a ban, a dupe, a flamewar, a game
-mocked), the phenomenon is kept and the member is not named. Personal details on any page were read and not copied.
+decide whether it reaches the game. An infamous incident (a ban, a dupe, a flamewar, a
+game mocked) names no one, member or staff, and is told in the abstract: what happened in general terms and what the
+community felt about it. The owner: "the individuals shouldn't go in the design records but the feelings behind the
+events in an abstract form may be informative." Personal details on any page were read and not copied.
 Pages built around slurs, Nazi jokes or similar were left out entirely, and are not named.
 
 **Nothing here is a decision.** Each record's suggestions for Divided World are ideas, held to `CLAUDE.md`'s rules
