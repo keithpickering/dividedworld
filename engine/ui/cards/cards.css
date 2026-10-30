@@ -101,9 +101,29 @@
   white-space: nowrap;
 }
 
+/*
+ * On a narrow post the tag no longer breaks the frame: it would cover the post's line and the start of
+ * its words, so it stands in the flow above the words instead, taking the post's width (less the
+ * skew's lean at both sides) with the card's name on a line of its own and its caster's words wrapping
+ * under it, in reading order. The Main board's one-line tag at the post's top right is unchanged.
+ */
 @media (max-width: 40em) {
   .kb-play-tags {
-    margin-right: 1%;
-    justify-content: flex-start;
+    margin: 0.4rem 0.9rem 0.6rem;
+    justify-content: stretch;
+  }
+
+  .kb-play-tag {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.75rem;
+  }
+
+  .kb-play-tag-card {
+    flex: 1 0 100%;
+  }
+
+  .kb-play-tag-words {
+    flex: 1 1 0;
   }
 }
