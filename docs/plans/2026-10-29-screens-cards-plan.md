@@ -111,6 +111,10 @@ overlay's content and the focus's return; that it neither selects nor spends.
 - **Tests first:** a post already carrying three Whoops! offers no fourth; the surcharge shown equals the server's;
   the message's bound; the armed state's way out (Esc, or play).
 
+**Amended 2026-10-30, the owner's answer on #78.** "Paid for once at the machine makes sense." A card is paid for at
+the Vending Machine; the play form's price is what the card's rules add for that post (Whoops!'s long-post fee), and
+the form says the card is paid. The glass plan's section 2.1 amendment of this date moves the boards' timeline with it.
+
 ### Task 4. Stick Around
 
 - `instances/divided-world/cards/stick-around/hold.ts` (pure): which Stick Around pulls (the nearest seen and unescaped,

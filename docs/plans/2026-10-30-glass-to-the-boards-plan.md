@@ -82,6 +82,13 @@ boards show, and a named moment for each board. It is the boards' sample data ma
   | 11 settings | Oct 30 08:30 | the player | Settings, Accessibility |
   | 12 log | Oct 30 08:30 | the player | My log, Pipewrench's tab |
 
+  **Amended 2026-10-30, the owner's answer on #78 (what playing a card costs).** The owner: "Paid for once at the
+  machine makes sense." A card's price is charged once, when it is bought; playing it costs only what its own rules add.
+  So the 21:52 play of Whoops! on Gloomba's #46 costs the long post's 0.25 alone, and the wallet after it is 4.37, not
+  3.37; every later figure in the timeline moves by 1.00 with it (the settlement's 4.37 → 4.72). Board 05's cost lines
+  are read as the build draws them: "Card: paid", the long post 0.25, "To pay now 0.25", "Wallet after playing: 4.37
+  of 6.00".
+
   **Amended 2026-10-30, in the glass build's Task 2.2.** 06 turn is at Oct 30 00:34, a minute before the Turn,
   as 05 cards and 07 vending sit a minute before their acts: the board shows the Turn being chosen, so the
   build opens Turn Pipewrench and chooses Face, rather than reopening a Turn already made.
