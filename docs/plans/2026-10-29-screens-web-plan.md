@@ -173,6 +173,9 @@ manifests of the boards they build, as its section 10 lists, and are not done un
 above are built onto it in the order, and at the paths, of `docs/plans/2026-10-30-glass-build-plan.md`, which wins
 where they differ. Task 8 waits on issue #25's design.
 
+**Amended 2026-10-30, after issue #25's design.** Task 8 is built by `docs/plans/2026-10-30-log-shares-plan.md`
+(Tasks 4 and 5), which adds the expansion of a settled line into its posts and wins where it differs.
+
 The mockups each screen follows are in `docs/research/2026-10-29-screens/`; the design's sections say what was decided
 and why. Where a mockup and the design disagree, the design wins. impeccable is installed (`.claude/skills/impeccable/`)
 with its product record (`PRODUCT.md`); a builder runs `.claude/skills/impeccable/scripts/impeccable context` once, then
