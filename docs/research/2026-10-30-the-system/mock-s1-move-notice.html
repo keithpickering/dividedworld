@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1100">
+<title>A move in force: where its way out shows</title>
+<!-- The System design session, screens question 1, 2026-10-30. Three ways to show a move in force on the board it
+     changed, in plain words, beside the board's own 2003 page. A reference for the look, not code to copy. The glass
+     panels use a flat smoke stand-in; the real glass draws the procedural smoke of the two-worlds boards. -->
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#2a2633;font:12px/1.5 Verdana,Geneva,sans-serif}
+.opt{width:1060px;margin:24px auto;background:#fff;position:relative}
+.label{position:absolute;left:-1px;top:-30px;font:700 22px 'Barlow Condensed',sans-serif;color:#f1ecff;letter-spacing:2px}
+.board{padding:0 2% 16px;color:#000}
+.hdr{display:flex;justify-content:space-between;align-items:baseline;padding:10px 2%;border-bottom:1px solid #000}
+.hdr a{font:bold 22px 'Courier New',monospace;letter-spacing:1px;text-decoration:none;color:#000}
+.nav{padding:5px 2%;border-bottom:1px solid #000;font-size:11px}
+h1{margin:10px 0 2px;font:bold 18px 'Courier New',monospace}
+.desc{margin:0 0 10px;font-size:11px;color:#333;max-width:760px}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{font:bold 11px 'Courier New',monospace;text-align:left;border:1px solid #000;padding:3px 6px}
+td{border:1px solid #000;padding:5px 6px}
+.glass{background:radial-gradient(120% 140% at 15% 20%,rgba(140,36,250,.55),transparent 60%),radial-gradient(90% 120% at 85% 80%,rgba(20,217,255,.35),transparent 60%),#07050d;color:#f1ecff;font-family:'Barlow Condensed',sans-serif}
+.calm{background:rgba(7,5,13,.86);box-shadow:0 0 24px 18px rgba(7,5,13,.86)}
+.seam{border-top:1px solid #c9f8ff;box-shadow:0 -1px 10px rgba(25,227,255,.8)}
+.tag{display:inline-block;transform:skewX(-10deg);padding:2px 12px;font:italic 800 20px 'Barlow Condensed',sans-serif;letter-spacing:1px}
+.tag>span{display:inline-block;transform:skewX(10deg)}
+.bar{height:12px;background:#160d2a;border:1px solid #19e3ff;position:relative}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:#19e3ff;box-shadow:0 0 12px rgba(25,227,255,.8)}
+.plain{font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.btn{transform:skewX(-10deg);background:rgba(10,6,20,.88);border:1px solid #19e3ff;color:#f1ecff;font:24px/1 Anton,Impact,sans-serif;padding:12px 22px;box-shadow:0 0 18px rgba(25,227,255,.5)}
+.btn>span{display:inline-block;transform:skewX(10deg)}
+.hud{height:96px;position:relative}
+</style>
+</head>
+<body>
+
+<!-- ============================ A: a glass panel set into the board ============================ -->
+<div class="opt" style="margin-top:56px">
+  <div class="label">A · A GLASS PANEL SET INTO THE BOARD, UNDER ITS TITLE</div>
+  <div class="hdr"><a href="#">DIVIDED WORLD</a><span style="color:#555">dw.gripe</span></div>
+  <div class="nav"><a href="#">Index</a> · <a href="#">Pointless Toast Palace</a> · <a href="#">The System</a></div>
+  <div class="board">
+    <p style="margin:10px 0 0;font-size:11px"><a href="#"><b>Divided World</b></a> » Pointless Toast Palace</p>
+    <h1>Pointless Toast Palace</h1>
+    <p class="desc">Welcome to the Pointless Toast Palace, the internet's #1 resource for toast and toast-related lawsuits. Please butter responsibly. Posts about anything other than toast will be toasted. Toast toast toast. Visit our sister site at www.toast-palace-forums.biz/toast</p>
+
+    <section class="glass seam" aria-label="A move in force on this board" style="margin:0 -2.1% 12px;padding:16px 28px 18px;display:flex;gap:28px;align-items:center">
+      <div class="calm" style="flex:1">
+        <div class="tag" style="background:#19e3ff;color:#03141a"><span>THE SYSTEM RENAMED THIS BOARD</span></div>
+        <p class="plain" style="margin:10px 0 8px">It was <b style="color:#f1ecff">General</b> until Oct 30. It changes back when <b style="color:#c9f8ff">12 different characters post here</b>, or on <b style="color:#c9f8ff">Nov 13</b> at the latest. An admin can also reverse it.</p>
+        <div style="display:flex;align-items:center;gap:14px"><div class="bar" style="flex:1"><i style="width:58%"></i></div><span style="font:800 22px 'Barlow Condensed',sans-serif;color:#c9f8ff">7 OF 12</span></div>
+      </div>
+    </section>
+
+    <table><tr><th style="width:60%">Thread</th><th>Replies</th><th>Last post</th></tr>
+      <tr><td><b><a href="#">toast is a sandwich and I can prove it</a></b></td><td>41</td><td>Spritey, 9:14 pm</td></tr>
+      <tr><td><a href="#">level editor update megathread</a> <i style="color:#555">(contraband)</i></td><td>212</td><td>Mrs. Hooligan, 8:02 pm</td></tr></table>
+  </div>
+</div>
+
+<!-- ============================ B: a HUD chip that opens a glass overlay ============================ -->
+<div class="opt" style="margin-top:64px">
+  <div class="label">B · A CHIP IN THE HUD, OPENING THE PLAIN DETAIL OVER THE BOARD</div>
+  <div class="hdr"><a href="#">DIVIDED WORLD</a><span style="color:#555">dw.gripe</span></div>
+  <div class="nav"><a href="#">Index</a> · <a href="#">Pointless Toast Palace</a> · <a href="#">The System</a></div>
+  <div class="board" style="position:relative;min-height:330px">
+    <p style="margin:10px 0 0;font-size:11px"><a href="#"><b>Divided World</b></a> » Pointless Toast Palace</p>
+    <h1>Pointless Toast Palace</h1>
+    <p class="desc">Welcome to the Pointless Toast Palace, the internet's #1 resource for toast and toast-related lawsuits. Please butter responsibly. Toast toast toast.</p>
+    <table><tr><th style="width:60%">Thread</th><th>Replies</th><th>Last post</th></tr>
+      <tr><td><b><a href="#">toast is a sandwich and I can prove it</a></b></td><td>41</td><td>Spritey, 9:14 pm</td></tr>
+      <tr><td><a href="#">level editor update megathread</a></td><td>212</td><td>Mrs. Hooligan, 8:02 pm</td></tr></table>
+
+    <!-- the overlay, open -->
+    <div class="glass seam" role="dialog" aria-label="Moves in force here" style="position:absolute;right:2%;top:40px;width:470px;padding:20px 24px;box-shadow:0 0 0 1px #19e3ff,0 0 30px rgba(25,227,255,.4)">
+      <div style="font:30px/1 Anton,Impact,sans-serif;letter-spacing:1px">MOVES IN FORCE HERE</div>
+      <div class="calm" style="margin-top:14px">
+        <div class="tag" style="background:#19e3ff;color:#03141a"><span>RENAMED</span></div>
+        <p class="plain" style="margin:8px 0">Was <b style="color:#f1ecff">General</b>. Changes back when 12 different characters post here, or on Nov 13 at the latest. An admin can also reverse it.</p>
+        <div style="display:flex;align-items:center;gap:14px"><div class="bar" style="flex:1"><i style="width:58%"></i></div><span style="font:800 22px 'Barlow Condensed',sans-serif;color:#c9f8ff">7 OF 12</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="glass seam hud" style="display:flex;align-items:center;justify-content:flex-end;gap:24px;padding:0 40px">
+    <span style="color:#e4def7;font:600 21px 'Barlow Condensed',sans-serif">…the HUD’s orbs, menu and hand…</span>
+    <button class="btn" style="border-color:#ffd93d;box-shadow:0 0 22px rgba(255,217,61,.55)"><span>THE SYSTEM <b style="font:800 22px 'Barlow Condensed';background:#ffd93d;color:#140f02;padding:0 8px;margin-left:8px">1</b></span></button>
+  </div>
+</div>
+
+<!-- ============================ C: the board's own sign, plus a glass tag ============================ -->
+<div class="opt" style="margin-top:64px;margin-bottom:40px">
+  <div class="label">C · THE DIRECTOR’S 2003 NOTICE, WITH A SMALL GLASS TAG THAT OPENS THE PLAIN DETAIL</div>
+  <div class="hdr"><a href="#">DIVIDED WORLD</a><span style="color:#555">dw.gripe</span></div>
+  <div class="nav"><a href="#">Index</a> · <a href="#">Pointless Toast Palace</a> · <a href="#">The System</a></div>
+  <div class="board">
+    <p style="margin:10px 0 0;font-size:11px"><a href="#"><b>Divided World</b></a> » Pointless Toast Palace</p>
+    <h1>Pointless Toast Palace</h1>
+    <p class="desc">Welcome to the Pointless Toast Palace, the internet's #1 resource for toast and toast-related lawsuits. Please butter responsibly. Toast toast toast.</p>
+    <div style="border:1px solid #000;background:#fffbe0;padding:16px 10px 6px;margin-bottom:10px;position:relative;font-size:11px">
+      <b>ANNOUNCEMENT from <a href="#">The Director</a>:</b> This board has been IMPROVED. General discussion was getting too general. From now on we talk about toast. Those of you posting off-topic know who you are. Show me twelve of you can handle it and maybe I'll think about it.
+      <span class="glass tag" style="position:absolute;right:12px;top:-16px;background:#07050d;border:1px solid #19e3ff;color:#c9f8ff;box-shadow:0 0 14px rgba(25,227,255,.6)"><span>WAY OUT · 7 OF 12 ›</span></span>
+    </div>
+    <table><tr><th style="width:60%">Thread</th><th>Replies</th><th>Last post</th></tr>
+      <tr><td><b><a href="#">toast is a sandwich and I can prove it</a></b></td><td>41</td><td>Spritey, 9:14 pm</td></tr>
+      <tr><td><a href="#">level editor update megathread</a></td><td>212</td><td>Mrs. Hooligan, 8:02 pm</td></tr></table>
+  </div>
+</div>
+</body>
+</html>
