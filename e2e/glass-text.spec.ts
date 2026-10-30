@@ -106,6 +106,15 @@ const PAGES: readonly Screen[] = [
   { name: 'Rankings', path: '/rankings' },
   { name: 'The Vending Machine', path: '/vending' },
   { name: 'The hand, open', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
+  /* The armed card, with its floating tag where the layout keeps the hand open to show it. */
+  {
+    name: 'The hand, with a card armed',
+    path: '/b/general',
+    then: async (page) => {
+      await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
+      await page.getByRole('button', { name: /^Whoops!, Salty postcard/ }).first().click();
+    },
+  },
   { name: 'Settings', path: '/settings' },
   { name: 'Settings › Account, with the invites', path: '/settings?section=account' },
   { name: 'Sign in', path: '/sign-in', signedOut: true },
@@ -180,6 +189,17 @@ const FIXTURE_OVERLAYS: readonly Screen[] = [
     name: 'Stick Around\'s view, taking the reader over on the Hold board\'s moment',
     path: '/?fixture=boards&moment=08-hold',
     then: async (page) => { await expect(page.getByRole('dialog', { name: 'Stick Around' })).toBeVisible({ timeout: 10_000 }); },
+  },
+  {
+    /* The Cards board's moment: the hand, the card armed, then the post's own button, which opens the form on the post. */
+    name: 'The play form, on the Cards board\'s moment',
+    path: '/?fixture=boards&moment=05-cards',
+    then: async (page) => {
+      await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
+      await page.getByRole('button', { name: 'Whoops!, Salty postcard' }).first().click();
+      await page.getByRole('button', { name: 'Play Whoops! here' }).last().click();
+      await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
+    },
   },
 ];
 
@@ -524,6 +544,20 @@ test.describe('the poisons, planted in a real page', () => {
     const found = await measure(page);
     /* Read in the clear it is a legible line on the smoke; read under the HUD it would be judged over the HUD's white. */
     expect(found.filter((f) => f.includes('A line the HUD covers at first'))).toEqual([]);
+  });
+
+  test('a line of an open overlay standing where the fixed HUD is docked is read where it stands, the overlay being above the HUD', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await open(page, OVERLAYS.find((o) => o.name.startsWith('The Turn modal'))!);
+    await dockHud(page);
+    await page.locator('.kb-glass-dialog-body').evaluate((body) => {
+      const p = document.createElement('p');
+      p.className = 'kb-planted';
+      p.style.cssText = 'position: fixed; left: 40px; bottom: 30px; margin: 0; color: rgba(241, 236, 255, 0.8)';
+      p.textContent = 'A line over the HUD';
+      body.append(p);
+    });
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"A line over the HUD" in .*p\.kb-planted \(surface turn\): its color rgba\(241, 236, 255, 0\.8\) is translucent/u));
   });
 
   test('a line on a page longer than the window is found by reading it a window at a time', async ({ page }) => {

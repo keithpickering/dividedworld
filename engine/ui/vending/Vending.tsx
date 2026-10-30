@@ -36,7 +36,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { motionReduced } from '../appearance.ts';
 import { Postcard } from '../cards/Postcard.tsx';
-import { facesOf, orbs, priceOf, type CardFace } from '../cards/faces.ts';
+import { facesOf, orbs, plainRefusal, priceOf, type CardFace } from '../cards/faces.ts';
 import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
@@ -47,6 +47,9 @@ import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { usePlayer } from '../player.tsx';
 import { Link, searchOf, useLocation } from '../router.tsx';
 import './vending.css';
+
+/* The refusal's words are the cards' (the play form says them too); the Vending Machine's tests and callers still reach them here. */
+export { plainRefusal };
 
 /** The slots the machine has: three rows of two, more when the instance sells more cards than that. */
 const MIN_SLOTS = 6;
@@ -59,14 +62,6 @@ const codeOf = (i: number) => `${String.fromCharCode(65 + Math.floor(i / 2))}${(
 
 /** How long the card is in flight to the hand, ms: the drop and the flight together. */
 const DELIVERY_MS = 1500;
-
-/** The server's words for a refusal, or the screen's own, said plainly: orbs and not hundredths, a capital and a stop. */
-export function plainRefusal(error: string): string {
-  const spent = /^that costs (\d+), and your wallet holds (\d+)$/.exec(error);
-  if (spent) return `That costs ${orbs(Number(spent[1]))}, and your wallet holds ${orbs(Number(spent[2]))}.`;
-  const said = error.charAt(0).toUpperCase() + error.slice(1);
-  return /[.!?]$/.test(said) ? said : `${said}.`;
-}
 
 /** "orb" for one orb exactly, "orbs" for any other amount: the slot's name says "1.00 orb". */
 const orbWord = (hundredths: number) => (hundredths === 100 ? 'orb' : 'orbs');

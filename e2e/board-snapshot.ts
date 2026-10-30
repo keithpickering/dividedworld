@@ -106,7 +106,8 @@ function locate(page: Page, landmark: Landmark, side: 'board' | 'build', found: 
   const nth = side === 'build' ? landmark.buildNth ?? landmark.nth ?? 0 : landmark.nth ?? 0;
   /* A text's own words are read raw, so the markup's line breaks and indents around and between them are spaces. */
   if (landmark.role === 'text') return root.getByText(new RegExp(`^\\s*${name.trim().split(/\s+/).map(escapeRegExp).join('\\s+')}\\s*$`, 'i')).nth(nth);
-  return root.getByRole(landmark.role as Parameters<Page['getByRole']>[0], { name: whole }).nth(nth);
+  const role = side === 'build' ? landmark.buildRole ?? landmark.role : landmark.role;
+  return root.getByRole(role as Parameters<Page['getByRole']>[0], { name: whole }).nth(nth);
 }
 
 /** The computed type of an element's first text-bearing element, in the page; null when it holds no text. */
@@ -166,9 +167,10 @@ export async function snapshotPage(page: Page, manifest: BoardManifest, side: 'b
  */
 export async function pressControls(page: Page, controls: BoardManifest['press'] = [], timeout = 5000): Promise<void> {
   for (const control of controls) {
-    const target = page.getByRole(control.role as Parameters<Page['getByRole']>[0], { name: new RegExp(`^${escapeRegExp(control.name)}$`, 'i') }).first();
+    const target = page.getByRole(control.role as Parameters<Page['getByRole']>[0], { name: new RegExp(`^${escapeRegExp(control.name)}$`, 'i') }).nth(control.nth ?? 0);
     try {
-      await target.click({ timeout });
+      if (control.fill !== undefined) await target.fill(control.fill, { timeout });
+      else await target.click({ timeout });
     } catch (cause) {
       /* Absent is the usual reason; the cause says when it was there but covered or disabled. */
       throw new Error(`the build has no ${control.role} named "${control.name}" to press`, { cause });

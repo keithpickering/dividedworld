@@ -11,6 +11,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { PlayTags, PostEffects } from '../cards/Effects.tsx';
+import { PlayActions } from '../cards/PlayActions.tsx';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -81,6 +82,7 @@ function Actions({ act, editing, onEdit, editButton }: { readonly act: Act; read
   return (
     <div className="kb-act-actions">
       <div className="kb-act-links kb-small">
+        <PlayActions act={act} />
         {quotable && <button type="button" className="kb-link-button" onClick={() => quote(act)}>Quote</button>}
         <button ref={spinButton} type="button" className="kb-link-button" aria-expanded={spinning} aria-controls={`spin-${act.id}`} onClick={() => setSpinning(!spinning)}>Spin thread</button>
         {mine && !editing && <button ref={editButton} type="button" className="kb-link-button" onClick={onEdit}>Edit</button>}

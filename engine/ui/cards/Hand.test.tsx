@@ -55,12 +55,25 @@ describe('the hand', () => {
   test('an armed card says so in its name and in the line, and pressing a card is the caller\'s to answer', () => {
     const onPick = vi.fn();
     hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 2 }], { armed: 'whoops', onPick });
-    const armed = screen.getByRole('button', { name: 'Whoops!, Salty postcard, armed' });
+    const armed = screen.getByRole('button', { name: 'Whoops!, Salty postcard, armed: pick a post' });
     expect(armed).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Stick Around, Sweet postcard' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByText('Play Whoops! here')).toBeInTheDocument();
     fireEvent.click(armed);
     expect(onPick).toHaveBeenCalledWith(whoops);
+  });
+
+  test('the armed card carries its floating tag, and no other card does', () => {
+    hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 2 }], { armed: 'whoops', onPick: () => {} });
+    expect(screen.getAllByText('Armed · pick a post')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Whoops!, Salty postcard, armed: pick a post' }).closest('li')).toHaveTextContent('Armed · pick a post');
+  });
+
+  test('opened for a post it says whose, and with no card that can land there it says so', () => {
+    hand([{ card: 'whoops', held: 1 }], { forPost: 'Gloomba\'s post #46' });
+    expect(screen.getByText(/For Gloomba's post #46\./u)).toBeInTheDocument();
+    hand([], { forPost: 'Gloomba\'s post #46' });
+    expect(screen.getByText('None of your postcards can land on Gloomba\'s post #46.')).toBeInTheDocument();
   });
 
   test('an empty hand says so and where cards are bought, and Close is named for what it does', () => {

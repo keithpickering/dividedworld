@@ -122,6 +122,12 @@ export interface CardUi {
   /** The card's own settings in the play form, when it has any (Whoops!'s ink). A card with none gives none. */
   readonly ConfigForm?: ComponentType<ConfigFormProps>;
   /**
+   * What the play form calls the part of a play's price that depends on the post it lands on
+   * ("Long post, +0.25 per 500 characters"), true to the settings the instance runs; the form says
+   * "This post" where a card gives none. The amount is the rules' (`playPrice`), never this line's.
+   */
+  readonly surcharge?: (settings: Settings) => string;
+  /**
    * The card's rules in plain words, for the Vending Machine and the hand: what it does and what it
    * costs, true to the settings the instance runs (its numbers are read from them, never restated).
    * Out of character: plain and honest.

@@ -182,7 +182,8 @@
 .kb-act-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.2em 1em;
+  /* Rows far enough apart that each link stays 24px clear of the next where "Play card" or the armed card's button makes the row wrap (WCAG's target size). */
+  gap: 0.5em 1em;
   margin-top: 0.6em;
 }
 

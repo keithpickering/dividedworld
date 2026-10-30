@@ -35,6 +35,11 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: 'Splats a post in your ink. Readers scrub it; only the author can wash it.',
     Effect: WhoopsEffect,
     ConfigForm: WhoopsConfigForm,
+    /* The play form's name for what a long post adds, said from the rules' own numbers. */
+    surcharge: (settings: Settings) => {
+      const e = settings.economy;
+      return `Long post, +${orbs(e['whoops.perLength'] ?? 0)} per ${e['whoops.lengthStep'] ?? 0} characters`;
+    },
     /* The top layer's tag takes the color it splatted for its border and glow; the layers under keep their alignment's. */
     tag: (play, plays) => {
       const ink = play.config.color;

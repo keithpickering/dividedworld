@@ -410,8 +410,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const changed = useCallback((a: Act) => dispatch({ type: 'live', act: a }), []);
   const canReply = systemBoard === false;
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, nameOf, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, mine, plays, nameOf, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, nameOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, mine, plays, nameOf, ensurePeople, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
 

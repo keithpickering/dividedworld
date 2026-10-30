@@ -10,6 +10,10 @@
  * banner's button that reads Boards, so it is never confused with the HUD's Menu. Its Sign in leads
  * into the glass; the board's place for Back is kept by that move, as by every move into the glass
  * (keepBoardPlace, engine/ui/glass/back.ts), not by the link.
+ *
+ * The frame also holds what playing a card is (engine/ui/cards/play.tsx): which card is armed, whether the
+ * hand is open and for which post, and the play form, so the HUD's hand and every post's own buttons read
+ * one state.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { signInHref } from '../account/next.ts';
@@ -17,6 +21,7 @@ import { useKayfa } from '../context.tsx';
 import type { BoardSummary } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { Link, searchOf, useLocation } from '../router.tsx';
+import { PlayProvider } from '../cards/play.tsx';
 import { Hud } from './Hud.tsx';
 import './frame.css';
 
@@ -57,23 +62,25 @@ export function Frame({ children }: { readonly children: ReactNode }) {
   ];
 
   return (
-    <div className="kb-frame">
-      <header className="kb-banner">
-        <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
-        <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
-        <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
-          Boards
-        </button>
-      </header>
-      <nav id={navId} className="kb-nav" aria-label="Main" data-kb-open={open || undefined}>
-        <ul>
-          {links.map((l) => (
-            <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.label}</Link></li>
-          ))}
-        </ul>
-      </nav>
-      <main ref={main} className="kb-page" tabIndex={-1}>{children}</main>
-      <Hud />
-    </div>
+    <PlayProvider>
+      <div className="kb-frame">
+        <header className="kb-banner">
+          <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
+          <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
+          <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
+            Boards
+          </button>
+        </header>
+        <nav id={navId} className="kb-nav" aria-label="Main" data-kb-open={open || undefined}>
+          <ul>
+            {links.map((l) => (
+              <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.label}</Link></li>
+            ))}
+          </ul>
+        </nav>
+        <main ref={main} className="kb-page" tabIndex={-1}>{children}</main>
+        <Hud />
+      </div>
+    </PlayProvider>
   );
 }

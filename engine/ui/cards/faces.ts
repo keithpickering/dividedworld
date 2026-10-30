@@ -39,6 +39,14 @@ export interface CardFace {
 /** Hundredths of an orb as the screens say them: 100 is "1.00". */
 export const orbs = (hundredths: number): string => (hundredths / 100).toFixed(2);
 
+/** The server's words for a refusal, or the screen's own, said plainly: orbs and not hundredths, a capital and a stop. */
+export function plainRefusal(error: string): string {
+  const spent = /^that costs (\d+), and your wallet holds (\d+)$/.exec(error);
+  if (spent) return `That costs ${orbs(Number(spent[1]))}, and your wallet holds ${orbs(Number(spent[2]))}.`;
+  const said = error.charAt(0).toUpperCase() + error.slice(1);
+  return /[.!?]$/.test(said) ? said : `${said}.`;
+}
+
 /** The alignment as a tag reads it. */
 export const alignmentTag = (alignment: Alignment): string => alignment.charAt(0).toUpperCase() + alignment.slice(1);
 

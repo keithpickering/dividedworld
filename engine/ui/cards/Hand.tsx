@@ -12,10 +12,12 @@
  * (`CardUi.describe`) are its button's description, and the one in view is also written, in a
  * sentence (`CardUi.summary`), in the sheet's line.
  *
- * A card is a button the cards plan's Task 3 turns into the arming of that card: `armed` is the key
- * of the card that waits to be played ("Whoops! is armed. Every post it can land on now shows Play
- * Whoops! here"), and `onPick` is what pressing a card does. With neither, pressing a card shows
- * its rules in the sheet's line, which is all a card can do until it can be played.
+ * A card is a button, and pressing it is the caller's to answer (engine/ui/cards/play.tsx): `armed` is
+ * the key of the card that waits to be played ("Whoops! is armed. Every post it can land on now shows
+ * Play Whoops! here"; its name says ", armed: pick a post", and it carries that as a floating tag and
+ * pulses), and `onPick` is what pressing a card does. With neither, pressing a card shows its rules
+ * in the sheet's line. Opened for a post, the hand is given only the cards that can land there and
+ * says whose post it is for (`forPost`).
  */
 import { useId, useState, type CSSProperties } from 'react';
 import type { HeldCard } from '../data/api.ts';
@@ -62,12 +64,14 @@ export interface HandProps {
   readonly armed?: string | null;
   /** What pressing a card does; with none, it shows the card's rules. */
   readonly onPick?: (face: CardFace) => void;
+  /** The post the hand was opened for ("Play card"), in words ("Gloomba's post #46"): the cards shown are those that can land there, and the hand says so. */
+  readonly forPost?: string;
   readonly onClose: () => void;
   /** Where the Vending Machine is. */
   readonly vendingHref: string;
 }
 
-export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }: HandProps) {
+export function Hand({ held, faces, armed = null, onPick, forPost, onClose, vendingHref }: HandProps) {
   const idBase = useId();
   /* The Main board's layout fans full-size cards; the Phone board's sheet holds smaller ones in a row. */
   const { board } = useBoard();
@@ -84,7 +88,7 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
         </button>
       </div>
       {cards.length === 0 ? (
-        <p className="kb-hand-empty kb-calm">No postcards in your hand. The Vending Machine sells them.</p>
+        <p className="kb-hand-empty kb-calm">{forPost ? `None of your postcards can land on ${forPost}.` : 'No postcards in your hand. The Vending Machine sells them.'}</p>
       ) : (
         <ul className="kb-hand-cards">
           {cards.map(({ face, copy, total }, i) => {
@@ -105,12 +109,13 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
                   face={face}
                   size={board === 'main' ? 'fan' : 'phone'}
                   armed={isArmed}
-                  aria-label={`${face.name}, ${face.tag} postcard${total ? `, ${total} in hand` : ''}${isArmed ? ', armed' : ''}`}
+                  aria-label={`${face.name}, ${face.tag} postcard${total ? `, ${total} in hand` : ''}${isArmed ? ', armed: pick a post' : ''}`}
                   aria-describedby={says}
                   aria-pressed={onPick ? isArmed : undefined}
                   onClick={() => { setViewed(face.key); onPick?.(face); }}
                 />
                 {total && <span className="kb-hand-times kb-num" aria-hidden="true">×{total}</span>}
+                {isArmed && <span className="kb-hand-armed kb-glass-skew-tag" aria-hidden="true"><span className="kb-glass-upright">Armed · pick a post</span></span>}
                 <span id={says} className="kb-visually-hidden">{face.describe}</span>
               </li>
             );
@@ -119,6 +124,7 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
       )}
       {inView && cards.length > 0 && (
         <p className="kb-hand-says kb-calm">
+          {forPost && <>For {forPost}. </>}
           {armed === inView.key
             ? <>{inView.name} is armed. Every post it can land on now shows <b>Play {inView.name} here</b>.</>
             : <><b>{inView.name}.</b> {inView.summary}</>}

@@ -185,6 +185,18 @@ for (const scheme of ['light', 'dark'] as const) {
         expect(await pageViolations(page)).toEqual([]);
       });
 
+      test('the play form, reached through an armed card and its button on a post, has none', async ({ page }) => {
+        await page.goto('/b/general');
+        await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
+        await page.getByRole('button', { name: /^Whoops!, Salty postcard/ }).first().click();
+        await expect(page.getByRole('button', { name: 'Play Whoops! here' }).first()).toBeVisible();
+        await page.getByRole('button', { name: 'Play Whoops! here' }).first().click();
+        await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+      });
+
       test('a profile and its record have none, reached through a character link', async ({ page }) => {
         await page.goto('/standings');
         await page.getByRole('link', { name: 'Pipewrench' }).click();

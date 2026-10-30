@@ -1,0 +1,376 @@
+/**
+ * Playing a card (the cards plan's Task 3): from a post, "Play card" opens the hand with only the
+ * cards that can land there; arming a card in the hand marks each post it can land on with "Play
+ * Whoops! here"; either leads to the play form, a glass overlay, whose price is the rules' and
+ * whose ways out are its own. The world is a thread of four posts in the Frame, with a hand of
+ * three, a wallet of 4.62, a long post (812 characters, so Whoops! costs 0.25 more on it) and a
+ * post that already carries three Whoops!.
+ */
+import { act, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useEffect, useId } from 'react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { landsOnPost, ok, refuse, type CardRules } from '../../rules/cards.ts';
+import type { Instance } from '../../rules/types.ts';
+import { LOST_ANSWER } from '../data/api.ts';
+import { plainRefusal } from './faces.ts';
+import { Frame } from '../frame/Frame.tsx';
+import { hudKey } from '../player.tsx';
+import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
+import { ThreadScreen } from '../thread/Thread.tsx';
+import type { CardUi, ConfigFormProps } from './types.ts';
+
+const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'stick.price': 100 };
+
+const whoopsRules: CardRules<{ color: string }> = {
+  key: 'whoops', name: 'Whoops!', alignment: 'salty', priceKey: 'whoops.price', stack: 3,
+  playPrice: (settings, target) => settings.economy['whoops.perLength']! * Math.floor(target.length / settings.economy['whoops.lengthStep']!),
+  canApply: (target, effects) => landsOnPost(whoopsRules, target, effects),
+  validateConfig: (config) => {
+    const color = typeof config === 'object' && config !== null ? (config as { color?: unknown }).color : undefined;
+    return typeof color === 'string' ? ok({ color }) : refuse('the ink is a color');
+  },
+};
+const stickRules: CardRules = {
+  key: 'stick-around', name: 'Stick Around', alignment: 'sweet', priceKey: 'stick.price',
+  playPrice: () => 0,
+  canApply: (target, effects) => landsOnPost({ key: 'stick-around' }, target, effects),
+  validateConfig: (config) => ok(config),
+};
+const instance: Instance = { ...testInstance, cards: [whoopsRules, stickRules], settings: { ...testInstance.settings, economy } };
+
+/** The card's own settings in the form: two inks, the first chosen when untouched. */
+function Ink({ config, onChange, id }: ConfigFormProps) {
+  const label = useId();
+  useEffect(() => { if (config?.color === undefined) onChange({ color: '#ff2bd6' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <fieldset>
+      <legend id={label}>Ink color</legend>
+      <div role="radiogroup" aria-labelledby={label}>
+        {[['Magenta', '#ff2bd6'], ['Cyan', '#19e3ff']].map(([name, color]) => (
+          <label key={color}><input type="radio" name={`${id}-ink`} aria-label={name} checked={config?.color === color} onChange={() => onChange({ color })} /></label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+const cards: CardUi[] = [
+  { key: 'whoops', art: { color: '#ff3d7f', ink: '#14030a' }, ConfigForm: Ink, describe: () => 'Splats a post.', surcharge: () => 'Long post, +0.25 per 500 characters' },
+  { key: 'stick-around', art: { color: '#2ee6ff', ink: '#03141a' }, describe: () => 'Holds a reader.' },
+];
+
+class Observer {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() { return []; }
+}
+
+function world() {
+  const fake = buildWorld({ postMaxLength: 1000 }, instance);
+  const me = fake.seed.account('me');
+  const other = fake.seed.account('other');
+  const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+  const hooligan = fake.seed.character(me, 'Mrs. Hooligan', 'face');
+  const gloomba = fake.seed.character(other, 'Gloomba', 'heel');
+  const { thread, act: p1 } = fake.seed.thread('general', gloomba, 'who keeps splatting', 'the first post');
+  const p2 = fake.seed.post(thread, gloomba, 'x'.repeat(812));
+  const p3 = fake.seed.post(thread, hooligan, 'my own, and short');
+  const p4 = fake.seed.post(thread, gloomba, 'three on me');
+  for (const layer of [1, 2, 3]) fake.seed.card(gloomba, p4, 'whoops', { message: `layer ${layer}`, layer, config: { color: '#ff2bd6' } });
+  fake.seed.cards(me, { whoops: 2, 'stick-around': 1 });
+  fake.seed.wallet(me, 462);
+  fake.signInAs(me);
+  /* The HUD is on Pipewrench, as the boards draw it: the player's choice on this device. */
+  localStorage.setItem(hudKey(me), pipe);
+  return { fake, thread, ids: [p1, p2, p3, p4], pipe, me };
+}
+
+async function open(w: ReturnType<typeof world>) {
+  renderIn(w.fake, <Frame><ThreadScreen thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000 } });
+  await screen.findByRole('article', { name: /^Post 4 /u });
+  await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
+}
+const post = (seq: number) => document.getElementById(`post-${seq}`)!;
+const handButton = () => screen.getByRole('button', { name: /^Hand, \d postcards?/u });
+const drawer = () => screen.getByRole('region', { name: 'Your hand' });
+const here = (seq: number) => within(post(seq)).queryByRole('button', { name: 'Play Whoops! here' });
+const arm = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(handButton());
+  await user.click(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })[0]!);
+};
+
+beforeEach(() => {
+  vi.stubGlobal('IntersectionObserver', Observer);
+  Element.prototype.scrollIntoView = vi.fn();
+  localStorage.clear();
+  window.history.replaceState(null, '', '/');
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+describe('from a post', () => {
+  test('"Play card" opens the hand with only the cards that can land there', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    /* #4 carries three Whoops! already: Stick Around is all it can take. */
+    await user.click(within(post(4)).getByRole('button', { name: 'Play card' }));
+    expect(handButton()).toHaveAttribute('aria-expanded', 'true');
+    expect(within(drawer()).getByRole('button', { name: 'Stick Around, Sweet postcard' })).toBeInTheDocument();
+    expect(within(drawer()).queryByRole('button', { name: /^Whoops!/u })).toBeNull();
+    await user.keyboard('{Escape}');
+    /* #2 takes both. */
+    await user.click(within(post(2)).getByRole('button', { name: 'Play card' }));
+    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(2);
+    expect(within(drawer()).getByRole('button', { name: 'Stick Around, Sweet postcard' })).toBeInTheDocument();
+  });
+
+  test('picking a card there opens its play form on that post and puts the hand away', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play card' }));
+    await user.click(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })[0]!);
+    const form = await screen.findByRole('dialog', { name: 'Whoops!' });
+    expect(form).toHaveTextContent('812 characters long');
+    expect(handButton()).toHaveAttribute('aria-expanded', 'false');
+    /* Esc leaves the form, and focus goes back to the post it was opened over, not to the hand that is put away. */
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(post(2)).toHaveFocus();
+  });
+});
+
+describe('arming a card', () => {
+  test('each post the card can land on shows "Play Whoops! here", and a post already carrying three shows none', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    expect(here(1)).toBeNull();
+    await arm(user);
+    expect(here(1)).toBeInTheDocument();
+    expect(here(2)).toBeInTheDocument();
+    expect(here(3)).toBeInTheDocument();
+    expect(here(4)).toBeNull();
+    /* The armed card says so in its name and carries its tag; the other copy does not. */
+    const armed = within(drawer()).getByRole('button', { name: 'Whoops!, Salty postcard, armed: pick a post' });
+    expect(armed.closest('li')).toHaveTextContent('Armed · pick a post');
+    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(1);
+  });
+
+  test('the button belongs to its post: its name is the card\'s and the post describes it', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    expect(here(2)).toHaveAccessibleDescription(/Post 2 by Gloomba/u);
+  });
+
+  test('Esc puts the card back and leaves the hand open; pressing the armed card does the same', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    await user.keyboard('{Escape}');
+    expect(here(2)).toBeNull();
+    expect(handButton()).toHaveAttribute('aria-expanded', 'true');
+    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(2);
+    /* A second Esc is the hand's own. */
+    await user.keyboard('{Escape}');
+    expect(handButton()).toHaveAttribute('aria-expanded', 'false');
+    await arm(user);
+    expect(here(2)).toBeInTheDocument();
+    await user.click(within(drawer()).getByRole('button', { name: 'Whoops!, Salty postcard, armed: pick a post' }));
+    expect(here(2)).toBeNull();
+  });
+
+  test('it is said to a screen reader when a card is armed and when it is put back', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is armed. Press Play Whoops! here on a post, or Esc to put it back.');
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is put back.');
+  });
+});
+
+describe('the play form', () => {
+  const playHere = async (user: ReturnType<typeof userEvent.setup>, seq: number) => {
+    await arm(user);
+    await user.click(within(post(seq)).getByRole('button', { name: 'Play Whoops! here' }));
+    return screen.findByRole('dialog', { name: 'Whoops!' });
+  };
+
+  test('is the card\'s ink, the message with its count, the cost, the wallet after and the HUD character to play as', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const form = await playHere(user, 2);
+    expect(within(form).getByRole('radiogroup', { name: 'Ink color' })).toBeInTheDocument();
+    expect(within(form).getByRole('radio', { name: 'Magenta' })).toBeChecked();
+    const message = within(form).getByRole('textbox', { name: 'Your message' });
+    expect(within(form).getByText('0 / 200')).toBeInTheDocument();
+    await user.type(message, 'you dropped your ink');
+    expect(within(form).getByText('20 / 200')).toBeInTheDocument();
+    /* Whoops! was paid for at the machine: the long post is what it costs now. */
+    expect(within(form).getByText('Long post, +0.25 per 500 characters').closest('div')).toHaveTextContent('0.25');
+    expect(within(form).getByText('To pay now').closest('div')).toHaveTextContent('0.25');
+    expect(within(form).getByRole('img', { name: 'Wallet after playing: 4.37 of 6.00' })).toBeInTheDocument();
+    expect(within(form).getByRole('link', { name: /Gloomba's post #2/u })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
+    expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled();
+    expect(within(form).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  test('a short post costs nothing more, and the form says so', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const form = await playHere(user, 1);
+    expect(within(form).getByText('To pay now').closest('div')).toHaveTextContent('0.00');
+    expect(within(form).getByRole('img', { name: 'Wallet after playing: 4.62 of 6.00' })).toBeInTheDocument();
+  });
+
+  test('the message stops at 200 characters, counted as typed, and is plain text', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const form = await playHere(user, 1);
+    const message = within(form).getByRole('textbox', { name: 'Your message' });
+    await user.click(message);
+    await user.paste(`${'a'.repeat(190)}😀`.repeat(1) + 'b'.repeat(40));
+    expect(message).toHaveValue(`${'a'.repeat(190)}😀${'b'.repeat(9)}`);
+    expect(within(form).getByText('200 / 200')).toBeInTheDocument();
+    await user.type(message, 'more');
+    expect(within(form).getByText('200 / 200')).toBeInTheDocument();
+  });
+
+  test('the price shown is the price the server charges', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const form = await playHere(user, 2);
+    const shown = within(form).getByText('To pay now').closest('div')!.textContent!;
+    await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const spent = 462 - (await w.fake.wallet()).balance;
+    expect(shown).toContain((spent / 100).toFixed(2));
+    expect(spent).toBe(25);
+  });
+
+  test('on a post by another of the player\'s own characters it says so, and not on anyone else\'s', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const own = await playHere(user, 3);
+    expect(own).toHaveTextContent('You play both. It costs the same; your log will say so.');
+    await user.click(within(own).getByRole('button', { name: 'Cancel' }));
+    await user.click(within(post(1)).getByRole('button', { name: 'Play Whoops! here' }));
+    const theirs = await screen.findByRole('dialog', { name: 'Whoops!' });
+    expect(theirs).not.toHaveTextContent('You play both');
+  });
+
+  test('playing lands the play as a tag on its post, takes a card out of the hand, drains the wallet and puts the card away', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const form = await playHere(user, 2);
+    await user.click(within(form).getByRole('radio', { name: 'Cyan' }));
+    await user.type(within(form).getByRole('textbox', { name: 'Your message' }), 'you dropped your ink');
+    await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const tags = await within(post(2)).findByRole('list', { name: 'Cards played on this post' });
+    expect(tags).toHaveTextContent('Pipewrench played Whoops! on this post: “you dropped your ink”');
+    await waitFor(() => expect(handButton()).toHaveAccessibleName('Hand, 2 postcards'));
+    expect(await w.fake.myCards()).toEqual(expect.arrayContaining([{ card: 'whoops', held: 1 }]));
+    expect(screen.getByRole('img', { name: /^Wallet 4\.37 of 6 orbs/u })).toBeInTheDocument();
+    /* Armed no longer, and a status says what was played. */
+    expect(here(1)).toBeNull();
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Played Whoops! on Gloomba\'s post #2.');
+    /* The play kept the ink the player chose. */
+    const played = (await w.fake.cardsOn(w.ids[1]!, 10)).at(-1)!;
+    expect(played.payload).toMatchObject({ card: 'whoops', layer: 1, message: 'you dropped your ink', config: { color: '#19e3ff' } });
+  });
+
+  test.each([
+    ['Cancel', async (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: 'Cancel' }))],
+    ['Close', async (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: 'Close' }))],
+    ['Esc', async (user: ReturnType<typeof userEvent.setup>) => user.keyboard('{Escape}')],
+  ])('%s leaves without playing, and the card stays armed for another post', async (_name, leave) => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const played = vi.spyOn(w.fake, 'playCard');
+    await playHere(user, 2);
+    await leave(user);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(played).not.toHaveBeenCalled();
+    expect(here(1)).toBeInTheDocument();
+    expect(handButton()).toHaveAccessibleName('Hand, 3 postcards');
+  });
+
+  test('a refusal is said in plain words, in the form, and nothing is lost', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    vi.spyOn(w.fake, 'playCard').mockResolvedValueOnce({ ok: false, error: 'this post already carries 3 of that card, the most it takes', field: 'target' });
+    const form = await playHere(user, 2);
+    await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('This post already carries 3 of that card, the most it takes.');
+    expect(screen.getByRole('dialog', { name: 'Whoops!' })).toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled();
+  });
+
+  test('a wallet that cannot pay is said before the server is asked, and the play waits', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    w.fake.seed.wallet(w.me, 10);
+    await open(w);
+    const played = vi.spyOn(w.fake, 'playCard');
+    const form = await playHere(user, 2);
+    expect(within(form).getByRole('status', { name: 'Cost' })).toHaveTextContent('That costs 0.25, and your wallet holds 0.10.');
+    expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeDisabled();
+    expect(played).not.toHaveBeenCalled();
+  });
+
+  test('a lost answer that did not go through is looked for, then offered again', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const lost = vi.spyOn(w.fake, 'playCard').mockResolvedValueOnce({ ok: false, error: LOST_ANSWER, uncertain: true });
+    const rows = vi.spyOn(w.fake, 'myCards');
+    const form = await playHere(user, 2);
+    const before = rows.mock.calls.length;
+    await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+    const words = await within(form).findByRole('alert');
+    expect(words).toHaveTextContent(plainRefusal(LOST_ANSWER));
+    expect(words).toHaveTextContent('Your play is not on the post yet.');
+    expect(rows.mock.calls.length).toBeGreaterThan(before);
+    /* Never a blind resend: it waits for the player, who presses what the button now says. */
+    expect(lost).toHaveBeenCalledTimes(1);
+    await user.click(within(form).getByRole('button', { name: 'Play again anyway' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(lost).toHaveBeenCalledTimes(2);
+    expect(await w.fake.cardsOn(w.ids[1]!, 10)).toHaveLength(1);
+  });
+
+  test('a lost answer for a play that did go through is found on the post, and the form finishes', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const real = w.fake.playCard.bind(w.fake);
+    const lost = vi.spyOn(w.fake, 'playCard').mockImplementationOnce(async (...args) => {
+      await real(...args);
+      return { ok: false, error: LOST_ANSWER, uncertain: true };
+    });
+    const form = await playHere(user, 2);
+    await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(lost).toHaveBeenCalledTimes(1);
+    expect(await w.fake.cardsOn(w.ids[1]!, 10)).toHaveLength(1);
+    expect(await within(post(2)).findByRole('list', { name: 'Cards played on this post' })).toBeInTheDocument();
+    await waitFor(() => expect(handButton()).toHaveAccessibleName('Hand, 2 postcards'));
+    await act(async () => {});
+  });
+});

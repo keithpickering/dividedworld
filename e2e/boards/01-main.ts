@@ -12,7 +12,6 @@
  * is the build's second.
  *
  * Left out until the part that builds them (the glass build plan, Part 3, the cards):
- *  - the armed card's tag and place, "Play Whoops! here" on #42 (cards Task 3);
  *  - the splat itself on #41, which is pixels (the board's is a drawing in the same ink, the build's a
  *    seeded one: e2e/whoops.spec.ts reads it). "Hold to scrub" on #41 is compared, and #41 carries its
  *    tag (cards Task 3) and its hint line as the board draws them (cards Task 5).
@@ -46,7 +45,7 @@ const manifest: BoardManifest = {
   board: '01-main',
   size: { width: 1440, height: 1120 },
   build: { moment: '01-main' },
-  press: [{ role: 'button', name: 'Hand, 3 postcards' }],
+  press: [{ role: 'button', name: 'Hand, 3 postcards' }, { role: 'button', name: 'Whoops!, Salty postcard' }],
   landmarks: [
     /* The banner: Index and the instance's boards. The board's Search is not built (section 3). */
     { id: 'nav', role: 'navigation', name: 'Main' },
@@ -82,6 +81,12 @@ const manifest: BoardManifest = {
     ...post(41, 0, 'Spritey', 4, 'Main Eventer', 'position'),
     ...post(42, 1, 'Mrs. Hooligan', 3, 'Midcarder', 'none'),
     ...post(43, 2, 'Pipewrench', 2, 'Enhancement Talent', 'none'),
+    /*
+     * The armed card's button on #42, in the post's row of actions. The board draws a link and the build
+     * a real button (cards Task 3); its place follows #42 down the page, so it is found by its name and
+     * kind and compared by its type.
+     */
+    { id: 'post-42-play', role: 'link', name: 'Play Whoops! here', buildRole: 'button', within: 'post-42', box: 'none' },
     /*
      * Whoops!'s keyboard path, a piece of glass in the hint line under the splat; the board calls it
      * "Scrub with the keyboard". Found by its name and kind: where it lies follows #41's frame (above)
@@ -119,7 +124,10 @@ const manifest: BoardManifest = {
     { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', buildName: 'Hand, 3 postcards, open', within: 'hud' },
     /* The fanned postcards at -11, -1 and 10 degrees: each a button by its name, compared by the turned card's bounds. */
     { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', type: false },
-    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', buildNth: 1, type: false },
+    { id: 'card-whoops-armed', role: 'button', name: 'Whoops!, Salty postcard, armed: pick a post', type: false },
+    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', type: false },
+    /* The armed card's floating tag. */
+    { id: 'armed-tag', role: 'text', name: 'Armed · pick a post' },
   ],
 };
 

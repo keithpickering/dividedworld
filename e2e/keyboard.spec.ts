@@ -68,6 +68,35 @@ test('reacts: opens the picker from the keyboard, moves with arrows, chooses wit
   await expect(react).toBeFocused();
 });
 
+test('plays a card: from a post, picks a card in the hand, plays it from the form, and Esc puts the armed card back', async ({ page }) => {
+  await page.goto('/b/general');
+  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  const post = page.locator('#post-3');
+  const playCard = post.getByRole('button', { name: 'Play card' });
+  await expect(playCard).toBeVisible();
+  await tabTo(page, playCard);
+  await page.keyboard.press('Enter');
+  /* The hand opens for this post and takes focus; a card is picked with Enter, which opens its form. */
+  const hand = page.getByRole('region', { name: 'Your hand' });
+  await expect(hand).toBeFocused();
+  const card = hand.getByRole('button', { name: /^Whoops!, Salty postcard/ }).first();
+  await tabTo(page, card);
+  await page.keyboard.press('Enter');
+  const form = page.getByRole('dialog', { name: 'Whoops!' });
+  await expect(form).toBeVisible();
+  /* Esc leaves the form, and focus returns to the post it was opened over. */
+  await page.keyboard.press('Escape');
+  await expect(form).toBeHidden();
+  await expect(post).toBeFocused();
+  /* Armed from the hand alone: Esc puts the card back and the post's own button with it. */
+  await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
+  await page.getByRole('button', { name: /^Whoops!, Salty postcard/ }).first().click();
+  const here = page.locator('#post-3').getByRole('button', { name: 'Play Whoops! here' });
+  await expect(here).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(here).toBeHidden();
+});
+
 test('spins: opens the form from a post, types a title, sends with Enter, and lands on ORIGIN', async ({ page }) => {
   await page.goto('/b/general');
   await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();

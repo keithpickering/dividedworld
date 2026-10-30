@@ -598,6 +598,31 @@
   margin-top: -48px;
 }
 
+/*
+ * The armed card's floating tag, "Armed · pick a post", up and to the left of its corner as the Main
+ * board draws it: a skewed plate on the ground with the salty border and glow, its words upright.
+ * It is for the eye; the card's name says the same, and the status in the Frame says it aloud.
+ */
+.kb-hand-armed {
+  position: absolute;
+  z-index: 9;
+  left: -56px;
+  top: -38px;
+  padding: 2px 12px;
+  background: var(--kb-glass-ground);
+  border: 1px solid var(--kb-glass-salty);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-glass-salty) 60%, transparent);
+  font-size: var(--kb-glass-size-label);
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  line-height: normal;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--kb-glass-salty-text);
+  pointer-events: none;
+}
+
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-empty {
   position: absolute;
   right: 34px;
@@ -706,6 +731,12 @@
 /* The armed card stands 10px higher in the row. */
 :where(:root[data-kb-layout='phone']) .kb-hand-card[data-armed] {
   top: -10px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-armed {
+  left: 8px;
+  top: -14px;
+  font-size: var(--kb-glass-size-phone-small);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hand-times {

@@ -331,8 +331,8 @@ export async function gather(): Promise<Gathered[]> {
     lines.forEach((line, i) => {
       const box = visiblePart(inkBand(toBox(line), m), el);
       if (!box || box.width < 2 || box.height < 2) return;
-      /* The HUD is docked over the window's foot: a line of the page lying behind it is read in a later window, where it is clear. */
-      const seen = hud && hud.top > 0 && hud.top < view.height && !hud.contains(el) ? { ...view, height: hud.top } : view;
+      /* The HUD is docked over the window's foot: a line of the page lying behind it is read in a later window, where it is clear. An open overlay stands above the HUD, so its lines are not behind it. */
+      const seen = hud && hud.top > 0 && hud.top < view.height && !hud.contains(el) && !overlay?.contains(el) ? { ...view, height: hud.top } : view;
       const inView = intersect(box, seen)?.width === box.width && intersect(box, seen)?.height === box.height;
       out.push({
         key: `${idOf(n)}:${i}`, inView, name: nameOf(n.data, el), surface: ground.surface, box, color,
