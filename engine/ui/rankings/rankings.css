@@ -1,0 +1,299 @@
+/*
+ * Rankings on the glass (Rankings.tsx). No board draws it; the glass plan (section 8) gives it the
+ * Settings board's heading and the Log board's table: the column heads in the neon text at the
+ * label size over a pale rule, each row at the body size over a faint one, numbers right-aligned in
+ * tabular figures. The player's own rows carry a tag skewed as a tag, in the neon fill and its ink;
+ * a class is a chip in its class's own fill and ink, filled for the player's own and outlined for a
+ * public reveal. The text stands in calms (calm.css), as the Log board's table stands in its own.
+ *
+ * Sizes are the boards' px or the glass's size tokens, never under the label (20px) on the Main
+ * board's layout (engine/ui/glass/board.test.tsx reads this file). On the Phone board's layout the
+ * table keeps its rows and gives each one three lines (the place, the name and the standing; the
+ * rank; the class), since five columns do not fit 358px, at the phone's sizes.
+ */
+.kb-rankings {
+  padding-top: 32px;
+}
+
+.kb-rankings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 32px;
+}
+
+/* The Settings board's heading: Anton at 112px, set solid, with its neon glow. */
+.kb-rankings-title {
+  margin: 0;
+  font-size: 112px;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+.kb-rankings-season {
+  margin: 0 0 12px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-rankings-lead,
+.kb-rankings-empty {
+  max-width: 680px;
+  margin: 28px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-rankings-board {
+  margin-top: 40px;
+}
+
+/* ---- the table, set as the Log board's ---- */
+
+.kb-rankings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.kb-rankings-table thead th {
+  padding: 0 16px 12px 0;
+  text-align: left;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
+}
+
+.kb-rankings-table tbody > tr > * {
+  vertical-align: top;
+  padding: 12px 16px 12px 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+.kb-rankings-table th.kb-rankings-place,
+.kb-rankings-table td.kb-rankings-place {
+  width: 110px;
+}
+
+.kb-rankings-table td.kb-rankings-place {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--kb-glass-text);
+}
+
+.kb-rankings-table .kb-rankings-name {
+  text-align: left;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+}
+
+.kb-rankings-name a {
+  color: inherit;
+  text-decoration-color: color-mix(in srgb, var(--kb-glass-pale) 60%, transparent);
+  text-underline-offset: 4px;
+}
+
+.kb-rankings-table td.kb-rankings-rank {
+  width: 240px;
+  font-weight: 600;
+}
+
+.kb-rankings-table .kb-rankings-num {
+  width: 140px;
+  padding-right: 48px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.kb-rankings-table td.kb-rankings-standing {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--kb-glass-text);
+}
+
+.kb-rankings-table td.kb-rankings-cls {
+  width: 400px;
+  padding-right: 0;
+}
+
+/* The player's own rows: a band of the neon along the row's left edge, under the tag. */
+.kb-rankings-table tr[data-kb-own] td:first-child {
+  box-shadow: inset 3px 0 0 var(--kb-glass-neon);
+  padding-left: 16px;
+}
+
+.kb-rankings-table th.kb-rankings-place {
+  padding-left: 16px;
+}
+
+.kb-rankings-table td.kb-rankings-place {
+  padding-left: 16px;
+}
+
+/* ---- the tag and the chips ---- */
+
+.kb-rankings-yours {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 1px 8px;
+  font-size: var(--kb-glass-size-label);
+  font-style: italic;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  vertical-align: 2px;
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+}
+
+.kb-rankings-class {
+  display: inline-block;
+  padding: 0 8px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1.5;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  background: var(--kb-rankings-class-fill);
+  color: var(--kb-rankings-class-ink);
+}
+
+/* A public reveal: the class's fill as the chip's edge, the word in the glass's text, so it reads as said, not as known. */
+.kb-rankings-class[data-kb-kind='revealed'] {
+  padding: 0 7px;
+  background: transparent;
+  border: 1.5px solid var(--kb-rankings-class-fill);
+  color: var(--kb-glass-text);
+}
+
+.kb-rankings-stated {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 12px;
+}
+
+.kb-rankings-when {
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-rankings-when + .kb-rankings-when {
+  flex-basis: 100%;
+}
+
+.kb-rankings-none {
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- the Phone board's layout ---- */
+
+/*
+ * A calm's feather reaches 32px past its words, and the phone's gutter is 16px: the page is clipped
+ * at the window's edge, so the feather never makes the page scroll sideways.
+ */
+:where(:root[data-kb-layout='phone']) .kb-rankings {
+  padding-top: 16px;
+  overflow-x: clip;
+  overflow-clip-margin: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-title {
+  font-size: var(--kb-glass-size-display-l);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-season {
+  margin: 0;
+  font-size: var(--kb-glass-size-phone-small);
+  letter-spacing: 1.5px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-lead,
+:where(:root[data-kb-layout='phone']) .kb-rankings-empty {
+  margin-top: 16px;
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-board {
+  margin-top: 24px;
+}
+
+/* The heads are read with each cell, and drawn on none: each row says what it holds. */
+:where(:root[data-kb-layout='phone']) .kb-rankings-table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-table tbody tr {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'place name standing'
+    '. rank rank'
+    '. cls cls';
+  column-gap: 8px;
+  padding: 10px 0 10px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-table tbody tr[data-kb-own] {
+  box-shadow: inset 3px 0 0 var(--kb-glass-neon);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-table tbody > tr > :is(.kb-rankings-place, .kb-rankings-name, .kb-rankings-rank, .kb-rankings-standing, .kb-rankings-cls) {
+  display: block;
+  width: auto;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-table tbody > tr > :is(.kb-rankings-place, .kb-rankings-name, .kb-rankings-standing) {
+  font-size: var(--kb-glass-size-phone-display);
+  line-height: 1.3;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-place { grid-area: place; }
+:where(:root[data-kb-layout='phone']) .kb-rankings-name { grid-area: name; }
+:where(:root[data-kb-layout='phone']) .kb-rankings-standing { grid-area: standing; }
+:where(:root[data-kb-layout='phone']) .kb-rankings-rank { grid-area: rank; }
+:where(:root[data-kb-layout='phone']) .kb-rankings-cls { grid-area: cls; }
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-table tbody > tr > .kb-rankings-cls {
+  margin-top: 6px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-yours,
+:where(:root[data-kb-layout='phone']) .kb-rankings-class {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-yours {
+  margin-left: 6px;
+  padding: 0 6px;
+}

@@ -23,6 +23,19 @@ describe('the story route', () => {
     expect(screen.getByText(/Daily at 08:17 UTC/)).toBeInTheDocument();
   });
 
+  it('renders Rankings\' story for the owner: the season in its order, the player\'s own rows marked, a stranger\'s class only as revealed', async () => {
+    const Story = boardStory('boards-13-rankings--season');
+    render(<Story />);
+    const rows = await screen.findAllByRole('row');
+    expect(rows.map((r) => r.querySelector('th[scope="row"]')?.textContent ?? null).filter(Boolean)).toEqual([
+      'Spritey Yours', 'Mrs. Hooligan Yours', 'Pipewrench Yours', 'Gloomba', 'Thwompson', 'Ringside 1', 'Ringside 2', 'Ringside 3', 'Ringside 4',
+    ]);
+    expect(screen.getAllByText('Yours')).toHaveLength(3);
+    expect(screen.getAllByText(/^Revealed /)).toHaveLength(2);
+    expect(screen.getAllByText(/^Has Turned since /)).toHaveLength(1);
+    expect(screen.getAllByText('Not revealed')).toHaveLength(4);
+  });
+
   it('fails on an id it does not have, naming it and the ones it has', () => {
     expect(() => boardStory('boards-99-nope--board')).toThrow(/boards-99-nope--board[\s\S]*boards-04-orbs--board/);
   });

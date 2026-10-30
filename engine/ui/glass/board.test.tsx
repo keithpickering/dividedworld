@@ -75,6 +75,7 @@ const SHEETS = [
   path.join(here, '../frame/frame.css'),
   ...fs.readdirSync(here).filter((f) => f.endsWith('.css')).map((f) => path.join(here, f)),
   ...fs.readdirSync(path.join(here, '../orbs')).filter((f) => f.endsWith('.css')).map((f) => path.join(here, '../orbs', f)),
+  path.join(here, '../rankings/rankings.css'),
 ];
 const PHONE = ":where(:root[data-kb-layout='phone'])";
 
@@ -129,7 +130,7 @@ describe('the smallest text on the scaled layout', () => {
   const floor = Math.min(...Object.values(testGlass.sizes).filter((s) => !s.phone).map((s) => s.px));
   test('the floor is the test world\'s smallest Main board size, and the sheets it reads are there', () => {
     expect(floor).toBe(20);
-    expect(SHEETS.map((s) => path.basename(s))).toEqual(expect.arrayContaining(['frame.css', 'shell.css', 'base.css', 'orbs.css', 'orbs-board.css']));
+    expect(SHEETS.map((s) => path.basename(s))).toEqual(expect.arrayContaining(['frame.css', 'shell.css', 'base.css', 'orbs.css', 'orbs-board.css', 'rankings.css']));
   });
   test('reads a phone rule\'s fixed size and passes it, and reads a Main rule\'s', () => {
     const rules = styleRules(`${PHONE} .a, ${PHONE} .b { font-size: 18px; } .c { color: red; font: bold 14px / 1.2 F; } @media (x) { .d { font-size: 12px } }`);
