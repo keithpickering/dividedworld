@@ -258,6 +258,24 @@ test.describe('between the boards\' widths', () => {
   }
 
   /*
+   * A calm's feather reaches 32px past its words, wider than the phone's 16px gutter, so a restyled
+   * glass page whose text runs to the column's edge would push the page sideways. The page shell
+   * contains it for every glass page (shell.css), so no page has to remember to. Read on the
+   * Rankings story, a restyled page with calms to the column's edge, and on the restyled pages of
+   * the app, at the Phone board's width.
+   */
+  for (const [label, path] of [['Rankings', '/?fixture=boards&story=boards-13-rankings--season'], ['My characters', '/characters'], ['New character', '/characters/new']] as const) {
+    test(`on a phone 390 wide, the restyled ${label} page does not scroll sideways`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      expect(await page.evaluate(() => document.documentElement.dataset.kbLayout)).toBe('phone');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    });
+  }
+
+  /*
    * The menu bar and the content column are drawn at the board's scale; the board's own content
    * panel, until Part 2, keeps the board's sizes and undoes the column's zoom (shell.css), so its
    * effective zoom is 1 while the menu bar's is the scale.

@@ -148,6 +148,18 @@
 }
 
 /*
+ * A calm's feather reaches 32px past its words (calm.css), wider than the phone's 16px gutter, so a
+ * calm on text that runs to the column's edge would push the page sideways. The column clips
+ * sideways at its own edge, which is the window's on a phone and past the gutters everywhere else,
+ * so no glass page scrolls sideways for its feathers. `clip` makes no scroll container, so nothing
+ * else about the column changes. (An `overflow-clip-margin` would be ignored here: Chromium reads
+ * it only where both axes clip.)
+ */
+.kb-glass-content {
+  overflow-x: clip;
+}
+
+/*
  * Until Part 2: the page's own content, in the board's colors and type, on the glass's cut panel. Its
  * type is the board's own (12px body), which no board page scales, so the panel undoes the
  * column's scale; Part 2's glass type, drawn in the glass's sizes, takes it with the column.
