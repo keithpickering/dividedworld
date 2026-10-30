@@ -26,11 +26,11 @@ begin
   -- Preferences: the account's own.
   perform tests.become(ann);
   said := set_preferences('dark', 'stacked', 'reduce');
-  if said is distinct from '{"theme": "dark", "motion": "reduce", "postbit": "stacked"}'::jsonb then raise exception 'preferences are saved: %', said; end if;
+  if said is distinct from '{"theme": "dark", "motion": "reduce", "postbit": "stacked", "smoke": "full", "contrast": "standard", "text_size": 100}'::jsonb then raise exception 'preferences are saved: %', said; end if;
   if (select (theme, postbit, motion) from account_preferences) is distinct from ('dark'::text, 'stacked'::text, 'reduce'::text) then raise exception 'its own account reads its preferences'; end if;
   -- One left out keeps what it was.
   said := set_preferences(null, 'side', null);
-  if said is distinct from '{"theme": "dark", "motion": "reduce", "postbit": "side"}'::jsonb then raise exception 'a preference left out is kept: %', said; end if;
+  if said is distinct from '{"theme": "dark", "motion": "reduce", "postbit": "side", "smoke": "full", "contrast": "standard", "text_size": 100}'::jsonb then raise exception 'a preference left out is kept: %', said; end if;
   if pg_temp.refusal($q$select set_preferences(null, 'sideways', null)$q$) is distinct from 'the postbit is side or stacked' then raise exception 'a postbit that is neither'; end if;
   if pg_temp.refusal($q$select set_preferences(null, null, 'fast')$q$) is distinct from 'motion follows the system, or is reduced or full' then raise exception 'a motion that is none of them'; end if;
   if pg_temp.refusal($q$select set_preferences('Not A Theme!', null, null)$q$) is distinct from 'a theme is named in lowercase words joined by hyphens' then raise exception 'a theme name that is not one'; end if;
