@@ -56,6 +56,15 @@
   color: var(--kb-glass-text-2);
 }
 
+/* Past 100% text the heading takes more of the row; the lead keeps a readable width and goes under it when there is no room beside it, rather than narrow to a word a line and out of its calm. */
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-characters-head {
+  flex-wrap: wrap;
+}
+
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-characters-lead {
+  min-width: min(100%, 18em);
+}
+
 .kb-flash:empty {
   display: none;
 }
@@ -111,16 +120,25 @@
 
 .kb-roster > li {
   position: relative;
+  display: flex;
   min-height: 420px;
 }
 
+/*
+ * A card's parts are laid out in its flow, at the Roster board's places at 100% text (the portrait
+ * 10px in, the name 14px under it, the class 12px under the name, the Turn line 16px off the foot),
+ * so a larger text size grows the card instead of laying its words over the portrait and each other.
+ */
 .kb-roster-card {
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  box-sizing: border-box;
   width: 100%;
-  height: 100%;
   min-height: 420px;
-  padding: 0;
+  padding: 10px 14px 16px;
   border: 0;
   text-align: left;
   font: inherit;
@@ -143,10 +161,9 @@
 }
 
 .kb-roster-portrait {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  top: 10px;
+  flex: none;
+  align-self: stretch;
+  margin: 0 -4px;
   height: 270px;
 }
 
@@ -160,20 +177,18 @@
 }
 
 .kb-roster-name {
-  position: absolute;
-  left: 14px;
-  max-width: calc(100% - 28px);
-  top: 294px;
+  max-width: 100%;
+  margin-top: 14px;
   font-size: 2rem;
   line-height: 1;
   overflow-wrap: anywhere;
 }
 
 .kb-roster-class {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  top: 338px;
+  align-self: stretch;
+  margin-top: 12px;
+  /* At least this much between the class and the Turn line, however the card's words grow. */
+  margin-bottom: 12px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -188,10 +203,8 @@
 }
 
 .kb-roster-turn {
-  position: absolute;
-  left: 14px;
-  max-width: calc(100% - 28px);
-  bottom: 16px;
+  max-width: 100%;
+  margin-top: auto;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.2;
@@ -472,6 +485,16 @@
   gap: 10px;
 }
 
+/* Past 100% text a class's name grows toward the card's radio, top right: it keeps clear of it, and breaks rather than run past the card. */
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-class-title {
+  padding-right: 26px;
+}
+
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-class-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /*
  * A class's name and its Now tag are its large colors. At the Main board's 40px they are large and
  * stand bare on the smoke, as the Turn board draws them; on the phone they are under WCAG's large
@@ -507,25 +530,27 @@
   color: var(--kb-class-large);
 }
 
+/* The marks' cells are 28px at 100% text, in rem so they grow with the text they hold and each mark stays on its fill or ground. */
 .kb-class-marks {
   display: grid;
-  grid-template-columns: repeat(2, 28px);
+  grid-template-columns: repeat(2, 1.75rem);
   gap: 4px;
 }
 
 .kb-class-mark {
   box-sizing: border-box;
-  height: 28px;
+  display: grid;
+  place-items: center;
+  height: 1.75rem;
   border: 1px solid color-mix(in srgb, var(--kb-glass-text-hi) 30%, transparent);
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
-  line-height: 26px;
+  line-height: 1;
   text-align: center;
 }
 
 .kb-class-mark[data-kb-mark='earns'] {
   border: 0;
-  line-height: 28px;
   background: var(--kb-class-fill);
   color: var(--kb-class-ink);
 }
@@ -536,7 +561,6 @@
  */
 .kb-class-mark[data-kb-mark='hurts'] {
   border: 1.5px dashed var(--kb-glass-over);
-  line-height: 24px;
   color: var(--kb-glass-over);
   background: var(--kb-glass-ground);
 }
@@ -1133,31 +1157,23 @@
   min-height: 280px;
 }
 
+/* The phone's card, in the same flow: the portrait 6px in, the name 10px under it, the class 10px under the name. */
+:where(:root[data-kb-layout='phone']) .kb-roster-card {
+  padding: 6px 10px 10px;
+}
+
 :where(:root[data-kb-layout='phone']) .kb-roster-portrait {
-  left: 6px;
-  right: 6px;
-  top: 6px;
   height: 150px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-roster-name {
-  left: 10px;
-  right: 10px;
-  top: 166px;
+  margin-top: 10px;
   font-size: var(--kb-glass-size-phone-display);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-roster-class {
-  left: 10px;
-  right: 10px;
-  top: 196px;
+  margin-top: 10px;
   gap: 4px 6px;
-}
-
-:where(:root[data-kb-layout='phone']) .kb-roster-turn {
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-roster-new-link {

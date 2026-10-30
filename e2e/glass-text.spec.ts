@@ -231,6 +231,46 @@ async function chooseHighContrast(page: Page) {
 /* The boards' fixture signs in its own account, which has no preference; the HUD is read on the demo world's board, as the player who chose it. */
 const onTheAccount = (s: Screen): Screen => (s.path.includes('fixture=boards') ? { name: 'The HUD, on a board page', path: '/b/general' } : s);
 
+/*
+ * Text size (Settings › Accessibility): the glass's words grow with the player's choice, past 150%
+ * on the Phone board's layout, and every line is held to the same rules at every size, its calm
+ * growing with it. Chosen as a player chooses it, by keyboard, and kept by the account across the
+ * load that opens each screen; signed-out screens are left out, as no account's size applies there.
+ * 200% is read at both widths, 125% and 150% at 1920 (both are past the switch to the Phone board's
+ * layout there only at 150%, and the phone at 390 is read at 200%), which keeps the spec's time
+ * near three minutes.
+ */
+async function chooseTextSize(page: Page, size: string) {
+  await page.goto('/settings');
+  await page.getByRole('radiogroup', { name: 'Text size' }).getByRole('radio', { name: `${size}%` }).focus();
+  await page.keyboard.press('Space');
+  await expect(page.locator('html')).toHaveAttribute('data-kb-text-size', size);
+}
+
+const TEXT_SIZES: readonly (readonly [string, readonly (typeof SIZES)[number][]])[] = [
+  ['125', [SIZES[0]]],
+  ['150', [SIZES[0]]],
+  ['200', SIZES],
+];
+
+for (const [size, widths] of TEXT_SIZES) {
+  test.describe(`at ${size}% text`, () => {
+    for (const [label, viewport] of widths) {
+      test.describe(`at ${label}`, () => {
+        test.use({ viewport });
+        for (const s of [...PAGES, ...OVERLAYS].filter((x) => !x.signedOut).map(onTheAccount)) {
+          test(`${s.name}: every line of glass text is legible on its smoke`, async ({ page }) => {
+            await chooseTextSize(page, size);
+            await open(page, s);
+            await expect(page.locator('html')).toHaveAttribute('data-kb-text-size', size);
+            expect(await measure(page)).toEqual([]);
+          });
+        }
+      });
+    }
+  });
+}
+
 test.describe('under high contrast', () => {
   for (const [label, viewport] of SIZES) {
     test.describe(`at ${label}`, () => {

@@ -148,7 +148,8 @@
   display: grid;
   grid-template-columns: 420px minmax(0, 44px) 452px minmax(0, 28px) 426px;
   align-items: start;
-  height: 212px;
+  /* 212px at 100% text; its heights are in rem, so a larger text size grows the HUD rather than cutting what it holds. */
+  min-height: 13.25rem;
   max-width: 1440px;
   margin: 0 auto;
   box-sizing: border-box;
@@ -160,34 +161,49 @@
 
 .kb-hud-plate {
   grid-column: 1;
-  margin-top: 40px;
+  margin-top: 2.5rem;
 }
 
 .kb-hud-plate--cast {
   position: relative;
-  height: 150px;
+  min-height: 9.375rem;
   transform: skewX(var(--kb-glass-skew));
   background: var(--kb-glass-panel-soft);
   border: 1px solid color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
   box-shadow: inset 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 12%, transparent);
 }
 
-.kb-hud-plate--cast > .kb-hud-plate-in {
-  position: absolute;
-  inset: 0;
+/*
+ * The plate's words are in its flow, to the avatar's right, at the board's places at 100% text
+ * (the name 10px down, the class line under it, the mask picker under that), so a larger text size
+ * grows the plate and stacks them rather than laying one over another.
+ */
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-plate--cast > .kb-hud-plate-in {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 9.375rem;
+  padding: 0.625rem 16px 0.625rem 118px;
   transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-plate--cast .kb-hud-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .kb-hud-plate--cast .kb-hud-avatar {
   position: absolute;
   left: 22px;
-  top: 31px;
+  top: 1.9375rem;
 }
 
 .kb-hud-avatar {
   display: block;
   width: 84px;
-  height: 84px;
+  height: 5.25rem;
   box-sizing: border-box;
   overflow: hidden;
   border: 2px solid var(--kb-glass-neon);
@@ -214,10 +230,8 @@
 }
 
 .kb-hud-name {
-  position: absolute;
-  left: 118px;
-  top: 10px;
-  max-width: calc(100% - 134px);
+  align-self: flex-start;
+  max-width: 100%;
   font-size: var(--kb-glass-size-title);
   line-height: 1;
   letter-spacing: 0.5px;
@@ -228,11 +242,13 @@
   white-space: nowrap;
 }
 
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-class-line {
+  margin: 0.5rem 0 0 2px;
+}
+
 .kb-hud-class-line {
-  position: absolute;
-  left: 120px;
-  top: 52px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   font-size: var(--kb-glass-size-label);
@@ -263,10 +279,12 @@
   stroke-width: 1.3;
 }
 
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-swap {
+  margin: 0.75rem 0 0 2px;
+  flex-wrap: wrap;
+}
+
 .kb-hud-swap {
-  position: absolute;
-  left: 120px;
-  top: 88px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -277,7 +295,8 @@
 }
 
 .kb-hud-select {
-  min-height: 52px;
+  min-height: 3.25rem;
+  min-width: 0;
   max-width: 12em;
   font: inherit;
   font-size: 1.375rem;
@@ -295,7 +314,7 @@
 
 .kb-hud-aura {
   grid-column: 3;
-  margin-top: 10px;
+  margin-top: 0.625rem;
 }
 
 .kb-hud-aura-legend {
@@ -380,7 +399,7 @@
 .kb-hud-clock {
   display: flex;
   flex-direction: column;
-  margin: 30px 0 0;
+  margin: 1.875rem 0 0;
 }
 
 .kb-hud-clock-label {
@@ -401,7 +420,7 @@
 
 .kb-hud-actions {
   position: absolute;
-  top: 142px;
+  top: 8.875rem;
   left: 10px;
   right: 0;
   display: flex;
@@ -415,7 +434,7 @@
   align-items: center;
   justify-content: center;
   gap: 12px;
-  height: 52px;
+  height: 3.25rem;
   padding: 0;
   font: inherit;
   cursor: pointer;
@@ -598,7 +617,35 @@
   align-items: center;
   gap: 8px 10px;
   height: auto;
-  padding: 8px 16px 0;
+  min-height: 0;
+  /* Room under the last row, so at a larger text size its descenders are not cut at the window's foot. */
+  padding: 8px 16px 0.25rem;
+}
+
+/*
+ * On the phone past 100% text the bar's one row cannot hold the avatar, the mask picker, Menu and
+ * the hand: the picker takes the first row beside the avatar, Menu and the hand the second, and the
+ * orbs the third, so nothing is squeezed out of its calm. (Under `.kb-hud`, to win over the phone's
+ * own places for them below.)
+ */
+:where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-hud .kb-hud-swap {
+  grid-column: 2 / -1;
+}
+
+:where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-hud .kb-hud-menu {
+  grid-row: 2;
+  grid-column: 1 / 3;
+  justify-self: start;
+}
+
+:where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-hud .kb-hud-hand {
+  grid-row: 2;
+  grid-column: 3 / -1;
+  justify-self: end;
+}
+
+:where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-hud .kb-hud-aura {
+  grid-row: 3;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-plate,

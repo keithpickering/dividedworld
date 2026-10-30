@@ -78,6 +78,14 @@
   bottom: 12px;
 }
 
+/* Past 100% text the hint wraps and grows; Close comes into the flow under it rather than standing over its words. */
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-picker .kb-glass-dialog-foot {
+  position: static;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
 .kb-picker .kb-glass-dialog-close {
   min-height: 52px;
   font-size: var(--kb-glass-size-label);
