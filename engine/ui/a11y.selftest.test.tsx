@@ -50,6 +50,28 @@ describe('the accessibility check detects', () => {
     expect(darkBlocksDisagree(both(DARK, DARK.replace('--kb-muted:#aaa', '--kb-muted:#333'))).length).toBeGreaterThan(0);
   });
 
+  test('a later block in the same selector form wins, as in the browser, in light, chosen dark and device dark', () => {
+    const later = `${both(DARK)}
+      :root { --kb-fg:#fefefe; }
+      @media (prefers-color-scheme: dark) { :root:not([data-kb-mode="light"]) { --kb-fg:#000001; } }
+      :root[data-kb-mode="dark"] { --kb-fg:#000001; }`;
+    const failures = contrastFailures(later);
+    expect(failures.some((f) => f.startsWith('light: body text'))).toBe(true);
+    expect(failures.some((f) => f.startsWith('dark: body text'))).toBe(true);
+    expect(failures.some((f) => f.startsWith('dark (device): body text'))).toBe(true);
+  });
+
+  test('a block written without spaces is the same block', () => {
+    const failures = contrastFailures(`${both(DARK)}:root{--kb-fg:#fefefe}`);
+    expect(failures.some((f) => f.startsWith('light: body text'))).toBe(true);
+  });
+
+  test('a player who chose light gets the light-mode block over :root', () => {
+    const failures = contrastFailures(`${both(DARK)}:root[data-kb-mode="light"] { --kb-muted:#ddd; }`);
+    expect(failures.some((f) => f.startsWith('light (chosen): muted text'))).toBe(true);
+    expect(failures.some((f) => f.startsWith('light: muted text'))).toBe(false);
+  });
+
   test('a token that is renamed away fails instead of being skipped', () => {
     const failures = contrastFailures(BASE.replace('--kb-hud-bg:#fff;', ''));
     expect(failures.some((f) => f.includes('--kb-hud-bg, which no stylesheet sets'))).toBe(true);

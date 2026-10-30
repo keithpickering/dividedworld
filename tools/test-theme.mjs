@@ -49,6 +49,20 @@ const GOOD = `/* a theme */
   check('--kb-size-body: 0 fires', r.length === 1 && /size-body/.test(r[0]?.why ?? ''), JSON.stringify(r));
 }
 
+{
+  /* A later block over the real ones: the browser applies it, so the file no longer says what the page shows. */
+  const house = treeFiles()[THEME] ?? '';
+  const r = fires(`${house}
+:root { --kb-fg: #fefefe; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-kb-mode="light"]) { --kb-fg: #000001; }
+}
+:root[data-kb-mode="dark"] { --kb-fg: #000001; }
+`);
+  check('a second :root, device-dark and chosen-dark block appended to the house theme each fire',
+    r.length === 3 && r.every((f) => /a second block/.test(f.why)), JSON.stringify(r));
+}
+
 /* ---- clean ---- */
 check('a theme in the contract\'s shape is clean', fires(GOOD).length === 0, JSON.stringify(fires(GOOD)));
 check('an empty theme is clean', fires('/* nothing yet */').length === 0);
@@ -71,6 +85,9 @@ check('@layer and @keyframes fire', fires(`@layer x { :root { --kb-fg: #000; } }
 check('a media query other than the dark scheme fires', fires(`@media (max-width: 40em) { :root { --kb-fg: #000; } }`).length === 1);
 check('a selector other than the not-light root inside the dark query fires', fires(`@media (prefers-color-scheme: dark) { .kb-hud { --kb-fg: #fff; } }`).length === 1);
 check('the dark query holding a property that is not a --kb- one fires', fires(`@media (prefers-color-scheme: dark) { :root:not([data-kb-mode="light"]) { display: none; } }`).length === 1);
+check('a repeated selector written with other spacing or quotes is still a repeat', fires(`${GOOD}\n:root[ data-kb-mode = 'dark' ]{--kb-fg:#fff}`).length === 1);
+check('a second dark query holding the device-dark selector again fires', fires(`${GOOD}\n@media (prefers-color-scheme: dark) { :root:not([data-kb-mode="light"]) { --kb-fg: #fff; } }`).length === 1);
+check('a repeat names the line of the first block', /line 2/.test(fires(`${GOOD}\n:root { --kb-fg: #111; }`)[0]?.why ?? ''), JSON.stringify(fires(`${GOOD}\n:root { --kb-fg: #111; }`)));
 check('the dark query written with different spacing is the same query', fires(`@media (prefers-color-scheme:dark){:root:not([data-kb-mode="light"]){--kb-fg:#fff}}`).length === 0);
 
 /* ---- declarations ---- */
