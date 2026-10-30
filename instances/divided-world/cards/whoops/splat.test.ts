@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { contrast, covers, luminance, makeSplat, mulberry32, shading, tagText } from './splat.ts';
+import { contrast, covers, luminance, makeSplat, mulberry32, shading } from './splat.ts';
 import { NAMED_COLORS } from '../../../../engine/bbcode/parse.ts';
 
 test('the generator is deterministic: one seed and one post height always give one splat', () => {
@@ -125,15 +125,7 @@ test('every named color the card accepts has a shading', () => {
   assert.throws(() => shading('chartreuse'), RangeError);
 });
 
-test('the tag is black on a pale ink and white on a dark one, with 4.5:1 or better', () => {
-  assert.equal(tagText('#ffffff'), '#000000');
-  assert.equal(tagText('yellow'), '#000000');
-  assert.equal(tagText('#000'), '#ffffff');
-  assert.equal(tagText('navy'), '#ffffff');
-  for (const name of NAMED_COLORS) assert.ok(contrast(tagText(name), name) >= 4.5, name);
-  for (let v = 0; v < 256; v += 5) {
-    const hex = `#${v.toString(16).padStart(2, '0').repeat(3)}`;
-    assert.ok(contrast(tagText(hex), hex) >= 4.5, hex);
-  }
+test('contrast is the WCAG ratio, 1 to 21', () => {
   assert.ok(Math.abs(contrast('#000000', '#ffffff') - 21) < 1e-9);
+  assert.equal(contrast('#777777', '#777777'), 1);
 });

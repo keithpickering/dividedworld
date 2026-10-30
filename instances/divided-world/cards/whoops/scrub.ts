@@ -101,9 +101,13 @@ function segment2(px: number, py: number, ax: number, ay: number, bx: number, by
 export interface Region { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number }
 
 /**
- * One layer: its splat less the washes on it. `has` asks whether a point still has ink (the splat's
- * outline, and the distance to each wash's path); `washed` is the share of the splat washed away, counted
- * at a grid of points inside it, kept as washes are added so a stroke costs the cells it passes.
+ * One layer: its splat, less the washes on it, plus the author's pen strokes written back in it. The strokes
+ * apply in the order they were made, so a pen written over a wash is ink again and a wash after it removes
+ * it: a pen stroke belongs to its layer and is scrubbed like the rest of its ink. `has` asks whether a point
+ * still has ink (the last stroke that reaches it, else the splat's outline); `washed` is the share of the
+ * layer's ink washed away, counted at a grid of points over the splat and wherever a pen can write, kept as
+ * strokes are added so a stroke costs the cells it passes. A pen stroke counts at the cells it passes (a thin
+ * pen rounded out to the grid's spacing), wherever it lies, so the share and the sweep find it as a hand does.
  *
  * `region` is where a stroke can reach: the post's own box. The ink runs past it into the margins (and a
  * stroke is kept to across 0 to 1 and down the post), so ink out there can never be washed; counting it
@@ -111,8 +115,14 @@ export interface Region { readonly minX: number; readonly maxX: number; readonly
  */
 export class LayerInk {
   readonly splat: Splat;
-  /** Each wash as a segment and its radius: ax, ay, bx, by, r. */
-  private readonly segments: [number, number, number, number, number][] = [];
+  /** Each stroke as a segment, its radius and whether it is a pen (1) or a wash (0), in the order made: ax, ay, bx, by, r, pen. */
+  private readonly segments: [number, number, number, number, number, number][] = [];
+  private readonly region: Region | undefined;
+  /** Where the grid starts: its left and top, in widths. */
+  private readonly gx: number;
+  private readonly gy: number;
+  /** The cells that count toward the share: the splat's, and those a pen has written on. */
+  private readonly counted: Uint8Array;
   private readonly nx: number;
   private readonly ny: number;
   private readonly alive: Uint8Array;
@@ -121,52 +131,101 @@ export class LayerInk {
 
   constructor(splat: Splat, strokes: readonly Stroke[], region?: Region) {
     this.splat = splat;
-    const { minX, maxX, minY, maxY } = splat.bounds;
+    this.region = region;
+    /* The grid reaches the splat and wherever a pen can write: the post's box when it is given, and the pen strokes already made, held to the card's bounds. */
+    let { minX, maxX, minY, maxY } = splat.bounds;
+    if (region) {
+      minX = Math.min(minX, region.minX);
+      maxX = Math.max(maxX, region.maxX);
+      minY = Math.min(minY, region.minY);
+      maxY = Math.max(maxY, region.maxY);
+    }
+    for (const s of strokes) {
+      if (s.tool !== 'ink') continue;
+      for (const [px, py] of s.points) {
+        minX = Math.min(minX, clamp(px, 0, 1));
+        maxX = Math.max(maxX, clamp(px, 0, 1));
+        minY = Math.min(minY, clamp(py, 0, STROKES.deepest));
+        maxY = Math.max(maxY, clamp(py, 0, STROKES.deepest));
+      }
+    }
+    this.gx = minX;
+    this.gy = minY;
     this.nx = Math.max(1, Math.ceil((maxX - minX) / CELL));
     this.ny = Math.max(1, Math.ceil((maxY - minY) / CELL));
     this.alive = new Uint8Array(this.nx * this.ny);
+    this.counted = new Uint8Array(this.nx * this.ny);
     for (let j = 0; j < this.ny; j++) {
       for (let i = 0; i < this.nx; i++) {
         const x = minX + (i + 0.5) * CELL, y = minY + (j + 0.5) * CELL;
         if ((!region || (x >= region.minX && x <= region.maxX && y >= region.minY && y <= region.maxY)) && covers(splat, x, y)) {
           this.alive[j * this.nx + i] = 1;
+          this.counted[j * this.nx + i] = 1;
           this.total++;
         }
       }
     }
     this.left = this.total;
-    for (const s of strokes) if (s.tool === 'wash') this.wash(s.points, s.width);
+    for (const s of strokes) {
+      if (s.tool === 'wash') this.wash(s.points, s.width);
+      else this.pen(s.points, s.width);
+    }
   }
 
-  /** Whether a point still has ink on this layer. */
+  /** Whether a point still has ink on this layer: the last stroke that reaches it decides, and with none the splat does. */
   has(x: number, y: number): boolean {
-    if (!covers(this.splat, x, y)) return false;
-    for (const [ax, ay, bx, by, r] of this.segments) {
+    for (let k = this.segments.length - 1; k >= 0; k--) {
+      const [ax, ay, bx, by, r, pen] = this.segments[k]!;
       if (x < Math.min(ax, bx) - r || x > Math.max(ax, bx) + r || y < Math.min(ay, by) - r || y > Math.max(ay, by) + r) continue;
-      if (segment2(x, y, ax, ay, bx, by) <= r * r) return false;
+      if (segment2(x, y, ax, ay, bx, by) <= r * r) return pen === 1;
     }
-    return true;
+    return covers(this.splat, x, y);
   }
 
   /** A brush of `width` passing through `points` washes the ink under it; one point washes a round dab. */
   wash(points: readonly Pt[], width: number): void {
+    this.stroke(points, width, false);
+  }
+
+  /** The author's pen of `width` passing through `points` writes ink back where it passes; one point is a dab. */
+  pen(points: readonly Pt[], width: number): void {
+    this.stroke(points, width, true);
+  }
+
+  private stroke(points: readonly Pt[], width: number, pen: boolean): void {
     const r = width / 2;
-    const { minX, minY } = this.splat.bounds;
+    /* The grid is coarser than a pen is thick, so a pen takes the cells whose area it crosses. */
+    const reach = pen ? r + CELL / 2 : r;
+    const minX = this.gx, minY = this.gy;
     for (let k = 0; k < Math.max(1, points.length - 1); k++) {
       const [ax, ay] = points[k]!;
       const [bx, by] = points[k + 1] ?? points[k]!;
-      this.segments.push([ax, ay, bx, by, r]);
-      const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - r - minX) / CELL));
-      const i1 = Math.min(this.nx - 1, Math.floor((Math.max(ax, bx) + r - minX) / CELL));
-      const j0 = Math.max(0, Math.floor((Math.min(ay, by) - r - minY) / CELL));
-      const j1 = Math.min(this.ny - 1, Math.floor((Math.max(ay, by) + r - minY) / CELL));
+      this.segments.push([ax, ay, bx, by, r, pen ? 1 : 0]);
+      const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - minX) / CELL));
+      const i1 = Math.min(this.nx - 1, Math.floor((Math.max(ax, bx) + reach - minX) / CELL));
+      const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reach - minY) / CELL));
+      const j1 = Math.min(this.ny - 1, Math.floor((Math.max(ay, by) + reach - minY) / CELL));
       for (let j = j0; j <= j1; j++) {
         for (let i = i0; i <= i1; i++) {
           const at = j * this.nx + i;
-          if (!this.alive[at]) continue;
-          if (segment2(minX + (i + 0.5) * CELL, minY + (j + 0.5) * CELL, ax, ay, bx, by) <= r * r) {
-            this.alive[at] = 0;
-            this.left--;
+          const x = minX + (i + 0.5) * CELL, y = minY + (j + 0.5) * CELL;
+          if (segment2(x, y, ax, ay, bx, by) > reach * reach) continue;
+          if (!pen) {
+            if (this.alive[at]) {
+              this.alive[at] = 0;
+              this.left--;
+            }
+            continue;
+          }
+          const box = this.region;
+          if (box && (x < box.minX || x > box.maxX || y < box.minY || y > box.maxY)) continue;
+          if (!this.counted[at]) {
+            this.counted[at] = 1;
+            this.total++;
+          }
+          if (!this.alive[at]) {
+            this.alive[at] = 1;
+            this.left++;
           }
         }
       }
@@ -180,7 +239,7 @@ export class LayerInk {
 
   /** The cells of the grid in the band y ± half that still hold ink: their left and right edges, or null with none. */
   inkSpan(y: number, half: number): readonly [number, number] | null {
-    const { minX, minY } = this.splat.bounds;
+    const minX = this.gx, minY = this.gy;
     const j0 = Math.max(0, Math.floor((y - half - minY) / CELL));
     const j1 = Math.min(this.ny - 1, Math.floor((y + half - minY) / CELL));
     let lo = Infinity, hi = -Infinity;

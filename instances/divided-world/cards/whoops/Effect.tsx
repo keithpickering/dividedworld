@@ -12,7 +12,9 @@
  * What is the model and what is drawn. A layer's ink is the seeded splat less the strokes washed on it
  * (scrub.ts `LayerInk`), which is geometry and costs no canvas, so which layer a stroke scrubs, how much
  * of a layer is washed and which lines of text lie under ink are answered without reading a pixel and
- * are the same on every screen. The canvas (paint.ts) only draws that model, and only for a post near
+ * are the same on every screen. The author's pen strokes (written back in a layer's ink) are that layer's ink
+ * like the splat: a reader's stroke scrubs them on their screen, a line under one is hidden from a screen reader,
+ * and the layers above them cover them. The canvas (paint.ts) only draws that model, and only for a post near
  * the viewport: a page can hold many splatted posts and a canvas is megabytes.
  *
  * Whose strokes. A stroke scrubs the top layer that still has ink where it starts. A reader's strokes
@@ -139,6 +141,9 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
   const fixed = frame > 0;
   const geo = layoutOf(frame || REF_WIDTH);
   const height = size.height / REF_WIDTH;
+  /* The sweep reads the layout's geometry as it is each frame, not as it was when the sweep began: a resize mid-sweep moves the suds with the words. */
+  const geoNow = useRef(geo);
+  geoNow.current = geo;
 
   /* ------------------------------------------------------------------ measuring ---- */
 
@@ -208,7 +213,10 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
     inks.current = splats.map((splat, i) => {
       const id = layers[i]!.play.id;
       const ink = new LayerInk(splat, savedOf(states[id]?.state).strokes, { minX: 0, maxX: 1, minY: 0, maxY: height });
-      for (const s of mine.current.get(id) ?? []) if (s.tool === 'wash') ink.wash(s.points, s.width);
+      for (const s of mine.current.get(id) ?? []) {
+        if (s.tool === 'wash') ink.wash(s.points, s.width);
+        else ink.pen(s.points, s.width);
+      }
       return ink;
     });
     const body = layoutRef.current;
@@ -244,7 +252,6 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
     const stroking = live.current;
     let fading = false;
     const painted: PaintLayer[] = [];
-    const pens: Stroke[] = [];
     all.forEach((layer, i) => {
       const id = layer.play.id;
       const clean = savedFor(id).clean || localClean.current.has(id);
@@ -255,17 +262,12 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
         if (alpha > 0) fading = true;
       }
       const strokes = [...savedFor(id).strokes, ...(mine.current.get(id) ?? [])];
-      const washes: Stroke[] = strokes.filter((s) => s.tool === 'wash');
       if (stroking && stroking.layer === i) {
-        const s: Stroke = stroking.tool === 'wash' ? { tool: 'wash', width: stroking.width, points: stroking.points } : { tool: 'ink', color: stroking.color, width: stroking.width, points: stroking.points };
-        (s.tool === 'wash' ? washes : strokes).push(s);
+        strokes.push(stroking.tool === 'wash' ? { tool: 'wash', width: stroking.width, points: stroking.points } : { tool: 'ink', color: stroking.color, width: stroking.width, points: stroking.points });
       }
-      if (alpha > 0) {
-        painted.push({ splat: inks.current[i]!.splat, color: layer.color, washes, alpha });
-        pens.push(...strokes.filter((s) => s.tool === 'ink'));
-      }
+      if (alpha > 0) painted.push({ splat: inks.current[i]!.splat, color: layer.color, strokes, alpha });
     });
-    paint(canvas, geometry, painted, pens);
+    paint(canvas, geometry, painted);
     if (fading) schedulePaint();
   }, [band.top, dpr, savedFor]);
 
@@ -410,7 +412,8 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
     live.current = pen
       ? { layer, tool: 'ink', width: PEN, color: now.current.layers[layer]!.color, points: [p], pointer: e.pointerId }
       : { layer, tool: 'wash', width: BRUSH, color: '', points: [p], pointer: e.pointerId };
-    if (!pen) inks.current[layer]!.wash([p], BRUSH);
+    if (pen) inks.current[layer]!.pen([p], PEN);
+    else inks.current[layer]!.wash([p], BRUSH);
     suppress.current = false;
     schedulePaint();
   };
@@ -427,6 +430,8 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
       inks.current[s.layer]!.wash([last, p], BRUSH);
       const [sx, sy] = screenAt(e);
       sud(sx, sy);
+    } else {
+      inks.current[s.layer]!.pen([last, p], PEN);
     }
     schedulePaint();
   };
@@ -501,7 +506,7 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
           sweepStroke.current = { layer, tool: 'wash', width: SWEEP_BRUSH, color: '', points: [p], pointer: null };
           inks.current[layer]!.wash([p], SWEEP_BRUSH);
         }
-        sud(p[0] * geo.width + geo.offset, p[1] * geo.width);
+        sud(p[0] * geoNow.current.width + geoNow.current.offset, p[1] * geoNow.current.width);
       }
       run.sweep = step.sweep;
       checkClean();
@@ -513,7 +518,7 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
       run.raf = requestAnimationFrame(tick);
     };
     run.raf = requestAnimationFrame(tick);
-  }, [built, checkClean, closeSweepStroke, geo.offset, geo.width, liveInks, refresh, schedulePaint, stopSweep, sud]);
+  }, [built, checkClean, closeSweepStroke, liveInks, refresh, schedulePaint, stopSweep, sud]);
 
   /* The latest stop, called once on unmount: a sweep is not stopped each time a callback is made again. */
   const stopLatest = useRef(stopSweep);

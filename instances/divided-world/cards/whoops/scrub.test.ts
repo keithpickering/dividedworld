@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BRUSH, LayerInk, ROW, SWEEP_BRUSH, SWEEP_SPEED, bandsOf, coveredLines, fits, fitStroke, layoutOf, sweepStep, toLayout, topLayer, type Pt, type Stroke, type Sweep } from './scrub.ts';
+import { BRUSH, LayerInk, PEN, ROW, SWEEP_BRUSH, SWEEP_SPEED, bandsOf, coveredLines, fits, fitStroke, layoutOf, sweepStep, toLayout, topLayer, type Pt, type Stroke, type Sweep } from './scrub.ts';
 import { covers, makeSplat } from './splat.ts';
 import { whoops, STROKES } from '../whoops.ts';
 
@@ -169,4 +169,66 @@ test('a line of text is covered when the ink over it is most of its length, and 
   ink.wash([[-0.2, cy], [1.2, cy]], BRUSH * 1.5);
   assert.deepEqual(coveredLines(lines, [ink]), [false, false], 'washed, the line is read');
   assert.deepEqual(coveredLines(lines, [null, null]), [false, false], 'clean layers cover nothing');
+});
+
+/* ------------------------------------------------------- the author's pen belongs to its layer ---- */
+
+/** A pen stroke in a layer's ink, across the post at height y, far from any splat (so only the pen is there). */
+const penAcross = (y: number, color = '#ff2bd6'): Stroke => ({ tool: 'ink', color, width: PEN, points: [[0, y], [0.5, y], [1, y]] });
+
+test('a line under a pen stroke is covered, as the eye finds it covered, and is read once the pen is scrubbed away', () => {
+  const splat = splatOf(51);
+  const y = splat.bounds.maxY + 1;
+  const ink = new LayerInk(splat, [penAcross(y)]);
+  const lines = [{ top: y - 0.025, bottom: y + 0.025, text: 'under the pen' }, { top: y + 0.3, bottom: y + 0.35, text: 'clear of it' }];
+  assert.deepEqual(coveredLines(lines, [ink]), [true, false]);
+  ink.wash([[-0.1, y], [1.1, y]], BRUSH);
+  assert.deepEqual(coveredLines(lines, [ink]), [false, false], 'a reader\'s stroke over the pen removes it on their screen');
+  assert.equal(ink.has(0.5, y), false);
+});
+
+test('a pen stroke is the ink of its layer: a stroke over it scrubs that layer, and a layer above has it covered', () => {
+  const under = new LayerInk(splatOf(52), []);
+  const penned = new LayerInk(splatOf(53), [penAcross(9)]);
+  const over = new LayerInk(splatOf(54), []);
+  assert.equal(topLayer([under, penned, over], 0.5, 9), 1, 'the pen is the layer\'s ink where no layer above has any');
+  // Over the pen the layer above has ink: a layer-3 stroke there scrubs layer 3, since the pen is under it.
+  const spot = over.splat.placement;
+  const inked = new LayerInk(splatOf(53), [{ tool: 'ink', color: '#fff', width: PEN, points: [[spot.cx, spot.cy], [spot.cx + 0.05, spot.cy]] }]);
+  assert.equal(topLayer([under, inked, over], spot.cx, spot.cy), 2);
+  over.wash([[spot.cx, spot.cy]], BRUSH * 4);
+  assert.equal(topLayer([under, inked, over], spot.cx, spot.cy), 1, 'with the layer above washed away, the pen is what is there');
+});
+
+test('a pen written over a wash is ink again there, and a wash after it removes it: the strokes are in order', () => {
+  const splat = splatOf(55);
+  const { cx, cy } = splat.placement;
+  const wash: Stroke = { tool: 'wash', width: BRUSH, points: [[cx - 0.1, cy], [cx + 0.1, cy]] };
+  const pen: Stroke = { tool: 'ink', color: '#fff', width: PEN, points: [[cx - 0.05, cy], [cx + 0.05, cy]] };
+  assert.equal(new LayerInk(splat, [wash]).has(cx, cy), false);
+  assert.equal(new LayerInk(splat, [wash, pen]).has(cx, cy), true, 'written back');
+  assert.equal(new LayerInk(splat, [wash, pen, wash]).has(cx, cy), false, 'and washed again');
+});
+
+test('a pen stroke counts in the share washed: ink written back lowers it, and washing it raises it', () => {
+  const splat = splatOf(56);
+  const { cx, cy } = splat.placement;
+  const wash: Stroke = { tool: 'wash', width: BRUSH * 3, points: [[cx - 0.2, cy], [cx + 0.2, cy]] };
+  const washedOnly = new LayerInk(splat, [wash]);
+  const written = new LayerInk(splat, [wash, { tool: 'ink', color: '#fff', width: PEN, points: [[cx - 0.2, cy], [cx + 0.2, cy]] }]);
+  assert.ok(written.washed < washedOnly.washed, `${written.washed} < ${washedOnly.washed}`);
+  written.wash([[cx - 0.2, cy], [cx + 0.2, cy]], BRUSH * 3);
+  assert.ok(Math.abs(written.washed - washedOnly.washed) < 1e-9, 'scrubbed again, it is as washed as before');
+});
+
+test('a pen stroke past the splat is found by the sweep and counted in the share, and the sweep clears it', () => {
+  const splat = splatOf(57);
+  const y = splat.bounds.maxY + 0.5;
+  const ink = new LayerInk(splat, [penAcross(y)], BOX);
+  const row = bandsOf(HEIGHT).findIndex((c) => Math.abs(c - y) <= ROW / 2);
+  assert.notEqual(ink.inkSpan(y, ROW / 2), null, 'the sweep finds ink where only the pen is');
+  assert.ok(new LayerInk(splat, [], BOX).washed === 0 && ink.washed === 0, 'and the share starts whole');
+  ink.wash([[-0.1, y], [1.1, y]], SWEEP_BRUSH);
+  assert.equal(ink.inkSpan(y, ROW / 2), null, 'swept, it is gone');
+  assert.ok(row >= 0);
 });

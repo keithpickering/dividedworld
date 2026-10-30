@@ -3,7 +3,7 @@
  * card's face, and its rules in plain words for the Vending Machine and the hand. A card's rules
  * themselves are `instances/divided-world/cards/`, whose settings these read, so a number said
  * here is the one the instance runs on. Stick Around's hold is drawn (ui/stick-around/Effect.tsx),
- * and Whoops!'s ink: its effect, its ink form, and the tag of its top layer, which takes the layer's ink.
+ * and Whoops!'s ink: its effect, its ink form, and the tag of its top layer, which takes the layer's ink for its border and glow.
  *
  * The faces' colors are the Cards board's: Sweet is the cyan, Salty the pink, each with the dark
  * ink the board sets on it (docs/research/2026-10-29-two-worlds/05-cards.html).
@@ -15,7 +15,7 @@ import stickAroundFace from './cards/stick-around.svg?url';
 import whoopsFace from './cards/whoops.svg?url';
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
 import { Effect as WhoopsEffect } from '../cards/whoops/Effect.tsx';
-import { luminance, tagText } from '../cards/whoops/splat.ts';
+import { luminance } from '../cards/whoops/splat.ts';
 
 /** A price of a whole number of hundredths, as the shop says it: "1.00". */
 const orbs = (hundredths: number) => (hundredths / 100).toFixed(2);
@@ -35,7 +35,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: 'Splats a post in your ink. Readers scrub it; only the author can wash it.',
     Effect: WhoopsEffect,
     ConfigForm: WhoopsConfigForm,
-    /* The top layer's tag is the color it splatted, with black or white text, whichever reads better on it; the layers under keep their alignment's. */
+    /* The top layer's tag takes the color it splatted for its border and glow; the layers under keep their alignment's. */
     tag: (play, plays) => {
       const ink = play.config.color;
       if (play !== plays[plays.length - 1] || typeof ink !== 'string') return undefined;
@@ -44,7 +44,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       } catch {
         return undefined;
       }
-      return { fill: ink, text: tagText(ink) };
+      return ink;
     },
     describe: (settings: Settings) => {
       const e = settings.economy;

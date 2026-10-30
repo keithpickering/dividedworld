@@ -78,11 +78,11 @@ export function PlayTag({ play, caster, to, tint }: { readonly play: CardPlay; r
   /* One sentence to read; the drawn pieces (the card's name over its caster's words) are for the eye, so a screen reader hears it once. */
   const sentence = `${caster} played ${card} on this post${said}`;
   const words = <><span className="kb-visually-hidden">{sentence}</span><span aria-hidden="true">{caster}{said}</span></>;
-  /* A card that chooses its tag's colors fills it solid with them, so its text stands on a fill it knows, with no smoke under it. */
-  const style = tint ? { ...calm, '--kb-tag-fill': tint.fill, '--kb-tag-ink': tint.text } as CSSProperties : calm;
+  /* A card that chooses its tag's ink gives the glass that ink for its border and glow, as the Main board draws the tag over #41; the smoke and the glass's own text stay. */
+  const style = tint ? { ...calm, '--kb-tag': tint } as CSSProperties : calm;
   return (
     <li className="kb-glass kb-play-tag" data-kb-card={play.card} data-kb-alignment={rules?.alignment} data-kb-tinted={tint ? 'true' : undefined} data-kb-play={play.id} style={style}>
-      {!tint && <Smoke surface="effect" />}
+      <Smoke surface="effect" />
       <span className="kb-play-tag-card kb-calm" aria-hidden="true">{card}</span>
       <span className="kb-play-tag-words kb-calm">{to ? <Link to={to}>{words}</Link> : words}</span>
       <time className="kb-play-tag-when kb-calm" dateTime={play.playedAt}>{when(play.playedAt)}</time>

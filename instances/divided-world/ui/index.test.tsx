@@ -28,7 +28,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(whoops.describe(instance.settings)).toContain('1.00');
     expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.price': 250 } })).toContain('2.50');
   });
-  test('Whoops! draws its effect and its ink form, and its top layer\'s tag takes the ink with the text that reads on it', () => {
+  test('Whoops! draws its effect and its ink form, and its top layer\'s tag takes the ink', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
     expect(whoops.Effect).toBeDefined();
     expect(whoops.ConfigForm).toBeDefined();
@@ -36,8 +36,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const under = play('a', '#ffd93d');
     const top = play('b', '#101010');
     expect(whoops.tag!(under, [under, top])).toBeUndefined();
-    expect(whoops.tag!(top, [under, top])).toEqual({ fill: '#101010', text: '#ffffff' });
-    expect(whoops.tag!(under, [under])).toEqual({ fill: '#ffd93d', text: '#000000' });
+    expect(whoops.tag!(top, [under, top])).toBe('#101010');
+    expect(whoops.tag!(under, [under])).toBe('#ffd93d');
     expect(whoops.tag!(play('c', 'not a color'), [play('c', 'not a color')])).toBeUndefined();
     expect(instanceUi.cards.find((c) => c.key === 'stick-around')!.tag).toBeUndefined();
   });

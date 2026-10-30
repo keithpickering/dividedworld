@@ -113,11 +113,12 @@ export interface CardUi {
    */
   readonly Effect?: ComponentType<EffectProps>;
   /**
-   * The colors of a play's tag where the card chooses them (Whoops!'s top layer takes its ink, with
-   * the black or white that reads on it): a fill and the text set on it, given the play and all of
-   * this card's plays on its post in play order. A play it gives none keeps the tag its alignment draws.
+   * The ink of a play's tag where the card chooses it (Whoops!'s top layer takes the ink it splatted),
+   * given the play and all of this card's plays on its post in play order: any CSS color, drawn as the
+   * tag's border and glow on the same glass, the text unchanged. A play it gives none keeps the tag its
+   * alignment draws.
    */
-  readonly tag?: (play: CardPlay, plays: readonly CardPlay[]) => { readonly fill: string; readonly text: string } | undefined;
+  readonly tag?: (play: CardPlay, plays: readonly CardPlay[]) => string | undefined;
   /** The card's own settings in the play form, when it has any (Whoops!'s ink). A card with none gives none. */
   readonly ConfigForm?: ComponentType<ConfigFormProps>;
   /**

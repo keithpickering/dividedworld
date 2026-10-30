@@ -175,11 +175,3 @@ export function contrast(a: string, b: string): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
   return (hi + 0.05) / (lo + 0.05);
 }
-
-/**
- * The tag's text over the ink (the tag takes the top layer's color): black or white, whichever contrasts
- * more. The better of the two is at least 4.58:1 on any ink, so 4.5:1 always holds.
- */
-export function tagText(ink: string): '#000000' | '#ffffff' {
-  return contrast('#000000', ink) >= contrast('#ffffff', ink) ? '#000000' : '#ffffff';
-}

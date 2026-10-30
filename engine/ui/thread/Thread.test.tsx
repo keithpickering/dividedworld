@@ -862,21 +862,22 @@ describe('a card\'s effect on a post', () => {
     expect(saved).not.toHaveBeenCalled();
   });
 
-  test('a card can tint the tag of the play it chooses (Whoops!\'s top layer takes its ink), and the other plays keep their alignment\'s', async () => {
+  test('a card can tint the border and glow of the tag of the play it chooses (Whoops!\'s top layer takes its ink) on the same glass, and the other plays keep their alignment\'s', async () => {
     const w = world(2);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'under', layer: 1 });
     w.fake.clock.advance(60_000);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'over', layer: 2 });
-    const tint: CardUi = { ...fx('whoops'), tag: (play, all) => (play === all[all.length - 1] ? { fill: '#ff2bd6', text: '#000000' } : undefined) };
+    const tint: CardUi = { ...fx('whoops'), tag: (play, all) => (play === all[all.length - 1] ? '#ff2bd6' : undefined) };
     openWith(w, [tint]);
     const tags = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('list', { name: 'Cards played on this post' });
     const [under, over] = within(tags).getAllByRole('listitem');
     expect(over!).toHaveAttribute('data-kb-tinted', 'true');
-    expect(over!.style.getPropertyValue('--kb-tag-fill')).toBe('#ff2bd6');
-    expect(over!.style.getPropertyValue('--kb-tag-ink')).toBe('#000000');
-    expect(over!.querySelector('.kb-smoke-svg')).toBeNull();
+    /* The tint is the tag's border and glow (both are drawn from --kb-tag); the glass and its smoke stay. */
+    expect(over!.style.getPropertyValue('--kb-tag')).toBe('#ff2bd6');
+    expect(over!.querySelector('.kb-smoke-svg')).not.toBeNull();
     expect(under!).not.toHaveAttribute('data-kb-tinted');
-    expect(under!.style.getPropertyValue('--kb-tag-fill')).toBe('');
+    expect(under!.style.getPropertyValue('--kb-tag')).toBe('');
+    expect(under!.querySelector('.kb-smoke-svg')).not.toBeNull();
   });
 
   test('a play that arrives live gets its tag and its effect on a post already on screen', async () => {

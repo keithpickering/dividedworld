@@ -47,19 +47,11 @@
 }
 
 /*
- * A tag whose card chose its colors (CardUi.tag) is a solid fill in them with the text the card set
- * on it, which the card guarantees reads: no smoke is drawn under it.
+ * A tag whose card chose its ink (CardUi.tag) keeps the glass, its smoke and all its text colors: the
+ * ink is only the border and the glow, as the Main board draws Whoops!'s tag over #41 (`--kb-tag` is set
+ * inline). The card's name stays the alignment's text color, because an ink of any luminance tints a
+ * name legibly on no more than a measured few, and the glass's text colors are the ones measured.
  */
-.kb-play-tag[data-kb-tinted="true"] {
-  --kb-tag: var(--kb-tag-fill);
-  --kb-tag-text: var(--kb-tag-ink);
-  background: var(--kb-tag-fill);
-  color: var(--kb-tag-ink);
-}
-
-.kb-play-tag[data-kb-tinted="true"] .kb-play-tag-when {
-  color: var(--kb-tag-ink);
-}
 
 /* The text stands upright on the skewed glass, over the smoke (which fills the glass behind it). */
 .kb-play-tag-card,

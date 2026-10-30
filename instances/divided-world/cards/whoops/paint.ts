@@ -1,7 +1,8 @@
 /**
  * Whoops!'s canvas: the one place a splat is drawn (the canvas API, so nothing here runs in Node). It
  * paints a post's layers, bottom to top, each as its splat in its ink with the shading splat.ts gives
- * that ink, less the washes on it, and then the author's pen strokes over all of them.
+ * that ink, then the layer's strokes in the order they were made: a wash takes the ink away, the author's
+ * pen writes it back in the layer's ink. A pen stroke belongs to its layer, so the layers above cover it.
  *
  * Memory is the cost this is built around ("Weigh a design at the scale of a busy instance"): a page
  * can hold many splatted posts, and a canvas the size of a phone's post at its pixel density is
@@ -34,8 +35,8 @@ export interface Geometry {
 export interface PaintLayer {
   readonly splat: Splat;
   readonly color: string;
-  /** The washes on it, saved and the reader's own, in the order they were made. */
-  readonly washes: readonly Stroke[];
+  /** The strokes on it, saved and the reader's own, in the order they were made: washes, and the author's pen strokes in its ink. */
+  readonly strokes: readonly Stroke[];
   /** 1 while it is on, falling to 0 as it fades after being washed clean. */
   readonly alpha: number;
 }
@@ -85,10 +86,10 @@ function drawSplat(g: CanvasRenderingContext2D, layer: PaintLayer, geo: Geometry
 }
 
 /**
- * Paint the post's layers and the pen over them on `canvas`, whose pixels are `canvas.width` by
+ * Paint the post's layers, each with its strokes, on `canvas`, whose pixels are `canvas.width` by
  * `canvas.height` (set by the caller, at the geometry's density). A browser with no 2D context draws nothing.
  */
-export function paint(canvas: HTMLCanvasElement, geo: Geometry, layers: readonly PaintLayer[], pens: readonly Stroke[]): void {
+export function paint(canvas: HTMLCanvasElement, geo: Geometry, layers: readonly PaintLayer[]): void {
   const ctx = canvas.getContext('2d');
   const work = scratchOf(canvas.width, canvas.height);
   if (!ctx || !work) return;
@@ -105,26 +106,19 @@ export function paint(canvas: HTMLCanvasElement, geo: Geometry, layers: readonly
     work.clearRect(0, 0, canvas.width, canvas.height);
     at(work);
     drawSplat(work, layer, geo);
-    work.globalCompositeOperation = 'destination-out';
     work.lineCap = work.lineJoin = 'round';
-    for (const s of layer.washes) {
-      if (s.tool !== 'wash') continue;
+    for (const s of layer.strokes) {
+      /* A wash takes the layer's ink away and a pen writes it back, whichever came last winning, as the layer's model (scrub.ts) says; neither touches the layers under. */
+      work.globalCompositeOperation = s.tool === 'wash' ? 'destination-out' : 'source-over';
+      if (s.tool === 'ink') work.strokeStyle = s.color;
       work.lineWidth = s.width;
       trace(work, s.points);
       work.stroke();
     }
+    work.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = layer.alpha;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(work.canvas, 0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
     ctx.globalAlpha = 1;
-  }
-  at(ctx);
-  ctx.lineCap = ctx.lineJoin = 'round';
-  for (const s of pens) {
-    if (s.tool !== 'ink') continue;
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = s.width;
-    trace(ctx, s.points);
-    ctx.stroke();
   }
 }

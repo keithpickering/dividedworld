@@ -13,7 +13,8 @@ import type { Act, EffectState } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { whoops } from '../whoops.ts';
 import { Effect } from './Effect.tsx';
-import { BRUSH, LayerInk, ROW, layoutOf } from './scrub.ts';
+import { paint, type PaintLayer } from './paint.ts';
+import { BRUSH, LayerInk, PEN, ROW, layoutOf, type Stroke } from './scrub.ts';
 import { makeSplat } from './splat.ts';
 
 const LINES = 30;
@@ -432,5 +433,104 @@ describe('the author', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
     expect(screen.getByRole('status')).toHaveTextContent('at most 200 strokes');
     expect(washed(root)[0]).toBeGreaterThan(0);
+  });
+});
+
+describe('the author\'s pen strokes belong to their layer', () => {
+  /** The line index and a pen stroke along it, below where any splat of the test's seeds reaches (so only the pen covers it). */
+  const penLine = Math.ceil(Math.max(...SEEDS.map((seed) => makeSplat(seed).bounds.maxY)) / ROW) + 2;
+  const penAt = (line: number): Stroke => ({ tool: 'ink', color: COLORS[0]!, width: PEN, points: [[0, (line + 0.5) * ROW], [0.5, (line + 0.5) * ROW], [1, (line + 0.5) * ROW]] });
+  const saved = (id: string, strokes: Stroke[]): Record<string, EffectState> => ({ [id]: { state: { strokes }, savedAt: '2026-10-29T22:00:00.000Z' } });
+  const name = (line: number) => `L${String(line).padStart(2, '0')} alpha beta gamma`;
+
+  test('a line under a pen stroke is hidden from a screen reader as from the eye, and one clear of it is read', () => {
+    const plain = mount();
+    expect(readout(plain.root)).toContain(name(penLine));
+    plain.unmount();
+    const { root } = mount({ states: saved('play-1', [penAt(penLine)]) });
+    expect(readout(root)).not.toContain(name(penLine));
+    expect(readout(root)).toContain(name(penLine + 3));
+  });
+
+  test('a reader\'s stroke over a pen stroke removes it on their screen, and the line is read', () => {
+    const { frame, root, save } = mount({ states: saved('play-1', [penAt(penLine)]) });
+    expect(readout(root)).not.toContain(name(penLine));
+    drag(frame, [[0.1, (penLine + 0.5) * ROW], [0.3, (penLine + 0.5) * ROW], [0.5, (penLine + 0.5) * ROW], [0.7, (penLine + 0.5) * ROW], [0.9, (penLine + 0.5) * ROW]]);
+    expect(readout(root)).toContain(name(penLine));
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  test('a pen stroke on layer 2 is under layer 3\'s ink: a stroke where both are scrubs layer 3', () => {
+    const top = new LayerInk(splatFor(2), []);
+    const [x, y] = inkSpot(top);
+    const pen: Stroke = { tool: 'ink', color: COLORS[1]!, width: PEN, points: [[x - 0.05, y], [x + 0.05, y]] };
+    const { frame, root } = mount({ layers: 3, states: saved('play-2', [pen]) });
+    const before = washed(root);
+    drag(frame, [[x, y], [x + 0.02, y]]);
+    expect(washed(root)[2]).toBeGreaterThan(before[2]!);
+    expect(washed(root)[1]).toBe(before[1]);
+  });
+
+  test('"Hold to scrub" clears a pen stroke past the splat, and the line under it is read once it has', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+    /* Washed to the whole, so the layer is not clean while any ink, the pen's included, is left. */
+    const { root } = mount({ clean: 100, states: saved('play-1', [penAt(penLine)]) });
+    expect(readout(root)).not.toContain(name(penLine));
+    const button = screen.getByRole('button', { name: 'Hold to scrub' });
+    act(() => { fireEvent.keyDown(button, { key: ' ' }); });
+    act(() => { vi.advanceTimersByTime(120_000); });
+    act(() => { fireEvent.keyUp(button, { key: ' ' }); });
+    /* Nothing is under ink: the words are plain on the page for a screen reader, with no hidden copy. */
+    expect(root.querySelector('.kb-whoops-layout')).not.toHaveAttribute('inert');
+    expect(root.querySelector('.kb-whoops-layout')).toHaveTextContent(name(penLine));
+    expect(readout(root)).toBe('');
+  }, 60_000);
+
+  test('a reader\'s scrub of the author\'s pen is not saved, and the author\'s own is', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { frame, save } = mount({ author: true, states: saved('play-1', [penAt(penLine)]) });
+    const y = (penLine + 0.5) * ROW;
+    drag(frame, [[0.1, y], [0.5, y], [0.9, y]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    const [play, state] = save.mock.calls[0]!;
+    expect(play).toBe('play-1');
+    expect((state as { strokes: Stroke[] }).strokes.map((s) => s.tool)).toEqual(['ink', 'wash']);
+  });
+});
+
+describe('the canvas', () => {
+  /** A recording stand-in for a 2D context: every call and every style set is logged against the context it was made on. */
+  function recorder(log: string[], name: string, onStroke: (style: unknown) => void) {
+    const state: Record<string, unknown> = {};
+    return new Proxy({}, {
+      get: (_t, key: string) => (key in state ? state[key] : (...args: unknown[]) => {
+        log.push(`${name}.${key}`);
+        if (key === 'stroke') onStroke(state.strokeStyle);
+        if (key === 'createRadialGradient') return { addColorStop() {} };
+        return args.length ? undefined : undefined;
+      }),
+      set: (_t, key: string, value) => { state[key] = value; return true; },
+    }) as unknown as CanvasRenderingContext2D;
+  }
+
+  test('each pen stroke is drawn in its layer, under the layers above it, and none over them all', () => {
+    const log: string[] = [];
+    const penColors: string[] = [];
+    const canvases = new Map<HTMLCanvasElement, string>();
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
+      if (!canvases.has(this)) canvases.set(this, canvases.size === 0 ? 'main' : 'work');
+      return recorder(log, canvases.get(this)!, (style) => penColors.push(`${canvases.get(this)}:${String(style)}`));
+    } as unknown as HTMLCanvasElement['getContext'];
+    (globalThis as { Path2D?: unknown }).Path2D ??= class {};
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 64;
+    const pen: Stroke = { tool: 'ink', color: '#19e3ff', width: PEN, points: [[0.2, 0.2], [0.4, 0.2]] };
+    const layers: PaintLayer[] = [
+      { splat: splatFor(0), color: COLORS[0]!, strokes: [pen], alpha: 1 },
+      { splat: splatFor(1), color: COLORS[1]!, strokes: [], alpha: 1 },
+    ];
+    paint(canvas, { dpr: 1, width: 360, offset: 0, top: 0, scale: 1 }, layers);
+    expect(penColors).toEqual(['work:#19e3ff']);
+    expect(log.filter((l) => l === 'main.stroke')).toEqual([]);
   });
 });
