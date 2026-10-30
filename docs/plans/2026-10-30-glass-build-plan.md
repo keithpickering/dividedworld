@@ -130,6 +130,13 @@ the menu bar between the boards' widths, the phone's menu bar):
 `PENDING`. The hand and the armed card in 01 and 02 are cards Task 2's and 3's: they are left out of these manifests
 here, with a comment naming Part 3, and Part 3 adds them.
 
+**Amended 2026-10-30, the owner's answers on PR #39's open questions.** Both are built in Part 1, in PR #39, tests
+first. Task 1.3's guard checks a class's large text per surface, as the glass plan's section 6 amendment of this date
+says ("Per screen + 9% lift"; Heel's large text `#ff959f`). Task 1.4's HUD and glass pages keep the Main board's layout
+scaled below 1440px and become the Phone board's at a width worked out from the size tokens, as the glass plan's
+section 8 amendment of this date says ("Board layout, scaled"); it replaces the 1340px switch, and the 1024px story
+becomes two stories either side of that width.
+
 ## 5. Part 2: the glass pages
 
 ### Task 2.1. The React picker (board 03)

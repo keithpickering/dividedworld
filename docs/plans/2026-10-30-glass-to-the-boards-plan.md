@@ -239,7 +239,7 @@ Panel alphas within .02 of each other are one token: over a ground this dark the
 **Two families of color are the instance's data, not tokens,** because the engine cannot name them:
 
 - **The classes' glass colors** go into `glass.json` beside the keys, keyed by the instance's class keys: Face
-  `#3db8ff`, Heel `#ff3d57` (its large text `#ff8a96`), Lurker `#2ef0a0`, Jabroni `#ffd93d`, each with its fill, its
+  `#3db8ff`, Heel `#ff3d57` (its large text `#ff8a96`, `#ff959f` as amended in section 6), Lurker `#2ef0a0`, Jabroni `#ffd93d`, each with its fill, its
   ink on the fill and its large text. The guard checks each as it checks the tokens.
 - **The orbs** (web Task 3) go into `glass.json` as six gradients of three stops (highlight, color, shade) and the
   orb's body: c1 `#ead6ff`, `#b46cff`, `#3d1475`; c2 `#d6e9ff`, `#3d9bff`, `#0c3275`; c3 `#d6fff0`, `#2ef0a0`,
@@ -317,6 +317,17 @@ The look is the board's, so the smoke becomes recipes, and the guard checks each
 - **Web Task 12's rendered measurement** writes each surface's ceilings from its own recipe, and on a `calmAll`
   surface requires every text node, large or not, inside a calm. **Poison:** the settlement's heading moved out of its
   calm.
+
+**Amended 2026-10-30, the owner's answer on class large text (PR #39's Design question 2).** The owner chose "Per
+screen + 9% lift". A class's large text is checked at 3:1 against the full worst only of the recipes for the surfaces
+where the boards draw that class's large text on the full smoke, and against the calmed worst on the surfaces where the
+boards draw it inside a calm (the page surfaces, settlement, hud and vending, whose clouds are still too bright). The
+engine names, for every `GlassSurface`, whether a class's large text is drawn there on the full smoke, in a calm, or not
+at all; the guard checks each class against that list and writes a class ceiling only for the surfaces that draw it,
+so Part 2's rendered measurement fails class large text on a surface with no ceiling. Heel's large text is lifted 9%,
+from `#ff8a96` to `#ff959f`, which meets 3:1 on the turn recipe's full worst (`#ff8a96` is 2.80:1 there). Face, Lurker
+and Jabroni are unchanged. **Poisons:** Heel's large text back at `#ff8a96` on turn; a surface missing from the
+engine's list; a class's large text on a surface the list says does not draw it (Part 2's measurement).
 
 ## 7. Each board: what it shows, what builds it, and what is compared
 
@@ -441,6 +452,15 @@ here looks wrong, that is a bug and not the game. Tell an admin." Header and fir
 Each of these is drawn first as a story and shown to the owner on the PR of the task that builds it, before its tests
 are written against it. The owner's word on the story is recorded in that PR.
 
+**Amended 2026-10-30, the owner's answer on the glass between the boards' widths (PR #39's section 8 story).** The
+owner chose "Board layout, scaled", which replaces the 1340px switch to the Phone board's HUD below. Above 1440px
+nothing changes. Below 1440px the Main board's layout, the HUD's three groups and the glass pages alike, keeps the
+board's arrangement and scales in proportion to the window. It becomes the Phone board's layout only at the width where
+the smallest scaled text would fall below the Phone board's sizes: 1440px times the smallest phone size over the
+smallest Main board size, worked out from the instance's size tokens (for Divided World, 1440 × 16 / 20 = 1152px), never
+picked by hand, and a test asserts it. The 1024px story is replaced by two, one just above that width and one just below
+it, and the owner reviews those.
+
 - **The glass between the boards' widths.** A glass page's content sits in a column at most 1312px wide (the boards'
   1440 less two 64px gutters), centered past 1440px; its gutters are `clamp(16px, 4.44vw, 64px)`; text blocks stay at
   most 680px wide; at more than 150% text size the page is one column (web Task 11). The menu bar spans the width: its
@@ -485,7 +505,8 @@ in this plan's PR.
    player the rules let see them (section 3).
 10. **Copy in sentence case, capitals by CSS,** so a screen reader reads words.
 11. **Near values made one:** panel alphas within .02, and chamfers in five steps (section 5).
-12. **The HUD below 1340px is the phone's,** and **the phone's menu bar** is a Back row over a scrolling strip
+12. **The HUD below 1340px is the phone's** (amended 2026-10-30: the owner chose the Main board's layout scaled, down to
+    a width worked out from the size tokens; section 8), and **the phone's menu bar** is a Back row over a scrolling strip
     (section 8).
 13. **Rankings' look** (section 8).
 
@@ -529,7 +550,8 @@ log, Back to the board, or Esc.
 ## Open
 
 - **The phone's floor** (design, Open) is still to be checked with the owner on real phones. The phone's menu bar and
-  the HUD below 1340px are this plan's, shown to the owner as stories.
+  the HUD between the boards' widths are this plan's, shown to the owner as stories (the HUD's answered 2026-10-30,
+  section 8).
 - **Rankings beyond the public standings** (design, Open): its first board is this plan's minimal one.
 - **Whether a player-made theme can reach the glass** (design, Open): until it is decided, `glass.json` is the
   instance's only.
