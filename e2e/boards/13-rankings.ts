@@ -39,9 +39,15 @@ const manifest: BoardManifest = {
   size: { width: 1440, height: 1034 },
   build: { moment: '13-rankings' },
   landmarks: [
-    /* The menu bar, as every glass page has it, with Rankings the current page. */
+    /*
+     * The menu bar, as boards 06, 07, 10, 11 and 12 draw it, with Rankings the current page. Back's
+     * name: the board's ESC key cap is in the link's text, where the build hides it from the
+     * accessibility tree and names the link by its words (engine/ui/glass/MenuBar.tsx), as the Main
+     * board's manifest says of the HUD's Menu button. The Vending Machine's tab is left out until the
+     * glass build's Part 3 adds the screen and its tab, and adds it here.
+     */
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
-    { id: 'menu-back', role: 'link', name: 'Back to the board', within: 'menu' },
+    { id: 'menu-back', role: 'link', name: 'ESC Back to the board', buildName: 'Back to the board', within: 'menu' },
     { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu' },
     { id: 'menu-rankings', role: 'link', name: 'Rankings', within: 'menu' },
     { id: 'menu-log', role: 'link', name: 'My log', within: 'menu' },
@@ -80,8 +86,8 @@ const manifest: BoardManifest = {
     { id: 'class-thwompson', role: 'text', name: 'Lurker', within: 'table' },
     { id: 'revealed-thwompson', role: 'text', name: 'Revealed Oct 8', within: 'table' },
     { id: 'turned-thwompson', role: 'text', name: 'Has Turned since Oct 30', within: 'table' },
-    /* No class for the rest: the dash is hidden from a reader and "Not revealed" from the eye, so the dash is compared by its box and type. */
-    { id: 'none-ringside-1', role: 'text', name: '—', within: 'table' },
+    /* No class for the rest: the dash is hidden from a reader and "Not revealed" from the eye, so each dash is compared by its box and type. */
+    ...[1, 2, 3, 4].map((n): Landmark => ({ id: `none-ringside-${n}`, role: 'text', name: '—', within: 'table', nth: n - 1 })),
   ],
 };
 

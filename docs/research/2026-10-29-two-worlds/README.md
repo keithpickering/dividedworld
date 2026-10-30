@@ -26,7 +26,7 @@ each departure.
 **Amended 2026-10-30, Rankings.** No board of the session drew Rankings. `13-rankings.html` was drawn after it, from
 the story the owner approved as drawn (`engine/ui/rankings/Rankings.board.stories.tsx`, issue #50), in this folder's
 style, showing the boards fixture's `13-rankings` moment; `e2e/boards/13-rankings.ts` holds the build to it. Its menu
-bar is the build's, without the Vending Machine, which joins the bar with its screen.
+bar is drawn as boards 06, 07, 10, 11 and 12 draw it, the Vending Machine's tab included, with Rankings current.
 
 - `01-main.html`: the game screen: the 2003 board with the HUD docked at the bottom as glass (the character being
   played and its swap, the orbs and the next settlement, the hand), a card armed with "Play Whoops! here" on the

@@ -17,12 +17,8 @@
 body{margin:0}
 a{color:inherit}a:hover{color:inherit;text-decoration:none}
 a:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
-.back,.tab{display:inline-flex;align-items:center;gap:10px;min-height:48px;padding:0 18px;box-sizing:border-box;font:600 20px Anton,Impact,sans-serif;text-transform:uppercase;text-decoration:none}
-.back{margin-right:auto;color:#ffffff;background:#19e3ff;clip-path:polygon(0 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%);position:relative;isolation:isolate}
-.back::after{content:'';position:absolute;z-index:-1;inset:1.5px;background:rgb(10,6,20);clip-path:polygon(0 0,100% 0,100% calc(100% - 15.1px),calc(100% - 15.1px) 100%,0 100%)}
-.back kbd{padding:0 6px;font:600 20px 'Barlow Condensed',sans-serif;border:1px solid #e4def7;color:#e4def7}
-.tab{border-bottom:3px solid transparent;color:#e4def7}
-.tab[aria-current="page"]{color:#ffffff;border-bottom-color:#19e3ff}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
 table{border-collapse:collapse;width:100%}
 th[scope="col"]{padding:0 16px 12px 0;text-align:left;font:800 20px/29px 'Barlow Condensed',sans-serif;letter-spacing:2px;text-transform:uppercase;color:#9ef4ff;border-bottom:1px solid rgba(201,248,255,.55)}
 tbody td,tbody th{vertical-align:top;padding:12px 16px 12px 0;border-bottom:1px solid rgba(241,236,255,.2);font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
@@ -68,18 +64,17 @@ tr.own td:first-child{box-shadow:inset 3px 0 0 #19e3ff}
     </g>
   </svg>
 
-  <!-- the menu bar every glass page shares, as the build draws it; the Vending Machine joins it with its screen -->
-  <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; padding: 16px 64px; display: flex; align-items: center; gap: 8px 12px">
-    <a href="#" class="back" aria-keyshortcuts="Escape"><span aria-hidden="true">‹</span>Back to the board<kbd aria-hidden="true">ESC</kbd></a>
-    <ul style="display: flex; align-items: center; gap: 8px 12px; margin: 0; padding: 0; list-style: none">
-      <li><a href="#" class="tab">My characters</a></li>
-      <li><a href="#" class="tab" aria-current="page">Rankings</a></li>
-      <li><a href="#" class="tab">My log</a></li>
-      <li><a href="#" class="tab">Settings</a></li>
-    </ul>
+  <!-- the menu bar every glass page shares, in place of the board's header -->
+  <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 0 40px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+    <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 18px"><b><kbd style="display: inline-block; margin-right: 10px; padding: 0 6px; border: 1px solid #ffffff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>VENDING MACHINE</b></a>
+    <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+    <a href="#" class="tab" aria-current="page" style="background: rgba(25,227,255,.16); box-shadow: inset 0 -3px 0 #19e3ff; color: #ffffff"><b>RANKINGS</b></a>
+    <a href="#" class="tab"><b>MY LOG</b></a>
+    <a href="#" class="tab"><b>SETTINGS</b></a>
   </nav>
 
-  <main style="position: absolute; left: 64px; width: 1312px; top: 80px; padding-top: 32px">
+  <main style="position: absolute; left: 64px; width: 1312px; top: 84px; padding-top: 32px">
     <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 32px">
       <h1 style="margin: 0; font: 112px/1 Anton, Impact, sans-serif; letter-spacing: 1px; text-transform: uppercase; text-shadow: 0 0 30px rgba(25,227,255,.35)">Rankings</h1>
       <p style="margin: 0 0 12px; font: 800 20px/29px 'Barlow Condensed', sans-serif; letter-spacing: 2px; text-transform: uppercase; color: #9ef4ff">Season 1 · Settled Oct 30, 8:17 AM</p>
