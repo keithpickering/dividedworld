@@ -14,10 +14,13 @@
  * most any pixel can be: each layer's alpha is its rect's opacity (the noise saturates the color
  * matrix's alpha row, which the boards write as `1.8 r - 0.74` and `2 g - 1.0`; a row that evaluates
  * a little under 1 at full noise, `2 b - 1.12`, is taken as 1, which only over-states the worst), its
- * color is the matrix's constant color at 8 bits, and the blur cannot raise a maximum. That is the
- * worst pixel. The calmed worst is the same with each layer's opacity scaled by (1 - calm): a calm is
+ * color is the matrix's constant color, and the blur cannot raise a maximum. Only the colors are
+ * quantized to 8 bits (the browser rounds a matrix's constant color to a byte); opacities and the calm
+ * are not. That is the worst pixel. The calmed worst is the same with each layer's opacity scaled by (1 - calm): a calm is
  * the ground laid over the smoke at the calm's opacity under a text block (engine/ui/glass/calm.css),
- * so the smoke shows through at what is left. A recipe's `narrow` layers (below 600px) are held
+ * so the smoke shows through at what is left. The calm's feather sits outside the text's box
+ * (calm.css insets the backing by the feather on every side), so the text is in the full-strength
+ * region and the calmed worst applies to every pixel under it. A recipe's `narrow` layers (below 600px) are held
  * separately, the same way. The numbers this reproduces are the audit's (the glass plan, section 6:
  * the hud recipe 0.216, page 0.230, characters 0.196, turn 0.116, effect 0.103, react 0.087, cards
  * 0.193, vending 0.230, settlement 0.274), and test-glass-contrast.mjs pins them.
@@ -60,9 +63,12 @@ const TYPES_FILE = 'engine/ui/types.ts';
 /** The size floor: ink of at least 18px, and 16px of computed size on a phone (the web plan's brief, item 7). */
 const INK_FLOOR = 18;
 const PHONE_FLOOR = 16;
+/** A smoke layer's color: six hex digits, the only form engine/ui/glass/Smoke.tsx reads. */
+const LAYER_COLOR = /^#[0-9a-f]{6}$/i;
 const TEXT_TAGS = ['body', 'large', 'waiting', 'ink'];
-/** The ratio each tag asks, by key. */
-const NEED = { standard: { body: 4.5, large: 3, waiting: 3, ink: 4.5 }, high: { body: 7, large: 7, waiting: 7, ink: 7 } };
+/** The ratio each tag asks of the standard key; the high key asks HIGH of every text token and ink, on its bare ground. */
+const HIGH = 7;
+const NEED = { standard: { body: 4.5, large: 3, waiting: 3, ink: 4.5 }, high: { ink: HIGH } };
 
 /** The engine's closed list of surfaces, read from the `GlassSurface` union in engine/ui/types.ts. */
 function readSurfaces() {
@@ -181,7 +187,8 @@ const fontFor = (glass, size) => (glass.fonts ?? []).find((f) => f.family === si
 
 /**
  * Every departure of one glass from the contract, as `{ where, why }`; [] is clean.
- * @param {any} glass the parsed glass.json (GlassTheme in engine/ui/types.ts)
+ * `glass` is the parsed glass.json (a GlassTheme); it is left untyped here because naming the type
+ * would pull the rules' sources into the tools' type check.
  */
 export function glassFaults(glass) {
   const out = [];
@@ -208,9 +215,9 @@ export function glassFaults(glass) {
       if (layers === undefined && which === 'narrow layers') continue;
       if (!Array.isArray(layers) || layers.length === 0) { fault(`recipe ${name}`, `has no ${which}`); continue; }
       layers.forEach((l, i) => {
-        const bad = !parseColor(l.color) || !(l.opacity > 0 && l.opacity <= 1) || !Array.isArray(l.alpha) || l.alpha.length !== 5
+        const bad = !LAYER_COLOR.test(l.color) || !(l.opacity > 0 && l.opacity <= 1) || !Array.isArray(l.alpha) || l.alpha.length !== 5
           || !Array.isArray(l.frequency) || l.frequency.length !== 2 || !(l.octaves >= 1) || !Number.isFinite(l.seed) || !(l.blur >= 0);
-        if (bad) fault(`recipe ${name}`, `${which} ${i + 1} is not a color, an opacity in (0, 1], an alpha row of five, two frequencies, octaves, a seed and a blur`);
+        if (bad) fault(`recipe ${name}`, `${which} ${i + 1} is not a six-digit #rrggbb color (the only form Smoke reads), an opacity in (0, 1], an alpha row of five, two frequencies, octaves, a seed and a blur`);
       });
     }
   }
@@ -322,7 +329,7 @@ export function glassFaults(glass) {
       const c = parseColor(def.value);
       if (!tags.length || !c || c.a !== 1) continue;
       const r = contrastRatio([c.r, c.g, c.b], [highGround.r, highGround.g, highGround.b]);
-      if (r < 7) fault(name, `high key: ${def.value} on the bare ground ${high['--kb-glass-ground'].value} is ${fmt(r, 7)}, needs 7:1 under high contrast`);
+      if (r < HIGH) fault(name, `high key: ${def.value} on the bare ground ${high['--kb-glass-ground'].value} is ${fmt(r, HIGH)}, needs ${HIGH}:1 under high contrast`);
     }
   }
   return out;
