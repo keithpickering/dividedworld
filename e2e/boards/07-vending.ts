@@ -38,19 +38,22 @@ const manifest: BoardManifest = {
 
     /* The head: drawn in outline on the board and solid in the build (the glass measures no translucent type), so its box is compared. */
     { id: 'eyebrow', role: 'text', name: 'Spend Aura' },
+    /* Outline on the board (a translucent color), solid in the build, so only its type is left out (as the head's comment above says). */
     { id: 'title', role: 'heading', name: 'Vending Machine', type: false },
 
     /* The wallet panel, chamfer step 3. */
-    { id: 'wallet', role: 'region', name: 'Your wallet', type: false },
+    { id: 'wallet', role: 'region', name: 'Your wallet' },
     { id: 'wallet-label', role: 'text', name: 'Wallet · solid only', within: 'wallet' },
-    { id: 'wallet-orbs', role: 'img', name: 'Wallet: 4.62 of 6.00; buying Whoops! leaves 3.62', buildName: 'Wallet: 5.62 of 6.00; buying Whoops! leaves 4.62', within: 'wallet', type: false },
+    { id: 'wallet-orbs', role: 'img', name: 'Wallet: 4.62 of 6.00; buying Whoops! leaves 3.62', buildName: 'Wallet: 5.62 of 6.00; buying Whoops! leaves 4.62', within: 'wallet' },
     { id: 'wallet-after', role: 'text', name: '3.62', buildName: '4.62', within: 'wallet' },
     { id: 'hand', role: 'link', name: 'Your hand 3 → 4', buildName: 'Your hand 2 → 3' },
 
     /* The machine's sign carries the instance's name for it; its drawing is the instance's art. */
     { id: 'sign', role: 'text', name: '[Machine name]' },
 
-    /* The slots: the two cards, A2 picked, and the four sealed. */
+    /* The slots: the two cards, A2 picked, and the four sealed. Their box is compared; their type is not, because a slot's
+       visible words are the machine's printing, the instance's art (the postcard's face and a code the stylesheet writes out),
+       and the name a reader gets is an aria-label with no text node behind it. */
     { id: 'slot-a1', role: 'button', name: 'Buy Stick Around, 1.00 orb', type: false },
     { id: 'slot-a2', role: 'button', name: 'Buy Whoops!, 1.00 orb, selected', type: false },
     { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', type: false },
@@ -58,19 +61,22 @@ const manifest: BoardManifest = {
     { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', type: false },
     { id: 'slot-c2', role: 'img', name: 'Empty slot C2, waiting for a future postcard', type: false },
 
-    /* The control panel: the price display, the buy button and the note under it. */
+    /* The control panel: the price display, the buy button and the note under it. The display's lit words are the machine's
+       printing (`data-kb-art`) and the text a reader gets is visually hidden, so its box is compared and its type is not. */
     { id: 'price', role: 'status', name: 'Selected: A2, Whoops!, 1.00', type: false },
     { id: 'buy', role: 'button', name: 'Buy Whoops! · 1.00' },
     { id: 'price-note', role: 'text', name: 'Playing it on a long post costs up to 2.00 more, never more than 3.00 in all.' },
 
-    /* The plain list: its heading, the first card's name and price, and the sealed slots' line. */
-    { id: 'list', role: 'region', name: 'In the machine', type: false, box: 'position' },
+    /* The plain list: its heading, the first card's name and price, and the sealed slots' line. The later rows' place follows
+       the first row's description, which is each card's `describe` and longer than the board's sentence (see the top), so
+       those rows are compared by size and not by place. */
+    { id: 'list', role: 'region', name: 'In the machine', box: 'position' },
     { id: 'list-head', role: 'text', name: 'In the machine', within: 'list', nth: 0 },
     { id: 'list-stick', role: 'text', name: 'Stick Around', within: 'list' },
     { id: 'list-stick-price', role: 'text', name: '1.00', within: 'list' },
-    { id: 'list-whoops-price', role: 'text', name: '1.00+', within: 'list', box: 'none' },
-    { id: 'list-empty', role: 'text', name: '4 slots empty', within: 'list', box: 'none' },
-    { id: 'list-empty-says', role: 'text', name: 'More postcards arrive in later seasons.', within: 'list', box: 'none' },
+    { id: 'list-whoops-price', role: 'text', name: '1.00+', within: 'list', box: 'size' },
+    { id: 'list-empty', role: 'text', name: '4 slots empty', within: 'list', box: 'size' },
+    { id: 'list-empty-says', role: 'text', name: 'More postcards arrive in later seasons.', within: 'list', box: 'size' },
   ],
 };
 

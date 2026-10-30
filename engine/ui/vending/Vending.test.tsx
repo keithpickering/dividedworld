@@ -141,3 +141,44 @@ describe('the cascade, backwards', () => {
     expect(orbSolids()).toEqual([1, 1, 1, 1, 0.62, 0]);
   });
 });
+
+describe('the drop and the flight, under full motion', () => {
+  test('the card enters the tray, the hand still counts what it held, and the count moves when the card lands', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const fake = seeded(562);
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })); await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    /* In the tray and on its way: the hand has not received it, so it still reads what it held (the picked card is still picked, so 2 → 3), not 3 → 4. */
+    const drop = document.querySelector('.kb-vending-tray .kb-vending-drop');
+    expect(drop).not.toBeNull();
+    expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent('2 → 3');
+    /* Mid-flight a second on, it has still not landed. */
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(document.querySelector('.kb-vending-drop')).not.toBeNull();
+    /* The card lands (its animation ends): the tray is empty and the hand holds three. */
+    /* jsdom has no CSS animations, so React listens for the prefixed name there; a browser sends the plain one. Either ends the flight. */
+    await act(async () => {
+      const flying = document.querySelector('.kb-vending-drop')!;
+      for (const name of ['animationend', 'webkitAnimationEnd']) fireEvent(flying, new Event(name, { bubbles: true }));
+    });
+    expect(document.querySelector('.kb-vending-drop')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Your hand 3 → 4' })).toBeInTheDocument();
+  });
+
+  test('a card whose landing is never reported still reaches the hand once the delivery time has passed', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const fake = seeded(562);
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })); await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByRole('link', { name: 'Your hand 2 → 3' })).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 400); });
+    expect(document.querySelector('.kb-vending-drop')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Your hand 3 → 4' })).toBeInTheDocument();
+  });
+});

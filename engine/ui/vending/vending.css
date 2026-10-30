@@ -451,6 +451,12 @@ button.kb-vending-slot {
   text-transform: uppercase;
 }
 
+/* The sealed line is one block, as the board draws it (no price shares its row), so its text spans the row. */
+.kb-vending-item--sealed .kb-vending-item-row,
+.kb-vending-item--sealed .kb-vending-item-name {
+  display: block;
+}
+
 .kb-vending-item--sealed .kb-vending-item-name {
   color: var(--kb-glass-ready-text);
 }
