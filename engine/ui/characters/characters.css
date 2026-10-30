@@ -920,6 +920,7 @@
 @media (forced-colors: active) {
   .kb-turn-toggle input {
     forced-color-adjust: none;
+    transition: none;
     border-color: ButtonText;
     background: Canvas;
     box-shadow: none;

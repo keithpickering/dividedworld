@@ -141,6 +141,7 @@ test('in forced colors the Turn names still show which is on', async ({ page }) 
     return color;
   });
   const fill = (box: typeof on) => box.evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(await fill(on)).toBe(highlight);
-  expect(await fill(off)).not.toBe(highlight);
+  /* Polled: a fill eases in under full motion, and the reading is of the state it settles in. */
+  await expect.poll(() => fill(on)).toBe(highlight);
+  await expect.poll(() => fill(off)).not.toBe(highlight);
 });
