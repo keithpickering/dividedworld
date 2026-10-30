@@ -1,36 +1,43 @@
 /**
  * The reaction picker: a 2x2 grid shaped like the circumplex (excited at the top, negative on the
- * left), each quadrant a group of its emoji. One tab stop; the arrow keys move through the buttons in
- * the grid as it looks: Left and Right along a row of the whole grid, Up and Down along a column of it
- * (across into the quadrant above or below), Home and End to the first and last, Escape closes and returns focus to the React button. A
- * popover by the button on a desktop and a sheet above the HUD on a phone (the same element; the
- * stylesheet places it, and on a desktop `place.ts` keeps it clear of the window's edges and the HUD). It leaves when a choice is made, on Escape, on Close, on a tap outside, or
- * when focus moves away.
+ * left), each quadrant a group of its emoji, as the React board draws it
+ * (docs/research/2026-10-29-two-worlds/03-react.html): a glass overlay (engine/ui/glass/Overlay.tsx)
+ * on the `react` smoke, named for the post it reacts to, with the count in its bar and the hint at
+ * its foot. Each quadrant wears the class the instance gives it (`InstanceUi.quadrantClasses`): its
+ * tint, and its label in the class's large text.
+ *
+ * One tab stop; the arrow keys move through the buttons in the grid as it looks: Left and Right
+ * along a row of the whole grid, Up and Down along a column of it (across into the quadrant above
+ * or below), Home and End to the first and last. A quadrant's kinds are four across on the Main
+ * board's layout, as the board draws them, and two across on the Phone board's, where the picker is
+ * a sheet above the HUD. The overlay holds focus and Tab, closes on Esc, Close or a press on the
+ * dimmed page, and returns focus to React; a choice made closes it too.
  */
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id, MyCharacter, MyReaction } from '../data/api.ts';
 import type { Quadrant } from '../../rules/types.ts';
+import { Overlay } from '../glass/Overlay.tsx';
+import { useBoard } from '../glass/useBoard.ts';
 import { usePlayer } from '../player.tsx';
 import type { Tallies } from '../thread/tallies.ts';
 import type { Mine } from './mine.ts';
-import { placePopover } from './place.ts';
 import { readable } from './Reactions.tsx';
 
 /** Top-left, top-right, bottom-left, bottom-right. */
 const GRID: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
-/** How many kinds a quadrant holds side by side (reactions.css lays them in this many columns). */
-export const KIND_COLUMNS = 2;
+/** How many kinds a quadrant holds side by side: four on the Main board's layout, two on the phone's sheet (reactions.css lays them so). */
+export const KIND_COLUMNS = { main: 4, phone: 2 } as const;
 
 /**
  * Where each kind sits in the whole grid: a row and a column, the quadrants' own rows and columns
  * laid end to end. A quadrant's kinds fill its columns left to right and then down; the top quadrants
  * are as tall as the fuller of the two, so a column runs straight down into the quadrant below.
  */
-export function cells(counts: readonly number[]): readonly (readonly { readonly row: number; readonly col: number }[])[] {
-  const topRows = Math.ceil(Math.max(counts[0] ?? 0, counts[1] ?? 0) / KIND_COLUMNS);
+export function cells(counts: readonly number[], columns: number): readonly (readonly { readonly row: number; readonly col: number }[])[] {
+  const topRows = Math.ceil(Math.max(counts[0] ?? 0, counts[1] ?? 0) / columns);
   return counts.map((n, q) =>
-    Array.from({ length: n }, (_, i) => ({ row: (q < 2 ? 0 : topRows) + Math.floor(i / KIND_COLUMNS), col: (q % 2) * KIND_COLUMNS + (i % KIND_COLUMNS) })));
+    Array.from({ length: n }, (_, i) => ({ row: (q < 2 ? 0 : topRows) + Math.floor(i / columns), col: (q % 2) * columns + (i % columns) })));
 }
 
 /** The enabled button a key moves to from one, or null when the key moves nowhere. */
@@ -53,75 +60,38 @@ function target(key: string, all: readonly HTMLButtonElement[], at: number): num
 
 interface Props {
   readonly act: Id;
+  /** Whose post it is, as the thread names it, for the dialog's name. */
+  readonly authorName: string;
   readonly as: MyCharacter | null;
   readonly own: readonly MyReaction[];
   readonly tallies: Tallies;
   readonly mine: Mine;
-  readonly trigger: RefObject<HTMLButtonElement | null>;
+  /** The post's reactions row, which the picker opens by. */
+  readonly anchor: RefObject<HTMLElement | null>;
   readonly onClose: (refocus: boolean) => void;
 }
 
-export function Picker({ act, as, own, tallies, mine, trigger, onClose }: Props) {
+export function Picker({ act, authorName, as, own, tallies, mine, anchor, onClose }: Props) {
   const { api, instance, ui, settings } = useKayfa();
   const player = usePlayer();
-  const root = useRef<HTMLDivElement>(null);
+  const { board } = useBoard();
+  const grid = useRef<HTMLDivElement>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
   const alive = useRef(true);
   const countId = useId();
+  const describedId = useId();
   const cap = settings.reactionCap;
   const kinds = new Set(own.map((o) => o.kind));
   const left = Math.max(0, cap - kinds.size);
   const free = (k: string) => left > 0 && !kinds.has(k);
-  const buttons = () => [...(root.current?.querySelectorAll<HTMLButtonElement>('.kb-picker-grid button:not(:disabled)') ?? [])];
+  const columns = KIND_COLUMNS[board];
+  const buttons = () => [...(grid.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
-  /* A desktop popover is placed by the button: below it if that clears the HUD, else above, inside the window's edges, scrolling if neither side holds it. A phone's sheet is the stylesheet's. */
-  useLayoutEffect(() => {
-    const el = root.current;
-    const box = el?.offsetParent as HTMLElement | null;
-    const button = trigger.current;
-    if (!el || !box || !button) return;
-    const place = () => {
-      for (const k of ['top', 'left', 'maxHeight', 'maxWidth', 'overflowY'] as const) el.style[k] = '';
-      if (typeof window.matchMedia !== 'function' || !window.matchMedia('(min-width: 40.01em)').matches) return;
-      const viewport = { width: document.documentElement.clientWidth, height: window.innerHeight };
-      const hud = document.querySelector('.kb-hud')?.getBoundingClientRect().top;
-      const r = el.getBoundingClientRect();
-      const p = placePopover({
-        button: button.getBoundingClientRect(), container: box.getBoundingClientRect(),
-        size: { width: r.width, height: el.scrollHeight + (r.height - el.clientHeight) }, viewport, hudTop: Math.min(hud ?? viewport.height, viewport.height),
-      });
-      el.style.top = `${p.top}px`;
-      el.style.left = `${p.left}px`;
-      el.style.maxWidth = `${p.maxWidth}px`;
-      if (p.maxHeight !== null) { el.style.maxHeight = `${p.maxHeight}px`; el.style.overflowY = 'auto'; }
-    };
-    place();
-    window.addEventListener('resize', place);
-    /* The page scrolling moves the button; the popover's own scrolling is not a reason to place it again. */
-    const onScroll = (e: Event) => { if (e.target !== el) place(); };
-    window.addEventListener('scroll', onScroll, true);
-    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', onScroll, true); };
-  }, [trigger, left, refusal]);
-
-  /* On open, focus the first kind that can be left; with none, the picker itself. */
-  useEffect(() => { (buttons()[0] ?? root.current)?.focus(); }, []);
-
-  /* A tap outside closes it. */
-  useEffect(() => {
-    const away = (e: Event) => {
-      const t = e.target as Node;
-      if (!root.current?.contains(t) && !trigger.current?.contains(t)) onClose(false);
-    };
-    document.addEventListener('pointerdown', away);
-    return () => document.removeEventListener('pointerdown', away);
-  }, [onClose, trigger]);
-
   const move = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(true); return; }
     const all = buttons();
     const at = all.indexOf(document.activeElement as HTMLButtonElement);
     if (all.length === 0 || at < 0) return;
@@ -151,7 +121,7 @@ export function Picker({ act, as, own, tallies, mine, trigger, onClose }: Props)
       mine.add({ act, kind, character: as.id });
       tallies.merge(act, answer.value.tally);
       player.reactionLanded();
-      /* Closed meanwhile (a tap outside, focus elsewhere): the reaction still counts, but focus is not taken back. */
+      /* Closed meanwhile (Esc, Close): the reaction still counts, but focus is not taken back. */
       if (alive.current) onClose(true);
     } catch {
       setRefusal('The reaction could not be sent. Try again.');
@@ -162,51 +132,59 @@ export function Picker({ act, as, own, tallies, mine, trigger, onClose }: Props)
   };
 
   let first = true;
-  const grid = cells(GRID.map((q) => instance.reactions.filter((r) => r.quadrant === q).length));
+  const at = cells(GRID.map((q) => instance.reactions.filter((r) => r.quadrant === q).length), columns);
   return (
-    <div
-      ref={root} className="kb-picker kb-sheet" role="dialog" aria-label={`React as ${as?.name ?? 'your character'}`} tabIndex={-1}
-      aria-busy={busy || undefined} aria-describedby={countId} onKeyDown={move}
-      onBlur={(e) => { const to = e.relatedTarget as Node | null; if (to && !root.current?.contains(to) && !trigger.current?.contains(to)) onClose(false); }}
+    <Overlay
+      title={<span className="kb-calm">React</span>} label={`React to ${authorName}'s post`} surface="react" className="kb-picker"
+      describedBy={describedId} closeAt="foot" anchor={anchor} onClose={() => onClose(true)}
+      aside={<span id={countId} className="kb-picker-left kb-calm" role="status">{left} of {cap} left</span>}
     >
-      <div className="kb-picker-head">
-        <span id={countId} className="kb-picker-left" role="status">{left} of {cap} left</span>
-      </div>
-      {left === 0 && <p className="kb-picker-none kb-small">You have left all {cap} of your reactions on this post. You cannot leave another.</p>}
-      {left > 0 && (
-        <>
-          <div className="kb-picker-axis kb-small kb-muted" aria-hidden="true"><span>Excited</span></div>
-          <div className="kb-picker-grid">
-            {GRID.map((q, qi) => (
-              <div key={q} className="kb-picker-quad" role="group" aria-label={ui.quadrantLabels[q]} data-kb-quadrant={q}>
-                <div className="kb-picker-label kb-small kb-muted" aria-hidden="true">{ui.quadrantLabels[q]}</div>
-                <div className="kb-picker-kinds">
-                  {instance.reactions.filter((r) => r.quadrant === q).map((r, ki) => {
-                    const ok = free(r.key);
-                    const tab = ok && first;
-                    if (ok) first = false;
-                    return (
-                      <button
-                        key={r.key} type="button" className="kb-picker-kind" disabled={!ok} tabIndex={tab ? 0 : -1}
-                        data-kb-reaction={r.key} data-kb-row={grid[qi]![ki]!.row} data-kb-col={grid[qi]![ki]!.col} data-kb-own={kinds.has(r.key) ? '' : undefined}
-                        aria-label={`${readable(r.key)}, ${ui.quadrantLabels[q]}${kinds.has(r.key) ? ', already left' : ''}`}
-                        onClick={() => void choose(r.key)}
-                      >
-                        <span aria-hidden="true">{r.emoji}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+      {/* What the dialog is described by: the count, and the mask the reaction goes out under (the HUD's, which the overlay dims). */}
+      <span id={describedId} hidden>{left} of {cap} left, reacting as {as?.name ?? 'your character'}</span>
+      <div className="kb-picker-body" aria-busy={busy || undefined} onKeyDown={move}>
+        {left === 0 && <p className="kb-picker-none kb-calm">You have left all {cap} of your reactions on this post. You cannot leave another.</p>}
+        {left > 0 && (
+          <div className="kb-picker-field">
+            <span className="kb-picker-axis kb-calm" data-kb-axis="top" aria-hidden="true">Excited</span>
+            <div ref={grid} className="kb-picker-grid" data-kb-columns={columns} style={{ '--kb-picker-columns': columns } as CSSProperties}>
+              {GRID.map((q, qi) => {
+                const cls = ui.quadrantClasses?.[q];
+                const worn = cls === undefined ? undefined : ({
+                  '--kb-picker-large': `var(--kb-glass-class-${cls}-large)`,
+                  '--kb-picker-fill': `var(--kb-glass-class-${cls}-fill)`,
+                } as CSSProperties);
+                return (
+                  <div key={q} className="kb-picker-quad" role="group" aria-labelledby={`${countId}-${q}`} data-kb-quadrant={q} style={worn}>
+                    <div id={`${countId}-${q}`} className="kb-picker-label kb-glass-display">{ui.quadrantLabels[q]}</div>
+                    <div className="kb-picker-kinds">
+                      {instance.reactions.filter((r) => r.quadrant === q).map((r, ki) => {
+                        const ok = free(r.key);
+                        const tab = ok && first;
+                        if (ok) first = false;
+                        return (
+                          <button
+                            key={r.key} type="button" className="kb-picker-kind" disabled={!ok} tabIndex={tab ? 0 : -1}
+                            data-kb-reaction={r.key} data-kb-row={at[qi]![ki]!.row} data-kb-col={at[qi]![ki]!.col} data-kb-own={kinds.has(r.key) ? '' : undefined}
+                            aria-label={`${readable(r.key)}, ${ui.quadrantLabels[q]}${kinds.has(r.key) ? ', your reaction' : ''}`}
+                            onClick={() => void choose(r.key)}
+                          >
+                            <span aria-hidden="true">{r.emoji}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <span className="kb-picker-axis kb-calm" data-kb-axis="bottom" aria-hidden="true">Low-key</span>
+            <span className="kb-picker-cross" data-kb-cross="across" aria-hidden="true" />
+            <span className="kb-picker-cross" data-kb-cross="down" aria-hidden="true" />
           </div>
-          <div className="kb-picker-axis kb-small kb-muted" aria-hidden="true"><span>Calm</span></div>
-        </>
-      )}
-      {refusal && <p className="kb-notice kb-picker-refusal" data-kb-tone="refusal" role="alert">{refusal}</p>}
-      <div className="kb-picker-foot">
-        <button type="button" className="kb-button kb-picker-close" onClick={() => onClose(true)}>Close</button>
+        )}
+        {refusal && <p className="kb-notice kb-picker-refusal kb-calm" data-kb-tone="refusal" role="alert">{refusal}</p>}
+        {left > 0 && <p className="kb-picker-hint kb-calm">Arrow keys move, Enter reacts. Outlined: yours.</p>}
       </div>
-    </div>
+    </Overlay>
   );
 }

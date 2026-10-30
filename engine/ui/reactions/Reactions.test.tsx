@@ -1,8 +1,9 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Id } from '../data/api.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
+import { Page } from '../glass/Page.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { usePlayer } from '../player.tsx';
 import { createTallies } from '../thread/tallies.ts';
@@ -17,6 +18,12 @@ vi.mock('../player.tsx', async (original) => {
 });
 
 beforeEach(() => { landed.mockClear(); });
+afterEach(() => { vi.unstubAllGlobals(); });
+
+/** The Phone board's layout, as useBoard reads the window (jsdom answers no media query, which is the Main board's). */
+function onAPhone() {
+  vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList);
+}
 
 /** Test instance: fire = hype (top right), tomato = heat (top left), zzz = groan (bottom left), tea = calm (bottom right). */
 function world() {
@@ -37,11 +44,12 @@ function world() {
 function show(w: ReturnType<typeof world>, act: Id, author: Id | null) {
   const tallies = createTallies();
   const mine = createMine();
-  const view = renderIn(w.fake, <Reactions act={act} author={author} tallies={tallies} mine={mine} />);
+  const view = renderIn(w.fake, <Reactions act={act} author={author} authorName="Spritey" tallies={tallies} mine={mine} />);
   return { tallies, mine, ...view };
 }
 
-const picker = () => screen.getByRole('dialog', { name: /^React as / });
+/* Named as the React board names it (glass Task 2.1; it was "React as" the HUD's character, which is now its description). */
+const picker = () => screen.getByRole('dialog', { name: /^React to / });
 const open = async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'React' }));
   return within(picker());
@@ -109,9 +117,10 @@ describe('the picker', () => {
     const w = world();
     show(w, w.theirs, w.spritey);
     const p = await open();
-    expect(picker()).toHaveAccessibleName('React as Mrs. Hooligan');
-    const groups = p.getAllByRole('group').map((g) => g.getAttribute('aria-label'));
-    expect(groups).toEqual(['Heat', 'Hype', 'Groan', 'Calm']);
+    expect(picker()).toHaveAccessibleName('React to Spritey\'s post');
+    const groups = p.getAllByRole('group');
+    expect(groups).toHaveLength(4);
+    ['Heat', 'Hype', 'Groan', 'Calm'].forEach((name, i) => expect(groups[i]).toHaveAccessibleName(name));
     expect(p.getByRole('button', { name: 'Fire, Hype' })).toBeInTheDocument();
     expect(p.getByRole('button', { name: 'Tomato, Heat' })).toBeInTheDocument();
     expect(p.getByRole('button', { name: 'Zzz, Groan' })).toBeInTheDocument();
@@ -125,7 +134,7 @@ describe('the picker', () => {
     act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
     const p = await open();
     expect(p.getByText('2 of 3 left')).toBeInTheDocument();
-    expect(p.getByRole('button', { name: /^Fire, Hype/u })).toBeDisabled();
+    expect(p.getByRole('button', { name: 'Fire, Hype, your reaction' })).toBeDisabled();
     expect(p.getByRole('button', { name: 'Tea, Calm' })).toBeEnabled();
   });
 
@@ -196,35 +205,32 @@ describe('the picker', () => {
       const tallies = createTallies();
       const mine = createMine();
       for (const kind of own) mine.add({ act: w.theirs, kind, character: w.pipe });
-      renderIn(w.fake, <Reactions act={w.theirs} author={w.spritey} tallies={tallies} mine={mine} />, { instance: big() });
+      renderIn(w.fake, <Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={mine} />, { instance: big() });
       await userEvent.click(await screen.findByRole('button', { name: 'React' }));
     };
     const on = () => document.activeElement?.getAttribute('data-kb-reaction');
     const press = async (...keys: string[]) => { for (const k of keys) await userEvent.keyboard(`{${k}}`); return on(); };
 
+    /* On the Main board's layout a quadrant's four kinds are a row, as the React board draws them. */
     test('Left and Right go along a row of the whole grid, across into the next quadrant', async () => {
       await openBig();
       await waitFor(() => expect(on()).toBe('e1'));
-      expect(await press('ArrowRight')).toBe('e2');
+      expect(await press('ArrowRight', 'ArrowRight', 'ArrowRight')).toBe('e4');
       expect(await press('ArrowRight')).toBe('p1');
-      expect(await press('ArrowRight')).toBe('p2');
-      expect(await press('ArrowRight')).toBe('p2');
-      expect(await press('ArrowLeft', 'ArrowLeft')).toBe('e2');
+      expect(await press('ArrowRight', 'ArrowRight', 'ArrowRight')).toBe('p4');
+      expect(await press('ArrowRight')).toBe('p4');
+      expect(await press('ArrowLeft', 'ArrowLeft', 'ArrowLeft', 'ArrowLeft')).toBe('e4');
     });
 
     test('Up and Down go along a column of the whole grid, across into the quadrant below and above', async () => {
       await openBig();
       await waitFor(() => expect(on()).toBe('e1'));
-      expect(await press('ArrowDown')).toBe('e3');
       expect(await press('ArrowDown')).toBe('b1');
-      expect(await press('ArrowDown')).toBe('b3');
-      expect(await press('ArrowDown')).toBe('b3');
-      expect(await press('ArrowUp', 'ArrowUp', 'ArrowUp')).toBe('e1');
+      expect(await press('ArrowDown')).toBe('b1');
       expect(await press('ArrowUp')).toBe('e1');
-      expect(await press('ArrowRight', 'ArrowRight', 'ArrowRight')).toBe('p2');
-      expect(await press('ArrowDown', 'ArrowDown')).toBe('c2');
-      expect(await press('ArrowDown')).toBe('c4');
-      expect(await press('ArrowLeft')).toBe('c3');
+      expect(await press('ArrowUp')).toBe('e1');
+      expect(await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight')).toBe('p1');
+      expect(await press('ArrowDown')).toBe('c1');
       expect(await press('ArrowLeft')).toBe('b4');
     });
 
@@ -233,9 +239,50 @@ describe('the picker', () => {
       await waitFor(() => expect(on()).toBe('e1'));
       expect(await press('End')).toBe('c4');
       expect(await press('Home')).toBe('e1');
-      await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowDown');
-      expect(on()).toBe('p4');
-      expect(await press('ArrowDown')).toBe('c4');
+      expect(await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowDown')).toBe('c1');
+      expect(await press('ArrowRight')).toBe('c3');
+    });
+
+    /* On the phone's sheet there is room for two across, so a quadrant's kinds are two rows of two (the grid before the glass). */
+    describe('on the Phone board\'s layout, two to a row', () => {
+      test('Left and Right go along a row of the whole grid, across into the next quadrant', async () => {
+        onAPhone();
+        await openBig();
+        await waitFor(() => expect(on()).toBe('e1'));
+        expect(await press('ArrowRight')).toBe('e2');
+        expect(await press('ArrowRight')).toBe('p1');
+        expect(await press('ArrowRight')).toBe('p2');
+        expect(await press('ArrowRight')).toBe('p2');
+        expect(await press('ArrowLeft', 'ArrowLeft')).toBe('e2');
+      });
+
+      test('Up and Down go along a column of the whole grid, across into the quadrant below and above', async () => {
+        onAPhone();
+        await openBig();
+        await waitFor(() => expect(on()).toBe('e1'));
+        expect(await press('ArrowDown')).toBe('e3');
+        expect(await press('ArrowDown')).toBe('b1');
+        expect(await press('ArrowDown')).toBe('b3');
+        expect(await press('ArrowDown')).toBe('b3');
+        expect(await press('ArrowUp', 'ArrowUp', 'ArrowUp')).toBe('e1');
+        expect(await press('ArrowUp')).toBe('e1');
+        expect(await press('ArrowRight', 'ArrowRight', 'ArrowRight')).toBe('p2');
+        expect(await press('ArrowDown', 'ArrowDown')).toBe('c2');
+        expect(await press('ArrowDown')).toBe('c4');
+        expect(await press('ArrowLeft')).toBe('c3');
+        expect(await press('ArrowLeft')).toBe('b4');
+      });
+
+      test('Home and End go to the first and the last, and a kind already left is stepped over', async () => {
+        onAPhone();
+        await openBig(['c2']);
+        await waitFor(() => expect(on()).toBe('e1'));
+        expect(await press('End')).toBe('c4');
+        expect(await press('Home')).toBe('e1');
+        await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowDown');
+        expect(on()).toBe('p4');
+        expect(await press('ArrowDown')).toBe('c4');
+      });
     });
   });
 
@@ -312,7 +359,7 @@ function showAround(w: ReturnType<typeof world>) {
   renderIn(w.fake, (
     <>
       <input aria-label="before" />
-      <Reactions act={w.theirs} author={w.spritey} tallies={tallies} mine={mine} />
+      <Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={mine} />
       <button type="button">after</button>
       <Probe />
     </>
@@ -335,7 +382,7 @@ describe('from the Task 6 quality review', () => {
     const v = show(w, w.theirs, w.spritey);
     const p = await open();
     expect(p.getByRole('status')).toHaveTextContent('3 of 3 left');
-    expect(picker()).toHaveAccessibleDescription('3 of 3 left');
+    expect(picker()).toHaveAccessibleDescription('3 of 3 left, reacting as Mrs. Hooligan');
     act(() => { v.mine.add({ act: w.theirs, kind: 'fire', character: w.pipe }); });
     expect(p.getByRole('status')).toHaveTextContent('2 of 3 left');
   });
@@ -353,19 +400,23 @@ describe('from the Task 6 quality review', () => {
     expect(p.getByRole('button', { name: /^Tea, Calm/u })).toBeDisabled();
   });
 
+  /* In the glass the page behind is inert, so the picker is closed by Esc, not by a click on the page; focus is back on React and the reaction landing moves it nowhere. */
   test('a reaction that lands after the picker was closed is still recorded, and takes focus nowhere', async () => {
     const w = world();
     const v = showAround(w);
     const gate = held(w);
     const p = await open();
     await userEvent.click(p.getByRole('button', { name: 'Fire, Hype' }));
-    await userEvent.click(screen.getByLabelText('before'));
+    await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'React' })).toHaveFocus());
+    act(() => screen.getByLabelText('before').focus());
     gate.release();
     await waitFor(() => expect(screen.getByText('Fire, 1, including yours')).toBeInTheDocument());
     expect(v.mine.get(w.theirs)).toHaveLength(1);
     expect(landed).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('before')).toHaveFocus();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   test('sends one reaction at a time: a second click while the first is in flight is ignored', async () => {
@@ -381,25 +432,25 @@ describe('from the Task 6 quality review', () => {
     expect(gate.react).toHaveBeenCalledTimes(1);
   });
 
-  test('closes on a press outside, without taking focus', async () => {
+  /* In the glass a press outside lands on the overlay's dimmed page, which closes it and gives focus back to React, as every overlay does. */
+  test('closes on a press outside, on the dimmed page, and focus goes back to React', async () => {
     const w = world();
     showAround(w);
     await open();
-    fireEvent.pointerDown(document.body);
+    fireEvent.mouseDown(picker().closest('.kb-glass-overlay')!);
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByRole('button', { name: 'React' })).not.toHaveFocus();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'React' })).toHaveFocus());
   });
 
-  test('closes when focus moves to something outside it, and stays open when it moves to the React button', async () => {
+  /* In the glass focus is held: what used to close the picker (focus moving outside) is brought back inside it. */
+  test('holds focus: focus sent outside it comes back inside, and the picker stays open', async () => {
     const w = world();
     showAround(w);
     const p = await open();
     await waitFor(() => expect(p.getByRole('button', { name: 'Tomato, Heat' })).toHaveFocus());
-    act(() => screen.getByRole('button', { name: 'React' }).focus());
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    act(() => p.getByRole('button', { name: 'Tomato, Heat' }).focus());
     act(() => screen.getByLabelText('before').focus());
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(picker()).toContainElement(document.activeElement as HTMLElement);
   });
 
   test('closes by its Close button and returns focus to React', async () => {
@@ -411,7 +462,8 @@ describe('from the Task 6 quality review', () => {
     expect(screen.getByRole('button', { name: 'React' })).toHaveFocus();
   });
 
-  test('puts Close after the grid: Tab from the grid reaches it, and Tab from it leaves and closes', async () => {
+  /* In the glass Tab is held inside: from Close it comes back round to the grid's one stop, where it used to leave and close. */
+  test('puts Close after the grid: Tab from the grid reaches it, and Tab from it comes back round to the grid', async () => {
     const w = world();
     showAround(w);
     const p = await open();
@@ -420,8 +472,12 @@ describe('from the Task 6 quality review', () => {
     expect(p.getByRole('button', { name: 'Close' })).toHaveFocus();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     await userEvent.tab();
-    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(p.getByRole('button', { name: 'Tomato, Heat' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(p.getByRole('button', { name: 'Fire, Hype' })).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(p.getByRole('button', { name: 'Close' })).toHaveFocus();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   /* The choice: a picker belongs to the character it was opened for, so changing the HUD's character closes it (a reaction never goes out under a mask other than the one the label named). */
@@ -429,7 +485,7 @@ describe('from the Task 6 quality review', () => {
     const w = world();
     const v = showAround(w);
     await open();
-    expect(picker()).toHaveAccessibleName('React as Mrs. Hooligan');
+    expect(picker()).toHaveAccessibleDescription(/reacting as Mrs\. Hooligan$/u);
     act(() => v.probe.player!.setHudCharacter(w.pipe));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     act(() => v.probe.player!.setHudCharacter(w.hooligan));
@@ -445,5 +501,83 @@ describe('from the Task 6 quality review', () => {
     expect(own).toBeDisabled();
     expect(getComputedStyle(own).opacity).toBe('1');
     expect(getComputedStyle(own.firstElementChild!).opacity).toBe('0.4');
+  });
+});
+
+/* Glass Task 2.1: the picker as the React board draws it, a glass overlay (docs/research/2026-10-29-two-worlds/03-react.html). */
+describe('in the glass', () => {
+  test('opens as a glass overlay named as the board names it, on the react smoke, with the page behind inert and focus inside', async () => {
+    const w = world();
+    const { container } = show(w, w.theirs, w.spritey);
+    await open();
+    const dialog = picker();
+    expect(dialog).toHaveAccessibleName('React to Spritey\'s post');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveClass('kb-glass-dialog');
+    expect(dialog.querySelector('.kb-smoke')).toHaveAttribute('data-kb-surface', 'react');
+    expect(container).toHaveAttribute('inert');
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  test('Esc closes the picker only: on a glass page the page stays, and focus goes back to React', async () => {
+    const w = world();
+    const tallies = createTallies();
+    const mine = createMine();
+    renderIn(w.fake, <Page surface="settings"><Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={mine} /></Page>, { path: '/settings' });
+    await open();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: /^React to / })).toBeNull();
+    expect(window.location.pathname).toBe('/settings');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'React' })).toHaveFocus());
+    expect(screen.getByRole('button', { name: 'React' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('says the board\'s words: its heading, the count in its bar, the two axes and the hint', async () => {
+    const w = world();
+    show(w, w.theirs, w.spritey);
+    const p = await open();
+    expect(p.getByRole('heading', { name: 'React' })).toBeInTheDocument();
+    expect(picker().querySelector('.kb-glass-dialog-bar')).toContainElement(p.getByRole('status'));
+    expect(p.getByRole('status')).toHaveTextContent(/^3 of 3 left$/u);
+    expect(p.getByText('Excited')).toBeInTheDocument();
+    expect(p.getByText('Low-key')).toBeInTheDocument();
+    expect(p.getByText('Arrow keys move, Enter reacts. Outlined: yours.')).toBeInTheDocument();
+  });
+
+  test('names each group by its visible label, and the player\'s own kind as theirs', async () => {
+    const w = world();
+    const v = show(w, w.theirs, w.spritey);
+    act(() => { v.mine.add({ act: w.theirs, kind: 'tea', character: w.pipe }); });
+    const p = await open();
+    const heat = p.getByRole('group', { name: 'Heat' });
+    const label = document.getElementById(heat.getAttribute('aria-labelledby') ?? '');
+    expect(heat).toContainElement(label);
+    expect(label).toHaveTextContent('Heat');
+    expect(p.getByRole('button', { name: 'Tea, Calm, your reaction' })).toHaveAttribute('data-kb-own', '');
+  });
+
+  test('wears each quadrant\'s class colors where the instance gives one, and the glass\'s text where it gives none', async () => {
+    const w = world();
+    show(w, w.theirs, w.spritey);
+    const p = await open();
+    expect(p.getByRole('group', { name: 'Heat' }).getAttribute('style')).toContain('var(--kb-glass-class-heel-large)');
+    expect(p.getByRole('group', { name: 'Hype' }).getAttribute('style')).toContain('var(--kb-glass-class-face-fill)');
+    expect(p.getByRole('group', { name: 'Groan' }).getAttribute('style') ?? '').not.toContain('--kb-glass-class-');
+  });
+
+  test('lays a quadrant\'s kinds four across on the Main board\'s layout', async () => {
+    const w = world();
+    show(w, w.theirs, w.spritey);
+    await open();
+    expect(picker().querySelector('.kb-picker-grid')).toHaveAttribute('data-kb-columns', '4');
+  });
+
+  test('and two across on the Phone board\'s, where the picker is a sheet', async () => {
+    onAPhone();
+    const w = world();
+    show(w, w.theirs, w.spritey);
+    await open();
+    expect(picker().querySelector('.kb-picker-grid')).toHaveAttribute('data-kb-columns', '2');
+    expect(picker()).toHaveAttribute('data-kb-place', 'sheet');
   });
 });

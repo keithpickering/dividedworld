@@ -56,6 +56,13 @@ export const instanceUi: InstanceUi = Object.freeze({
     boredNegative: 'Groan',
     calmPositive: 'Calm',
   }),
+  // The React board's quadrants, each in a class's glass colors.
+  quadrantClasses: Object.freeze({
+    excitedNegative: 'heel',
+    excitedPositive: 'face',
+    boredNegative: 'jabroni',
+    calmPositive: 'lurker',
+  }),
   // Placeholder looks; each class's look on the reveal's bar is the owner's to give.
   classLooks: Object.freeze({
     face: { color: '#2e86de', description: 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.' },

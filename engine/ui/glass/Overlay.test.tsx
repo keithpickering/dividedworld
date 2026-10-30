@@ -4,10 +4,10 @@
  * (engine/ui/modal.tsx), so the two share one stack: Esc closes only the top one, and an Esc inside
  * an overlay on a glass page closes the overlay and leaves the page.
  */
-import { act, cleanup, screen } from '@testing-library/react';
+import { act, cleanup, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
-import { afterEach, describe, expect, test } from 'vitest';
+import { useRef, useState } from 'react';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { Modal } from '../modal.tsx';
 import { renderInWorld } from '../test-world.tsx';
@@ -70,6 +70,84 @@ describe('the overlay', () => {
     expect(screen.queryByRole('dialog', { name: 'Turn Pipewrench' })).toBeNull();
     expect(screen.getByRole('dialog', { name: 'A dialog' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open over' })).toHaveFocus();
+  });
+});
+
+/*
+ * Task 2.1: the React picker is the first overlay that opens by what it was opened from. Its board
+ * names the dialog more fully than its heading, sets its count in the bar, has no Close in the bar,
+ * and stands by the post it reacts to.
+ */
+describe('a popover overlay (the React picker\'s)', () => {
+  function Pop({ anchored = true }: { readonly anchored?: boolean }) {
+    const [open, setOpen] = useState(false);
+    const row = useRef<HTMLDivElement>(null);
+    return (
+      <>
+        <div ref={row} data-testid="row"><button type="button" onClick={() => setOpen(true)}>React</button></div>
+        {open && (
+          <Overlay
+            title="React" label="React to Spritey's post" surface="react" describedBy="count" closeAt="foot"
+            aside={<span id="count">2 of 3 left</span>} anchor={anchored ? row : undefined} onClose={() => setOpen(false)}
+          >
+            <button type="button">Fire</button>
+          </Overlay>
+        )}
+      </>
+    );
+  }
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  test('is named by its label where that says more than its title, described by what it names, with its aside in the bar', async () => {
+    renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
+    await userEvent.click(screen.getByRole('button', { name: 'React' }));
+    const dialog = screen.getByRole('dialog', { name: 'React to Spritey\'s post' });
+    expect(dialog).toHaveAccessibleDescription('2 of 3 left');
+    expect(within(dialog).getByRole('heading', { name: 'React' })).toBeInTheDocument();
+    expect(dialog.querySelector('.kb-glass-dialog-bar')).toHaveTextContent(/^React2 of 3 left$/u);
+  });
+
+  test('with its Close at the foot, Close comes after the body: Tab reaches it last and comes back round', async () => {
+    renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
+    await userEvent.click(screen.getByRole('button', { name: 'React' }));
+    const dialog = screen.getByRole('dialog', { name: 'React to Spritey\'s post' });
+    expect(within(dialog).getAllByRole('button').map((b) => b.textContent)).toEqual(['Fire', 'Close']);
+    expect(screen.getByRole('button', { name: 'Fire' })).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole('button', { name: 'Fire' })).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+  });
+
+  test('opened by an anchor, it stands below it, its left edge at the anchor\'s, inside the window', async () => {
+    renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
+    vi.spyOn(screen.getByTestId('row'), 'getBoundingClientRect').mockReturnValue(rect(224, 160, 300, 24));
+    await userEvent.click(screen.getByRole('button', { name: 'React' }));
+    const dialog = screen.getByRole('dialog', { name: 'React to Spritey\'s post' });
+    expect(dialog).toHaveAttribute('data-kb-place', 'below');
+    expect(dialog.style.position).toBe('absolute');
+    expect(parseFloat(dialog.style.left)).toBe(224);
+    expect(parseFloat(dialog.style.top)).toBeGreaterThan(184);
+  });
+
+  test('on the Phone board\'s layout it is a sheet above the HUD instead', async () => {
+    /* A window narrower than the switch, as useBoard reads it (jsdom answers no media query, which is the Main board's). */
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList);
+    renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
+    await userEvent.click(screen.getByRole('button', { name: 'React' }));
+    const dialog = screen.getByRole('dialog', { name: 'React to Spritey\'s post' });
+    expect(dialog).toHaveAttribute('data-kb-place', 'sheet');
+    expect(dialog.style.top).toBe('');
+  });
+
+  test('with no anchor, it stands where every overlay does', async () => {
+    renderInWorld(<Pop anchored={false} />, { path: '/t/1', seed: signedIn });
+    await userEvent.click(screen.getByRole('button', { name: 'React' }));
+    expect(screen.getByRole('dialog', { name: 'React to Spritey\'s post' })).not.toHaveAttribute('data-kb-place');
   });
 });
 

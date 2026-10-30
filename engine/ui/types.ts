@@ -179,6 +179,12 @@ export interface InstanceUi {
   readonly themes: readonly ThemeOption[];
   /** The four quadrants' labels on the reaction picker. */
   readonly quadrantLabels: Readonly<Record<Quadrant, string>>;
+  /**
+   * The class whose glass colors (`GlassTheme.classes`) each quadrant wears on the reaction picker,
+   * by the class's key: its tint and its label in the class's large text, as the React board draws
+   * them. A quadrant the instance gives no class is drawn in the glass's own text.
+   */
+  readonly quadrantClasses?: Readonly<Partial<Record<Quadrant, string>>>;
   /** Each class's look, by the class's key. */
   readonly classLooks: Readonly<Record<string, ClassLook>>;
   /**

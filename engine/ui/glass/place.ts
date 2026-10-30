@@ -1,5 +1,6 @@
 /**
- * Where the desktop popover goes, as numbers: below its button if it fits above the HUD, else above
+ * Where an overlay opened by an anchor goes on the Main board's layout (Overlay.tsx; the React
+ * picker's, which this was first written for), as numbers: below its button if it fits above the HUD, else above
  * it, else on the roomier side with a height cap (the popover scrolls inside it); and pulled back
  * inside the window's left and right edges. Everything is in viewport pixels in, and out relative to
  * the popover's containing block (the container's top-left), which is what an absolute element needs.
