@@ -1,12 +1,15 @@
 /*
- * The orbs: a game piece, so in color (the instance's --kb-orb-1 to -6). Each orb is a ring; the
- * solid fill sweeps clockwise from the top; the gain is hatched after it; a loss is a pale band
- * over the solid it would take. Sizes in em, so the orbs scale with the HUD's text.
+ * The orbs, in the glass's look (the glass plan, section 7, board 01): each a glass ball on the
+ * instance's orb body (--kb-glass-orb-body-from to -to), its fill a liquid in the gradient of its
+ * place in the row (--kb-orb-highlight, -color and -shade, which Orbs.tsx points at
+ * --kb-glass-orb-<n>-*). The liquid rises from the bottom by the settled fill; the estimate's gain
+ * is the same liquid, hatched, above it; a loss is a pale band over the liquid it would take; a
+ * gloss sits over all. Sizes in em, so the orbs scale with the HUD's text.
  */
 .kb-orbs {
   display: inline-flex;
   align-items: center;
-  gap: 0.5em;
+  gap: 0.6em;
   flex-wrap: wrap;
 }
 
@@ -18,45 +21,69 @@
 
 .kb-orb {
   position: relative;
-  width: 1.55em;
-  height: 1.55em;
+  width: 1.7em;
+  height: 1.7em;
   border-radius: 50%;
-  border: 1px solid var(--kb-orb-rim);
   overflow: hidden;
-  background: conic-gradient(var(--kb-orb-color) calc(var(--kb-solid) * 360deg), transparent 0);
+  isolation: isolate;
+  background: radial-gradient(circle at 50% 35%, var(--kb-glass-orb-body-from), var(--kb-glass-orb-body-to));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kb-orb-highlight) 35%, transparent);
 }
 
-.kb-orb--full {
-  background: radial-gradient(circle at 50% 25%, var(--kb-orb-shine) 0 22%, transparent 45%), var(--kb-orb-color);
-}
-
-/* The gain: the orb's color, hatched, from the solid fill on. */
-.kb-orb::after {
-  content: "";
+.kb-orb > span {
   position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: conic-gradient(transparent calc(var(--kb-gain-from) * 360deg), var(--kb-orb-color) 0 calc(var(--kb-gain-to) * 360deg), transparent 0);
-  mask: repeating-linear-gradient(45deg, var(--kb-fg) 0 2px, transparent 2px 4px);
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
-/* The loss: a pale band over the solid it would take. */
-.kb-orb::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: conic-gradient(transparent calc(var(--kb-loss-from) * 360deg), var(--kb-orb-loss) 0 calc(var(--kb-loss-to) * 360deg), transparent 0);
-  z-index: 1;
+/* The settled fill: the liquid, risen from the bottom. */
+.kb-orb-liquid {
+  height: calc(var(--kb-solid) * 100%);
+  background: linear-gradient(to top, var(--kb-orb-shade), var(--kb-orb-color) 60%, var(--kb-orb-highlight));
+}
+
+/* The gain: the same liquid, hatched, from the fill up. */
+.kb-orb-ghost {
+  bottom: calc(var(--kb-gain-from) * 100%);
+  height: calc((var(--kb-gain-to) - var(--kb-gain-from)) * 100%);
+  background: repeating-linear-gradient(45deg, var(--kb-orb-color) 0 2px, transparent 2px 4px);
+}
+
+/* The loss: a pale band over the liquid it would take. */
+.kb-orb-pale {
+  bottom: calc(var(--kb-loss-from) * 100%);
+  height: calc((var(--kb-loss-to) - var(--kb-loss-from)) * 100%);
+  background: color-mix(in srgb, var(--kb-glass-pale) 75%, transparent);
+}
+
+/* The gloss: the glass's highlight, over all. */
+.kb-orb-gloss {
+  top: 0;
+  background: radial-gradient(ellipse 55% 35% at 40% 22%, color-mix(in srgb, var(--kb-orb-highlight) 70%, transparent), transparent 70%);
+}
+
+.kb-orbs-figures {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
 }
 
 .kb-orbs-figure {
-  font-size: var(--kb-size-body);
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-xs);
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-orbs-cap {
+  font-size: var(--kb-glass-size-label);
+  color: var(--kb-glass-text-2);
 }
 
 .kb-orbs-pending,
 .kb-orbs-over {
-  font-size: var(--kb-size-small);
+  font-size: var(--kb-glass-size-label);
+  color: var(--kb-glass-estimate);
 }
 
 /* The cascade's beat: a flash and a shine on an orb as it fills. */
@@ -64,10 +91,9 @@
   animation: kb-orb-flash 600ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.kb-orb--flash::after {
-  background: linear-gradient(115deg, transparent 30%, var(--kb-orb-shine) 50%, transparent 70%) no-repeat;
+.kb-orb--flash .kb-orb-gloss {
+  background: linear-gradient(115deg, transparent 30%, var(--kb-orb-highlight) 50%, transparent 70%) no-repeat;
   background-size: 250% 100%;
-  mask: none;
   animation: kb-orb-shine 600ms ease-out;
 }
 

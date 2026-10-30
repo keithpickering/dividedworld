@@ -11,13 +11,32 @@ import type { GlassTheme } from '../types.ts';
 
 export type GlassKeyName = 'standard' | 'high';
 
-/** Every property a key sets: its tokens, each size step in px, and the calm's opacity and feather. */
+/**
+ * Every property a key sets: its tokens, each size step in px, and the calm's opacity and feather.
+ * Then the instance's own colors, which are its data and not tokens (the glass plan, section 4):
+ * each orb's three stops by its place in the row (`--kb-glass-orb-<n>-highlight`, `-color`,
+ * `-shade`) and the orb's body (`--kb-glass-orb-body-from`, `-to`), and each class's fill, ink and
+ * large text by the class's key (`--kb-glass-class-<key>-fill`, `-ink`, `-large`). The engine
+ * reads those names and never a value; an orb or a class the instance does not give is unset.
+ */
 export function glassVars(glass: GlassTheme, key: GlassKeyName): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [name, token] of Object.entries(glass.keys[key])) out[name] = token.value;
   for (const [name, size] of Object.entries(glass.sizes)) out[`--kb-glass-size-${name}`] = `${size.px}px`;
   out['--kb-glass-calm-opacity'] = String(glass.calm.opacity);
   out['--kb-glass-calm-feather'] = `${glass.calm.feather}px`;
+  glass.orbs.gradients.forEach((g, i) => {
+    out[`--kb-glass-orb-${i + 1}-highlight`] = g.highlight;
+    out[`--kb-glass-orb-${i + 1}-color`] = g.color;
+    out[`--kb-glass-orb-${i + 1}-shade`] = g.shade;
+  });
+  if (glass.orbs.body.from) out['--kb-glass-orb-body-from'] = glass.orbs.body.from;
+  if (glass.orbs.body.to) out['--kb-glass-orb-body-to'] = glass.orbs.body.to;
+  for (const [cls, c] of Object.entries(glass.classes)) {
+    out[`--kb-glass-class-${cls}-fill`] = c.fill;
+    out[`--kb-glass-class-${cls}-ink`] = c.ink;
+    out[`--kb-glass-class-${cls}-large`] = c.large;
+  }
   return out;
 }
 

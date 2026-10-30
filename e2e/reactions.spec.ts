@@ -13,7 +13,7 @@ test.describe('a phone', () => {
     await post.getByRole('button', { name: 'React' }).click();
     const picker = page.getByRole('dialog', { name: /^React as / });
     await expect(picker).toBeVisible();
-    const hud = page.getByRole('region', { name: 'HUD' });
+    const hud = page.getByRole('region', { name: 'Game HUD' });
     await expect(hud).toBeVisible();
     /* The sheet slides in; wait for it to settle before measuring. */
     await expect.poll(async () => {
@@ -52,7 +52,7 @@ test.describe('a short desktop window', () => {
     await last.getByRole('button', { name: 'React' }).click();
     const picker = page.getByRole('dialog', { name: /^React as / });
     await expect(picker).toBeVisible();
-    const hud = page.getByRole('region', { name: 'HUD' });
+    const hud = page.getByRole('region', { name: 'Game HUD' });
     const [p, h] = [(await picker.boundingBox())!, (await hud.boundingBox())!];
     expect(p.y).toBeGreaterThanOrEqual(-1);
     expect(p.y + p.height).toBeLessThanOrEqual(h.y + 1);

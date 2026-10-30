@@ -12,7 +12,7 @@
  * Esc, Tab and stray focus. The app root is not named here: every direct child of the body other
  * than the top modal's overlay is the page behind, which holds in the web app, in stories and in tests.
  */
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import './modal.css';
 
@@ -63,8 +63,19 @@ function settle() {
   }
 }
 
-export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
-  const id = useId();
+export interface ModalLayer {
+  readonly overlay: RefObject<HTMLDivElement | null>;
+  readonly box: RefObject<HTMLDivElement | null>;
+  readonly closeButton: RefObject<HTMLButtonElement | null>;
+}
+
+/**
+ * The layer every modal surface is: the board's Modal here, and the glass's Overlay
+ * (engine/ui/glass/Overlay.tsx), so the two share one stack and only the top one of either kind
+ * answers Esc, Tab and stray focus. The caller renders the overlay, the dialog box and its Close
+ * button with the refs this returns.
+ */
+export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onClose' | 'returnFocusTo'>): ModalLayer {
   const box = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   /* The latest props, read by listeners that live as long as the dialog does. */
@@ -128,6 +139,12 @@ export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
     };
   }, []);
 
+  return { overlay, box, closeButton };
+}
+
+export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {
+  const id = useId();
+  const { overlay, box, closeButton } = useModalLayer({ onClose, returnFocusTo });
   return createPortal(
     <div ref={overlay} className="kb-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={box} className="kb-modal" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1}>

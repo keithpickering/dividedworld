@@ -71,11 +71,11 @@ describe('Signing out', () => {
     const me = fake.seed.account('me');
     fake.seed.character(me, 'Pipewrench', 'face');
     fake.signInAs(me);
-    renderIn(fake, <Frame links={[]}><SettingsScreen /></Frame>, { path: '/settings' });
-    await waitFor(() => expect(within(screen.getByRole('region', { name: 'HUD' })).getByRole('combobox', { name: 'Posting as' })).toBeInTheDocument());
+    renderIn(fake, <Frame><SettingsScreen /></Frame>, { path: '/settings' });
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('combobox', { name: 'Swap mask' })).toBeInTheDocument());
     localStorage.setItem(`kb-draft:${me}:thread-1`, JSON.stringify({ text: 'half a thought', as: null }));
     await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
-    await waitFor(() => expect(within(screen.getByRole('region', { name: 'HUD' })).getByRole('link', { name: 'Sign in' })).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('link', { name: 'Sign in' })).toBeInTheDocument());
     expect(localStorage.getItem(`kb-draft:${me}:thread-1`)).toBeNull();
   });
 });
@@ -112,8 +112,8 @@ describe('Where sign-in returns to', () => {
   });
 
   test('the HUD\'s Sign in link carries it', async () => {
-    renderIn(buildWorld(), <Frame links={[]}><p>x</p></Frame>, { path: '/standings' });
-    const hud = await screen.findByRole('region', { name: 'HUD' });
+    renderIn(buildWorld(), <Frame><p>x</p></Frame>, { path: '/standings' });
+    const hud = await screen.findByRole('region', { name: 'Game HUD' });
     expect(within(hud).getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in?next=%2Fstandings');
   });
 });

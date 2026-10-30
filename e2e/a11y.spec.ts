@@ -23,6 +23,12 @@ export async function pageViolations(page: Page): Promise<string[]> {
 /* These specs inject axe and poison styles into the page; the site's policy (e2e/csp.spec.ts holds it) would block them. */
 test.use({ bypassCSP: true });
 
+/* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register']);
+const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.has(path)
+  ? page.getByRole('navigation', { name: 'Menu' })
+  : page.getByRole('region', { name: 'Game HUD' }));
+
 const PAGES: readonly [string, string][] = [
   ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['standings', '/standings'], ['settings', '/settings'], ['invites', '/invites'],
 ];
@@ -35,7 +41,7 @@ for (const scheme of ['light', 'dark'] as const) {
       for (const [label, path] of PAGES) {
         test(`${label} has no axe violation, color contrast included`, async ({ page }) => {
           await page.goto(path);
-          await expect(page.getByRole('region', { name: 'HUD' })).toBeVisible();
+          await expect(ready(page, path)).toBeVisible();
           expect(await pageViolations(page)).toEqual([]);
         });
       }
@@ -94,7 +100,7 @@ for (const scheme of ['light', 'dark'] as const) {
         /* The demo world starts signed in and starts over on a load, so sign out in the app and go on from there. */
         await page.goto('/settings');
         await page.getByRole('button', { name: 'Sign out' }).click();
-        await expect(page.getByRole('region', { name: 'HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
+        await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
         await page.getByRole('link', { name: 'Sign in' }).first().click();
         await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
@@ -108,7 +114,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
 test('the check sees low-contrast text in the browser', async ({ page }) => {
   await page.goto('/b/general');
-  await expect(page.getByRole('region', { name: 'HUD' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
   await page.addStyleTag({ content: 'body, main, .kb-box, .kb-table { background: #fff !important; } h1, h2, td, th, a, p { color: #ccc !important; }' });
   const found = await pageViolations(page);
   expect(found.some((f) => f.startsWith('color-contrast'))).toBe(true);

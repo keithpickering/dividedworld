@@ -21,20 +21,33 @@ describe('the orbs', () => {
     expect(orbEls().map(solid)).toEqual([1, 1, 0.4, 0, 0, 0]);
     expect(orbEls()[3]!.style.getPropertyValue('--kb-gain-to')).toBe('0.25');
     expect(screen.getByText('2.40')).toBeInTheDocument();
-    expect(screen.getByText('+0.85 pending')).toBeInTheDocument();
+    expect(screen.getByText('/ 6.00')).toBeInTheDocument();
+    expect(screen.getByText('+0.85 est.')).toBeInTheDocument();
   });
   test('a loss is a pale band and its figure is negative', () => {
     render(<Orbs settled={240} pending={-30} cap={600} />);
     expect(orbEls()[2]!.style.getPropertyValue('--kb-loss-from')).toBe('0.1');
-    expect(screen.getByText('−0.30 pending')).toBeInTheDocument();
+    expect(screen.getByText('−0.30 est.')).toBeInTheDocument();
   });
   test('past the cap is said', () => {
     render(<Orbs settled={500} pending={140} cap={600} />);
     expect(screen.getByText('+0.40 past the cap')).toBeInTheDocument();
   });
-  test('each orb takes its own color token', () => {
+  test('each orb takes its own gradient from the glass, by its place in the row', () => {
     render(<Orbs settled={0} pending={0} cap={600} />);
-    expect(orbEls()[4]!.style.getPropertyValue('--kb-orb-color')).toBe('var(--kb-orb-5)');
+    expect(orbEls()[4]!.style.getPropertyValue('--kb-orb-color')).toBe('var(--kb-glass-orb-5-color)');
+    expect(orbEls()[4]!.style.getPropertyValue('--kb-orb-highlight')).toBe('var(--kb-glass-orb-5-highlight)');
+    expect(orbEls()[4]!.style.getPropertyValue('--kb-orb-shade')).toBe('var(--kb-glass-orb-5-shade)');
+  });
+  test('in the glass\'s look the settled fill is a liquid risen from the bottom, the gain a ghost above it, a loss a pale band', () => {
+    render(<Orbs settled={240} pending={-30} cap={600} />);
+    const third = orbEls()[2]!;
+    expect(third.querySelector('.kb-orb-liquid')).not.toBeNull();
+    expect(third.querySelector('.kb-orb-pale')).not.toBeNull();
+    expect(third.querySelector('.kb-orb-gloss')).not.toBeNull();
+    const { unmount } = render(<Orbs settled={240} pending={85} cap={600} />);
+    expect(orbEls().at(-3)!.querySelector('.kb-orb-ghost')).not.toBeNull();
+    unmount();
   });
 });
 

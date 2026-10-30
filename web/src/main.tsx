@@ -1,5 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import '../../engine/ui/base.css';
+import '../../engine/ui/glass/tokens.css';
+import '../../engine/ui/glass/base.css';
+import '../../engine/ui/glass/calm.css';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 import { App } from './App.tsx';

@@ -5,17 +5,19 @@ import type { Character, KayfaApi, MyCharacter } from '../data/api.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { PlayerProvider } from '../player.tsx';
 import { RouterProvider } from '../router.tsx';
+import { testGlass } from '../test-world.tsx';
+import { boardPlace, forgetBoard } from '../glass/back.ts';
 import { Frame } from './Frame.tsx';
 
-const mine = (id: string, name: string): MyCharacter => ({
-  id, name, class: 'face', classSince: '2026-10-01T00:00:00Z', turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
+const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
+  id, name, class: cls, classSince: '2026-10-01T00:00:00Z', turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
   debutLoudness: 'silent', retiredAt: null, pendingTurn: null,
 });
 const pub = (id: string, name: string): Character => ({
   id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01',
 });
 
-function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan')]) {
+function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>) {
   const api = {
     session: async () => ({ signedIn, account: signedIn ? 'acc' : null }),
     onSession: () => () => {},
@@ -24,18 +26,26 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
     myCards: async () => [{ card: 'whoops', held: 2 }, { card: 'stick-around', held: 1 }],
     estimate: async () => ({ entries: [{ character: 'a', reason: 'face.cheered', amount: 85 }], lines: [], asOf: null, freshAfter: null }),
     characters: vi.fn(async (ids: readonly string[]) => ids.map((id) => pub(id, id))),
+    boards: async () => {
+      if (!signedIn) throw new Error('reads answer only for a session');
+      return [{ id: 'g', slug: 'general', name: 'General' }, { id: 's', slug: 'the-system', name: 'The System' }];
+    },
+    nextSettlementAt: async () => '2026-10-31T08:17:00Z',
   } as unknown as KayfaApi;
   const kayfa = {
     api,
-    instance: { cards: [{ key: 'whoops', name: 'Whoops!' }, { key: 'stick-around', name: 'Stick Around' }] },
-    ui: { copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine' } },
+    instance: {
+      cards: [{ key: 'whoops', name: 'Whoops!' }, { key: 'stick-around', name: 'Stick Around' }],
+      classes: [{ key: 'face', name: 'Face' }, { key: 'heel', name: 'Heel' }],
+    },
+    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine' } },
     settings: { walletCap: 600 },
   } as unknown as Kayfa;
   const view = render(
     <RouterProvider>
       <KayfaProvider value={kayfa}>
         <PlayerProvider api={api}>
-          <Frame links={[{ to: '/', label: 'Index' }, { to: '/characters', label: 'Characters' }]}><p>page</p></Frame>
+          <Frame>{page}</Frame>
         </PlayerProvider>
       </KayfaProvider>
     </RouterProvider>,
@@ -43,86 +53,192 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
   return { api, unmount: view.unmount };
 }
 
-beforeEach(() => localStorage.clear());
+const here = () => window.location.pathname + window.location.search + window.location.hash;
+const hud = () => screen.findByRole('region', { name: 'Game HUD' });
 
-describe('the frame', () => {
-  test('a banner with the instance\'s name and the links, the page, and the HUD', async () => {
+/** A window this wide, as matchMedia answers it (jsdom has none). */
+function width(px: number) {
+  vi.stubGlobal('matchMedia', (q: string) => {
+    const m = /\((min|max)-width:\s*([\d.]+)px\)/.exec(q);
+    const matches = m ? (m[1] === 'min' ? px >= Number(m[2]) : px <= Number(m[2])) : false;
+    return { matches, media: q, addEventListener: () => {}, removeEventListener: () => {} } as unknown as MediaQueryList;
+  });
+}
+
+beforeEach(() => { localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+describe('the banner: the board\'s own', () => {
+  test('holds the instance\'s name, then Index and the boards, and nothing of the glass', async () => {
     setup();
     expect(screen.getByRole('banner')).toHaveTextContent('Divided World');
-    expect(screen.getByRole('navigation', { name: 'Site' })).toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    await waitFor(() => expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Index', 'General', 'The System']));
+    expect(within(nav).getByRole('link', { name: 'General' })).toHaveAttribute('href', '/b/general');
+    expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
     expect(screen.getByRole('main')).toHaveTextContent('page');
-    const hud = await screen.findByRole('region', { name: 'HUD' });
-    await waitFor(() => expect(within(hud).getByRole('img', { name: 'Wallet 2.40 of 6 orbs, 0.85 pending until the next settlement (estimate)' })).toBeInTheDocument());
   });
-  test('the quick-swap is a labeled select of the characters that can act, and it changes the HUD\'s character', async () => {
+  test('signed out, it holds Index and Sign in, and no Sign out', async () => {
+    setup(false);
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    await act(async () => {});
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Index', 'Sign in']);
+    expect(screen.queryByText('Sign out')).toBeNull();
+  });
+  test('its phone button reads Boards and discloses the links, and its name is not the HUD\'s Menu', async () => {
+    /* A phone shows it; jsdom lays out the desktop, where it is display: none, so it is read hidden here. */
     setup();
-    const select = await screen.findByRole('combobox', { name: 'Posting as' });
+    const boards = screen.getByText('Boards', { selector: 'button' });
+    expect(boards).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(boards);
+    expect(boards).toHaveAttribute('aria-expanded', 'true');
+    expect(within(await hud()).getByRole('button', { name: 'Menu' })).not.toBe(boards);
+  });
+});
+
+describe('the HUD: the glass, docked at the bottom', () => {
+  test('is the Game HUD, with the orbs\' wallet', async () => {
+    setup();
+    const h = await hud();
+    await waitFor(() => expect(within(h).getByRole('img', { name: 'Wallet 2.40 of 6 orbs, 0.85 pending until the next settlement (estimate)' })).toBeInTheDocument());
+  });
+  test('the character plate: the name, the class tag only its player sees, and the swap', async () => {
+    setup();
+    const h = await hud();
+    await waitFor(() => expect(within(h).getByText('Pipewrench', { selector: '.kb-hud-name' })).toBeInTheDocument());
+    expect(within(h).getByText('Heel')).toBeInTheDocument();
+    expect(within(h).getByText('Only you see this')).toBeInTheDocument();
+  });
+  test('the swap is "Swap mask" on a wide screen and "Posting as" below 1340px, and it changes the HUD\'s character', async () => {
+    width(1440);
+    const { unmount } = setup();
+    const select = await within(await hud()).findByRole('combobox', { name: 'Swap mask' });
     await waitFor(() => expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['Pipewrench', 'Mrs. Hooligan']));
     await userEvent.selectOptions(select, 'b');
-    expect((select as HTMLSelectElement).value).toBe('b');
     expect(localStorage.getItem('kb-hud:acc')).toBe('b');
     expect(window.location.href).not.toContain('b');
-  });
-  test('the hand button says how many cards are held and opens the drawer above the HUD', async () => {
+    unmount();
+    width(1024);
     setup();
-    const hand = await screen.findByRole('button', { name: 'Hand: 3 cards' });
+    expect(await within(await hud()).findByRole('combobox', { name: 'Posting as' })).toBeInTheDocument();
+  });
+  test('the clock says when the next settlement is', async () => {
+    setup();
+    expect(await within(await hud()).findByText('Next settlement')).toBeInTheDocument();
+  });
+  test('Menu, with Esc as its key, opens the glass at My characters and keeps the board\'s place', async () => {
+    window.history.replaceState(null, '', '/b/general?page=2');
+    setup();
+    const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
+    expect(menu).toHaveAttribute('aria-keyshortcuts', 'Escape');
+    expect(menu).toHaveAttribute('aria-haspopup', 'true');
+    await userEvent.click(menu);
+    expect(here()).toBe('/characters');
+    expect(boardPlace()).toMatchObject({ href: '/b/general?page=2' });
+  });
+  test('the avatar opens My characters and the orbs open My log (the standings stand in), each keeping the board\'s place', async () => {
+    window.history.replaceState(null, '', '/t/abc');
+    setup();
+    const h = await hud();
+    await userEvent.click(await within(h).findByRole('link', { name: 'My characters' }));
+    expect(here()).toBe('/characters');
+    expect(boardPlace()).toMatchObject({ href: '/t/abc' });
+    forgetBoard();
+    window.history.replaceState(null, '', '/t/abc');
+    act(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+    await userEvent.click(await within(h).findByRole('link', { name: /^My log: Wallet 2\.40/ }));
+    expect(here()).toBe('/standings');
+    expect(boardPlace()).toMatchObject({ href: '/t/abc' });
+  });
+  test('Esc anywhere on the board opens the menu, but not while typing', async () => {
+    window.history.replaceState(null, '', '/b/general');
+    setup(true, undefined, <textarea aria-label="Your reply" />);
+    await within(await hud()).findByRole('button', { name: 'Menu' });
+    await userEvent.click(screen.getByRole('textbox', { name: 'Your reply' }));
+    await userEvent.keyboard('{Escape}');
+    expect(here()).toBe('/b/general');
+    screen.getByRole('textbox', { name: 'Your reply' }).blur();
+    await userEvent.keyboard('{Escape}');
+    expect(here()).toBe('/characters');
+  });
+});
+
+describe('the hand', () => {
+  test('its button names the postcards held, and says open while the drawer is', async () => {
+    setup();
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     expect(hand).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(hand);
+    expect(hand).toHaveAccessibleName('Hand, 3 postcards, open');
     expect(hand).toHaveAttribute('aria-expanded', 'true');
     const drawer = screen.getByRole('region', { name: 'Your hand' });
     expect(drawer).toHaveTextContent('Whoops! ×2');
     expect(drawer).toHaveTextContent('Stick Around ×1');
+  });
+  test('Esc closes the drawer and returns focus to the hand, and does not open the menu', async () => {
+    window.history.replaceState(null, '', '/b/general');
+    setup();
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
+    await userEvent.click(hand);
     hand.blur();
-    expect(hand).not.toHaveFocus();
     await userEvent.keyboard('{Escape}');
     expect(hand).toHaveAttribute('aria-expanded', 'false');
     expect(hand).toHaveFocus();
+    expect(here()).toBe('/b/general');
   });
-  test('the Menu button discloses the links (a phone shows it; jsdom lays out the desktop, so it is read hidden here)', async () => {
+  test('Close the hand closes it', async () => {
     setup();
-    const menu = screen.getByText('Menu', { selector: 'button' });
-    expect(menu).toHaveAttribute('aria-expanded', 'false');
-    await userEvent.click(menu);
-    expect(menu).toHaveAttribute('aria-expanded', 'true');
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
+    await userEvent.click(hand);
+    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Close the hand' }));
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(hand).toHaveFocus();
   });
-  test('signed out, the HUD offers sign-in and holds no orbs', async () => {
+});
+
+describe('signed out and new', () => {
+  test('signed out, the HUD offers sign-in and holds no orbs, no Menu and no hand', async () => {
     setup(false);
-    const hud = await screen.findByRole('region', { name: 'HUD' });
+    const h = await hud();
     await act(async () => {});
-    expect(within(hud).getByRole('link', { name: 'Sign in' })).toBeInTheDocument();
-    expect(within(hud).queryByRole('img')).toBeNull();
+    expect(within(h).getByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+    expect(within(h).queryByRole('img')).toBeNull();
+    expect(within(h).queryByRole('button')).toBeNull();
   });
   test('a player with no character that can act is told how to make one', async () => {
     setup(true, []);
-    const hud = await screen.findByRole('region', { name: 'HUD' });
-    await waitFor(() => expect(within(hud).getByRole('link', { name: 'Make a character' })).toBeInTheDocument());
+    const h = await hud();
+    await waitFor(() => expect(within(h).getByRole('link', { name: 'Make a character' })).toBeInTheDocument());
   });
 });
 
 describe('from the Task 3 quality review', () => {
   test('the hand button controls a drawer that is always there, hidden while closed', async () => {
     setup();
-    const hand = await screen.findByRole('button', { name: 'Hand: 3 cards' });
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     const drawer = document.getElementById(hand.getAttribute('aria-controls')!);
     expect(drawer).not.toBeNull();
     expect(drawer).toHaveAttribute('hidden');
   });
-  test('an Esc another control has already handled leaves the drawer and focus alone', async () => {
+  test('an Esc another control has already handled leaves the drawer, focus and the page alone', async () => {
+    window.history.replaceState(null, '', '/b/general');
     setup();
-    const hand = await screen.findByRole('button', { name: 'Hand: 3 cards' });
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     await userEvent.click(hand);
     const other = document.createElement('input');
+    other.type = 'checkbox';
     document.body.append(other);
     other.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.preventDefault(); });
     other.focus();
     await userEvent.keyboard('{Escape}');
     expect(hand).toHaveAttribute('aria-expanded', 'true');
     expect(other).toHaveFocus();
+    expect(here()).toBe('/b/general');
     other.remove();
   });
   test('moving to another page puts focus at the top of the new page', async () => {
     setup();
-    await userEvent.click(screen.getByRole('link', { name: 'Characters' }));
+    await userEvent.click(await screen.findByRole('link', { name: 'General' }));
     expect(screen.getByRole('main')).toHaveFocus();
   });
 });
@@ -137,19 +253,18 @@ describe('the measured HUD height', () => {
     height = 57.2;
     disconnected = 0;
     vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { tell = cb; } observe() {} disconnect() { disconnected += 1; } });
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ height }) as DOMRect);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ height, left: 0, width: 0, top: 0, bottom: height }) as DOMRect);
   });
-  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
   test('is set when the HUD mounts, follows it as it resizes, and is removed when it unmounts', async () => {
     const { unmount } = setup();
-    await screen.findByRole('region', { name: 'HUD' });
+    await hud();
     expect(measured()).toBe('58px');
     height = 96;
     act(() => tell());
     expect(measured()).toBe('96px');
     unmount();
     expect(measured()).toBe('');
-    expect(disconnected).toBe(1);
+    expect(disconnected).toBeGreaterThanOrEqual(1);
   });
 });

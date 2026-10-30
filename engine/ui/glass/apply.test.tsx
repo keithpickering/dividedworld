@@ -45,6 +45,31 @@ describe('glassVars', () => {
   });
 });
 
+describe('the instance\'s own colors as properties', () => {
+  /* The orbs and the classes are the instance's data, not tokens (the glass plan, section 4): the engine reads them by position and by key. */
+  const colored = {
+    ...glass,
+    classes: { heel: { fill: '#ff3d57', ink: '#14030a', large: '#ff8a96' } },
+    orbs: { gradients: [{ highlight: '#ead6ff', color: '#b46cff', shade: '#3d1475' }, { highlight: '#d6e9ff', color: '#3d9bff', shade: '#0c3275' }], body: { from: '#1c1533', to: '#07060c' } },
+  } as unknown as GlassTheme;
+
+  it('gives each orb its three stops, by its place in the row, and the orb\'s body', () => {
+    const v = glassVars(colored, 'standard');
+    expect(v['--kb-glass-orb-1-highlight']).toBe('#ead6ff');
+    expect(v['--kb-glass-orb-1-color']).toBe('#b46cff');
+    expect(v['--kb-glass-orb-2-shade']).toBe('#0c3275');
+    expect(v['--kb-glass-orb-body-from']).toBe('#1c1533');
+    expect(v['--kb-glass-orb-body-to']).toBe('#07060c');
+  });
+
+  it('gives each class its fill, its ink and its large text, by the class\'s key', () => {
+    const v = glassVars(colored, 'standard');
+    expect(v['--kb-glass-class-heel-fill']).toBe('#ff3d57');
+    expect(v['--kb-glass-class-heel-ink']).toBe('#14030a');
+    expect(v['--kb-glass-class-heel-large']).toBe('#ff8a96');
+  });
+});
+
 describe('applyGlass', () => {
   it('sets the properties on the root and marks the key', () => {
     const el = document.createElement('div');

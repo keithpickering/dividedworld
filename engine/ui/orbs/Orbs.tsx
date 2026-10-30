@@ -1,7 +1,9 @@
 /**
- * The six orbs in the HUD, the player's wallet: a ring each in the instance's orb colors, the
- * settled fill solid, the estimate's gain hatched after it, a loss a pale band over the fill it
- * would take, and the figures beside them (the screens' design, section 3). At a settlement the
+ * The six orbs in the HUD, the player's wallet, in the glass's look (the glass plan, section 7,
+ * board 01): a glass ball each in the instance's gradient for its place in the row
+ * (`--kb-glass-orb-<n>-*`, set by applyGlass), the settled fill a liquid risen from the bottom, the
+ * estimate's gain a hatched ghost above it, a loss a pale band over the liquid it would take, a
+ * gloss over all, and the figures beside them: the wallet over its cap, and the estimate. At a settlement the
  * fill plays the TTYD cascade from the last wallet the player saw, one orb a second, a flash and a
  * shine on each orb that fills; under reduced motion the new wallet shows at once.
  *
@@ -54,23 +56,33 @@ export function Orbs({ settled, pending, cap, cascadeFrom = null }: OrbsProps) {
             key={i}
             className={`kb-orb${o.solid === 1 ? ' kb-orb--full' : ''}${flash === i ? ' kb-orb--flash' : ''}`}
             style={{
-              '--kb-orb-color': `var(--kb-orb-${i + 1})`,
+              '--kb-orb-color': `var(--kb-glass-orb-${i + 1}-color)`,
+              '--kb-orb-highlight': `var(--kb-glass-orb-${i + 1}-highlight)`,
+              '--kb-orb-shade': `var(--kb-glass-orb-${i + 1}-shade)`,
               '--kb-solid': String(o.solid),
               '--kb-gain-from': String(o.gainFrom),
               '--kb-gain-to': String(o.gainTo),
               '--kb-loss-from': String(o.lossFrom),
               '--kb-loss-to': String(o.lossTo),
             } as CSSProperties}
-          />
+          >
+            <span className="kb-orb-liquid" />
+            <span className="kb-orb-ghost" />
+            <span className="kb-orb-pale" />
+            <span className="kb-orb-gloss" />
+          </span>
         ))}
       </span>
-      <span className="kb-orbs-figure kb-mono kb-num" aria-hidden="true">{figure(clamp(settled, 0, cap))}</span>
+      <span className="kb-orbs-figures" aria-hidden="true">
+        <span className="kb-orbs-figure kb-num">{figure(clamp(settled, 0, cap))}</span>
+        <span className="kb-orbs-cap kb-num">/ {figure(cap)}</span>
+      </span>
       {pending !== 0 && (
-        <span className="kb-orbs-pending kb-mono kb-num" aria-hidden="true">
-          {pending > 0 ? `+${figure(pending)}` : `−${figure(-pending)}`} pending
+        <span className="kb-orbs-pending kb-num" aria-hidden="true">
+          {pending > 0 ? `+${figure(pending)}` : `−${figure(-pending)}`} est.
         </span>
       )}
-      {overflow > 0 && <span className="kb-orbs-over kb-mono kb-num" aria-hidden="true">+{figure(overflow)} past the cap</span>}
+      {overflow > 0 && <span className="kb-orbs-over kb-num" aria-hidden="true">+{figure(overflow)} past the cap</span>}
     </span>
   );
 }

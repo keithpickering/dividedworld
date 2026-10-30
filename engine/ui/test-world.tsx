@@ -42,7 +42,24 @@ export const testInstance: Instance = {
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
 };
 
-const ui = { themes: [{ key: 'house', name: 'House', href: '/house.css', modes: 'both' }, { key: 'sepia', name: 'Sepia', href: '/sepia.css', modes: 'light' }], classLooks: { face: { color: 'currentColor', description: 'The crowd favorite: earns from cheers.' }, heel: { color: 'currentColor', description: 'Earns heat: boos and tomatoes.' } }, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, copy: { siteName: 'Test', siteTagline: 'test', shopName: 'Shop' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } } } as unknown as Kayfa['ui'];
+/**
+ * A glass with one plain recipe for every surface, so a screen that draws smoke (the HUD, a glass
+ * page) renders; the smoke's own tests (engine/ui/glass/Smoke.test.tsx) give it real recipes.
+ */
+export const testGlass = {
+  keys: { standard: {}, high: {} },
+  smoke: {
+    recipes: { plain: { layers: [] } },
+    surfaces: Object.fromEntries(['hud', 'hand', 'play', 'react', 'turn', 'effect', 'vending', 'characters', 'rankings', 'log', 'settings', 'account', 'settlement'].map((s) => [s, 'plain'])),
+  },
+  calm: { opacity: 0.85, feather: 32 },
+  sizes: {},
+  fonts: [],
+  classes: {},
+  orbs: { gradients: [], body: { from: '', to: '' } },
+} as unknown as Kayfa['ui']['glass'];
+
+const ui = { glass: testGlass, themes: [{ key: 'house', name: 'House', href: '/house.css', modes: 'both' }, { key: 'sepia', name: 'Sepia', href: '/sepia.css', modes: 'light' }], classLooks: { face: { color: 'currentColor', description: 'The crowd favorite: earns from cheers.' }, heel: { color: 'currentColor', description: 'Earns heat: boos and tomatoes.' } }, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, copy: { siteName: 'Test', siteTagline: 'test', shopName: 'Shop' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } } } as unknown as Kayfa['ui'];
 
 export interface WorldOptions {
   /** The address the screen opens at (a path, a query, a fragment). */

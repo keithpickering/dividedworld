@@ -6,7 +6,6 @@ const meta: Meta<typeof Frame> = {
   title: 'Frame/Frame',
   component: Frame,
   args: {
-    links: [{ to: '/', label: 'Index' }, { to: '/characters', label: 'Characters' }, { to: '/settings', label: 'Settings' }],
     children: <p>A page.</p>,
   },
 };
