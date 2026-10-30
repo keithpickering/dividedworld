@@ -7,7 +7,8 @@
  * A manifest (e2e/boards/<NN>-<name>.ts) lists a board's landmarks by role and accessible name. A
  * snapshot says, for each landmark, whether it was found, where, and how its first text is set. The
  * comparison is what docs/plans/2026-10-30-glass-to-the-boards-plan.md section 2.3 specifies: a box
- * within 8px of the board's position and 4px of its size, the same font family, size and weight,
+ * within 8px of the board's position and 4px of its size (a popover's parts measured from its own corner,
+ * where the manifest says so), the same font family, size and weight,
  * the same opaque color, letter-spacing within half a pixel. It never compares the smoke's pixels,
  * numbers, or anything a manifest leaves out.
  *
@@ -15,8 +16,8 @@
  * lacks (the manifest is wrong), a `buildName` that matches nothing in the build.
  */
 
-/** How a landmark's box is compared: `full` (the default), x and y only, y and height only, or not at all. */
-export type BoxMode = 'full' | 'position' | 'height' | 'none';
+/** How a landmark's box is compared: `full` (the default), x and y only, y and height only, width and height only, or not at all. */
+export type BoxMode = 'full' | 'position' | 'height' | 'size' | 'none';
 
 export interface Landmark {
   /** Names the landmark in a snapshot and a report; unique in its manifest. */
@@ -29,6 +30,12 @@ export interface Landmark {
   readonly buildName?: string;
   /** Another landmark's id: the search is made inside that one. */
   readonly within?: string;
+  /**
+   * Another landmark's id, earlier in the manifest: this one's x and y are compared as offsets from
+   * that one's top-left on each side, for the parts of a popover whose own place follows a page the
+   * board only draws (the React board's picker over its post). Width and height are compared as ever.
+   */
+  readonly origin?: string;
   /** Which of several matches (0 is the first). */
   readonly nth?: number;
   /** Which of the build's matches, where the build names a landmark the board leaves unnamed (`nth` otherwise). */
@@ -105,16 +112,20 @@ function parseColor(value: string): { r: number; g: number; b: number; a: number
 
 const firstFamily = (family: string) => family.split(',')[0]!.trim().replace(/^["']|["']$/g, '').toLowerCase();
 
-function compareBox(id: string, mode: BoxMode, board: Box, build: Box): Mismatch[] {
+function compareBox(id: string, mode: BoxMode, board: Box, build: Box, origin?: string): Mismatch[] {
   if (mode === 'none') return [];
   const fields: { name: keyof Box; tolerance: number }[] = [];
   if (mode === 'full' || mode === 'position') fields.push({ name: 'x', tolerance: POSITION_TOLERANCE }, { name: 'y', tolerance: POSITION_TOLERANCE });
   if (mode === 'height') fields.push({ name: 'y', tolerance: POSITION_TOLERANCE });
-  if (mode === 'full') fields.push({ name: 'width', tolerance: SIZE_TOLERANCE }, { name: 'height', tolerance: SIZE_TOLERANCE });
+  if (mode === 'full' || mode === 'size') fields.push({ name: 'width', tolerance: SIZE_TOLERANCE }, { name: 'height', tolerance: SIZE_TOLERANCE });
   if (mode === 'height') fields.push({ name: 'height', tolerance: SIZE_TOLERANCE });
+  const from = origin === undefined ? '' : `, measured from ${origin}`;
   return fields.filter((f) => Math.abs(board[f.name] - build[f.name]) > f.tolerance)
-    .map((f) => mismatch(id, f.name, String(board[f.name]), String(build[f.name]), `more than ${f.tolerance}px apart`));
+    .map((f) => mismatch(id, f.name, String(board[f.name]), String(build[f.name]), `more than ${f.tolerance}px apart${from}`));
 }
+
+/** A box's place as an offset from another's top-left. */
+const from = (box: Box, origin: Box): Box => ({ ...box, x: box.x - origin.x, y: box.y - origin.y });
 
 function compareType(id: string, board: TypeRead, build: TypeRead): Mismatch[] {
   const out: Mismatch[] = [];
@@ -147,7 +158,15 @@ export function compareBoard(board: Snapshot, build: Snapshot, manifest: BoardMa
       out.push(mismatch(l.id, 'presence', 'found', 'missing', `missing from the build: no ${l.role} named "${asked}"`));
       continue;
     }
-    if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', b.box, u.box));
+    if (l.origin !== undefined) {
+      const ob = board.shots.find((s) => s.id === l.origin);
+      const ou = build.shots.find((s) => s.id === l.origin);
+      if (!manifest.landmarks.some((m) => m.id === l.origin)) {
+        out.push(mismatch(l.id, 'origin', l.origin, l.origin, `measured from ${l.origin}, which is no landmark of the manifest`));
+      } else if (!ob?.found || !ou?.found || !ob.box || !ou.box) {
+        out.push(mismatch(l.id, 'origin', ob?.found ? 'found' : 'missing', ou?.found ? 'found' : 'missing', `measured from ${l.origin}, which is missing, so its place cannot be compared`));
+      } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', from(b.box, ob.box), from(u.box, ou.box), l.origin));
+    } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', b.box, u.box));
     if (l.type !== false) {
       if (b.type && u.type) out.push(...compareType(l.id, b.type, u.type));
       else if (b.type || u.type) out.push(mismatch(l.id, 'font', b.type ? 'text' : 'no text', u.type ? 'text' : 'no text', 'one side has no text to read'));

@@ -8,17 +8,17 @@
  *
  * One tab stop; the arrow keys move through the buttons in the grid as it looks: Left and Right
  * along a row of the whole grid, Up and Down along a column of it (across into the quadrant above
- * or below), Home and End to the first and last. A quadrant's kinds are four across on the Main
- * board's layout, as the board draws them, and two across on the Phone board's, where the picker is
- * a sheet above the HUD. The overlay holds focus and Tab, closes on Esc, Close or a press on the
- * dimmed page, and returns focus to React; a choice made closes it too.
+ * or below), Home and End to the first and last. Where the window has the popover's room (its
+ * 540px with the phone's 16px gutters) the picker opens by its post and a quadrant's kinds are four
+ * across, as the board draws them in its 900px window; in a narrower window (a phone) it is a sheet
+ * above the HUD and they are two across. The overlay holds focus and Tab, closes on Esc, Close or a
+ * press on the dimmed page, and returns focus to React; a choice made closes it too.
  */
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id, MyCharacter, MyReaction } from '../data/api.ts';
 import type { Quadrant } from '../../rules/types.ts';
-import { Overlay } from '../glass/Overlay.tsx';
-import { useBoard } from '../glass/useBoard.ts';
+import { Overlay, type Placed } from '../glass/Overlay.tsx';
 import { usePlayer } from '../player.tsx';
 import type { Tallies } from '../thread/tallies.ts';
 import type { Mine } from './mine.ts';
@@ -26,8 +26,10 @@ import { readable } from './Reactions.tsx';
 
 /** Top-left, top-right, bottom-left, bottom-right. */
 const GRID: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
-/** How many kinds a quadrant holds side by side: four on the Main board's layout, two on the phone's sheet (reactions.css lays them so). */
-export const KIND_COLUMNS = { main: 4, phone: 2 } as const;
+/** How many kinds a quadrant holds side by side: four in the popover, two on the sheet (reactions.css lays them so). */
+export const KIND_COLUMNS = { popover: 4, sheet: 2 } as const;
+/** The room the popover needs: its width (reactions.css's 540px, the board's) with the phone's 16px gutters either side. */
+export const POPOVER_ROOM = 540 + 2 * 16;
 
 /**
  * Where each kind sits in the whole grid: a row and a column, the quadrants' own rows and columns
@@ -74,7 +76,7 @@ interface Props {
 export function Picker({ act, authorName, as, own, tallies, mine, anchor, onClose }: Props) {
   const { api, instance, ui, settings } = useKayfa();
   const player = usePlayer();
-  const { board } = useBoard();
+  const [placed, setPlaced] = useState<Placed | null>(null);
   const grid = useRef<HTMLDivElement>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -86,7 +88,7 @@ export function Picker({ act, authorName, as, own, tallies, mine, anchor, onClos
   const kinds = new Set(own.map((o) => o.kind));
   const left = Math.max(0, cap - kinds.size);
   const free = (k: string) => left > 0 && !kinds.has(k);
-  const columns = KIND_COLUMNS[board];
+  const columns = KIND_COLUMNS[placed === 'sheet' ? 'sheet' : 'popover'];
   const buttons = () => [...(grid.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -136,7 +138,7 @@ export function Picker({ act, authorName, as, own, tallies, mine, anchor, onClos
   return (
     <Overlay
       title={<span className="kb-calm">React</span>} label={`React to ${authorName}'s post`} surface="react" className="kb-picker"
-      describedBy={describedId} closeAt="foot" anchor={anchor} onClose={() => onClose(true)}
+      describedBy={describedId} closeAt="foot" anchor={anchor} sheetBelow={POPOVER_ROOM} onPlace={setPlaced} onClose={() => onClose(true)}
       aside={<span id={countId} className="kb-picker-left kb-calm" role="status">{left} of {cap} left</span>}
     >
       {/* What the dialog is described by: the count, and the mask the reaction goes out under (the HUD's, which the overlay dims). */}

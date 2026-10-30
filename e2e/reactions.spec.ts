@@ -38,9 +38,10 @@ test.describe('a phone', () => {
 });
 
 /*
- * A 1000px window is below the switch to the Phone board's layout (engine/ui/glass/board.ts), where the
- * picker is the sheet above the HUD; it must still stay inside the window and clear of the HUD, even for a
- * post at the page's foot, and every kind must be reachable where the room is short.
+ * A 1000px window has the popover's room (Picker.tsx's POPOVER_ROOM), though it is below the switch to
+ * the Phone board's HUD: the picker is a popover by its post, as the React board draws it in a 900px
+ * window. It must stay inside the window and clear of the HUD, even for a post at the page's foot, and
+ * every kind must be reachable where the room is short.
  */
 test.describe('a short desktop window', () => {
   test.use({ viewport: { width: 1000, height: 500 } });
@@ -78,7 +79,7 @@ test.describe('a short desktop window', () => {
   });
 });
 
-/* On the Main board's layout the picker opens by its post, as the React board draws it: below the reactions row, its left edge at the row's, or above it where below would run under the HUD. */
+/* With the room, the picker opens by its post, as the React board draws it: below the reactions row, its left edge at the row's, or above it where below would run under the HUD. */
 test.describe('a wide window', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 

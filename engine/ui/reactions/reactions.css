@@ -44,6 +44,7 @@
  */
 .kb-glass-dialog.kb-picker {
   --kb-cut: var(--kb-glass-chamfer-3);
+  line-height: normal; /* the board's: its words set at the face's own line */
   --kb-border: 1px;
   width: 540px;
   max-width: 100%;
@@ -196,47 +197,47 @@
   padding: 0;
 }
 
-/* The Phone board's layout: a sheet above the HUD (Overlay.tsx), the kinds two across, at the phone's sizes, Close in the flow. */
-:where(:root[data-kb-layout='phone']) .kb-glass-dialog.kb-picker {
+/* In a window without the popover's room (a phone): a sheet above the HUD (Overlay.tsx), the kinds two across, at the phone's sizes, Close in the flow. */
+.kb-glass-dialog.kb-picker[data-kb-place='sheet'] {
   width: auto;
   padding: 12px 16px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-picker .kb-glass-dialog-head,
-:where(:root[data-kb-layout='phone']) .kb-picker-label {
+.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-head,
+.kb-picker[data-kb-place='sheet'] .kb-picker-label {
   font-size: var(--kb-glass-size-phone-display);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-picker-left,
-:where(:root[data-kb-layout='phone']) .kb-picker-hint,
-:where(:root[data-kb-layout='phone']) .kb-picker-none,
-:where(:root[data-kb-layout='phone']) .kb-picker-refusal,
-:where(:root[data-kb-layout='phone']) .kb-picker .kb-glass-dialog-close {
+.kb-picker[data-kb-place='sheet'] .kb-picker-left,
+.kb-picker[data-kb-place='sheet'] .kb-picker-hint,
+.kb-picker[data-kb-place='sheet'] .kb-picker-none,
+.kb-picker[data-kb-place='sheet'] .kb-picker-refusal,
+.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-close {
   font-size: var(--kb-glass-size-phone-body);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-picker-axis {
+.kb-picker[data-kb-place='sheet'] .kb-picker-axis {
   font-size: var(--kb-glass-size-phone-small);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-picker-grid {
+.kb-picker[data-kb-place='sheet'] .kb-picker-grid {
   grid-auto-rows: auto;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-picker-kinds {
+.kb-picker[data-kb-place='sheet'] .kb-picker-kinds {
   grid-template-columns: repeat(var(--kb-picker-columns, 2), 48px);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-picker-kind {
+.kb-picker[data-kb-place='sheet'] .kb-picker-kind {
   width: 48px;
   height: 48px;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-picker .kb-glass-dialog-foot {
+.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-foot {
   position: static;
   margin: 8px 0 0;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-picker .kb-glass-dialog-close {
+.kb-picker[data-kb-place='sheet'] .kb-glass-dialog-close {
   min-height: 48px;
 }

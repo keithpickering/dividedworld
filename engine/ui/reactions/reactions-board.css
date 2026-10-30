@@ -1,0 +1,8 @@
+/* The React board's page (Picker.board.stories.tsx): the board's own white page, the post at the board's place on it. */
+.kb-react-board {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 24px 32px 0;
+  background: var(--kb-bg);
+  color: var(--kb-fg);
+}

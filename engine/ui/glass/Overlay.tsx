@@ -7,19 +7,20 @@
  * an overlay answers never reaches the glass page's Back (MenuBar.tsx).
  *
  * Most overlays stand in the middle of the window. One opened by a part of the page it belongs to
- * (the React picker, by its post's reactions) is given that part as its `anchor`: on the Main
- * board's layout it stands below the anchor, its left edge at the anchor's, or above it where below
- * would run under the HUD, kept inside the window (place.ts); on the Phone board's layout it is a
- * sheet the width of the window, standing on the HUD's top edge. It is placed as it opens and again
- * when the window resizes or the page under it scrolls.
+ * (the React picker, by its post's reactions) is given that part as its `anchor`: where the window
+ * has the room its popover needs (`sheetBelow`, its width with the phone's gutters) it stands below
+ * the anchor, its left edge at the anchor's, or above it where below would run under the HUD, kept
+ * inside the window (place.ts); in a narrower window it is a sheet the width of the window, standing
+ * on the HUD's top edge. The room is the popover's own, not the HUD's switch between the boards'
+ * layouts: the React board draws the popover in a 900px window, below that switch. It is placed as it
+ * opens and again when the window resizes or the page under it scrolls, and tells its opener which
+ * it took (`onPlace`), so what it holds can be laid out for it.
  */
-import { useId, useLayoutEffect, type ReactNode, type RefObject } from 'react';
+import { useId, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
 import { placePopover } from './place.ts';
-import { useBoard } from './useBoard.ts';
-import type { BoardLayout } from './board.ts';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
@@ -41,21 +42,28 @@ export interface OverlayProps {
   readonly closeAt?: 'bar' | 'foot';
   /** The part of the page the overlay opens by, as a popover; with none it stands in the middle of the window. */
   readonly anchor?: RefObject<HTMLElement | null>;
+  /** With an anchor: the window's width, in px, below which the overlay is a sheet above the HUD rather than a popover. */
+  readonly sheetBelow?: number;
+  /** With an anchor: told where the overlay was placed, each time it is. */
+  readonly onPlace?: (place: Placed) => void;
   /** The dialog's own class, for its size and its parts. */
   readonly className?: string;
 }
+
+/** Where an anchored overlay stands. */
+export type Placed = 'below' | 'above' | 'sheet';
 
 /** The room kept between the anchor and the overlay, and between the overlay and the window's edges. */
 const GAP = 30;
 const MARGIN = 4;
 
 /** Places `box` by `anchor`, as the module comment says; returns the side it took. */
-function place(box: HTMLElement, anchor: HTMLElement, board: BoardLayout['board']): 'below' | 'above' | 'sheet' {
+function place(box: HTMLElement, anchor: HTMLElement, sheetBelow: number): Placed {
   for (const k of ['top', 'left', 'bottom', 'maxHeight', 'maxWidth'] as const) box.style[k] = '';
   const viewport = { width: document.documentElement.clientWidth || window.innerWidth, height: window.innerHeight };
   const hud = document.querySelector('.kb-hud')?.getBoundingClientRect().top;
   const hudTop = Math.min(hud ?? viewport.height, viewport.height);
-  if (board === 'phone') {
+  if (viewport.width < sheetBelow) {
     box.style.bottom = `${Math.max(0, viewport.height - hudTop)}px`;
     box.style.maxHeight = `${Math.max(0, hudTop - MARGIN)}px`;
     return 'sheet';
@@ -75,18 +83,22 @@ function place(box: HTMLElement, anchor: HTMLElement, board: BoardLayout['board'
   return p.side;
 }
 
-export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', anchor, className }: OverlayProps) {
+export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', anchor, sheetBelow = 0, onPlace, className }: OverlayProps) {
   const id = useId();
   const { overlay, box, closeButton } = useModalLayer({ onClose, returnFocusTo });
   const calm = useSurfaceStyle(surface);
-  const { board } = useBoard();
 
+  const told = useRef(onPlace);
+  told.current = onPlace;
   useLayoutEffect(() => {
     const el = box.current;
     if (!anchor || !el) return;
     const again = () => {
       const target = anchor.current;
-      if (target) el.setAttribute('data-kb-place', place(el, target, board));
+      if (!target) return;
+      const at = place(el, target, sheetBelow);
+      el.setAttribute('data-kb-place', at);
+      told.current?.(at);
     };
     again();
     window.addEventListener('resize', again);
@@ -94,7 +106,7 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
     const onScroll = (e: Event) => { if (e.target !== el) again(); };
     window.addEventListener('scroll', onScroll, true);
     return () => { window.removeEventListener('resize', again); window.removeEventListener('scroll', onScroll, true); };
-  }, [anchor, box, board]);
+  }, [anchor, box, sheetBelow]);
 
   const close = <button ref={closeButton} type="button" className="kb-glass-dialog-close kb-glass-cut-button" onClick={onClose}>Close</button>;
   return createPortal(

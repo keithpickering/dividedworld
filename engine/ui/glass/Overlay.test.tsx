@@ -88,7 +88,7 @@ describe('a popover overlay (the React picker\'s)', () => {
         {open && (
           <Overlay
             title="React" label="React to Spritey's post" surface="react" describedBy="count" closeAt="foot"
-            aside={<span id="count">2 of 3 left</span>} anchor={anchored ? row : undefined} onClose={() => setOpen(false)}
+            aside={<span id="count">2 of 3 left</span>} anchor={anchored ? row : undefined} sheetBelow={572} onClose={() => setOpen(false)}
           >
             <button type="button">Fire</button>
           </Overlay>
@@ -134,14 +134,21 @@ describe('a popover overlay (the React picker\'s)', () => {
     expect(parseFloat(dialog.style.top)).toBeGreaterThan(184);
   });
 
-  test('on the Phone board\'s layout it is a sheet above the HUD instead', async () => {
-    /* A window narrower than the switch, as useBoard reads it (jsdom answers no media query, which is the Main board's). */
-    vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList);
+  test('in a window narrower than the room its popover needs, it is a sheet above the HUD instead', async () => {
+    vi.stubGlobal('innerWidth', 571);
     renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
     await userEvent.click(screen.getByRole('button', { name: 'React' }));
     const dialog = screen.getByRole('dialog', { name: 'React to Spritey\'s post' });
     expect(dialog).toHaveAttribute('data-kb-place', 'sheet');
     expect(dialog.style.top).toBe('');
+  });
+
+  test('in a window just as wide as that room, and below the boards\' switch, it is still the popover', async () => {
+    vi.stubGlobal('innerWidth', 572);
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList);
+    renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
+    await userEvent.click(screen.getByRole('button', { name: 'React' }));
+    expect(screen.getByRole('dialog', { name: 'React to Spritey\'s post' })).toHaveAttribute('data-kb-place', 'below');
   });
 
   test('with no anchor, it stands where every overlay does', async () => {

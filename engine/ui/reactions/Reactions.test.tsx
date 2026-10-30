@@ -20,9 +20,9 @@ vi.mock('../player.tsx', async (original) => {
 beforeEach(() => { landed.mockClear(); });
 afterEach(() => { vi.unstubAllGlobals(); });
 
-/** The Phone board's layout, as useBoard reads the window (jsdom answers no media query, which is the Main board's). */
+/** A phone's window, narrower than the popover's room, where the picker is the sheet (jsdom's own window is 1024px wide). */
 function onAPhone() {
-  vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList);
+  vi.stubGlobal('innerWidth', 390);
 }
 
 /** Test instance: fire = hype (top right), tomato = heat (top left), zzz = groan (bottom left), tea = calm (bottom right). */
@@ -211,7 +211,7 @@ describe('the picker', () => {
     const on = () => document.activeElement?.getAttribute('data-kb-reaction');
     const press = async (...keys: string[]) => { for (const k of keys) await userEvent.keyboard(`{${k}}`); return on(); };
 
-    /* On the Main board's layout a quadrant's four kinds are a row, as the React board draws them. */
+    /* In the popover a quadrant's four kinds are a row, as the React board draws them. */
     test('Left and Right go along a row of the whole grid, across into the next quadrant', async () => {
       await openBig();
       await waitFor(() => expect(on()).toBe('e1'));
@@ -244,7 +244,7 @@ describe('the picker', () => {
     });
 
     /* On the phone's sheet there is room for two across, so a quadrant's kinds are two rows of two (the grid before the glass). */
-    describe('on the Phone board\'s layout, two to a row', () => {
+    describe('on a phone\'s sheet, two to a row', () => {
       test('Left and Right go along a row of the whole grid, across into the next quadrant', async () => {
         onAPhone();
         await openBig();
@@ -565,14 +565,14 @@ describe('in the glass', () => {
     expect(p.getByRole('group', { name: 'Groan' }).getAttribute('style') ?? '').not.toContain('--kb-glass-class-');
   });
 
-  test('lays a quadrant\'s kinds four across on the Main board\'s layout', async () => {
+  test('lays a quadrant\'s kinds four across in the popover', async () => {
     const w = world();
     show(w, w.theirs, w.spritey);
     await open();
     expect(picker().querySelector('.kb-picker-grid')).toHaveAttribute('data-kb-columns', '4');
   });
 
-  test('and two across on the Phone board\'s, where the picker is a sheet', async () => {
+  test('and two across in a window too narrow for the popover, where the picker is a sheet', async () => {
     onAPhone();
     const w = world();
     show(w, w.theirs, w.spritey);

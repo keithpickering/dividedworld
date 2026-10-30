@@ -2,7 +2,9 @@
  * Storybook's composition root: the engine's base stylesheet, an instance's house theme and its
  * glass (the glass's stylesheets, its tokens on the root and its fonts), as web/ loads them, and for a story that asks for one (`parameters.world`, engine/ui/story.tsx) an
  * in-memory world on the fake backend with the app's providers around it. Stories in engine/ui/
- * never import an instance; this file hands them one.
+ * never import an instance; this file hands them one. A board story asks for a moment of the boards
+ * fixture instead (`parameters.moment`), which this file seeds from web/src/data/fixtures/boards.ts,
+ * the composition root's, as the end-to-end build's backend does for the app.
  */
 import type { Decorator, Preview } from '@storybook/react-vite';
 import { useMemo } from 'react';
@@ -21,6 +23,7 @@ import type { WorldParameters } from '../engine/ui/story.tsx';
 import { instance } from '../instances/divided-world/index.ts';
 import { instanceUi } from '../instances/divided-world/ui/index.ts';
 import { fallbackSettings } from '../web/src/data/settings.ts';
+import { assertMoment, createBoardsFake, seedBoards } from '../web/src/data/fixtures/boards.ts';
 
 /* The instance's glass, as the app puts it on the page. */
 applyGlass(document.documentElement, instanceUi.glass, 'standard');
@@ -32,13 +35,19 @@ const ABOVE = SWITCH + 8;
 const BELOW = SWITCH - 8;
 
 const withWorld: Decorator = (Story, context) => {
-  const { world, path } = context.parameters as WorldParameters;
+  const { world, path, moment } = context.parameters as WorldParameters;
   const api = useMemo(() => {
+    if (moment !== undefined) {
+      const named = assertMoment(moment);
+      const fake = createBoardsFake(named);
+      seedBoards(fake, named);
+      return fake;
+    }
     if (!world && !path) return null;
     const fake = createFake({ instance, settings: fallbackSettings });
     world?.(fake, instance);
     return fake;
-  }, [world, path]);
+  }, [world, path, moment]);
   if (!api) return <Story />;
   if (path) window.history.replaceState(null, '', path);
   return (
