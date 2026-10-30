@@ -46,7 +46,7 @@ test('reacts: opens the picker from the keyboard, moves with arrows, chooses wit
   await expect(react).toBeVisible();
   await tabTo(page, react);
   await page.keyboard.press('Enter');
-  const picker = page.getByRole('dialog', { name: /^React as / });
+  const picker = page.getByRole('dialog', { name: /^React to / });
   await expect(picker).toBeVisible();
   await expect(picker.getByRole('status')).toContainText('3 of 3 left');
   /* Focus is already on a kind; the arrows move it, Enter leaves the reaction. */
@@ -62,9 +62,9 @@ test('reacts: opens the picker from the keyboard, moves with arrows, chooses wit
   await expect(react).toBeFocused();
   /* One reaction is spent: the picker says so when it is opened again, and Esc closes it. */
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog', { name: /^React as / }).getByRole('status')).toContainText('2 of 3 left');
+  await expect(page.getByRole('dialog', { name: /^React to / }).getByRole('status')).toContainText('2 of 3 left');
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog', { name: /^React as / })).toBeHidden();
+  await expect(page.getByRole('dialog', { name: /^React to / })).toBeHidden();
   await expect(react).toBeFocused();
 });
 

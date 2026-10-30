@@ -11,7 +11,7 @@ test.describe('a phone', () => {
     const post = page.locator('#post-5'); // another player's character: your own posts have no React button
     await expect(post).toBeVisible();
     await post.getByRole('button', { name: 'React' }).click();
-    const picker = page.getByRole('dialog', { name: /^React as / });
+    const picker = page.getByRole('dialog', { name: /^React to / });
     await expect(picker).toBeVisible();
     const hud = page.getByRole('region', { name: 'Game HUD' });
     await expect(hud).toBeVisible();
@@ -37,7 +37,11 @@ test.describe('a phone', () => {
   });
 });
 
-/* On a desktop the picker is a popover by its button: it must stay inside the window and clear of the HUD, even for a post at the page's foot. */
+/*
+ * A 1000px window is below the switch to the Phone board's layout (engine/ui/glass/board.ts), where the
+ * picker is the sheet above the HUD; it must still stay inside the window and clear of the HUD, even for a
+ * post at the page's foot, and every kind must be reachable where the room is short.
+ */
 test.describe('a short desktop window', () => {
   test.use({ viewport: { width: 1000, height: 500 } });
 
@@ -50,7 +54,7 @@ test.describe('a short desktop window', () => {
     const last = posts.filter({ has: page.getByRole('button', { name: 'React' }) }).last();
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     await last.getByRole('button', { name: 'React' }).click();
-    const picker = page.getByRole('dialog', { name: /^React as / });
+    const picker = page.getByRole('dialog', { name: /^React to / });
     await expect(picker).toBeVisible();
     const hud = page.getByRole('region', { name: 'Game HUD' });
     const [p, h] = [(await picker.boundingBox())!, (await hud.boundingBox())!];
@@ -71,5 +75,27 @@ test.describe('a short desktop window', () => {
       expect(box.y).toBeGreaterThanOrEqual(p.y - 1);
       expect(box.y + box.height).toBeLessThanOrEqual(p.y + p.height + 1);
     }
+  });
+});
+
+/* On the Main board's layout the picker opens by its post, as the React board draws it: below the reactions row, its left edge at the row's, or above it where below would run under the HUD. */
+test.describe('a wide window', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test('the picker opens by the post\'s reactions, inside the window and clear of the HUD', async ({ page }) => {
+    await page.goto('/b/general');
+    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    const post = page.locator('#post-3');
+    await post.getByRole('button', { name: 'React' }).click();
+    const picker = page.getByRole('dialog', { name: /^React to / });
+    await expect(picker).toBeVisible();
+    await expect(picker).toHaveAttribute('data-kb-place', /^(below|above)$/u);
+    const row = (await post.locator('.kb-reactions').boundingBox())!;
+    const [p, h] = [(await picker.boundingBox())!, (await page.getByRole('region', { name: 'Game HUD' }).boundingBox())!];
+    expect(Math.abs(p.x - row.x)).toBeLessThanOrEqual(1);
+    if ((await picker.getAttribute('data-kb-place')) === 'below') expect(p.y).toBeGreaterThan(row.y + row.height);
+    else expect(p.y + p.height).toBeLessThan(row.y);
+    expect(p.y + p.height).toBeLessThanOrEqual(h.y + 1);
+    expect(p.x + p.width).toBeLessThanOrEqual(1441);
   });
 });
