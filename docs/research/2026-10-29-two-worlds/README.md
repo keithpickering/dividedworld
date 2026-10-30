@@ -16,6 +16,13 @@ commit 6abe8ec. The design's amendment of the same date says what the new versio
 also has the light board's colors filled in. The first one shipped with its color placeholders unfilled, so its board
 had no colors at all.
 
+**Amended 2026-10-30, after the boards' audit.** A build is held to these boards by a machine:
+`docs/plans/2026-10-30-glass-to-the-boards-plan.md` gives each board a manifest of its parts and compares the build's
+boxes and type with the board's. The boards' sample data breaks five decided rules (a React button on the player's own
+posts, the author held by Stick Around, a Stick Around in the log, "your Whoops!" on a post the player did not splat,
+and a hand that counts one card too many), so the build's fixture departs from them there; that plan's section 3 lists
+each departure.
+
 - `01-main.html`: the game screen: the 2003 board with the HUD docked at the bottom as glass (the character being
   played and its swap, the orbs and the next settlement, the hand), a card armed with "Play Whoops! here" on the
   eligible posts. Drawn before the pause menu was decided, so its banner still lists the glass's pages and its HUD has

@@ -161,6 +161,14 @@ worlds do not both have a button called Menu. Task 9: the Turn modal opened from
 in view, dimmed and inert, and Close and Esc return to My characters. **Tests first,** added to Task 3's: the banner
 holds no Sign out; the phone's banner button and the HUD's Menu have different accessible names.
 
+**Amended 2026-10-30, after the boards' audit** (`docs/plans/2026-10-30-glass-to-the-boards-plan.md`). That plan
+says how a build is shown to match its board and wins over the glass amendments above where they differ. Task 0 runs
+its board match (`web/e2e/boards.spec.ts`) and asserts the fake backend is absent from the production bundle. Task 1
+takes its closed token list, its shapes, the smoke as a recipe per surface (`GlassTheme.smoke` becomes recipes and
+surfaces) with the guard's new poisons, and the comparator `web/e2e/board-match.ts` with its self-test. Task 2 takes
+its fixture, `web/src/data/fixtures/boards.ts`, and the boards' moments. Tasks 3, 5, 6 and 8 to 12 each add the
+manifests of the boards they build, as its section 10 lists, and are not done until those are green.
+
 The mockups each screen follows are in `docs/research/2026-10-29-screens/`; the design's sections say what was decided
 and why. Where a mockup and the design disagree, the design wins. impeccable is installed (`.claude/skills/impeccable/`)
 with its product record (`PRODUCT.md`); a builder runs `.claude/skills/impeccable/scripts/impeccable context` once, then

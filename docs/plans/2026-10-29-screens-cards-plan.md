@@ -29,6 +29,14 @@ wins:
 - **Task 6:** the card lines are the log's, in the glass, in the words this task gives them.
 - **Ways out:** unchanged; an overlay's way out is the web plan's (Esc or its close, onto what it was opened over).
 
+**Amended 2026-10-30, after the boards' audit** (`docs/plans/2026-10-30-glass-to-the-boards-plan.md`), which wins over
+the amendment above where they differ. Task 2 adds the board match's manifests for the Vending board, the Cards
+board's hand sheet and the hand in the Main and Phone boards; Task 3 for the Cards board's play form, on Gloomba's #46,
+and the Main board's armed card; Task 4 for the Hold board, seen by a reader who owns none of its characters (the
+author is never held); Task 5 names Whoops!'s keyboard path "Hold to scrub" where the Main board wrote "Scrub with the
+keyboard"; Task 6's log holds no Stick Around lines, so the Log board's eight rows are six. Stick Around's frame and
+Whoops!'s tag draw the `effect` smoke recipe.
+
 ## The layers
 
 The card-effect interface is engine (`engine/ui/cards/`); Stick Around's and Whoops!'s effects are Divided World's

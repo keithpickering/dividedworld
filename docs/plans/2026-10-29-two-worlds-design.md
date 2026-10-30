@@ -35,6 +35,14 @@ they settle Open's "Three boards behind section 5":
 Two placeholders these boards add, beside Open's: the banner's links past Index (General, The System, Search), which
 are an instance's boards and a search no design has decided; and where in the glass Sign out lives.
 
+**Amended 2026-10-30, after the boards' audit** (`docs/plans/2026-10-30-glass-to-the-boards-plan.md`). The boards draw
+not one smoke but nine recipes, each tuned to its screen, so section 4's smoke is a recipe per surface, and the guard
+checks every text color against every recipe its surface uses. The settlement's smoke is too bright for its large type
+to stand on it uncalmed (`#f1ecff` at 2.81:1), so on that surface every text node stands in a calm, as its board
+already draws its heading. That plan's section 9 takes defaults for this design's Open placeholders (Search is not
+built; Sign out is at the foot of Settings, Account; the machine's name stays a placeholder; Rankings' first look), each
+for the owner to overturn.
+
 The words this design uses: **the board** is the 2003 message board, the game's arena; **the glass** is everything
 outside it, the game's own interface. The owner, on the direction: "It even fits the name of the game." The board and
 the glass are the divided world.
