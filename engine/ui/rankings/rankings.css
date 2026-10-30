@@ -208,14 +208,8 @@
 
 /* ---- the Phone board's layout ---- */
 
-/*
- * A calm's feather reaches 32px past its words, and the phone's gutter is 16px: the page is clipped
- * at the window's edge, so the feather never makes the page scroll sideways.
- */
 :where(:root[data-kb-layout='phone']) .kb-rankings {
   padding-top: 16px;
-  overflow-x: clip;
-  overflow-clip-margin: 16px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-rankings-title {

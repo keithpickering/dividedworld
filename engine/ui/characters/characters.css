@@ -1,153 +1,1119 @@
-/* My characters, New character, and the dialogs they open. A phone (40em and under) folds each row into a card. */
+/*
+ * My characters, New character, the Turn and the debut dialogs, on the glass: the Roster board
+ * (docs/research/2026-10-29-two-worlds/10-roster.html) and the Turn board (06-turn.html). Colors
+ * are the glass's tokens and the instance's class colors (`--kb-glass-class-<key>-*`, set on a card
+ * or a chip as `--kb-class-fill`, `-ink`, `-large` by ClassChip.tsx); sizes are the boards' px or
+ * the glass's size tokens, never under the label's 20px on the Main board's layout
+ * (engine/ui/glass/board.test.tsx reads this file), and the phone's tokens on the Phone board's.
+ *
+ * Text stands in a calm (calm.css) or on a panel: the roster and the selected panel sit in calms,
+ * as the board's mask draws them, and the dialogs' text on the sheet. A class's name is drawn in
+ * its large color only on the Turn (`data-kb-large`), the one surface here that draws a class's
+ * large text (engine/ui/glass/apply.ts); My characters and New character draw a class as a chip.
+ *
+ * The reveal's dialog stays the board's own modal (RevealDialog.tsx, also opened from the
+ * composer), and keeps the last two rules of this file.
+ */
+
+/* ---- the page's head ---- */
+
 .kb-characters,
 .kb-new-character {
   min-width: 0;
+  padding-top: 27px;
 }
 
-.kb-private {
-  display: inline-block;
-  border: 1px dashed var(--kb-rule);
-  padding: 0 0.3em;
-  font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
-}
-
-.kb-character-name {
-  font: bold var(--kb-size-body) / 1.3 var(--kb-font-mono);
-}
-
-.kb-character-who {
-  width: 34%;
-  overflow-wrap: anywhere;
-}
-
-.kb-character-sub,
-.kb-character-waiting {
-  display: block;
-  font-weight: normal;
-}
-
-.kb-character-waiting > span {
-  display: inline;
-}
-
-.kb-row-actions {
+.kb-characters-head {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.3em;
-  margin-top: 0.3em;
-  font-weight: normal;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 32px;
 }
 
-.kb-turn-pending,
-.kb-turn-when {
-  display: block;
+.kb-characters-title {
+  flex: none;
+  margin: 0;
+  font-size: var(--kb-glass-size-display-xl);
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
 }
 
-.kb-character-list td .kb-notice {
-  display: block;
+/* The count is the heading's, read with it, and drawn smaller beside it. */
+.kb-characters-count {
+  font-size: var(--kb-glass-size-display-m);
+  color: var(--kb-glass-text-2);
+}
+
+.kb-characters-lead {
+  flex: 0 1 540px;
+  min-width: 0;
+  margin: 0 0 8px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: right;
+  color: var(--kb-glass-text-2);
 }
 
 .kb-flash:empty {
   display: none;
 }
 
+.kb-glass .kb-notice {
+  max-width: 680px;
+  margin: 16px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-glass .kb-notice[data-kb-tone='refusal'] {
+  color: var(--kb-glass-salty-text);
+}
+
+.kb-characters-empty,
 .kb-characters-new {
-  margin: 0.8em 0;
+  max-width: 680px;
+  margin: 20px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
 }
 
-.kb-characters-new .kb-button {
-  display: inline-block;
-  text-decoration: none;
+.kb-glass .kb-characters a:not([class]) {
+  color: var(--kb-glass-pale);
 }
 
-/* The class cards. */
-.kb-class-cards,
-.kb-choice {
-  border: 1px solid var(--kb-rule);
-  margin: 0.6em 0;
-  padding: 0.4em 0.8em 0.6em;
+/* ---- the roster and the selected panel ---- */
+
+.kb-roster-layout {
+  display: grid;
+  grid-template-columns: 780px minmax(0, 1fr);
+  column-gap: 32px;
+  margin-top: 28px;
+}
+
+.kb-roster-side {
   min-width: 0;
 }
 
-.kb-class-cards legend,
-.kb-choice legend {
-  font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
-  padding: 0 0.3em;
+.kb-roster {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-roster > li {
+  position: relative;
+  min-height: 420px;
+}
+
+.kb-roster-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  padding: 0;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--kb-glass-text);
+  background: var(--kb-glass-panel-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
+  cursor: pointer;
+}
+
+.kb-roster-card[aria-current='true'] {
+  background: var(--kb-glass-panel);
+  box-shadow: 0 0 0 2px var(--kb-glass-neon), 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+}
+
+.kb-roster-portrait,
+.kb-turn-portrait-art {
+  display: block;
+  overflow: hidden;
+  background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--kb-glass-text-hi) 7%, transparent) 0 8px, transparent 8px 16px), var(--kb-glass-field-2);
+}
+
+.kb-roster-portrait {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 10px;
+  height: 270px;
+}
+
+.kb-roster-portrait img,
+.kb-turn-portrait-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.kb-roster-name {
+  position: absolute;
+  left: 14px;
+  max-width: calc(100% - 28px);
+  top: 294px;
+  font-size: 32px;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.kb-roster-class {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 338px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.kb-roster-rank {
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-roster-turn {
+  position: absolute;
+  left: 14px;
+  max-width: calc(100% - 28px);
+  bottom: 16px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-roster-turn[data-kb-state='ready'] {
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+/* New character, a dashed slot in the gold; the open slots after it, empty and dashed. */
+.kb-roster-new-link {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1.5px dashed color-mix(in srgb, var(--kb-glass-ready) 55%, transparent);
+  text-decoration: none;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--kb-glass-ready-text);
+}
+
+.kb-roster-slots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  text-align: center;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+  pointer-events: none;
+}
+
+.kb-roster-empty {
+  box-sizing: border-box;
+  border: 1px dashed color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+/* The selected character's panel: chamfer step 4, the sheet one border in from the neon. */
+.kb-roster-panel {
+  --kb-cut: var(--kb-glass-chamfer-4);
+  --kb-border: 1px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 28px 30px;
+}
+
+.kb-roster-panel::after {
+  background: var(--kb-glass-sheet);
+}
+
+.kb-roster-selected {
+  margin: 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-roster-panel-name {
+  margin: 2px 0 0;
+  font-size: 58px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 22px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.kb-roster-line {
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-roster-facts,
+.kb-turn-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 20px;
+  row-gap: 8px;
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.kb-roster-facts dt,
+.kb-turn-facts dt {
+  color: var(--kb-glass-text-2);
+}
+
+.kb-roster-facts dd,
+.kb-turn-facts dd {
+  margin: 0;
+  text-align: right;
+  color: var(--kb-glass-text);
+}
+
+.kb-roster-facts .kb-pips {
+  vertical-align: middle;
+}
+
+.kb-roster-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kb-roster-most {
+  margin-top: auto;
+}
+
+.kb-turn-pending {
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-roster-pending,
+.kb-character-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kb-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.kb-row-actions > * {
+  flex: 1 1 auto;
+}
+
+/* "only you": a tag on the class, dashed, in the neon's text. */
+.kb-glass .kb-private {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border: 1px dashed var(--kb-glass-neon-text);
+  color: var(--kb-glass-neon-text);
+}
+
+/* ---- the class: a chip, and the class cards ---- */
+
+.kb-class-chip {
+  display: inline-block;
+  padding: 0 8px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  background: var(--kb-class-fill, var(--kb-glass-neon));
+  color: var(--kb-class-ink, var(--kb-glass-ink-neon));
+}
+
+.kb-roster-facts .kb-class-chip,
+.kb-turn-facts .kb-class-chip {
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: 1px;
+}
+
+/* The pip style, a row of the panel: its label, and the HUD's field at the right. */
+.kb-roster-pip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-glass-select {
+  min-width: 190px;
+  min-height: 52px;
+  padding: 4px 10px;
+  border: 1px solid var(--kb-glass-neon);
+  background: var(--kb-glass-field);
+  font: inherit;
+  font-weight: 700;
+  color: var(--kb-glass-text);
+}
+
+.kb-glass fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kb-glass legend {
+  padding: 0;
+  line-height: normal;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
 }
 
 .kb-class-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14em, 1fr));
-  gap: 0.5em;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 10px;
 }
 
 .kb-class-card {
+  position: relative;
   display: flex;
-  gap: 0.5em;
-  align-items: flex-start;
-  border: 1px solid var(--kb-rule);
-  padding: 0.4em 0.5em;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 300px;
+  padding: 18px 16px;
+  box-sizing: border-box;
+  background: var(--kb-glass-panel-soft);
+  border: 1px solid color-mix(in srgb, var(--kb-class-fill) 55%, transparent);
   cursor: pointer;
 }
 
 .kb-class-card[data-kb-chosen] {
-  border-width: 3px;
-  padding: calc(0.4em - 2px) calc(0.5em - 2px);
+  background: color-mix(in srgb, var(--kb-class-fill) 12%, var(--kb-glass-panel-soft));
+  border: 2px solid var(--kb-class-fill);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--kb-class-fill) 55%, transparent);
 }
 
-.kb-class-swatch {
-  flex: none;
-  width: 0.9em;
-  height: 0.9em;
-  margin-top: 0.2em;
-  border: 1px solid var(--kb-rule);
+.kb-class-card[data-kb-now] {
+  cursor: default;
 }
 
-.kb-class-text {
+.kb-class-card input {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--kb-class-fill);
+}
+
+.kb-class-title > .kb-class-name:only-child {
+  flex: 1;
+}
+
+.kb-class-title {
   display: flex;
-  flex-direction: column;
-  gap: 0.2em;
-  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .kb-class-name {
-  font: bold var(--kb-size-body) / 1.3 var(--kb-font-mono);
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-m);
+  font-weight: 400;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+/* Only on the Turn, whose surface draws a class's large text on its smoke. */
+.kb-class-name[data-kb-large] {
+  color: var(--kb-class-large);
+  text-shadow: 0 0 16px color-mix(in srgb, var(--kb-class-fill) 80%, transparent);
+}
+
+.kb-class-now {
+  padding: 0 6px;
+  line-height: normal;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  border: 1px solid var(--kb-class-large);
+  color: var(--kb-class-large);
+}
+
+.kb-class-marks {
+  display: grid;
+  grid-template-columns: repeat(2, 28px);
+  gap: 4px;
+}
+
+.kb-class-mark {
+  box-sizing: border-box;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text-hi) 30%, transparent);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 26px;
+  text-align: center;
+}
+
+.kb-class-mark[data-kb-mark='earns'] {
+  border: 0;
+  line-height: 28px;
+  background: var(--kb-class-fill);
+  color: var(--kb-class-ink);
+}
+
+.kb-class-mark[data-kb-mark='hurts'] {
+  border: 1.5px dashed var(--kb-glass-over);
+  line-height: 24px;
+  color: var(--kb-glass-over);
+}
+
+.kb-class-mark[data-kb-mark='calls'] {
+  border: 1.5px dotted var(--kb-class-fill);
+}
+
+.kb-class-description {
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- how loud, and when ---- */
+
+.kb-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.kb-choice > legend {
+  margin-bottom: 10px;
 }
 
 .kb-choice-option {
   display: flex;
-  gap: 0.5em;
+  gap: 12px;
   align-items: flex-start;
-  margin: 0.3em 0;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 35%, transparent);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--kb-glass-text-2);
+  cursor: pointer;
+}
+
+.kb-choice-option:has(input:checked),
+.kb-choice-option[data-kb-chosen] {
+  border: 2px solid var(--kb-glass-neon);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--kb-glass-neon) 45%, transparent);
+  background: color-mix(in srgb, var(--kb-glass-neon) 8%, transparent);
+}
+
+.kb-choice-option:has(input:disabled) {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .kb-choice-option input {
-  /* A target of 24px at the least (WCAG 2.2, 2.5.8). */
   flex: none;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 22px;
+  height: 22px;
+  margin: 2px 0 0;
+  accent-color: var(--kb-glass-neon);
+}
+
+.kb-choice-option b {
+  display: block;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+/* ---- what everyone will see: the board's own post ---- */
+
+.kb-preview-head {
+  margin: 0 0 8px;
+  line-height: normal;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-preview-post {
+  display: flex;
   margin: 0;
-}
-
-.kb-choice-sub {
-  margin-left: calc(1.5rem + 0.5em);
-}
-
-/* What everyone will see. */
-.kb-preview {
+  background: var(--kb-bg);
+  color: var(--kb-fg);
   border: 1px solid var(--kb-rule);
-  padding: 0.4em 0.6em;
-  margin: 0.6em 0;
+  font-family: var(--kb-font-body);
+  font-size: var(--kb-size-body);
+  font-weight: normal;
+  line-height: 1.5;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--kb-glass-pale) 60%, transparent), 0 0 26px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
 }
 
-.kb-preview p {
-  margin: 0.2em 0;
+.kb-preview-side {
+  flex: none;
+  width: 18%;
+  margin: 0;
+  padding: 8px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--kb-rule);
 }
 
 .kb-preview-by {
-  font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
+  display: inline;
+  font-weight: bold;
+}
+
+.kb-preview-where {
+  display: block;
+  font-size: var(--kb-size-small);
+  color: var(--kb-muted);
+}
+
+.kb-preview-lines {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.kb-preview-lines p {
+  margin: 0;
+}
+
+/* ---- the Turn, on the Turn board's grid ---- */
+
+/* The Turn board's modal fills the window under the menu bar, 27px under it, 24px from each side. */
+.kb-glass-overlay:has(> .kb-turn-dialog) {
+  align-items: stretch;
+  padding: 27px 24px 28px;
+  background: color-mix(in srgb, var(--kb-glass-ground) 84%, transparent);
+}
+
+.kb-turn-dialog,
+.kb-debut-dialog {
+  zoom: var(--kb-board-scale, 1);
+}
+
+.kb-turn-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 1392px);
+  padding: 36px 40px;
+}
+
+.kb-turn-dialog > .kb-glass-dialog-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.kb-debut-dialog {
+  width: min(100%, 960px);
+  padding: 36px 40px;
+}
+
+/* The dialogs' sheet over their smoke, as the board's .94 panel lets its smoke through. */
+.kb-turn-dialog > .kb-smoke,
+.kb-debut-dialog > .kb-smoke {
+  opacity: 0.35;
+}
+
+.kb-turn-dialog .kb-glass-dialog-head,
+.kb-debut-dialog .kb-glass-dialog-head {
+  margin-top: 2px;
+  font-size: 68px;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
+}
+
+.kb-glass-dialog-titles .kb-glass-dialog-kicker,
+.kb-debut-dialog .kb-glass-dialog-kicker {
+  margin: 0;
+  line-height: normal;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+/*
+ * Close, the board's: a 52px square with a cross, its word kept for its name and drawn off the
+ * button (the cross is the ::before, two strokes in the text's color).
+ */
+.kb-turn-dialog .kb-glass-dialog-close,
+.kb-debut-dialog .kb-glass-dialog-close {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  margin-right: 24px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-indent: 52px;
+  clip-path: none;
+  background: color-mix(in srgb, var(--kb-glass-text-hi) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
+  color: var(--kb-glass-text);
+}
+
+.kb-turn-dialog .kb-glass-dialog-close::after,
+.kb-debut-dialog .kb-glass-dialog-close::after {
+  display: none;
+}
+
+.kb-turn-dialog .kb-glass-dialog-close::before,
+.kb-debut-dialog .kb-glass-dialog-close::before {
+  content: '';
+  position: absolute;
+  inset: 16px;
+  background:
+    linear-gradient(45deg, transparent calc(50% - 1px), currentColor calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)),
+    linear-gradient(-45deg, transparent calc(50% - 1px), currentColor calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+.kb-turn {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  column-gap: 40px;
+  row-gap: 24px;
+  margin-top: 24px;
+}
+
+.kb-turn-who {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.kb-turn-portrait {
+  position: relative;
+  display: block;
+  width: 300px;
+  height: 420px;
+  box-sizing: border-box;
+  border: 2px solid var(--kb-glass-neon);
+  box-shadow: 0 0 26px color-mix(in srgb, var(--kb-glass-neon) 50%, transparent);
+}
+
+.kb-turn-portrait-art {
+  position: absolute;
+  inset: 0;
+}
+
+.kb-turn-portrait-name {
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  padding: 34px 16px 12px;
+  background: linear-gradient(transparent, var(--kb-glass-sheet));
+}
+
+.kb-turn-portrait-name > span {
+  display: block;
+  font-size: 44px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text-hi);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.kb-turn-rank {
+  line-height: normal;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+}
+
+.kb-turn-facts {
+  column-gap: 14px;
+  line-height: normal;
+}
+
+.kb-turn-line {
+  margin: 0;
+  max-width: 680px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-turn-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+
+.kb-turn-map {
+  margin: 12px 0 0;
+  line-height: normal;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-turn-map-cells {
   text-transform: uppercase;
 }
+
+.kb-turn-loud {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.35fr);
+}
+
+.kb-turn-foot {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px 30px;
+  padding-top: 20px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-neon-text) 35%, transparent);
+}
+
+.kb-turn-effect {
+  flex: 1 1 400px;
+  margin-right: auto;
+}
+
+.kb-turn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px;
+  margin-right: 30px;
+}
+
+.kb-debut {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  margin-top: 24px;
+}
+
+/* ---- the glass's buttons on these screens ---- */
+
+.kb-glass-action,
+.kb-glass-confirm,
+.kb-roster-turn-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+  padding: 0 26px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
+  background: transparent;
+  font: inherit;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--kb-glass-text);
+  cursor: pointer;
+}
+
+.kb-turn-actions .kb-glass-action {
+  min-height: 60px;
+}
+
+.kb-glass-confirm,
+.kb-roster-turn-button {
+  min-height: 60px;
+  padding: 0 40px;
+  border: 0;
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-s);
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+}
+
+/* A Turn that opens later: the neon's text on a dashed edge, not to be pressed. */
+.kb-roster-turn-button:disabled {
+  border: 1px dashed color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
+  background: transparent;
+  color: var(--kb-glass-neon-text);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.kb-glass-confirm:disabled,
+.kb-glass-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- New character ---- */
+
+.kb-new-form {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  margin-top: 28px;
+}
+
+.kb-new-name {
+  max-width: 680px;
+}
+
+.kb-glass-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-glass-input {
+  min-height: 52px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px 12px;
+  border: 1px solid var(--kb-glass-neon);
+  background: var(--kb-glass-field);
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--kb-glass-text);
+}
+
+.kb-new-back {
+  margin-top: 20px;
+}
+
+.kb-new-back .kb-glass-action {
+  display: inline-flex;
+}
+
+/* ---- the Phone board's layout ---- */
+
+:where(:root[data-kb-layout='phone']) .kb-characters,
+:where(:root[data-kb-layout='phone']) .kb-new-character {
+  padding-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-characters-title {
+  font-size: var(--kb-glass-size-display-m);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-characters-count {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-characters-lead {
+  text-align: left;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster-layout {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 24px;
+  margin-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster > li,
+:where(:root[data-kb-layout='phone']) .kb-roster-card {
+  min-height: 280px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster-portrait {
+  left: 6px;
+  right: 6px;
+  top: 6px;
+  height: 150px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster-name {
+  left: 10px;
+  right: 10px;
+  top: 166px;
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster-class {
+  left: 10px;
+  right: 10px;
+  top: 196px;
+  gap: 4px 6px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster-turn {
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster-new-link {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster-empty {
+  display: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster-panel {
+  padding: 20px 16px;
+  gap: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-roster-panel-name {
+  font-size: var(--kb-glass-size-display-m);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-class-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-class-card {
+  min-height: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-class-name {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-turn-dialog .kb-glass-dialog-head,
+:where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-dialog-head {
+  font-size: var(--kb-glass-size-display-m);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-turn-dialog,
+:where(:root[data-kb-layout='phone']) .kb-debut-dialog {
+  padding: 20px 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-overlay:has(> .kb-turn-dialog) {
+  padding: 8px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-turn,
+:where(:root[data-kb-layout='phone']) .kb-turn-loud {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-turn-portrait {
+  width: 100%;
+  height: 220px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-turn-portrait-name {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-turn-actions {
+  margin-right: 0;
+  gap: 12px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-preview-side {
+  width: 30%;
+}
+
+:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog) :is(.kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-choice-option, .kb-characters-lead, .kb-glass-action, .kb-notice, .kb-glass-field, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) :is(.kb-class-chip, .kb-private, .kb-roster-selected, .kb-roster-slots, .kb-class-now, .kb-class-mark) {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+:where(:root[data-kb-layout='phone']) :is(.kb-glass-confirm, .kb-roster-turn-button) {
+  min-height: 48px;
+  padding: 0 20px;
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-action {
+  min-height: 48px;
+  padding: 0 14px;
+}
+
+/* ---- the reveal's board modal (RevealDialog.tsx) ---- */
 
 .kb-dialog-actions {
   display: flex;
@@ -159,51 +1125,13 @@
   margin-top: 0.8em;
 }
 
-.kb-wide,
-.kb-new-character .kb-input {
+.kb-wide {
   box-sizing: border-box;
   width: 100%;
 }
 
-@media (max-width: 40em) {
-  .kb-character-list,
-  .kb-character-list tbody,
-  .kb-character-list tr,
-  .kb-character-list td,
-  .kb-character-list th[scope="row"] {
-    display: block;
-    width: auto;
-  }
-
-  .kb-character-list thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-
-  .kb-character-row {
-    border: 1px solid var(--kb-rule);
-    padding: 0.4em 3%;
-  }
-
-  .kb-character-row + .kb-character-row {
-    border-top: 0;
-  }
-
-  .kb-character-list td,
-  .kb-character-list th[scope="row"] {
-    border: 0;
-    padding: 0.2em 0;
-  }
-
-  .kb-character-list td[data-label]::before {
-    content: attr(data-label) ": ";
-    font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
-  }
-
-  .kb-character-list td:empty {
-    display: none;
-  }
+/* The rank's pips on the glass: the board's pip images in the glass's gold, the empty ones in its text. */
+.kb-glass :is(.kb-roster-facts, .kb-turn-rank) {
+  --kb-pip: var(--kb-glass-ready);
+  --kb-pip-empty: var(--kb-glass-text-2);
 }

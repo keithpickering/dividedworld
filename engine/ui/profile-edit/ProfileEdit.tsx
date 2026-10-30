@@ -15,6 +15,7 @@ import { usePlayer } from '../player.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { AvatarEditor } from './Cropper.tsx';
 import type { PictureIo } from './crops.ts';
+import '../characters/characters.css';
 import './profile-edit.css';
 
 const TITLE_MAX = 40;
@@ -61,11 +62,11 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   if (signedIn === null || (signedIn && !loaded)) return <div className="kb-profile-edit" aria-busy="true" />;
   if (!signedIn) return <div className="kb-profile-edit"><SignInPrompt /></div>;
 
-  const back = <p><Link to="/characters">Back to your characters</Link></p>;
+  const back = <p className="kb-new-back"><Link to="/characters" state={id === null ? undefined : { character: id }} className="kb-glass-action kb-glass-skew"><span className="kb-glass-upright">Back to your characters</span></Link></p>;
   if (!mine || id === null) {
     return (
       <div className="kb-profile-edit">
-        <h1 className="kb-heading">Edit profile</h1>
+        <h1 className="kb-characters-title kb-glass-display">Edit profile</h1>
         <p className="kb-notice">You have no characters yet, so there is no profile here for you to edit. <Link to="/characters/new">Make a character</Link> first.</p>
         {back}
       </div>
@@ -82,8 +83,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   /* The same head in every state, so the select keeps its place in the tree (and its open list) while a profile loads. */
   const head = (
     <>
-      <p className="kb-crumb"><Link to="/">Index</Link> › <Link to="/characters">Your characters</Link> › {mine.name}</p>
-      <h1 className="kb-heading">Edit {mine.name}</h1>
+      <h1 className="kb-characters-title kb-glass-display">Edit {mine.name}</h1>
       {picker}
     </>
   );
@@ -152,7 +152,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
           </select>
         </label>
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-        <p><button type="submit" className="kb-button" data-kb-primary="" disabled={busy}>Save the profile</button></p>
+        <p><button type="submit" className="kb-glass-confirm kb-glass-skew" disabled={busy}><span className="kb-glass-upright">Save the profile</span></button></p>
         <div role="status">{saved && <p className="kb-notice">{saved}</p>}</div>
       </form>
       <AvatarEditor character={profile} onSaved={setProfile} io={io} />

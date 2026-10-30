@@ -1,5 +1,11 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { webpChunks, webpProblem, webpSize } from '../engine/ui/profile-edit/webp.ts';
+
+/* On the glass a character's Edit profile is in its panel, chosen by its card (the Roster board); before, its table row. */
+async function pipewrench(page: Page) {
+  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+  await page.getByRole('region', { name: 'Pipewrench' }).getByRole('link', { name: 'Edit profile' }).click();
+}
 
 /* Safari's canvas gives a PNG when asked for a WebP; a page can be made to do the same. */
 const PNG_ONLY = () => {
@@ -15,7 +21,7 @@ test(`cuts and re-encodes an avatar in the browser, and the files carry no metad
   if (fallback) await page.addInitScript(PNG_ONLY);
   page.on('response', (r) => { if (r.url().endsWith('.wasm')) wasm.push(r.url()); });
   await page.goto('/characters');
-  await page.getByRole('row', { name: /^Pipewrench/u }).getByRole('link', { name: 'Edit profile' }).click();
+  await pipewrench(page);
   await expect(page.getByRole('heading', { level: 1, name: 'Edit Pipewrench' })).toBeVisible();
 
   /* A picture the player owns: 600 by 1500, drawn here, handed to the file input. */
@@ -76,7 +82,7 @@ test(`cuts and re-encodes an avatar in the browser, and the files carry no metad
 /* A 48 megapixel photo is opened shrunk, not whole, and an avatar is still cut from it. */
 test('opens a 48 megapixel photo at a longest side of 4096 and cuts an avatar from it', async ({ page }) => {
   await page.goto('/characters');
-  await page.getByRole('row', { name: /^Pipewrench/u }).getByRole('link', { name: 'Edit profile' }).click();
+  await pipewrench(page);
   await page.evaluate(async () => {
     const canvas = document.createElement('canvas');
     canvas.width = 8000;
@@ -103,7 +109,7 @@ test('opens a 48 megapixel photo at a longest side of 4096 and cuts an avatar fr
 /* What the cropper shows is the shrunk picture too: the stage image is never the 48 megapixel original. */
 test('shows the shrunk picture, not the original, in the stage', async ({ page }) => {
   await page.goto('/characters');
-  await page.getByRole('row', { name: /^Pipewrench/u }).getByRole('link', { name: 'Edit profile' }).click();
+  await pipewrench(page);
   await page.evaluate(async () => {
     const canvas = document.createElement('canvas');
     canvas.width = 8000;
@@ -138,7 +144,7 @@ test('a browser whose createImageBitmap ignores the resize is never handed the p
     };
   });
   await page.goto('/characters');
-  await page.getByRole('row', { name: /^Pipewrench/u }).getByRole('link', { name: 'Edit profile' }).click();
+  await pipewrench(page);
   await page.evaluate(async () => {
     const canvas = document.createElement('canvas');
     canvas.width = 8000;
@@ -166,7 +172,7 @@ test('a browser whose createImageBitmap ignores the resize is never handed the p
 for (const orientation of [6, 8]) {
   test(`opens a large JPEG with EXIF orientation ${orientation} at its oriented size, and the frames match it`, async ({ page }) => {
     await page.goto('/characters');
-    await page.getByRole('row', { name: /^Pipewrench/u }).getByRole('link', { name: 'Edit profile' }).click();
+    await pipewrench(page);
     await page.evaluate(async (o) => {
       const canvas = document.createElement('canvas');
       canvas.width = 6000;

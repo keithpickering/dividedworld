@@ -13,6 +13,10 @@
  * browser would and leaves this page and its kept place alone. Where the bar's pages live is
  * GLASS_NAV's (nav.ts): Rankings and My log stand in on the standings until their pages exist.
  *
+ * On the Main board's layout the bar is the boards': 84px, its tabs skewed with their words set
+ * upright, Back outlined in white with its ESC key cap before its words, the current tab lit. While
+ * an overlay is open over the page the bar stays in view, dimmed and inert (Overlay.tsx).
+ *
  * On a phone Back is on its own row and the pages are a strip under it that scrolls sideways, so
  * the current page's tab is scrolled into view as a page opens; with reduced motion it is there at
  * once. Back stays out of the strip, so no tab ever slides under it.
@@ -61,19 +65,21 @@ export function MenuBar() {
       <div className="kb-glass-menu-row">
         <Link
           to={backHref(boardPlace())}
-          className="kb-glass-menu-back kb-glass-cut-button"
+          className="kb-glass-menu-back kb-glass-skew"
           aria-keyshortcuts="Escape"
           onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
         >
-          <span className="kb-glass-menu-arrow" aria-hidden="true" data-kb-key="‹" />
-          Back to the board
-          <span className="kb-glass-menu-key" aria-hidden="true" data-kb-key="ESC" />
+          <span className="kb-glass-upright">
+            <span className="kb-glass-menu-arrow" aria-hidden="true" data-kb-key="‹" />
+            <span className="kb-glass-menu-key" aria-hidden="true" data-kb-key="ESC" />
+            Back to the board
+          </span>
         </Link>
         {session.signedIn && (
           <ul ref={list} className="kb-glass-menu-list">
             {TABS.map((t) => (
               <li key={t.label}>
-                <Link to={t.to} className="kb-glass-menu-tab" aria-current={t.current(path) ? 'page' : undefined}>{t.label}</Link>
+                <Link to={t.to} className="kb-glass-menu-tab kb-glass-skew" aria-current={t.current(path) ? 'page' : undefined}><span className="kb-glass-upright">{t.label}</span></Link>
               </li>
             ))}
           </ul>

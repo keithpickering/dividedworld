@@ -148,6 +148,8 @@ for (const scheme of ['light', 'dark'] as const) {
 
       test('the Turn, Reveal and Debut dialogs have none', async ({ page }) => {
         await page.goto('/characters');
+        /* On the glass a character's controls are in its panel, chosen by its card (the Roster board). */
+        await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
         await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
         await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
@@ -249,10 +251,69 @@ test.describe('between the boards\' widths', () => {
       });
       if (board === 'main') {
         expect(got).toMatchObject({ board, tabsUnderBack: false, key: true });
-        expect(got.backHeight).toBeCloseTo(48 * (width / MAIN_BOARD_WIDTH), 0);
+        /* The boards' tabs are 52px tall (they were 48 before the menu bar took the boards' look, in the glass build's Task 2.2). */
+        expect(got.backHeight).toBeCloseTo(52 * (width / MAIN_BOARD_WIDTH), 0);
       } else {
         expect(got).toMatchObject({ board, tabsUnderBack: true, key: false, backHeight: 48 });
       }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    });
+  }
+
+  /*
+   * The menu bar is the boards' (06, 07, 10, 11 and 12 draw it alike): 85px tall over the strong
+   * panel with a pale rule at its foot, its tabs skewed -10 degrees in uppercase Barlow Condensed
+   * 800 at 21px spaced 2px, Back outlined in white with its ESC key cap before its words, the current
+   * tab lit with a neon rule along its foot.
+   */
+  test('at 1440px a glass page\'s menu bar is drawn as the boards draw it', async ({ page }) => {
+    await page.setViewportSize({ width: MAIN_BOARD_WIDTH, height: 900 });
+    await page.goto('/characters');
+    await expect(ready(page, '/characters')).toBeVisible();
+    const got = await page.evaluate(async () => {
+      await document.fonts.ready;
+      const nav = document.querySelector('nav.kb-glass-menu')!;
+      const back = nav.querySelector('a[aria-keyshortcuts="Escape"]')!;
+      const tab = nav.querySelector('a[aria-current="page"]')!;
+      const words = (a: Element) => {
+        const s = getComputedStyle(a.querySelector('.kb-glass-upright') ?? a);
+        return { family: s.fontFamily.split(',')[0]!.replace(/"/g, ''), size: s.fontSize, weight: s.fontWeight, spacing: s.letterSpacing, upper: s.textTransform };
+      };
+      const key = getComputedStyle(back.querySelector('.kb-glass-menu-key')!, '::before');
+      /* The key cap comes before Back's words. */
+      const keyFirst = (a: Element) => {
+        const kids = [...(a.querySelector('.kb-glass-upright') ?? a).childNodes];
+        return kids.findIndex((n) => n instanceof Element && n.classList.contains('kb-glass-menu-key')) < kids.findIndex((n) => n.nodeType === Node.TEXT_NODE && /\S/.test(n.textContent ?? ''));
+      };
+      return {
+        height: Math.round(nav.getBoundingClientRect().height),
+        rule: getComputedStyle(nav).borderBottomStyle,
+        back: { ...words(back), border: getComputedStyle(back).borderTopStyle, skewed: getComputedStyle(back).transform !== 'none', keyFirst: keyFirst(back), key: key.content },
+        current: { ...words(tab), skewed: getComputedStyle(tab).transform !== 'none', lit: getComputedStyle(tab).boxShadow.includes('inset') },
+      };
+    });
+    const type = { family: 'Barlow Condensed', size: '21px', weight: '800', spacing: '2px', upper: 'uppercase' };
+    expect(got).toEqual({
+      height: 85, rule: 'solid',
+      back: { ...type, border: 'solid', skewed: true, keyFirst: true, key: '"ESC"' },
+      current: { ...type, skewed: true, lit: true },
+    });
+  });
+
+  /*
+   * A calm's feather reaches 32px past its words, wider than the phone's 16px gutter, so a restyled
+   * glass page whose text runs to the column's edge would push the page sideways. The page shell
+   * contains it for every glass page (shell.css), so no page has to remember to. Read on the
+   * Rankings story, a restyled page with calms to the column's edge, and on the restyled pages of
+   * the app, at the Phone board's width.
+   */
+  for (const [label, path] of [['Rankings', '/?fixture=boards&story=boards-13-rankings--season'], ['My characters', '/characters'], ['New character', '/characters/new']] as const) {
+    test(`on a phone 390 wide, the restyled ${label} page does not scroll sideways`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      expect(await page.evaluate(() => document.documentElement.dataset.kbLayout)).toBe('phone');
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
     });
   }

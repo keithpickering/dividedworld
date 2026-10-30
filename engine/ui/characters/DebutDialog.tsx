@@ -1,13 +1,15 @@
 /**
  * A waiting character's dialog: drop it now, or change how it debuts at the settlement. Until the
- * tally it can be dropped or its announcement changed; neither is final until it debuts.
+ * tally it can be dropped or its announcement changed; neither is final until it debuts. It is a
+ * glass overlay over My characters, as the Turn is, on the Turn's smoke (Overlay.tsx).
  */
 import { useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { DebutLoudness, DebutTiming, MyCharacter } from '../data/api.ts';
-import { Modal } from '../modal.tsx';
+import { Overlay } from '../glass/Overlay.tsx';
 import { usePlayer } from '../player.tsx';
 import { DebutChoice } from './DebutChoice.tsx';
+import './characters.css';
 
 export interface DebutDialogProps {
   readonly character: MyCharacter;
@@ -44,15 +46,15 @@ export function DebutDialog({ character, timing, onClose, onDone, returnFocusTo 
   };
 
   return (
-    <Modal title={drop ? `Drop ${character.name} now` : `How ${character.name} debuts`} onClose={onClose} returnFocusTo={returnFocusTo}>
-      <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
+    <Overlay title={drop ? `Drop ${character.name} now` : `How ${character.name} debuts`} kicker="My characters › Debut" surface="turn" className="kb-debut-dialog" onClose={onClose} returnFocusTo={returnFocusTo}>
+      <form className="kb-debut" onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
         <DebutChoice name={character.name} className={className} timing={timing} loudness={loudness} onLoudness={setLoudness} />
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-        <div className="kb-dialog-actions">
-          <button type="button" className="kb-button" onClick={onClose}>Cancel</button>
-          <button type="submit" className="kb-button" data-kb-primary="" disabled={busy}>{drop ? `Drop ${character.name} now` : `Save how ${character.name} debuts`}</button>
+        <div className="kb-turn-actions">
+          <button type="button" className="kb-glass-action kb-glass-skew" onClick={onClose}><span className="kb-glass-upright">Cancel</span></button>
+          <button type="submit" className="kb-glass-confirm kb-glass-skew" disabled={busy}><span className="kb-glass-upright">{drop ? `Drop ${character.name} now` : `Save how ${character.name} debuts`}</span></button>
         </div>
       </form>
-    </Modal>
+    </Overlay>
   );
 }
