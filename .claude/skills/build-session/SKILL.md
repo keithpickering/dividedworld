@@ -56,6 +56,10 @@ with the task it touched, so that gaps can be counted.
 4. The final review is the last thing to read the branch. Any commit after it means a fresh Opus final review of the
    new head and a full build on it. That review reads a fix's diff against every row of the charter it touches, not
    only the finding it fixed: a fix is new code.
+5. A final review with no blocking finding ends the build: write its `Final review read:` line and the PR is done.
+   Its non-blocking findings, and any earlier review's still unbuilt, are filed as follow-ups (below), never fixed in
+   this PR, because each fix buys another final review and the PR never lands. Only a blocking finding is fixed here,
+   tests first, followed by one more final review of the new head.
 
 **The final review's charter.** By the final review, the per-task reviewers have held each task to the plan and the
 plan's tests have their red runs. The final review is for what neither of those proves. It covers these five, in
