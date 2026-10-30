@@ -153,6 +153,13 @@ parts from the picker's corner, in full. Where the picker stands against its pos
 instead. Both were driven red in `e2e/board-match.test.ts` first: a whole popover moved with its parts is clean, a part
 9px off within it fails and 8px passes, `size` never compares the place, and a missing or unknown origin is a mismatch.
 
+**Amended 2026-10-30, in the glass build's Part 3 (the cards).** The comparator gains four things, each driven red in
+`e2e/board-match.test.ts` or `e2e/board-snapshot.spec.ts` first. A landmark's `buildRole` names its role in the build
+where it differs by a decision (as `buildName` names its name). A board's manifest may name further build sides
+(`also`), each its own build (the app at a moment, or a story) compared against the same board, so board 05 holds its
+hand sheet (a story) and its play form (the app); a mismatch names its side, and each side's report is its own folder.
+A press that reaches a state may pick the last of several matches (`nth: -1`) and may type into a field (`fill`).
+
 ### 2.4 The e2e spec
 
 `web/e2e/boards.spec.ts`, in `npm run test:e2e` and `.github/workflows/web.yml` (web Task 0):
@@ -425,6 +432,16 @@ Groan's label matches and is compared.
 
 Amended 2026-10-30, the owner's answer on #54 (section 6): the quadrant labels are 24px, 2px over the board's 22px,
 so they are large at WCAG's size; Groan's label is compared with that size as the decided one.
+
+**Amended 2026-10-30, in the glass build's Part 3 (the cards).** Boards 01 and 05 are compared as the build reached
+them, each difference in its manifest's header. On 01: the hand's fan opens from the hand button, so the button is
+compared as "Hand, 3 postcards, open"; the fan's postcards are named by the words each shows (Label in Name), by
+`buildName`; "Play Whoops! here" on #42 is compared by type, as #42 itself is (#76's numbers: #41's 360px column and the
+board's avatar slot under #42 move it); "Hold to scrub" likewise. On 05: the play form's dialog is compared by
+position and some rows below the ink by size, since Whoops!'s ink form adds an "Any color" picker and a preview the
+board does not draw (about 190px); "Total" reads "To pay now" at the body size; the cost lines read as #78 settled
+("Card: paid", the long post 0.25, to pay now 0.25, the wallet after 4.37). On 07: the "In the machine" list is gone
+(#75), and the title, the slots and the price display are the instance's art, compared by place.
 
 ### 04 orbs (1440×900): web Task 3
 
