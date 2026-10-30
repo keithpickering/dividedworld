@@ -16,7 +16,13 @@ import { storyNameFromExport, toId } from 'storybook/internal/csf';
  * and compared with this one (e2e/a11y.spec.ts), so a story this misses fails by name rather than
  * going unread.
  */
-const ENGINE_UI = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'engine', 'ui');
+const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ENGINE_UI = path.join(REPO, 'engine', 'ui');
+/** An instance's own board stories live beside its art, in its `ui` folder (the story route globs both). */
+const instanceUis = (): string[] => {
+  const instances = path.join(REPO, 'instances');
+  return fs.readdirSync(instances, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(instances, e.name, 'ui')).filter((p) => fs.existsSync(p));
+};
 
 function storyFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -27,8 +33,8 @@ function storyFiles(dir: string): string[] {
 }
 
 /** Every board story's id, sorted, as the story route lists them. */
-export function boardStoryIds(root: string = ENGINE_UI): string[] {
-  return storyFiles(root).flatMap((file) => {
+export function boardStoryIds(roots: readonly string[] = [ENGINE_UI, ...instanceUis()]): string[] {
+  return roots.flatMap((root) => storyFiles(root).map((file) => ({ root, file }))).flatMap(({ root, file }) => {
     const text = fs.readFileSync(file, 'utf8');
     /* The meta's title: the object a file's `meta` names (a story's own data may have titles too). */
     const title = /\bconst meta\b[^=]*=\s*\{[^}]*?\btitle:\s*'([^']+)'/.exec(text)?.[1];

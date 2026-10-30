@@ -764,6 +764,9 @@ describe('what a list row shows', () => {
     expect(await fake.spunFrom(opener, 0)).toEqual([]);
     fake.seed.card(boFace, second.id, 'whoops', { message: 'again' });
     expect(await fake.cardsOn(second.id, 1)).toHaveLength(1);
+    /* A card's own settings ride in the payload as the server keeps them (Stick Around's sentence). */
+    fake.seed.card(boFace, opener, 'stick-around', { message: 'read it', config: { sentence: 'I read it.' } });
+    expect((await fake.cardsOn(opener, 50)).map((c) => c.payload).filter((p) => p.card === 'stick-around')).toEqual([{ card: 'stick-around', message: 'read it', config: { sentence: 'I read it.' } }]);
   });
 
   test('a card play takes no thread number, as an edit takes none: the posts keep theirs, and the play is found through its post', async () => {

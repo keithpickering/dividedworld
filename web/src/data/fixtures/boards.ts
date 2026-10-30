@@ -25,8 +25,7 @@
  *    fixture carries no marker of its own.
  *  - The Whoops! on #41 is a card Act by Mrs. Hooligan with no spend in Pipewrench's wallet, which the
  *    timeline does not show (the player owns both); the plan seeds it that way.
- *  - Stick Around's release sentence is a card's effect state, not part of its Act; the cards part
- *    seeds it when it draws the Hold board.
+ *  - Stick Around's release sentence is the play's own setting (its `config`), seeded on #44's play.
  */
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
@@ -196,8 +195,8 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   const steps: Step[] = [];
   const when = (at: number, run: (at: number) => void) => steps.push({ at, run });
   /* A card play takes no number in its thread, so it is written where it happened, between the posts. */
-  const play = (at: number, character: string, target: number, card: string, message: string) =>
-    when(at, (when_) => { seed.card(character, posts[target]!, card, { message, at: when_ }); });
+  const play = (at: number, character: string, target: number, card: string, message: string, config?: Readonly<Record<string, unknown>>) =>
+    when(at, (when_) => { seed.card(character, posts[target]!, card, { message, at: when_, ...(config === undefined ? {} : { config }) }); });
   const post = (n: keyof typeof POSTED, character: string, body: string, quote?: number) =>
     when(POSTED[n], (at) => { posts[n] = seed.post(opener.thread, character, body, { at, ...(quote === undefined ? {} : { quote: posts[quote]! }) }); });
 
@@ -218,7 +217,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
     'Undo goes back 200 steps instead of 20.\nThe tile picker remembers your last three tilesets.\nWater no longer flows uphill when the level is resized.\nCustom music loops at the point you set, not at the start of the file.\nFixed the crash when an enemy was placed inside another enemy.\nFixed a second, different crash when that happened in water.',
     'Every one of these was requested in this forum. You\'re welcome. Please read it this time.',
   ].join('\n\n'));
-  play(STICK_AROUND_AT, gloomba, 44, 'stick-around', 'required reading');
+  play(STICK_AROUND_AT, gloomba, 44, 'stick-around', 'required reading', { sentence: 'I have read every word of Spritey\'s changelog and I feel changed.' });
   post(45, gloomba, 'I read the whole changelog and I have a question about the water. Mostly I have a question about who keeps splatting these.');
   post(46, gloomba, LONG_POST);
   play(PLAYED_AT, pipewrench, 46, 'whoops', 'you dropped your ink');

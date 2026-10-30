@@ -75,7 +75,7 @@ export interface Seed {
   announceTurn(character: Id, thread: Id, options?: { was?: string; since?: string; at?: number }): Id;
   avatar(character: Id, urls: { square?: string; portrait?: string }): void;
   /** A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action). */
-  card(character: Id, target: Id, card: string, options?: { message?: string; at?: number; live?: boolean }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean }): Id;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
   /**
@@ -957,6 +957,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!on) throw new Error(`no such Act ${target}`);
       const payload: Record<string, unknown> = { card };
       if (o?.message !== undefined) payload.message = o.message;
+      if (o?.config !== undefined) payload.config = o.config;
       const written = asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload }));
       if (o?.live) sendAct(written);
       return written.id;

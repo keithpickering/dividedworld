@@ -46,8 +46,12 @@ export interface OverlayProps {
   readonly describedBy?: string;
   /** Set in the bar after the title. */
   readonly aside?: ReactNode;
-  /** Where Close stands: in the bar (the default), or after the body, last in the order Tab goes. */
-  readonly closeAt?: 'bar' | 'foot';
+  /**
+   * Where Close stands: in the bar (the default), or after the body, last in the order Tab goes; or nowhere, for a view the
+   * reader leaves by its own way out (Stick Around's bar) and not by closing it. Esc and a press on the dimmed page still
+   * call `onClose`, which then decides what they mean.
+   */
+  readonly closeAt?: 'bar' | 'foot' | 'none';
   /** The part of the page the overlay opens by, as a popover; with none it stands in the middle of the window. */
   readonly anchor?: RefObject<HTMLElement | null>;
   /** With an anchor: the window's width, in px, below which the overlay is a sheet above the HUD rather than a popover. */
