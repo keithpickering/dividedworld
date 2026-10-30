@@ -346,6 +346,16 @@ from `#ff8a96` to `#ff959f`, which meets 3:1 on the turn recipe's full worst (`#
 and Jabroni are unchanged. **Poisons:** Heel's large text back at `#ff8a96` on turn; a surface missing from the
 engine's list; a class's large text on a surface the list says does not draw it (Part 2's measurement).
 
+**Amended 2026-10-30, the owner's answer on #53.** The owner: "#53 reword is fine, we should avoid being too strict with contrast, if we can still pass accessibility requirements by changing a rule slightly then that points to too much strictness in the rule itself." A
+text node that is not `large` stands where the worst pixel its surface can put under it is under its color's ceiling:
+in a calm's interior, on an opaque panel, or on a recipe whose full worst is under that ceiling. So a dim recipe's words
+need no calm where the recipe's full worst is under their colors' ceilings (the turn recipe, 0.116, for `--kb-glass-text`,
+`-text-2`, `-text-hi`, `-pale` and `-neon-text`, as the Turn board draws them), and a color whose ceiling is under it
+still takes a calm or a panel there (`--kb-glass-over`, 0.054, the Turn's hurt marks). The guard is unchanged: it already
+writes each surface's full worst (`worst`, and `narrowWorst` for a recipe with narrow layers) beside its ceilings, and the
+rendered measurement reads them there. `calmAll` is unchanged: on the settlement, whose full worst is under no ceiling,
+every text node, large or not, stands in a calm.
+
 ## 7. Each board: what it shows, what builds it, and what is compared
 
 The board file is the geometry. Each part below is found in the board by its role and name; its size, position,
