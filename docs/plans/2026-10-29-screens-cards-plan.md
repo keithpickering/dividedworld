@@ -90,6 +90,16 @@ behavior the engine's.
 - **Tests first:** a purchase with too little solid Aura is refused before and by the server; the count rises by one;
   the cascade runs backwards; the buy buttons' accessible names carry the price.
 
+**Amended 2026-10-30, the owner's answer on #75 (the Vending Machine on a phone).** The owner: "Looks good in
+general. "In the machine" I think is not going to scale well, we should consider an `i` button on each card that opens a
+modal showing what it is." So the phone's stack stands as #75 draws it, and the "In the machine" list is gone at every
+width, since the list grows with every card added: each card's slot carries an info button named for its card ("About
+Whoops!") that opens an `Overlay` with that card's rules in plain words (`describe`) and closes the usual way (its
+Close, Esc, focus back on the button). Opening it never selects a slot and never spends. A sealed slot has no info
+button; the line "4 slots empty: More postcards arrive in later seasons." stays, near the slots. Board 07 draws the list
+on a desktop; its manifest leaves that region out, naming this answer. **Tests first:** the button's name; the
+overlay's content and the focus's return; that it neither selects nor spends.
+
 ### Task 3. Playing a card
 
 - From a post ("Play card" opens the hand, showing only cards whose `canApply` passes there) or by arming a card in the
@@ -199,6 +209,11 @@ view's tests and board 08's manifest follow from the approved stories.
   uncovers the same words at 320 px; a stroke started where the top layer is gone scrubs the one under it; a reader's
   scrubbing is gone after a reload and the author's is not; the sweep at its pace takes about as long as a hand to clear
   a layer; a third play stacks and a fourth is not offered.
+
+**Amended 2026-10-30, the owner's answer on #76 (a splatted post's size on a wide screen).** The owner: "B makes sense
+for the splat". The fixed layout's scale is capped at 1×, not 1.5×: a splatted post keeps the board's 12px type in its
+360px column on a wide screen, and is scaled down, never up, on a narrow one. Board 01's #42, #43 and "Hold to scrub"
+are compared as fully as the 1× layout allows.
 
 ### Task 6. The log's card lines, and the audit
 

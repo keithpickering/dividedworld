@@ -267,6 +267,10 @@ looked slightly different every time etc."
 - The accessible path: a "Hold to scrub" button that sweeps line by line at about a hand's pace, never all at once.
 - Soap suds, from the owner's pen.
 
+**Amended 2026-10-30, the owner's answer on #76.** "B makes sense for the splat": the one fixed layout is scaled down
+to a narrow screen and never up, so on a wide screen a splatted post keeps the board's type in its 360px column (the
+cards plan's Task 5 amendment of this date).
+
 ## 12. The out-of-character screens
 
 - **Invites:** one-use links the inviter shares themselves, expiring after seven days; every player holds three at a
