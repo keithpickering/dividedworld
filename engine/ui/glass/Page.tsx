@@ -4,9 +4,10 @@
  * board's banner and HUD are not on it; Back to the board and Esc leave it (MenuBar.tsx).
  *
  * A move between glass pages reads as one, as the frame's does: the page starts at its top and
- * focus is on its main, so a keyboard and a screen reader begin there. Until the glass build's
- * Part 2 restyles each page, its content keeps the board's own look on a panel in the board's
- * colors, so every screen reads as it did.
+ * focus is on its main, so a keyboard and a screen reader begin there. A page the glass build's
+ * Part 2 has not yet restyled keeps the board's own look on a panel in the board's colors, so it
+ * reads as it did; a `restyled` page draws its content on the glass itself, at the column's scale.
+ * Once every glass page is restyled the panel and the flag go.
  *
  * Its menu bar and column are the Main board's layout from the width useBoard works out and the
  * Phone board's below it, the switch the HUD makes at the same width; between that width and
@@ -20,7 +21,14 @@ import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import { useBoard } from './useBoard.ts';
 import './shell.css';
 
-export function Page({ surface, children }: { readonly surface: GlassSurface; readonly children: ReactNode }) {
+export interface PageProps {
+  readonly surface: GlassSurface;
+  readonly children: ReactNode;
+  /** The content is drawn in the glass's own type and colors, so it takes the column's scale and no board panel. */
+  readonly restyled?: boolean;
+}
+
+export function Page({ surface, children, restyled = false }: PageProps) {
   const { path, hash, popped } = useLocation();
   const main = useRef<HTMLElement>(null);
   const calm = useSurfaceStyle(surface);
@@ -38,7 +46,7 @@ export function Page({ surface, children }: { readonly surface: GlassSurface; re
       <Smoke surface={surface} />
       <MenuBar />
       <main ref={main} className="kb-glass-content" tabIndex={-1}>
-        <div className="kb-glass-content-panel kb-glass-cut-panel">{children}</div>
+        {restyled ? children : <div className="kb-glass-content-panel kb-glass-cut-panel">{children}</div>}
       </main>
     </div>
   );
