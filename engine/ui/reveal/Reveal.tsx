@@ -15,6 +15,7 @@ import { useKayfa } from '../context.tsx';
 import type { Act } from '../data/api.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { figure } from '../characters/format.ts';
+import { turnNamedWords } from '../characters/previews.ts';
 import { Pips } from '../postbit/Postbit.tsx';
 import { Link } from '../router.tsx';
 import { BbCode } from '../bbcode/render.tsx';
@@ -52,7 +53,7 @@ export function Debuts({ payload }: { readonly payload: Act['payload'] }) {
       ))}
       {turns.map((t, i) => (
         <li key={`t${i}`}>
-          <Who id={t.character} name={text(t.name) || 'A character'} /> has Turned{cls(t.was) ? ` from ${cls(t.was)}` : ''}{cls(t.class) ? ` to ${cls(t.class)}` : ''}
+          <Who id={t.character} name={text(t.name) || 'A character'} /> has Turned{cls(t.was) ? ` ${turnNamedWords({ was: cls(t.was)!, to: '' }).old}` : ''}{cls(t.class) ? ` ${turnNamedWords({ was: '', to: cls(t.class)! }).new}` : ''}
         </li>
       ))}
     </ul>

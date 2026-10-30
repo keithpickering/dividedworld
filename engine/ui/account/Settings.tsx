@@ -123,11 +123,20 @@ export function SettingsScreen() {
   const navigate = useNavigate();
   const { query } = useLocation();
   const section: Section = query.get('section') === 'account' ? 'account' : 'accessibility';
-  const [prefs, setPrefs] = useState<Preferences | null>(null);
-  const [address, setAddress] = useState<string | null>(null);
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const account = session?.account ?? null;
+  /*
+   * What the screen read, each kept with the account it was read for and drawn only while that
+   * account is the one signed in: when the session changes in another tab, the next account's reads
+   * are still out for a commit or more, and the last account's address and choices never stand in.
+   */
+  const [read, setRead] = useState<{ readonly account: string; readonly prefs: Preferences } | null>(null);
+  const [addressRead, setAddressRead] = useState<{ readonly account: string; readonly address: string | null } | null>(null);
+  const [refusalFor, setRefusal] = useState<{ readonly account: string | null; readonly text: string } | null>(null);
+  const [savedFor, setSaved] = useState<string | null>(null);
+  const prefs = read?.account === account ? read.prefs : null;
+  const address = addressRead?.account === account ? addressRead : null;
+  const refusal = refusalFor && refusalFor.account === account ? refusalFor.text : null;
+  const saved = account !== null && savedFor === account;
   /* The choices as the page holds them now (before the server has answered), what the account last confirmed, and the saves in line. */
   const current = useRef<Preferences | null>(null);
   const confirmed = useRef<Preferences | null>(null);
@@ -142,8 +151,10 @@ export function SettingsScreen() {
   useEffect(() => {
     if (!account) return;
     let live = true;
-    void api.preferences().then((p) => { if (live) { current.current = p; confirmed.current = p; setPrefs(p); } }, () => { if (live) setRefusal('Your settings could not be read right now. Reload the page to try again.'); });
-    void api.signInAddress().then((a) => { if (live) setAddress(a); }, () => { /* the row says it could not be read */ });
+    current.current = null;
+    confirmed.current = null;
+    void api.preferences().then((p) => { if (live) { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); } }, () => { if (live) setRefusal({ account, text: 'Your settings could not be read right now. Reload the page to try again.' }); });
+    void api.signInAddress().then((a) => { if (live) setAddressRead({ account, address: a }); }, () => { if (live) setAddressRead({ account, address: null }); });
     return () => { live = false; };
   }, [api, account]);
 
@@ -177,17 +188,18 @@ export function SettingsScreen() {
     const key = Object.keys(patch)[0] as keyof Preferences;
     const asked = patch[key];
     const madeFor = account;
-    const show = (next: Preferences) => { current.current = next; setPrefs(next); applyAppearance(document, next, ui.themes, ui.glass); };
+    if (madeFor === null) return;
+    const show = (next: Preferences) => { current.current = next; setRead({ account: madeFor, prefs: next }); applyAppearance(document, next, ui.themes, ui.glass); };
     show({ ...current.current!, ...patch });
     setRefusal(null);
-    setSaved(false);
+    setSaved(null);
     line.current = line.current.then(async () => {
       let r: Answer<Preferences>;
       try { r = await api.setPreferences(patch); } catch { r = { ok: false, error: LOST_ANSWER }; }
       if (showing.current !== madeFor) return;
-      if (r.ok) { confirmed.current = { ...confirmed.current!, [key]: r.value[key] }; setSaved(true); return; }
+      if (r.ok) { confirmed.current = { ...confirmed.current!, [key]: r.value[key] }; setSaved(madeFor); return; }
       if (current.current![key] === asked) show({ ...current.current!, [key]: confirmed.current![key] });
-      setRefusal(r.error);
+      setRefusal({ account: madeFor, text: r.error });
     });
   };
 
@@ -196,7 +208,7 @@ export function SettingsScreen() {
       await api.signOut();
       navigate('/');
     } catch {
-      setRefusal('Signing out could not be done right now; try again.');
+      setRefusal({ account, text: 'Signing out could not be done right now; try again.' });
     }
   };
 
@@ -214,7 +226,9 @@ export function SettingsScreen() {
           <h2 id="kb-settings-account" className="kb-acct-section-title kb-glass-display">Account</h2>
           <p className="kb-acct-lead">Out of character: what you sign in with, and who you bring in.</p>
           <Row label="Sign-in address" sentence="The address the code and the link come to. It is not shown to anyone else.">
-            <p className="kb-acct-value">{address ?? 'Your address could not be read right now. Reload the page to try again.'}</p>
+            {address === null
+              ? <p className="kb-acct-value" aria-busy="true" />
+              : <p className="kb-acct-value">{address.address ?? 'Your address could not be read right now. Reload the page to try again.'}</p>}
           </Row>
           <Row label="Invites"><Invites /></Row>
           {said}

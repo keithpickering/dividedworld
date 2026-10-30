@@ -44,7 +44,8 @@ export function debutPreview(o: { readonly name: string; readonly className: str
 
 /**
  * The words naming a class adds to a Turn's tally line, which the Turn's names quote: the one
- * function both read, so a name never promises words the post does not carry.
+ * function the names, the preview and the tally that posts it all read, so a name never promises
+ * words the post does not carry.
  */
 export function turnNamedWords(o: { readonly was: string; readonly to: string }): { readonly old: string; readonly new: string } {
   return { old: `from ${o.was}`, new: `to ${o.to}` };

@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import type { Act } from '../data/api.ts';
+import { turnPreview } from '../characters/previews.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { RevealPost, TallyPost } from './Reveal.tsx';
@@ -129,6 +130,19 @@ describe('the tally', () => {
     expect(tally).toHaveTextContent('Pipewrench debuts');
     expect(tally).toHaveTextContent('Pipewrench has Turned from Face to Heel');
     expect(within(tally).getAllByRole('link', { name: 'Pipewrench' })[0]).toHaveAttribute('href', '/c/c2');
+  });
+
+  test('says of a Turn the words the Turn modal\'s preview promised, for each class named', async () => {
+    const named = [[true, false], [false, true], [true, true]] as const;
+    show(actOf('tally', {
+      season: 1, part: 1, of: 1, body: '', debuts: [],
+      turns: named.map(([from, to], i) => ({ character: `c${i}`, name: `Mask ${i}`, loudness: 'announced', ...(from ? { was: 'face' } : {}), ...(to ? { class: 'heel' } : {}) })),
+    }));
+    const tally = await screen.findByRole('region', { name: 'The tally' });
+    for (const [i, [showFrom, showTo]] of named.entries()) {
+      const promised = turnPreview({ name: `Mask ${i}`, was: 'Face', to: 'Heel', loudness: 'announced', showFrom, showTo }).lines[0]!.text;
+      expect(tally).toHaveTextContent(promised);
+    }
   });
 
   test('says which part of a long tally this is', async () => {

@@ -230,6 +230,41 @@ describe('Settings, as board 11 draws it', () => {
     });
   }
 
+  /*
+   * Settings left open while the session changes in another tab: the next account's own address and
+   * preferences are on their way (here, never answering), and the screen must show neither the last
+   * account's address nor its choices meanwhile, nor say the address could not be read.
+   */
+  for (const via of ['another account', 'signed out, then another account'] as const) {
+    /** Open Settings at `path` as an account whose smoke is off, then change accounts while the next one's reads are still out. */
+    async function switched(path: string, ready: () => Promise<unknown>) {
+      const w = world();
+      await w.fake.setPreferences({ smoke: 'off' });
+      const mine = (await w.fake.signInAddress())!;
+      open(w.fake, path);
+      await ready();
+      w.fake.preferences = () => new Promise(() => {});
+      w.fake.signInAddress = () => new Promise(() => {});
+      const other = w.fake.seed.account('other');
+      if (via !== 'another account') {
+        w.fake.signInAs(null);
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      }
+      w.fake.signInAs(other);
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      return mine;
+    }
+    test(`with Settings › Account open, ${via} signing in never shows the last account's address`, async () => {
+      const mine = await switched('/settings?section=account', () => screen.findByText(/@/u));
+      expect(screen.queryByText(mine)).toBeNull();
+      expect(screen.queryByText(/could not be read/u)).toBeNull();
+    });
+    test(`with Settings › Accessibility open, ${via} signing in never shows the last account's choices`, async () => {
+      await switched('/settings', () => screen.findByRole('radiogroup', { name: 'Smoke' }));
+      expect(screen.queryByRole('radiogroup', { name: 'Smoke' })).toBeNull();
+    });
+  }
+
   test('a refused save that answers after the screen is gone puts nothing back', async () => {
     const { calls, view } = await leaving('signed out');
     view.unmount();
