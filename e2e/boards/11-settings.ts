@@ -16,9 +16,9 @@
  *    it offers Follow my device and the instance's own themes beside the board's two (section 9,
  *    choice 4), and a row of its own, Posts, follows it, where the board draws Read-outs, which is not
  *    built (web Task 11);
- *  - Motion's sentence names no card: the engine never names an instance's card, so "Stick Around
- *    still snaps you back" is "one that snaps you back still does"; and The board's sentence, with
- *    more than two choices, says "whichever you choose" for "either way".
+ *  - The board's sentence, with more than two choices, says "whichever you choose" for "either way"
+ *    and "its colors" for "its two colors". (Motion's names Stick Around in the instance's own copy,
+ *    `InstanceUi.copy.reducedMotionCard`, since the engine names no card, and reads as the board's.)
  *
  * Not compared: the smoke and its calms, which are the guards' (tools/check-glass-contrast.mjs and
  * e2e/glass-text.spec.ts). "Changes save as you make them." follows the Posts row where the board's
@@ -65,8 +65,7 @@ const manifest: BoardManifest = {
     { id: 'lead', role: 'text', name: 'These change how the board and the glass look, read and move. They never change how hard a card is to get through.' },
 
     ...row('motion', 'Motion', 'Motion', ['Follow my device', 'Reduced', 'Full'],
-      'Reduced stops the drifting smoke, the pulses and the orb shine. A card\'s effect stays: Stick Around still snaps you back, only instantly.', undefined,
-      'Reduced stops the drifting smoke, the pulses and the orb shine. A card\'s effect stays: one that snaps you back still does, only instantly.'),
+      'Reduced stops the drifting smoke, the pulses and the orb shine. A card\'s effect stays: Stick Around still snaps you back, only instantly.'),
     ...row('smoke', 'Smoke', 'Smoke', ['Full', 'Low', 'Off'], 'How much cloud sits behind the glass. Off leaves plain black. Text is readable at every setting.'),
     ...row('contrast', 'Contrast', 'Contrast', ['Standard', 'High'],
       'High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen.'),
@@ -80,7 +79,7 @@ const manifest: BoardManifest = {
      */
     ...row('board', 'The board', 'Board colors', [],
       'The 2003 board stays 2003 either way. Only its two colors swap.', 'The board',
-      'The 2003 board stays 2003 whichever you choose. Only its colors change.'),
+      'The 2003 board stays 2003 whichever you choose. Only its colors swap.'),
     { id: 'board-black-on-white', role: 'text', name: 'Black on white', within: 'board', box: 'none', type: false },
     { id: 'board-white-on-black', role: 'text', name: 'White on black', within: 'board', box: 'none' },
 

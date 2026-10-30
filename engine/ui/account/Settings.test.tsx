@@ -63,6 +63,12 @@ describe('Settings, as board 11 draws it', () => {
     }
   });
 
+  test('Motion\'s sentence names the instance\'s own card, in the instance\'s words', async () => {
+    open(world().fake);
+    await screen.findByRole('radiogroup', { name: 'Motion' });
+    expect(screen.getByText('Reduced stops the drifting smoke, the pulses and the orb shine. A card\'s effect stays: the test card still moves you, only instantly.')).toBeInTheDocument();
+  });
+
   test('the board\'s colors and motion apply at once and persist across a fresh load', async () => {
     const w = world();
     await persists(w, 'The board', 'White on black', { theme: 'dark' }, ['data-kb-mode', 'dark']);

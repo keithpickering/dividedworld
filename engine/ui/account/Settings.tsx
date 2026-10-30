@@ -4,7 +4,7 @@
  * sections, Account and Accessibility (the board's Notifications, Privacy and Export my data wait
  * for a design), and the section beside it.
  *
- * Accessibility: motion, smoke, contrast, text size, the board's colors (the device's, black on
+ * Accessibility: motion (its sentence naming the instance's own card, `InstanceUi.copy`), smoke, contrast, text size, the board's colors (the device's, black on
  * white, white on black, then the instance's own themes) and the post style, each a row of skewed
  * choices with its sentence. Each is saved to the account the moment it is chosen and applied to the
  * page at once (applyAppearance): the theme restyles the board only, the smoke, contrast and text
@@ -219,7 +219,7 @@ export function SettingsScreen() {
         <h2 id="kb-settings-accessibility" className="kb-acct-section-title kb-glass-display">Accessibility</h2>
         <p className="kb-acct-lead">These change how the board and the glass look, read and move. They never change how hard a card is to get through.</p>
         <Choice legend="Motion" options={MOTION} value={prefs.motion} onChange={(v) => change({ motion: v })}
-          sentence="Reduced stops the drifting smoke, the pulses and the orb shine. A card's effect stays: one that snaps you back still does, only instantly." />
+          sentence={`Reduced stops the drifting smoke, the pulses and the orb shine. A card's effect stays: ${ui.copy.reducedMotionCard}`} />
         <Choice legend="Smoke" options={SMOKE} value={prefs.smoke} onChange={(v) => change({ smoke: v })}
           sentence="How much cloud sits behind the glass. Off leaves plain black. Text is readable at every setting." />
         <Choice legend="Contrast" options={CONTRAST} value={prefs.contrast} onChange={(v) => change({ contrast: v })}
@@ -227,7 +227,7 @@ export function SettingsScreen() {
         <Choice legend="Text size" options={TEXT_SIZE} value={prefs.textSize} onChange={(v) => change({ textSize: v })}
           sentence="Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off." />
         <Choice legend="The board" options={themeOptions} value={theme} onChange={(v) => change({ theme: v })}
-          sentence="The 2003 board stays 2003 whichever you choose. Only its colors change." />
+          sentence="The 2003 board stays 2003 whichever you choose. Only its colors swap." />
         <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
           sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />
         {said}

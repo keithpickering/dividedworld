@@ -62,6 +62,12 @@ export interface UiCopy {
   readonly siteTagline: string;
   /** What the shop is called (the owner names it later; a placeholder until then). */
   readonly shopName: string;
+  /**
+   * How a card's effect stays under reduced motion, in Settings' Motion sentence after "A card's
+   * effect stays: ", naming the instance's own card the way its players know it (the engine names
+   * none), such as "Stick Around still snaps you back, only instantly."
+   */
+  readonly reducedMotionCard: string;
 }
 
 /**
