@@ -82,6 +82,23 @@ test('a run settles the next window: reads its input, runs the instance\'s class
   assert.equal(apply.window_start, new Date(FROM).toISOString());
 });
 
+test('the call to apply_settlement carries each entry\'s shares, which add up to it', async () => {
+  const { db, calls } = fakeDb();
+  await runSettlement(db, instance, new Date(TO).toISOString());
+  const apply = calls.find((c) => c.fn === 'apply_settlement')!.args;
+  const entries = apply.entries as { character: string; reason: string; amount: number }[];
+  const shares = apply.shares as { character: string; reason: string; act: string; quadrant?: string; amount: number }[];
+  assert.ok(Array.isArray(shares) && shares.length > 0, 'shares are sent');
+  for (const s of shares) assert.deepEqual(Object.keys(s).sort(), s.quadrant ? ['act', 'amount', 'character', 'quadrant', 'reason'] : ['act', 'amount', 'character', 'reason'], 'a share names its entry by character and reason, never its player');
+  for (const e of entries) {
+    const mine = shares.filter((s) => s.character === e.character && s.reason === e.reason);
+    assert.ok(mine.length > 0, `${e.reason} is shared`);
+    assert.equal(mine.reduce((t, s) => t + s.amount, 0), e.amount, `${e.reason}'s shares add up to it`);
+  }
+  // The heat is on p1, the post, in the quadrant the estimate valued.
+  assert.deepEqual(shares.filter((s) => s.reason === 'heel.drewHeat').map((s) => [s.act, s.quadrant, s.amount]), [['p1', 'excitedNegative', 35]]);
+});
+
 test('the settings rows reach the settlement: an admin\'s tuning of a vote or a class\'s number is what pays', async () => {
   const { db, calls } = fakeDb(day, { vote: 20, economy: { ...instance.settings.economy, 'lurker.earlyMatch': 40 }, copy: { turnsThreadTitle: 'x' } });
   await runSettlement(db, instance, new Date(TO).toISOString());

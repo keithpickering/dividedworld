@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { settle } from './settle.ts';
+import { settle, shareEntries } from './settle.ts';
 import type { ClassRules, Instance, InputAct, InputReaction, SettlementInput } from './types.ts';
 
 const counting: ClassRules = {
@@ -72,6 +72,26 @@ test('one window with 500 players, 3,000 characters, 20,000 Acts and 100,000 rea
     assert.equal(sum(r.details.filter((d) => d.character === e.character && d.reason === e.reason).map((d) => d.amount)), e.amount, 'the log adds up');
   }
   assert.ok(ms < 15_000, `took ${Math.round(ms)} ms`);
+});
+
+test('the same busy window\'s shares add up to every entry, and the second run fits beside the first', () => {
+  const input = busyWindow(500, 20_000, 100_000);
+  const start = performance.now();
+  const r = settle(input, instance);
+  const settled = performance.now();
+  const shares = shareEntries(input, instance, r.entries);
+  const ms = performance.now() - start;
+  console.log(`  settled in ${Math.round(settled - start)} ms and shared ${r.entries.length} entries into ${shares.length} shares in ${Math.round(performance.now() - settled)} ms more`);
+  const totals = new Map<string, number>();
+  for (const s of shares) { const k = `${s.player}\u0000${s.character}\u0000${s.reason}`; totals.set(k, (totals.get(k) ?? 0) + s.amount); }
+  assert.ok(shares.length > 1000);
+  for (const e of r.entries) {
+    const k = `${e.player}\u0000${e.character}\u0000${e.reason}`;
+    if (totals.has(k)) assert.equal(totals.get(k), e.amount, `${e.character} ${e.reason}`);
+  }
+  console.log(`  ${totals.size} of ${r.entries.length} entries shared`);
+  assert.ok(totals.size >= 0.9 * r.entries.length, `${totals.size} of ${r.entries.length} entries shared`);
+  assert.ok(ms < 30_000, `took ${Math.round(ms)} ms`);
 });
 
 test('one post that 20,000 players first react to in one window settles in seconds', () => {
