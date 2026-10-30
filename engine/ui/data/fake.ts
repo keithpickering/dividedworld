@@ -63,6 +63,10 @@ export interface Seed {
   nextSettlementAt(at: number | null): void;
   views(thread: Id, count: number): void;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
+  /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). */
+  wallet(account: Id, balance: number): void;
+  /** A character's Turn asked by its player, waiting for the next settlement; refused in the server's words like any other. */
+  turn(character: Id, to: string, options?: { loudness?: 'silent' | 'announced'; showFrom?: boolean; showTo?: boolean }): void;
   /** What the account's next estimate holds; its times are the ask's. */
   estimate(account: Id, estimate: { entries?: Estimate['entries']; lines?: readonly EstimateLine[] }): void;
   /** A character's unmask Act in a thread, as its player's reveal (`via` 'act') or a debut's or a Turn's. */
@@ -860,6 +864,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     nextSettlementAt(at) { nextSettlement = at; },
     views(thread, count) { views.set(thread, count); },
     cards(account, held) { accounts.get(account)!.cards = { ...held }; },
+    wallet(account, balance) { accounts.get(account)!.wallet = Math.max(0, Math.min(balance, settings.walletCap)); },
+    turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
     estimate(account, e) {
       const a = accounts.get(account)!;
       a.estimate = { entries: e.entries ?? [], lines: e.lines ?? [] };

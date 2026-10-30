@@ -11,10 +11,10 @@ const root = createRoot(document.getElementById('root')!);
 createBackend().then(
   (api) => root.render(<App api={api} />),
   (error: unknown) => {
-    // Plain words, not in character: a build that cannot reach a forum says so.
+    // Plain words, not in character: a build that cannot start says why (no project named, or a fixture the address names that is not there).
     root.render(
       <main style={{ maxWidth: '36rem', margin: '3rem auto', padding: '0 1rem', fontFamily: 'system-ui, sans-serif', lineHeight: 1.5 }}>
-        <h1>This site is not set up</h1>
+        <h1>This site could not start</h1>
         <p>{error instanceof Error ? error.message : 'This build names no Supabase project.'}</p>
       </main>,
     );
