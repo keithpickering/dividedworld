@@ -597,7 +597,9 @@
 /*
  * The Phone board's glass is 124px, and so is this one while what it holds fits. It grows past
  * that rather than cut its last row at the window's foot: a wallet past its cap, which the board
- * does not draw, or text spaced wider by the reader, needs more.
+ * does not draw, or text spaced wider by the reader, needs more. Its border is inside those 124px
+ * (border-box), as the board draws it. A wallet past its cap is a mark on the last orb here, not
+ * words (issue 48), so it no longer grows the glass.
  */
 :where(:root[data-kb-layout='phone']) .kb-hud-glass {
   box-sizing: border-box;
@@ -781,6 +783,7 @@
   --kb-orb-gap: 6px;
   flex-wrap: wrap;
   align-items: center;
+  /* Tight across, so the orbs, the figure and the estimate keep to one row at 360px and the glass to its 124px. */
   gap: 4px 2px;
 }
 

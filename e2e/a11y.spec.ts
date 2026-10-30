@@ -150,7 +150,20 @@ for (const scheme of ['light', 'dark'] as const) {
         else {
           await expect(page.locator('.kb-hud-orbs .kb-orb:last-child .kb-orb-over')).toBeVisible();
           await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toBeHidden();
-          await expect(page.locator('.kb-hud-orbs [role="img"]')).toHaveAttribute('aria-label', /\d\.\d\d past the cap/);
+          /* The demo's estimate lies wholly past a full wallet, so the name carries that estimate as its amount. */
+          const name = await page.locator('.kb-hud-orbs [role="img"]').getAttribute('aria-label');
+          const pending = /, (\d\.\d\d) pending until the next settlement/.exec(name ?? '')?.[1];
+          expect(pending).toBeDefined();
+          expect(name).toMatch(new RegExp(`, ${pending!.replace('.', '\\.')} past the cap$`));
+          /* A mark a sighted player can tell from the orb under it: a disc in the over-cap color, ringed and crossed in the ground's. */
+          const mark = await page.locator('.kb-hud-orbs .kb-orb:last-child .kb-orb-over').evaluate((el) => {
+            const s = getComputedStyle(el);
+            const root = getComputedStyle(document.documentElement);
+            const probe = (v: string) => { const p = document.createElement('i'); p.style.color = v; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; };
+            return { fill: s.backgroundColor, ring: s.borderTopColor, over: probe(root.getPropertyValue('--kb-glass-over')), ground: probe(root.getPropertyValue('--kb-glass-ground')) };
+          });
+          expect(mark.fill).toBe(mark.over);
+          expect(mark.ring).toBe(mark.ground);
         }
         expect(await hudCut(page)).toEqual([]);
         /* The docked HUD keeps its 124px on a phone with an over-cap wallet: the words are not drawn there. */

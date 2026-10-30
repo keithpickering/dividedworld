@@ -94,17 +94,25 @@
 
 /*
  * A wallet past its cap, marked on the last orb where the Phone board's layout leaves the words out: a
- * ring in the over-cap color and a "+" in its middle, each a gradient so no text is drawn. The Main
- * board's layout says it in words instead, so there the mark is not drawn.
+ * disc in the over-cap color, ringed and crossed with a "+" in the ground's, so it stands apart from the
+ * liquid under it whatever the orb's color, and no text is drawn (its words are the row's name). The
+ * Main board's layout says it in words instead, so there the mark is not drawn.
  */
 .kb-orb > .kb-orb-over {
   display: none;
-  top: 0;
-  box-shadow: inset 0 0 0 2px var(--kb-glass-over);
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  width: 56%;
+  height: 56%;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid var(--kb-glass-ground);
   border-radius: 50%;
   background:
-    linear-gradient(var(--kb-glass-over), var(--kb-glass-over)) center / 52% 2px no-repeat,
-    linear-gradient(var(--kb-glass-over), var(--kb-glass-over)) center / 2px 52% no-repeat;
+    linear-gradient(var(--kb-glass-ground), var(--kb-glass-ground)) center / 60% 2px no-repeat,
+    linear-gradient(var(--kb-glass-ground), var(--kb-glass-ground)) center / 2px 60% no-repeat,
+    var(--kb-glass-over);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-orb > .kb-orb-over {
