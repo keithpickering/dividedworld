@@ -44,7 +44,7 @@ const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
 
 describe('the moments', () => {
   it('names a moment for each board that has one, in the order the boards are numbered', () => {
-    expect(NAMES).toEqual(['01-main', '02-phone', '03-react', '05-cards', '06-turn', '07-vending', '08-hold', '09-settlement', '10-roster', '11-settings', '12-log']);
+    expect(NAMES).toEqual(['01-main', '02-phone', '03-react', '05-cards', '06-turn', '07-vending', '08-hold', '09-settlement', '10-roster', '11-settings', '12-log', '13-rankings']);
   });
 
   it('is frozen, so a test cannot move a board by editing a moment', () => {
@@ -64,6 +64,7 @@ describe('the moments', () => {
     '10-roster': /^\/characters$/,
     '11-settings': /^\/settings$/,
     '12-log': /^\/log$/,
+    '13-rankings': /^\/rankings$/,
   };
   const WHO: Record<MomentName, readonly string[]> = {
     '01-main': ['Mrs. Hooligan', 'Pipewrench', 'Spritey'],
@@ -77,6 +78,7 @@ describe('the moments', () => {
     '10-roster': ['Mrs. Hooligan', 'Pipewrench', 'Spritey'],
     '11-settings': ['Mrs. Hooligan', 'Pipewrench', 'Spritey'],
     '12-log': ['Mrs. Hooligan', 'Pipewrench', 'Spritey'],
+    '13-rankings': ['Mrs. Hooligan', 'Pipewrench', 'Spritey'],
   };
 
   it.each(NAMES)('%s loads: the route is the board\'s, the moment\'s account is signed in, and the clock is the moment\'s', async (moment) => {
@@ -117,6 +119,7 @@ describe('Pipewrench through the season', () => {
     '10-roster': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
     '11-settings': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
     '12-log': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
+    '13-rankings': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
   };
 
   it.each(Object.entries(AT))('at %s: wallet, what is pending, the hand, the rank and the Turn are the timeline\'s', async (moment, want) => {
@@ -250,6 +253,43 @@ describe('the reader', () => {
     const { fake, thread } = await load('08-hold');
     const p44 = (await postsOf(fake, thread))[43]!;
     expect((await fake.cardsOn(p44.id, 10)).map((a) => a.payload.card)).toEqual(['stick-around']);
+  });
+});
+
+/* The Rankings board's season: every character in the standings' order, two of the others' classes said in public. */
+describe('the rankings', () => {
+  async function page(moment: MomentName) {
+    const { fake } = await load(moment);
+    const standings = await fake.standingsPage(0, 50);
+    const ids = standings.map((s) => s.character);
+    const named = async <T extends { character: string }>(rows: readonly T[]) => Promise.all(rows.map(async (r) => ({ ...r, name: await nameOf(fake, r.character) })));
+    return { fake, standings, reveals: await named(await fake.classReveals(ids)), turns: await named(await fake.turnsAnnounced(ids)) };
+  }
+
+  it('at 13-rankings, ranks the season as the Oct 30 settlement left it, the crowd last', async () => {
+    const { standings } = await page('13-rankings');
+    expect(standings.map((s) => [s.place, s.name, s.standing])).toEqual([
+      [1, 'Spritey', 650], [2, 'Mrs. Hooligan', 420], [3, 'Pipewrench', 330], [4, 'Gloomba', 180], [5, 'Thwompson', 40],
+      [6, 'Ringside 1', 0], [6, 'Ringside 2', 0], [6, 'Ringside 3', 0], [6, 'Ringside 4', 0],
+    ]);
+  });
+
+  it('at 13-rankings, Gloomba has said its class in public after the night\'s boards, and Thwompson long before, Turning, announced, since', async () => {
+    const { reveals, turns } = await page('13-rankings');
+    expect(reveals.map((r) => [r.name, r.class, r.at, r.via])).toEqual([
+      ['Thwompson', 'lurker', iso(8, 9, 31), 'act'],
+      ['Gloomba', 'heel', iso(30, 1, 13), 'act'],
+    ]);
+    expect(turns.map((t) => [t.name, t.at, t.was])).toEqual([['Pipewrench', iso(30, 8, 17), 'heel'], ['Thwompson', iso(30, 8, 17), null]]);
+  });
+
+  it('moves no other board: no reveal of Gloomba by the last thread moment, and Thwompson is still a Lurker on the Hold board', async () => {
+    for (const moment of ['01-main', '02-phone', '03-react', '05-cards', '06-turn'] as const) {
+      const { reveals } = await page(moment);
+      expect(reveals.map((r) => r.name)).not.toContain('Gloomba');
+    }
+    const { fake } = await load('08-hold');
+    expect((await fake.myCharacters()).map((c) => [c.name, c.class, c.pendingTurn])).toEqual([['Thwompson', 'lurker', null]]);
   });
 });
 
