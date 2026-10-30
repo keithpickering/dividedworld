@@ -914,9 +914,17 @@
   cursor: not-allowed;
 }
 
+/*
+ * A control that cannot be pressed yet is drawn as a Turn that opens later is, never translucent:
+ * glass type is opaque (the design, section 4.3), and the waiting token is the one for words a
+ * player cannot use yet.
+ */
 .kb-glass-confirm:disabled,
 .kb-glass-action:disabled {
-  opacity: 0.6;
+  border: 1px dashed color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
+  background: transparent;
+  color: var(--kb-glass-neon-text);
+  box-shadow: none;
   cursor: not-allowed;
 }
 

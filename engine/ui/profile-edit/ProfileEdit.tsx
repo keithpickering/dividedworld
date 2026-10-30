@@ -62,18 +62,18 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   if (signedIn === null || (signedIn && !loaded)) return <div className="kb-profile-edit" aria-busy="true" />;
   if (!signedIn) return <div className="kb-profile-edit"><SignInPrompt /></div>;
 
-  const back = <p className="kb-new-back"><Link to="/characters" state={id === null ? undefined : { character: id }} className="kb-glass-action kb-glass-skew"><span className="kb-glass-upright">Back to your characters</span></Link></p>;
+  const back = <p className="kb-new-back kb-calm"><Link to="/characters" state={id === null ? undefined : { character: id }} className="kb-glass-action kb-glass-skew"><span className="kb-glass-upright">Back to your characters</span></Link></p>;
   if (!mine || id === null) {
     return (
       <div className="kb-profile-edit">
         <h1 className="kb-characters-title kb-glass-display">Edit profile</h1>
-        <p className="kb-notice">You have no characters yet, so there is no profile here for you to edit. <Link to="/characters/new">Make a character</Link> first.</p>
+        <p className="kb-notice kb-calm">You have no characters yet, so there is no profile here for you to edit. <Link to="/characters/new">Make a character</Link> first.</p>
         {back}
       </div>
     );
   }
   const picker = (
-    <label className="kb-field">
+    <label className="kb-field kb-calm">
       <span>Character</span>
       <select className="kb-select" value={id} onChange={(e) => setPicked(e.target.value)}>
         {characters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -91,7 +91,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
     return (
       <div className="kb-profile-edit">
         {head}
-        <p className="kb-notice">{mine.name} is retired. An admin can restore it; until then its profile cannot be edited.</p>
+        <p className="kb-notice kb-calm">{mine.name} is retired. An admin can restore it; until then its profile cannot be edited.</p>
         {back}
       </div>
     );
@@ -100,12 +100,12 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
     return (
       <div className="kb-profile-edit">
         {head}
-        <p className="kb-notice">{mine.name} is waiting to debut at the next settlement. It has no profile to edit until it has debuted.</p>
+        <p className="kb-notice kb-calm">{mine.name} is waiting to debut at the next settlement. It has no profile to edit until it has debuted.</p>
         {back}
       </div>
     );
   }
-  if (profile === 'failed') return <div className="kb-profile-edit">{head}<p className="kb-notice" data-kb-tone="refusal">The profile could not be loaded. Reload the page to try again.</p></div>;
+  if (profile === 'failed') return <div className="kb-profile-edit">{head}<p className="kb-notice kb-calm" data-kb-tone="refusal">The profile could not be loaded. Reload the page to try again.</p></div>;
   if (profile === null) return <div className="kb-profile-edit">{head}<div aria-busy="true" /></div>;
 
   const save = async () => {
@@ -128,8 +128,8 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
   return (
     <div className="kb-profile-edit">
       {head}
-      <p className="kb-muted kb-small">What you set here is public: it shows beside {mine.name}&apos;s posts.</p>
-      <form onSubmit={(e) => { e.preventDefault(); void save(); }}>
+      <p className="kb-muted kb-small kb-calm">What you set here is public: it shows beside {mine.name}&apos;s posts.</p>
+      <form className="kb-calm" onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <label className="kb-field">
           <span>Title</span>
           <input className="kb-input kb-wide" value={title} maxLength={TITLE_MAX} onChange={(e) => setTitle(e.target.value)} aria-describedby="pe-title-count" />
@@ -151,11 +151,11 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
             {instance.pipStyles.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
           </select>
         </label>
-        {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
+        {refusal && <p role="alert" className="kb-notice kb-calm" data-kb-tone="refusal">{refusal}</p>}
         <p><button type="submit" className="kb-glass-confirm kb-glass-skew" disabled={busy}><span className="kb-glass-upright">Save the profile</span></button></p>
-        <div role="status">{saved && <p className="kb-notice">{saved}</p>}</div>
+        <div role="status">{saved && <p className="kb-notice kb-calm">{saved}</p>}</div>
       </form>
-      <AvatarEditor character={profile} onSaved={setProfile} io={io} />
+      <div className="kb-calm"><AvatarEditor character={profile} onSaved={setProfile} io={io} /></div>
     </div>
   );
 }

@@ -79,11 +79,11 @@ export function NewCharacter() {
           </label>
           <p id="new-name-hint" className="kb-roster-line">1 to 40 characters. Letters, marks, digits and single spaces. Names are unique, look-alikes included.</p>
         </div>
-        <ClassCards legend="Class" value={cls} onChange={setCls} />
+        <div className="kb-calm"><ClassCards legend="Class" value={cls} onChange={setCls} /></div>
         <p className="kb-roster-line kb-calm">Only you will know its class, unless you choose to reveal it.</p>
-        <DebutChoice name={name} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} />
+        <div className="kb-calm"><DebutChoice name={name} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} /></div>
         {refusal && <p role="alert" className="kb-notice kb-calm" data-kb-tone="refusal">{refusal}</p>}
-        <div className="kb-turn-actions">
+        <div className="kb-turn-actions kb-calm">
           <Link to="/characters" className="kb-glass-action kb-glass-skew"><span className="kb-glass-upright">Cancel</span></Link>
           <button type="submit" className="kb-glass-confirm kb-glass-skew" disabled={!cls || name.trim() === '' || busy}><span className="kb-glass-upright">Make the character</span></button>
         </div>
