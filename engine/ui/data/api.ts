@@ -311,6 +311,13 @@ export interface HeldCard {
   readonly held: number;
 }
 
+/** What a purchase leaves: the card bought, the settled wallet after it and how many of that card the player now holds (`buy_card`'s answer). */
+export interface Bought {
+  readonly card: string;
+  readonly balance: number;
+  readonly held: number;
+}
+
 /* ------------------------------------------------------------------ actions ---- */
 
 export type DebutTiming = 'now' | 'tally';
@@ -476,6 +483,16 @@ export interface KayfaApi {
   post(thread: Id, character: Id, body: string, quote: Id | null): Promise<Answer<Act>>;
   edit(post: Id, character: Id, body: string): Promise<Answer<Act>>;
   spin(origin: Id, character: Id, title: string, body: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  /**
+   * Buy a card from the Vending Machine at its base price, from the settled wallet only: the ghost estimate cannot be spent. The
+   * price is the card's rules' (`basePrice`), never sent by the screen. Private, and nothing about it is broadcast.
+   */
+  buyCard(card: string): Promise<Answer<Bought>>;
+  /**
+   * Play a card the player holds on a post, as one of their characters: the card's own settings (`config`), the caster's message (plain
+   * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.
+   */
+  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Promise<Answer<Act>>;
   /** Release the player from a play's effect, for good and on every device; the player's own, and said again it is the same. */
   releaseEffect(play: Id): Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
   /** Save the state of a play's effect, as the character that wrote the post it landed on (no one else may); the card's rules bound what it holds. */

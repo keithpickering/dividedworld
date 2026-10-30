@@ -885,6 +885,91 @@ describe('what a list row shows', () => {
   });
 });
 
+describe('the Vending Machine and a card play, refused as the server refuses them', () => {
+  /* One salty card at 1.00, and a long post costs 0.50 more: the rules the server prices a play by (engine/rules/cards.ts). */
+  const splat = {
+    key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', stack: 2,
+    playPrice: (_s: Settings, t: { length: number }) => (t.length > 20 ? 50 : 0),
+    canApply: (t: { kind: string }, on: readonly { card: string }[]) => (t.kind !== 'post' ? refused2('a card lands on a post') : on.length >= 2 ? refused2('this post already carries 2 of that card, the most it takes') : { ok: true as const, value: undefined }),
+    validateConfig: (c: unknown) => ([undefined, 'red'].includes((c as { color?: unknown } | undefined)?.color as string | undefined) ? { ok: true as const, value: c ?? {} } : refused2('the ink is red')),
+  };
+  const refused2 = (why: string) => ({ ok: false as const, why });
+  const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
+  function shopWorld(wallet: number, held = 0) {
+    const fake = createFake({ instance: shop });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    fake.seed.wallet(ana, wallet);
+    if (held > 0) fake.seed.cards(ana, { splat: held });
+    fake.signInAs(ana);
+    return { fake, ana, anaFace, boFace, thread, opener };
+  }
+
+  test('buying takes the card\'s price from the settled wallet, and the count rises by one', async () => {
+    const { fake } = shopWorld(562, 1);
+    expect(must(await fake.buyCard('splat'))).toEqual({ card: 'splat', balance: 462, held: 2 });
+    expect(await fake.wallet()).toEqual({ balance: 462, cap: 600 });
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 2 }]);
+  });
+
+  test('a wallet that holds less than the price is refused in the server\'s words, and nothing is spent or given', async () => {
+    const { fake } = shopWorld(99);
+    expect(await fake.buyCard('splat')).toEqual(refused('that costs 100, and your wallet holds 99'));
+    expect((await fake.wallet()).balance).toBe(99);
+    expect(await fake.myCards()).toEqual([]);
+  });
+
+  test('the ghost estimate is not the wallet: a purchase reads the settled balance only', async () => {
+    const { fake, ana } = shopWorld(50);
+    fake.seed.estimate(ana, { entries: [{ character: fake.seed.character(ana, 'Ghosty', 'face'), reason: 'face.cheered', amount: 500 }] });
+    expect((await fake.buyCard('splat')).ok).toBe(false);
+  });
+
+  test('a card the machine does not sell, and signed out, are refused as the decision refuses them', async () => {
+    const { fake } = shopWorld(500);
+    expect((await fake.buyCard('nothing'))).toMatchObject({ ok: false, field: 'card' });
+    fake.signInAs(null);
+    expect(await fake.buyCard('splat')).toEqual(refused('sign in to act'));
+  });
+
+  test('a play needs a card in hand, in the server\'s words, and spends the card and the price of the post', async () => {
+    const { fake, anaFace, opener } = shopWorld(500);
+    expect(await fake.playCard('splat', anaFace, opener, {}, '')).toEqual(refused('you hold no "splat" card; the Vending Machine sells them'));
+    must(await fake.buyCard('splat'));
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 1 }]);
+    const played = must(await fake.playCard('splat', anaFace, opener, { color: 'red' }, ' Take that. '));
+    expect(played).toMatchObject({ kind: 'card', character: anaFace, targetActId: opener, seq: null, payload: { card: 'splat', layer: 1, message: 'Take that.', config: { color: 'red' } } });
+    /* The post is 10 characters, so the play costs nothing more than the card already bought. */
+    expect((await fake.wallet()).balance).toBe(400);
+    expect(await fake.myCards()).toEqual([]);
+  });
+
+  test('a play is priced from the post as it stands, refused where the wallet cannot pay it, and keeps the layer count of a stack', async () => {
+    const { fake, ana, anaFace, boFace, thread } = shopWorld(0, 3);
+    const long = fake.seed.post(thread, boFace, 'x'.repeat(30));
+    fake.seed.wallet(ana, 49);
+    expect(await fake.playCard('splat', anaFace, long, {}, '')).toEqual(refused('that costs 50, and your wallet holds 49'));
+    fake.seed.wallet(ana, 100);
+    expect(must(await fake.playCard('splat', anaFace, long, {}, '')).payload).toMatchObject({ layer: 1 });
+    expect(must(await fake.playCard('splat', anaFace, long, {}, '')).payload).toMatchObject({ layer: 2 });
+    expect(await fake.playCard('splat', anaFace, long, {}, '')).toEqual(refused('this post already carries 2 of that card, the most it takes', 'config'));
+    expect((await fake.wallet()).balance).toBe(0);
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 1 }]);
+  });
+
+  test('a play is refused for a character the player does not play, a target that is no post, a bad setting and a message past 200', async () => {
+    const { fake, anaFace, boFace, thread, opener } = shopWorld(500, 1);
+    expect(await fake.playCard('splat', boFace, opener, {}, '')).toEqual(refused('you do not play that character'));
+    expect(await fake.playCard('splat', anaFace, thread, {}, '')).toMatchObject({ ok: false });
+    expect(await fake.playCard('splat', anaFace, opener, { color: 'blue' }, '')).toEqual(refused('the ink is red', 'config'));
+    expect(await fake.playCard('splat', anaFace, opener, {}, 'x'.repeat(201))).toMatchObject({ ok: false, field: 'message' });
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 1 }]);
+  });
+});
+
 describe('a character\'s public month', () => {
   test('joined is the first day of the month it debuted, never a time', async () => {
     const { fake, ana } = world();

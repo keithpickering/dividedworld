@@ -621,6 +621,31 @@ describe('a card\'s effect', () => {
   });
 });
 
+describe('buying and playing a card', () => {
+  it('buys through the act function, naming the card and no price, and reads the wallet and count the function answers', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ card: 'whoops', balance: 462, held: 3 }) : undefined));
+    expect(await h.api.buyCard('whoops')).toEqual({ ok: true, value: { card: 'whoops', balance: 462, held: 3 } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'buyCard', card: 'whoops' }]);
+    const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'that costs 100, and your wallet holds 62' }, 400) : undefined));
+    expect(await refused.api.buyCard('whoops')).toEqual({ ok: false, error: 'that costs 100, and your wallet holds 62' });
+    /* Never resent: a lost answer may have spent the Aura, and the player looks before they buy again. */
+    const lost = harness(() => new Error('network'));
+    const gone = await lost.api.buyCard('whoops');
+    expect(gone.ok === false && gone.uncertain).toBe(true);
+    expect(lost.log.filter((r) => r.url.pathname === '/functions/v1/act')).toHaveLength(1);
+  });
+
+  it('plays through the act function with the card, the character, the post, the settings and the message, and reads the card\'s Act', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json(ACT_ROW) : undefined));
+    expect(await h.api.playCard('whoops', B, A, { color: 'magenta' }, 'you dropped your ink')).toEqual({ ok: true, value: ACT });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([
+      { action: 'playCard', card: 'whoops', character: B, target: A, config: { color: 'magenta' }, message: 'you dropped your ink' },
+    ]);
+    const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'you hold no "whoops" card; the Vending Machine sells them' }, 400) : undefined));
+    expect(await refused.api.playCard('whoops', B, A, {}, '')).toEqual({ ok: false, error: 'you hold no "whoops" card; the Vending Machine sells them' });
+  });
+});
+
 describe('signing in goes through the account function', () => {
   it('requests a code and verifies it there, installs the session it carries, and never calls Auth for a code', async () => {
     const h = harness((r) => {

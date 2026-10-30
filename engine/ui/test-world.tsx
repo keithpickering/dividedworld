@@ -18,7 +18,7 @@ const settings: Settings = {
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 },
-  postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, economy: {},
+  postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, economy: { 'whoops.price': 100 },
 };
 
 const earn = () => [];
@@ -27,7 +27,11 @@ export const testInstance: Instance = {
   key: 'test', name: 'Test',
   copy: { turnsThreadTitle: 'Turns {season}', revealTitle: 'Reveal {season}', revealBody: 'All.' },
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }],
-  cards: [{ key: 'whoops', name: 'Whoops!' } as unknown as Instance['cards'][number]],
+  /* One salty card at 1.00, whose play costs nothing more: enough rules for a screen that prices a card (the HUD's hand, the Vending Machine). */
+  cards: [{
+    key: 'whoops', name: 'Whoops!', alignment: 'salty', priceKey: 'whoops.price', playPrice: () => 0,
+    canApply: () => ({ ok: true, value: undefined }), validateConfig: (config) => ({ ok: true, value: config }),
+  }],
   reactions: [
     { key: 'fire', emoji: 'F', quadrant: 'excitedPositive' }, { key: 'tomato', emoji: 'T', quadrant: 'excitedNegative' },
     { key: 'tea', emoji: 'E', quadrant: 'calmPositive' }, { key: 'zzz', emoji: 'Z', quadrant: 'boredNegative' },

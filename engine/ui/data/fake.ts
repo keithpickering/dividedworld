@@ -16,14 +16,15 @@
  *  - A month is thirty days (a cooldown, a lifetime); the server counts calendar months.
  *  - A name is taken by the engine's own `sameName` (case and look-alike folding, as the database's).
  *  - A debut dropped "now" writes no announcement Act; tests that need one seed it.
- *  - There is no purchase and no card play of a player's own (a seed makes one); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
+ *  - A card's seeded settings are not drawn (a play carries no `seed`); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
  */
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
+import { basePrice, casterMessage, decidePlay, type CardTarget } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
 import type {
-  Act, ActKind, Answer, AvatarUpload, Board, BoardListener, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
+  Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
   DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
   ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet,
 } from './api.ts';
@@ -440,6 +441,55 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ play, releasedAt: iso(releases.get(key)!) });
   }
 
+  /**
+   * What a wallet debit refuses, in the words of `wallet_spend` (0006_cards.sql): the amounts are hundredths, as the server says them.
+   * Returns the balance left, or the refusal.
+   */
+  function spend(account: AccountRec, amount: number): number | Refusal {
+    if (account.wallet < amount) return refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`);
+    account.wallet -= amount;
+    return account.wallet;
+  }
+
+  /** `buy_card` (0006_cards.sql): the card's base price from the settled wallet, and one more of it in the hand. */
+  function buyCard(card: string): Answer<Bought> {
+    const bad = request({ action: 'buyCard', card });
+    if (bad) return bad;
+    const account = me()!;
+    const price = basePrice(instance.cards.find((c) => c.key === card)!, settings);
+    const left = spend(account, price);
+    if (typeof left !== 'number') return left;
+    account.cards[card] = (account.cards[card] ?? 0) + 1;
+    return ok({ card, balance: left, held: account.cards[card]! });
+  }
+
+  /**
+   * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
+   * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
+   */
+  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Answer<Act> {
+    const bad = request({ action: 'playCard', card, character, target, config, message });
+    if (bad) return bad;
+    const on = acts.get(target);
+    if (!on) return refuse('there is no such post', 'target');
+    const rules = instance.cards.find((c) => c.key === card)!;
+    const text = (publicAct(on).currentPayload as { body?: unknown }).body;
+    const effects = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target).map((a) => ({ card: String(a.payload.card), act: a.id }));
+    const decided = decidePlay(rules, settings, { act: on.id, kind: on.kind as CardTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effects, config, message);
+    if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    const account = me()!;
+    if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
+    const left = spend(account, decided.value.price);
+    if (typeof left !== 'number') return left;
+    account.cards[card]! -= 1;
+    const layer = effects.filter((e) => e.card === card).length + 1;
+    const written = write({ character, kind: 'card', thread: on.thread, target, payload: { card, layer, message: decided.value.message, config: decided.value.config } });
+    sendAct(written);
+    return ok(publicAct(written));
+  }
+
   function edit(target: Id, character: Id, body: string): Answer<Act> {
     const bad = request({ action: 'edit', post: target, character, body });
     if (bad) return bad;
@@ -659,6 +709,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
     releaseEffect,
     saveEffect,
+    buyCard: lossy(buyCard),
+    playCard: lossy(playCard),
     cardsOn: (act, limit) => [...acts.values()].filter((a) => a.kind === 'card' && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct),
     characters: (ids) => ids.map((id) => characters.get(id)).filter((c): c is CharRec => c !== undefined && c.debutedAt !== null).map(publicCharacter),
     characterCounts(id) {

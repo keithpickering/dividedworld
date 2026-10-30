@@ -75,8 +75,8 @@ export const instanceUi: InstanceUi = Object.freeze({
   copy: Object.freeze({
     siteName: 'Divided World',
     siteTagline: 'dw.gripe',
-    // The owner names the machine later.
-    shopName: 'The Vending Machine',
+    // The owner names the machine later; the board draws this placeholder on its sign (07-vending.html).
+    shopName: '[Machine name]',
     // The Settings board's words for Motion (docs/research/2026-10-29-two-worlds/11-settings.html).
     reducedMotionCard: 'Stick Around still snaps you back, only instantly.',
   }),

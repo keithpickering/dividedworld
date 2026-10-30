@@ -104,6 +104,8 @@ const PAGES: readonly Screen[] = [
   { name: 'New character', path: '/characters/new' },
   { name: 'Edit profile', path: '/characters/edit' },
   { name: 'Rankings', path: '/rankings' },
+  { name: 'The Vending Machine', path: '/vending' },
+  { name: 'The hand, open', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
   { name: 'Settings', path: '/settings' },
   { name: 'Settings › Account, with the invites', path: '/settings?section=account' },
   { name: 'Sign in', path: '/sign-in', signedOut: true },
@@ -348,6 +350,27 @@ test.describe('under high contrast', () => {
  * it. The web plan's five (the fifth, under high contrast, is above) and the glass plan's section
  * 6 two. Each plant lives only in its own test's page.
  */
+test.describe('the instance\'s drawn art', () => {
+  test.use({ viewport: { width: 1920, height: 1080 } });
+
+  test('the poison: a line in a color no token names is named, and the same line marked as the machine\'s art is left alone', async ({ page }) => {
+    await open(page, PAGES.find((p) => p.path === '/vending')!);
+    const plantLine = (art: boolean) => page.locator('.kb-vending-list').evaluate((list, marked) => {
+      document.querySelector('.kb-planted')?.remove();
+      const p = document.createElement('p');
+      p.className = 'kb-planted kb-calm';
+      p.style.cssText = 'color: #2ef0a0; font-size: 21px; margin: 0';
+      if (marked) p.setAttribute('data-kb-art', '');
+      p.textContent = 'A line printed on the machine in a color no token names.';
+      list.append(p);
+    }, art);
+    await plantLine(false);
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-planted \(surface vending\): its color rgb\(46, 240, 160\) is not one of the glass's text colors in the standard key$/u));
+    await plantLine(true);
+    expect((await measure(page)).filter((m) => m.includes('kb-planted'))).toEqual([]);
+  });
+});
+
 test.describe('the poisons, planted in a real page', () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
   const rankings = PAGES.find((p) => p.path === '/rankings')!;

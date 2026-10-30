@@ -99,6 +99,8 @@ export interface CardArt {
   readonly ink: string;
   /** The picture on the card's face, a URL the bundler resolved; none draws the color alone. It is decoration: the card's name and rules say the rest. */
   readonly image?: string;
+  /** One short line for the face of a small card, such as the hand's ("Hold a reader on a post."); none draws the name alone. */
+  readonly tagline?: string;
 }
 
 export interface CardUi {
@@ -118,5 +120,7 @@ export interface CardUi {
    * Out of character: plain and honest.
    */
   readonly describe: (settings: Settings) => string;
+  /** What the card does in one sentence with no numbers in it, for the face of a large card (the hand's sheet); `describe`'s words when none is given. */
+  readonly summary?: string;
   readonly art: CardArt;
 }

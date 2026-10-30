@@ -1,7 +1,7 @@
 /**
  * The menu bar on every glass page (the web plan's glass amendment to Task 3; the glass plan,
- * section 7, board 02): Back to the board first, with Esc as its key, then My characters, Rankings,
- * My log and Settings, the current one marked with aria-current. Signed out, the bar holds Back
+ * section 7, boards 02 and 07): Back to the board first, with Esc as its key, then Vending Machine, My
+ * characters, Rankings, My log and Settings, the current one marked with aria-current. Signed out, the bar holds Back
  * alone, since every page on it needs an account. The arrow and the ESC key cap the boards draw on
  * Back are empty, hidden elements the stylesheet writes into (`data-kb-key`), so the link's name and
  * text are its words alone.
@@ -33,6 +33,7 @@ import './shell.css';
 interface Tab { readonly label: string; readonly to: string; readonly current: (path: string) => boolean }
 
 const TABS: readonly Tab[] = [
+  { label: 'Vending Machine', to: GLASS_NAV.vending, current: (p) => p === GLASS_NAV.vending },
   { label: 'My characters', to: GLASS_NAV.characters, current: (p) => p === '/characters' || p.startsWith('/characters/') },
   { label: 'Rankings', to: GLASS_NAV.rankings, current: (p) => p === GLASS_NAV.rankings },
   { label: 'My log', to: GLASS_NAV.log, current: () => false },

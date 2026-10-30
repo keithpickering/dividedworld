@@ -4,8 +4,15 @@
  * plan's section 7 lists what is compared; section 3 says where the build departs from the board
  * by a decision, and each departure is named where it sets a `buildName` or a box mode.
  *
+ * The hand is the cards part's (the glass build plan, Part 3): the board draws three postcards fanned
+ * through the HUD's seam, so the build is pressed on the hand button before it is read, which opens
+ * the hand ("Hand, 3 postcards, open"; the board's button is unopened, the cards standing as the
+ * armed card leaves them). The board's second card is the armed one; arming is cards Task 3's, so the
+ * build's second Whoops! stands in the hand unarmed and the board's third, the one plain Whoops!,
+ * is the build's second.
+ *
  * Left out until the part that builds them (the glass build plan, Part 3, the cards):
- *  - the hand's fanned postcards, the armed card's tag, "Play Whoops! here" on #42 (cards Tasks 2 and 3);
+ *  - the armed card's tag and place, "Play Whoops! here" on #42 (cards Task 3);
  *  - "Hold to scrub" on #41 and the splat it scrubs (cards Task 5). The Whoops! tag over #41 is built
  *    (cards Task 3), as the card's tag on its post.
  * Left out because the fixture cannot hold it: the "3 new posts" bar, which is the thread's answer
@@ -38,6 +45,7 @@ const manifest: BoardManifest = {
   board: '01-main',
   size: { width: 1440, height: 1120 },
   build: { moment: '01-main' },
+  press: [{ role: 'button', name: 'Hand, 3 postcards' }],
   landmarks: [
     /* The banner: Index and the instance's boards. The board's Search is not built (section 3). */
     { id: 'nav', role: 'navigation', name: 'Main' },
@@ -91,7 +99,10 @@ const manifest: BoardManifest = {
     { id: 'hud-menu-word', role: 'text', name: 'Menu', within: 'hud-menu' },
     /* The Menu button's Esc key cap, a <kbd> with no role. The AURA label beside the orbs is not in section 7's list. */
     { id: 'hud-esc', role: 'text', name: 'ESC', within: 'hud' },
-    { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', within: 'hud' },
+    { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', buildName: 'Hand, 3 postcards, open', within: 'hud' },
+    /* The fanned postcards at -11, -1 and 10 degrees: each a button by its name, compared by the turned card's bounds. */
+    { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', type: false },
+    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', buildNth: 1, type: false },
   ],
 };
 

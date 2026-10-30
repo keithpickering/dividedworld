@@ -29,7 +29,7 @@ describe('the menu bar', () => {
     renderInWorld(<MenuBar />, { path: '/characters', seed: signedIn });
     const back = await within(bar()).findByRole('link', { name: 'Back to the board' });
     expect(back).toHaveAttribute('aria-keyshortcuts', 'Escape');
-    expect(tabs()).toEqual(['Back to the board', 'My characters', 'Rankings', 'My log', 'Settings']);
+    expect(tabs()).toEqual(['Back to the board', 'Vending Machine', 'My characters', 'Rankings', 'My log', 'Settings']);
   });
   test('the current page carries aria-current, the character pages under My characters and invites under Settings', async () => {
     const { unmount } = renderInWorld(<MenuBar />, { path: '/characters/new', seed: signedIn });
@@ -38,6 +38,16 @@ describe('the menu bar', () => {
     unmount();
     renderInWorld(<MenuBar />, { path: '/invites', seed: signedIn });
     expect(await within(bar()).findByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page');
+    expect(within(bar()).getByRole('link', { name: 'My characters' })).not.toHaveAttribute('aria-current');
+  });
+  test('the Vending Machine goes to its own page, marked current there', async () => {
+    const { unmount } = renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
+    const vending = await within(bar()).findByRole('link', { name: 'Vending Machine' });
+    expect(vending).toHaveAttribute('href', '/vending');
+    expect(vending).not.toHaveAttribute('aria-current');
+    unmount();
+    renderInWorld(<MenuBar />, { path: '/vending', seed: signedIn });
+    expect(await within(bar()).findByRole('link', { name: 'Vending Machine' })).toHaveAttribute('aria-current', 'page');
     expect(within(bar()).getByRole('link', { name: 'My characters' })).not.toHaveAttribute('aria-current');
   });
   test('Rankings goes to its own page, marked current there', async () => {

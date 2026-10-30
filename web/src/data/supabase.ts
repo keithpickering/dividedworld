@@ -31,7 +31,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import type {
-  Act, ActKind, Answer, AvatarUpload, Board, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
   EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet,
 } from '../../../engine/ui/data/api.ts';
@@ -565,6 +565,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('release_effect', { play }));
       return a.ok ? { ok: true, value: { play: a.value['play'], releasedAt: a.value['released_at'] } } : a;
     },
+    /* The price is the card's rules' and the Edge Function's (it reads the settings rows as they stand), so a purchase sends the card alone. */
+    buyCard: (card) => act({ action: 'buyCard', card }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
+    playCard: (card, character, target, config, message) => act({ action: 'playCard', card, character, target, config, message }, toAct),
     saveEffect: (play, character, state) => act({ action: 'saveEffect', character, play, state }, (r) => ({ play: r['play'], savedAt: r['saved_at'] })),
     characters,
     async characterCounts(id): Promise<CharacterCounts> {

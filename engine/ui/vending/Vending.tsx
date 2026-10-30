@@ -1,0 +1,290 @@
+/**
+ * The Vending Machine, as the Vending board draws it (docs/research/2026-10-29-two-worlds/07-vending.html;
+ * the cards plan's Task 2): a glass page under the menu bar, with the wallet and the hand on its
+ * left, the drawn machine in the middle and the plain list of what is in it on its right. Each slot
+ * is a button that selects a card ("Buy Stick Around, 1.00 orb"; the selected one adds ", selected"),
+ * the price display says what is picked, and the buy button spends it. Slots with no card yet are
+ * sealed and wait for a future postcard.
+ *
+ * Buying spends solid orbs only: the wallet, never the ghost estimate. A purchase the wallet cannot
+ * pay is refused here before the server is asked, and the server refuses it again if the wallet was
+ * spent between the preview and the press, each in plain words ("Whoops! costs 1.00 and your wallet
+ * holds 0.62"), since this is an out-of-character screen. On success the wallet's orbs drain the
+ * cascade's way backwards (engine/ui/orbs/fill.ts: a spend runs from the last changed orb down), the
+ * card drops into the tray and flies to the hand, and the count in the hand's link moves when it
+ * lands. Under reduced motion there is no drop and no flight: the card is in the hand at once, and
+ * the wallet shows what is left.
+ *
+ * The machine is a drawing and the drawing is the instance's: the engine lays out its parts and
+ * marks each decorative one `data-kb-art` (hidden from a screen reader and, being the instance's
+ * printing, outside the rendered type measurement; a code printed on a slot is an attribute the
+ * stylesheet writes out, so a button's visible text is the card's name alone and the name it is
+ * given, "Buy Stick Around, 1.00 orb", contains it), and the instance's stylesheet
+ * (instances/divided-world/ui/vending.css) gives them their colors, their words and their glow. What
+ * a player reads and presses is real text in the glass's tokens, so a card, a price and a refusal
+ * are said once, in words.
+ *
+ * What is bought is private: nothing here is sent to anyone, and a lost answer is read again from
+ * the wallet and the hand rather than guessed at (player.tsx's buyCard).
+ */
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { motionReduced } from '../appearance.ts';
+import { Postcard } from '../cards/Postcard.tsx';
+import { facesOf, orbs, priceOf, type CardFace } from '../cards/faces.ts';
+import { signInHref } from '../account/next.ts';
+import { useKayfa } from '../context.tsx';
+import { backHref, boardPlace } from '../glass/back.ts';
+import { Orbs } from '../orbs/Orbs.tsx';
+import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
+import { usePlayer } from '../player.tsx';
+import { Link, searchOf, useLocation } from '../router.tsx';
+import './vending.css';
+
+/** The slots the machine has: three rows of two, more when the instance sells more cards than that. */
+const MIN_SLOTS = 6;
+
+/** How many slots the machine has for this many cards. */
+const slotsFor = (cards: number) => Math.max(MIN_SLOTS, Math.ceil(cards / 2) * 2);
+
+/** A slot's code on the machine's front: A1, A2, B1 ... two to a row. */
+const codeOf = (i: number) => `${String.fromCharCode(65 + Math.floor(i / 2))}${(i % 2) + 1}`;
+
+/** How long the card is in flight to the hand, ms: the drop and the flight together. */
+const DELIVERY_MS = 1500;
+
+/** The server's words for a refusal, or the screen's own, said plainly: orbs and not hundredths, a capital and a stop. */
+export function plainRefusal(error: string): string {
+  const spent = /^that costs (\d+), and your wallet holds (\d+)$/.exec(error);
+  if (spent) return `That costs ${orbs(Number(spent[1]))}, and your wallet holds ${orbs(Number(spent[2]))}.`;
+  const said = error.charAt(0).toUpperCase() + error.slice(1);
+  return /[.!?]$/.test(said) ? said : `${said}.`;
+}
+
+/** "orb" for one orb exactly, "orbs" for any other amount: the slot's name says "1.00 orb". */
+const orbWord = (hundredths: number) => (hundredths === 100 ? 'orb' : 'orbs');
+
+interface Outcome {
+  readonly tone: 'refusal' | 'done';
+  readonly text: string;
+}
+
+function Machine({ faces, picked, onPick, onBuy, busy, drop, onLanded, shopName }: {
+  readonly faces: readonly CardFace[];
+  readonly picked: CardFace | null;
+  readonly onPick: (key: string) => void;
+  readonly onBuy: () => void;
+  readonly busy: boolean;
+  readonly drop: { readonly key: string; readonly n: number } | null;
+  readonly onLanded: () => void;
+  readonly shopName: string;
+}) {
+  const total = slotsFor(faces.length);
+  const dropped = drop ? faces.find((f) => f.key === drop.key) : undefined;
+  const pickedCode = picked ? codeOf(faces.indexOf(picked)) : null;
+  const pickedWords = picked ? `Selected: ${pickedCode}, ${picked.name}, ${orbs(picked.price)}` : 'Nothing selected';
+  return (
+    <div className="kb-vending-machine" role="group" aria-label={shopName}>
+      <div className="kb-vending-body" aria-hidden="true" data-kb-art />
+      <div className="kb-vending-marquee" aria-hidden="true" data-kb-art><span className="kb-vending-sign">{shopName}</span></div>
+
+      <div className="kb-vending-front">
+        <div className="kb-vending-sheen" aria-hidden="true" data-kb-art />
+        <div className="kb-vending-slots">
+          {Array.from({ length: total }, (_, i) => {
+            const face = faces[i];
+            const code = codeOf(i);
+            if (!face) {
+              return (
+                <div key={code} className="kb-vending-slot kb-vending-slot--sealed" role="img" aria-label={`Empty slot ${code}, waiting for a future postcard`}>
+                  <span className="kb-vending-sealed" aria-hidden="true" data-kb-art />
+                  <span className="kb-vending-slot-code" aria-hidden="true" data-kb-art data-code={code} />
+                </div>
+              );
+            }
+            const selected = picked?.key === face.key;
+            return (
+              <button
+                key={face.key}
+                type="button"
+                className="kb-vending-slot"
+                aria-label={`Buy ${face.name}, ${orbs(face.price)} ${orbWord(face.price)}${selected ? ', selected' : ''}`}
+                aria-pressed={selected}
+                data-kb-alignment={face.alignment}
+                style={{ '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink } as CSSProperties}
+                onClick={() => onPick(face.key)}
+              >
+                <Postcard face={face} size="slot" selected={selected} />
+                <svg className="kb-vending-coil" aria-hidden="true" focusable="false" width="120" height="22" viewBox="0 0 120 22" data-kb-art>
+                  <path d="M4 11 q8 -10 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0" fill="none" strokeWidth="2.5" />
+                </svg>
+                <span className="kb-vending-slot-code" aria-hidden="true" data-kb-art data-code={`${code} · ${orbs(face.price)}`} />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="kb-vending-panel">
+        <div className="kb-vending-lcd" role="status" aria-label={pickedWords}>
+          <span className="kb-visually-hidden">{pickedWords}</span>
+          <span className="kb-vending-lcd-name" aria-hidden="true" data-kb-art>{picked ? `${pickedCode} · ${picked.name}` : 'Pick a slot'}</span>
+          <span className="kb-vending-lcd-price kb-num" aria-hidden="true" data-kb-art>{picked ? orbs(picked.price) : '0.00'}</span>
+        </div>
+        <div className="kb-vending-aura-in" aria-hidden="true" data-kb-art><span className="kb-vending-aura-slot" /><span className="kb-vending-aura-label" /></div>
+        <button type="button" className="kb-vending-buy" disabled={!picked || busy} onClick={onBuy}>
+          <span className="kb-vending-buy-word">Buy</span>{' '}
+          {picked && <span className="kb-vending-buy-card">{picked.name} · {orbs(picked.price)}</span>}
+        </button>
+        <p className="kb-vending-price-note kb-calm">
+          {!picked ? 'Pick a slot to see what it costs.' : picked.extra > 0
+            ? `Playing it on a long post costs up to ${orbs(picked.extra)} more, never more than ${orbs(picked.price + picked.extra)} in all.`
+            : 'Playing it costs nothing more.'}
+        </p>
+      </div>
+
+      <div className="kb-vending-tray">
+        <span className="kb-vending-tray-label" aria-hidden="true" data-kb-art />
+        {dropped && drop && (
+          <span key={drop.n} className="kb-vending-drop" aria-hidden="true" onAnimationEnd={onLanded}>
+            <Postcard face={dropped} size="slot" />
+          </span>
+        )}
+        <span className="kb-vending-tray-to" aria-hidden="true" data-kb-art />
+        {picked && <span className="kb-visually-hidden">Push {picked.name} to your hand</span>}
+      </div>
+    </div>
+  );
+}
+
+export function Vending() {
+  const { instance, ui } = useKayfa();
+  const player = usePlayer();
+  const location = useLocation();
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings), [instance, ui.cards]);
+  const [pickedKey, setPickedKey] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  /* The wallet the drain starts from, until it has played. */
+  const [drainFrom, setDrainFrom] = useState<number | null>(null);
+  /* A card on its way to the hand: it is in the hand when it lands. */
+  const [drop, setDrop] = useState<{ readonly key: string; readonly n: number } | null>(null);
+
+  const wallet = player.wallet;
+  const balance = wallet?.balance ?? 0;
+  const cap = wallet?.cap ?? 0;
+  const heldNow = player.cards.reduce((n, c) => n + c.held, 0);
+  /* On its way, the card has not reached the hand: the count moves when it lands. */
+  const held = drop !== null ? heldNow - 1 : heldNow;
+  const picked = faces.find((f) => f.key === pickedKey) ?? null;
+  const short = picked !== null && balance < picked.price;
+  const shortWords = picked ? `${picked.name} costs ${orbs(picked.price)} and your wallet holds ${orbs(balance)}. Only solid Aura can be spent; the ghost estimate cannot.` : '';
+  const after = picked && !short ? balance - picked.price : null;
+
+  /* The drain, once played, is forgotten, so a later change of the wallet starts from where it stands. */
+  useEffect(() => {
+    if (drainFrom === null) return;
+    const t = setTimeout(() => setDrainFrom(null), cascade(drainFrom, balance, cap).length * CASCADE_BEAT_MS + 600);
+    return () => clearTimeout(t);
+  }, [drainFrom, balance, cap]);
+
+  /* A card that never reports landing (a browser without animation events) still reaches the hand. */
+  useEffect(() => {
+    if (drop === null) return;
+    const t = setTimeout(() => setDrop(null), DELIVERY_MS + 400);
+    return () => clearTimeout(t);
+  }, [drop]);
+
+  async function buy() {
+    if (!picked || busy) return;
+    if (balance < picked.price) {
+      setOutcome({ tone: 'refusal', text: shortWords });
+      return;
+    }
+    setBusy(true);
+    setOutcome(null);
+    const before = balance;
+    const bought = await player.buyCard(picked.key);
+    setBusy(false);
+    if (!bought.ok) {
+      setOutcome({ tone: 'refusal', text: plainRefusal(bought.error) });
+      return;
+    }
+    setOutcome({ tone: 'done', text: `${picked.name} is in your hand. ${orbs(bought.value.balance)} is left, solid.` });
+    if (!motionReduced()) {
+      setDrainFrom(before);
+      setDrop((d) => ({ key: picked.key, n: (d?.n ?? 0) + 1 }));
+    }
+  }
+
+  if (!player.sessionKnown || (player.session.signedIn && !player.loaded)) return <div className="kb-vending" aria-busy="true" />;
+  if (!player.session.signedIn) {
+    return (
+      <div className="kb-vending">
+        <p className="kb-vending-signin kb-calm">
+          The Vending Machine is for players. <Link to={signInHref(location.path, searchOf(location.query))}>Sign in</Link> to spend your Aura here.
+        </p>
+      </div>
+    );
+  }
+
+  const handLink = backHref(boardPlace());
+  const walletName = after !== null && picked
+    ? `Wallet: ${orbs(balance)} of ${orbs(cap)}; buying ${picked.name} leaves ${orbs(after)}`
+    : `Wallet: ${orbs(balance)} of ${orbs(cap)}`;
+
+  return (
+    <div className="kb-vending">
+      <aside className="kb-vending-side">
+        <div className="kb-vending-head kb-calm">
+          <p className="kb-vending-eyebrow">Spend Aura</p>
+          <h1 className="kb-vending-title kb-glass-display">Vending Machine</h1>
+        </div>
+        <section className="kb-vending-wallet kb-glass-cut-panel" aria-label="Your wallet">
+          <div className="kb-vending-wallet-in">
+            <p className="kb-vending-label kb-calm">Wallet · solid only</p>
+            <div className="kb-vending-orbs">
+              <Orbs settled={balance} pending={after !== null && picked ? -picked.price : 0} cap={cap} cascadeFrom={drainFrom} figures={false} label={walletName} />
+            </div>
+            <p className="kb-vending-sum kb-num kb-calm">
+              {orbs(balance)}{after !== null ? <> → <b>{orbs(after)}</b></> : null}
+            </p>
+            {short && !outcome && <p className="kb-vending-fine kb-calm">{shortWords}</p>}
+            {outcome && (outcome.tone === 'refusal'
+              ? <p className="kb-vending-fine kb-vending-outcome kb-calm" role="alert" data-kb-tone="refusal">{outcome.text}</p>
+              : <p className="kb-vending-fine kb-vending-outcome kb-calm" aria-live="polite" data-kb-tone="done">{outcome.text}</p>)}
+            <p className="kb-vending-fine kb-calm">The ghost estimate can't be spent. What you buy is private: nobody else sees it until you play it.</p>
+          </div>
+        </section>
+        <Link to={handLink} className="kb-vending-hand kb-glass-skew">
+          <span className="kb-vending-hand-word kb-glass-upright">Your hand</span>{' '}
+          <span className="kb-vending-hand-count kb-glass-upright kb-num">{picked && !short ? `${held} → ${held + 1}` : held}</span>
+        </Link>
+      </aside>
+
+      <Machine
+        faces={faces} picked={picked} busy={busy} drop={drop} shopName={ui.copy.shopName}
+        onPick={(key) => { setPickedKey(key); setOutcome(null); }}
+        onBuy={() => void buy()}
+        onLanded={() => setDrop(null)}
+      />
+
+      <section className="kb-vending-list" aria-label="In the machine">
+        <h2 className="kb-vending-list-head kb-calm">In the machine</h2>
+        <ul className="kb-vending-items">
+          {faces.map((f) => (
+            <li key={f.key} className="kb-vending-item kb-calm" data-kb-alignment={f.alignment} style={{ '--kb-card-color': f.art.color } as CSSProperties}>
+              <div className="kb-vending-item-row"><span className="kb-vending-item-name">{f.name}</span><span className="kb-vending-item-price kb-num">{priceOf(f)}</span></div>
+              <p className="kb-vending-item-says">{f.describe}</p>
+            </li>
+          ))}
+          {faces.length < slotsFor(faces.length) && (
+            <li className="kb-vending-item kb-vending-item--sealed kb-calm">
+              <div className="kb-vending-item-row"><span className="kb-vending-item-name">{slotsFor(faces.length) - faces.length} {slotsFor(faces.length) - faces.length === 1 ? 'slot' : 'slots'} empty</span></div>
+              <p className="kb-vending-item-says">More postcards arrive in later seasons.</p>
+            </li>
+          )}
+        </ul>
+      </section>
+    </div>
+  );
+}
