@@ -89,6 +89,24 @@ const tidy = (x: number) => Math.round(x * 1e6) / 1e6 || 0;
 const byTime = <T extends { at: number; act: string }>(a: T, b: T) => a.at - b.at || cmp(a.act, b.act);
 
 /**
+ * Whole hundredths for each part that add up to `target` exactly: each part floored, and what
+ * is short shared by largest remainder, ties by key. The details and the shares both round this
+ * way, so a line and a share are never rounded two ways.
+ */
+function apportion(target: number, parts: readonly { readonly key: string; readonly amount: number }[]): number[] {
+  const whole = parts.map((l) => Math.floor(l.amount));
+  let short = target - whole.reduce((s, w) => s + w, 0);
+  const byRemainder = parts.map((l, i) => ({ i, rem: l.amount - Math.floor(l.amount), key: l.key }))
+    .sort((a, b) => b.rem - a.rem || cmp(a.key, b.key));
+  /* The target is the rounded sum of the parts and each part is floored, so `short` is
+     between 0 and the number of parts and no part gets two. Only floating dust across many
+     parts could push it a step past either end, and the modulo keeps that bounded too. */
+  for (let j = 0; short > 0; j = (j + 1) % byRemainder.length, short--) whole[byRemainder[j]!.i]! += 1;
+  for (let j = byRemainder.length - 1; short < 0; j = (j - 1 + byRemainder.length) % byRemainder.length, short++) whole[byRemainder[j]!.i]! -= 1;
+  return whole;
+}
+
+/**
  * How the settlement counts. Both on is the settlement itself. The live estimate turns both off
  * (estimateForOwner): with the shared vote off, each reaction is a vote of its own, and whatever
  * counts players counts reactions instead (a post's reactors, its lean, a card's later votes) or,
@@ -370,16 +388,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   const details: Detail[] = [];
   const entryAmount = new Map(entries.map((e) => [`${e.player}\u0000${e.character}\u0000${e.reason}`, e.amount]));
   for (const [k, list] of [...linesOf].sort((a, b) => cmp(a[0], b[0]))) {
-    const target = entryAmount.get(k) ?? 0;
-    const whole = list.map((l) => Math.floor(l.amount));
-    let short = target - whole.reduce((s, w) => s + w, 0);
-    const byRemainder = list.map((l, i) => ({ i, rem: l.amount - Math.floor(l.amount), key: l.key }))
-      .sort((a, b) => b.rem - a.rem || cmp(a.key, b.key));
-    /* The target is the rounded sum of the lines and each line is floored, so `short` is
-       between 0 and the number of lines and no line gets two. Only floating dust across many
-       lines could push it a step past either end, and the modulo keeps that bounded too. */
-    for (let j = 0; short > 0; j = (j + 1) % byRemainder.length, short--) whole[byRemainder[j]!.i]! += 1;
-    for (let j = byRemainder.length - 1; short < 0; j = (j - 1 + byRemainder.length) % byRemainder.length, short++) whole[byRemainder[j]!.i]! -= 1;
+    const whole = apportion(entryAmount.get(k) ?? 0, list);
     list.forEach((l, i) => {
       if (whole[i] === 0) return;
       details.push({
@@ -399,6 +408,59 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     byClass,
     paid,
   };
+}
+
+/** One post's share of a ledger entry, in whole hundredths: the shares of an entry add up to it. */
+export interface Share {
+  readonly player: string;
+  readonly character: string;
+  readonly reason: string;
+  readonly act: string;
+  readonly quadrant?: Quadrant;
+  readonly amount: number;
+}
+
+/**
+ * Each entry split across the posts the live estimate valued for it (the log shares design,
+ * sections 1 and 3): the settlement run once more over the window with the shared vote and the
+ * halving off, as estimateForOwner runs it, its lines summed by Act and quadrant, and the entry's
+ * exact amount split across those of the entry's sign in proportion to their size. A card's lift
+ * is weighed on the card's own Act. The shares of an entry add up to it exactly, by the details'
+ * rounding (apportion). An entry whose estimate holds no weight of its sign has no shares, and a
+ * share of 0 is none.
+ *
+ * So a share says nothing past the entry, already shown, and the estimate the player watched
+ * live: no share moves with how reactions group into players, and where the estimate and the
+ * settlement disagree about which post (a count of distinct players), the post is the estimate's.
+ */
+export function shareEntries(input: SettlementInput, instance: Instance, entries: readonly LedgerEntry[]): Share[] {
+  const estimate = settle(input, instance, { sharedVote: false, halving: false });
+  const weights = new Map<string, Map<string, { act: string; quadrant?: Quadrant; amount: number }>>();
+  for (const d of estimate.details) {
+    if (!d.act) continue;
+    const k = `${d.player}\u0000${d.character}\u0000${d.reason}`;
+    const byPost = weights.get(k) ?? new Map();
+    const key = `${d.act}\u0000${d.quadrant ?? ''}`;
+    const w = byPost.get(key) ?? { act: d.act, ...(d.quadrant ? { quadrant: d.quadrant } : {}), amount: 0 };
+    w.amount += d.amount;
+    byPost.set(key, w);
+    weights.set(k, byPost);
+  }
+  const shares: Share[] = [];
+  for (const e of [...entries].sort((a, b) => cmp(a.player, b.player) || cmp(a.character, b.character) || cmp(a.reason, b.reason))) {
+    const sign = Math.sign(e.amount);
+    const posts = [...(weights.get(`${e.player}\u0000${e.character}\u0000${e.reason}`) ?? [])]
+      .filter(([, w]) => Math.sign(w.amount) === sign && sign !== 0)
+      .sort((a, b) => cmp(a[0], b[0]));
+    const total = posts.reduce((s, [, w]) => s + Math.abs(w.amount), 0);
+    if (!total) continue;
+    const whole = apportion(e.amount, posts.map(([key, w]) => ({ key, amount: tidy(e.amount * Math.abs(w.amount) / total) })));
+    posts.forEach(([, w], i) => {
+      if (whole[i] === 0) return;
+      shares.push({ player: e.player, character: e.character, reason: e.reason, act: w.act, ...(w.quadrant ? { quadrant: w.quadrant } : {}), amount: whole[i]! });
+    });
+  }
+  return shares;
 }
 
 /**

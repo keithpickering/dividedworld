@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyCap, estimateForOwner, settle } from './settle.ts';
+import { applyCap, estimateForOwner, settle, shareEntries, type LedgerEntry } from './settle.ts';
 import type { ClassInput, ClassRules, Earning, Instance, InputAct, InputReaction, SettlementInput } from './types.ts';
 
 /* Two fake classes. "fan" earns a vote per whole excited-positive vote and loses one per bored-negative
@@ -702,4 +702,142 @@ test('a reveal is an Act of its character like a card: its reactions are scored,
   const received = inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.received);
   assert.deepEqual(received.map((x) => [x.act, x.actKind]), [['u1', 'unmask']], 'a class reads a reveal\'s reactions, named as a reveal\'s');
   assert.deepEqual(inputs.filter((i) => i.character === 'ann-quiet').flatMap((i) => i.posts), [], 'a reveal is not a post');
+});
+
+/* ---- the shares: each entry split across the posts the live estimate valued ---- */
+
+/** Each entry's shares, summed: what the shares of each entry add up to. */
+const shareTotals = (shares: ReturnType<typeof shareEntries>) => {
+  const out = new Map<string, number>();
+  for (const s of shares) { const k = `${s.player}\u0000${s.character}\u0000${s.reason}`; out.set(k, (out.get(k) ?? 0) + s.amount); }
+  return out;
+};
+const assertSharesAddUp = (entries: readonly LedgerEntry[], shares: ReturnType<typeof shareEntries>) => {
+  const totals = shareTotals(shares);
+  for (const s of shares) {
+    assert.ok(Number.isInteger(s.amount) && s.amount !== 0, 'a share is whole hundredths, never 0');
+    assert.ok(totals.has(`${s.player}\u0000${s.character}\u0000${s.reason}`) && entries.some((e) => e.player === s.player && e.character === s.character && e.reason === s.reason), 'a share names an entry');
+  }
+  for (const e of entries) {
+    const k = `${e.player}\u0000${e.character}\u0000${e.reason}`;
+    if (totals.has(k)) assert.equal(totals.get(k), e.amount, `${e.character} ${e.reason}`);
+  }
+};
+
+test('each entry\'s shares add up to it exactly', () => {
+  const b = base();
+  // Thirds of a vote on three posts, which do not round evenly, beside the base window's.
+  const thirds: SettlementInput = {
+    ...b,
+    acts: [...b.acts, post('p3', 'ann-fan', FROM + 3 * H), post('p4', 'ann-fan', FROM + 3 * H + 1)],
+    reactions: [...b.reactions, ...['p1', 'p3', 'p4'].flatMap((act) => ['fire', 'tea', 'tomato'].map((kind) => react(act, 'dee', 'dee-1', kind, FROM + 8 * H)))],
+  };
+  for (const input of [b, thirds]) {
+    const { entries } = settle(input, instance);
+    const shares = shareEntries(input, instance, entries);
+    assert.ok(shares.length > 0);
+    assert.ok(entries.every((e) => shareTotals(shares).has(`${e.player}\u0000${e.character}\u0000${e.reason}`)), 'every entry here has weight of its sign');
+    assertSharesAddUp(entries, shares);
+  }
+  // The base window's love: 20, split as the estimate valued it, a whole vote for each of three reactions: two on p1, one on p2.
+  const love = shareEntries(b, instance, settle(b, instance).entries).filter((s) => s.reason === 'fan.love');
+  assert.deepEqual(love.map((s) => [s.act, s.quadrant, s.amount]), [['p1', 'excitedPositive', 13], ['p2', 'excitedPositive', 7]]);
+});
+
+test('three fires on one post from one player share an entry as three from three players do', () => {
+  const characters = [
+    { id: 'ann-fan', player: 'ann', classes: [{ class: 'fan', from: 0 }] },
+    ...['bob-1', 'bob-2', 'bob-3', 'cat-1', 'dee-1', 'eve-1'].map((id) => ({ id, player: id.split('-')[0]!, classes: [{ class: 'quiet', from: 0 }] })),
+  ];
+  const acts = [post('p1', 'ann-fan', FROM + H), post('p2', 'ann-fan', FROM + 2 * H)];
+  // One player behind three masks on p1, and Eve on p2.
+  const onePlayer: SettlementInput = {
+    window: { id: 'w1', from: FROM, to: TO }, characters, acts,
+    reactions: [react('p1', 'bob', 'bob-1', 'fire', FROM + 3 * H), react('p1', 'bob', 'bob-2', 'fire', FROM + 4 * H), react('p1', 'bob', 'bob-3', 'fire', FROM + 5 * H), react('p2', 'eve', 'eve-1', 'fire', FROM + 6 * H)],
+  };
+  // The same three fires from three players.
+  const threePlayers: SettlementInput = {
+    ...onePlayer,
+    reactions: [react('p1', 'bob', 'bob-1', 'fire', FROM + 3 * H), react('p1', 'cat', 'cat-1', 'fire', FROM + 4 * H), react('p1', 'dee', 'dee-1', 'fire', FROM + 5 * H), react('p2', 'eve', 'eve-1', 'fire', FROM + 6 * H)],
+  };
+  // The exact settlement tells them apart (one vote on p1, or three): the shares must not.
+  assert.notDeepEqual(settle(onePlayer, instance).details.map((d) => d.amount), settle(threePlayers, instance).details.map((d) => d.amount));
+  const entries = settle(onePlayer, instance).entries;
+  const one = shareEntries(onePlayer, instance, entries);
+  assert.deepEqual(one.map((s) => [s.act, s.amount]), [['p1', 15], ['p2', 5]], 'three whole votes on p1 to one on p2');
+  assert.deepEqual(shareEntries(threePlayers, instance, entries), one);
+});
+
+/* A spinner's class: 10 for each spun thread whose repliers reach two in the window. */
+const spinner: ClassRules = {
+  key: 'spinner',
+  name: 'Spinner',
+  earn: (input) => input.threadsSpun.filter((t) => t.repliersBefore < 2 && t.repliersNow >= 2).map((t) => ({ reason: 'spinner.crowd', amount: 10, act: t.act })),
+};
+
+test('a reason the estimate pays on another post than the settlement does is shared on the estimate\'s', () => {
+  const b = base();
+  const input: SettlementInput = {
+    ...b,
+    characters: [...b.characters, { id: 'ann-spin', player: 'ann', classes: [{ class: 'spinner', from: 0 }] }, { id: 'bob-2', player: 'bob', classes: [{ class: 'quiet', from: 0 }] }, { id: 'cat-2', player: 'cat', classes: [{ class: 'quiet', from: 0 }] }],
+    acts: [
+      ...b.acts,
+      // s1: Bob replies in the window as two masks, so the estimate counts two repliers and the settlement one.
+      { id: 's1', character: 'ann-spin', kind: 'spin', at: FROM - 5 * H, thread: 'one', target: 'q1' },
+      post('o1', 'bob-1', FROM + 7 * H, 'one'), post('o2', 'bob-2', FROM + 8 * H, 'one'),
+      // s2: Cat replied before the window as two masks, and Dee replies in it: the settlement's count reaches two in the window, the estimate's was two already.
+      { id: 's2', character: 'ann-spin', kind: 'spin', at: FROM - 5 * H, thread: 'two', target: 'q1' },
+      post('t1', 'cat-1', FROM - 4 * H, 'two'), post('t2', 'cat-2', FROM - 3 * H, 'two'), post('t3', 'dee-1', FROM + 9 * H, 'two'),
+    ],
+  };
+  const world = withClasses(spinner);
+  const exact = settle(input, world);
+  assert.deepEqual(exact.details.filter((d) => d.reason === 'spinner.crowd').map((d) => d.act), ['s2'], 'the settlement pays s2');
+  const shares = shareEntries(input, world, exact.entries).filter((s) => s.reason === 'spinner.crowd');
+  assert.deepEqual(shares.map((s) => [s.act, s.amount]), [['s1', 10]], 'the share is on s1, the estimate\'s');
+});
+
+test('a negative entry is shared negatively, and an entry with no weight of its sign has no shares', () => {
+  const b = base();
+  const groan: SettlementInput = { ...b, reactions: [...b.reactions, react('p2', 'dee', 'dee-1', 'zzz', FROM + 7 * H)] };
+  const { entries } = settle(groan, instance);
+  const shares = shareEntries(groan, instance, entries).filter((s) => s.reason === 'fan.groan');
+  assert.ok(shares.length === 2 && shares.every((s) => s.amount < 0));
+  assertSharesAddUp(entries, shares);
+  // An entry the estimate holds nothing of its sign for: a groan of -5 handed in where the estimate has only love.
+  const love: SettlementInput = { ...b, reactions: b.reactions.filter((r) => r.kind !== 'zzz') };
+  const odd: LedgerEntry[] = [{ window: 'w1', player: 'ann', character: 'ann-fan', reason: 'fan.groan', amount: -5 }, { window: 'w1', player: 'ann', character: 'ann-fan', reason: 'fan.love', amount: -3 }];
+  assert.deepEqual(shareEntries(love, instance, odd), [], 'no groan in the estimate, and love only of the other sign');
+});
+
+/* A thief's class: a card's stolen thunder, its target's cheers after it, paid on the card's own Act. */
+const thief: ClassRules = {
+  key: 'thief',
+  name: 'Thief',
+  earn: (input, settings) => input.cardsPlayed.map((c) => ({ reason: 'thief.thunder', amount: settings.vote * c.targetAfter.excitedPositive, act: c.act, quadrant: 'excitedPositive' as const, valuing: { act: c.target, from: c.at } })),
+};
+
+test('a card\'s stolen thunder is shared on the card\'s own Act', () => {
+  const b = base();
+  const input: SettlementInput = {
+    ...b,
+    characters: [...b.characters, { id: 'cat-thief', player: 'cat', classes: [{ class: 'thief', from: 0 }] }],
+    acts: [...b.acts, { id: 'k1', character: 'cat-thief', kind: 'card', at: FROM + 3 * H + 30, thread: 't1', target: 'p1', card: 'splat' }],
+  };
+  const world = withClasses(thief);
+  const { entries } = settle(input, world);
+  assert.ok(entries.some((e) => e.reason === 'thief.thunder'));
+  const shares = shareEntries(input, world, entries).filter((s) => s.reason === 'thief.thunder');
+  assert.deepEqual(shares.map((s) => [s.character, s.act, s.quadrant]), [['cat-thief', 'k1', 'excitedPositive']]);
+  assertSharesAddUp(entries, shares);
+});
+
+test('the shares are the same in any input order', () => {
+  const b = base();
+  const input: SettlementInput = { ...b, reactions: [...b.reactions, react('p2', 'dee', 'dee-1', 'zzz', FROM + 7 * H), react('p2', 'cat', 'cat-1', 'fire', FROM + 7 * H)] };
+  const { entries } = settle(input, instance);
+  const one = shareEntries(input, instance, entries);
+  const shuffled: SettlementInput = { ...input, characters: [...input.characters].reverse(), acts: [...input.acts].reverse(), reactions: [...input.reactions].reverse() };
+  assert.ok(one.length > 0);
+  assert.deepEqual(shareEntries(shuffled, instance, [...entries].reverse()), one);
 });
