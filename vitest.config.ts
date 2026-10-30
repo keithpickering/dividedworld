@@ -10,7 +10,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'jsdom',
-    include: ['engine/ui/**/*.test.tsx', 'instances/*/ui/**/*.test.tsx', 'web/**/*.test.tsx', 'e2e/**/*.test.ts'],
+    include: ['engine/ui/**/*.test.tsx', 'instances/*/ui/**/*.test.tsx', 'web/**/*.test.tsx', 'web/**/*.test.ts', 'e2e/**/*.test.ts'],
     setupFiles: ['web/test-setup.ts'],
     css: true,
     /* Dates show in the reader's zone; a zone that is not UTC makes a local date and a UTC date differ, so a test cannot pass by luck of the machine. */

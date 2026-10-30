@@ -5,6 +5,11 @@
  * called; the end-to-end build (mode "e2e") is the one production build that runs on the fake. The
  * fake and the demo are loaded only in that branch, so a bundle that uses Supabase does not carry
  * them.
+ *
+ * In the end-to-end build the address can name the boards' fixture instead of the demo world:
+ * `?fixture=boards&moment=<name>` seeds the season as it stood at that moment, signs in the moment's
+ * account and moves the address to the moment's route (web/src/data/fixtures/boards.ts). Nothing
+ * else reads those parameters: the Supabase branch returns before it looks at the address.
  */
 import type { KayfaApi } from '../../../engine/ui/data/api.ts';
 import { createSupabaseApi } from './supabase.ts';
@@ -18,11 +23,24 @@ export async function createBackend(): Promise<KayfaApi> {
   if (import.meta.env.PROD && !e2e) {
     throw new Error('This build names no Supabase project: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY when building.');
   }
+  const params = e2e ? new URLSearchParams(globalThis.location?.search) : null;
+  const named = params?.get('fixture') ?? null;
+  if (named !== null && named !== 'boards') throw new Error(`There is no fixture named "${named}". The fixture is boards.`);
+  // `?fixture=boards&story=<id>` is a story's own seed (the board match's stories): that is not built here, and until it is the demo world loads.
+  const boards = named === 'boards' && !(params!.has('story') && !params!.has('moment'));
   const [{ createFake }, { instance }, { seedDemo, recordAvatarUploads }] = await Promise.all([
     import('../../../engine/ui/data/fake.ts'),
     import('../../../instances/divided-world/index.ts'),
     import('../demo.ts'),
   ]);
+  if (boards) {
+    const { assertMoment, createBoardsFake, seedBoards } = await import('./fixtures/boards.ts');
+    const moment = assertMoment(params!.get('moment'));
+    const fake = createBoardsFake(moment);
+    globalThis.history.replaceState(null, '', seedBoards(fake, moment));
+    recordAvatarUploads(fake);
+    return fake;
+  }
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
   if (e2e) recordAvatarUploads(fake);

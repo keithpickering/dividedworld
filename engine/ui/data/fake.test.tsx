@@ -612,6 +612,29 @@ describe('the account', () => {
     fake.seed.settle({ wallet: { [ana]: 250 } });
     expect(await fake.wallet()).toEqual({ balance: 250, cap: 600 });
   });
+  test('seed.wallet sets the settled balance between settlements, under the cap, and dates no settlement', async () => {
+    const { fake, ana } = world();
+    fake.seed.settle({ at: Date.UTC(2026, 9, 29, 8, 17), wallet: { [ana]: 562 } });
+    const settledAt = await fake.lastSettledAt();
+    fake.seed.wallet(ana, 462);
+    expect(await fake.wallet()).toEqual({ balance: 462, cap: 600 });
+    fake.seed.wallet(ana, 9_000);
+    expect((await fake.wallet()).balance).toBe(600);
+    expect(await fake.lastSettledAt()).toBe(settledAt);
+  });
+  test('seed.turn asks a Turn as its player, waiting for the settlement, and is refused in the server\'s words', async () => {
+    const { fake, bo, anaFace, boFace } = world();
+    fake.seed.nextSettlementAt(fake.clock.now() + 8 * 3_600_000);
+    fake.seed.turn(anaFace, 'heel', { loudness: 'announced', showFrom: true, showTo: false });
+    const waiting = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
+    expect(waiting.class).toBe('face');
+    expect(waiting.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: new Date(fake.clock.now() + 8 * 3_600_000).toISOString() });
+    expect(() => fake.seed.turn(anaFace, 'face')).toThrow(/the seed was refused/);
+    /* A character of another account is asked as its own player, whoever is signed in. */
+    fake.seed.turn(boFace, 'lurker');
+    fake.signInAs(bo);
+    expect((await fake.myCharacters())[0]!.pendingTurn).toMatchObject({ class: 'lurker', loudness: 'silent', showFrom: false, showTo: false });
+  });
   test('the estimate: empty by default, the same answer until it is fresh again, then new', async () => {
     const { fake, ana, anaFace } = world();
     const first = await fake.estimate();
