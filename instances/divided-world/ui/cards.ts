@@ -3,7 +3,7 @@
  * card's face, and its rules in plain words for the Vending Machine and the hand. A card's rules
  * themselves are `instances/divided-world/cards/`, whose settings these read, so a number said
  * here is the one the instance runs on. Stick Around's hold is drawn
- * (cards/stick-around/Effect.tsx); Whoops!'s ink is the cards plan's Task 5 and is added to its entry
+ * (ui/stick-around/Effect.tsx); Whoops!'s ink is the cards plan's Task 5 and is added to its entry
  * then; until it is, a play of it is shown as its tag on the post.
  *
  * The faces' colors are the Cards board's: Sweet is the cyan, Salty the pink, each with the dark
@@ -22,7 +22,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     Effect: StickAroundEffect,
     art: { color: '#2ee6ff', ink: '#03141a' },
     describe: (settings: Settings) =>
-      `A Sweet card. Once the post scrolls into view, whoever reads it is held there: each time they scroll away, the page brings them back, until they tick the caster's sentence to certify they read it, or scroll hard enough the other way to break free for that visit. The post's author and the caster are never held. It costs ${orbs(settings.economy['stickAround.price'] ?? 0)} to buy, and nothing more to play.`,
+      `A Sweet card. Once the post settles in view, whoever reads it is pulled to it and the post fills their screen: they read it there, and get out by ticking the caster's sentence to certify they read it, or by scrolling hard past either end of it (or pressing Break free, or Esc) to fill a bar that drains whenever they stop, which frees them for that visit. The post's author and the caster are never held. It costs ${orbs(settings.economy['stickAround.price'] ?? 0)} to buy, and nothing more to play.`,
   },
   {
     key: 'whoops',

@@ -1,7 +1,8 @@
 /**
- * Stick Around (Sweet): once the post scrolls into view, the reader is held, and each scroll
- * that ends anywhere else brings the page back to it, until they check the caster's own
- * sentence or scroll hard enough to break through (design, section 7). Its rules here are its
+ * Stick Around (Sweet): once the post settles in view, the reader is pulled to it and the post
+ * fills their screen, until they check the caster's own sentence or fill a draining bar by
+ * scrolling hard past either end of it, or by pressing Break free (design, section 10 as amended
+ * 2026-10-30). Its rules here are its
  * price and its sentence; the hold itself is the screens' to draw. A reader's release is kept on
  * the server, per account (effect_releases, supabase/migrations/0016_cards_screens.sql), so it
  * follows them from a phone to a desktop; breaking free lasts the visit, and is not kept
