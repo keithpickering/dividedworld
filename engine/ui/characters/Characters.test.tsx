@@ -714,11 +714,14 @@ describe('the panel\'s pip style (the Roster board)', () => {
     await ready();
     const select = await pipSelect();
     await userEvent.selectOptions(select, 'stars');
+    /* While the save is out the select shows the style being saved, never the old one. */
+    expect(select).toHaveValue('stars');
     expect(select).toHaveFocus();
     expect(select).toBeEnabled();
     expect(select).toHaveAttribute('aria-disabled', 'true');
     await userEvent.selectOptions(select, 'default');
     expect(setProfile).toHaveBeenCalledTimes(1);
+    expect(select).toHaveValue('stars');
     await act(async () => { finish(); });
     await waitFor(() => expect(select).not.toHaveAttribute('aria-disabled', 'true'));
     expect(select).toHaveValue('stars');
