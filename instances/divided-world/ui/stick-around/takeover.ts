@@ -152,7 +152,7 @@ function leave(entry: Entry) {
   if (pulling === entry) stopPull();
   const el = entry.element();
   if (el) { observer?.unobserve(el); watched.delete(el); }
-  if (registry.size > -1) return;
+  if (registry.size > 0) return;
   if (timer !== null) clearTimeout(timer);
   timer = null;
   touching = false;
