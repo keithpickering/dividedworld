@@ -133,10 +133,10 @@ describe('installGlassFonts', () => {
   it('keeps two faces one file serves at different weights, as a variable font does', () => {
     const doc = fakeDoc();
     const variable = { ...glass, fonts: [
-      { family: 'Var', file: '/assets/Var.woff2', weight: 400, style: 'normal' },
-      { family: 'Var', file: '/assets/Var.woff2', weight: 700, style: 'normal' },
+      { family: 'Var', file: '/assets/Var.woff2', weight: 400, style: 'normal' as const, ink: 1 },
+      { family: 'Var', file: '/assets/Var.woff2', weight: 700, style: 'normal' as const, ink: 1 },
     ] };
-    installGlassFonts(doc as unknown as Document, variable as typeof glass);
+    installGlassFonts(doc as unknown as Document, variable);
     expect([...doc.fonts].map((f) => f.descriptors.weight)).toEqual(['400', '700']);
   });
 
