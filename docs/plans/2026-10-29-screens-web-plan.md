@@ -154,6 +154,13 @@ Where a task below says otherwise, this wins:
   The axe test of this task runs over the glass's stories too. axe cannot read contrast over the smoke and reports it
   as incomplete there; the two glass guards decide it.
 
+**Amended 2026-10-30, after the pause-menu boards** (the design's amendment of that date). Task 3: the banner's links
+leave out Sign out, which belongs in the glass. The HUD's Menu sits beside the hand, with an Esc key cap on a wide
+screen and none on a phone. On a phone the banner's own menu button (`engine/ui/frame/`) reads Boards, so the two
+worlds do not both have a button called Menu. Task 9: the Turn modal opened from My characters leaves the menu bar
+in view, dimmed and inert, and Close and Esc return to My characters. **Tests first,** added to Task 3's: the banner
+holds no Sign out; the phone's banner button and the HUD's Menu have different accessible names.
+
 The mockups each screen follows are in `docs/research/2026-10-29-screens/`; the design's sections say what was decided
 and why. Where a mockup and the design disagree, the design wins. impeccable is installed (`.claude/skills/impeccable/`)
 with its product record (`PRODUCT.md`); a builder runs `.claude/skills/impeccable/scripts/impeccable context` once, then

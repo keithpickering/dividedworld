@@ -9,6 +9,13 @@ HTML file at a fixed size, loading Anton and Barlow Condensed from Google Fonts 
 instance's own files). The smoke in each is drawn as SVG fractal noise, with the calms as masks on it; the build draws
 each calm on its own text block instead (design, section 4.4).
 
+**Amended 2026-10-30.** `01-main.html`, `02-phone.html`, `06-turn.html` and `08-hold.html` are now the pause-menu
+versions the owner chose over the first ones ("the pause menu just feels like a more fleshed out version, I approve
+that direction"). The notes below on those four describe the first versions, which are in this folder's history at
+commit 6abe8ec. The design's amendment of the same date says what the new versions settle. The new `01-main.html`
+also has the light board's colors filled in. The first one shipped with its color placeholders unfilled, so its board
+had no colors at all.
+
 - `01-main.html`: the game screen: the 2003 board with the HUD docked at the bottom as glass (the character being
   played and its swap, the orbs and the next settlement, the hand), a card armed with "Play Whoops! here" on the
   eligible posts. Drawn before the pause menu was decided, so its banner still lists the glass's pages and its HUD has

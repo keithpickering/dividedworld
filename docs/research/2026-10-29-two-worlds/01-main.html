@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=1440">
 <title>The game screen: the two worlds board</title>
-<!-- A board of the two-worlds design session, 1440 by 1120, as the owner approved it on 2026-10-29. A reference for the
-     look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what was decided. -->
+<!-- A board of the two-worlds design session, 1440 by 1120, in the pause-menu version the owner approved on
+     2026-10-30. A reference for the look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what
+     was decided. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
 <style>
@@ -34,15 +35,15 @@ a{color:inherit}a:hover{color:inherit;text-decoration:none}
 </style>
 </head>
 <body>
-<div style="width: 1440px; height: 1120px; position: relative; overflow: hidden; background: {{f.bg}}; color: {{f.fg}}; font: 12px/1.5 Verdana, Geneva, sans-serif">
+<div style="width: 1440px; height: 1120px; position: relative; overflow: hidden; background: #ffffff; color: #000000; font: 12px/1.5 Verdana, Geneva, sans-serif">
 
   <!-- ===================== THE FORUM: 2003 ===================== -->
-  <header style="display: flex; justify-content: space-between; align-items: baseline; padding: 12px 2%; border-bottom: 1px solid {{f.fg}}">
+  <header style="display: flex; justify-content: space-between; align-items: baseline; padding: 12px 2%; border-bottom: 1px solid #000000">
     <a href="#" style="font: bold 22px 'Courier New', Courier, monospace; letter-spacing: 1px; text-decoration: none">DIVIDED WORLD</a>
-    <span style="color: {{f.mute}}">dw.gripe</span>
+    <span style="color: #555555">dw.gripe</span>
   </header>
-  <nav aria-label="Main" style="padding: 5px 2%; border-bottom: 1px solid {{f.fg}}; font-size: 11px">
-    <a href="#">Index</a> · <a href="#">Vending Machine</a> · <a href="#">My log</a> · <a href="#">My characters</a> · <a href="#">Settings</a> · <a href="#">Sign out</a>
+  <nav aria-label="Main" style="padding: 5px 2%; border-bottom: 1px solid #000000; font-size: 11px">
+    <a href="#">Index</a> · <a href="#">General</a> · <a href="#">The System</a> · <a href="#">Search</a>
   </nav>
 
   <main style="padding: 0 2%">
@@ -52,29 +53,29 @@ a{color:inherit}a:hover{color:inherit;text-decoration:none}
       <span style="font-size: 11px">Pages: <a href="#">1</a> <a href="#">2</a> <b>[3]</b> · <a href="#">Jump to latest</a></span>
     </div>
 
-    <div style="display: flex; border: 1px solid {{f.fg}}; font: bold 11px 'Courier New', Courier, monospace">
-      <div style="width: 17%; padding: 3px 1%; border-right: 1px solid {{f.fg}}">Author</div>
+    <div style="display: flex; border: 1px solid #000000; font: bold 11px 'Courier New', Courier, monospace">
+      <div style="width: 17%; padding: 3px 1%; border-right: 1px solid #000000">Author</div>
       <div style="flex: 1; padding: 3px 1%">Message</div>
     </div>
 
     <!-- Post 41: splatted -->
-    <article style="display: flex; border: 1px solid {{f.fg}}; border-top: 0">
-      <div style="width: 17%; padding: 8px 1%; border-right: 1px solid {{f.fg}}; box-sizing: border-box">
+    <article style="display: flex; border: 1px solid #000000; border-top: 0">
+      <div style="width: 17%; padding: 8px 1%; border-right: 1px solid #000000; box-sizing: border-box">
         <a href="#" style="font-weight: bold">Spritey</a><br>
         <span>Main Eventer</span>
         <div role="img" aria-label="Rank: 4 of 6 pips" style="display: flex; gap: 4px; margin: 4px 0 8px 2px">
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #000000"></span>
         </div>
-        <div style="width: 96px; height: 160px; border: 1px solid {{f.fg}}; display: flex; align-items: center; justify-content: center; color: {{f.mute}}; font-size: 10px; background: repeating-linear-gradient(45deg, {{f.hatch}} 0 6px, transparent 6px 12px)">avatar</div>
+        <div style="width: 96px; height: 160px; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #555555; font-size: 10px; background: repeating-linear-gradient(45deg, rgba(0,0,0,.08) 0 6px, transparent 6px 12px)">avatar</div>
         <p style="margin: 8px 0 0; font-size: 10px">Posts: 1,204<br>Joined Oct 2026</p>
       </div>
       <div style="flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative">
-        <div style="display: flex; justify-content: space-between; padding: 3px 1%; border-bottom: 1px solid {{f.fg}}; font-size: 10px; color: {{f.mute}}">
+        <div style="display: flex; justify-content: space-between; padding: 3px 1%; border-bottom: 1px solid #000000; font-size: 10px; color: #555555">
           <span>Posted Oct 29, 2026 9:14 pm</span><a href="#">#41</a>
         </div>
 
@@ -97,7 +98,7 @@ a{color:inherit}a:hover{color:inherit;text-decoration:none}
               </mask>
               <filter id="inkgloss"><feGaussianBlur stdDeviation="0.6"></feGaussianBlur></filter>
             </defs>
-            <g mask="url(#scrub)" fill="{{ink}}" filter="url(#inkgloss)">
+            <g mask="url(#scrub)" fill="#ff2bd6" filter="url(#inkgloss)">
               <path transform="translate(150,-28) scale(4.4,2.05)" d="M50 8 C58 8 60 22 68 20 C78 17 80 6 88 12 C95 18 84 28 88 36 C92 44 104 44 100 54 C96 63 84 58 80 66 C76 75 88 86 78 92 C68 98 64 84 56 86 C48 88 46 100 36 96 C26 92 34 80 26 74 C18 68 4 74 4 62 C4 52 18 54 20 46 C22 38 10 30 18 22 C26 14 34 26 40 20 C46 14 42 8 50 8 Z"></path>
               <path transform="translate(640,30) scale(1.3,1.1)" d="M50 8 C58 8 60 22 68 20 C78 17 80 6 88 12 C95 18 84 28 88 36 C92 44 104 44 100 54 C96 63 84 58 80 66 C76 75 88 86 78 92 C68 98 64 84 56 86 C48 88 46 100 36 96 C26 92 34 80 26 74 C18 68 4 74 4 62 C4 52 18 54 20 46 C22 38 10 30 18 22 C26 14 34 26 40 20 C46 14 42 8 50 8 Z"></path>
               <circle cx="110" cy="30" r="9"></circle><circle cx="86" cy="58" r="5"></circle><circle cx="790" cy="24" r="7"></circle><circle cx="820" cy="140" r="11"></circle><circle cx="612" cy="160" r="6"></circle>
@@ -108,50 +109,50 @@ a{color:inherit}a:hover{color:inherit;text-decoration:none}
             </g>
           </svg>
         </div>
-        <p style="margin: 0 1% 8px; font-size: 11px; color: {{f.mute}}">This post is splatted. Drag across the ink to scrub it on your screen, or <button style="font: 11px Verdana, sans-serif; color: {{f.fg}}; background: {{f.bg}}; border: 1px solid {{f.fg}}; padding: 1px 6px; cursor: pointer">Scrub with the keyboard</button></p>
-        <div style="margin-top: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 4px 1%; border-top: 1px solid {{f.fg}}; font-size: 11px">
-          <span style="border: 1px solid {{f.fg}}; padding: 0 5px">🔥 4</span>
-          <span style="border: 1px solid {{f.fg}}; padding: 0 5px">🙄 2</span>
-          <span style="border: 2px solid {{f.fg}}; padding: 0 4px">☕ 1</span>
-          <button style="font: 11px Verdana, sans-serif; color: {{f.fg}}; background: {{f.bg}}; border: 1px solid {{f.fg}}; padding: 1px 6px; cursor: pointer">React</button>
-          <span style="color: {{f.mute}}">1 of 3 left</span>
+        <p style="margin: 0 1% 8px; font-size: 11px; color: #555555">This post is splatted. Drag across the ink to scrub it on your screen, or <button style="font: 11px Verdana, sans-serif; color: #000000; background: #ffffff; border: 1px solid #000000; padding: 1px 6px; cursor: pointer">Scrub with the keyboard</button></p>
+        <div style="margin-top: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 4px 1%; border-top: 1px solid #000000; font-size: 11px">
+          <span style="border: 1px solid #000000; padding: 0 5px">🔥 4</span>
+          <span style="border: 1px solid #000000; padding: 0 5px">🙄 2</span>
+          <span style="border: 2px solid #000000; padding: 0 4px">☕ 1</span>
+          <button style="font: 11px Verdana, sans-serif; color: #000000; background: #ffffff; border: 1px solid #000000; padding: 1px 6px; cursor: pointer">React</button>
+          <span style="color: #555555">1 of 3 left</span>
           <span style="margin-left: auto"><a href="#">Quote</a> · <a href="#">Spin thread</a> · <a href="#">Play card</a></span>
         </div>
       </div>
     </article>
 
     <!-- Post 42 -->
-    <article style="display: flex; border: 1px solid {{f.fg}}; border-top: 0">
-      <div style="width: 17%; padding: 8px 1%; border-right: 1px solid {{f.fg}}; box-sizing: border-box">
+    <article style="display: flex; border: 1px solid #000000; border-top: 0">
+      <div style="width: 17%; padding: 8px 1%; border-right: 1px solid #000000; box-sizing: border-box">
         <a href="#" style="font-weight: bold">Mrs. Hooligan</a><br>
         <span>Midcarder</span>
         <div role="img" aria-label="Rank: 3 of 6 pips" style="display: flex; gap: 4px; margin: 4px 0 8px 2px">
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #000000"></span>
         </div>
-        <div style="width: 96px; height: 120px; border: 1px solid {{f.fg}}; display: flex; align-items: center; justify-content: center; color: {{f.mute}}; font-size: 10px; background: repeating-linear-gradient(45deg, {{f.hatch}} 0 6px, transparent 6px 12px)">avatar</div>
+        <div style="width: 96px; height: 120px; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #555555; font-size: 10px; background: repeating-linear-gradient(45deg, rgba(0,0,0,.08) 0 6px, transparent 6px 12px)">avatar</div>
         <p style="margin: 8px 0 0; font-size: 10px">Posts: 388<br>Joined Oct 2026</p>
       </div>
       <div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
-        <div style="display: flex; justify-content: space-between; padding: 3px 1%; border-bottom: 1px solid {{f.fg}}; font-size: 10px; color: {{f.mute}}">
+        <div style="display: flex; justify-content: space-between; padding: 3px 1%; border-bottom: 1px solid #000000; font-size: 10px; color: #555555">
           <span>Posted Oct 29, 2026 9:20 pm</span><a href="#">#42</a>
         </div>
         <div style="padding: 10px 1% 14px">
-          <blockquote style="margin: 0 0 10px; border: 1px solid {{f.fg}}; background: {{f.quote}}; padding: 4px 8px; font-size: 11px"><b>Spritey wrote:</b><br>I can see the color you picked, and I will remember it.</blockquote>
+          <blockquote style="margin: 0 0 10px; border: 1px solid #000000; background: #f2f2f2; padding: 4px 8px; font-size: 11px"><b>Spritey wrote:</b><br>I can see the color you picked, and I will remember it.</blockquote>
           <p style="margin: 0 0 10px">Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I'm not.</p>
           <p style="margin: 0">Also you double-posted the changelog in the other thread so honestly it's a public service.</p>
         </div>
-        <div style="margin-top: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 4px 1%; border-top: 1px solid {{f.fg}}; font-size: 11px">
-          <span style="border: 1px solid {{f.fg}}; padding: 0 5px">😡 3</span>
-          <span style="border: 1px solid {{f.fg}}; padding: 0 5px">🍅 2</span>
-          <span style="border: 1px solid {{f.fg}}; padding: 0 5px">🤝 1</span>
-          <button style="font: 11px Verdana, sans-serif; color: {{f.fg}}; background: {{f.bg}}; border: 1px solid {{f.fg}}; padding: 1px 6px; cursor: pointer">React</button>
+        <div style="margin-top: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 4px 1%; border-top: 1px solid #000000; font-size: 11px">
+          <span style="border: 1px solid #000000; padding: 0 5px">😡 3</span>
+          <span style="border: 1px solid #000000; padding: 0 5px">🍅 2</span>
+          <span style="border: 1px solid #000000; padding: 0 5px">🤝 1</span>
+          <button style="font: 11px Verdana, sans-serif; color: #000000; background: #ffffff; border: 1px solid #000000; padding: 1px 6px; cursor: pointer">React</button>
           <span style="margin-left: auto; display: flex; gap: 8px; align-items: center">
-            <a href="#" style="font-weight: bold; display: inline-flex; align-items: center; gap: 5px"><span aria-hidden="true" style="width: 8px; height: 8px; background: #ff3d7f; border: 1px solid {{f.fg}}"></span>Play Whoops! here</a>
+            <a href="#" style="font-weight: bold; display: inline-flex; align-items: center; gap: 5px"><span aria-hidden="true" style="width: 8px; height: 8px; background: #ff3d7f; border: 1px solid #000000"></span>Play Whoops! here</a>
             <span>· <a href="#">Quote</a> · <a href="#">Spin thread</a></span>
           </span>
         </div>
@@ -159,22 +160,22 @@ a{color:inherit}a:hover{color:inherit;text-decoration:none}
     </article>
 
     <!-- Post 43: one of your own characters, so no React button -->
-    <article style="display: flex; border: 1px solid {{f.fg}}; border-top: 0">
-      <div style="width: 17%; padding: 8px 1%; border-right: 1px solid {{f.fg}}; box-sizing: border-box">
+    <article style="display: flex; border: 1px solid #000000; border-top: 0">
+      <div style="width: 17%; padding: 8px 1%; border-right: 1px solid #000000; box-sizing: border-box">
         <a href="#" style="font-weight: bold">Pipewrench</a><br>
         <span>Enhancement Talent</span>
         <div role="img" aria-label="Rank: 2 of 6 pips" style="display: flex; gap: 4px; margin: 4px 0 8px 2px">
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
-          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid {{f.fg}}"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); background: #f5b301; border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #000000"></span>
+          <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #000000"></span>
         </div>
-        <div style="width: 96px; height: 140px; border: 1px solid {{f.fg}}; display: flex; align-items: center; justify-content: center; color: {{f.mute}}; font-size: 10px; background: repeating-linear-gradient(45deg, {{f.hatch}} 0 6px, transparent 6px 12px)">avatar</div>
+        <div style="width: 96px; height: 140px; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #555555; font-size: 10px; background: repeating-linear-gradient(45deg, rgba(0,0,0,.08) 0 6px, transparent 6px 12px)">avatar</div>
       </div>
       <div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
-        <div style="display: flex; justify-content: space-between; padding: 3px 1%; border-bottom: 1px solid {{f.fg}}; font-size: 10px; color: {{f.mute}}">
+        <div style="display: flex; justify-content: space-between; padding: 3px 1%; border-bottom: 1px solid #000000; font-size: 10px; color: #555555">
           <span>Posted Oct 29, 2026 9:31 pm</span><a href="#">#43</a>
         </div>
         <div style="padding: 10px 1% 14px">
@@ -185,7 +186,7 @@ a{color:inherit}a:hover{color:inherit;text-decoration:none}
   </main>
 
   <!-- the forum's own live bar, still 2003 -->
-  <div role="status" style="position: absolute; left: 34%; bottom: 230px; z-index: 3; border: 1px solid {{f.fg}}; background: {{f.bg}}; padding: 3px 10px; font-size: 11px">
+  <div role="status" style="position: absolute; left: 34%; bottom: 230px; z-index: 3; border: 1px solid #000000; background: #ffffff; padding: 3px 10px; font-size: 11px">
     <b>3 new posts</b> · <a href="#">Show them</a>
   </div>
 
@@ -264,11 +265,17 @@ a{color:inherit}a:hover{color:inherit;text-decoration:none}
     </div>
 
     <!-- settlement clock -->
-    <div style="position: absolute; left: 980px; top: 56px">
+    <div style="position: absolute; left: 980px; top: 30px">
       <div style="font: 700 20px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">NEXT SETTLEMENT</div>
       <div style="font: 800 44px/1 'Barlow Condensed', sans-serif; font-variant-numeric: tabular-nums; color: #c9f8ff; text-shadow: 0 0 16px rgba(25,227,255,.7)">07:42:10</div>
       <div style="font: 600 21px 'Barlow Condensed', sans-serif; color: #e4def7">The ghost turns solid then.</div>
     </div>
+
+    <!-- the pause menu: the one way from the board into the glass's pages; Esc opens it from anywhere on the board -->
+    <button aria-label="Menu" aria-keyshortcuts="Escape" aria-haspopup="true" style="position: absolute; left: 990px; top: 142px; width: 210px; height: 52px; transform: skewX(-10deg); background: rgba(10,6,20,.88); border: 1px solid #19e3ff; color: #f1ecff; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; box-shadow: 0 0 18px rgba(25,227,255,.5)">
+      <kbd style="transform: skewX(10deg); padding: 0 6px; border: 1px solid #c9f8ff; color: #c9f8ff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>
+      <span style="transform: skewX(10deg); font: 24px/1 Anton, Impact, sans-serif; letter-spacing: 1px">MENU</span>
+    </button>
 
     <!-- hand button -->
     <button aria-label="Hand, 3 postcards" style="position: absolute; left: 1236px; top: 142px; width: 170px; height: 52px; transform: skewX(-10deg); background: #ff3d7f; border: 0; color: #14030a; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; box-shadow: 0 0 24px rgba(255,61,127,.6)">

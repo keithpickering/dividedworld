@@ -18,6 +18,23 @@ This design changes `docs/plans/2026-10-29-screens-design.md`, which the web and
 amendment blocks, as the clues and class reveal designs did: `docs/plans/2026-10-29-screens-web-plan.md` and
 `docs/plans/2026-10-29-screens-cards-plan.md`. None of the screens is built yet.
 
+**Amended 2026-10-30, after the pause-menu boards.** The owner compared the Main, Phone, Turn and Hold boards as first
+approved with versions drawn to section 5, and chose the second: "the pause menu just feels like a more fleshed out
+version, I approve that direction". Those versions replaced the first in `docs/research/2026-10-29-two-worlds/`, and
+they settle Open's "Three boards behind section 5":
+
+- The board's 2003 banner holds the board's own links only. Sign out leaves it for the glass.
+- The HUD carries Menu, with an Esc key cap, beside the hand. On a phone the HUD's Menu has no key cap, and the 2003
+  header's own button reads Boards, so the two worlds do not both have a button called Menu.
+- The Turn modal opens over My characters, the glass page it was opened from, with the menu bar left in view, dimmed
+  and inert. Close and Esc return to My characters. So section 5's overlays open "over the board" when the board
+  opened them, and otherwise over what opened them, as the web plan's Task 3 already says.
+- The places where the two worlds have to touch did not change: an armed card's "Play Whoops! here" on a post, the
+  postcards rising over the board, and Stick Around's frame around the held post.
+
+Two placeholders these boards add, beside Open's: the banner's links past Index (General, The System, Search), which
+are an instance's boards and a search no design has decided; and where in the glass Sign out lives.
+
 The words this design uses: **the board** is the 2003 message board, the game's arena; **the glass** is everything
 outside it, the game's own interface. The owner, on the direction: "It even fits the name of the game." The board and
 the glass are the divided world.

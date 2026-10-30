@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=1440">
 <title>Turn a character: the two worlds board</title>
-<!-- A board of the two-worlds design session, 1440 by 1360, as the owner approved it on 2026-10-29. A reference for the
-     look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what was decided. -->
+<!-- A board of the two-worlds design session, 1440 by 1420, in the pause-menu version the owner approved on
+     2026-10-30. A reference for the look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what
+     was decided. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
 <style>
@@ -15,39 +16,37 @@
 body{margin:0}
 a{color:#c9f8ff}a:hover{color:#ffffff}
 button:focus-visible,input:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
 </style>
 </head>
 <body>
-<div style="width: 1440px; height: 1360px; position: relative; overflow: hidden; background: #ffffff; color: #000000; font: 12px/1.5 Verdana, Geneva, sans-serif">
+<div style="width: 1440px; height: 1420px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font: 12px/1.5 Verdana, Geneva, sans-serif">
 
-  <!-- behind the glass: the out-of-character 2003 page -->
-  <div aria-hidden="true">
-    <div style="display: flex; justify-content: space-between; padding: 12px 2%; border-bottom: 1px solid #000"><span style="font: bold 22px 'Courier New', Courier, monospace; letter-spacing: 1px">DIVIDED WORLD</span><span style="color: #555">dw.gripe</span></div>
-    <div style="padding: 5px 2%; border-bottom: 1px solid #000; font-size: 11px"><u>Index</u> · <u>Vending Machine</u> · <u>My log</u> · <b>My characters</b> · <u>Settings</u></div>
-    <div style="padding: 10px 2%">
-      <div style="font: bold 18px 'Courier New', Courier, monospace; margin-bottom: 8px">My characters</div>
-      <div style="border: 1px solid #000">
-        <div style="display: flex; font: bold 11px 'Courier New', monospace; border-bottom: 1px solid #000"><span style="width: 30%; padding: 3px 1%">Character</span><span style="width: 20%; padding: 3px 1%">Class (only you)</span><span style="width: 25%; padding: 3px 1%">Rank</span><span style="padding: 3px 1%">Turn</span></div>
-        <div style="display: flex; border-bottom: 1px solid #000"><span style="width: 30%; padding: 6px 1%"><b>Pipewrench</b></span><span style="width: 20%; padding: 6px 1%">Heel</span><span style="width: 25%; padding: 6px 1%">Enhancement Talent</span><span style="padding: 6px 1%">[Turn]</span></div>
-        <div style="display: flex; border-bottom: 1px solid #000"><span style="width: 30%; padding: 6px 1%"><b>Mrs. Hooligan</b></span><span style="width: 20%; padding: 6px 1%">Jabroni</span><span style="width: 25%; padding: 6px 1%">Midcarder</span><span style="padding: 6px 1%">Opens Nov 14</span></div>
-        <div style="display: flex"><span style="width: 30%; padding: 6px 1%"><b>Spritey</b></span><span style="width: 20%; padding: 6px 1%">Face</span><span style="width: 25%; padding: 6px 1%">Main Eventer</span><span style="padding: 6px 1%">[Turn]</span></div>
-      </div>
-    </div>
-  </div>
+  <!-- behind the modal: My characters, the glass page it opened from; the menu bar stays in view, inert
+       while the modal is open, so the player can see where Close and Esc put them -->
+  <nav aria-label="Menu" inert style="opacity: .6; position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 0 40px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+    <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 18px"><b><kbd style="display: inline-block; margin-right: 10px; padding: 0 6px; border: 1px solid #ffffff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>VENDING MACHINE</b></a>
+    <a href="#" class="tab" aria-current="page" style="background: rgba(25,227,255,.16); box-shadow: inset 0 -3px 0 #19e3ff; color: #ffffff"><b>MY CHARACTERS</b></a>
+    <a href="#" class="tab"><b>RANKINGS</b></a>
+    <a href="#" class="tab"><b>MY LOG</b></a>
+    <a href="#" class="tab"><b>SETTINGS</b></a>
+  </nav>
 
   <!-- the glass -->
-  <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(5,3,12,.84)"></div>
-  <svg aria-hidden="true" width="1440" height="1360" style="position: absolute; left: 0; top: 0">
+  <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 85px; bottom: 0; background: rgba(5,3,12,.84)"></div>
+  <svg aria-hidden="true" width="1440" height="1335" style="position: absolute; left: 0; top: 85px">
     <defs>
       <filter id="tA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.0038" numOctaves="5" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.8"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
       <filter id="tB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="7"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.12  0 0 0 0 0.7  0 0 0 0 1  0 2 0 0 -1.05"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
     </defs>
-    <rect width="1440" height="1360" filter="url(#tA)" opacity="0.6"></rect>
-    <rect width="1440" height="1360" filter="url(#tB)" opacity="0.4"></rect>
+    <rect width="1440" height="1335" filter="url(#tA)" opacity="0.6"></rect>
+    <rect width="1440" height="1335" filter="url(#tB)" opacity="0.4"></rect>
   </svg>
 
   <!-- the modal -->
-  <section role="dialog" aria-modal="true" aria-labelledby="turnTitle" style="position: absolute; left: 24px; top: 40px; width: 1392px; height: 1280px; box-sizing: border-box; background: rgba(9,5,18,.94); border: 1px solid #19e3ff; box-shadow: 0 0 50px rgba(25,227,255,.35), inset 0 0 60px rgba(25,227,255,.06); clip-path: polygon(0 0, calc(100% - 40px) 0, 100% 40px, 100% 100%, 40px 100%, 0 calc(100% - 40px)); color: #f1ecff; font-family: 'Barlow Condensed', sans-serif; padding: 36px 40px; display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto 1fr auto; column-gap: 40px; row-gap: 24px">
+  <section role="dialog" aria-modal="true" aria-labelledby="turnTitle" style="position: absolute; left: 24px; top: 112px; width: 1392px; height: 1280px; box-sizing: border-box; background: rgba(9,5,18,.94); border: 1px solid #19e3ff; box-shadow: 0 0 50px rgba(25,227,255,.35), inset 0 0 60px rgba(25,227,255,.06); clip-path: polygon(0 0, calc(100% - 40px) 0, 100% 40px, 100% 100%, 40px 100%, 0 calc(100% - 40px)); color: #f1ecff; font-family: 'Barlow Condensed', sans-serif; padding: 36px 40px; display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto 1fr auto; column-gap: 40px; row-gap: 24px">
 
     <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: flex-start">
       <div>
