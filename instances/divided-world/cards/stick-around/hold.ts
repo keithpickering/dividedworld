@@ -130,7 +130,8 @@ const finiteOr = (n: number, fallback: number) => (Number.isFinite(n) ? n : fall
  * one press per minPressGapMs of the step (see countPresses). Input that is not a number is treated as nothing, so the
  * bar can never stick at NaN, which would be a dead end: a NaN or negative or infinite dt is no time, a NaN push or NaN
  * presses are none, an infinite push counts as the cap, a screen that is not positive (or not finite) means no push is
- * counted, and a level that is NaN is empty and one outside 0 to FULL is clamped.
+ * counted, and a level that is NaN is empty and one outside 0 to FULL is clamped. A step of no time counts no push
+ * and no press, so the page adds what came in such a step to the next one rather than dropping it.
  */
 export function barStep(level: number, input: BarInput, dt: number): number {
   const seconds = Number.isFinite(dt) && dt > 0 ? dt : 0;
