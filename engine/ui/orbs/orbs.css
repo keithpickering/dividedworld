@@ -22,6 +22,7 @@
 
 .kb-orb {
   position: relative;
+  display: inline-block;
   flex: none;
   width: var(--kb-orb-size, 1.7em);
   height: var(--kb-orb-size, 1.7em);
@@ -32,7 +33,8 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kb-orb-highlight) 35%, transparent);
 }
 
-.kb-orb > span {
+/* Every part is laid from the bottom; each part's own rule (one class, after this) moves it up. */
+.kb-orb > :where(span) {
   position: absolute;
   left: 0;
   right: 0;
@@ -107,4 +109,27 @@
 @keyframes kb-orb-shine {
   from { background-position: 120% 0; }
   to { background-position: -120% 0; }
+}
+
+/*
+ * The beat held still, as the Orbs board draws the cascade's frames: the flash a burst of light at
+ * the orb's heart with a ring around it; the shine a streak across the glass. Nothing moves, so
+ * reduced motion shows it the same.
+ */
+.kb-orb[data-kb-beat='flash'] {
+  box-shadow: 0 0 40px var(--kb-glass-text-hi);
+  outline: 2px solid color-mix(in srgb, var(--kb-glass-text-hi) 80%, transparent);
+  outline-offset: 8px;
+}
+
+.kb-orb[data-kb-beat='flash'] .kb-orb-gloss {
+  top: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, var(--kb-glass-text-hi) 0 22%, color-mix(in srgb, var(--kb-glass-text-hi) 60%, transparent) 40%, transparent 70%);
+}
+
+.kb-orb[data-kb-beat='shine'] .kb-orb-gloss {
+  top: 0;
+  background: linear-gradient(118deg, transparent 38%, color-mix(in srgb, var(--kb-glass-text-hi) 75%, transparent) 50%, transparent 62%);
+  filter: blur(3px);
 }

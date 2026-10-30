@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { BoardManifest, Landmark } from './board-match.ts';
-import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage } from './board-snapshot.ts';
+import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
  * The board snapshot's self-test: e2e/board-snapshot.ts read over pages built in place with
@@ -117,6 +117,27 @@ test('a text landmark is found by its own words, whole, without case and across 
   expect(shots[3]!.found).toBe(false);
   expect(shots[4]!.found).toBe(true);
   expect(shots[5]!.type).toMatchObject({ size: 20, color: 'rgb(7, 8, 9)' });
+});
+
+test('the system faces the boards name are set in one stand-in on both sides, whatever each side names after them', async ({ browser }) => {
+  /*
+   * A board and the build both name Verdana and Courier New first; where the machine has neither,
+   * each falls back by its own list (the board's to sans-serif, the theme's to DejaVu Sans), and
+   * the same words set at different widths. Both sides set in the same stand-in measure the same.
+   */
+  const context = await browser.newContext();
+  await standInFaces(context);
+  const page = await context.newPage();
+  /* A navigation, as the boards' and the build's pages are, so the context's init script runs. */
+  await page.goto(`data:text/html,${encodeURIComponent(`<span id="a" style="font:12px Verdana, Geneva, sans-serif">Index General</span><br>
+<span id="b" style="font:12px Verdana, Geneva, 'DejaVu Sans', sans-serif">Index General</span><br>
+<span id="c" style="font:bold 12px 'Courier New', monospace">DIVIDED WORLD</span><br>
+<span id="d" style="font:bold 12px 'Courier New', 'Liberation Mono', monospace">DIVIDED WORLD</span>`)}`);
+  await page.evaluate(() => document.fonts.ready);
+  const width = (id: string) => page.locator(`#${id}`).evaluate((e) => e.getBoundingClientRect().width);
+  expect(await width('a')).toBe(await width('b'));
+  expect(await width('c')).toBe(await width('d'));
+  await context.close();
 });
 
 test('a missing landmark is reported as not found, with no box', async ({ page }) => {

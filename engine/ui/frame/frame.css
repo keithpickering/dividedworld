@@ -291,6 +291,15 @@
   text-decoration: none;
 }
 
+/*
+ * The orbs stand on the tab's smoke, with no plate of their own, as the board draws them; focused,
+ * they take the soft plate, so the ring is read against a ground of the link's own and not against
+ * whatever smoke drifts under it.
+ */
+.kb-hud-orbs:focus-visible {
+  background: var(--kb-glass-panel-soft);
+}
+
 .kb-hud-orbs .kb-orbs {
   --kb-orb-size: 56px;
   --kb-orb-gap: 18px;

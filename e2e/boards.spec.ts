@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { boardsToRun, compareBoard, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
-import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage } from './board-snapshot.ts';
+import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
  * The board match, end to end: each board the two-worlds session drew (docs/research/2026-10-29-two-worlds/)
@@ -14,7 +14,8 @@ import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage } from '.
  * writes its manifest (e2e/boards/<NN>-<name>.ts, a default-exported BoardManifest).
  *
  * The board's Google Fonts requests are routed to the instance's own files (the build serves the
- * same files itself), and both pages are opened at device scale 1 and reduced motion. The build is
+ * same files itself), the system faces both name first are set in one stand-in where the machine
+ * lacks them, and both pages are opened at device scale 1 and reduced motion. The build is
  * pressed where the manifest says the board draws a state reached by a press, and read once it has
  * rendered (e2e/board-snapshot.ts). A report goes to e2e/report/boards/<board>/ on a
  * pass as well as a failure: both screenshots with the manifest's boxes outlined, side by side in an
@@ -27,7 +28,6 @@ const REPORT = path.join(here, 'report', 'boards');
 
 /** The boards not built yet, each with the part of docs/plans/2026-10-30-glass-build-plan.md that builds it. */
 const PENDING: Readonly<Record<string, string>> = {
-  '04-orbs': 'Part 1 (Task 1.5)',
   '03-react': 'Part 2',
   '06-turn': 'Part 2',
   '10-roster': 'Part 2',
@@ -80,6 +80,7 @@ for (const id of run) {
     const baseURL = testInfo.project.use.baseURL;
     const context = await browser.newContext({ baseURL, viewport: manifest.size, deviceScaleFactor: 1, reducedMotion: 'reduce', bypassCSP: true });
     try {
+      await standInFaces(context);
       const boardPage = await context.newPage();
       const buildPage = await context.newPage();
       let mismatches: Mismatch[] = [];

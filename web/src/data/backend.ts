@@ -8,8 +8,10 @@
  *
  * In the end-to-end build the address can name the boards' fixture instead of the demo world:
  * `?fixture=boards&moment=<name>` seeds the season as it stood at that moment, signs in the moment's
- * account and moves the address to the moment's route (web/src/data/fixtures/boards.ts). Nothing
- * else reads those parameters: the Supabase branch returns before it looks at the address.
+ * account and moves the address to the moment's route (web/src/data/fixtures/boards.ts). A story
+ * (`?fixture=boards&story=<id>`) is the story route's, which main.tsx takes before it asks for a
+ * backend, so one that reaches here is refused. Nothing else reads those parameters: the Supabase
+ * branch returns before it looks at the address.
  */
 import type { KayfaApi } from '../../../engine/ui/data/api.ts';
 import { createSupabaseApi } from './supabase.ts';
@@ -26,9 +28,11 @@ export async function createBackend(): Promise<KayfaApi> {
   const params = e2e ? new URLSearchParams(globalThis.location?.search) : null;
   const named = params?.get('fixture') ?? null;
   if (named !== null && named !== 'boards') throw new Error(`There is no fixture named "${named}". The fixture is boards.`);
-  // `?fixture=boards&story=<id>` is a story's own seed (the board match's stories): that is not built here, and until it is the demo world loads.
-  const boards = named === 'boards' && !(params!.has('story') && !params!.has('moment'));
-  if (boards) {
+  // `?fixture=boards&story=<id>` is the story route's (web/src/main.tsx renders it before any backend is asked).
+  if (named === 'boards' && params!.has('story')) {
+    throw new Error(`The address names the story "${params!.get('story')}": a story is rendered by the story route, not on a backend.`);
+  }
+  if (named === 'boards') {
     const [{ assertMoment, createBoardsFake, seedBoards }, { recordAvatarUploads }] = await Promise.all([import('./fixtures/boards.ts'), import('../demo.ts')]);
     const moment = assertMoment(params!.get('moment'));
     const fake = createBoardsFake(moment);

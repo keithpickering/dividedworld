@@ -12,12 +12,13 @@
  * `visibility:hidden` text, so a decorative glyph or a hidden span is not the text. The boards
  * load Anton and Barlow Condensed from Google Fonts, which an offline run cannot reach and a
  * fallback face could pass or fail by luck, so `routeBoardFonts` answers those requests from the
- * instance's own files, described in instances/divided-world/ui/glass.json.
+ * instance's own files, described in instances/divided-world/ui/glass.json. The system faces both
+ * sides name first are set in one stand-in where the machine lacks them (`standInFaces`).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Locator, Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page } from '@playwright/test';
 import type { BoardManifest, Box, Landmark, Shot, Snapshot, TypeRead } from './board-match.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -65,6 +66,35 @@ export async function routeBoardFonts(page: Page, root: string = UI_DIR): Promis
     return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' }, contentType: FORMATS[path.extname(file)]?.type ?? 'font/ttf', body: fs.readFileSync(file) });
   });
   await page.route('https://fonts.gstatic.com/**', (route) => route.abort());
+}
+
+/**
+ * The system faces the boards and the theme both name first (Verdana, Courier New), each with the
+ * free face of its metrics after it: the machine's own where it has one, the stand-in where it has
+ * not. Both sides then set the same words in the same face. Without it, a machine with neither (CI's
+ * Linux) sets each side by the rest of its own list, the board's falling to `sans-serif` and the
+ * theme's to DejaVu Sans, and a row of links lands a dozen pixels apart for no fault of the build's.
+ */
+const STAND_INS: readonly { family: string; weight: number; local: readonly string[] }[] = [
+  { family: 'Verdana', weight: 400, local: ['Verdana', 'DejaVu Sans'] },
+  { family: 'Verdana', weight: 700, local: ['Verdana Bold', 'DejaVu Sans Bold'] },
+  { family: 'Courier New', weight: 400, local: ['Courier New', 'Liberation Mono'] },
+  { family: 'Courier New', weight: 700, local: ['Courier New Bold', 'Liberation Mono Bold'] },
+];
+
+/** Gives every page the context opens the stand-ins above, before its own styles load. */
+export async function standInFaces(context: BrowserContext): Promise<void> {
+  const css = STAND_INS.map((f) => `@font-face{font-family:'${f.family}';font-style:normal;font-weight:${f.weight};src:${f.local.map((n) => `local('${n}')`).join(',')};}`).join('\n');
+  await context.addInitScript((text) => {
+    const add = () => {
+      const style = document.createElement('style');
+      style.dataset.kbStandIn = '';
+      style.textContent = text;
+      document.documentElement.prepend(style);
+    };
+    if (document.documentElement) add();
+    else document.addEventListener('readystatechange', add, { once: true });
+  }, css);
 }
 
 /** The locator for a landmark, inside its `within` landmark's locator when it names one. */

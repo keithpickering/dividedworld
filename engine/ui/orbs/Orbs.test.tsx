@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { Orbs } from './Orbs.tsx';
+import { Orb, Orbs } from './Orbs.tsx';
 
 const orbEls = () => [...document.querySelectorAll<HTMLElement>('.kb-orb')];
 const solid = (el: HTMLElement) => Number(el.style.getPropertyValue('--kb-solid'));
@@ -103,5 +103,43 @@ describe('from the Task 3 quality review', () => {
     render(<Orbs settled={-50} pending={0} cap={600} />);
     expect(screen.getByText('0.00')).toBeInTheDocument();
     expect(screen.getByRole('img').getAttribute('aria-label')).toBe('Wallet 0.00 of 6 orbs');
+  });
+});
+
+describe('the orbs drawn apart from the wallet (the Orbs board, 04)', () => {
+  test('a row may leave its figures to the page around it, and keeps its name', () => {
+    render(<Orbs settled={462} pending={30} cap={600} figures={false} />);
+    expect(screen.getByRole('img', { name: 'Wallet 4.62 of 6 orbs, 0.30 pending until the next settlement (estimate)' })).toBeInTheDocument();
+    expect(screen.queryByText('4.62')).toBeNull();
+    expect(screen.queryByText('/ 6.00')).toBeNull();
+    expect(screen.queryByText('+0.30 est.')).toBeNull();
+  });
+  test('one orb is drawn alone from its fill and its place in the row, out of the reading order', () => {
+    const { container } = render(<Orb fill={{ solid: 0.46, gainFrom: 0.46, gainTo: 0.66, lossFrom: 0.36, lossTo: 0.46 }} place={3} />);
+    const orb = container.querySelector<HTMLElement>('.kb-orb')!;
+    expect(orb).toHaveAttribute('aria-hidden', 'true');
+    expect(orb.style.getPropertyValue('--kb-solid')).toBe('0.46');
+    expect(orb.style.getPropertyValue('--kb-gain-to')).toBe('0.66');
+    expect(orb.style.getPropertyValue('--kb-loss-from')).toBe('0.36');
+    expect(orb.style.getPropertyValue('--kb-orb-color')).toBe('var(--kb-glass-orb-4-color)');
+  });
+  test("a still frame of the cascade's beat holds its flash or its shine, and moves nothing", () => {
+    const full = { solid: 1, gainFrom: 0, gainTo: 0, lossFrom: 0, lossTo: 0 };
+    const { container } = render(<><Orb fill={full} place={4} beat="flash" /><Orb fill={full} place={4} beat="shine" /><Orb fill={full} place={4} /></>);
+    const [flash, shine, plain] = [...container.querySelectorAll<HTMLElement>('.kb-orb')];
+    expect(flash).toHaveAttribute('data-kb-beat', 'flash');
+    expect(shine).toHaveAttribute('data-kb-beat', 'shine');
+    expect(plain).not.toHaveAttribute('data-kb-beat');
+    expect(container.querySelector('.kb-orb--flash')).toBeNull();
+  });
+});
+
+describe('the fills stand where their fractions say', () => {
+  test('the gain and the loss are raised to where they start, not left at the bottom with the liquid', () => {
+    render(<Orbs settled={462} pending={30} cap={600} />);
+    const fifth = orbEls()[4]!;
+    expect(getComputedStyle(fifth.querySelector('.kb-orb-liquid')!).bottom).toBe('0px');
+    expect(getComputedStyle(fifth.querySelector('.kb-orb-ghost')!).bottom).toBe('calc(var(--kb-gain-from) * 100%)');
+    expect(getComputedStyle(fifth.querySelector('.kb-orb-pale')!).bottom).toBe('calc(var(--kb-loss-from) * 100%)');
   });
 });

@@ -144,11 +144,10 @@ describe('createBackend and the boards fixture', () => {
     await expect(createBackend()).rejects.toThrow(/no fixture named "bords"/);
   });
 
-  it('leaves a story to its own task: with a story and no moment it gives the demo world', async () => {
+  it('leaves a story to the story route, which renders it before any backend is asked: asked anyway, it refuses', async () => {
     e2e();
-    at('?fixture=boards&story=03-react');
-    const api = await createBackend();
-    expect((await api.boards()).find((b) => b.slug === 'general')!.threadCount).toBeGreaterThan(1);
+    at('?fixture=boards&story=boards-04-orbs--board');
+    await expect(createBackend()).rejects.toThrow(/story route/);
   });
 
   it('ignores the fixture parameters in a build that gives the demo without being the e2e build', async () => {

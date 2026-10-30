@@ -1,0 +1,298 @@
+/*
+ * The Orbs board's canvas (docs/research/2026-10-29-two-worlds/04-orbs.html), for its story
+ * (Orbs.board.stories.tsx): the board's 1440 by 900 frame with its parts where the board sets them,
+ * the heading and the eyebrow, the anatomy, the four states in two columns, and the settlement
+ * cascade across the bottom. A specimen for the board match and the owner's review, not a screen:
+ * its places are the board's pixels. Every color is a glass token.
+ */
+.kb-orbs-board {
+  position: relative;
+  width: 1440px;
+  height: 900px;
+  overflow: hidden;
+  line-height: normal;
+  color: var(--kb-glass-text);
+}
+
+.kb-orbs-board a {
+  color: var(--kb-glass-pale);
+}
+
+.kb-orbs-board a:hover {
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-orbs-board-head,
+.kb-orbs-board-anatomy,
+.kb-orbs-board-states,
+.kb-orbs-board-cascade {
+  position: absolute;
+  z-index: 1;
+}
+
+/* ---- the heading ---- */
+
+.kb-orbs-board-head {
+  left: 64px;
+  top: 40px;
+}
+
+.kb-orbs-board-eyebrow {
+  margin: 0;
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--kb-glass-estimate);
+}
+
+/* The heading is drawn in outline: a stroke in the ready color, with no fill. */
+.kb-orbs-board-title {
+  margin: 0;
+  font-size: 112px;
+  line-height: 1;
+  letter-spacing: 2px;
+  color: transparent;
+  -webkit-text-stroke: 1.5px var(--kb-glass-ready);
+  text-shadow: 0 0 34px color-mix(in srgb, var(--kb-glass-ready) 35%, transparent);
+}
+
+/* ---- the anatomy: one big orb, its leader lines and the terms they reach ---- */
+
+.kb-orbs-board-anatomy {
+  left: 64px;
+  top: 210px;
+  width: 590px;
+  height: 340px;
+}
+
+.kb-orbs-board-hero {
+  --kb-orb-size: 240px;
+  position: absolute;
+  left: 0;
+  top: 20px;
+}
+
+.kb-orbs-board-hero .kb-orb {
+  box-shadow: 0 0 50px color-mix(in srgb, var(--kb-glass-ready) 55%, transparent), inset 0 0 0 2px color-mix(in srgb, var(--kb-glass-text-hi) 25%, transparent);
+}
+
+.kb-orbs-board-leaders {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.kb-orbs-board-leaders polyline {
+  fill: none;
+  stroke: var(--kb-glass-text);
+  stroke-width: 1;
+}
+
+.kb-orbs-board-leaders circle {
+  fill: var(--kb-glass-text);
+}
+
+.kb-orbs-board-terms {
+  position: absolute;
+  left: 290px;
+  top: 20px;
+  width: 300px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.kb-orbs-board-terms dt {
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.kb-orbs-board-terms dt[data-kb-tone='ghost'] {
+  color: var(--kb-glass-ready-text);
+}
+
+.kb-orbs-board-terms dt[data-kb-tone='solid'] {
+  color: var(--kb-glass-ready);
+}
+
+.kb-orbs-board-terms dd {
+  margin: 0;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- the four states ---- */
+
+.kb-orbs-board-states {
+  left: 660px;
+  top: 48px;
+  width: 716px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.kb-orbs-board-state {
+  --kb-orb-size: 42px;
+  --kb-orb-gap: 8px;
+  --kb-state-edge: color-mix(in srgb, var(--kb-glass-pale) 35%, transparent);
+  --kb-state-ink: var(--kb-glass-text);
+  --kb-state-figure: var(--kb-glass-text-hi);
+  padding: 18px 22px;
+  background: var(--kb-glass-panel-soft);
+  border: 1px solid var(--kb-state-edge);
+  clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%);
+}
+
+.kb-orbs-board-state[data-kb-tone='ghost'] {
+  --kb-state-edge: color-mix(in srgb, var(--kb-glass-estimate) 45%, transparent);
+  --kb-state-ink: var(--kb-glass-estimate);
+  --kb-state-figure: var(--kb-glass-estimate);
+}
+
+.kb-orbs-board-state[data-kb-tone='drained'] {
+  --kb-state-edge: color-mix(in srgb, var(--kb-glass-text-hi) 30%, transparent);
+}
+
+.kb-orbs-board-state[data-kb-tone='over'] {
+  --kb-state-edge: color-mix(in srgb, var(--kb-glass-orb-6-color) 50%, transparent);
+  --kb-state-ink: var(--kb-glass-over);
+  --kb-state-figure: var(--kb-glass-over);
+}
+
+.kb-orbs-board-state h2 {
+  margin: 0 0 14px;
+  font-size: var(--kb-glass-size-display-s);
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--kb-state-ink);
+}
+
+/* The row spans its panel, as the board's does; the orbs keep their size and gap at its start. */
+.kb-orbs-board-state .kb-orbs {
+  display: flex;
+}
+
+.kb-orbs-board-state .kb-orbs-row {
+  flex: 1;
+}
+
+.kb-orbs-board-state p {
+  margin: 14px 0 0;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-orbs-board-state b {
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 400;
+  line-height: 1;
+  color: var(--kb-state-figure);
+}
+
+/* ---- the settlement cascade ---- */
+
+.kb-orbs-board-cascade {
+  left: 64px;
+  right: 64px;
+  top: 620px;
+  height: 240px;
+  background: var(--kb-glass-panel);
+  border-top: 1px solid var(--kb-glass-pale);
+  box-shadow: 0 -1px 18px color-mix(in srgb, var(--kb-glass-neon) 45%, transparent);
+}
+
+.kb-orbs-board-cascade-head {
+  position: absolute;
+  left: 24px;
+  top: 18px;
+  display: flex;
+  gap: 18px;
+  align-items: baseline;
+}
+
+.kb-orbs-board-cascade-head h2 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+}
+
+.kb-orbs-board-cascade-head span {
+  color: var(--kb-glass-text-2);
+}
+
+.kb-orbs-board-cascade ol {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 74px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.kb-orbs-board-cascade li {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kb-orbs-board-frame {
+  --kb-orb-size: 52px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.kb-orbs-board-step {
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.kb-orbs-board-step[data-kb-tone='ghost'] {
+  color: var(--kb-glass-estimate);
+}
+
+.kb-orbs-board-cascade li.kb-orbs-board-settled {
+  gap: 6px;
+}
+
+.kb-orbs-board-total {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.kb-orbs-board-total-figure {
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-l);
+  line-height: 1;
+  color: var(--kb-glass-ready);
+  text-shadow: 0 0 24px color-mix(in srgb, var(--kb-glass-ready) 60%, transparent);
+}
+
+.kb-orbs-board-total-gain {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--kb-glass-orb-3-color);
+}
+
+.kb-orbs-board-settled a {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  min-height: 52px;
+}

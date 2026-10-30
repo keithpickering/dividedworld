@@ -11,6 +11,9 @@
  * the board draws #42 alone under the title, and below #46 the build holds the plays' lines the
  * fixture writes there until cards Task 3 (section 3, the sixth departure); neither is under the
  * sheet and the HUD, which sit at the bottom of the window.
+ *
+ * Waiting on the owner with the Main board's 2003 type (e2e/boards/01-main.ts): the board sets the
+ * Boards button in its 12px body size, and the built board sets its buttons at 11px.
  */
 import type { BoardManifest } from '../board-match.ts';
 
