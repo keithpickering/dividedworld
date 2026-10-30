@@ -41,7 +41,7 @@ export const INK_SAMPLE = 'Hg';
  * and axe hold, not the glass's.
  */
 const BOARD = '.kb-preview-post';
-const SKIP = `.kb-smoke, script, style, noscript, template, option, [inert], ${BOARD}`;
+const SKIP = `.kb-smoke, script, style, noscript, template, option, ${BOARD}`;
 
 /** A line as gathered, before its pixels are read: the judgment's fact less `brightest` and `smoke`. */
 export interface Gathered extends Omit<TextFact, 'brightest' | 'smoke'> {
@@ -53,7 +53,9 @@ export interface Gathered extends Omit<TextFact, 'brightest' | 'smoke'> {
 
 /**
  * A node of emoji alone is a picture, drawn in its own colors at the size its button gives it (the
- * React picker's kinds), not words: the design's rules for text exempt decoration (section 4.6).
+ * React picker's kinds), not words: the design's rules for text on smoke exempt decoration
+ * (docs/plans/2026-10-29-two-worlds-design.md, section 4, item 6). Each such picture is named in
+ * words for a screen reader by an aria-label on its control (the picker's kind buttons).
  */
 const PICTURE = /^[\s\p{Extended_Pictographic}\p{Emoji_Modifier}\u200d\ufe0f]+$/u;
 

@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
 import { expect, test, type Page } from '@playwright/test';
-import { judge, paletteOf, setAside, type Awaiting, type CeilingsFile, type GlassColors, type TextFact } from './glass-text.ts';
+import { judge, paletteOf, type CeilingsFile, type GlassColors, type TextFact } from './glass-text.ts';
 import type * as Gatherer from './glass-text-page.ts';
+import type { Fake } from '../engine/ui/data/fake.ts';
+import type { Demo } from '../web/src/demo.ts';
+
+type E2eWindow = typeof globalThis & { readonly __kbFake: Fake; readonly __kbDemo: Demo };
 
 /**
  * The rendered glass measurement (the web plan's glass amendment to Task 12; the glass build's
@@ -92,7 +96,8 @@ interface Screen {
 /**
  * Every glass page: the routes web/src/App.tsx's GLASS map draws on the glass, each read in full
  * (Invites is Settings › Account, where /invites now opens). The HUD is glass on every board page:
- * it is read on the Main board's moment, where it holds the most.
+ * it is read on the Main board's moment, where it holds the most, signed out, and with a wallet
+ * past its cap, the longest its figures get.
  */
 const PAGES: readonly Screen[] = [
   { name: 'My characters', path: '/characters' },
@@ -104,6 +109,23 @@ const PAGES: readonly Screen[] = [
   { name: 'Sign in', path: '/sign-in', signedOut: true },
   { name: 'Register', path: '/register?invite=ab12cd34', signedOut: true },
   { name: 'The HUD, on the Main board\'s moment', path: '/?fixture=boards&moment=01-main' },
+  { name: 'The HUD, signed out', path: '/b/general', signedOut: true },
+  {
+    name: 'The HUD, with a wallet past its cap',
+    path: '/b/general',
+    then: async (page) => {
+      /* A full wallet puts the demo's estimate wholly past the cap; the HUD reads the wallet when the account changes, out and back in. */
+      await page.waitForFunction(() => '__kbFake' in globalThis);
+      await page.evaluate(() => {
+        const w = globalThis as E2eWindow;
+        w.__kbFake.seed.wallet(w.__kbDemo.me, 600);
+        w.__kbFake.signInAs(null);
+      });
+      await expect(page.locator('.kb-hud-orbs')).toHaveCount(0);
+      await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbDemo.me); });
+      await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d past the cap$/u);
+    },
+  },
 ];
 
 /** A new character waits to debut; its two debut dialogs open from its panel. */
@@ -147,14 +169,6 @@ const OVERLAYS: readonly Screen[] = [
  */
 const STORIES: readonly Screen[] = [{ name: 'The settlement\'s surface, in its stand-in story', path: '/?fixture=boards&story=boards-glass-surfaces--settlement' }];
 
-/**
- * What waits on the owner: faults a screen shows under a rule asked about as one that fights the
- * product (CLAUDE.md), by screen, each set aside until the answer is written into the rule. An
- * entry no fault matches any longer fails as stale. None waits now: #53 (body text on the Turn
- * board's smoke with no calm) was answered and written into the rule (glass-text.ts).
- */
-const AWAITING: Readonly<Record<string, readonly Awaiting[]>> = {};
-
 /** The demo world starts signed in, and starts over on a load: sign out in the app. */
 async function signOut(page: Page) {
   await page.goto('/settings?section=account');
@@ -191,8 +205,7 @@ for (const [label, viewport] of SIZES) {
     for (const s of [...PAGES, ...OVERLAYS, ...STORIES]) {
       test(`${s.name}: every line of glass text is legible on its smoke`, async ({ page }) => {
         await open(page, s);
-        const { left, stale } = setAside(await measure(page), AWAITING[s.name] ?? []);
-        expect([...left, ...stale]).toEqual([]);
+        expect(await measure(page)).toEqual([]);
       });
     }
   });
@@ -232,6 +245,15 @@ test.describe('under high contrast', () => {
       }
     });
   }
+
+  test('the poison: a line in a color the high key does not name is named', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await chooseHighContrast(page);
+    await open(page, PAGES.find((p) => p.path === '/rankings')!);
+    /* The standard key's --kb-glass-text-2, which the high key lifts to #f1ecff. */
+    await plant(page, '.kb-rankings-lead { color: #e4def7 !important; }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): its color rgb\(228, 222, 247\) is not one of the glass's text colors in the high key$/u));
+  });
 
   test('the poison: one line left on the smoke is named', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
@@ -282,6 +304,14 @@ test.describe('the poisons, planted in a real page', () => {
     await open(page, rankings);
     await plant(page, '.kb-glass-menu-tab { font-size: 19px !important; }');
     expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Rankings" in .*\(surface rankings\): inks 17\.\dpx at 19px of Barlow Condensed, under the floor of 18px of ink$/u));
+  });
+
+  test('with no overlay open, text a page marks inert is still read', async ({ page }) => {
+    /* Only an open overlay's page is passed over (the gatherer reads the overlay alone); a page's own inert text is the player's to read, and is held like the rest. */
+    await open(page, rankings);
+    await page.locator('.kb-rankings-lead').evaluate((el) => el.setAttribute('inert', ''));
+    await plant(page, '.kb-rankings-lead { color: rgba(228, 222, 247, 0.8) !important; }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): its color rgba\(228, 222, 247, 0\.8\) is translucent/u));
   });
 
   test('a translucent text color', async ({ page }) => {

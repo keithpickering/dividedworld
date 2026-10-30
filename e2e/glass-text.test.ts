@@ -17,7 +17,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import {
-  judge, paletteOf, pixelStats, setAside, within, type Backing, type CeilingsFile, type GlassColors, type TextFact,
+  judge, paletteOf, pixelStats, within, type Backing, type CeilingsFile, type GlassColors, type TextFact,
 } from './glass-text.ts';
 
 const glass = JSON.parse(readFileSync(new URL('../instances/divided-world/ui/glass.json', import.meta.url), 'utf8')) as GlassColors;
@@ -125,6 +125,12 @@ describe('the web plan\'s five poisons', () => {
     expect(judged(solid, 'rankings', { palette: high, high: true })).toEqual([]);
     const found = judged({ ...solid, smoke: 37 }, 'rankings', { palette: high, high: true });
     expect(found).toEqual(['"Every character this season" in p.kb-rankings-lead (surface rankings): under high contrast the smoke shows through under it (it changes a channel by 37 levels), not solid ground']);
+  });
+
+  test('under high contrast, a line in a color the high key does not name', () => {
+    /* #e4def7 is the standard key's --kb-glass-text-2; the high key lifts it to #f1ecff. */
+    const found = judged({ ...body, color: [228, 222, 247, 1], smoke: 0 }, 'rankings', { palette: high, high: true });
+    expect(found).toEqual(['"Every character this season" in p.kb-rankings-lead (surface rankings): its color rgb(228, 222, 247) is not one of the glass\'s text colors in the high key']);
   });
 });
 
@@ -240,18 +246,5 @@ describe('the geometry and the pixels', () => {
     expect(pixelStats(bare, w, h, { x: 0, y: 1, width: 3, height: 2 }, bare).smoke).toBe(0);
     /* With no smokeless shot there is nothing to compare: no smoke is read. */
     expect(pixelStats(data, w, h, { x: 0, y: 1, width: 3, height: 2 }).smoke).toBe(0);
-  });
-});
-
-describe('what waits on the owner', () => {
-  const waits = [{ fault: /\(surface turn\): stands in no calm/, question: 'Q' }];
-
-  test('a fault that waits is set aside, and every other one is left to fail', () => {
-    const found = ['"Cancel" in button (surface turn): stands in no calm and on no panel', '"Cancel" in button (surface turn): inks 17px'];
-    expect(setAside(found, waits)).toEqual({ left: ['"Cancel" in button (surface turn): inks 17px'], stale: [] });
-  });
-
-  test('an entry nothing matches any longer is stale, and says so', () => {
-    expect(setAside([], waits).stale).toEqual(['nothing waits on "Q" here any more (/\\(surface turn\\): stands in no calm/); take its entry out']);
   });
 });

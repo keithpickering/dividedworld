@@ -481,6 +481,16 @@
 }
 
 /*
+ * Signed out, or with no character yet, the plate holds only this link and no calm; the HUD's
+ * smoke is too bright for its words to stand on bare (e2e/glass-text.spec.ts), so its panel is the
+ * strong one, at least as solid as the calm.
+ */
+.kb-hud-sign-in::after,
+.kb-hud-make::after {
+  background: var(--kb-glass-panel-strong);
+}
+
+/*
  * The hand: the `hand` smoke, a sheet of its own drawn above the HUD (the Phone board's: 364px
  * under a ruled seam, its close a 48px icon at the top right). Its heading and its cards are the
  * cards part's (the glass build plan, Part 3), which fills the sheet the board draws.

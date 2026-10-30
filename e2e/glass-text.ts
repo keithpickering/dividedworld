@@ -34,8 +34,9 @@
  *   ceiling over the smoke: the guard holds it to 4.5:1 on its fill.
  * - **The brightest pixel.** With all text made transparent, the brightest pixel under the line's
  *   box is under its color's ceiling for the surface.
- * - **High contrast.** Under the `high` key every line stands on solid ground: with the text made
- *   transparent, taking the smoke away changes no pixel under it by more than a level.
+ * - **High contrast.** Under the `high` key every line is in one of that key's text colors and
+ *   stands on solid ground: with the text made transparent, taking the smoke away changes no pixel
+ *   under it by more than a level.
  *
  * "A panel at least as solid as the calm" is how this reads the plan's "an opaque panel": the guard
  * holds body text to 4.5:1 on the calmed worst, the smoke thinned by the calm's opacity, so a panel
@@ -233,14 +234,16 @@ export function judge(fact: TextFact, ctx: JudgeContext): string[] {
     out.push(`${at}: inks ${round1(fact.ink)}px at ${round1(fact.size)}px of ${fact.family}, under the floor of ${INK_FLOOR}px of ink`);
   }
   if (fact.color[3] < 1) out.push(`${at}: its color ${colorText(fact.color)} is translucent; glass type is opaque`);
+  const roles = ctx.palette.roles.get(keyOf(fact.color)) ?? [];
+  if (roles.length === 0) out.push(`${at}: its color ${colorText([fact.color[0], fact.color[1], fact.color[2], 1])} is not one of the glass's text colors in the ${ctx.palette.key} key`);
+  /* Under high contrast the ground is solid, so the smoke's ceilings do not apply; the key's colors, which the guard holds at 7:1 on that ground, do. */
   if (ctx.high) {
     if (fact.smoke > 1) out.push(`${at}: under high contrast the smoke shows through under it (it changes a channel by ${fact.smoke} levels), not solid ground`);
     return out;
   }
+  if (roles.length === 0) return out;
   const s = ctx.ceilings;
   if (!s) return [...out, `${at}: surface ${fact.surface} has no ceilings in e2e/glass-ceilings.json`];
-  const roles = ctx.palette.roles.get(keyOf(fact.color)) ?? [];
-  if (roles.length === 0) return [...out, `${at}: its color ${colorText([fact.color[0], fact.color[1], fact.color[2], 1])} is not one of the glass's text colors in the ${ctx.palette.key} key`];
   /* A color two roles share passes as either; the first role's faults are the ones told. */
   const readings = roles.map((role) => reading(fact, role, s, at, ctx.phone));
   const clean = readings.find((r) => r.length === 0);
@@ -310,20 +313,4 @@ function reading(fact: TextFact, role: ColorRole, s: SurfaceCeilings, at: string
     faults.push(`${at}: its brightest pixel, luminance ${fact.brightest.toFixed(4)}, is not under the ceiling ${ceiling} for ${as} ${where}`);
   }
   return faults;
-}
-
-/** Faults a screen shows that wait on a question to the owner: which, by a pattern, and the question. */
-export interface Awaiting { readonly fault: RegExp; readonly question: string }
-
-/**
- * A screen's faults with those that wait on the owner set aside (CLAUDE.md: "A rule that fights
- * the product is asked about, not obeyed into a worse product"): `left` is every other fault,
- * which fails as before, and `stale` names each waiting entry no fault matches any longer, which
- * fails too, so an entry cannot outlive what it waits on.
- */
-export function setAside(found: readonly string[], waits: readonly Awaiting[]): { left: string[]; stale: string[] } {
-  return {
-    left: found.filter((f) => !waits.some((w) => w.fault.test(f))),
-    stale: waits.filter((w) => !found.some((f) => w.fault.test(f))).map((w) => `nothing waits on "${w.question}" here any more (${w.fault}); take its entry out`),
-  };
 }
