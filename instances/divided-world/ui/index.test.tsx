@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
+import { glassVars } from '../../../engine/ui/glass/apply.ts';
+import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
 import { instance } from '../index.ts';
 import { instanceUi } from './index.ts';
 
@@ -40,6 +42,23 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       expect(resolved, f.file).not.toBe(f.file);
       expect(resolved, f.file).toMatch(/\.woff2(\?.*)?$/);
     });
+  });
+  test('no font file sits in ui/fonts/ that glass.json does not name', () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const named = new Set((JSON.parse(fs.readFileSync(path.join(dir, 'glass.json'), 'utf8')).fonts as { file: string }[]).map((f) => f.file));
+    const shipped = fs.readdirSync(path.join(dir, 'fonts')).filter((f) => f.endsWith('.woff2')).map((f) => `fonts/${f}`);
+    expect(shipped.filter((f) => !named.has(f)), 'shipped but unnamed').toEqual([]);
+  });
+  test('the names tokens.css declares are the names the glass writes: two lists that must agree are one list', () => {
+    const css = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../engine/ui/glass/tokens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const declared = [...css.matchAll(/(--kb-glass-[\w-]+)\s*:/g)].map((m) => m[1]!).sort();
+    for (const key of ['standard', 'high'] as const) {
+      const written = Object.keys(glassVars(instanceUi.glass, key)).sort();
+      expect(written, `${key} key writes what tokens.css declares`).toEqual(declared);
+    }
+  });
+  test('the surfaces the glass names are the surfaces the engine lists', () => {
+    expect(Object.keys(instanceUi.glass.smoke.surfaces).sort()).toEqual([...SURFACES].sort());
   });
   test('the fonts ship with their license', () => {
     const dir = path.dirname(fileURLToPath(import.meta.url));

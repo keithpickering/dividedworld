@@ -3,7 +3,7 @@
  * section 6): none drawn under `off`; a third of each layer's opacity under `low`; still under
  * reduced motion; and the ground opaque under it before it draws and when it never does. jsdom
  * paints nothing, so these read the elements and their attributes: what the page looks like is
- * tools/check-glass-contrast.mjs's model and e2e/glass-text.spec.ts's measurement.
+ * tools/check-glass-contrast.mjs's model and e2e/glass-text.spec.ts's measurement (Part 2, not yet written).
  */
 import { render } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -83,11 +83,28 @@ describe('Smoke', () => {
     expect(strip!.style.getPropertyValue('--kb-smoke-travel')).toBe('120px');
   });
 
-  it('holds still under reduced motion, with the smoke still drawn', () => {
+  it('draws the same strip under reduced motion, so the still frame is the same crop; the stylesheet stops it', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const full = render(inWorld(<Smoke surface="hud" />)).container;
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
-    const { container } = render(inWorld(<Smoke surface="hud" />));
-    expect(container.querySelector('[data-kb-drift]')).toBeNull();
-    expect(opacities(container)).toEqual([1, 0.55]);
+    const still = render(inWorld(<Smoke surface="hud" />)).container;
+    const strip = still.querySelector<HTMLElement>('[data-kb-drift]');
+    expect(strip).not.toBeNull();
+    expect(strip!.style.width).toBe('1560px');
+    expect(opacities(still)).toEqual([1, 0.55]);
+    /* Reduced motion is decided in one place, base.css: the render does not branch on it. */
+    expect(still.querySelector('[data-kb-drift]')!.outerHTML.length).toBe(full.querySelector('[data-kb-drift]')!.outerHTML.length);
+  });
+
+  it('gives two Smokes on one page filter ids that do not meet', () => {
+    const { container } = render(inWorld(<><Smoke surface="hud" /><Smoke surface="hud" /></>));
+    const ids = [...container.querySelectorAll('filter')].map((f) => f.id);
+    expect(ids).toHaveLength(6);
+    expect(new Set(ids).size).toBe(6);
+    for (const rect of container.querySelectorAll('rect')) {
+      const ref = rect.getAttribute('filter')!.match(/url\(#(.+)\)/)![1]!;
+      expect(ids, 'every rect points at a filter that exists').toContain(ref);
+    }
   });
 
   it('does not drift a recipe that has no drift', () => {

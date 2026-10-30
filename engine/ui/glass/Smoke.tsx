@@ -8,15 +8,14 @@
  *
  * Under the `low` preference each layer is drawn at a third of its opacity; under `off` no smoke
  * element is drawn and the ground remains. A recipe with a `drift` is a strip wider than its
- * frame that slides back and forth (base.css holds the keyframes), still under reduced motion
- * with the smoke drawn. A recipe's `narrow` layers are drawn too, and base.css shows one set or
- * the other at 600px. The filters work in sRGB: the boards were drawn there, and SVG's default
+ * frame that slides back and forth (base.css holds the keyframes and stops them under reduced
+ * motion, the device's or the player's override, so the strip and its crop are the same either
+ * way). A recipe's `narrow` layers are drawn too, and base.css shows one set or the other at 600px. The filters work in sRGB: the boards were drawn there, and SVG's default
  * linearRGB brightens the noise, which tools/check-glass-contrast.mjs's numbers do not allow for.
  *
  * It says nothing to a screen reader. Where it is not drawn the page loses decoration only.
  */
 import { useId, type CSSProperties } from 'react';
-import { motionReduced } from '../appearance.ts';
 import { useKayfa } from '../context.tsx';
 import type { GlassSurface, SmokeLayer } from '../types.ts';
 
@@ -69,7 +68,7 @@ export function Smoke({ surface, level = 'full' }: SmokeProps) {
   const { recipes, surfaces } = ui.glass.smoke;
   const recipe = recipes[surfaces[surface]];
   const scale = level === 'low' ? LOW : 1;
-  const drift = recipe && level !== 'off' && recipe.drift && !motionReduced() ? recipe.drift : null;
+  const drift = recipe && level !== 'off' && recipe.drift ? recipe.drift : null;
   const strip: CSSProperties | undefined = drift
     ? ({ width: `${drift.width}px`, '--kb-smoke-seconds': `${drift.seconds}s`, '--kb-smoke-travel': `${drift.travel}px` } as CSSProperties)
     : undefined;

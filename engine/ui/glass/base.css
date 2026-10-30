@@ -56,6 +56,7 @@
 }
 
 .kb-smoke-strip[data-kb-drift] {
+  will-change: transform;
   animation: kb-smoke-drift var(--kb-smoke-seconds) ease-in-out infinite alternate;
 }
 
@@ -80,32 +81,83 @@
 
 /* ---- the shapes ---- */
 
+:root {
+  /* Skew: buttons, tabs and plates; and the steeper one for tags. */
+  --kb-glass-skew: -10deg;
+  --kb-glass-skew-tag: -12deg;
+  /* The five chamfer steps. A component picks one with --kb-cut: style={{ '--kb-cut': 'var(--kb-glass-chamfer-4)' }}. */
+  --kb-glass-chamfer-1: 16px;
+  --kb-glass-chamfer-2: 20px;
+  --kb-glass-chamfer-3: 24px;
+  --kb-glass-chamfer-4: 34px;
+  --kb-glass-chamfer-5: 40px;
+}
+
 /*
- * The chamfered panel: two corners cut at --kb-cut, the border drawn on the cut. The element
- * is the border's color, cut; its ::after is the panel, cut by the same line inset by the border.
+ * Skewed shapes. Text inside is set upright by the opposite skew on an inner element
+ * (`<span class="kb-glass-upright">`), as the boards do with the <b> in a tab.
  */
-.kb-glass-chamfer {
-  --kb-cut: 14px;
+.kb-glass-skew { transform: skewX(var(--kb-glass-skew)); }
+.kb-glass-skew-tag { transform: skewX(var(--kb-glass-skew-tag)); }
+.kb-glass-skew > .kb-glass-upright { display: inline-block; transform: skewX(calc(var(--kb-glass-skew) * -1)); }
+.kb-glass-skew-tag > .kb-glass-upright { display: inline-block; transform: skewX(calc(var(--kb-glass-skew-tag) * -1)); }
+
+/*
+ * Chamfers, cut with clip-path, in three placements: panel (top right), dialog (top right and
+ * bottom left), button (bottom right). The element is the border's color, cut; its ::after is the
+ * panel, one border in and cut by the same line, so the border is drawn on the cut and not under it.
+ * The inner cut is the outer one less 0.5858 of the border: a 45 degree edge moved in by b along
+ * its normal moves its ends along the sides by b (2 - sqrt 2) less than the cut.
+ */
+.kb-glass-cut-panel,
+.kb-glass-cut-dialog,
+.kb-glass-cut-button {
+  --kb-cut: var(--kb-glass-chamfer-3);
   --kb-border: 1.5px;
+  --kb-cut-in: calc(var(--kb-cut) - var(--kb-border) * 0.5858);
   position: relative;
   isolation: isolate;
   background: var(--kb-glass-neon);
-  clip-path: polygon(var(--kb-cut) 0, 100% 0, 100% calc(100% - var(--kb-cut)), calc(100% - var(--kb-cut)) 100%, 0 100%, 0 var(--kb-cut));
 }
 
-.kb-glass-chamfer::after {
+.kb-glass-cut-panel::after,
+.kb-glass-cut-dialog::after,
+.kb-glass-cut-button::after {
   content: '';
   position: absolute;
   z-index: -1;
   inset: var(--kb-border);
   background: var(--kb-glass-panel);
-  clip-path: polygon(calc(var(--kb-cut) - var(--kb-border) * 0.4142) 0, 100% 0, 100% calc(100% - var(--kb-cut) + var(--kb-border) * 0.4142), calc(100% - var(--kb-cut) + var(--kb-border) * 0.4142) 100%, 0 100%, 0 calc(var(--kb-cut) - var(--kb-border) * 0.4142));
 }
 
-/* The HUD's tab: a parallelogram, its slant the same at both ends. */
-.kb-glass-tab {
-  --kb-slant: 14px;
-  clip-path: polygon(var(--kb-slant) 0, 100% 0, calc(100% - var(--kb-slant)) 100%, 0 100%);
+.kb-glass-cut-panel { clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, 0 100%); }
+.kb-glass-cut-panel::after { clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, 0 100%); }
+
+.kb-glass-cut-dialog { clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, var(--kb-cut) 100%, 0 calc(100% - var(--kb-cut))); }
+.kb-glass-cut-dialog::after { clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in))); }
+
+.kb-glass-cut-button { clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--kb-cut)), calc(100% - var(--kb-cut)) 100%, 0 100%); }
+.kb-glass-cut-button::after { clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--kb-cut-in)), calc(100% - var(--kb-cut-in)) 100%, 0 100%); }
+
+/*
+ * The HUD's top edge is a tab: 24px tall, 28px slopes, its four points (--tab-a to --tab-d, set
+ * from the aura block's own position) following the orbs at every width. The seam is an SVG
+ * polyline along the same points at y + 6, drawn twice: the glow under a blur, then the core.
+ */
+.kb-glass-hud-tab { clip-path: polygon(0 24px, var(--tab-a) 24px, var(--tab-b) 0, var(--tab-c) 0, var(--tab-d) 24px, 100% 24px, 100% 100%, 0 100%); }
+
+.kb-glass-seam-glow {
+  fill: none;
+  stroke: var(--kb-glass-neon);
+  stroke-width: 6;
+  opacity: 0.7;
+  filter: blur(4px);
+}
+
+.kb-glass-seam-core {
+  fill: none;
+  stroke: var(--kb-glass-pale);
+  stroke-width: 1.5;
 }
 
 /* ---- focus ---- */

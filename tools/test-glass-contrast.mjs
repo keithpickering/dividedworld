@@ -14,6 +14,11 @@
  * The first block pins the math to the numbers the plans give (the worst pixel of each recipe, and
  * the poisons' ratios), so a model that drifts from the audit's fails before any poison does.
  */
+import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SURFACES, ceilingsFile, ceilingsStale, contrastRatio, glassCeilings, glassFaults, luminance, recipeWorsts, treeGlass } from './check-glass-contrast.mjs';
 
 let pass = 0;
@@ -163,7 +168,8 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
 {
   const g = fresh();
   delete g.smoke.surfaces.hud;
-  check('a surface the engine lists and the theme leaves out fires', named(glassFaults(g), 'surface hud').length > 0);
+  const f = named(glassFaults(g), 'surface hud');
+  check('a surface the engine lists and the theme leaves out fires, as not named', f.length === 1 && f[0].why.includes('is not named'), text(glassFaults(g)));
   const e = fresh();
   e.smoke.surfaces.lobby = 'page';
   check('a surface the engine does not list fires', named(glassFaults(e), 'surface lobby').length > 0);
@@ -186,6 +192,170 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
   const g = fresh();
   g.keys.standard['--kb-glass-ink-ready'].on = ['--kb-glass-nonesuch'];
   check('an ink set on a token that is not in the key fires', named(glassFaults(g), '--kb-glass-ink-ready', '--kb-glass-nonesuch').length > 0);
+}
+
+/* ---- every fault class the guard has, planted once ---- */
+/** The faults of a poisoned copy of the real glass whose line holds all the words, or []. */
+const poisoned = (poison, ...words) => {
+  const g = fresh();
+  poison(g);
+  return named(glassFaults(g), ...words);
+};
+/** The smallest ratio a gray makes against every recipe's calmed worst pixel (and the narrow ones'). */
+const grayAt = (v) => [v, v, v];
+const calmedBackgrounds = () => Object.values(recipeWorsts(real)).flatMap((w) => [w.calmed.rgb, ...(w.narrow ? [w.narrow.calmed.rgb] : [])]);
+const minRatio = (rgb, bgs) => Math.min(...bgs.map((bg) => contrastRatio(rgb, bg)));
+const hexOf = (v) => `#${v.toString(16).padStart(2, '0').repeat(3)}`;
+/** The gray whose smallest ratio against `bgs` is nearest `target`. */
+const grayFor = (bgs, target) => {
+  let best = 0;
+  for (let v = 0; v < 256; v++) if (Math.abs(minRatio(grayAt(v), bgs) - target) < Math.abs(minRatio(grayAt(best), bgs) - target)) best = v;
+  return best;
+};
+
+check('an ink that names no fills fires', poisoned((g) => { g.keys.standard['--kb-glass-ink-ready'].on = []; }, '--kb-glass-ink-ready', 'names the fills').length === 1);
+check('an ink that names no fills fires in the high key too', poisoned((g) => { g.keys.high['--kb-glass-ink-ready'].on = []; }, 'high key', 'names the fills').length === 1);
+check('a translucent high-key ground fires', poisoned((g) => { g.keys.high['--kb-glass-ground'].value = 'rgba(0,0,0,0.9)'; }, '--kb-glass-ground', 'high').length > 0);
+check('a high key whose tags differ from the standard key\'s fires', poisoned((g) => { g.keys.high['--kb-glass-text'].tags = ['body']; }, '--kb-glass-text', 'high key tags').length === 1);
+check('a calm with no opacity fires', poisoned((g) => { g.calm.opacity = 0; }, 'calm', 'opacity').length === 1);
+check('a calm opacity above 1 fires', poisoned((g) => { g.calm.opacity = 1.2; }, 'calm', 'opacity').length === 1);
+check('a negative feather fires', poisoned((g) => { g.calm.feather = -1; }, 'calm', 'feather').length === 1);
+check('a glass with no calm fires', poisoned((g) => { delete g.calm; }, 'calm', 'opacity').length === 1);
+check('a recipe with no layers fires', poisoned((g) => { g.smoke.recipes.react.layers = []; }, 'recipe react', 'no layers').length === 1);
+check('narrow layers that are empty fire', poisoned((g) => { g.smoke.recipes.hud.narrow = []; }, 'recipe hud', 'no narrow layers').length === 1);
+check('a layer with no alpha row fires', poisoned((g) => { delete g.smoke.recipes.react.layers[0].alpha; }, 'recipe react', 'layers 1').length === 1);
+check('a layer with one frequency fires', poisoned((g) => { g.smoke.recipes.react.layers[0].frequency = [0.01]; }, 'recipe react', 'layers 1').length === 1);
+check('a layer with no seed fires', poisoned((g) => { delete g.smoke.recipes.react.layers[0].seed; }, 'recipe react', 'layers 1').length === 1);
+check('a layer with a negative blur fires', poisoned((g) => { g.smoke.recipes.react.layers[0].blur = -1; }, 'recipe react', 'layers 1').length === 1);
+check('a layer with zero octaves fires', poisoned((g) => { g.smoke.recipes.react.layers[0].octaves = 0; }, 'recipe react', 'layers 1').length === 1);
+check('a layer whose opacity is 0 fires', poisoned((g) => { g.smoke.recipes.react.layers[0].opacity = 0; }, 'recipe react', 'layers 1').length === 1);
+check('a narrow layer with a bad shape is named as narrow', poisoned((g) => { delete g.smoke.recipes.hud.narrow[0].seed; }, 'recipe hud', 'narrow layers 1').length === 1);
+check('a three-digit layer color fires: Smoke reads six digits only', poisoned((g) => { g.smoke.recipes.react.layers[0].color = '#80f'; }, 'recipe react', 'layers 1', '#rrggbb').length === 1);
+check('an rgb() layer color fires', poisoned((g) => { g.smoke.recipes.react.layers[0].color = 'rgb(128,64,255)'; }, 'recipe react', 'layers 1', '#rrggbb').length === 1);
+check('an eight-digit layer color fires', poisoned((g) => { g.smoke.recipes.react.layers[0].color = '#8040ff80'; }, 'recipe react', 'layers 1').length === 1);
+check('a font with no family fires', poisoned((g) => { delete g.fonts[0].family; }, 'font fonts/Anton-Regular.woff2', 'needs a family').length === 1);
+check('a font with no file fires', poisoned((g) => { delete g.fonts[0].file; }, 'font (no file)', 'needs a family').length === 1);
+check('a font with no weight fires', poisoned((g) => { delete g.fonts[0].weight; }, 'font fonts/Anton-Regular.woff2', 'needs a family').length === 1);
+check('a font with a style that is neither normal nor italic fires', poisoned((g) => { g.fonts[0].style = 'oblique'; }, 'font fonts/Anton-Regular.woff2', 'needs a family').length === 1);
+check('a font with an ink ratio above 1 fires', poisoned((g) => { g.fonts[0].ink = 1.2; }, 'font fonts/Anton-Regular.woff2', 'ink ratio').length === 1);
+check('a size of 0px fires', poisoned((g) => { g.sizes.body.px = 0; }, 'size body', 'not a size').length === 1);
+check('a token whose value is not a color fires', poisoned((g) => { g.keys.standard['--kb-glass-text'].value = 'white'; }, '--kb-glass-text', 'not a color').length > 0);
+check('a class with no fill fires', poisoned((g) => { delete g.classes.face.fill; }, 'class face', 'needs a fill').length === 1);
+
+/* The per-recipe calm: its own, else the theme's. */
+{
+  const thinner = fresh();
+  thinner.smoke.recipes.page.calm = 0.3;
+  const f = named(glassFaults(thinner), 'recipe page');
+  check('a recipe\'s own thinner calm is the one it is read at', f.length > 0 && f.every((x) => x.why.includes('calmed')), text(f));
+  const thicker = fresh();
+  thicker.smoke.recipes.page.calm = 0.99;
+  check('a recipe\'s own thicker calm lowers its calmed worst below the theme\'s', recipeWorsts(thicker).page.calmed.luminance < recipeWorsts(real).page.calmed.luminance);
+  check('and leaves the other recipes at the theme\'s calm', recipeWorsts(thicker).hud.calmed.luminance === recipeWorsts(real).hud.calmed.luminance);
+}
+
+/* The narrow layers' calmed worst, in the ceilings and in the class check. */
+{
+  const hud = glassCeilings(real).surfaces.hud;
+  const w = recipeWorsts(real).hud.narrow;
+  check('the ceilings carry the narrow layers\' worst and calmed worst', near(hud.narrowWorst, w.full.luminance, 0.0001) && near(hud.narrowCalmedWorst, w.calmed.luminance, 0.0001) && hud.narrowCalmedWorst < hud.narrowWorst, JSON.stringify(hud));
+  check('a surface whose recipe has no narrow layers carries none', glassCeilings(real).surfaces.react.narrowWorst === undefined && glassCeilings(real).surfaces.react.narrowCalmedWorst === undefined);
+  const g = fresh();
+  g.smoke.recipes.hud.calm = 0.001;
+  for (const l of g.smoke.recipes.hud.layers) l.color = '#000000';
+  g.smoke.recipes.hud.narrow[0].color = '#ffffff';
+  g.smoke.recipes.hud.narrow[0].opacity = 1;
+  const f = named(glassFaults(g), 'class ', '(narrow)');
+  check('a class\'s large text on only the narrow layers\' calmed worst fires, naming them', f.length === 4 && f.every((x) => x.why.includes('recipe hud (narrow)')), text(glassFaults(g)).slice(0, 500));
+}
+
+/* The thresholds, each pinned from both sides. */
+{
+  const bgs = calmedBackgrounds();
+  const passing = grayFor(bgs, 3.4);
+  const failing = grayFor(bgs, 2.7);
+  const token = (value) => ({ value, tags: ['waiting'] });
+  const add = (g, v) => { g.keys.standard['--kb-glass-wait'] = token(hexOf(v)); g.keys.high['--kb-glass-wait'] = token('#ffffff'); };
+  const gpass = fresh();
+  add(gpass, passing);
+  check(`a waiting token at ${minRatio(grayAt(passing), bgs).toFixed(2)}:1 passes: waiting asks 3:1, not 4.5`, named(glassFaults(gpass), '--kb-glass-wait').length === 0, text(named(glassFaults(gpass), '--kb-glass-wait')));
+  const gfail = fresh();
+  add(gfail, failing);
+  check(`a waiting token at ${minRatio(grayAt(failing), bgs).toFixed(2)}:1 fires: it is under 3:1`, named(glassFaults(gfail), '--kb-glass-wait', 'waiting', 'needs 3:1').length > 0);
+
+  /* A high-key ink between 4.5 and 7 on its fill fires: the high key asks 7:1 of an ink. */
+  const fill = [0x19, 0xe3, 0xff];
+  let ink = 0;
+  for (let v = 0; v < 256; v++) if (Math.abs(contrastRatio(grayAt(v), fill) - 5.5) < Math.abs(contrastRatio(grayAt(ink), fill) - 5.5)) ink = v;
+  const g = fresh();
+  g.keys.high['--kb-glass-ink-neon'].value = hexOf(ink);
+  const f = named(glassFaults(g), '--kb-glass-ink-neon', 'high key', 'needs 7:1');
+  check(`a high-key ink at ${contrastRatio(grayAt(ink), fill).toFixed(2)}:1 on cyan fires: the high key asks 7:1`, f.length > 0 && contrastRatio(grayAt(ink), fill) >= 4.5, text(glassFaults(g)).slice(0, 300));
+  const s = fresh();
+  s.keys.standard['--kb-glass-ink-neon'].value = hexOf(ink);
+  check('the same ink in the standard key passes: it asks 4.5:1', named(glassFaults(s), '--kb-glass-ink-neon').length === 0);
+}
+
+/* ---- main(): the script itself, run against a scratch tree ---- */
+{
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const repo = path.resolve(here, '..');
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' });
+  /** A scratch repository with the guard, the engine's types, and the given glass (null for none), staged. */
+  const scratch = ({ glass, types = true, ceilings = null }) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glass-contrast-'));
+    git(dir, 'init', '-q');
+    fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
+    fs.copyFileSync(path.join(here, 'check-glass-contrast.mjs'), path.join(dir, 'tools', 'check-glass-contrast.mjs'));
+    fs.symlinkSync(path.join(repo, 'node_modules'), path.join(dir, 'node_modules'));
+    fs.mkdirSync(path.join(dir, 'engine', 'ui'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'engine', 'ui', 'types.ts'), types ? fs.readFileSync(path.join(repo, 'engine', 'ui', 'types.ts'), 'utf8') : 'export type Nothing = never;\n');
+    if (glass) {
+      fs.mkdirSync(path.join(dir, 'instances', 'x', 'ui'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'instances', 'x', 'ui', 'glass.json'), JSON.stringify(glass));
+    }
+    if (ceilings !== null) {
+      fs.mkdirSync(path.join(dir, 'e2e'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'e2e', 'glass-ceilings.json'), ceilings);
+    }
+    git(dir, 'add', '-A', '-f');
+    return dir;
+  };
+  const run = (dir, ...args) => spawnSync('node', [path.join(dir, 'tools', 'check-glass-contrast.mjs'), ...args], { cwd: dir, encoding: 'utf8' });
+  const dirs = [];
+  const make = (o) => { const d = scratch(o); dirs.push(d); return d; };
+
+  const none = run(make({ glass: null }));
+  check('reading no glass.json refuses rather than passing', none.status === 1 && /refusing to report a pass on nothing/.test(none.stderr), none.stderr);
+  const blind = run(make({ glass: real, types: false }));
+  check('reading no engine surfaces refuses too', blind.status === 1 && /refusing to report a pass on nothing/.test(blind.stderr), blind.stderr);
+
+  const missing = run(make({ glass: real }));
+  check('a missing ceilings file exits 1, naming --write', missing.status === 1 && /does not exist/.test(missing.stderr) && /--write/.test(missing.stderr), missing.stderr);
+
+  const dir = make({ glass: real });
+  const wrote = run(dir, '--write');
+  check('--write writes the ceilings file and exits 0', wrote.status === 0 && fs.existsSync(path.join(dir, 'e2e', 'glass-ceilings.json')), wrote.stderr + wrote.stdout);
+  const written = fs.readFileSync(path.join(dir, 'e2e', 'glass-ceilings.json'), 'utf8');
+  check('the scratch tree writes what the real tree\'s guard computes for the same glass', written === ceilingsFile({ x: glassCeilings(real) }));
+  const current = run(dir);
+  check('a current ceilings file passes', current.status === 0 && /is current/.test(current.stdout), current.stderr + current.stdout);
+
+  const moved = fresh();
+  moved.smoke.recipes.hud.layers[0].opacity = 0.9;
+  fs.writeFileSync(path.join(dir, 'instances', 'x', 'ui', 'glass.json'), JSON.stringify(moved));
+  git(dir, 'add', '-A', '-f');
+  const stale = run(dir);
+  check('a glass changed after the ceilings were written exits 1 as stale', stale.status === 1 && /no longer matches the glass/.test(stale.stderr), stale.stderr + stale.stdout);
+
+  const bad = fresh();
+  bad.calm.opacity = 0.3;
+  const faulty = run(make({ glass: bad }));
+  check('a glass that fails its contrast exits 1 and names the instance and the token', faulty.status === 1 && /x: recipe page: --kb-glass-text-2/.test(faulty.stderr), faulty.stderr.slice(0, 400));
+  const nowrite = run(make({ glass: bad }), '--write');
+  check('--write does not write over a glass that fails', nowrite.status === 1, nowrite.stderr.slice(0, 200));
+
+  for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
 }
 
 /* ---- the ceilings Part 2's rendered measurement reads ---- */
