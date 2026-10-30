@@ -3,7 +3,7 @@
  * section 8): Back to the board with its Esc key, then the pages, the current one marked; signed
  * out, Back alone. My log stands in for the standings until Part 4 builds it.
  */
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
@@ -148,11 +148,12 @@ describe('from the Task 1.4 reviews', () => {
     Element.prototype.scrollIntoView = function scrollIntoView(this: Element, opts?: unknown) { seen.push({ el: this, opts }); };
     const { unmount } = renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
     const settings = await within(bar()).findByRole('link', { name: 'Settings' });
-    expect(seen.at(-1)).toEqual({ el: settings, opts: { inline: 'nearest', block: 'nearest', behavior: 'smooth' } });
+    /* The scroll is an effect after the commit that shows the link: waited for, not assumed done (it raced under load). */
+    await waitFor(() => expect(seen.at(-1)).toEqual({ el: settings, opts: { inline: 'nearest', block: 'nearest', behavior: 'smooth' } }));
     unmount();
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     renderInWorld(<MenuBar />, { path: '/characters/new', seed: signedIn });
     const mine = await within(bar()).findByRole('link', { name: 'My characters' });
-    expect(seen.at(-1)).toEqual({ el: mine, opts: { inline: 'nearest', block: 'nearest', behavior: 'auto' } });
+    await waitFor(() => expect(seen.at(-1)).toEqual({ el: mine, opts: { inline: 'nearest', block: 'nearest', behavior: 'auto' } }));
   });
 });

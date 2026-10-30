@@ -145,3 +145,22 @@ test('in forced colors the Turn names still show which is on', async ({ page }) 
   await expect.poll(() => fill(on)).toBe(highlight);
   await expect.poll(() => fill(off)).not.toBe(highlight);
 });
+
+/*
+ * The phone's roster card at 100% text is where the Phone board's layout put it before its parts
+ * moved into the card's flow (PR #49): 280px tall, its Turn line 10px off its foot. The flow keeps
+ * the gaps between the parts at a larger text size; at 100% it must not move the card.
+ */
+test('on a phone at 100% text, a roster card is 280px tall with its Turn line 10px off its foot', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/characters');
+  await expect(page.getByRole('list', { name: /^Roster, /u })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const got = await page.evaluate(() => {
+    const card = document.querySelector('.kb-roster-card')!.getBoundingClientRect();
+    const turn = document.querySelector('.kb-roster-card .kb-roster-turn')!.getBoundingClientRect();
+    return { height: card.height, turnFoot: card.bottom - turn.bottom };
+  });
+  expect(got.height).toBeCloseTo(280, 0);
+  expect(got.turnFoot).toBeCloseTo(10, 0);
+});

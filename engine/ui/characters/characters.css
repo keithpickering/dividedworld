@@ -1173,6 +1173,8 @@
 
 :where(:root[data-kb-layout='phone']) .kb-roster-class {
   margin-top: 10px;
+  /* The phone's card holds its parts in 280px at 100% text: a smaller least gap above the Turn line keeps it there. */
+  margin-bottom: 4px;
   gap: 4px 6px;
 }
 

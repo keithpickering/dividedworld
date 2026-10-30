@@ -184,7 +184,8 @@
   display: flex;
   flex-direction: column;
   min-height: 9.375rem;
-  padding: 0.625rem 16px 0.625rem 118px;
+  /* Its words start 12px past the avatar, which is 22px in and 5.25rem wide: 118px at 100% text. */
+  padding: 0.625rem 16px 0.625rem calc(22px + 5.25rem + 12px);
   transform: skewX(calc(var(--kb-glass-skew) * -1));
 }
 
@@ -202,7 +203,8 @@
 
 .kb-hud-avatar {
   display: block;
-  width: 84px;
+  /* Square at every text size: both sides grow with the plate, in rem. */
+  width: 5.25rem;
   height: 5.25rem;
   box-sizing: border-box;
   overflow: hidden;
@@ -478,11 +480,16 @@
   box-shadow: 0 0 24px color-mix(in srgb, var(--kb-glass-salty) 60%, transparent);
 }
 
+/*
+ * Its ink fill holds the whole of the count's ink, the descender's band included, at every size and
+ * scale: the face's content area is taller than its em, so a line of 1em let the band run past the
+ * fill; at 1.3em it sits inside with room to spare.
+ */
 .kb-hud-hand-count {
-  padding: 2px 8px;
+  padding: 0 8px;
   font-size: 1.375rem;
   font-weight: 800;
-  line-height: 1;
+  line-height: 1.3;
   color: var(--kb-glass-salty-text);
   background: var(--kb-glass-ink-salty);
 }

@@ -236,9 +236,8 @@ const onTheAccount = (s: Screen): Screen => (s.path.includes('fixture=boards') ?
  * on the Phone board's layout, and every line is held to the same rules at every size, its calm
  * growing with it. Chosen as a player chooses it, by keyboard, and kept by the account across the
  * load that opens each screen; signed-out screens are left out, as no account's size applies there.
- * 200% is read at both widths, 125% and 150% at 1920 (both are past the switch to the Phone board's
- * layout there only at 150%, and the phone at 390 is read at 200%), which keeps the spec's time
- * near three minutes.
+ * 200% is read at both widths, 125% and 150% at 1920 and at 1280, where the Main board's layout is
+ * drawn scaled (the phone at 390 is on the Phone board's layout at every size, and is read at 200%).
  */
 async function chooseTextSize(page: Page, size: string) {
   await page.goto('/settings');
@@ -247,11 +246,23 @@ async function chooseTextSize(page: Page, size: string) {
   await expect(page.locator('html')).toHaveAttribute('data-kb-text-size', size);
 }
 
-const TEXT_SIZES: readonly (readonly [string, readonly (typeof SIZES)[number][]])[] = [
-  ['125', [SIZES[0]]],
-  ['150', [SIZES[0]]],
+/* The Main board's layout drawn at the window's scale: 1280 is 1280/1440 of it, between the switch and the board's width. */
+const SCALED = ['1280×1080, the Main board\'s layout scaled', { width: 1280, height: 1080 }] as const;
+
+const TEXT_SIZES: readonly (readonly [string, readonly (readonly [string, { readonly width: number; readonly height: number }])[]])[] = [
+  ['125', [SIZES[0], SCALED]],
+  ['150', [SIZES[0], SCALED]],
   ['200', SIZES],
 ];
+
+test('at 150% text the HUD\'s avatar grows on both sides with its plate, square', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await chooseTextSize(page, '150');
+  await open(page, onTheAccount(PAGES.find((p) => p.path.includes('moment=01-main'))!));
+  const box = await page.locator('.kb-hud-avatar').boundingBox();
+  expect(box!.height).toBeCloseTo(126, 0);
+  expect(box!.width).toBeCloseTo(box!.height, 0);
+});
 
 for (const [size, widths] of TEXT_SIZES) {
   test.describe(`at ${size}% text`, () => {
