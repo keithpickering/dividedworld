@@ -135,7 +135,11 @@ first. Task 1.3's guard checks a class's large text per surface, as the glass pl
 says ("Per screen + 9% lift"; Heel's large text `#ff959f`). Task 1.4's HUD and glass pages keep the Main board's layout
 scaled below 1440px and become the Phone board's at a width worked out from the size tokens, as the glass plan's
 section 8 amendment of this date says ("Board layout, scaled"); it replaces the 1340px switch, and the 1024px story
-becomes two stories either side of that width.
+becomes two stories either side of that width. Two things fall to Part 2 from it. Until a glass page's content is
+restyled, it keeps the board's 12px type in a panel that undoes the scale, since 12px scaled would fall under the
+phone's sizes; the task that restyles a page's content removes that panel and its counter-zoom (`.kb-glass-content-panel`
+in `engine/ui/glass/shell.css`). And Task 2.4's text size setting moves the layout to the Phone board's at more than
+150% text size as well as below the switch width, where the switch is set (`engine/ui/glass/useBoard.ts`).
 
 ## 5. Part 2: the glass pages
 

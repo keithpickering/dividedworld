@@ -461,8 +461,8 @@ board's arrangement and scales in proportion to the window. It becomes the Phone
 the smallest scaled text would fall below the Phone board's sizes: 1440px times the smallest phone size over the
 smallest Main board size, worked out from the instance's size tokens (for Divided World, 1440 × 16 / 20 = 1152px), never
 picked by hand, and a test asserts it. The one width also replaces the menu bar's 900px switch to the phone's menu
-bar, so a glass page and the HUD change layout together. The 1024px story is replaced by two, one just above that width and one just below
-it, and the owner reviews those.
+bar, so a glass page and the HUD change layout together. The 1024px story is replaced by two, one just above that
+width and one just below it, and the owner reviews those.
 
 - **The glass between the boards' widths.** A glass page's content sits in a column at most 1312px wide (the boards'
   1440 less two 64px gutters), centered past 1440px; its gutters are `clamp(16px, 4.44vw, 64px)`; text blocks stay at
