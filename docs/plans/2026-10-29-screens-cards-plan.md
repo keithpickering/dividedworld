@@ -162,6 +162,17 @@ The view is drawn by no board: its story goes to the owner on the PR before its 
 ways-out row below becomes "Certify (holds on every device), fill the bar by scrolling (or BREAK FREE) for this visit,
 or leave the page."
 
+**Amended 2026-10-30, the owner's answer on the view's story** (#74, PR #71). The stories stand as drawn, with one
+change. On the view having no Close and Esc not closing it, the owner: "Yes, this is our rules working. By default the
+build session would want to make the modal easily closeable - instead it's treating it according to the game rules.
+"Esc" is something people may try though, so it's good to give it something to do: just map it to the "Break Free" so
+each Esc press counts the same as if you had the button focused while tapping enter." And of the rest: "No other notes
+on anything else, all looks/sounds good." So the view has no Close; each Esc press fills the bar exactly as one BREAK
+FREE press does, against the same drain, and a held key's repeats count no more than repeated presses would; the line
+the view shows on Esc says that Esc breaks free like the button. The take-over, the release after breaking free and
+after certifying, what the view shows, the keys and touch, the focus and the bar's words stand as #74 draws them. The
+view's tests and board 08's manifest follow from the approved stories.
+
 ### Task 5. Whoops!
 
 - `instances/divided-world/cards/whoops/splat.ts` (pure): the seeded generator (the play's seed to a blob with
