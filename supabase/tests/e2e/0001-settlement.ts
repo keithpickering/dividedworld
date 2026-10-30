@@ -66,7 +66,9 @@ test('a day on the board settles into wallets and standings, once', async () => 
   // The heat is shared on the post it was drawn by, and the Heel reads the share through their own view.
   const shares = JSON.parse(sql(`begin; do $$ begin perform tests.become('${ids['e2e-heel']}'); end $$;
     select coalesce(jsonb_agg(jsonb_build_object('character', character, 'reason', reason, 'act', act, 'quadrant', quadrant, 'amount', amount)), '[]') from my_ledger_shares; rollback;`));
-  assert.deepEqual(shares, [{ character: characters.Pipewrench, reason: 'heel.drewHeat', act: post, quadrant: 'excitedNegative', amount: 20 }], 'the shares add up to the ledger line, on the post');
+  assert.deepEqual(shares, [{ character: characters.Pipewrench, reason: 'heel.drewHeat', act: post, quadrant: 'excitedNegative', amount: 20 }], 'the heat, on the post');
+  // Every ledger line the settlement wrote with shares is what its shares add up to.
+  assert.equal(sql(`select count(*) from ledger l join (select ledger, sum(amount) as total from ledger_shares group by ledger) s on s.ledger = l.id where s.total <> l.amount`), '0', 'each line\'s shares add up to it');
 
   const again = await runSettlement(db, instance, until);
   assert.equal(again.status, 'nothing to settle');

@@ -124,6 +124,11 @@ begin
   -- Each share: an entry of this call by its character and reason, an Act there is, one of the
   -- four quadrants or none, and whole hundredths that are not 0; one per entry, Act and quadrant;
   -- and an entry's shares, where it has any, add up to it (engine/rules/settle.ts's shareEntries).
+  -- One entry per character and reason, as settle() sums them (the ledger's unique index, above):
+  -- the shares are checked against it, and it against them.
+  if exists (select 1 from jsonb_array_elements(entries) e group by (e ->> 'character')::uuid, e ->> 'reason' having count(*) > 1) then
+    raise exception 'two entries name one character and reason' using errcode = '22023';
+  end if;
   if jsonb_typeof(coalesce(shares, '[]')) <> 'array' then raise exception 'shares are a list' using errcode = '22023'; end if;
   if exists (select 1 from jsonb_array_elements(coalesce(shares, '[]')) s
              where jsonb_typeof(s) <> 'object' or not exists (
@@ -147,7 +152,7 @@ begin
     raise exception 'a share''s amount is whole hundredths, never 0' using errcode = '22023';
   end if;
   if exists (select 1 from jsonb_array_elements(coalesce(shares, '[]')) s
-             group by s ->> 'character', s ->> 'reason', s ->> 'act', coalesce(s ->> 'quadrant', '') having count(*) > 1) then
+             group by (s ->> 'character')::uuid, s ->> 'reason', (s ->> 'act')::uuid, coalesce(s ->> 'quadrant', '') having count(*) > 1) then
     raise exception 'two shares name one entry''s Act and quadrant' using errcode = '22023';
   end if;
   if exists (select 1 from (select s ->> 'character' as character, s ->> 'reason' as reason, sum((s ->> 'amount')::numeric) as total

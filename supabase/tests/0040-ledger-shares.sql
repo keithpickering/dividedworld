@@ -111,12 +111,17 @@ begin
     ('a zero', jsonb_build_array(share, share || jsonb_build_object('quadrant', 'calmPositive', 'amount', 0)), 'a share''s amount is whole hundredths, never 0'),
     ('a string', jsonb_build_array(share || jsonb_build_object('amount', '10')), 'a share''s amount is whole hundredths, never 0'),
     ('one post twice', jsonb_build_array(share || jsonb_build_object('amount', 5), share || jsonb_build_object('amount', 5)), 'two shares name one entry''s Act and quadrant'),
+    ('one post twice, in capitals', jsonb_build_array(share || jsonb_build_object('amount', 5), share || jsonb_build_object('act', upper(p::text), 'amount', 5)), 'two shares name one entry''s Act and quadrant'),
+    ('not an object', jsonb_build_array(share, '"a share"'::jsonb), 'a share names no entry of this call'),
     ('short of the entry', jsonb_build_array(share || jsonb_build_object('amount', 9)), 'an entry''s shares add up to it'))
     as v(what, shares, words)
   loop
     said := pg_temp.refusal(format('select apply_settlement(%L, %L, %L, %L, %L, %L)', w1, w2, entries, '{}', '[]', c.shares));
     if said is null or said not like c.words || '%' then raise exception '% should be refused with "%", said %', c.what, c.words, coalesce(said, 'nothing'); end if;
   end loop;
+  -- Two entries for one character and reason are refused by their words, not by the ledger's index.
+  said := pg_temp.refusal(format('select apply_settlement(%L, %L, %L)', w1, w2, entries || entries));
+  if said is null or said not like 'two entries name one character and reason%' then raise exception 'two entries for one reason should be refused by their words, said %', coalesce(said, 'nothing'); end if;
   if exists (select 1 from settlements where starts_at = w1) then raise exception 'a refused window was written'; end if;
 
   -- The refusals are invalid_parameter_value (22023).
@@ -130,9 +135,10 @@ begin
   if not (apply_settlement(w1, w2, entries) ->> 'applied')::boolean then raise exception 'a settlement without shares should apply'; end if;
   if exists (select 1 from ledger_shares sh join ledger l on l.id = sh.ledger where l.account = ann) then raise exception 'a share appeared from nowhere'; end if;
   if not (apply_settlement(w2, w2 + interval '1 day', entries || jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.groaned', 'amount', -3)),
-                           '{}', '[]', jsonb_build_array(share)) ->> 'applied')::boolean then
+                           '{}', '[]', jsonb_build_array(share || jsonb_build_object('quadrant', null))) ->> 'applied')::boolean then
     raise exception 'an entry with no shares beside one with them should apply';
   end if;
+  if (select quadrant from ledger_shares sh join ledger l on l.id = sh.ledger where l.account = ann) is not null then raise exception 'a share with a null quadrant is written with none'; end if;
 end $$;
 
 -- ---- The five-argument apply_settlement is gone, and the new one is the service role's alone ----
