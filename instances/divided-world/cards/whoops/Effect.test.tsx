@@ -15,7 +15,7 @@ import { whoops } from '../whoops.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
 import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS } from './Effect.tsx';
 import { paint, type PaintLayer } from './paint.ts';
-import { BRUSH, LayerInk, PEN, ROW, layoutOf, type Stroke } from './scrub.ts';
+import { BRUSH, LayerInk, PEN, REF_WIDTH, ROW, layoutOf, type Stroke } from './scrub.ts';
 import { makeSplat } from './splat.ts';
 
 /* Every ink grid the component builds is counted, so a test can tell a rebuild from a kept grid. Tests that count do not build their own. */
@@ -32,25 +32,30 @@ vi.mock('./scrub.ts', async (importOriginal) => {
 });
 
 const LINES = 30;
+/** The pen strokes' tests lie below every splat (at the 790px layout a splat reaches 1.8 widths down, 78 lines of 18px) and lay the post out this tall. */
+const TEXT_LINES = 90;
 const LINE_PX = 18;
 /** Each line of the post's text is exactly this long, so a word's place in the text is its line. */
 const LINE_CHARS = 24;
-const TEXT = Array.from({ length: LINES }, (_, k) => `L${String(k).padStart(2, '0')} alpha beta gamma`.padEnd(LINE_CHARS)).join('');
-const HEIGHT = (LINES * LINE_PX) / 360;
+const textOf = (lines: number) => Array.from({ length: lines }, (_, k) => `L${String(k).padStart(2, '0')} alpha beta gamma`.padEnd(LINE_CHARS)).join('');
+const HEIGHT = (LINES * LINE_PX) / REF_WIDTH;
+/** The thread's body at the board's widest, and a phone's: where a splatted post is laid out, and where it is scaled down to. */
+const MAX_FRAME = REF_WIDTH;
+const PHONE_FRAME = 390;
 
 const slots: HTMLElement[] = [];
-let frameWidth = 620;
+let frameWidth = MAX_FRAME;
 /** How many lines tall the post is laid out; an edit changes it. */
 let layoutLines = LINES;
 
 beforeEach(() => {
-  frameWidth = 620;
+  frameWidth = MAX_FRAME;
   layoutLines = LINES;
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-whoops-frame') ? frameWidth : 0; } });
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-whoops-layout') ? layoutLines * LINE_PX : 0; } });
   /* A word's box: its line down the layout, at the scale the frame gives. */
   Range.prototype.getClientRects = function (this: Range) {
-    const unit = 360 * layoutOf(frameWidth).scale;
+    const unit = REF_WIDTH * layoutOf(frameWidth).scale;
     const top = Math.floor(this.startOffset / LINE_CHARS) * ROW * unit;
     return [{ top, bottom: top + ROW * unit, left: 0, right: 1, width: 1, height: ROW * unit, x: 0, y: top }] as unknown as DOMRectList;
   };
@@ -98,7 +103,7 @@ function mount(o: Options = {}) {
   slots.push(slot);
   const props: EffectProps = {
     slot, post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
-    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), children: <p>{TEXT}</p>,
+    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), children: <p>{textOf(layoutLines)}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};
@@ -164,17 +169,23 @@ describe('the layers', () => {
     expect(root).toHaveTextContent('L00 alpha beta gamma');
   });
 
-  test('the post\'s words are laid out at the reference width and scaled as a whole to the frame, centered, never scaled up', () => {
+  test('the post\'s words are laid out at the body\'s width at the board\'s max and scaled as a whole to a narrower frame, never scaled up', () => {
+    const atMax = mount();
+    const layout = atMax.root.querySelector('.kb-whoops-layout') as HTMLElement;
+    expect(layout.style.width).toBe(`${REF_WIDTH}px`);
+    expect(layout.style.transform).toBe('translateX(0px) scale(1)');
+    /* The post body's own gutters (1% of it each side) are the layout's padding, so the words break where the post's own would. */
+    expect(layout.style.paddingInline).toBe(`${REF_WIDTH * 0.01}px`);
+    atMax.unmount();
+    frameWidth = 1000;
     const wide = mount();
-    const layout = wide.root.querySelector('.kb-whoops-layout') as HTMLElement;
-    expect(layout.style.width).toBe('360px');
-    expect(layout.style.transform).toBe('translateX(130px) scale(1)');
+    expect((wide.root.querySelector('.kb-whoops-layout') as HTMLElement).style.transform).toBe(`translateX(${(1000 - REF_WIDTH) / 2}px) scale(1)`);
     wide.unmount();
-    frameWidth = 320;
+    frameWidth = PHONE_FRAME;
     const narrow = mount();
     const small = narrow.root.querySelector('.kb-whoops-layout') as HTMLElement;
-    expect(small.style.transform).toBe(`translateX(0px) scale(${320 / 360})`);
-    expect((narrow.frame as HTMLElement).style.height).toBe(`${LINES * LINE_PX * (320 / 360)}px`);
+    expect(small.style.transform).toBe(`translateX(0px) scale(${PHONE_FRAME / REF_WIDTH})`);
+    expect((narrow.frame as HTMLElement).style.height).toBe(`${LINES * LINE_PX * (PHONE_FRAME / REF_WIDTH)}px`);
   });
 
   test('a layer whose saved state says it is clean is not drawn, and the post is plain again', () => {
@@ -269,7 +280,7 @@ describe('scrubbing', () => {
     expect(washed(reloaded.root)[0]).toBeCloseTo(was, 2);
   });
 
-  test('a stroke saved at 620px wide uncovers the same words at 320px', () => {
+  test('a stroke saved at the board\'s max uncovers the same words read at 390px', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const wide = mount({ author: true });
     const ink = new LayerInk(splatFor(0), []);
@@ -280,12 +291,12 @@ describe('scrubbing', () => {
     drag(wide.frame, rowAcross(ink, y));
     act(() => { vi.advanceTimersByTime(2000); });
     const saved = wide.save.mock.calls[0]![1] as Record<string, unknown>;
-    const readAt620 = readout(wide.root);
-    expect(readAt620).toContain(`L${String(line).padStart(2, '0')} alpha beta gamma`);
+    const readAtMax = readout(wide.root);
+    expect(readAtMax).toContain(`L${String(line).padStart(2, '0')} alpha beta gamma`);
     wide.unmount();
-    frameWidth = 320;
+    frameWidth = PHONE_FRAME;
     const narrow = mount({ states: { 'play-1': { state: saved, savedAt: '2026-10-29T22:00:00.000Z' } } });
-    expect(readout(narrow.root)).toBe(readAt620);
+    expect(readout(narrow.root)).toBe(readAtMax);
   });
 
   test('a layer washed clean at the instance\'s share fades on a reader\'s own screen, and nothing is saved', () => {
@@ -390,14 +401,16 @@ describe('the keyboard path', () => {
 
 describe('what a screen reader is given', () => {
   test('a line under ink is hidden from a screen reader as it is from the eye, and the lines clear of it are read', () => {
+    /* A post tall enough that its last lines lie below the splat, which at the 790px layout reaches well down. */
+    layoutLines = TEXT_LINES;
     const { root } = mount();
     const layout = root.querySelector('.kb-whoops-layout') as HTMLElement;
     expect(layout).toHaveAttribute('inert');
     const covered = Math.floor(new LayerInk(splatFor(0), []).splat.placement.cy / ROW);
     const text = readout(root);
     expect(text).not.toContain(`L${String(covered).padStart(2, '0')} `);
-    expect(text).toContain(`L${LINES - 2} alpha beta gamma`);
-    expect(text).toContain(`L${LINES - 1} alpha beta gamma`);
+    expect(text).toContain(`L${TEXT_LINES - 2} alpha beta gamma`);
+    expect(text).toContain(`L${TEXT_LINES - 1} alpha beta gamma`);
   });
 
   test('a line is read out once it is uncovered', () => {
@@ -482,6 +495,7 @@ describe('the author', () => {
 });
 
 describe('the author\'s pen strokes belong to their layer', () => {
+  beforeEach(() => { layoutLines = TEXT_LINES; });
   /** The line index and a pen stroke along it, below where any splat of the test's seeds reaches (so only the pen covers it). */
   const penLine = Math.ceil(Math.max(...SEEDS.map((seed) => makeSplat(seed).bounds.maxY)) / ROW) + 2;
   const penAt = (line: number): Stroke => ({ tool: 'ink', color: COLORS[0]!, width: PEN, points: [[0, (line + 0.5) * ROW], [0.5, (line + 0.5) * ROW], [1, (line + 0.5) * ROW]] });
@@ -574,7 +588,7 @@ describe('the canvas', () => {
       { splat: splatFor(0), color: COLORS[0]!, strokes: [pen], alpha: 1 },
       { splat: splatFor(1), color: COLORS[1]!, strokes: [], alpha: 1 },
     ];
-    paint(canvas, { dpr: 1, width: 360, offset: 0, top: 0, scale: 1 }, layers);
+    paint(canvas, { dpr: 1, width: REF_WIDTH, offset: 0, top: 0, scale: 1 }, layers);
     expect(penColors).toEqual(['work:#19e3ff']);
     expect(log.filter((l) => l === 'main.stroke')).toEqual([]);
   });
@@ -834,12 +848,12 @@ describe('what a post costs a page', () => {
 
   test('the pixel density is capped at two', () => {
     vi.stubGlobal('devicePixelRatio', 3);
-    expect(mount().root.querySelector('canvas')!.width).toBe(620 * 2);
+    expect(mount().root.querySelector('canvas')!.width).toBe(MAX_FRAME * 2);
   });
 
   test('below the cap the density is the screen\'s own', () => {
     vi.stubGlobal('devicePixelRatio', 1.5);
-    expect(mount().root.querySelector('canvas')!.width).toBe(620 * 1.5);
+    expect(mount().root.querySelector('canvas')!.width).toBe(MAX_FRAME * 1.5);
   });
 
   test('a post not near the viewport draws no canvas, and one that comes near draws it, hidden from a screen reader', () => {

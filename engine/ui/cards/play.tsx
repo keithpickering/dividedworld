@@ -72,7 +72,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   /* The account the screen is on now, for the callbacks that outlive a render. */
   const accountNow = useRef(account);
   accountNow.current = account;
-  /* Each is kept with the account it was made for, and reads as nothing under another. */
+  /* Each is kept with the account it was made for, and reads as nothing under another: in the commit the account changes, not after it (the clearing effect below runs after that commit, and a render between would show the other account's card; play.test.tsx pins it). */
   const [armedHeld, setArmedHeld] = useState<{ readonly card: string; readonly for: Id | null } | null>(null);
   const [handForHeld, setHandForHeld] = useState<{ readonly target: PlayTarget; readonly for: Id | null } | null>(null);
   const [formHeld, setFormHeld] = useState<{ readonly card: string; readonly target: PlayTarget; readonly for: Id | null } | null>(null);

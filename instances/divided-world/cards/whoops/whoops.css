@@ -18,6 +18,16 @@
   touch-action: pan-y pinch-zoom;
 }
 
+/*
+ * In the thread the frame is the post's whole body, border to border: it bleeds out over the gutters the post's body keeps
+ * (`.kb-act-main`, engine/ui/thread/thread.css: 1% of the body each side, so the words' own share of the body is 98% and a
+ * gutter is 1/98 of it), and the layout keeps them as its own padding (Effect.tsx, BODY_GUTTER), so the words break where the
+ * post's would and the ink reaches the body's borders. The origin box has no such gutter and keeps its frame as is.
+ */
+.kb-whoops[data-kb-place="thread"] > .kb-whoops-frame {
+  margin-inline: calc(-100% / 98);
+}
+
 .kb-whoops-layout {
   transform-origin: 0 0;
 }
@@ -35,6 +45,16 @@
   left: 0;
   width: 100%;
   pointer-events: none;
+}
+
+/*
+ * In the thread the ink runs to the post body's borders, over the tag's row and the reactions and actions under the words
+ * (the owner: "such things can just render in front of the splat"). The canvas is above the words and below everything else the
+ * body holds: the body is its own stacking context and lifts its other children over the canvas (thread.css), so they stay in
+ * front, visible and usable. The frame no longer clips, since the canvas is sized to the body.
+ */
+.kb-whoops[data-kb-place="thread"] .kb-whoops-ink {
+  z-index: 1;
 }
 
 .kb-whoops-suds {

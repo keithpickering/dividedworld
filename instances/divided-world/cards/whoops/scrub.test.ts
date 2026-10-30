@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BRUSH, LayerInk, PEN, ROW, SWEEP_BRUSH, SWEEP_SPEED, bandsOf, coveredLines, fits, fitStroke, layoutOf, sweepStep, toLayout, topLayer, type Pt, type Stroke, type Sweep } from './scrub.ts';
+import { BRUSH, LayerInk, REF_WIDTH, PEN, ROW, SWEEP_BRUSH, SWEEP_SPEED, bandsOf, coveredLines, fits, fitStroke, layoutOf, sweepStep, toLayout, topLayer, type Pt, type Stroke, type Sweep } from './scrub.ts';
 import { covers, makeSplat } from './splat.ts';
 import { whoops, STROKES } from '../whoops.ts';
 
@@ -14,20 +14,29 @@ const HEIGHT = 8;
 const BOX = { minX: 0, maxX: 1, minY: 0, maxY: HEIGHT };
 const splatOf = (seed: number) => makeSplat(seed);
 
-test('the layout is 360px scaled to the frame, never scaled up, and centered', () => {
-  assert.deepEqual(layoutOf(360), { scale: 1, width: 360, offset: 0 });
-  const wide = layoutOf(900);
+test('the reference width is the post body\'s width at the board\'s 960px, derived from the thread\'s own measures', () => {
+  /* The thread's table at its widest: 960 less its 1px borders, its postbit column minmax(8em, min(18%, 14em)) at 12px type, the rest the body. */
+  const table = 960 - 2;
+  const postbit = Math.max(8 * 12, Math.min(0.18 * table, 14 * 12));
+  assert.equal(postbit, 168);
+  assert.equal(REF_WIDTH, table - postbit);
+  assert.equal(REF_WIDTH, 790);
+});
+
+test('the layout is the body\'s width scaled to the frame, never scaled up, and centered', () => {
+  assert.deepEqual(layoutOf(REF_WIDTH), { scale: 1, width: REF_WIDTH, offset: 0 });
+  const wide = layoutOf(1000);
   assert.equal(wide.scale, 1);
-  assert.equal(wide.width, 360);
-  assert.equal(wide.offset, 270);
-  const narrow = layoutOf(320);
-  assert.ok(Math.abs(narrow.scale - 320 / 360) < 1e-9);
+  assert.equal(wide.width, REF_WIDTH);
+  assert.equal(wide.offset, (1000 - REF_WIDTH) / 2);
+  const narrow = layoutOf(390);
+  assert.ok(Math.abs(narrow.scale - 390 / REF_WIDTH) < 1e-9);
   assert.equal(narrow.offset, 0);
 });
 
 test('a point on the screen is in widths of the layout, the same words at any screen width', () => {
   // The same spot of the layout: its quarter across and half a width down.
-  for (const frame of [320, 360, 620, 1000]) {
+  for (const frame of [320, 390, REF_WIDTH, 1000]) {
     const l = layoutOf(frame);
     const [x, y] = toLayout([l.offset + 0.25 * l.width, 0.5 * l.width], frame);
     assert.ok(Math.abs(x - 0.25) < 1e-9 && Math.abs(y - 0.5) < 1e-9, `at ${frame}px`);
@@ -118,7 +127,7 @@ test('a layer\'s strokes fit while they are within the card\'s counts, and not p
 
 test('the sweep goes line by line at 0.55 widths a second, a line at a time and never all at once', () => {
   const rows = bandsOf(1);
-  assert.equal(rows.length, Math.round(1 / ROW));
+  assert.equal(rows.length, Math.floor(1 / ROW));
   let s: Sweep = { row: 0, x: 0 };
   const dt = 1 / 60;
   let t = 0;
@@ -133,9 +142,11 @@ test('the sweep goes line by line at 0.55 widths a second, a line at a time and 
 });
 
 test('a hand-paced sweep clears a layer in about the time a hand takes, not at once and not forever', () => {
+  /* A post of sixteen lines (a long one), at the 790px layout: the ink reaches only what the post's box holds, so a layer is as many lines as the post is. */
+  const post = { ...BOX, maxY: 16 * ROW };
   const splat = splatOf(31);
-  const ink = new LayerInk(splat, [], BOX);
-  const rows = bandsOf(HEIGHT);
+  const ink = new LayerInk(splat, [], post);
+  const rows = bandsOf(post.maxY);
   let s: Sweep = { row: 0, x: 0 };
   const dt = 1 / 60;
   let t = 0;
@@ -152,9 +163,9 @@ test('a hand-paced sweep clears a layer in about the time a hand takes, not at o
   assert.ok(ink.washed >= 0.95, `it reaches clean (${ink.washed})`);
 
   // A hand scrubs the same splat back and forth at a brisk 1.5 widths a second, its rows a brush apart, where there is ink.
-  const hand = new LayerInk(splat, [], BOX);
+  const hand = new LayerInk(splat, [], post);
   let path = 0;
-  for (let y = splat.bounds.minY, flip = false; y <= splat.bounds.maxY; y += BRUSH * 0.9, flip = !flip) {
+  for (let y = splat.bounds.minY, flip = false; y <= Math.min(splat.bounds.maxY, post.maxY); y += BRUSH * 0.9, flip = !flip) {
     const span = hand.inkSpan(y, BRUSH / 2);
     if (!span) continue;
     hand.wash(flip ? [[span[1], y], [span[0], y]] : [[span[0], y], [span[1], y]], BRUSH);

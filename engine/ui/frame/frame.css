@@ -1,8 +1,11 @@
 /*
  * The frame: the banner, the links, and the Game HUD docked at the bottom. The banner is the 2003
  * board's, as the Main board draws it: the name on a row, the links on a row of their own under it,
- * each ruled off, and the page the window's width less a 2% gutter each side. On a phone the links
- * fold behind Boards, a 44px control, as the Phone board draws it.
+ * each ruled off, and the page the window's width less a 2% gutter each side. Past `--kb-board-max`
+ * (960px, the owner's word: engine/ui/tokens.css) the three stand in one column of that width,
+ * centered, rules and all, so the board does not stretch into a table too wide to read; the HUD below
+ * is the glass's and spans the window. On a phone the links fold behind Boards, a 44px control, as
+ * the Phone board draws it.
  */
 .kb-frame {
   --kb-hud-height: 3.4em;
@@ -14,7 +17,14 @@
   align-items: baseline;
   gap: 0.4em 1.2em;
   border-bottom: 1px solid var(--kb-rule);
-  padding: 12px 2%;
+  padding: 12px 0;
+}
+
+.kb-banner,
+.kb-nav {
+  box-sizing: border-box;
+  width: min(96%, var(--kb-board-max));
+  margin-inline: auto;
 }
 
 .kb-logo {
@@ -26,7 +36,7 @@
 }
 
 .kb-nav {
-  padding: 5px 2%;
+  padding: 5px 0;
   border-bottom: 1px solid var(--kb-rule);
   font-size: var(--kb-size-small);
 }
@@ -50,12 +60,12 @@
   margin-left: auto;
 }
 
-/* The page clears the HUD at its real height, and spans the window less the board's 2% gutters. */
+/* The page clears the HUD at its real height, and spans the window less the board's 2% gutters, up to the board's column. */
 .kb-frame > .kb-page {
-  width: auto;
+  width: min(96%, var(--kb-board-max));
   max-width: none;
-  padding-left: 2%;
-  padding-right: 2%;
+  padding-left: 0;
+  padding-right: 0;
   padding-bottom: calc(var(--kb-hud-measured, 9em) + 1.5em);
 }
 

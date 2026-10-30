@@ -104,6 +104,17 @@
   grid-area: main;
   padding: 0.5em 1%;
   min-width: 0;
+  /*
+   * A card's effect may paint over the post's words, out to the borders of this body (Whoops!'s ink, instances/divided-world/
+   * cards/whoops/whoops.css); everything else the body holds is lifted over it, so a reaction, an action or a link is never
+   * covered, whatever lies under it.
+   */
+  isolation: isolate;
+}
+
+.kb-act-main > :not([data-kb-whoops]) {
+  position: relative;
+  z-index: 2;
 }
 
 /* A line of the game's (an unmask): no postbit, the words across the whole width. */

@@ -58,7 +58,13 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
   const account = player.session.account;
-  /* The account the screen is on now, read after every wait: an answer for another one is dropped. */
+  /*
+   * The account the screen is on now, read after every wait: an answer for another one is dropped. These checks are defense in
+   * depth behind PlayProvider (play.tsx), which reads the form as nothing in the very commit an account changes and unmounts it,
+   * so a form never renders under another account and this ref is never updated to one. No test can tell them from that
+   * (an unmounted form's ref still holds its own account), and they are kept for a form ever hosted where the provider's keying
+   * is not: there they would be the only guard. The provider's `onPlayed` carries its own check, which is the pinned one.
+   */
   const accountNow = useRef(account);
   accountNow.current = account;
   /* The post as it stands: its edits change its length and so its price, and the click's copy is only where it starts. */

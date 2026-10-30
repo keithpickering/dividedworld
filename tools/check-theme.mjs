@@ -20,7 +20,7 @@
  * each at most once, and every declaration in them is a `--kb-*` custom property. A second block with the
  * same selector is refused: the browser lays it over the first, so a reader of the file (and a reviewer of a
  * diff that touches only the first) sees colors the page does not show. engine/ui/contrast.ts reads every
- * block in order as the browser does, so contrast holds either way; this keeps the file saying what it does. A size token (`--kb-size-*`, `--kb-line`)
+ * block in order as the browser does, so contrast holds either way; this keeps the file saying what it does. A size token (`--kb-size-*`, `--kb-line`, and `--kb-board-max`, the board's column)
  * must be a plain positive number with an optional unit: a `calc()` or a `var()` cannot be shown
  * positive, so it is refused, and 0 or less hides the text it sizes. A theme may add a size token the
  * engine does not name; the engine ignores it.
@@ -47,7 +47,7 @@ export const UI_INDEX = /^instances\/([^/]+)\/ui\/index\.ts$/;
 const SELECTORS = new Set([':root', ':root[data-kb-mode="dark"]', ':root[data-kb-mode="light"]']);
 const DEVICE_QUERY = '@media(prefers-color-scheme:dark)';
 const DEVICE_SELECTOR = ':root:not([data-kb-mode="light"])';
-const SIZE_TOKEN = /^--kb-(size-[a-z0-9-]+|line)$/;
+const SIZE_TOKEN = /^--kb-(size-[a-z0-9-]+|line|board-max)$/;
 
 /** A stylesheet with its comments blanked to spaces, so lines keep their numbers; strings are skipped whole. */
 function withoutComments(text) {

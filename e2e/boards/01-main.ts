@@ -32,13 +32,23 @@ import type { BoardManifest, Landmark } from '../board-match.ts';
 /** A post's article, its author link, its rank and its permalink, found inside the article. */
 function post(n: number, index: number, author: string, pips: number, rank: string, box: Landmark['box']): Landmark[] {
   const id = `post-${n}`;
+  /*
+   * The board is drawn at 1440 across the whole window; the build stands in the board's column, at most 960px wide and
+   * centered (the owner: "we need a smaller max width for the 2003 board in general", the glass plan's section 8 amendment of
+   * 2026-10-30). So a post's x and width differ by that word, and the landmarks inside it are compared as they sit in it
+   * (from the post's own corner, `origin`) with the permalink, which the board sets at the right edge of a post a different
+   * width, by its y and height. The post's own box is not compared: its body wraps in the narrower column (the build's #41 is
+   * 342px tall to the board's 275), which is that word and no fault of the post's. Where `box` is 'none', no landmark in the
+   * post is compared by place at all.
+   */
+  const placed = box === 'none' ? undefined : id;
+  const inside = box === 'none' ? 'none' : 'position';
   return [
-    /* The board's articles have no name, so it picks by place; the build names each by its number and author. */
-    { id, role: 'article', name: '', nth: index, buildName: `Post ${n} by ${author}`, buildNth: 0, box },
-    { id: `${id}-author`, role: 'link', name: author, within: id, box },
+    { id, role: 'article', name: '', nth: index, buildName: `Post ${n} by ${author}`, buildNth: 0, box: 'none' },
+    { id: `${id}-author`, role: 'link', name: author, within: id, origin: placed, box: inside },
     /* The rank's name is the postbit's (web Task 5), which says the rank's title where the board says pips. */
-    { id: `${id}-rank`, role: 'img', name: `Rank: ${pips} of 6 pips`, buildName: `Rank ${pips} of 6: ${rank}`, within: id, box, type: false },
-    { id: `${id}-permalink`, role: 'link', name: `#${n}`, buildName: `Permalink to post #${n}`, within: id, box },
+    { id: `${id}-rank`, role: 'img', name: `Rank: ${pips} of 6 pips`, buildName: `Rank ${pips} of 6: ${rank}`, within: id, origin: placed, box: inside, type: false },
+    { id: `${id}-permalink`, role: 'link', name: `#${n}`, buildName: `Permalink to post #${n}`, within: id, box: box === 'none' ? 'none' : 'height' },
   ];
 }
 
@@ -57,11 +67,16 @@ const manifest: BoardManifest = {
   build: { moment: '01-main' },
   press: [{ role: 'button', name: 'Hand, 3 postcards' }, { role: 'button', name: WHOOPS }],
   landmarks: [
-    /* The banner: Index and the instance's boards. The board's Search is not built (section 3). */
-    { id: 'nav', role: 'navigation', name: 'Main' },
-    { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'position' },
-    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', box: 'position' },
-    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', box: 'position' },
+    /*
+     * The banner: Index and the instance's boards. The board's Search is not built (section 3). The board draws its rows across
+     * the 1440px window; the build's stand in the board's column, 960px wide and centered (the owner's word, above, on `post`).
+     * So the links row is compared by its y and height, Index by its y and height too (its x is the column's edge), and the links
+     * after it from Index, where they sit in the row.
+     */
+    { id: 'nav', role: 'navigation', name: 'Main', box: 'height' },
+    { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height' },
+    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position' },
+    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position' },
 
     /*
      * The breadcrumb over the thread's head, by its type: the board's words lead from the instance
@@ -75,18 +90,14 @@ const manifest: BoardManifest = {
     { id: 'jump', role: 'link', name: 'Jump to latest', box: 'none' },
 
     /*
-     * The posts, by position and type. A card play takes no number and shows as its tag on its post
-     * (cards Task 3), so the page holds #41 to #46 and nothing else. #41 is splatted (cards Task 5): the
-     * board draws its splat in a 150px frame and the card's fixed layout is the board's 12px type in a
-     * 360px column, never scaled up (#76), so #42 and #43 start where the board's do, or as near as 1x allows.
-     *
-     * Tried in full and by position (#76). Neither holds, for two reasons the build cannot close:
-     * the board lays #41's body out across its whole 1000px-wide column (three lines in a 150px
-     * frame) where the card's column is 360px, so #41 is 26px taller than the board's and #42 starts
-     * 26px lower (y 455 against 429); and #43 starts 66px higher (598 against 664) because #42's own
-     * post is 92px shorter (143 against 235: the board's has a 160px avatar slot under the postbit,
-     * which the build has no portrait to fill, web Task 5), which is nothing of Whoops!'s. x, width
-     * and x of every landmark inside the article match, and only y and heights differ. They stay compared by type.
+     * The posts. A card play takes no number and shows as its tag on its post (cards Task 3), so the page holds #41 to #46 and
+     * nothing else. #41 is splatted (cards Task 5): its body is laid out at the width the post body has at the board's 960px,
+     * so it breaks its lines as an unsplatted post does, and its splat covers the body edge to edge (the owner's word, the cards
+     * plan's Task 5 amendment of 2026-10-30). The board is drawn across the 1440px window and the build stands in a 960px
+     * column, so a post's x and width, and the heights of #41 (its words wrap more in the narrower column) are the owner's word
+     * and not compared (see `post`); what is inside a post is compared from the post's own corner. #42 and #43 are compared by
+     * type: #42's post is 92px shorter than the board's (the board's has a 160px avatar slot under the postbit, which the build
+     * has no portrait to fill, web Task 5), which is nothing of Whoops!'s.
      */
     ...post(41, 0, 'Spritey', 4, 'Main Eventer', 'position'),
     ...post(42, 1, 'Mrs. Hooligan', 3, 'Midcarder', 'none'),

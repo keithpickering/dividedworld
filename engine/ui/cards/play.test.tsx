@@ -15,7 +15,8 @@ import type { Instance } from '../../rules/types.ts';
 import { LOST_ANSWER } from '../data/api.ts';
 import { plainRefusal } from './faces.ts';
 import { Frame } from '../frame/Frame.tsx';
-import { hudKey } from '../player.tsx';
+import { hudKey, usePlayer } from '../player.tsx';
+import { usePlay } from './play.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import type { CardUi, ConfigFormProps } from './types.ts';
@@ -489,6 +490,31 @@ describe('from the Task 3 quality review', () => {
       await screen.findByRole('button', { name: /^Hand, \d postcards?/u });
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('');
+    });
+  });
+
+  describe('pinned: the render-time keying besides the clearing effect', () => {
+    test('in the very commit an account changes, the armed card and the open form already read as nothing', async () => {
+      const user = userEvent.setup();
+      const w = world();
+      const seen: { account: string | null; armed: string | null }[] = [];
+      function Probe() {
+        const play = usePlay();
+        const account = usePlayer().session.account;
+        seen.push({ account, armed: play?.armed ?? null });
+        return null;
+      }
+      renderIn(w.fake, <Frame><Probe /><ThreadScreen thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000 } });
+      await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
+      await arm(user);
+      expect(seen.some((s) => s.account === w.me && s.armed === 'whoops')).toBe(true);
+      seen.length = 0;
+      act(() => w.fake.signInAs(w.other));
+      await screen.findByRole('button', { name: /^Hand, \d postcards?/u });
+      /* The clearing effect runs after a commit, so a render under the new account that still read the card would be seen here. */
+      const under = seen.filter((s) => s.account === w.other);
+      expect(under.length).toBeGreaterThan(0);
+      expect(under.every((s) => s.armed === null)).toBe(true);
     });
   });
 

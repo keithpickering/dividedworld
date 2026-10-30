@@ -4,9 +4,12 @@
  * everyone, and the keyboard path ("Hold to scrub").
  *
  * The post stays the board's 2003 post. While it is splatted its body is laid out once at a reference
- * width and scaled as a whole to the frame (scrub.ts `layoutOf`), centered, so lines break in the same
- * places everywhere and every stroke, kept in widths of that layout, lands on the same words. The ink is
- * a canvas laid over it; the tag and the button are the glass reaching in (`tag` in cards.ts draws the
+ * width, the post body's at the board's widest (scrub.ts `REF_WIDTH`), and scaled as a whole to the frame
+ * (`layoutOf`), centered, so lines break in the same places everywhere, and as the post's own would. In the
+ * thread the frame is the post's whole body, border to border (whoops.css bleeds it over the body's gutters,
+ * and the layout keeps them as padding), so the ink covers the body edge to edge and lies within 0 to 1 of
+ * the layout's width, where a stroke can wash it. In the ORIGIN box the frame is the box's content, as it was.
+ * Every stroke, kept in widths of that layout, lands on the same words. The ink is a canvas laid over it; the tag and the button are the glass reaching in (`tag` in cards.ts draws the
  * tag, the button is here), on the `effect` smoke.
  *
  * What is the model and what is drawn. A layer's ink is the seeded splat less the strokes washed on it
@@ -41,7 +44,7 @@ import { Smoke, useSurfaceStyle } from '../../../../engine/ui/glass/Smoke.tsx';
 import { readLines } from './lines.ts';
 import { MAX_DPR, paint, type Geometry, type PaintLayer } from './paint.ts';
 import {
-  BRUSH, LayerInk, PEN, REF_WIDTH, SWEEP_BRUSH, ROW, bandsOf, coveredLines, fits, fitStroke, layoutOf, sweepStep, toLayout, topLayer,
+  BODY_GUTTER, BRUSH, LayerInk, PEN, REF_WIDTH, SWEEP_BRUSH, ROW, bandsOf, coveredLines, fits, fitStroke, layoutOf, sweepStep, toLayout, topLayer,
   type Pt, type Stroke, type Sweep, type TextLine,
 } from './scrub.ts';
 import { luminance, makeSplat, type Splat } from './splat.ts';
@@ -116,12 +119,12 @@ interface View {
   readonly fading: boolean;
 }
 
-export function Effect({ post, plays, states, reader, save, slot, children }: EffectProps) {
+export function Effect({ post, plays, states, reader, save, slot, place, children }: EffectProps) {
   const { settings } = useKayfa();
   const calm = useSurfaceStyle('effect');
   const help = useId();
   const layers = useMemo<readonly Layer[]>(() => plays.map((play) => ({ play, color: inkOf(play), seed: seedOf(play) })), [plays]);
-  const [size, setSize] = useState({ frame: 0, height: 0 });
+  const [size, setSize] = useState({ frame: 0, height: 0, above: 0, cell: 0 });
   const [near, setNear] = useState(true);
   const [built, setBuilt] = useState(false);
   const [tool, setTool] = useState<'wash' | 'ink'>('wash');
@@ -130,6 +133,8 @@ export function Effect({ post, plays, states, reader, save, slot, children }: Ef
   /** How many layers' ink grids are held: none for a post that has left the viewport. */
   const [held, setHeld] = useState(0);
 
+  /** In the thread the frame is the post's whole body and the ink runs to its borders, the reactions and the actions drawn in front of it. */
+  const bleed = place === 'thread';
   const frameRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -173,15 +178,18 @@ export function Effect({ post, plays, states, reader, save, slot, children }: Ef
     const f = frameRef.current;
     const l = layoutRef.current;
     if (!f || !l) return;
+    /* In the thread the ink reaches the post body's borders (the owner's word), so the body, the cell this sits in, is measured too: how far down it the frame starts and how tall it is. */
+    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
     const measure = () => setSize((prev) => {
-      const next = { frame: f.clientWidth, height: l.offsetHeight };
-      return prev.frame === next.frame && prev.height === next.height ? prev : next;
+      const next = { frame: f.clientWidth, height: l.offsetHeight, above: cell ? f.getBoundingClientRect().top - cell.getBoundingClientRect().top : 0, cell: cell ? cell.clientHeight : 0 };
+      return prev.frame === next.frame && prev.height === next.height && prev.above === next.above && prev.cell === next.cell ? prev : next;
     });
     measure();
     if (typeof ResizeObserver !== 'function') return;
     const watch = new ResizeObserver(measure);
     watch.observe(f);
     watch.observe(l);
+    if (cell) watch.observe(cell);
     return () => watch.disconnect();
   }, []);
 
@@ -278,9 +286,12 @@ export function Effect({ post, plays, states, reader, save, slot, children }: Ef
     if (!splats || !fixed) return { top: 0, height: 0 };
     const lo = Math.min(...splats.map((s) => s.bounds.minY)) * geo.width - 8;
     const hi = Math.max(...splats.map((s) => s.bounds.maxY)) * geo.width + 8;
-    const top = Math.max(0, lo);
-    return { top, height: Math.max(1, Math.min(size.height * geo.scale, hi) - top) };
-  }, [splats, fixed, geo.width, geo.scale, size.height]);
+    /* The canvas may reach up and down the post's body past the words (the tag above, the reactions below) when it has a body to reach; otherwise it stops at the words. */
+    const floor = size.cell > 0 ? -size.above : 0;
+    const ceiling = size.cell > 0 ? size.cell - size.above : size.height * geo.scale;
+    const top = Math.max(floor, lo);
+    return { top, height: Math.max(1, Math.min(ceiling, hi) - top) };
+  }, [splats, fixed, geo.width, geo.scale, size.height, size.cell, size.above]);
 
   const paintNow = useCallback(() => {
     paintQueued.current = 0;
@@ -603,18 +614,19 @@ export function Effect({ post, plays, states, reader, save, slot, children }: Ef
       data-kb-layers={view ? view.clean.map((c) => (c ? 'clean' : 'live')).join(' ') : layers.map(() => 'live').join(' ')}
       data-kb-washed={view ? view.washed.map((w) => w.toFixed(3)).join(' ') : layers.map(() => '0').join(' ')}
       data-kb-fading={view?.fading ? 'true' : undefined}
+      data-kb-place={place}
       data-kb-held={held}
       data-kb-splat={splats?.map((sp) => `${sp.placement.cx},${sp.placement.cy},${sp.placement.rx},${sp.placement.ry}`).join(' ')}
     >
       <div
         ref={frameRef} className="kb-whoops-frame"
-        style={fixed ? { height: size.height * geo.scale } : undefined}
+        style={fixed ? { height: size.height * geo.scale, ...(bleed ? { overflow: 'visible' } : null) } : undefined}
         onPointerDown={anyLive ? onPointerDown : undefined} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}
         onClickCapture={(e) => { if (suppress.current) { suppress.current = false; e.preventDefault(); e.stopPropagation(); } }}
       >
         <div
           ref={layoutRef} className="kb-whoops-layout" inert={hidden}
-          style={fixed ? { width: REF_WIDTH, transform: `translateX(${geo.offset}px) scale(${geo.scale})` } : undefined}
+          style={fixed ? { width: REF_WIDTH, transform: `translateX(${geo.offset}px) scale(${geo.scale})`, ...(place === 'thread' ? { paddingInline: REF_WIDTH * BODY_GUTTER } : null) } : undefined}
         >
           {children}
         </div>

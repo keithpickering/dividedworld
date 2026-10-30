@@ -35,6 +35,65 @@ test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', a
 });
 
 /*
+ * The splatted post is the post at the board's widest (the owner's word: the 2003 board is at most 960px wide, and Whoops!'s lines break
+ * as the same post's would unsplatted): its layer is the post's whole body, border to border, laid out at the width the body has at 960px,
+ * and its words get the width any other post's words get, so they break in the same places.
+ */
+test('at the board\'s max the splat covers the post body edge to edge, and its words are as wide as an unsplatted post\'s', async ({ page }) => {
+  await page.goto('/?fixture=boards&moment=01-main');
+  await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+  const read = await page.evaluate(() => {
+    const px = (v: string) => parseFloat(v) || 0;
+    const wordsOf = (el: Element) => { const c = getComputedStyle(el); return el.clientWidth - px(c.paddingLeft) - px(c.paddingRight); };
+    const body = document.querySelector('#post-41 .kb-act-main')!.getBoundingClientRect();
+    const frame = document.querySelector('#post-41 .kb-whoops-frame')!.getBoundingClientRect();
+    const layout = document.querySelector('#post-41 .kb-whoops-layout') as HTMLElement;
+    return {
+      body: { x: body.x, width: body.width },
+      frame: { x: frame.x, width: frame.width },
+      layoutTransform: layout.style.transform,
+      splattedWords: wordsOf(layout),
+      plainWords: wordsOf(document.querySelector('#post-42 .kb-act-main')!),
+    };
+  });
+  expect(read.frame.x).toBeCloseTo(read.body.x, 0);
+  expect(read.frame.width).toBeCloseTo(read.body.width, 0);
+  expect(read.layoutTransform).toBe('translateX(0px) scale(1)');
+  expect(read.splattedWords).toBeCloseTo(read.plainWords, 0);
+});
+
+/*
+ * The owner on the spill: "the spill still has edges that end before the black post borders ... such things can just render in front
+ * of the splat". The ink runs to the post body's borders on every side, and the reactions and the action row are drawn in front of
+ * it, visible and usable.
+ */
+test('the ink reaches the post body\'s borders, and the reactions and the action links are in front of it, clickable', async ({ page }) => {
+  await page.goto('/?fixture=boards&moment=01-main');
+  await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
+  const read = await page.evaluate(() => {
+    const body = document.querySelector('#post-41 .kb-act-main')!.getBoundingClientRect();
+    const ink = document.querySelector('#post-41 .kb-whoops-ink')!.getBoundingClientRect();
+    const over = (sel: string) => {
+      const r = document.querySelector(sel)!.getBoundingClientRect();
+      return ink.left < r.right && ink.right > r.left && ink.top < r.bottom && ink.bottom > r.top;
+    };
+    return { body: { top: body.top, bottom: body.bottom, left: body.left, right: body.right }, ink: { top: ink.top, bottom: ink.bottom, left: ink.left, right: ink.right },
+      chip: over('#post-41 .kb-chip'), links: over('#post-41 .kb-act-links') };
+  });
+  /* Down to the body's top border, and across to its sides: the ink's canvas starts at the body's top. */
+  expect(read.ink.top).toBeCloseTo(read.body.top, 0);
+  expect(read.ink.left).toBeCloseTo(read.body.left, 0);
+  expect(read.ink.right).toBeCloseTo(read.body.right, 0);
+  expect(read.ink.bottom).toBeGreaterThan(read.body.top + 100);
+  expect(read.chip).toBe(true);
+  expect(read.links).toBe(true);
+  /* Under the canvas's box, each is still what a click reaches (a trial click fails if anything else would take it). */
+  await page.locator('#post-41 .kb-act-links').getByRole('button', { name: 'Quote' }).click({ trial: true });
+  await page.locator('#post-41 .kb-act-links').getByRole('button', { name: 'Spin thread' }).click({ trial: true });
+  await page.locator('#post-41 .kb-chip').first().click({ trial: true });
+});
+
+/*
  * The scrub button, the author's tool toggles and the chosen ink swatch are drawn with a border, a
  * glow and underlining, which forced colors (Windows High Contrast) drop or recolor: each is also
  * marked by an outline or a border in a system color there. The swatch is the play form's, which a

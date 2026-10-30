@@ -34,6 +34,14 @@
   --kb-size-title: 1.125rem;
   --kb-size-logo: 1.25rem;
   --kb-line: 1.45;
+  /*
+   * How wide the board's own pages may be (the banner, the index, the boards, the threads, the profile,
+   * the standings): a column at most this wide, centered past it. The owner chose 960px for the 2003
+   * board (the glass plan's section 8): wider and the table looks silly, and Whoops!'s fixed layout is
+   * laid out at the post body this makes (instances/divided-world/cards/whoops/scrub.ts). The glass
+   * keeps its own widths. A theme may set it, as a plain positive length (tools/check-theme.mjs).
+   */
+  --kb-board-max: 960px;
 
   /* The game's pieces: the only color on the board. */
   --kb-orb-1: #777;

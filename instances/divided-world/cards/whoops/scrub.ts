@@ -14,16 +14,45 @@
 import { STROKES } from '../whoops.ts';
 import { covers, type Splat } from './splat.ts';
 
-/** The width the post's body is laid out at, in px, whatever the screen: lines break in the same places everywhere. */
-export const REF_WIDTH = 360;
-/** How far the layout may grow: not at all (#76). A splatted post keeps the board's 12px type in its 360px column on a wide screen, centered, the ink free to run into the margins, and is scaled down on a narrow one. */
+/*
+ * The reference width is derived, not chosen: it is the width of a post's body in the thread at the board's widest, so a
+ * splatted post is laid out as any other post is at its widest and its lines break in the same places (the owner's word, the
+ * cards plan's Task 5 amendment of 2026-10-30 and the glass plan's section 8). Every number below is the thread's own
+ * (engine/ui/tokens.css and engine/ui/thread/thread.css), at the board's 12px type:
+ *
+ *   the board's column                                  960   (`--kb-board-max`)
+ *   less the table's border, 1px each side              -2    = 958
+ *   less the postbit column, minmax(8em, min(18%, 14em)) -168  (18% of 958 is 172.4, and 14em is 168)
+ *   = the post's body, border to border                 790
+ *
+ * The body is the layer's box: the splat covers it edge to edge, the words inside it keep the post's own gutters (1% of the
+ * body each side), so they break as the same words would unsplatted. A theme or a player's own theme may change the
+ * board's max; this does not follow it, because the layout must be one width for every viewer of a play (a saved stroke
+ * is in widths of it). A narrower board is only scaled down as a whole, as a narrow window is.
+ *
+ * Strokes saved before this (no instance is deployed and there are no players, so none exists outside a test) were in widths
+ * of a 360px layout; read at 790 they would land at 0.46 times the place and size they were drawn. They are not converted
+ * (CLAUDE.md, "Nobody is waiting on a hotfix"): a stroke is kept in widths, and the width it is kept in is this one.
+ */
+const BOARD_MAX = 960;
+const TABLE_BORDERS = 2;
+const BODY_PX = 12;
+const POSTBIT = { share: 0.18, least: 8 * BODY_PX, most: 14 * BODY_PX };
+const TABLE = BOARD_MAX - TABLE_BORDERS;
+/** The width the post's body is laid out at, in px, whatever the screen: lines break in the same places everywhere. 790. */
+export const REF_WIDTH = TABLE - Math.max(POSTBIT.least, Math.min(POSTBIT.share * TABLE, POSTBIT.most));
+/** The post's own gutter each side of its words, as a share of the body (`.kb-act-main`, thread.css): the layout keeps it, so its lines break as the post's. */
+export const BODY_GUTTER = 0.01;
+/** How far the layout may grow: not at all (#76). A splatted post keeps the board's 12px type in its full-width column, and is scaled down on a narrow screen. */
 export const MAX_SCALE = 1;
-/** The wash's brush and the author's pen, in widths. */
-export const BRUSH = 0.045;
+/** A length at the reference layout, px, as the widths the strokes are kept in: the card's measures keep their physical size at the board's widest. */
+const px = (n: number) => n / REF_WIDTH;
+/** The wash's brush and the author's pen, in widths (24px at the reference width: a splat that spans a 790px body is washed with a hand-sized brush, not a pen's). */
+export const BRUSH = px(24);
 export const PEN = BRUSH * 0.3;
-/** A line of the post's text, in widths (18px at the reference width): the accessible sweep's band. */
-export const ROW = 0.05;
-/** The accessible sweep's pace, in widths a second: about a hand's. */
+/** A line of the post's text, in widths (18px at the reference width, the board's 12px type at 1.5): the accessible sweep's band. */
+export const ROW = px(18);
+/** The accessible sweep's pace, in widths a second: a line a little under two seconds, as a hand takes. */
 export const SWEEP_SPEED = 0.55;
 /** The sweep's brush: a little over its band, so the bands leave no sliver between them. */
 export const SWEEP_BRUSH = ROW * 1.15;
@@ -51,7 +80,7 @@ export function toLayout([px, py]: Pt, frame: number): Pt {
 const thousandth = (n: number) => Math.round(n * 1000) / 1000;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 /** Points closer than this to the one before are dropped: a drag reports far more than a path needs, and a layer's points are bounded. */
-const MIN_STEP = 0.008;
+const MIN_STEP = px(4);
 
 /**
  * A stroke as the card keeps it: points held to the layout (across 0 to 1, down 0 to `STROKES.deepest`), to a
@@ -85,8 +114,8 @@ export function fits(strokes: readonly Stroke[]): boolean {
 
 /* --------------------------------------------------------------------- a layer's ink ---- */
 
-/** The spacing of the points a layer's remaining ink is counted at, in widths. */
-const CELL = 0.02;
+/** The spacing of the points a layer's remaining ink is counted at, in widths (10px at the reference width, under half the brush). */
+const CELL = px(10);
 
 /** Squared distance from (px, py) to the segment a-b. */
 function segment2(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {

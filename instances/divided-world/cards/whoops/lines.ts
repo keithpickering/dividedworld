@@ -8,10 +8,10 @@
  * A browser that cannot measure a range (it has no `getClientRects` on one) gives no lines, and the
  * Effect then treats the post as one block: covered while any layer holds ink, read once none does.
  */
-import { REF_WIDTH, type TextLine } from './scrub.ts';
+import { REF_WIDTH, ROW, type TextLine } from './scrub.ts';
 
-/** Words closer than this many widths down are one line (bold or a link in mid-line sits a pixel off its neighbors). */
-const SAME_LINE = 0.012;
+/** Words closer than this many widths down are one line (bold or a link in mid-line sits a pixel off its neighbors): under half a line. */
+const SAME_LINE = ROW / 4;
 
 export function readLines(layout: HTMLElement, scale: number): TextLine[] {
   const probe = document.createRange();

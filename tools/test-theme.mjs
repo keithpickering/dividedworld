@@ -63,6 +63,15 @@ const GOOD = `/* a theme */
     r.length === 3 && r.every((f) => /a second block/.test(f.why)), JSON.stringify(r));
 }
 
+{
+  /* The board's column width is a size too (the owner's 960px word): at 0 every board page is an empty column. */
+  const r = fires(GOOD.replace('--kb-line: 1.45;', '--kb-line: 1.45; --kb-board-max: 0;'));
+  check('--kb-board-max: 0 fires', r.length === 1 && /board-max/.test(r[0]?.why ?? ''), JSON.stringify(r));
+  const calc = fires(GOOD.replace('--kb-line: 1.45;', '--kb-line: 1.45; --kb-board-max: calc(100% - 1px);'));
+  check('--kb-board-max as a calc() fires', calc.length === 1 && /board-max/.test(calc[0]?.why ?? ''), JSON.stringify(calc));
+  check('--kb-board-max: 960px is clean', fires(GOOD.replace('--kb-line: 1.45;', '--kb-line: 1.45; --kb-board-max: 960px;')).length === 0);
+}
+
 /* ---- clean ---- */
 check('a theme in the contract\'s shape is clean', fires(GOOD).length === 0, JSON.stringify(fires(GOOD)));
 check('an empty theme is clean', fires('/* nothing yet */').length === 0);
