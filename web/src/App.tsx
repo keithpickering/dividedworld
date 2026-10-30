@@ -22,6 +22,7 @@ import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
+import { RankingsScreen } from '../../engine/ui/rankings/Rankings.tsx';
 import { StandingsScreen } from '../../engine/ui/standings/Standings.tsx';
 import { Link, RouterProvider, useLocation } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
@@ -36,6 +37,7 @@ const ROUTES: readonly Route[] = [
   { path: '/characters/new', render: () => <NewCharacter /> },
   { path: '/characters/edit', render: () => <ProfileEdit /> },
   { path: '/standings', render: () => <StandingsScreen /> },
+  { path: '/rankings', render: () => <RankingsScreen /> },
   { path: '/c/:id', render: ({ id }) => <ProfileScreen id={id!} /> },
   { path: '/c/:id/record', render: ({ id }) => <RecordScreen id={id!} /> },
   { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
@@ -52,8 +54,9 @@ const ROUTES: readonly Route[] = [
 
 /**
  * The routes that are glass pages (the glass build's Task 1.4), each with the surface whose smoke it
- * stands on. Their content is the board's screen as it was until Part 2 restyles it; every other
- * route is a board page, in the frame with its banner and Game HUD.
+ * stands on. Their content is the board's screen as it was until Part 2 restyles it, and a route in
+ * RESTYLED draws its screen on the glass itself (`Page`'s `restyled`); every other route is a board
+ * page, in the frame with its banner and Game HUD.
  */
 const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/characters': 'characters',
@@ -63,7 +66,11 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/settings': 'settings',
   '/sign-in': 'account',
   '/register': 'account',
+  '/rankings': 'rankings',
 };
+
+/** The glass routes whose screens Part 2 has restyled: drawn in the glass's own type, with no board panel. */
+const RESTYLED: ReadonlySet<string> = new Set(['/rankings']);
 
 const isGlass = (path: string): boolean => Object.hasOwn(GLASS, path);
 
@@ -97,7 +104,7 @@ function Shell() {
       <Routes routes={ROUTES} />
     </AccountGate>
   );
-  return surface ? <GlassPage surface={surface}>{content}</GlassPage> : <Frame>{content}</Frame>;
+  return surface ? <GlassPage surface={surface} restyled={RESTYLED.has(path)}>{content}</GlassPage> : <Frame>{content}</Frame>;
 }
 
 /** The instance's glass on the page: its standard key's tokens and colors on the root, and its fonts. */

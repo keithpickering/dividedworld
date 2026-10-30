@@ -57,6 +57,7 @@ const OWN: readonly [string, () => HTMLElement][] = [
   ['/characters/edit', () => screen.getByRole('heading', { level: 1, name: /^Edit / })],
   ['/invites', () => screen.getByRole('heading', { level: 1, name: 'Invites' })],
   ['/settings', () => screen.getByRole('button', { name: 'Sign out' })],
+  ['/rankings', () => screen.getByRole('heading', { level: 1, name: 'Rankings' })],
 ];
 
 for (const [path, own] of OWN) {
@@ -72,6 +73,18 @@ for (const [path, own] of OWN) {
     expect(screen.queryByRole('region', { name: 'Game HUD' })).toBeNull();
   });
 }
+
+test('/rankings is restyled: drawn on the glass with no board panel, and its menu bar tab is the current page', async () => {
+  window.history.pushState(null, '', '/rankings');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedDemo(fake);
+  render(<App api={fake} />);
+  const bar = await screen.findByRole('navigation', { name: 'Menu' });
+  await screen.findByRole('heading', { level: 1, name: 'Rankings' });
+  expect(screen.getByRole('main').querySelector('.kb-glass-content-panel')).toBeNull();
+  expect(screen.getByRole('main').closest('[data-kb-surface]')).toHaveAttribute('data-kb-surface', 'rankings');
+  expect(within(bar).getByRole('link', { name: 'Rankings' })).toHaveAttribute('aria-current', 'page');
+});
 
 for (const path of ['/sign-in', '/register']) {
   test(`${path}, signed out, is a glass page with Back to the board alone`, async () => {
