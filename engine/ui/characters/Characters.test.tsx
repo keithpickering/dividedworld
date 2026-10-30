@@ -687,14 +687,14 @@ describe('the panel\'s pip style (the Roster board)', () => {
 });
 
 describe('the class cards\' radios', () => {
-  test('are each named by the class alone and described by its words, its marks an image beside them', async () => {
+  test('are each named by the class alone and described by its words, then its marks\' words', async () => {
     const w = world();
     open(w);
     await ready();
     await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
     const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
     const heel = within(dialog).getByRole('radio', { name: 'Heel' });
-    expect(heel).toHaveAccessibleDescription('Earns heat: boos and tomatoes.');
+    expect(heel).toHaveAccessibleDescription('Earns heat: boos and tomatoes. Earns from heat, hurt by the calm');
     expect(within(heel.closest('label')!).getByRole('img', { name: 'Earns from heat, hurt by the calm' })).toBeInTheDocument();
   });
 });
