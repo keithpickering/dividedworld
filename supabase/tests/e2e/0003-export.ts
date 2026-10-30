@@ -113,6 +113,8 @@ test('an instance exported and imported into a fresh database is the same instan
       perform write_unmask(a, t, 'act', now(), 'Exported, and unmasked.');
       insert into standings (character, season, amount) values (a, (select max(id) from seasons), 10) on conflict (season, character) do update set amount = excluded.amount;
       insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;
+      -- A share of a ledger line in e2e/0001's settlement (0034), on Ann's post.
+      insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 10 from ledger;
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
     end $$;
