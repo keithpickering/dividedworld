@@ -15,11 +15,16 @@
  * - **Opaque type.** Its color, times every opacity above it, has no alpha under 1.
  * - **A glass text color.** Its color is one of the active key's text tokens, a class's large text,
  *   or an ink; any other has no ceiling and fails by name.
- * - **Large or in a calm.** Text that inks 36px or more (the design: Anton at 37px, Barlow
- *   Condensed at 40px) in a token tagged `large` may stand on the full smoke, under that token's
- *   large ceiling. Everything else lies inside its calm's interior (the backing inset by its
- *   feather, where the backing is at its full opacity) or on a panel at least as solid as the calm
- *   there, under its token's body ceiling (or waiting, for a token that has no body tag). On a
+ * - **Large, or where the worst is under the ceiling.** Text that inks 36px or more (the design:
+ *   Anton at 37px, Barlow Condensed at 40px) in a token tagged `large` may stand on the full
+ *   smoke, under that token's large ceiling. Everything else stands where the worst pixel its
+ *   surface can put under it is under its token's body ceiling (or waiting, for a token that has
+ *   no body tag): inside its calm's interior (the backing inset by its feather, where the backing
+ *   is at its full opacity), on a panel at least as solid as the calm there, or on a recipe whose
+ *   full worst (the ceilings file's `worst`, and on the phone its `narrowWorst` too) is under that
+ *   ceiling. That last is the owner's answer on #53 (the web plan's Task 12 and the glass plan's
+ *   section 6, amended 2026-10-30): the Turn board draws its words on the turn recipe's smoke with
+ *   no calm, and that recipe is dim enough for its tokens. On a
  *   `calmAll` surface every node needs a calm (or such a panel), large or not. A class's large text has a ceiling only
  *   on a surface the engine's `classLargeText` says draws it (apply.ts; the guard writes `classes`
  *   only there), and needs a calm where that says `calmed`. It is read by its color at any size,
@@ -29,8 +34,8 @@
  *   ceiling over the smoke: the guard holds it to 4.5:1 on its fill.
  * - **The brightest pixel.** With all text made transparent, the brightest pixel under the line's
  *   box is under its color's ceiling for the surface.
- * - **High contrast.** Under the `high` key every line stands on solid ground: the pixels under it,
- *   with the text made transparent, are all one color.
+ * - **High contrast.** Under the `high` key every line stands on solid ground: with the text made
+ *   transparent, taking the smoke away changes no pixel under it by more than a level.
  *
  * "A panel at least as solid as the calm" is how this reads the plan's "an opaque panel": the guard
  * holds body text to 4.5:1 on the calmed worst, the smoke thinned by the calm's opacity, so a panel
@@ -71,8 +76,8 @@ export interface TextFact {
   readonly panels: readonly Backing[];
   /** The brightest pixel's luminance under the box, with all text transparent. */
   readonly brightest: number;
-  /** The widest range of any channel under the box, with all text transparent: 0 is solid ground. */
-  readonly spread: number;
+  /** The most the smoke changes any channel under the box, with all text transparent (pixelStats): 0 is solid ground. */
+  readonly smoke: number;
 }
 
 type CeilingTag = 'body' | 'large' | 'waiting';
@@ -176,11 +181,13 @@ export function luminance(r: number, g: number, b: number): number {
 }
 
 /**
- * The brightest pixel's luminance and the widest channel range under `box`, in an RGBA buffer
- * `width` pixels wide: the pixels whose centers lie in the box. A box that holds no pixel center is
- * read at its nearest pixel, so a line is never read as nothing.
+ * Under `box`, in an RGBA buffer `width` pixels wide: the brightest pixel's luminance, and `smoke`,
+ * the most any channel of any pixel changes against `bare`, the same window drawn with the smoke
+ * taken away (0 with no `bare`). A glow or a gradient is in both and is no smoke; solid ground
+ * under high contrast is a line the smoke changes nothing under. The pixels read are those whose
+ * centers lie in the box; a box that holds no pixel center is read at its nearest pixel.
  */
-export function pixelStats(data: ArrayLike<number>, width: number, height: number, box: Box): { brightest: number; spread: number } {
+export function pixelStats(data: ArrayLike<number>, width: number, height: number, box: Box, bare?: ArrayLike<number>): { brightest: number; smoke: number } {
   let x0 = Math.max(0, Math.ceil(box.x - 0.5));
   let y0 = Math.max(0, Math.ceil(box.y - 0.5));
   let x1 = Math.min(width, Math.ceil(box.x + box.width - 0.5));
@@ -188,17 +195,15 @@ export function pixelStats(data: ArrayLike<number>, width: number, height: numbe
   if (x1 <= x0) { x0 = Math.min(width - 1, Math.max(0, Math.round(box.x))); x1 = x0 + 1; }
   if (y1 <= y0) { y0 = Math.min(height - 1, Math.max(0, Math.round(box.y))); y1 = y0 + 1; }
   let brightest = 0;
-  const lo = [255, 255, 255];
-  const hi = [0, 0, 0];
+  let smoke = 0;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const i = (y * width + x) * 4;
-      const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
-      brightest = Math.max(brightest, luminance(r, g, b));
-      [r, g, b].forEach((v, c) => { lo[c] = Math.min(lo[c]!, v); hi[c] = Math.max(hi[c]!, v); });
+      brightest = Math.max(brightest, luminance(data[i]!, data[i + 1]!, data[i + 2]!));
+      if (bare) for (let c = 0; c < 3; c++) smoke = Math.max(smoke, Math.abs(data[i + c]! - bare[i + c]!));
     }
   }
-  return { brightest, spread: Math.max(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!) };
+  return { brightest, smoke };
 }
 
 export interface JudgeContext {
@@ -229,7 +234,7 @@ export function judge(fact: TextFact, ctx: JudgeContext): string[] {
   }
   if (fact.color[3] < 1) out.push(`${at}: its color ${colorText(fact.color)} is translucent; glass type is opaque`);
   if (ctx.high) {
-    if (fact.spread > 1) out.push(`${at}: under high contrast it stands on the smoke (its ground varies by ${fact.spread} levels), not on solid ground`);
+    if (fact.smoke > 1) out.push(`${at}: under high contrast the smoke shows through under it (it changes a channel by ${fact.smoke} levels), not solid ground`);
     return out;
   }
   const s = ctx.ceilings;
@@ -237,25 +242,36 @@ export function judge(fact: TextFact, ctx: JudgeContext): string[] {
   const roles = ctx.palette.roles.get(keyOf(fact.color)) ?? [];
   if (roles.length === 0) return [...out, `${at}: its color ${colorText([fact.color[0], fact.color[1], fact.color[2], 1])} is not one of the glass's text colors in the ${ctx.palette.key} key`];
   /* A color two roles share passes as either; the first role's faults are the ones told. */
-  const readings = roles.map((role) => reading(fact, role, s, at));
+  const readings = roles.map((role) => reading(fact, role, s, at, ctx.phone));
   const clean = readings.find((r) => r.length === 0);
   return clean ? out : [...out, ...readings[0]!];
 }
 
-/** Whether the line stands in its calm's interior, or on a panel as solid as the calm; the fault if not. */
-function grounded(fact: TextFact, at: string, why: string): string | null {
+/** A recipe dim enough to stand on bare: its full worst, and the ceiling the line is read at there. */
+interface Dim { readonly worst: number; readonly ceiling: number; readonly as: string; readonly where: string }
+
+/**
+ * Whether the line stands where the worst pixel its surface can put under it is under its
+ * ceiling: in its calm's interior, on a panel as solid as the calm, or, where `dim` is given, on a
+ * recipe whose full worst is under the ceiling (the owner's answer on #53); the fault if not.
+ */
+function grounded(fact: TextFact, at: string, why: string, dim?: Dim): string | null {
   if (fact.calm && within(fact.box, fact.calm.box)) return null;
   if (fact.panels.some((p) => p.opacity >= fact.calmOpacity - 1e-6 && within(fact.box, p.box))) return null;
+  if (dim && dim.worst < dim.ceiling) return null;
+  const bright = dim ? `, and its recipe's full worst, ${dim.worst}, is not under the ceiling ${dim.ceiling} for ${dim.as} ${dim.where}` : '';
   if (fact.calm) {
-    return `${at}: lies outside its calm's interior (its backing inset by its ${round1(fact.calm.feather)}px feather) by ${round1(overrun(fact.box, fact.calm.box))}px; ${why}`;
+    return `${at}: lies outside its calm's interior (its backing inset by its ${round1(fact.calm.feather)}px feather) by ${round1(overrun(fact.box, fact.calm.box))}px${bright}; ${why}`;
   }
-  return `${at}: stands in no calm and on no panel as solid as the calm (${fact.calmOpacity}); ${why}`;
+  return `${at}: stands in no calm and on no panel as solid as the calm (${fact.calmOpacity})${bright}; ${why}`;
 }
 
-function reading(fact: TextFact, role: ColorRole, s: SurfaceCeilings, at: string): string[] {
+function reading(fact: TextFact, role: ColorRole, s: SurfaceCeilings, at: string, phone: boolean): string[] {
   const large = fact.ink >= LARGE_INK;
   const where = `on surface ${fact.surface} (recipe ${s.recipe})`;
   const calmAllWhy = `surface ${fact.surface} (recipe ${s.recipe}) is calmAll: every text node on it stands in a calm, large or not`;
+  /* The most the surface's smoke can put under a line: on the phone, its narrow layers' too. */
+  const worst = phone && s.narrowWorst !== undefined ? Math.max(s.worst, s.narrowWorst) : s.worst;
   if (role.kind === 'ink') {
     return fact.panels.some((p) => p.opacity >= 1 && within(fact.box, p.box)) ? [] : [`${at}: is ink, and stands on no opaque fill`];
   }
@@ -276,18 +292,19 @@ function reading(fact: TextFact, role: ColorRole, s: SurfaceCeilings, at: string
   } else {
     const onSmoke = large && role.tags.includes('large') && !s.calmAll;
     const tag: CeilingTag = onSmoke ? 'large' : role.tags.includes('body') ? 'body' : role.tags.includes('waiting') ? 'waiting' : 'large';
-    if (s.calmAll || !onSmoke) {
-      const why = s.calmAll
-        ? calmAllWhy
-        : large
-          ? `${role.name} is not a large token, so it stands in a calm at any size`
-          : `text that inks under ${LARGE_INK}px (this inks ${round1(fact.ink)}px) stands in a calm ${where}`;
-      const f = grounded(fact, at, why);
-      if (f) faults.push(f);
-    }
     ceiling = s.tokens[role.name]?.[tag];
     as = `${role.name} as ${tag} text`;
-    if (ceiling === undefined) return [...faults, `${at}: ${role.name} has no ${tag} ceiling ${where}`];
+    if (ceiling === undefined) return [`${at}: ${role.name} has no ${tag} ceiling ${where}`];
+    if (s.calmAll) {
+      const f = grounded(fact, at, calmAllWhy);
+      if (f) faults.push(f);
+    } else if (!onSmoke) {
+      const why = large
+        ? `${role.name} is not a large token, so it stands in a calm at any size`
+        : `text that inks under ${LARGE_INK}px (this inks ${round1(fact.ink)}px) stands in a calm ${where}`;
+      const f = grounded(fact, at, why, { worst, ceiling, as, where });
+      if (f) faults.push(f);
+    }
   }
   if (!(fact.brightest < ceiling)) {
     faults.push(`${at}: its brightest pixel, luminance ${fact.brightest.toFixed(4)}, is not under the ceiling ${ceiling} for ${as} ${where}`);

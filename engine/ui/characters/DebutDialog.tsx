@@ -47,7 +47,7 @@ export function DebutDialog({ character, timing, onClose, onDone, returnFocusTo 
 
   return (
     <Overlay title={drop ? `Drop ${character.name} now` : `How ${character.name} debuts`} kicker="My characters › Debut" surface="turn" className="kb-debut-dialog" onClose={onClose} returnFocusTo={returnFocusTo}>
-      <form className="kb-debut kb-calm" onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
+      <form className="kb-debut" onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
         <DebutChoice name={character.name} className={className} timing={timing} loudness={loudness} onLoudness={setLoudness} />
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         <div className="kb-turn-actions">

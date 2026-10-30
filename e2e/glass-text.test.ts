@@ -49,7 +49,7 @@ const body: TextFact = {
   calmOpacity: 0.85,
   panels: [],
   brightest: 0.02,
-  spread: 40,
+  smoke: 40,
 };
 /** A 52px Anton heading of --kb-glass-text on the full smoke of the rankings page: large, so no calm, under the large ceiling. */
 const heading: TextFact = {
@@ -121,10 +121,40 @@ describe('the web plan\'s five poisons', () => {
   });
 
   test('under high contrast, one line left on the smoke', () => {
-    const solid: TextFact = { ...body, color: [241, 236, 255, 1], spread: 0 };
+    const solid: TextFact = { ...body, color: [241, 236, 255, 1], smoke: 0 };
     expect(judged(solid, 'rankings', { palette: high, high: true })).toEqual([]);
-    const found = judged({ ...solid, spread: 37 }, 'rankings', { palette: high, high: true });
-    expect(found).toEqual(['"Every character this season" in p.kb-rankings-lead (surface rankings): under high contrast it stands on the smoke (its ground varies by 37 levels), not on solid ground']);
+    const found = judged({ ...solid, smoke: 37 }, 'rankings', { palette: high, high: true });
+    expect(found).toEqual(['"Every character this season" in p.kb-rankings-lead (surface rankings): under high contrast the smoke shows through under it (it changes a channel by 37 levels), not solid ground']);
+  });
+});
+
+describe('a recipe dim enough (the owner\'s answer on #53)', () => {
+  /* A body line of --kb-glass-text-2 with no calm and no panel, on the bare smoke. */
+  const bare: TextFact = { ...body, calm: null, panels: [], brightest: 0.05 };
+
+  test('on a recipe whose full worst is under its color\'s ceiling, a line needs no calm', () => {
+    /* The turn recipe's full worst, 0.116, is under --kb-glass-text-2's body ceiling, 0.1288. */
+    expect(judged({ ...bare, surface: 'turn' })).toEqual([]);
+  });
+
+  test('the same line on a brighter recipe still needs one, and says the worst and the ceiling', () => {
+    expect(judged({ ...bare, surface: 'characters' })).toEqual([
+      '"Every character this season" in p.kb-rankings-lead (surface characters): stands in no calm and on no panel as solid as the calm (0.85), and its recipe\'s full worst, 0.196, is not under the ceiling 0.1288 for --kb-glass-text-2 as body text on surface characters (recipe characters); text that inks under 36px (this inks 18.9px) stands in a calm on surface characters (recipe characters)',
+    ]);
+  });
+
+  test('a color whose ceiling is under the dim recipe\'s worst still needs a calm there', () => {
+    /* --kb-glass-salty-text's body ceiling is 0.0697, under the turn recipe's 0.116. */
+    expect(judged({ ...bare, surface: 'turn', color: [255, 156, 192, 1] })[0]).toMatch(/its recipe's full worst, 0\.1167, is not under the ceiling 0\.0697 for --kb-glass-salty-text/);
+  });
+
+  test('on the phone the worst is the larger of the recipe\'s layers and its narrow ones', () => {
+    /* The hud recipe: 0.2161 wide, 0.2492 narrow; neither is under any body ceiling. */
+    expect(judged({ ...bare, surface: 'hud' }, 'hud', { phone: true })[0]).toMatch(/its recipe's full worst, 0\.2492, is not under/);
+  });
+
+  test('a calmAll surface still needs a calm, whatever its worst', () => {
+    expect(judged({ ...bare, surface: 'settlement' })[0]).toMatch(/is calmAll: every text node on it stands in a calm/);
   });
 });
 
@@ -191,17 +221,25 @@ describe('the geometry and the pixels', () => {
     expect(within({ x: -0.6, y: 0, width: 100, height: 20 }, outer)).toBe(false);
   });
 
-  test('the brightest pixel and the spread are read inside the box only', () => {
+  test('the brightest pixel, and what the smoke changes, are read inside the box only', () => {
     const w = 4;
     const h = 3;
-    const data = new Uint8ClampedArray(w * h * 4);
-    const put = (x: number, y: number, rgb: [number, number, number]) => data.set([...rgb, 255], (y * w + x) * 4);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) put(x, y, [10, 10, 10]);
-    put(3, 0, [255, 255, 255]); // outside the box
-    put(1, 1, [77, 126, 247]); // the smoke's worst, inside
-    const got = pixelStats(data, w, h, { x: 0, y: 1, width: 3, height: 2 });
+    const shot = () => new Uint8ClampedArray(w * h * 4);
+    const put = (data: Uint8ClampedArray, x: number, y: number, rgb: [number, number, number]) => data.set([...rgb, 255], (y * w + x) * 4);
+    const data = shot();
+    const bare = shot();
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { put(data, x, y, [10, 10, 10]); put(bare, x, y, [10, 10, 10]); }
+    put(data, 3, 0, [255, 255, 255]); // outside the box
+    put(data, 1, 1, [77, 126, 247]); // the smoke's worst, inside
+    put(data, 2, 2, [40, 40, 40]); // a glow, there with or without the smoke
+    put(bare, 2, 2, [40, 40, 40]);
+    const got = pixelStats(data, w, h, { x: 0, y: 1, width: 3, height: 2 }, bare);
     expect(got.brightest).toBeCloseTo(0.2321, 3);
-    expect(got.spread).toBe(237);
+    /* The smoke moved the blue channel from 10 to 247; the glow is the same in both and is no smoke. */
+    expect(got.smoke).toBe(237);
+    expect(pixelStats(bare, w, h, { x: 0, y: 1, width: 3, height: 2 }, bare).smoke).toBe(0);
+    /* With no smokeless shot there is nothing to compare: no smoke is read. */
+    expect(pixelStats(data, w, h, { x: 0, y: 1, width: 3, height: 2 }).smoke).toBe(0);
   });
 });
 

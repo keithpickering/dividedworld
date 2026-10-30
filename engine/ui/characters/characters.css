@@ -519,10 +519,15 @@
   color: var(--kb-class-ink);
 }
 
+/*
+ * The over token's ceiling is under even the turn recipe's worst, so the hurt mark stands on the
+ * ground inside its dashed edge rather than on the card's tint over the smoke.
+ */
 .kb-class-mark[data-kb-mark='hurts'] {
   border: 1.5px dashed var(--kb-glass-over);
   line-height: 24px;
   color: var(--kb-glass-over);
+  background: var(--kb-glass-ground);
 }
 
 .kb-class-mark[data-kb-mark='calls'] {

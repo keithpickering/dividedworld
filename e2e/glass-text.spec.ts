@@ -58,10 +58,15 @@ async function measure(page: Page): Promise<string[]> {
     for (const l of lines) seen.set(l.key, l.name);
     const fresh = lines.filter((l) => l.inView && !facts.has(l.key));
     if (fresh.length) {
-      await page.evaluate(() => (globalThis as Bundled).kbGlassText.hideText(true));
-      const png = (await page.screenshot({ animations: 'disabled', caret: 'hide' })).toString('base64');
+      const shoot = async (smoke: boolean) => {
+        await page.evaluate((s) => (globalThis as Bundled).kbGlassText.hideText(true, s), smoke);
+        return (await page.screenshot({ animations: 'disabled', caret: 'hide' })).toString('base64');
+      };
+      const png = await shoot(true);
+      /* Under high contrast, the same window with the smoke taken away: solid ground is ground the smoke changes nothing on. */
+      const bare = key === 'high' ? await shoot(false) : undefined;
       await page.evaluate(() => (globalThis as Bundled).kbGlassText.hideText(false));
-      const stats = await page.evaluate(([shot, boxes]) => (globalThis as Bundled).kbGlassText.pixels(shot, boxes), [png, fresh.map((l) => l.box)] as const);
+      const stats = await page.evaluate(([shot, boxes, without]) => (globalThis as Bundled).kbGlassText.pixels(shot, boxes, without), [png, fresh.map((l) => l.box), bare] as const);
       fresh.forEach((l, i) => facts.set(l.key, { ...l, ...stats[i]! }));
     }
     if (at.top >= at.max) break;
@@ -85,11 +90,9 @@ interface Screen {
 }
 
 /**
- * Every glass page: the routes web/src/App.tsx's GLASS map draws on the glass. Settings, sign-in,
- * register and invites still set their content on the board's own panel, which the gatherer does
- * not read (glass-text-page.ts says why); their menu bars are read now, and their content as soon
- * as Task 2.4 restyles them, with no change here. The HUD is glass on every board page: it is read
- * on the Main board's moment, where it holds the most.
+ * Every glass page: the routes web/src/App.tsx's GLASS map draws on the glass, each read in full
+ * (Invites is Settings › Account, where /invites now opens). The HUD is glass on every board page:
+ * it is read on the Main board's moment, where it holds the most.
  */
 const PAGES: readonly Screen[] = [
   { name: 'My characters', path: '/characters' },
@@ -97,7 +100,7 @@ const PAGES: readonly Screen[] = [
   { name: 'Edit profile', path: '/characters/edit' },
   { name: 'Rankings', path: '/rankings' },
   { name: 'Settings', path: '/settings' },
-  { name: 'Invites', path: '/invites' },
+  { name: 'Settings › Account, with the invites', path: '/settings?section=account' },
   { name: 'Sign in', path: '/sign-in', signedOut: true },
   { name: 'Register', path: '/register?invite=ab12cd34', signedOut: true },
   { name: 'The HUD, on the Main board\'s moment', path: '/?fixture=boards&moment=01-main' },
@@ -145,37 +148,29 @@ const OVERLAYS: readonly Screen[] = [
 const STORIES: readonly Screen[] = [{ name: 'The settlement\'s surface, in its stand-in story', path: '/?fixture=boards&story=boards-glass-surfaces--settlement' }];
 
 /**
- * What waits on the owner. The Turn board (06) draws its words on the turn recipe's smoke with no
- * calm, as the recipe is dim enough for its body tokens (its full worst, 0.116, is under the body
- * ceilings of --kb-glass-text, -text-2, -pale and -neon-text); the web plan's rule puts every line
- * that is not large in a calm or on an opaque panel. Asked of the owner as a rule that fights the
- * product (CLAUDE.md); until the answer, that one rule waits on the Turn modal and on the dialog
- * bar it shares with the Debut dialog (Overlay.tsx's kicker), and every other check runs there.
+ * What waits on the owner: faults a screen shows under a rule asked about as one that fights the
+ * product (CLAUDE.md), by screen, each set aside until the answer is written into the rule. An
+ * entry no fault matches any longer fails as stale. None waits now: #53 (body text on the Turn
+ * board's smoke with no calm) was answered and written into the rule (glass-text.ts).
  */
-const TURN_SMOKE = 'does body text on the turn recipe\'s smoke, which the Turn board draws with no calm, need one?';
-const DIALOG_KICKER = /^"My characters › Debut" in div\.kb-glass-dialog-titles > p\.kb-glass-dialog-kicker \(surface turn\): stands in no calm/u;
-const AWAITING: Readonly<Record<string, readonly Awaiting[]>> = {
-  'The Turn modal, from My characters': [{ fault: /\(surface turn\): stands in no calm and on no panel as solid as the calm/u, question: TURN_SMOKE }],
-  'The Debut dialog, dropping now': [{ fault: DIALOG_KICKER, question: TURN_SMOKE }],
-  'The Debut dialog, choosing how': [{ fault: DIALOG_KICKER, question: TURN_SMOKE }],
-};
+const AWAITING: Readonly<Record<string, readonly Awaiting[]>> = {};
 
 /** The demo world starts signed in, and starts over on a load: sign out in the app. */
 async function signOut(page: Page) {
-  await page.goto('/settings');
+  await page.goto('/settings?section=account');
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
 }
 
-/** Moves the app to `path` as a link does, without a load, so what the player chose stays chosen. */
+/** Moves the app to `path` as a link does, without a load, so the signed-out session stays. */
 async function goInApp(page: Page, path: string) {
   await page.evaluate((to) => { history.pushState(null, '', to); window.dispatchEvent(new PopStateEvent('popstate')); }, path);
 }
 
 /** Opens a screen ready to read: a glass page when its menu bar shows, a board page when its HUD does, a story once rendered. */
-async function open(page: Page, s: Screen, how: 'load' | 'in app' = 'load') {
+async function open(page: Page, s: Screen) {
   if (s.signedOut) await signOut(page);
-  if (s.signedOut || how === 'in app') await goInApp(page, s.path);
+  if (s.signedOut) await goInApp(page, s.path);
   else await page.goto(s.path);
   const ready = s.path.includes('story=')
     ? page.locator('#root > *').first()
@@ -204,34 +199,53 @@ for (const [label, viewport] of SIZES) {
 }
 
 /*
- * High contrast (Settings; the design's section 4.5): every line of glass text stands on solid
- * ground. Task 2.4 wires the preference and the high key's ground; until it merges there is no
- * high contrast to choose, so these wait on it. Each screen is reached in the app after the choice,
- * since a load starts the demo world over; sign-in and register are left out, as signed out the
- * device's contrast holds, not the account's.
+ * High contrast (Settings › Accessibility; the design's section 4.5): every line of glass text
+ * stands on solid ground (engine/ui/glass/contrast.css), with the high key on the root, so each
+ * line is also held to the high key's colors. It is chosen as a player chooses it, by keyboard
+ * (the radios are hidden inputs, as e2e/glass-preferences.spec.ts chooses them), and it is the
+ * account's, so it holds across the load that opens each screen. Sign-in and register are left
+ * out: signed out, no account's contrast applies (e2e/glass-preferences.spec.ts reads them under
+ * the mark alone).
  */
 async function chooseHighContrast(page: Page) {
   await page.goto('/settings');
-  await page.getByRole('radiogroup', { name: /contrast/iu }).getByRole('radio', { name: /high/iu }).check();
-  await expect(page.locator(':root[data-kb-glass-key="high"]')).toHaveCount(1);
+  await page.getByRole('radiogroup', { name: 'Contrast' }).getByRole('radio', { name: 'High' }).focus();
+  await page.keyboard.press('Space');
+  await expect(page.locator('html')).toHaveAttribute('data-kb-contrast', 'high');
+  await expect(page.locator('html')).toHaveAttribute('data-kb-glass-key', 'high');
 }
 
+/* The boards' fixture signs in its own account, which has no preference; the HUD is read on the demo world's board, as the player who chose it. */
+const onTheAccount = (s: Screen): Screen => (s.path.includes('fixture=boards') ? { name: 'The HUD, on a board page', path: '/b/general' } : s);
+
 test.describe('under high contrast', () => {
-  test.use({ viewport: { width: 1920, height: 1080 } });
-  for (const s of [...PAGES, ...OVERLAYS].filter((x) => !x.signedOut)) {
-    test.fixme(`${s.name}: every line of glass text stands on solid ground (Task 2.4 wires high contrast)`, async ({ page }) => {
-      await chooseHighContrast(page);
-      await open(page, s, 'in app');
-      expect(await measure(page)).toEqual([]);
+  for (const [label, viewport] of SIZES) {
+    test.describe(`at ${label}`, () => {
+      test.use({ viewport });
+      for (const s of [...PAGES, ...OVERLAYS].filter((x) => !x.signedOut).map(onTheAccount)) {
+        test(`${s.name}: every line of glass text stands on solid ground`, async ({ page }) => {
+          await chooseHighContrast(page);
+          await open(page, s);
+          await expect(page.locator('html')).toHaveAttribute('data-kb-glass-key', 'high');
+          expect(await measure(page)).toEqual([]);
+        });
+      }
     });
   }
 
-  test.fixme('the poison: one line left on the smoke is named (Task 2.4 wires high contrast)', async ({ page }) => {
+  test('the poison: one line left on the smoke is named', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
     await chooseHighContrast(page);
-    await open(page, PAGES.find((p) => p.path === '/rankings')!, 'in app');
-    /* The lead's ground taken away: whatever puts it on solid ground under high contrast, gone. */
-    await plant(page, '.kb-rankings-lead, .kb-rankings-lead::before { background: transparent !important; content: none !important; }');
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/p\.kb-rankings-lead \(surface rankings\): under high contrast it stands on the smoke/u));
+    await open(page, PAGES.find((p) => p.path === '/rankings')!);
+    /* One line of the page's own, left on its smoke below the column, with no ground under it. */
+    await page.locator('.kb-glass-page').evaluate((glassPage) => {
+      const p = document.createElement('p');
+      p.className = 'kb-rankings-lead kb-planted';
+      p.style.cssText = 'position: absolute; z-index: 1; left: 0; right: 0; top: 700px; margin: 0; text-align: center';
+      p.textContent = 'A line the high contrast ground was not laid under, across the smoke from one edge of the window to the other.';
+      glassPage.append(p);
+    });
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead\.kb-planted \(surface rankings\): under high contrast the smoke shows through under it \(it changes a channel by \d+ levels\), not solid ground$/u));
   });
 });
 
@@ -247,7 +261,15 @@ test.describe('the poisons, planted in a real page', () => {
   test('a calm moved off its text', async ({ page }) => {
     await open(page, rankings);
     await plant(page, '.kb-rankings-lead.kb-calm::before { transform: translateX(900px); }');
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior/u));
+    /* The page recipe's full worst, 0.231, is over the lead's ceiling, so the calm is still what it needs. */
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior .* by 900px, and its recipe's full worst, 0\.231, is not under the ceiling 0\.152/u));
+  });
+
+  test('an uncalmed line on a recipe too bright for its color', async ({ page }) => {
+    /* The owner's answer on #53 lets a line stand bare on a recipe dim enough (the Turn modal's); the characters recipe's full worst, 0.196, is over every body ceiling. */
+    await open(page, PAGES.find((p) => p.path === '/characters')!);
+    await page.locator('.kb-characters-lead').evaluate((el) => el.classList.remove('kb-calm'));
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-characters-lead \(surface characters\): stands in no calm and on no panel as solid as the calm \(0\.85\), and its recipe's full worst, 0\.196, is not under the ceiling 0\.1288 for --kb-glass-text-2 as body text on surface characters \(recipe characters\)/u));
   });
 
   test('a feather that reaches into the text', async ({ page }) => {

@@ -11,10 +11,7 @@
  * is not read. Under an open overlay only the overlay's text is read: the page behind it is dimmed
  * and inert (Overlay.tsx), the menu bar with it, and is not what the player is reading.
  *
- * Not read: the board's own white panel (`.kb-glass-content-panel`, shell.css), which an
- * unrestyled glass page still sets its content on in the board's 12px type, opaque, until the
- * glass build's Part 2 restyles every page and the panel goes; the board's own post a preview
- * shows (BOARD below); text that is not drawn (hidden,
+ * Not read: the board's own post a preview shows (BOARD below); text that is not drawn (hidden,
  * fully transparent by an opacity, or clipped to under 2px either way, as a visually hidden label
  * is); a node of emoji alone (PICTURE); and an `<option>`, which the closed select draws as its own value.
  *
@@ -39,15 +36,15 @@ import { parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, t
 export const INK_SAMPLE = 'Hg';
 
 /**
- * The board drawn inside the glass: an unrestyled page's panel (shell.css), and the post a Turn or a
- * debut previews as the thread will show it (characters/PreviewBox.tsx). Both are the board's own
- * ground and type, opaque, which the board's rules and axe hold, not the glass's.
+ * The board drawn inside the glass: the post a Turn or a debut previews as the thread will show it
+ * (characters/PreviewBox.tsx), in the board's own ground and type, opaque, which the board's rules
+ * and axe hold, not the glass's.
  */
-const BOARD = '.kb-glass-content-panel, .kb-preview-post';
+const BOARD = '.kb-preview-post';
 const SKIP = `.kb-smoke, script, style, noscript, template, option, [inert], ${BOARD}`;
 
-/** A line as gathered, before its pixels are read: the judgment's fact less `brightest` and `spread`. */
-export interface Gathered extends Omit<TextFact, 'brightest' | 'spread'> {
+/** A line as gathered, before its pixels are read: the judgment's fact less `brightest` and `smoke`. */
+export interface Gathered extends Omit<TextFact, 'brightest' | 'smoke'> {
   /** The node and line, the same from one read of the page to the next. */
   readonly key: string;
   /** The line lies wholly in the window, so a screenshot of the window holds all of it. */
@@ -290,25 +287,31 @@ const HIDE_ID = 'kb-glass-text-hidden';
  * Makes all text transparent, or shows it again. The fill is cleared rather than the color,
  * because a calm's mask is drawn in `currentColor` (calm.css), and a transparent color would take
  * the calm with it. Shadows, strokes, decorations and focus rings go with the text, since none is
- * the ground the text stands on.
+ * the ground the text stands on. With `smoke` false the smoke's layers go too, leaving its ground:
+ * the window without the smoke, which high contrast's solid ground must not differ from.
  */
-export function hideText(hidden: boolean): void {
+export function hideText(hidden: boolean, smoke = true): void {
   document.getElementById(HIDE_ID)?.remove();
   if (!hidden) return;
   const style = document.createElement('style');
   style.id = HIDE_ID;
   style.textContent = `*, *::before, *::after { -webkit-text-fill-color: transparent !important; -webkit-text-stroke-color: transparent !important;
-    text-shadow: none !important; text-decoration-color: transparent !important; caret-color: transparent !important; outline-color: transparent !important; }`;
+    text-shadow: none !important; text-decoration-color: transparent !important; caret-color: transparent !important; outline-color: transparent !important; }
+    ${smoke ? '' : '.kb-smoke-layers { display: none !important; }'}`;
   document.head.append(style);
 }
 
-/** The brightest pixel and the spread under each box, in a PNG screenshot of the window. */
-export async function pixels(png: string, boxes: readonly Box[]): Promise<{ brightest: number; spread: number }[]> {
-  const blob = await (await fetch(`data:image/png;base64,${png}`)).blob();
-  const bitmap = await createImageBitmap(blob);
-  const c = new OffscreenCanvas(bitmap.width, bitmap.height);
-  const g = c.getContext('2d', { willReadFrequently: true })!;
+/** A PNG's pixels, decoded in the page. */
+async function decode(png: string): Promise<ImageData> {
+  const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
+  const g = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d', { willReadFrequently: true })!;
   g.drawImage(bitmap, 0, 0);
-  const { data } = g.getImageData(0, 0, bitmap.width, bitmap.height);
-  return boxes.map((b) => pixelStats(data, bitmap.width, bitmap.height, b));
+  return g.getImageData(0, 0, bitmap.width, bitmap.height);
+}
+
+/** The brightest pixel under each box in a PNG screenshot of the window, and what the smoke changes there against `bare`, the window with no smoke. */
+export async function pixels(png: string, boxes: readonly Box[], bare?: string): Promise<{ brightest: number; smoke: number }[]> {
+  const shot = await decode(png);
+  const without = bare ? (await decode(bare)).data : undefined;
+  return boxes.map((b) => pixelStats(shot.data, shot.width, shot.height, b, without));
 }

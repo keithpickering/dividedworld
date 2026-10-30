@@ -22,7 +22,7 @@ const signedIn: World = (fake) => {
 
 function SettlementSurface() {
   return (
-    <Page surface="settlement" restyled>
+    <Page surface="settlement">
       <div className="kb-surfaces-story">
         <h1 className="kb-surfaces-story-head kb-glass-display kb-calm">Settled</h1>
         <p className="kb-surfaces-story-line kb-calm">The settlement ran at 08:17 UTC. Your wallet went from 4.62 to 5.02.</p>

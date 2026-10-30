@@ -191,7 +191,7 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
           {closeAt === 'bar' && close}
         </div>
         <div className="kb-glass-dialog-body">{children}</div>
-        {closeAt === 'foot' && <div className="kb-glass-dialog-foot kb-calm">{close}</div>}
+        {closeAt === 'foot' && <div className="kb-glass-dialog-foot">{close}</div>}
       </div>
     </div>,
     document.body,
