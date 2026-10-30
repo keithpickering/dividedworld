@@ -4,9 +4,10 @@
  * a case that wants other data seeds its own fake: the fixture's moments are what the board match
  * compares, so nothing here edits them (MOMENTS is frozen, and a test of it says so).
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { rankIndex } from '../../../../engine/rules/ranks.ts';
-import { TEST_CODE, type Fake } from '../../../../engine/ui/data/fake.ts';
+import { FAKE_BACKEND_MARKER, TEST_CODE, type Fake } from '../../../../engine/ui/data/fake.ts';
 import { instance } from '../../../../instances/divided-world/index.ts';
 import { createBoardsFake, EMAILS, MOMENTS, seedBoards, type MomentName } from './boards.ts';
 
@@ -242,5 +243,27 @@ describe('the reader', () => {
     const { fake, thread } = await load('08-hold');
     const p44 = (await postsOf(fake, thread))[43]!;
     expect((await fake.cardsOn(p44.id, 10)).map((a) => a.payload.card)).toEqual(['stick-around']);
+  });
+});
+
+describe('the marker', () => {
+  it('is the fake\'s own constant, in one place: seeding adds none, and the fixture\'s source names none', async () => {
+    const { fake } = await load('01-main');
+    expect(fake.marker).toBe(FAKE_BACKEND_MARKER);
+    expect(Object.getOwnPropertyDescriptor(fake, FAKE_BACKEND_MARKER)).toBeUndefined();
+    expect(readFileSync('web/src/data/fixtures/boards.ts', 'utf8')).not.toContain(FAKE_BACKEND_MARKER);
+  });
+});
+
+/* A fact about the engine today, pinned so a change to either side is seen (see the fixture's header). */
+describe('card plays in the thread', () => {
+  it('at 01-main page 3 holds the six posts and then the card Acts, at seqs above 46', async () => {
+    const { fake, thread } = await load('01-main');
+    const perPage = (await fake.settings()).postsPerPage;
+    const page3 = await fake.acts(thread, 2 * perPage + 1, 3 * perPage);
+    expect(page3.map((a) => [a.seq, a.kind])).toEqual([
+      ...[41, 42, 43, 44, 45, 46].map((n) => [n, 'post']),
+      [47, 'card'], [48, 'card'],
+    ]);
   });
 });

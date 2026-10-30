@@ -17,8 +17,15 @@
  * Where the fixture is less than the real thing, it says so:
  *  - Posts and reactions need accounts to make them: four more players (Ringside 1 to 4) hold the
  *    crowd's reactions, which one player cannot (a player reacts once to a kind on a post).
- *  - A card play takes a number in its thread, as the server's does; the plays are written after the
- *    moment's posts so that #41 to #46 are the posts (see `plays` below), which the cards part reconciles.
+ *  - Card plays against the boards. The boards number the posts #41 to #46 with no gap and draw a card
+ *    as a frame on its post. The engine gives a card play a number in its thread, as the server does,
+ *    and `engine/ui/thread/Post.tsx` draws each one as its own line ("X played Whoops! on post #41").
+ *    Written between the posts, the plays would renumber them, so they are written after the moment's
+ *    posts, dated as they happened: on page 3 the six posts come first and the lines follow at #47 and
+ *    up, out of time order. Nothing here changes either side; it is a question for the owner, and
+ *    boards.test.ts pins the fact so a change on either side is seen.
+ *  - The marker the production bundle is checked for is the fake's (`FAKE_BACKEND_MARKER`); the
+ *    fixture carries no marker of its own.
  *  - The Whoops! on #41 is a card Act by Mrs. Hooligan with no spend in Pipewrench's wallet, which the
  *    timeline does not show (the player owns both); the plan seeds it that way.
  *  - Stick Around's release sentence is a card's effect state, not part of its Act; the cards part
@@ -227,7 +234,5 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   for (const step of [...steps.filter((s) => s.at <= now).sort((a, b) => a.at - b.at), ...plays.filter((s) => s.at <= now).sort((a, b) => a.at - b.at)]) step.run();
 
   fake.signInAs({ player, rival, reader }[MOMENTS[moment].account]);
-  // A property the bundler keeps, so a production build that carries this fixture can be found by name (tools/check-web-bundle.mjs).
-  Object.defineProperty(fake, 'KAYFA_FAKE_BACKEND', { value: 'boards', configurable: true });
   return MOMENTS[moment].route(opener.thread);
 }

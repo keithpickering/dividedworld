@@ -4,19 +4,12 @@ import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 import { App } from './App.tsx';
 import { createBackend } from './data/backend.ts';
+import { StartError } from './StartError.tsx';
 
 // The device decides until the account's preferences are read (App's Appearance applies them then).
 applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes);
 const root = createRoot(document.getElementById('root')!);
 createBackend().then(
   (api) => root.render(<App api={api} />),
-  (error: unknown) => {
-    // Plain words, not in character: a build that cannot start says why (no project named, or a fixture the address names that is not there).
-    root.render(
-      <main style={{ maxWidth: '36rem', margin: '3rem auto', padding: '0 1rem', fontFamily: 'system-ui, sans-serif', lineHeight: 1.5 }}>
-        <h1>This site could not start</h1>
-        <p>{error instanceof Error ? error.message : 'This build names no Supabase project.'}</p>
-      </main>,
-    );
-  },
+  (error: unknown) => root.render(<StartError error={error} />),
 );
