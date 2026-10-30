@@ -462,7 +462,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       lastEstimate = null;
       await client.auth.signOut();
     },
-    /* Auth's own session holds the address; no table is read for it. */
+    /* Reads the client's own session for its address, which is not signing in, up or a reset, so it is outside Task 11's rule that those go through the account function; no table is read. */
     async signInAddress() {
       return (await client.auth.getSession()).data.session?.user.email ?? null;
     },
