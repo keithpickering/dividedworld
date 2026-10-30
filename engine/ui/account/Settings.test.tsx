@@ -1,9 +1,10 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { DEFAULT_PREFERENCES, type Answer, type Preferences } from '../data/api.ts';
 import { Smoke } from '../glass/Smoke.tsx';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { applyAppearance } from '../appearance.ts';
+import { buildWorld, renderIn, testGlass } from '../test-world.tsx';
 import { SettingsScreen } from './Settings.tsx';
 
 const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'];
@@ -183,6 +184,58 @@ describe('Settings, as board 11 draws it', () => {
     calls[1]!.settle({ ok: false, error: 'text size is 100, 125, 150 or 200 percent' });
     await waitFor(() => expect(radio('Text size', '100%')).toBeChecked());
     expect(document.documentElement).not.toHaveAttribute('data-kb-text-size');
+  });
+
+  /*
+   * A save still out when the account changes: the app's Appearance has already put the next
+   * account's look on the root (the defaults signed out), and the old account's answer must not put
+   * its own back. The account here had smoke off and asks for 200% text before it leaves.
+   */
+  async function leaving(next: 'signed out' | 'another account') {
+    const w = world();
+    await w.fake.setPreferences({ smoke: 'off' });
+    const calls: { settle: (a: Answer<Preferences>) => void }[] = [];
+    w.fake.setPreferences = () => new Promise((settle) => { calls.push({ settle }); });
+    const view = open(w.fake);
+    await screen.findByRole('radiogroup', { name: 'Text size' });
+    await userEvent.click(radio('Text size', '200%'));
+    expect(document.documentElement).toHaveAttribute('data-kb-text-size', '200');
+    const other = w.fake.seed.account('other');
+    /* The next account's own preferences are still on their way when the old account's answer comes. */
+    w.fake.preferences = () => new Promise(() => {});
+    w.fake.signInAs(next === 'signed out' ? null : other);
+    /* The change reaches the screen, as it reaches the app's Appearance in the same render. */
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    /* What Appearance does on the account's change: the defaults, signed out or before the next account's own arrive. */
+    applyAppearance(document, DEFAULT_PREFERENCES, [{ key: 'house', name: 'House', href: '/house.css', modes: 'both' }], testGlass);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    return { calls, view };
+  }
+  const isDefault = () => {
+    for (const m of ['data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size']) expect(document.documentElement).not.toHaveAttribute(m);
+  };
+
+  for (const next of ['signed out', 'another account'] as const) {
+    test(`a refused save that answers after the account changed (${next}) puts nothing of the old account back`, async () => {
+      const { calls } = await leaving(next);
+      await act(async () => { calls[0]!.settle({ ok: false, error: 'text size is 100, 125, 150 or 200 percent' }); await Promise.resolve(); });
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      isDefault();
+    });
+    test(`a kept save that answers after the account changed (${next}) puts nothing of the old account back`, async () => {
+      const { calls } = await leaving(next);
+      await act(async () => { calls[0]!.settle({ ok: true, value: { ...DEFAULT_PREFERENCES, smoke: 'off', textSize: 200 } }); await Promise.resolve(); });
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+      isDefault();
+    });
+  }
+
+  test('a refused save that answers after the screen is gone puts nothing back', async () => {
+    const { calls, view } = await leaving('signed out');
+    view.unmount();
+    calls[0]!.settle({ ok: false, error: 'text size is 100, 125, 150 or 200 percent' });
+    await new Promise((r) => setTimeout(r, 0));
+    isDefault();
   });
 
   test('"Saved to your account." is said in a region that is on the page before anything is saved', async () => {

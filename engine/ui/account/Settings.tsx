@@ -132,6 +132,12 @@ export function SettingsScreen() {
   const current = useRef<Preferences | null>(null);
   const confirmed = useRef<Preferences | null>(null);
   const line = useRef<Promise<void>>(Promise.resolve());
+  /* The account the screen is for now, and null once it is gone: a save answered after either changed is that account's no longer. */
+  const showing = useRef<string | null>(null);
+  useEffect(() => {
+    showing.current = account;
+    return () => { showing.current = null; };
+  }, [account]);
 
   useEffect(() => {
     if (!account) return;
@@ -163,11 +169,14 @@ export function SettingsScreen() {
    * A choice shows at once; its save waits for the ones before it (one out at a time, so the
    * account ends with the last choice made). A refusal puts back that choice alone, to what the
    * account last confirmed for it, and only while the screen still shows the refused value: a later
-   * choice of the same setting, still to be saved, is left on the screen for its own answer.
+   * choice of the same setting, still to be saved, is left on the screen for its own answer. An
+   * answer that comes once the player has signed out, another account has signed in or the screen
+   * has gone puts nothing on the page: the app has put the next look on the root by then.
    */
   const change = (patch: Partial<Preferences>) => {
     const key = Object.keys(patch)[0] as keyof Preferences;
     const asked = patch[key];
+    const madeFor = account;
     const show = (next: Preferences) => { current.current = next; setPrefs(next); applyAppearance(document, next, ui.themes, ui.glass); };
     show({ ...current.current!, ...patch });
     setRefusal(null);
@@ -175,6 +184,7 @@ export function SettingsScreen() {
     line.current = line.current.then(async () => {
       let r: Answer<Preferences>;
       try { r = await api.setPreferences(patch); } catch { r = { ok: false, error: LOST_ANSWER }; }
+      if (showing.current !== madeFor) return;
       if (r.ok) { confirmed.current = { ...confirmed.current!, [key]: r.value[key] }; setSaved(true); return; }
       if (current.current![key] === asked) show({ ...current.current!, [key]: confirmed.current![key] });
       setRefusal(r.error);
