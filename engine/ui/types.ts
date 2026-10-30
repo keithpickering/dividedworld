@@ -61,6 +61,13 @@ export type GlassSurface =
   | 'characters' | 'rankings' | 'log' | 'settings' | 'account' | 'settlement';
 
 /**
+ * How a class's large text (`GlassClassColor.large`) is drawn on a surface: on the full smoke, inside
+ * a calm, or not at all. The engine says which for every surface (`classLargeText`,
+ * engine/ui/glass/apply.ts), and tools/check-glass-contrast.mjs reads each class against it.
+ */
+export type ClassLargeDraw = 'full' | 'calmed' | 'none';
+
+/**
  * One layer of smoke: SVG fractal noise through a color matrix, blurred. `color` is the matrix's
  * constant color as an 8-bit hex (what the browser quantizes it to); `alpha` is the matrix's alpha
  * row (r, g, b, a, bias), which turns the noise into the layer's cloud; `opacity` is the opacity of

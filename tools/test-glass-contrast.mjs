@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SURFACES, calmOf, ceilingsFile, ceilingsStale, contrastRatio, glassCeilings, glassFaults, luminance, recipeWorsts, treeGlass } from './check-glass-contrast.mjs';
+import { CLASS_LARGE, SURFACES, calmOf, ceilingsFile, ceilingsStale, classLargeFaults, contrastRatio, glassCeilings, glassFaults, luminance, readClassLarge, recipeWorsts, treeGlass } from './check-glass-contrast.mjs';
 
 let pass = 0;
 const failures = [];
@@ -157,8 +157,8 @@ check('the real glass is clean', glassFaults(real).length === 0, text(glassFault
 {
   const g = fresh();
   g.classes.face.large = '#2a4a66';
-  const r = named(glassFaults(g), 'class face', 'large');
-  check('a class color whose large text is under 3:1 fires', r.length > 0, text(glassFaults(g)).slice(0, 600));
+  const r = named(glassFaults(g), 'class face', 'large', 'surface turn', 'recipe turn', '#2a4a66', 'needs 3:1');
+  check('a class color whose large text is under 3:1 on a surface that draws it fires, naming the class, the surface, the recipe, the color and the ratio', r.length > 0, text(glassFaults(g)).slice(0, 600));
   const k = fresh();
   k.classes.heel.ink = '#5a5a5a';
   check('a class ink under 4.5:1 on its fill fires', named(glassFaults(k), 'class heel', 'ink').length > 0);
@@ -271,13 +271,82 @@ check('a recipe calm that is not a number fires', poisoned((g) => { g.smoke.reci
   const w = recipeWorsts(real).hud.narrow;
   check('the ceilings carry the narrow layers\' worst and calmed worst', near(hud.narrowWorst, w.full.luminance, 0.0001) && near(hud.narrowCalmedWorst, w.calmed.luminance, 0.0001) && hud.narrowCalmedWorst < hud.narrowWorst, JSON.stringify(hud));
   check('a surface whose recipe has no narrow layers carries none', glassCeilings(real).surfaces.react.narrowWorst === undefined && glassCeilings(real).surfaces.react.narrowCalmedWorst === undefined);
+  /* The hud draws no class large text in the engine's list, so each of these reads it under a list that says it does. */
+  const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s === surface ? draw : 'none']));
   const g = fresh();
   g.smoke.recipes.hud.calm = 0.001;
   for (const l of g.smoke.recipes.hud.layers) l.color = '#000000';
   g.smoke.recipes.hud.narrow[0].color = '#ffffff';
   g.smoke.recipes.hud.narrow[0].opacity = 1;
-  const f = named(glassFaults(g), 'class ', '(narrow)');
-  check('a class\'s large text on only the narrow layers\' calmed worst fires, naming them', f.length === 4 && f.every((x) => x.why.includes('recipe hud (narrow)')), text(glassFaults(g)).slice(0, 500));
+  const f = named(glassFaults(g, only('hud', 'calmed')), 'class ', 'surface hud');
+  check('a class\'s large text on only the narrow layers\' calmed worst fires on a calmed surface, naming them', f.length === 4 && f.every((x) => x.why.includes('narrow calmed worst') && x.why.includes('recipe hud')), text(f).slice(0, 500));
+  const n = fresh();
+  for (const l of n.smoke.recipes.hud.layers) l.color = '#000000';
+  const nf = named(glassFaults(n, only('hud', 'full')), 'class ', 'surface hud');
+  check('a class\'s large text on only the narrow layers\' full worst fires on a full surface, naming them', nf.length === 4 && nf.every((x) => x.why.includes('narrow full worst')), text(nf).slice(0, 500));
+}
+
+/*
+ * Class large text, per screen (the glass plan, section 6, amended 2026-10-30: the owner's answer
+ * "Per screen + 9% lift"). The engine says, for every surface, whether a class's large text is
+ * drawn there on the full smoke, in a calm, or not at all (classLargeText, engine/ui/glass/apply.ts);
+ * the guard reads each class against that and writes a class ceiling only where it is drawn.
+ */
+{
+  const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s === surface ? draw : 'none']));
+  const list = CLASS_LARGE?.entries ?? {};
+  check('the engine\'s class large list is read from engine/ui/glass/apply.ts: every surface, each full, calmed or none',
+    CLASS_LARGE !== null && SURFACES.every((s) => ['full', 'calmed', 'none'].includes(list[s])) && Object.keys(list).length === SURFACES.length && CLASS_LARGE.unreadable.length === 0,
+    JSON.stringify(CLASS_LARGE));
+  check('the engine\'s own list is clean', classLargeFaults(CLASS_LARGE).length === 0, text(classLargeFaults(CLASS_LARGE)));
+  check('the turn modal draws class large text on the full smoke, and the settlement in a calm', CLASS_LARGE?.entries.turn === 'full' && CLASS_LARGE?.entries.settlement === 'calmed', JSON.stringify(CLASS_LARGE?.entries));
+
+  /* Heel's large text back at #ff8a96: 2.80:1 on the turn recipe's full worst. */
+  const heel = fresh();
+  heel.classes.heel.large = '#ff8a96';
+  const hf = named(glassFaults(heel), 'class heel', 'surface turn', 'recipe turn', '#ff8a96', 'full worst', '2.80', 'needs 3:1');
+  check('Heel\'s large text back at #ff8a96 fires on turn, read against the full smoke, at 2.80:1', hf.length === 1, text(glassFaults(heel)).slice(0, 600));
+  check('and only on the surfaces that draw it on the full smoke', named(glassFaults(heel), 'class heel').every((f) => list[f.why.match(/surface (\w+)/)?.[1]] === 'full'), text(glassFaults(heel)));
+  check('Heel\'s large text at #ff959f meets 3:1 on the turn recipe\'s full worst', contrastRatio('#ff959f', recipeWorsts(real).turn.full.rgb) >= 3 && contrastRatio('#ff8a96', recipeWorsts(real).turn.full.rgb) < 3);
+
+  /* The list: every surface, no other, each a draw the guard knows. */
+  const { turn: _turn, ...withoutTurn } = /** @type {Record<string, string>} */ (list);
+  const missing = { entries: withoutTurn, unreadable: [] };
+  check('a list that leaves out a surface is refused, naming it', classLargeFaults(missing).some((f) => f.where.includes('turn') && /leaves out/.test(f.why)), text(classLargeFaults(missing)));
+  const unknown = { entries: { ...list, lobby: 'full' }, unreadable: [] };
+  check('a list that names a surface the engine does not list is refused', classLargeFaults(unknown).some((f) => f.where.includes('lobby') && /not one the engine lists/.test(f.why)), text(classLargeFaults(unknown)));
+  const odd = { entries: { ...list, turn: 'sometimes' }, unreadable: [] };
+  check('a list that gives a surface a draw other than full, calmed or none is refused', classLargeFaults(odd).some((f) => f.where.includes('turn') && f.why.includes('sometimes')), text(classLargeFaults(odd)));
+  check('no list at all is refused', classLargeFaults(null).length === 1, text(classLargeFaults(null)));
+
+  /* The reader: the const from the source, through `as const` and `satisfies`, and nothing it cannot read. */
+  const src = (body) => `import type { GlassSurface } from '../types.ts';\nexport const classLargeText = ${body};\n`;
+  const read = readClassLarge(src(`{ turn: 'full', 'react': 'full', settlement: 'calmed' } as const satisfies Partial<Record<GlassSurface, string>>`));
+  check('the reader reads a list through as const and satisfies, and quoted names', JSON.stringify(read?.entries) === '{"turn":"full","react":"full","settlement":"calmed"}', JSON.stringify(read));
+  check('a source without the list reads as none', readClassLarge('export const somethingElse = {};\n') === null);
+  const spread = readClassLarge(src(`{ ...other, turn: 'full' }`));
+  check('a spread in the list is unreadable, and refused', spread?.unreadable.length === 1 && classLargeFaults(spread).some((f) => /cannot read/.test(f.why)), JSON.stringify(spread));
+  const computed = readClassLarge(src(`{ turn: draw }`));
+  check('a value that is not a string literal is unreadable, and refused', computed?.unreadable.length === 1 && classLargeFaults(computed).some((f) => /cannot read/.test(f.why)), JSON.stringify(computed));
+
+  /* A calmed surface is read against the calmed worst, a full one against the full worst. #ff959f on the page recipe: 1.79:1 full, 8.03:1 calmed. */
+  const g = fresh();
+  check('a color that passes calmed but fails full: #ff959f on the page recipe', contrastRatio('#ff959f', recipeWorsts(real).page.full.rgb) < 3 && contrastRatio('#ff959f', recipeWorsts(real).page.calmed.rgb) >= 3);
+  check('it passes on a calmed surface that uses the recipe', named(glassFaults(g, only('log', 'calmed')), 'class heel').length === 0, text(named(glassFaults(g, only('log', 'calmed')), 'class heel')));
+  const onFull = named(glassFaults(g, only('log', 'full')), 'class heel', 'surface log', 'recipe page', 'full worst');
+  check('and fails on a full surface that uses it', onFull.length === 1 && onFull[0].why.includes('1.79'), text(glassFaults(g, only('log', 'full'))));
+  check('a none surface reads nothing, however bright its smoke', glassFaults(g, only('log', 'none')).length === 0);
+  check('a full surface on a calmAll recipe is read calmed, as a large token is', named(glassFaults(g, only('settlement', 'full')), 'class ').length === 0, text(glassFaults(g, only('settlement', 'full'))));
+
+  /* The ceilings: a class ceiling per class where the list draws it, none where it does not. */
+  const c = glassCeilings(real);
+  const ceilingOf = (hex) => (luminance(hex) + 0.05) / 3 - 0.05;
+  check('a surface that draws class large text carries each class\'s ceiling, at 3:1', near(c.surfaces.turn?.classes?.heel?.large, ceilingOf('#ff959f'), 0.0001) && Object.keys(c.surfaces.turn?.classes ?? {}).join() === Object.keys(real.classes).join(), JSON.stringify(c.surfaces.turn?.classes));
+  check('and says how it is drawn there', c.surfaces.turn?.classLarge === 'full' && c.surfaces.settlement?.classLarge === 'calmed', JSON.stringify([c.surfaces.turn?.classLarge, c.surfaces.settlement?.classLarge]));
+  const none = SURFACES.filter((s) => list[s] === 'none');
+  check('a none surface carries no class ceiling, so Part 2\'s measurement has none to pass class large text on', none.length > 0 && none.every((s) => c.surfaces[s].classes === undefined && c.surfaces[s].classLarge === undefined), JSON.stringify(none.map((s) => [s, c.surfaces[s].classes])));
+  const off = glassCeilings(real, only('log', 'none'));
+  check('a surface the list turns to none loses its class ceiling', off.surfaces.turn.classes === undefined && off.surfaces.turn.tokens !== undefined, JSON.stringify(off.surfaces.turn));
 }
 
 /* The thresholds, each pinned from both sides. */
@@ -313,7 +382,7 @@ check('a recipe calm that is not a number fires', poisoned((g) => { g.smoke.reci
   const repo = path.resolve(here, '..');
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' });
   /** A scratch repository with the guard, the engine's types, and the given glass (null for none), staged. */
-  const scratch = ({ glass, types = true, ceilings = null }) => {
+  const scratch = ({ glass, types = true, ceilings = null, apply = null }) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glass-contrast-'));
     git(dir, 'init', '-q');
     fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
@@ -321,6 +390,8 @@ check('a recipe calm that is not a number fires', poisoned((g) => { g.smoke.reci
     fs.symlinkSync(path.join(repo, 'node_modules'), path.join(dir, 'node_modules'));
     fs.mkdirSync(path.join(dir, 'engine', 'ui'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'engine', 'ui', 'types.ts'), types ? fs.readFileSync(path.join(repo, 'engine', 'ui', 'types.ts'), 'utf8') : 'export type Nothing = never;\n');
+    fs.mkdirSync(path.join(dir, 'engine', 'ui', 'glass'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'engine', 'ui', 'glass', 'apply.ts'), apply ?? fs.readFileSync(path.join(repo, 'engine', 'ui', 'glass', 'apply.ts'), 'utf8'));
     if (glass) {
       fs.mkdirSync(path.join(dir, 'instances', 'x', 'ui'), { recursive: true });
       fs.writeFileSync(path.join(dir, 'instances', 'x', 'ui', 'glass.json'), JSON.stringify(glass));
@@ -340,6 +411,16 @@ check('a recipe calm that is not a number fires', poisoned((g) => { g.smoke.reci
   check('reading no glass.json refuses rather than passing', none.status === 1 && /refusing to report a pass on nothing/.test(none.stderr), none.stderr);
   const blind = run(make({ glass: real, types: false }));
   check('reading no engine surfaces refuses too', blind.status === 1 && /refusing to report a pass on nothing/.test(blind.stderr), blind.stderr);
+
+  const realApply = fs.readFileSync(path.join(repo, 'engine', 'ui', 'glass', 'apply.ts'), 'utf8');
+  const gap = realApply.replace(/^\s*turn: '(full|calmed|none)',.*\n/m, '');
+  check('the scratch list without turn differs from the real one', gap !== realApply);
+  const short = run(make({ glass: real, apply: gap }));
+  check('the script refuses an engine list that leaves out a surface', short.status === 1 && /class large text list/.test(short.stderr) && /turn/.test(short.stderr), short.stderr.slice(0, 400));
+  const extra = run(make({ glass: real, apply: realApply.replace(/^(\s*)turn: /m, "$1lobby: 'full',\n$1turn: ") }));
+  check('the script refuses an engine list that names an unknown surface', extra.status === 1 && /lobby/.test(extra.stderr), extra.stderr.slice(0, 400));
+  const unread = run(make({ glass: real, apply: 'export const nothing = 1;\n' }));
+  check('the script refuses when it cannot find the engine\'s list', unread.status === 1 && /class large text list/.test(unread.stderr), unread.stderr.slice(0, 400));
 
   const missing = run(make({ glass: real }));
   check('a missing ceilings file exits 1, naming --write', missing.status === 1 && /does not exist/.test(missing.stderr) && /--write/.test(missing.stderr), missing.stderr);

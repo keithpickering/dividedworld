@@ -34,9 +34,15 @@
  * (every text node on it stands in a calm, so large text is read calmed); a `body` token at 4.5:1
  * and a `waiting` token at 3:1 against the calmed worst; an `ink` at 4.5:1 against each fill it is
  * set on; every text token opaque (a translucent one has no ratio to check); the ground opaque. Each
- * class color: its ink 4.5:1 on its fill and its large text 3:1 against the calmed worst of every
- * recipe (the plans give Heel's large text as #ff8a96, which is 1.66:1 on any full smoke, so a class's
- * large text is read calmed; PR #39's design questions put this to the owner). Each
+ * class color: its ink 4.5:1 on its fill, and its large text per screen (the glass plan, section 6,
+ * amended 2026-10-30, the owner's "Per screen + 9% lift"). The engine says, for every surface,
+ * whether a class's large text is drawn there on the full smoke, in a calm, or not at all
+ * (`classLargeText` in engine/ui/glass/apply.ts, read here from its source as `GlassSurface` is); the
+ * guard refuses that list when it leaves out a surface the engine lists, names one it does not, or
+ * gives a draw other than those three. A class's large text is read at 3:1 against its surface's
+ * recipe's full worst where the list says full (calmed where the recipe is `calmAll`, as a large
+ * token is), against the calmed worst where it says calmed, the narrow layers' too in each case,
+ * and not at all where it says none. Each
  * size step: its px times its face's ink ratio at 18 or more, a phone step at 16px of computed size.
  * Each font has a family, a file, a weight, a style and an ink ratio. Every `GlassSurface` the engine
  * lists (read from engine/ui/types.ts) names a recipe the theme has, and no other surface is named.
@@ -45,8 +51,11 @@
  *
  * Writes (with --write) and checks (always) `e2e/glass-ceilings.json`: for each instance, each
  * surface's worst and calmed worst luminance, and for each text token the brightest background
- * luminance it still meets its ratio on, by tag. The file is committed; the check fails when it no
- * longer matches glass.json, so a change to the smoke is a change to the file Part 2 measures against.
+ * luminance it still meets its ratio on, by tag. A surface that draws a class's large text also
+ * carries how it is drawn there (`classLarge`) and each class's ceiling at 3:1 (`classes`); one that
+ * draws none carries neither, so the rendered measurement has no ceiling to pass it on. The file
+ * is committed; the check fails when it no longer matches glass.json, so a change to the smoke is a
+ * change to the file Part 2 measures against.
  *
  * Read from git, so an untracked scratch file neither fails the build nor makes it pass. The
  * detection is exported and pure so tools/test-glass-contrast.mjs drives every branch red.
@@ -63,6 +72,10 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 export const GLASS_FILE = /^instances\/([^/]+)\/ui\/glass\.json$/;
 export const CEILINGS_FILE = 'e2e/glass-ceilings.json';
 const TYPES_FILE = 'engine/ui/types.ts';
+/** Where the engine says how each surface draws a class's large text (`classLargeText`). */
+const CLASS_LARGE_FILE = 'engine/ui/glass/apply.ts';
+const CLASS_LARGE_NAME = 'classLargeText';
+const CLASS_LARGE_DRAWS = ['full', 'calmed', 'none'];
 
 /** The size floor: ink of at least 18px, and 16px of computed size on a phone (the web plan's brief, item 7). */
 const INK_FLOOR = 18;
@@ -88,6 +101,60 @@ function readSurfaces() {
   return out;
 }
 export const SURFACES = readSurfaces();
+
+/**
+ * The engine's list of how each surface draws a class's large text, read from the source text of
+ * engine/ui/glass/apply.ts: `{ entries, unreadable }`, where `entries` maps each surface named to its
+ * draw and `unreadable` describes each property the guard cannot read as a plain name and a string
+ * (a spread, a computed name, a value that is not a literal). Null when the source has no such
+ * list. The type check holds the list to every `GlassSurface`; the guard holds it again, because
+ * it is what the guard reads.
+ */
+export function readClassLarge(text) {
+  const source = ts.createSourceFile(CLASS_LARGE_FILE, text, ts.ScriptTarget.Latest, true);
+  for (const st of source.statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    for (const d of st.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || d.name.text !== CLASS_LARGE_NAME || !d.initializer) continue;
+      let init = d.initializer;
+      while (ts.isAsExpression(init) || ts.isSatisfiesExpression(init) || ts.isParenthesizedExpression(init)) init = init.expression;
+      if (!ts.isObjectLiteralExpression(init)) return { entries: {}, unreadable: [`${CLASS_LARGE_NAME} is not an object literal`] };
+      const entries = {};
+      const unreadable = [];
+      for (const p of init.properties) {
+        if (!ts.isPropertyAssignment(p) || !(ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) || !ts.isStringLiteral(p.initializer)) { unreadable.push(p.getText(source)); continue; }
+        const name = p.name.text;
+        if (name in entries) unreadable.push(`${name} is named twice`);
+        entries[name] = p.initializer.text;
+      }
+      return { entries, unreadable };
+    }
+  }
+  return null;
+}
+function readClassLargeFile() {
+  const file = path.join(repoRoot, CLASS_LARGE_FILE);
+  return fs.existsSync(file) ? readClassLarge(fs.readFileSync(file, 'utf8')) : null;
+}
+export const CLASS_LARGE = readClassLargeFile();
+
+/**
+ * Every departure of the engine's class large text list from the surfaces, as `{ where, why }`: no
+ * list, a property the guard cannot read, a surface left out, one the engine does not list, a draw
+ * that is not `full`, `calmed` or `none`.
+ */
+export function classLargeFaults(list, surfaces = SURFACES) {
+  const where = `class large text list (${CLASS_LARGE_NAME}, ${CLASS_LARGE_FILE})`;
+  if (!list) return [{ where, why: 'cannot be found; the engine says, for every surface, whether a class\'s large text is drawn there on the full smoke, in a calm, or not at all' }];
+  const out = [];
+  for (const u of list.unreadable) out.push({ where, why: `cannot read ${JSON.stringify(u)}; each entry is a surface's name and a string` });
+  for (const s of surfaces) if (!(s in list.entries)) out.push({ where: `${where}: surface ${s}`, why: 'leaves out this surface, which the engine lists (GlassSurface in engine/ui/types.ts)' });
+  for (const [s, draw] of Object.entries(list.entries)) {
+    if (!surfaces.includes(s)) out.push({ where: `${where}: surface ${s}`, why: 'is not one the engine lists (GlassSurface in engine/ui/types.ts)' });
+    else if (!CLASS_LARGE_DRAWS.includes(draw)) out.push({ where: `${where}: surface ${s}`, why: `draws class large text ${JSON.stringify(draw)}, which is not full, calmed or none` });
+  }
+  return out;
+}
 
 /* ---- color ---- */
 
@@ -190,11 +257,13 @@ const isText = (token) => textTags(token).length > 0;
 const fontFor = (glass, size) => (glass.fonts ?? []).find((f) => f.family === size.family && f.weight === size.weight && f.style === 'normal');
 
 /**
- * Every departure of one glass from the contract, as `{ where, why }`; [] is clean.
+ * Every departure of one glass from the contract, as `{ where, why }`; [] is clean. `classLarge`
+ * is the engine's list of how each surface draws a class's large text (its entries; the list itself
+ * is held by classLargeFaults).
  * `glass` is the parsed glass.json (a GlassTheme); it is left untyped here because naming the type
  * would pull the rules' sources into the tools' type check.
  */
-export function glassFaults(glass) {
+export function glassFaults(glass, classLarge = CLASS_LARGE?.entries ?? {}) {
   const out = [];
   const fault = (where, why) => out.push({ where, why });
   const standard = glass.keys?.standard ?? {};
@@ -284,7 +353,12 @@ export function glassFaults(glass) {
     }
   }
 
-  /* Class colors: the ink on the fill, and the large text on the calmed smoke. */
+  /*
+   * Class colors: the ink on the fill, and the large text on each surface that draws it, against
+   * the full worst where the engine's list says it stands on the full smoke and the calmed worst
+   * where it says it stands in a calm (and a recipe that is calmAll reads it calmed, as it does a
+   * large token), the narrow layers' too. A surface that draws none is not read.
+   */
   for (const [key, look] of Object.entries(glass.classes ?? {})) {
     const fill = parseColor(look.fill);
     const ink = parseColor(look.ink);
@@ -292,14 +366,18 @@ export function glassFaults(glass) {
     if (!fill || !ink || !large) { fault(`class ${key}`, 'needs a fill, an ink and a large text color, each a color the guard can read'); continue; }
     const r = contrastRatio([ink.r, ink.g, ink.b], [fill.r, fill.g, fill.b]);
     if (r < 4.5) fault(`class ${key}`, `ink ${look.ink} on its fill ${look.fill} is ${fmt(r, 4.5)}, needs 4.5:1`);
-    let tightest = null;
-    for (const [name, w] of Object.entries(worsts)) {
-      for (const [suffix, bg] of [['', w.calmed], ...(w.narrow ? [[' (narrow)', w.narrow.calmed]] : [])]) {
+    for (const s of SURFACES) {
+      const draw = classLarge[s];
+      const name = surfaces[s];
+      const w = worsts[name];
+      if ((draw !== 'full' && draw !== 'calmed') || !w) continue;
+      const calmedRead = draw === 'calmed' || recipes[name].calmAll === true;
+      const which = calmedRead ? 'calmed' : 'full';
+      for (const [label, bg] of [[which, w[which]], ...(w.narrow ? [[`narrow ${which}`, w.narrow[which]]] : [])]) {
         const lr = contrastRatio([large.r, large.g, large.b], bg.rgb);
-        if (!tightest || lr < tightest.r) tightest = { r: lr, name: `${name}${suffix}`, rgb: bg.rgb };
+        if (lr < 3) fault(`class ${key}`, `large ${look.large} on surface ${s} (recipe ${name}), its ${label} worst ${rgbText(bg.rgb)}, is ${fmt(lr, 3)}, needs 3:1`);
       }
     }
-    if (tightest && tightest.r < 3) fault(`class ${key}`, `large ${look.large} on recipe ${tightest.name}'s calmed worst ${rgbText(tightest.rgb)} is ${fmt(tightest.r, 3)}, needs 3:1`);
   }
 
   /* Fonts, and each size in its face. */
@@ -351,8 +429,11 @@ const round4 = (v) => Math.round(v * 10000) / 10000;
  * The numbers the rendered measurement holds the page to: for each surface its recipe's worst and
  * calmed worst luminance (the phone's too, where the recipe has narrow layers) and, for each text
  * token of the standard key, the brightest background luminance it still meets its ratio on, by tag.
+ * Where the engine's list says the surface draws a class's large text, how it is drawn there
+ * (`classLarge`, full or calmed) and each class's ceiling at 3:1 (`classes`); a surface that draws
+ * none carries neither, so the rendered measurement has no ceiling to pass class large text on.
  */
-export function glassCeilings(glass) {
+export function glassCeilings(glass, classLarge = CLASS_LARGE?.entries ?? {}) {
   const worsts = recipeWorsts(glass);
   const surfaces = {};
   for (const s of SURFACES) {
@@ -368,6 +449,15 @@ export function glassCeilings(glass) {
       const lum = luminance([c.r, c.g, c.b]);
       tokens[token] = Object.fromEntries(tags.map((t) => [t, round4((lum + 0.05) / NEED.standard[t] - 0.05)]));
     }
+    const draw = classLarge[s];
+    const drawn = draw === 'full' || draw === 'calmed';
+    const classes = {};
+    if (drawn) {
+      for (const [key, look] of Object.entries(glass.classes ?? {})) {
+        const c = parseColor(look.large);
+        if (c) classes[key] = { large: round4((luminance([c.r, c.g, c.b]) + 0.05) / NEED.standard.large - 0.05) };
+      }
+    }
     surfaces[s] = {
       recipe: recipeName,
       calmAll: recipe.calmAll === true,
@@ -375,6 +465,7 @@ export function glassCeilings(glass) {
       calmedWorst: round4(w.calmed.luminance),
       ...(w.narrow ? { narrowWorst: round4(w.narrow.full.luminance), narrowCalmedWorst: round4(w.narrow.calmed.luminance) } : {}),
       tokens,
+      ...(drawn ? { classLarge: draw, classes } : {}),
     };
   }
   return { surfaces };
@@ -410,6 +501,11 @@ function main() {
     process.exit(1);
   }
   let faults = 0;
+  /* The engine's list is the engine's, read once whatever the instances. */
+  for (const f of classLargeFaults(CLASS_LARGE)) {
+    if (faults++ === 0) console.error('  glass-contrast: the glass fails its contrast:');
+    console.error(`    engine: ${f.where}: ${f.why}`);
+  }
   const byInstance = {};
   for (const file of files) {
     const instance = file.match(GLASS_FILE)[1];
@@ -439,3 +535,4 @@ function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }
+
