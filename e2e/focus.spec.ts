@@ -179,11 +179,12 @@ test('a link out of the glass forgets the thread, and Back lands on the one the 
   await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
   await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
   /*
-   * Out of the glass by a link that is not Back: the Rankings tab, which stands in on the board's
-   * standings until Rankings has its page. (My characters' crumb was this link until the glass build's
-   * Task 2.2 drew the page as the Roster board, which has none.)
+   * Out of the glass by a link that is not Back: a character's name on Rankings, which opens its
+   * profile on the board. (My characters' crumb, then the Rankings tab while it stood in on the
+   * board's standings, were this link until the glass build's Tasks 2.2 and 2.3.)
    */
   await page.getByRole('navigation', { name: 'Menu' }).getByRole('link', { name: 'Rankings' }).click();
+  await page.getByRole('main').getByRole('table').getByRole('link').first().click();
   await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Menu' })).toHaveCount(0);
   /*

@@ -44,14 +44,16 @@ const manifest: BoardManifest = {
      * name: the board's ESC key cap is in the link's text, where the build hides it from the
      * accessibility tree and names the link by its words (engine/ui/glass/MenuBar.tsx), as the Main
      * board's manifest says of the HUD's Menu button. The Vending Machine's tab is left out until the
-     * glass build's Part 3 adds the screen and its tab, and adds it here.
+     * glass build's Part 3 adds the screen and its tab, and adds it here; until then every tab after
+     * Back stands one tab's width left of the board's, so the tabs are compared by size, as board 10's
+     * are, and Part 3 turns them back to full.
      */
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
     { id: 'menu-back', role: 'link', name: 'ESC Back to the board', buildName: 'Back to the board', within: 'menu' },
-    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu' },
-    { id: 'menu-rankings', role: 'link', name: 'Rankings', within: 'menu' },
-    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu' },
-    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu' },
+    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu', box: 'size' },
+    { id: 'menu-rankings', role: 'link', name: 'Rankings', within: 'menu', box: 'size' },
+    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu', box: 'size' },
+    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu', box: 'size' },
 
     /* The heading, the season's line and the lead. */
     { id: 'title', role: 'heading', name: 'Rankings' },
