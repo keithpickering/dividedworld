@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1100">
+<title>The Director's profile</title>
+<!-- The System design session, screens question 2, 2026-10-30. Three ways to draw the Director's profile on the
+     board (2003). Everything on it is written by the Director in character and may bluff; nothing here is its hidden
+     memory. A reference for the look, not code to copy. -->
+<style>
+body{margin:0;background:#2a2633;font:12px/1.5 Verdana,Geneva,sans-serif}
+.opt{width:1060px;margin:56px auto 24px;background:#fff;position:relative;color:#000}
+.label{position:absolute;left:-1px;top:-30px;font:bold 18px 'Courier New',monospace;color:#f1ecff;letter-spacing:1px}
+.hdr{display:flex;justify-content:space-between;align-items:baseline;padding:10px 2%;border-bottom:1px solid #000}
+.hdr a{font:bold 22px 'Courier New',monospace;letter-spacing:1px;text-decoration:none;color:#000}
+.wrap{padding:12px 2% 18px;display:flex;gap:2%}
+.tall{width:120px;height:180px;border:1px solid #000;background:repeating-linear-gradient(45deg,rgba(0,0,0,.08) 0 6px,transparent 6px 12px);display:flex;align-items:center;justify-content:center;color:#555;font-size:10px}
+.name{font:bold 18px 'Courier New',monospace}
+.staff{display:inline-block;background:#000;color:#fff;font:bold 10px Verdana;padding:1px 5px;letter-spacing:1px}
+table{border-collapse:collapse;width:100%;font-size:11px}
+th{font:bold 11px 'Courier New',monospace;text-align:left;border:1px solid #000;padding:3px 6px;background:#f2f2f2}
+td{border:1px solid #000;padding:4px 6px;vertical-align:top}
+.muted{color:#555}
+.sig{border-top:1px dashed #000;padding-top:4px;margin-top:8px;font-size:11px}
+marquee{font:bold 11px Verdana}
+</style>
+</head>
+<body>
+
+<!-- A: the member profile, with the admin's fields -->
+<div class="opt">
+  <div class="label">A · THE ORDINARY PROFILE, WITH AN ADMIN'S FIELDS</div>
+  <div class="hdr"><a href="#">DIVIDED WORLD</a><span class="muted">dw.gripe</span></div>
+  <div class="wrap">
+    <div class="tall">avatar</div>
+    <div style="flex:1">
+      <span class="name">The Director</span> <span class="staff">ADMINISTRATOR</span><br>
+      <span class="muted">Head of Board Operations (Toast Division)</span>
+      <table style="margin-top:10px;width:520px">
+        <tr><th style="width:150px">Interests</th><td>toast, artisanal breads, the 1998 film <i>Small Soldiers</i> (since Tuesday)</td></tr>
+        <tr><th>Favorite Members</th><td><a href="#">Pipewrench</a>, <a href="#">Spritey</a></td></tr>
+        <tr><th>Current Mood</th><td>😤 Disappointed but Hopeful</td></tr>
+        <tr><th>Posts</th><td>48 · Joined the beginning of time</td></tr>
+      </table>
+      <div class="sig">"A forum is like a loaf of bread. Somebody has to slice it." — The Director</div>
+    </div>
+  </div>
+</div>
+
+<!-- B: a 2003 staff page -->
+<div class="opt">
+  <div class="label">B · A GARISH 2003 STAFF PAGE</div>
+  <div class="hdr"><a href="#">DIVIDED WORLD</a><span class="muted">dw.gripe</span></div>
+  <div style="background:#000;color:#ffd93d;padding:4px 2%"><marquee scrollamount="4">★ WELCOME TO THE OFFICE OF THE DIRECTOR ★ TOAST MONTH IS NOW IN EFFECT ★ PLEASE WIPE YOUR FEET ★</marquee></div>
+  <div class="wrap">
+    <div class="tall" style="border:3px ridge #999">avatar<br>(animated)</div>
+    <div style="flex:1">
+      <span class="name" style="font-size:22px">THE DIRECTOR</span> <span class="staff">ADMINISTRATOR</span> <span class="staff" style="background:#c00">ONLINE</span>
+      <p style="margin:6px 0;border:1px solid #000;background:#fffbe0;padding:6px 8px"><b>A MESSAGE FROM THE DIRECTOR:</b> I see everything. I appreciate most of it. Lately I have been getting into toast and frankly I think you all should too.</p>
+      <table style="width:560px">
+        <tr><th colspan="2">MY HOBBY SHRINE</th></tr>
+        <tr><td style="width:150px">Current obsession</td><td><b>Toast</b> (picked up from <a href="#">Pipewrench</a>, Tuesday)</td></tr>
+        <tr><td>Previous obsessions</td><td>Small Soldiers (1998) · lawn bowling · Pipewrench's haircut</td></tr>
+        <tr><td>Members I am proud of</td><td><a href="#">Pipewrench</a>, <a href="#">Spritey</a></td></tr>
+        <tr><td>Members on notice</td><td><a href="#">Mrs. Hooligan</a></td></tr>
+      </table>
+      <div class="sig">"A forum is like a loaf of bread. Somebody has to slice it."</div>
+    </div>
+  </div>
+</div>
+
+<!-- C: A, plus the mod log -->
+<div class="opt" style="margin-bottom:40px">
+  <div class="label">C · THE ORDINARY PROFILE, PLUS ITS MOD LOG</div>
+  <div class="hdr"><a href="#">DIVIDED WORLD</a><span class="muted">dw.gripe</span></div>
+  <div class="wrap">
+    <div class="tall">avatar</div>
+    <div style="width:46%">
+      <span class="name">The Director</span> <span class="staff">ADMINISTRATOR</span><br>
+      <span class="muted">Head of Board Operations (Toast Division)</span>
+      <table style="margin-top:10px">
+        <tr><th style="width:130px">Interests</th><td>toast, artisanal breads, the 1998 film <i>Small Soldiers</i> (since Tuesday)</td></tr>
+        <tr><th>Favorite Members</th><td><a href="#">Pipewrench</a>, <a href="#">Spritey</a></td></tr>
+        <tr><th>Current Mood</th><td>😤 Disappointed but Hopeful</td></tr>
+        <tr><th>Posts</th><td>48 · Joined the beginning of time</td></tr>
+      </table>
+      <div class="sig">"A forum is like a loaf of bread. Somebody has to slice it." — The Director</div>
+    </div>
+    <div style="flex:1">
+      <table>
+        <tr><th colspan="3">Moderation log</th></tr>
+        <tr><td style="width:62px">Oct 30</td><td>Renamed <a href="#">General</a> to <a href="#">Pointless Toast Palace</a></td><td style="width:70px">in force</td></tr>
+        <tr><td>Oct 27</td><td>Renamed <a href="#">Art</a> to <a href="#">Lawn Bowling Lounge</a></td><td class="muted">undone: 12 posted</td></tr>
+        <tr><td>Oct 24</td><td>Renamed <a href="#">General</a> to <a href="#">Pirate Puns Palace</a></td><td class="muted">ran out Oct 31</td></tr>
+        <tr><td>Oct 22</td><td>Renamed <a href="#">Games</a> to <a href="#">Small Soldiers Situation Room</a></td><td class="muted">reversed by an admin</td></tr>
+      </table>
+      <p class="muted" style="font-size:10px;margin:4px 0 0">Every move The System has made, newest first. <a href="#">Older ›</a></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

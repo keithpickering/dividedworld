@@ -14,7 +14,7 @@ The System, runs the board. It is built for a small circle of people who know ea
 be someone you know; small is a choice of play, never a limit of the architecture. **Divided World** (dw.gripe) is its
 first instance, for the MFGG and Minus World community. The words this file uses: a **player** is the person behind the
 masks; an **account** is their login; a **character** is a mask; an **Act** is the unit everything is made of; **The
-System** is the machine (board turnover, Mod Bots, appeals). The design that settled these is
+System** is the machine (the Director, its Mod Bots, appeals). The design that settled these is
 `docs/plans/2026-10-28-kit-step-1-design.md`.
 
 **How a task starts here:** a plan before code, made with the owner by a design session
@@ -63,15 +63,16 @@ other community's instance.
 ## The System acts; it never destroys what a player wrote
 
 **The System decides on its own, inside effects the code defines and bounds; nothing it or any player does destroys
-the words a player wrote, and the weekly board list is shown to admins before it goes live.**
+the words a player wrote, and a move that reshapes a board is shown to admins before it lands.**
 
 The System's arbitrariness is the game's chance: a model encouraged to be unreasonable, reading the state of play the
 way a game director does, so that a ruling feels earned or cruel rather than a coin flip. So no person signs its
 rulings in play. What bounds it is the code: every verdict, reward and punishment it can give is one of a fixed list
 of choices the code maps to an effect with limits, and free text a model returns is shown, never acted on. A player's
 post may be shredded, redacted, splatted or autocorrected, but each of those is a layer over the original, which
-survives and can come back by the game's own means or an admin's. The weekly turnover's new boards go to admins about
-24 hours before they go live and go live unless one holds them, so an admin can override a board while the illusion
+survives and can come back by the game's own means or an admin's. A move that reshapes a board (creating, merging,
+restricting or renaming one) or permabans a character goes to admins about 24 hours before it lands and lands unless
+one holds it, and an admin can reverse any move after it lands, so an admin can override The System while the illusion
 holds, and an instance whose admins are away never stalls.
 
 ## Append-only
@@ -89,7 +90,7 @@ points at, never in the Act. Nothing here has an UPDATE on an Act's content.
 as an issue the day it is found.**
 
 The game may be unfair; it may never be a trap. A ban from a board, a splat, a timebomb, an appeal waiting on The
-System, an archived board and every state added later each say how they end: by themselves within a stated time, by a
+System, a locked thread, a full warn bar and every state added later each say how they end: by themselves within a stated time, by a
 player's act on the screen where the state shows, or by an admin. A plan that adds a state names its way out, and a
 change that adds one builds that way out in the same change.
 
