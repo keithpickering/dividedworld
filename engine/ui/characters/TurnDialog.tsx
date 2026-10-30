@@ -124,14 +124,21 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
               <input type="radio" name="turn-loudness" checked={loudness === 'announced'} onChange={() => setLoudness('announced')} />
               <span><b>Announced.</b> The System posts that {character.name} has Turned.</span>
             </label>
-            <label className="kb-choice-option kb-choice-sub" data-kb-chosen={showFrom || undefined}>
-              <input type="checkbox" checked={showFrom} disabled={loudness === 'silent'} onChange={(e) => setNamed({ ...named, was: e.target.checked })} />
-              <span>Name the old class. The post says what {character.name} was.</span>
-            </label>
-            <label className="kb-choice-option kb-choice-sub" data-kb-chosen={showTo || undefined}>
-              <input type="checkbox" checked={showTo} disabled={loudness === 'silent'} onChange={(e) => setNamed({ ...named, to: e.target.checked })} />
-              <span>Name the new class. The post says what {character.name} is now, and {character.name} reveals it.</span>
-            </label>
+            {/*
+              The board's third tile, lit where the post names a class: the two names an announced
+              Turn can carry (the class reveal design), one group that a silent Turn turns off.
+            */}
+            <fieldset className="kb-turn-name" disabled={loudness === 'silent'} data-kb-chosen={showFrom || showTo || undefined}>
+              <legend className="kb-visually-hidden">Name in the post</legend>
+              <label className="kb-turn-toggle" data-kb-chosen={showFrom || undefined}>
+                <input type="checkbox" checked={showFrom} onChange={(e) => setNamed({ ...named, was: e.target.checked })} />
+                <span><b>Name the old class.</b> “Was {withArticle(now)}” becomes public.</span>
+              </label>
+              <label className="kb-turn-toggle" data-kb-chosen={showTo || undefined}>
+                <input type="checkbox" checked={showTo} onChange={(e) => setNamed({ ...named, to: e.target.checked })} />
+                <span><b>Name the new class.</b> {to ? `A reveal: “Now ${withArticle(nameOf(to))}.”` : 'A reveal of the class you choose.'}</span>
+              </label>
+            </fieldset>
           </fieldset>
           {to ? (
             <PreviewBox preview={turnPreview({ name: character.name, was: now, to: nameOf(to), loudness, showFrom, showTo })} />

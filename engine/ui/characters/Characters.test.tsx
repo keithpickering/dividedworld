@@ -253,6 +253,25 @@ describe('the Turn', () => {
     expect(within(dialog).getByRole('checkbox', { name: /Name the old class/u })).not.toBeChecked();
   });
 
+  test('holds the two names in one group under Announced, off while the Turn is silent', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const dialog = await openTurn();
+    const loud = within(dialog).getByRole('group', { name: 'How loud' });
+    const naming = within(loud).getByRole('group', { name: 'Name in the post' });
+    expect(within(naming).getByRole('checkbox', { name: /^Name the old class/u })).toBeEnabled();
+    expect(within(naming).getByRole('checkbox', { name: /^Name the new class/u })).toBeEnabled();
+    expect(naming).toBeEnabled();
+
+    await userEvent.click(within(loud).getByRole('radio', { name: /^Silent/u }));
+    expect(naming).toBeDisabled();
+    expect(within(naming).getByRole('checkbox', { name: /^Name the new class/u })).toBeDisabled();
+
+    await userEvent.click(within(loud).getByRole('radio', { name: /^Announced/u }));
+    expect(naming).toBeEnabled();
+  });
+
   test('cannot be confirmed until a class is chosen', async () => {
     const w = world();
     open(w);
