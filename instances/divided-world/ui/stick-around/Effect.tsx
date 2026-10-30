@@ -15,7 +15,7 @@ import { createContext, useCallback, useContext, useLayoutEffect, useRef, useSta
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { HoldView } from './HoldView.tsx';
 import { isHeld, releaseSide } from '../../cards/stick-around/hold.ts';
-import { placeBeside, useTakeover } from './takeover.ts';
+import { placeBeside, swallowEscAfterRelease, useTakeover } from './takeover.ts';
 import './hold.css';
 
 /* Breaking free, for this visit: the posts the reader got out of. A module's memory lasts until the page is reloaded. */
@@ -57,6 +57,7 @@ export function StickAroundEffect({ post, plays, released, reader, release, chil
     const el = body.current;
     if (el) leaving.current = { post: el.closest<HTMLElement>('article') ?? el, side: releaseSide(pushed) };
     escaped.add(post.id);
+    swallowEscAfterRelease();
     setLifted(false);
     for (const l of [...listeners]) l();
   }, [post.id]);
@@ -76,7 +77,7 @@ export function StickAroundEffect({ post, plays, released, reader, release, chil
       {lifted ? <div className="kb-hold-away" style={{ height }} aria-hidden="true" /> : children}
       {lifted && (
         <HoldView
-          post={post} play={play} stage={stage} release={release} onBreakFree={breakFree}
+          key={play.id} post={post} play={play} stage={stage} release={release} onBreakFree={breakFree}
         >
           {children}
         </HoldView>

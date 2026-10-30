@@ -23,7 +23,7 @@
  * and its surface's element. A panel under the smoke (the dialog's own ground, under its smoke) is
  * not under the text, so the walk stops at the surface's element.
  */
-import { parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, type TextFact } from './glass-text.ts';
+import { isSkipped, parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, type TextFact } from './glass-text.ts';
 
 /**
  * What a face inks is read over a string with an ascender and a descender: the design's "ascender
@@ -34,24 +34,6 @@ import { parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, t
  * size the guard refuses.
  */
 export const INK_SAMPLE = 'Hg';
-
-/**
- * The board drawn inside the glass: the post a Turn or a debut previews as the thread will show it
- * (characters/PreviewBox.tsx), and the 2003 window on the hand sheet's story, around the card's tag
- * (cards/Hand.board.stories.tsx; the tag itself is glass and is read): in the board's own ground
- * and type, opaque, which the board's rules and axe hold, not the glass's; and the post Stick Around
- * lifts into its full-screen view, still the board's 2003 post, white, with the release and the bar
- * (the glass's, read) around it.
- */
-const BOARD = '.kb-preview-post, .kb-hand-board-post-bar, .kb-hand-board-post-foot, .kb-hold-post';
-/**
- * The instance's drawn art, marked `data-kb-art` by the engine screen that leaves it a place (the Vending
- * Machine's sign and the codes printed on its slots): decoration, hidden from a screen reader, with no
- * words in it a player needs (what a slot is and costs is said by its button's name), and so outside the
- * type measurement (docs/plans/2026-10-30-glass-to-the-boards-plan.md, section 7, board 07).
- */
-const ART = '[data-kb-art]';
-const SKIP = `.kb-smoke, script, style, noscript, template, option, ${BOARD}, ${ART}`;
 
 /** A line as gathered, before its pixels are read: the judgment's fact less `brightest` and `smoke`. */
 export interface Gathered extends Omit<TextFact, 'brightest' | 'smoke'> {
@@ -322,7 +304,7 @@ export async function gather(): Promise<Gathered[]> {
   for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
     if (!/\S/.test(n.data) || PICTURE.test(n.data)) continue;
     const el = n.parentElement;
-    if (!el || el.closest(SKIP)) continue;
+    if (!el || isSkipped(el)) continue;
     if (overlay && !overlay.contains(el)) continue;
     const s = getComputedStyle(el);
     if (s.visibility !== 'visible') continue;

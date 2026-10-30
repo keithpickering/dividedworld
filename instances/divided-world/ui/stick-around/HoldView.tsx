@@ -28,6 +28,9 @@ import { barStep, countPresses, FULL, pushPastEnd } from '../../cards/stick-arou
 const ARROW = 48;
 const PAGE = 0.9;
 
+/** The bar is announced to a screen reader in steps of this many percent; the drawn bar is smooth. */
+const ANNOUNCE_STEP = 10;
+
 const WAYS_OUT = 'Scroll past either end of the post, press Break free, or check the box.';
 /** What the view says after an Esc, and after a press on the dimmed page behind: the first is a way out, the second is not. */
 const ON_ESC = `Esc breaks free, like the Break free button: each press fills the bar a little, and it drains when you stop. ${WAYS_OUT}`;
@@ -181,7 +184,10 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
   const onClose = () => { if (!escaping.current) say(ON_PAGE); };
   useEffect(() => () => { if (hint.current !== null) clearTimeout(hint.current); }, []);
 
-  const percent = Math.round(Math.min(Math.max(level, 0), FULL) * 100);
+  const clamped = Math.min(Math.max(level, 0), FULL);
+  const percent = Math.round(clamped * 100);
+  /* A screen reader is told of the bar in tens: every frame's change would be a stream of announcements. */
+  const announced = Math.floor(percent / ANNOUNCE_STEP) * ANNOUNCE_STEP;
   const heading = `Held post: ${names.author}${post.seq === null ? '' : `, #${post.seq}`}`;
   const sentence = sentenceOf(play);
   const why = `${id}-why`;
@@ -213,8 +219,8 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
         <div className="kb-hold-foot">
           <div className="kb-hold-bar kb-glass-cut-panel">
             <div className="kb-hold-bar-head"><span>Break free</span><span aria-hidden="true">{percent}%</span></div>
-            <div className="kb-hold-track" role="progressbar" aria-label="Break free" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-valuetext={`${percent}%`}>
-              <div className="kb-hold-fill" style={{ width: `${percent}%` }} />
+            <div className="kb-hold-track" role="progressbar" aria-label="Break free" aria-valuemin={0} aria-valuemax={100} aria-valuenow={announced} aria-valuetext={`${announced}%`}>
+              <div className="kb-hold-fill" style={{ width: `${clamped * 100}%` }} />
             </div>
             <p className="kb-hold-hint">
               Keep scrolling away to break free for this visit. Next visit, it holds you again until you check.

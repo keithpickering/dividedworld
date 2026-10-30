@@ -19,8 +19,8 @@ import { storyNameFromExport, toId } from 'storybook/internal/csf';
 const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ENGINE_UI = path.join(REPO, 'engine', 'ui');
 /** An instance's own board stories live beside its art, in its `ui` folder (the story route globs both). */
-const instanceUis = (): string[] => {
-  const instances = path.join(REPO, 'instances');
+export const instanceUis = (repo = REPO): string[] => {
+  const instances = path.join(repo, 'instances');
   return fs.readdirSync(instances, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(instances, e.name, 'ui')).filter((p) => fs.existsSync(p));
 };
 

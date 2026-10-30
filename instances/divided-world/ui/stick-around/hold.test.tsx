@@ -10,12 +10,17 @@
  * 16 ms here and a "screen" is 500 px.
  */
 import { act, fireEvent, screen, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
 
 import { buildWorld, renderIn } from '../../../../engine/ui/test-world.tsx';
 import { instanceUi } from '../index.ts';
 import { TUNING } from '../../cards/stick-around/hold.ts';
+import type { Act } from '../../../../engine/ui/data/api.ts';
+import type { CardPlay } from '../../../../engine/ui/cards/types.ts';
+import { HoldStage, StickAroundEffect } from './Effect.tsx';
+import { ESC_QUIET_MS } from './takeover.ts';
 
 const SENTENCE = 'I have read every word of Spritey\'s changelog and I feel changed.';
 const WINDOW = 800;
@@ -105,7 +110,8 @@ async function settleOn(post: { top: number; bottom: number }) {
 }
 const view = () => screen.queryByRole('dialog', { name: 'Stick Around' });
 const bar = () => within(view()!).getByRole('progressbar', { name: 'Break free' });
-const level = () => Number(bar().getAttribute('aria-valuenow'));
+/* The bar as the eye reads it, to the percent; what a screen reader is told (`aria-valuenow`) is stepped, and tested as such. */
+const level = () => Number(within(view()!).getByText(/^\d+%$/u).textContent!.replace('%', ''));
 const scroller = () => view()!.querySelector<HTMLElement>('.kb-hold-scroll')!;
 
 /** The thread open and the reader taken over: the view is up with its bar empty. */
@@ -420,3 +426,227 @@ describe('for a keyboard and a screen reader', () => {
   });
 });
 
+
+
+/* --------------------------------------------------------------------------- touch ---- */
+describe('touch', () => {
+  /** A finger down on the view, and a function that moves it `px` up the screen (a drag that pushes the post down). */
+  const finger = (el: Element, px: number) => {
+    let y = 700;
+    const touch = (clientY: number) => ({ touches: [{ clientX: 50, clientY }], targetTouches: [{ clientX: 50, clientY }], changedTouches: [{ clientX: 50, clientY }] });
+    fireEvent.touchStart(el, touch(y));
+    return () => { y -= px; fireEvent.touchMove(el, touch(y)); };
+  };
+  const inner = () => view()!.querySelector('.kb-hold-inner')!;
+
+  test('a hard drag past the end of the post fills the bar against the drain, and a slow one does not', async () => {
+    const slow = await openView();
+    atEnd('bottom');
+    await frames(60 * 6, ((move) => () => move())(finger(inner(), 5)));
+    expect(level()).toBeLessThan(10);
+    expect(view()).not.toBeNull();
+    slow.unmount();
+    document.body.innerHTML = '';
+
+    await openView();
+    atEnd('bottom');
+    await frames(60 * 6, ((move) => () => move())(finger(inner(), 30)));
+    expect(view()).toBeNull();
+  });
+
+  test('a drag that the post can take fills nothing', async () => {
+    await openView();
+    await frames(30, ((move) => () => move())(finger(inner(), 10)));
+    expect(level()).toBe(0);
+    expect(scroller().scrollTop).toBe(0);
+  });
+
+  test('a finger down while the scroll settles holds the take-over back until it lifts', async () => {
+    await openThread(world());
+    geometry.post = { top: 200, bottom: 520 };
+    act(() => { window.dispatchEvent(new Event('touchstart')); });
+    await scrollWindow();
+    await wait(TUNING.settleMs * 3);
+    expect(view()).toBeNull();
+    act(() => { window.dispatchEvent(new Event('touchend')); });
+    await wait(TUNING.settleMs + 20);
+    expect(view()).not.toBeNull();
+  });
+});
+
+/* ---------------------------------------------------------------- the pull, and the wheel ---- */
+describe('the pull', () => {
+  test('a wheel during the pull takes the page back: the pull stops where it is, and waits for the reader to settle again', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 4000 });
+    await openThread(world());
+    await settleOn({ top: 500, bottom: 820 });
+    expect(view()).toBeNull();
+    await wait(300);
+    const scrollTo = window.scrollTo as unknown as ReturnType<typeof vi.fn>;
+    expect(scrollTo.mock.calls.length).toBeGreaterThan(0);
+    act(() => { window.dispatchEvent(new Event('wheel')); });
+    const during = scrollTo.mock.calls.length;
+    await wait(TUNING.settleMs - 60);
+    expect(scrollTo.mock.calls.length, 'the pull drew no more frames').toBe(during);
+    expect(view()).toBeNull();
+    /* Settled again, the page is pulled once more and the post taken. */
+    await wait(TUNING.pullMaxMs + TUNING.settleMs + 200);
+    expect(view()).not.toBeNull();
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 0 });
+  });
+
+  test('two held posts on a page share one set of listeners', async () => {
+    const w = world();
+    const second = w.fake.seed.post(w.thread, w.spritey, 'A second post, held too.');
+    w.fake.seed.card(w.gloomba, second, 'stick-around', { config: { sentence: SENTENCE } });
+    const add = vi.spyOn(window, 'addEventListener');
+    await openThread(w);
+    expect(screen.getByText(/A second post, held too/u)).toBeInTheDocument();
+    expect(document.querySelectorAll('.kb-hold')).toHaveLength(2);
+    const scrollListeners = add.mock.calls.filter(([type]) => type === 'scroll');
+    expect(scrollListeners).toHaveLength(1);
+  });
+});
+
+/* ---------------------------------------------------------------------- the view's input ---- */
+describe('what the view counts', () => {
+  /** The bar's level after a wheel event in each of twelve frames at the end of the post, with the view otherwise left alone. */
+  async function afterOneWheel(init: { deltaY: number; deltaMode?: number }) {
+    const { unmount } = await openView();
+    atEnd('bottom');
+    await frames(12, () => { fireEvent.wheel(scroller(), init); });
+    const now = level();
+    unmount();
+    document.body.innerHTML = '';
+    return now;
+  }
+
+  test('a wheel in lines or pages counts by the distance it would scroll', async () => {
+    /* Three lines are 48 px a frame; a tenth of the view's 500 px is 50. Both are under what a frame can fill, so they are told apart from the raw numbers. */
+    const lines = await afterOneWheel({ deltaY: 48 });
+    expect(lines).toBeGreaterThan(10);
+    expect(await afterOneWheel({ deltaY: 3, deltaMode: 1 })).toBe(lines);
+    const pages = await afterOneWheel({ deltaY: 50 });
+    expect(await afterOneWheel({ deltaY: 0.1, deltaMode: 2 })).toBe(pages);
+    expect(await afterOneWheel({ deltaY: 3 }), 'the same number in pixels is a small push').toBe(0);
+  });
+
+  test('a key with alt, control or meta is the browser\'s, not a scroll of the post', async () => {
+    await openView();
+    const el = scroller();
+    for (const mod of [{ altKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+      const untouched = fireEvent.keyDown(el, { key: 'PageDown', ...mod });
+      expect(untouched, JSON.stringify(mod)).toBe(true);
+      expect(el.scrollTop).toBe(0);
+    }
+    expect(fireEvent.keyDown(el, { key: 'PageDown' })).toBe(false);
+    expect(el.scrollTop).toBeGreaterThan(0);
+  });
+
+  test('Space on the button or the checkbox presses it, and on the post scrolls it', async () => {
+    await openView();
+    const dialog = view()!;
+    for (const control of [within(dialog).getByRole('button', { name: 'Break free' }), within(dialog).getByRole('checkbox')]) {
+      expect(fireEvent.keyDown(control, { key: ' ' }), control.tagName).toBe(true);
+      expect(scroller().scrollTop).toBe(0);
+    }
+    expect(fireEvent.keyDown(scroller(), { key: ' ' })).toBe(false);
+    expect(scroller().scrollTop).toBeGreaterThan(0);
+  });
+
+  test('the bar is announced in steps of ten, while the bar itself fills smoothly', async () => {
+    await openView();
+    atEnd('bottom');
+    const heard = new Set<string>();
+    const widths = new Set<string>();
+    for (let i = 0; i < 40; i++) {
+      fireEvent.wheel(scroller(), { deltaY: 40 });
+      await frames(1);
+      if (view() === null) break;
+      heard.add(bar().getAttribute('aria-valuenow')!);
+      widths.add(view()!.querySelector<HTMLElement>('.kb-hold-fill')!.style.width);
+    }
+    expect(heard.size).toBeGreaterThan(1);
+    for (const now of heard) expect(Number(now) % 10, `aria-valuenow ${now}`).toBe(0);
+    expect(widths.size, 'the fill moves in more steps than the announcement').toBeGreaterThan(heard.size);
+  });
+});
+
+describe('the view\'s words and its place in the thread', () => {
+  test('the tag names the card\'s caster and carries their message', async () => {
+    await openView();
+    await wait(50);
+    expect(view()!.querySelector('.kb-hold-tag')).toHaveTextContent('Gloomba: “required reading”');
+  });
+
+  test('the thread keeps a space as tall as the post while the post is lifted into the view', async () => {
+    await openView();
+    const away = document.querySelector<HTMLElement>('.kb-hold-away')!;
+    expect(away).not.toBeNull();
+    expect(away.style.height).toBe(`${geometry.post.bottom - geometry.post.top}px`);
+  });
+});
+
+describe('Esc after the release', () => {
+  test('an Esc right after breaking free is swallowed, not the board\'s Menu; one a moment later is the board\'s', async () => {
+    await openView();
+    atEnd('bottom');
+    /* Push until the bar fills and the view goes, and stop at that frame: the reader's next Esc is the one after. */
+    for (let i = 0; i < 60 * 6 && view() !== null; i++) await frames(1, pushing(scroller(), 40));
+    expect(view()).toBeNull();
+    const board = vi.fn();
+    document.addEventListener('keydown', board);
+    try {
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(board, 'the reader is still mashing').not.toHaveBeenCalled();
+      await wait(ESC_QUIET_MS + 50);
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(board).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener('keydown', board);
+    }
+  });
+});
+
+/* ---------------------------------------------------------------- a stack of plays ---- */
+describe('an effect given more than one play', () => {
+  let directs = 0;
+  const act1 = (): Act => ({ id: `direct-${directs}`, character: null, kind: 'post', thread: 't', targetActId: null, seq: 2, createdAt: '2026-10-30T12:00:00Z', payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null }) as Act;
+  const playOf = (id: string, sentence: string): CardPlay => ({ id, card: 'stick-around', layer: 1, caster: null, message: '', config: { sentence }, playedAt: '2026-10-30T12:00:00Z', post: `direct-${directs}` });
+
+  function Host({ plays, expose }: { plays: CardPlay[]; expose: (set: (ids: string[]) => void) => void }) {
+    const [released, setReleased] = useState<ReadonlySet<string>>(new Set());
+    expose((ids) => setReleased(new Set(ids)));
+    return (
+      <HoldStage.Provider value={{ mode: 'view', level: 0 }}>
+        <StickAroundEffect
+          post={act1()} plays={plays} states={{}} released={released} reader={{ author: false, caster: false }} place="thread" save={vi.fn()}
+          release={async (id) => { setReleased((r) => new Set([...r, id])); return { ok: true, value: { play: id, releasedAt: 'now' } } as never; }}
+        >
+          <p>the post</p>
+        </StickAroundEffect>
+      </HoldStage.Provider>
+    );
+  }
+
+  test('the next play\'s checkbox is unchecked and asks its own sentence, and a later play opens no view by itself', async () => {
+    directs++;
+    let set: (ids: string[]) => void = () => undefined;
+    renderIn(buildWorld(), <Host plays={[playOf('p1', 'First sentence.'), playOf('p2', 'Second sentence.')]} expose={(s) => { set = s; }} />);
+    vi.useFakeTimers();
+    const box = () => within(view()!).getByRole('checkbox');
+    expect(view()).toHaveTextContent('First sentence.');
+    fireEvent.click(box());
+    await wait(50);
+    expect(view()).toHaveTextContent('Second sentence.');
+    expect(box()).not.toBeChecked();
+    /* Both released: the view is gone with the post held no more. */
+    fireEvent.click(box());
+    await wait(50);
+    expect(view()).toBeNull();
+    /* A play that arrives later is not shown in a view that was open for the one before. */
+    act(() => { set([]); });
+    expect(view()).toBeNull();
+  });
+});
