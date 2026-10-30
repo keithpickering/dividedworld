@@ -135,6 +135,33 @@ behavior the engine's.
 - **Tuning is not this task's to finish.** Simulated pointers cannot move like a thumb, so the numbers ship as the
   owner's starting points and a dedicated session tunes them with the owner on phones, a mouse and a wheel.
 
+**Amended 2026-10-30, the breakout redesigned** (screens design, section 10's amendment of this date, which wins over
+this task where they differ). In `hold.ts`, the slingshot, the wheel's flick and the handle are gone. In their place:
+- `stickAroundTakesOver(post, viewport, scrollSettled)`: the post mostly in view and the reader's scroll settled.
+- The bar, a pure step: `barStep(level, input, dt)` fills by scroll distance pushed past an end of the post and drains
+  at a constant rate. The fill per screen, the drain per second and "mostly in view" are constants named in one place,
+  starting points for the tuning session.
+- `releaseSide(lastPush)`: `after` or `before`.
+
+`Effect.tsx` lifts the post into a full-screen glass view through `Overlay` (the `effect` recipe), with the thread dimmed
+and inert behind it. The post scrolls inside the view, the caster's checkbox sits at its end, and the bar and the BREAK
+FREE button sit in the view's foot. A full bar closes the view and puts the reader just past the post on the side they
+pushed toward.
+
+**Tests first** replace the slingshot's:
+- A scroll that does not settle never takes over, and a settled one with the post mostly in view does.
+- Scrolling inside a long post fills nothing until an end is reached.
+- A slow push past an end never fills the bar against the drain, and a sustained fast one does.
+- The bar drains to empty when input stops.
+- A release pushed down lands after the post, and one pushed up lands before it.
+- The BREAK FREE button fills against the same drain, and pressing slowly never frees.
+- In e2e, a long post is read to its end in the view, the reader is released past it, and a certified release holds
+  after a reload.
+
+The view is drawn by no board: its story goes to the owner on the PR before its tests are written against it. The
+ways-out row below becomes "Certify (holds on every device), fill the bar by scrolling (or BREAK FREE) for this visit,
+or leave the page."
+
 ### Task 5. Whoops!
 
 - `instances/divided-world/cards/whoops/splat.ts` (pure): the seeded generator (the play's seed to a blob with
