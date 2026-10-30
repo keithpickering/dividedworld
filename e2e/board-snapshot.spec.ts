@@ -82,6 +82,22 @@ test('a page that renders after it loads is read once every landmark is found an
   expect(shots[0]!.box!.y).toBeGreaterThan(80);
 });
 
+test('a page whose face is still loading is read once the face has loaded, not in the fallback', async ({ page }) => {
+  const anton = fs.readFileSync(path.join(here, '..', 'instances', 'divided-world', 'ui', 'fonts', 'Anton-Regular.woff2'));
+  await page.route('http://slow-font.test/**', async (route) => {
+    await new Promise((r) => setTimeout(r, 700));
+    await route.fulfill({ status: 200, contentType: 'font/woff2', headers: { 'access-control-allow-origin': '*' }, body: anton });
+  });
+  /* The face starts loading once the page has loaded, and lands well after two reads a frame apart could agree. */
+  await page.setContent(`<button style="font: 40px 'Slow', monospace">Wide words here</button><script>
+    setTimeout(() => { const face = new FontFace('Slow', 'url(http://slow-font.test/a.woff2)'); document.fonts.add(face); face.load(); }, 0);
+  </script>`);
+  const { shots } = await settledSnapshot(page, manifest(lm('w', { name: 'Wide words here' })), 'build', 3000);
+  await page.evaluate(() => document.fonts.ready);
+  const loaded = (await snapshotPage(page, manifest(lm('w', { name: 'Wide words here' })), 'build')).shots[0]!;
+  expect(shots[0]!.box!.width).toBe(loaded.box!.width);
+});
+
 test('a page whose landmark never comes is read when the wait runs out, with the landmark not found', async ({ page }) => {
   await page.setContent(`<button>Here</button>`);
   const started = Date.now();

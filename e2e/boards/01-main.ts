@@ -73,6 +73,8 @@ const manifest: BoardManifest = {
     { id: 'hud-estimate', role: 'text', name: '+0.30 est.', within: 'hud' },
     { id: 'hud-clock', role: 'text', name: 'Next settlement', within: 'hud', box: 'position' },
     { id: 'hud-menu', role: 'button', name: 'Menu', within: 'hud' },
+    /* The Menu button's Esc key cap, a <kbd> with no role. The AURA label beside the orbs is not in section 7's list. */
+    { id: 'hud-esc', role: 'text', name: 'ESC', within: 'hud' },
     { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', within: 'hud' },
   ],
 };

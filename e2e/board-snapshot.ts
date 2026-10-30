@@ -169,8 +169,9 @@ export async function pressControls(page: Page, controls: BoardManifest['press']
     const target = page.getByRole(control.role as Parameters<Page['getByRole']>[0], { name: new RegExp(`^${escapeRegExp(control.name)}$`, 'i') }).first();
     try {
       await target.click({ timeout });
-    } catch {
-      throw new Error(`the build has no ${control.role} named "${control.name}" to press`);
+    } catch (cause) {
+      /* Absent is the usual reason; the cause says when it was there but covered or disabled. */
+      throw new Error(`the build has no ${control.role} named "${control.name}" to press`, { cause });
     }
   }
 }
@@ -180,14 +181,20 @@ const sameSnapshot = (a: Snapshot, b: Snapshot) => JSON.stringify(a) === JSON.st
 /**
  * The app renders after its page loads (the fixture answers, then the thread lands), so the build
  * is read once every landmark is found and two reads a frame's breath apart agree; when `timeout`
- * runs out first it is read as it stands, and what is missing is reported as missing.
+ * runs out first it is read as it stands, and what is missing is reported as missing. Each read
+ * waits for the faces loading at that moment: a face a late render starts can take longer than a
+ * frame, and two reads in the fallback would agree.
  */
 export async function settledSnapshot(page: Page, manifest: BoardManifest, side: 'board' | 'build', timeout = 5000): Promise<Snapshot> {
   const until = Date.now() + timeout;
-  let last = await snapshotPage(page, manifest, side);
+  const read = async () => {
+    await page.evaluate(() => document.fonts.ready);
+    return snapshotPage(page, manifest, side);
+  };
+  let last = await read();
   for (;;) {
     await page.waitForTimeout(100);
-    const next = await snapshotPage(page, manifest, side);
+    const next = await read();
     if ((next.shots.every((s) => s.found) && sameSnapshot(last, next)) || Date.now() > until) return next;
     last = next;
   }

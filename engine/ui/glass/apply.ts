@@ -46,15 +46,17 @@ export function applyGlass(root: HTMLElement, glass: GlassTheme, key: GlassKeyNa
   root.setAttribute('data-kb-glass-key', key);
 }
 
-/** The faces put in each document, by file, so a second call adds none. */
+/** The faces put in each document, by file, weight and style, so a second call adds none. */
 const installed = new WeakMap<object, Set<string>>();
 
 /**
  * Puts each of the glass's font files in the document's font set as a FontFace, with `display:
  * swap` so text shows in the fallback while a font loads. A face added this way is fetched under
  * the site's font-src, where an injected `<style>` of @font-face rules would be refused by its
- * style-src (web/headers.ts; e2e/csp.spec.ts holds it). Each file is added once per document,
- * however often this is called; a document with no font set (a test's) is left alone.
+ * style-src (web/headers.ts; e2e/csp.spec.ts holds it). Each face is added once per document,
+ * however often this is called; a document with no font set (a test's) is left alone. A face whose
+ * file fails to load goes to `error` in the font set and its text keeps the fallback stack, so
+ * nothing throws.
  */
 export function installGlassFonts(doc: Document, glass: GlassTheme): void {
   const Face = doc.defaultView?.FontFace;
@@ -62,8 +64,9 @@ export function installGlassFonts(doc: Document, glass: GlassTheme): void {
   let done = installed.get(doc);
   if (!done) installed.set(doc, (done = new Set()));
   for (const f of glass.fonts) {
-    if (done.has(f.file)) continue;
-    done.add(f.file);
+    const face = `${f.file} ${f.weight} ${f.style}`;
+    if (done.has(face)) continue;
+    done.add(face);
     doc.fonts.add(new Face(f.family, `url(${JSON.stringify(f.file)}) format("woff2")`, { weight: String(f.weight), style: f.style, display: 'swap' }));
   }
 }
