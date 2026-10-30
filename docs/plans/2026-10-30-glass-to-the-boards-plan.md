@@ -356,6 +356,15 @@ writes each surface's full worst (`worst`, and `narrowWorst` for a recipe with n
 rendered measurement reads them there. `calmAll` is unchanged: on the settlement, whose full worst is under no ceiling,
 every text node, large or not, stands in a calm.
 
+**Amended 2026-10-30, the owner's answer on #54.** The rendered measurement read a class's large color as large at any
+size, which let the React picker's quadrant labels (22px Anton in the classes' large colors) stand at 3:1 on the react
+smoke under a size no rule calls large. The owner chose to set them at WCAG's large size: "24px should work for #54".
+So text that may stand at 3:1 as large is text at WCAG's large size or more (24px, or 18.66px at a weight of 700 or
+more) as well as the design's large (36px of ink); a token still needs its `large` tag to be read so. A class's large
+color under that size takes the body path: it stands in a calm, on an opaque panel, or on a recipe whose full worst is
+under its color's 4.5:1 ceiling, worked out from its color as the guard works out a token's. The picker's labels are
+24px. **Poison:** a class's large color at 22px, bare on the react smoke, fails.
+
 ## 7. Each board: what it shows, what builds it, and what is compared
 
 The board file is the geometry. Each part below is found in the board by its role and name; its size, position,
@@ -402,6 +411,9 @@ section 2.3's amendment says. The emoji buttons are `type: false`, since an emoj
 the glass's. Heat, Hype and Calm's groups are `type: false`, since the board drew their labels in shades that differ
 from `glass.json`'s class large text, which wins as section 4's instance class data (Heel's by the owner's lift);
 Groan's label matches and is compared.
+
+Amended 2026-10-30, the owner's answer on #54 (section 6): the quadrant labels are 24px, 2px over the board's 22px,
+so they are large at WCAG's size; Groan's label is compared with that size as the decided one.
 
 ### 04 orbs (1440×900): web Task 3
 
