@@ -19,6 +19,7 @@
 }
 
 .kb-acct-title {
+  width: fit-content;
   margin: 36px 0 0;
   font-size: 7rem;
   line-height: 1;
@@ -59,6 +60,7 @@
 .kb-settings-tab {
   display: flex;
   align-items: center;
+  line-height: normal;
   min-height: 52px;
   padding: 0 20px;
   box-sizing: border-box;
@@ -121,6 +123,7 @@
 .kb-acct-row-label {
   margin: 0;
   padding-top: 12px;
+  font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-lead);
   font-weight: 800;
   line-height: 1.1;
@@ -166,9 +169,11 @@
 .kb-acct-button {
   display: inline-flex;
   align-items: center;
+  line-height: normal;
+  /* 52px inside its 1px border, as the board draws it. */
   min-height: 52px;
   padding: 0 22px;
-  box-sizing: border-box;
+  box-sizing: content-box;
   border: 1px solid color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
   font-size: var(--kb-glass-size-body);
   font-weight: 800;

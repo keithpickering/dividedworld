@@ -227,7 +227,7 @@ export function SettingsScreen() {
         <Choice legend="Text size" options={TEXT_SIZE} value={prefs.textSize} onChange={(v) => change({ textSize: v })}
           sentence="Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off." />
         <Choice legend="The board" options={themeOptions} value={theme} onChange={(v) => change({ theme: v })}
-          sentence="The 2003 board stays 2003 whichever you choose: only its colors change. Follow my device takes light or dark from the device." />
+          sentence="The 2003 board stays 2003 whichever you choose. Only its colors change." />
         <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
           sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />
         {said}

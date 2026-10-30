@@ -32,7 +32,6 @@ const REPORT = path.join(here, 'report', 'boards');
 const PENDING: Readonly<Record<string, string>> = {
   '06-turn': 'Part 2',
   '10-roster': 'Part 2',
-  '11-settings': 'Part 2',
   '05-cards': 'Part 3',
   '07-vending': 'Part 3',
   '08-hold': 'Part 3',
