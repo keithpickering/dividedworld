@@ -100,7 +100,7 @@ describe('what the adapter may request', () => {
     });
     const api = h.api;
     await Promise.allSettled([
-      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10),
+      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.myReleases([A]), api.releaseEffect(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
@@ -303,14 +303,14 @@ describe('reads and their rows', () => {
     expect(await harness(() => rows([])).api.characterActs(B, [], { offset: 0, limit: 5 })).toEqual([]);
   });
 
-  it('reads a thread range from acts_public by seq, leaving edits out', async () => {
+  it('reads a thread range from acts_public by seq, leaving edits out and any card a number was given before cards took none', async () => {
     const h = harness(() => rows([ACT_ROW]));
     const acts = await h.api.acts(T, 3, 9);
     const [req] = h.to('acts_public');
     const p = req?.url.searchParams;
     expect(p?.get('thread')).toBe(`eq.${T}`);
     expect(p?.getAll('seq')).toEqual(['gte.3', 'lte.9']);
-    expect(p?.get('kind')).toBe('neq.edit');
+    expect(p?.get('kind')).toBe('not.in.(edit,card)');
     expect(p?.get('order')).toBe('seq.asc');
     expect(acts).toEqual([ACT]);
   });
@@ -336,6 +336,36 @@ describe('reads and their rows', () => {
     expect(await h.api.spunFromMany(['x),y'], 5)).toEqual([]);
     expect(await h.api.cardsOn('x),y', 5)).toEqual([]);
     expect(h.to('thread_list')).toHaveLength(1);
+  });
+
+  it('reads the card plays on a page of posts in one request, oldest first, bounded, and never filters on a non-id', async () => {
+    const h = harness(() => rows([{ ...ACT_ROW, kind: 'card', seq: null, target_act_id: A }, { ...ACT_ROW, id: B, kind: 'card', seq: null, target_act_id: C }]));
+    const plays = await h.api.cardsOnMany([A, C, A, 'x),y'], 60);
+    expect(h.to('acts_public')).toHaveLength(1);
+    const p = h.to('acts_public')[0]?.url.searchParams;
+    expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order'), p?.get('limit')]).toEqual(['eq.card', `in.(${A},${C})`, 'created_at.asc', '60']);
+    expect(plays.map((c) => [c.kind, c.seq, c.targetActId])).toEqual([['card', null, A], ['card', null, C]]);
+    expect(await h.api.cardsOnMany([], 5)).toEqual([]);
+    expect(await h.api.cardsOnMany(['x),y'], 5)).toEqual([]);
+    expect(h.to('acts_public')).toHaveLength(1);
+    await h.api.cardsOnMany([A], 5000);
+    expect(h.to('acts_public')[1]?.url.searchParams.get('limit')).toBe('1000');
+  });
+
+  it('reads the saved effect states of plays in one request, and the reader\'s own releases from their own rows', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/effect_state')
+      ? rows([{ play: A, state: { strokes: [1] }, saved_at: '2026-10-29T00:00:00+00:00' }])
+      : rows([{ play: B }])));
+    expect(await h.api.effectStates([A, B, 'x),y'])).toEqual({ [A]: { state: { strokes: [1] }, savedAt: '2026-10-29T00:00:00+00:00' } });
+    const state = h.to('effect_state')[0]?.url.searchParams;
+    expect([state?.get('select'), state?.get('play')]).toEqual(['play,state,saved_at', `in.(${A},${B})`]);
+    expect(await h.api.myReleases([B, 'x),y'])).toEqual([B]);
+    const released = h.to('effect_releases')[0]?.url.searchParams;
+    expect([released?.get('select'), released?.get('play')]).toEqual(['play', `in.(${B})`]);
+    expect(await h.api.effectStates([])).toEqual({});
+    expect(await h.api.myReleases(['x),y'])).toEqual([]);
+    expect(h.to('effect_state')).toHaveLength(1);
+    expect(h.to('effect_releases')).toHaveLength(1);
   });
 
   it('limits every list read of spins and card plays: ordered, and never more than the row cap', async () => {
@@ -566,6 +596,28 @@ describe('writes through the act function', () => {
       { action: 'reissueInvite', invite: 7 },
       { action: 'openAccount', invite: 'code' },
     ]);
+  });
+});
+
+describe('a card\'s effect', () => {
+  it('releases through the release_effect function and says when', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/release_effect') ? json({ play: A, released_at: '2026-10-30T10:00:00+00:00' }) : json({}, 404)));
+    expect(await h.api.releaseEffect(A)).toEqual({ ok: true, value: { play: A, releasedAt: '2026-10-30T10:00:00+00:00' } });
+    expect(h.to('rpc/release_effect')[0]?.body).toEqual({ play: A });
+    const refused = harness((r) => (r.url.pathname.endsWith('/rpc/release_effect') ? json({ code: 'P0002', message: 'there is no such card on a post', hint: 'kayfabb.refusal' }, 404) : json({}, 404)));
+    expect(await refused.api.releaseEffect(A)).toEqual({ ok: false, error: 'there is no such card on a post' });
+    /* Never resent: a lost answer is the player's to look at. */
+    const lost = harness(() => new Error('network'));
+    expect((await lost.api.releaseEffect(A)).ok).toBe(false);
+    expect(lost.to('rpc/release_effect')).toHaveLength(1);
+  });
+
+  it('saves the state through the act function as the post\'s author, and says when', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ play: A, thread: T, state: { strokes: [] }, saved_at: '2026-10-30T10:00:00+00:00' }) : undefined));
+    expect(await h.api.saveEffect(A, B, { strokes: [] })).toEqual({ ok: true, value: { play: A, savedAt: '2026-10-30T10:00:00+00:00' } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'saveEffect', character: B, play: A, state: { strokes: [] } }]);
+    const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'only the post\'s author saves what is on it' }, 403) : undefined));
+    expect(await refused.api.saveEffect(A, B, {})).toEqual({ ok: false, error: 'only the post\'s author saves what is on it' });
   });
 });
 

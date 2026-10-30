@@ -4,7 +4,7 @@
  * This is the one place a Supabase client lives ("Portable by construction"), and it reads only
  * what tools/check-web-reads.mjs allows: public projections and the signed-in player's own rows.
  * Every write goes through the `act` function (it validates and sends the broadcasts) except the
- * three rpcs that have no `act` equivalent (mark_read, set_preferences, set_profile) and the
+ * four rpcs that have no `act` equivalent (mark_read, set_preferences, set_profile, release_effect) and the
  * avatar, which is a multipart form to the `avatar` function. Sign-in goes through the `account`
  * function only; Auth's own code endpoints are never called, and the session the `account` function
  * answers with is installed with `auth.setSession`.
@@ -32,7 +32,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Board, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
-  Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet,
 } from '../../../engine/ui/data/api.ts';
 
@@ -509,7 +509,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return r[0] ? toThread(r[0]) : null;
     },
     async acts(thread, fromSeq, toSeq) {
-      const rows = await list(() => client.from('acts_public').select('*').eq('thread', thread).gte('seq', fromSeq).lte('seq', toSeq).neq('kind', 'edit').order('seq', { ascending: true }));
+      const rows = await list(() => client.from('acts_public').select('*').eq('thread', thread).gte('seq', fromSeq).lte('seq', toSeq).not('kind', 'in', '(edit,card)').order('seq', { ascending: true }));
       return rows.map(toAct);
     },
     async act(id) {
@@ -543,6 +543,29 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const rows = await list(() => client.from('acts_public').select('*').eq('kind', 'card').eq('target_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
       return rows.map(toAct);
     },
+    async cardsOnMany(actIds, limit) {
+      const wanted = [...new Set(actIds)].filter(idOk);
+      if (wanted.length === 0) return [];
+      const rows = await list(() => client.from('acts_public').select('*').eq('kind', 'card').in('target_act_id', wanted).order('created_at', { ascending: true }).limit(rowLimit(limit)));
+      return rows.map(toAct);
+    },
+    async effectStates(plays) {
+      const wanted = [...new Set(plays)].filter(idOk);
+      const out: Record<Id, EffectState> = {};
+      if (wanted.length === 0) return out;
+      for (const r of await list(() => client.from('effect_state').select('play,state,saved_at').in('play', wanted))) out[r['play']] = { state: r['state'], savedAt: r['saved_at'] };
+      return out;
+    },
+    async myReleases(plays) {
+      const wanted = [...new Set(plays)].filter(idOk);
+      if (wanted.length === 0) return [];
+      return (await list(() => client.from('effect_releases').select('play').in('play', wanted))).map((r): Id => r['play']);
+    },
+    async releaseEffect(play) {
+      const a = await rpcWrite(() => client.rpc('release_effect', { play }));
+      return a.ok ? { ok: true, value: { play: a.value['play'], releasedAt: a.value['released_at'] } } : a;
+    },
+    saveEffect: (play, character, state) => act({ action: 'saveEffect', character, play, state }, (r) => ({ play: r['play'], savedAt: r['saved_at'] })),
     characters,
     async characterCounts(id): Promise<CharacterCounts> {
       // One row of counters kept by a trigger (0030), never a count of the character's Acts; none for a character that has done nothing.

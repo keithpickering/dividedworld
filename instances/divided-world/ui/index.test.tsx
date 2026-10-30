@@ -16,6 +16,18 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       expect(instanceUi.classLooks[c.key]?.description.length, c.key).toBeGreaterThan(0);
     }
   });
+  test('every card has a face and rules in plain words, true to the settings it is told', () => {
+    expect(instanceUi.cards.map((c) => c.key).sort()).toEqual(instance.cards.map((c) => c.key).sort());
+    for (const c of instance.cards) {
+      const ui = instanceUi.cards.find((u) => u.key === c.key)!;
+      expect(ui.art.color, c.key).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(ui.art.ink, c.key).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(ui.describe(instance.settings).length, c.key).toBeGreaterThan(40);
+    }
+    const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
+    expect(whoops.describe(instance.settings)).toContain('1.00');
+    expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.price': 250 } })).toContain('2.50');
+  });
   test('every pip style has images', () => {
     for (const p of instance.pipStyles) expect(instanceUi.pips[p.key], p.key).toBeDefined();
   });

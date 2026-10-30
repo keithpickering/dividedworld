@@ -1,0 +1,169 @@
+/**
+ * The card plays on the posts on screen, kept apart from the page like the tallies are: each play's
+ * Act (a tag on its post), the state its effect has saved, and the reader's own releases. A change
+ * wakes only the post it belongs to, so a card played, or a state saved, on a busy thread
+ * re-renders the post it lands on and never the page. A post reads its own through `usePlays`.
+ *
+ * A card play takes no number in its thread (supabase/migrations/0035_card_takes_no_seq.sql): it is
+ * found through the post it targets, so a page of posts reads every play on them in one request
+ * (`readPlays`), never one per post ("Weigh a design at the scale of a busy instance"), and a play
+ * that arrives live is added to the post it names whichever page that post is on.
+ */
+import { useSyncExternalStore } from 'react';
+import type { Act, EffectState, Id, KayfaApi } from '../data/api.ts';
+import type { InstanceUi } from '../types.ts';
+import type { CardPlay } from './types.ts';
+
+/** More than any card stacks on one post; a page of posts asks for this many plays per post at most. */
+export const PLAYS_PER_POST = 8;
+
+/** A card play, from its card Act; null for any other Act, or a card Act with no card in it. */
+export function playOf(act: Act): CardPlay | null {
+  if (act.kind !== 'card' || act.targetActId === null || typeof act.payload.card !== 'string') return null;
+  const layer = act.payload.layer;
+  const config = act.payload.config;
+  return {
+    id: act.id,
+    card: act.payload.card,
+    layer: typeof layer === 'number' && Number.isInteger(layer) && layer >= 1 ? layer : 1,
+    caster: act.character,
+    message: typeof act.payload.message === 'string' ? act.payload.message : '',
+    config: typeof config === 'object' && config !== null && !Array.isArray(config) ? (config as Record<string, unknown>) : {},
+    playedAt: act.createdAt,
+    post: act.targetActId,
+  };
+}
+
+/** Layer first, then when it was played, then its id: the order plays are laid over a post, the first innermost. */
+export const inPlayOrder = (a: CardPlay, b: CardPlay): number =>
+  a.layer - b.layer || Date.parse(a.playedAt) - Date.parse(b.playedAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/** What a post carries: its plays in play order, their saved states, and the reader's releases among them. */
+export interface PostPlays {
+  readonly plays: readonly CardPlay[];
+  readonly states: Readonly<Record<Id, EffectState>>;
+  readonly released: ReadonlySet<Id>;
+}
+
+const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>() });
+
+export interface Plays {
+  get(post: Id): PostPlays;
+  /** Take in card Acts (anything else is ignored); true when a play was new. A play is its Act's id: the same again is the same play. */
+  add(acts: readonly Act[]): boolean;
+  /** Keep each play's newest saved state, by when it was saved; true when any was newer. A state for a play not here is kept for when it is. */
+  setStates(states: Readonly<Record<Id, EffectState>>): boolean;
+  /** The reader released themselves from these plays. */
+  setReleased(plays: readonly Id[]): boolean;
+  subscribe(post: Id, listener: () => void): () => void;
+}
+
+export function createPlays(): Plays {
+  const byPost = new Map<Id, Map<Id, CardPlay>>();
+  const postOf = new Map<Id, Id>();
+  const states = new Map<Id, EffectState>();
+  const released = new Set<Id>();
+  const snapshots = new Map<Id, PostPlays>();
+  const listeners = new Map<Id, Set<() => void>>();
+
+  const changed = (posts: Iterable<Id>) => {
+    for (const post of posts) {
+      snapshots.delete(post);
+      for (const l of [...(listeners.get(post) ?? [])]) l();
+    }
+  };
+  const newer = (a: EffectState, b: EffectState) => Date.parse(a.savedAt) > Date.parse(b.savedAt);
+  return {
+    get(post) {
+      const own = byPost.get(post);
+      if (!own) return NONE;
+      let snap = snapshots.get(post);
+      if (!snap) {
+        const plays = [...own.values()].sort(inPlayOrder);
+        snap = {
+          plays,
+          states: Object.fromEntries(plays.filter((p) => states.has(p.id)).map((p) => [p.id, states.get(p.id)!])),
+          released: new Set(plays.filter((p) => released.has(p.id)).map((p) => p.id)),
+        };
+        snapshots.set(post, snap);
+      }
+      return snap;
+    },
+    add(acts) {
+      const touched = new Set<Id>();
+      for (const act of acts) {
+        const play = playOf(act);
+        if (!play) continue;
+        const own = byPost.get(play.post) ?? new Map<Id, CardPlay>();
+        if (own.has(play.id)) continue;
+        own.set(play.id, play);
+        byPost.set(play.post, own);
+        postOf.set(play.id, play.post);
+        touched.add(play.post);
+      }
+      changed(touched);
+      return touched.size > 0;
+    },
+    setStates(next) {
+      const touched = new Set<Id>();
+      for (const [play, state] of Object.entries(next)) {
+        const was = states.get(play);
+        if (was && !newer(state, was)) continue;
+        states.set(play, state);
+        const post = postOf.get(play);
+        if (post !== undefined) touched.add(post);
+      }
+      changed(touched);
+      return touched.size > 0;
+    },
+    setReleased(plays) {
+      const touched = new Set<Id>();
+      for (const play of plays) {
+        if (released.has(play)) continue;
+        released.add(play);
+        const post = postOf.get(play);
+        if (post !== undefined) touched.add(post);
+      }
+      changed(touched);
+      return touched.size > 0;
+    },
+    subscribe(post, listener) {
+      const set = listeners.get(post) ?? new Set();
+      listeners.set(post, set.add(listener));
+      return () => {
+        set.delete(listener);
+        if (set.size === 0 && listeners.get(post) === set) listeners.delete(post);
+      };
+    },
+  };
+}
+
+export function usePlays(plays: Plays, post: Id): PostPlays {
+  return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.get(post));
+}
+
+/** The keys of the cards the instance draws an effect for: only their plays' saved states and releases are ever read. */
+export const effectCards = (ui: Pick<InstanceUi, 'cards'>): ReadonlySet<string> => new Set(ui.cards.filter((c) => c.Effect !== undefined).map((c) => c.key));
+
+/** Read what an effect keeps of these plays (the post author's saved state, the reader's releases), for the cards that draw one; a read that fails leaves the play as it was. */
+export async function readEffects(api: KayfaApi, plays: Plays, acts: readonly Act[], cards: ReadonlySet<string>): Promise<void> {
+  const wanted = acts.filter((a) => typeof a.payload.card === 'string' && cards.has(a.payload.card)).map((a) => a.id);
+  if (wanted.length === 0) return;
+  const [states, released] = await Promise.all([api.effectStates(wanted).catch(() => ({})), api.myReleases(wanted).catch(() => [])]);
+  plays.setStates(states);
+  plays.setReleased(released);
+}
+
+/**
+ * Read every play on these posts, with what their effects keep, in the reads a page costs: one for
+ * the plays, one for their states and one for the reader's releases, whatever the page holds. A
+ * result as long as the limit may be cut (`KayfaApi.cardsOnMany`). A failed read leaves the posts
+ * as they are drawn without it: a tag is missing, never a post.
+ */
+export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[], cards: ReadonlySet<string>): Promise<readonly Act[]> {
+  if (posts.length === 0) return [];
+  const acts = await api.cardsOnMany(posts, posts.length * PLAYS_PER_POST).catch((): readonly Act[] => []);
+  plays.add(acts);
+  await readEffects(api, plays, acts, cards);
+  return acts;
+}

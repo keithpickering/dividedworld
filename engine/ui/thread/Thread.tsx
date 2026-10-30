@@ -30,6 +30,7 @@
  * re-renders the posts it lands on and not the page.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { createPlays, effectCards, readEffects, readPlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
@@ -42,7 +43,7 @@ import { Link, useLocation, useNavigate } from '../router.tsx';
 import { returnOf } from '../glass/back.ts';
 import { emptyFeed, feedReducer, newer, ordered, shownEnd, waitingPosts } from './feed.ts';
 import { ActIndex, actLoader, type Located } from './locate.tsx';
-import { pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
+import { pageEndsThread, pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
 import { ActArticle } from './Post.tsx';
 import { ThreadCtx, type ThreadContext } from './context.ts';
 import { text } from './lines.tsx';
@@ -72,7 +73,7 @@ export function ThreadScreen({ thread }: { readonly thread: Id }) {
 const keyOf = (l: { query: URLSearchParams; hash: string }) => `${l.query.toString() ? `?${l.query.toString()}` : ''}${l.hash ? `#${l.hash}` : ''}`;
 
 function ThreadView({ thread }: { readonly thread: Id }) {
-  const { api, settings } = useKayfa();
+  const { api, settings, ui } = useKayfa();
   const P = settings.postsPerPage;
   const player = usePlayer();
   const navigate = useNavigate();
@@ -88,6 +89,9 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const [lines, setLines] = useState<readonly { readonly key: number; readonly text: string }[]>([]);
   const tallies = useMemo(() => createTallies(), []);
   const mine = useMemo(() => createMine(), []);
+  /* The card plays on the posts on screen (engine/ui/cards/plays.ts), and which cards the instance draws an effect for: only theirs have a state to read. */
+  const plays = useMemo(() => createPlays(), []);
+  const effects = useMemo(() => effectCards(ui), [ui]);
   /* Whether this is a thread of The System's board, where replies are spins and there is no reply box. */
   const [systemBoard, setSystemBoard] = useState<boolean | null>(null);
   /* The boards could not be read, so which kind of board this is is unknown: neither the reply box nor the System's note is shown. */
@@ -129,7 +133,10 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     await Promise.all(wanted.map((id) => asked.current.get(id)));
   }, [api]);
 
-  /* The posts of a read, with their tallies, ready to show. */
+  /** A character's name as the thread knows it: read before the posts that name it are drawn. */
+  const nameOf = useCallback((id: Id | null) => (id === null ? 'The System' : people.current.get(id)?.character.name ?? 'A character'), []);
+
+  /* The posts of a read, with their tallies and the plays on them, ready to show. */
   const prepare = useCallback(async (acts: readonly Act[]) => {
     await ensurePeople(acts.map((a) => a.character));
     if (acts.length > 0) {
@@ -139,8 +146,11 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const ids = acts.map((a) => a.id);
       const own = await api.myReactions(ids).catch(() => []);
       for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
+      /* Every play on the page's posts in one read; a play takes no number, so it is found through its post. Its caster is named before it is drawn. */
+      const played = await readPlays(api, plays, acts.filter((a) => a.kind === 'post').map((a) => a.id), effects);
+      await ensurePeople(played.map((a) => a.character));
     }
-  }, [api, ensurePeople, tallies, mine]);
+  }, [api, ensurePeople, tallies, mine, plays, effects]);
 
   /* ----------------------------------------------------------------- where to scroll ---- */
   const scrollTo = useRef<{ readonly seq: number; readonly scroll: boolean; readonly focus: boolean } | null>(null);
@@ -218,7 +228,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       /* Known before the first post is drawn, so the reply box and the posts' Quote links do not change the page after it. */
       setSystemBoard(board ? board.isSystem : null);
       setBoardUnread(!board);
-      dispatch({ type: 'loaded', summary, firstPage: page, lastPage: page, acts, tailLoaded: acts.length < end - start + 1, back: reloaded.current ? null : back.current });
+      dispatch({ type: 'loaded', summary, firstPage: page, lastPage: page, acts, tailLoaded: pageEndsThread(acts.length, { start, end }, summary.lastSeq), back: reloaded.current ? null : back.current });
       setStatus('ready');
       const seq = goal.current.seq !== null && goal.current.seq <= summary.lastSeq ? goal.current.seq : null;
       /* The canonical address of where this landed: the page, and the post when one was asked for. */
@@ -280,7 +290,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const now = feedRef.current;
       const from = shownEnd(now) + 1;
       const heldNext = [...now.held.values()].some((a) => a.seq === from);
-      dispatch({ type: 'more', page, acts, tailLoaded: acts.length < end - start + 1 });
+      dispatch({ type: 'more', page, acts, tailLoaded: pageEndsThread(acts.length, { start, end }, f.serverLast) });
       const href = threadHref(thread, page);
       selfNav.current = href.slice(href.indexOf('?'));
       navigate(href, { replace: true });
@@ -304,7 +314,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const lineKey = useRef(0);
   useEffect(() => {
     const announce = (a: Act) => {
-      /* New posts only: a card, an unmask or a tally still appears, and is not announced. */
+      /* New posts only: an unmask or a tally still appears, and is not announced. */
       if (a.kind !== 'post' || announcedIds.current.has(a.id)) return;
       announcedIds.current.add(a.id);
       const name = a.character === null ? 'The System' : people.current.get(a.character)?.character.name ?? 'a character';
@@ -312,6 +322,11 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     };
     const listener: ThreadListener = {
       onAct(a) {
+        /* A card play is a tag on its post, never a place in the thread: it is added to the post it names, wherever that post is, once its caster is known. */
+        if (a.kind === 'card') {
+          void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); });
+          return;
+        }
         const f = feedRef.current;
         if (f.shown.has(a.id) || f.held.has(a.id)) { dispatch({ type: 'live', act: a }); return; }
         if (a.seq === null) return;
@@ -326,6 +341,10 @@ function ThreadView({ thread }: { readonly thread: Id }) {
           if (feedRef.current.ready) announce(latest);
         });
       },
+      onEffect(play) {
+        /* A saved state is read where it is kept, by the play it names: the post author's newest version is what every reader loads. */
+        void api.effectStates([play]).then((saved) => plays.setStates(saved), () => { /* the next save is heard again */ });
+      },
       onTally(act, t) {
         const grew = tallies.merge(act, t);
         if (!grew) return;
@@ -338,7 +357,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       },
     };
     return api.subscribeThread(thread, listener);
-  }, [api, thread, ensurePeople, tallies]);
+  }, [api, thread, ensurePeople, tallies, plays, effects]);
 
   /* At the bottom of the last page, held Acts come in, sliding. */
   useEffect(() => {
@@ -388,8 +407,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const changed = useCallback((a: Act) => dispatch({ type: 'live', act: a }), []);
   const canReply = systemBoard === false;
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, mine, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, nameOf, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, mine, plays, nameOf, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
 

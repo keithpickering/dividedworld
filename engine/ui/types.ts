@@ -8,6 +8,7 @@
  * log never does"). The System's in-character words are the rules' `Copy`.
  */
 import type { Quadrant } from '../rules/types.ts';
+import type { CardUi } from './cards/types.ts';
 
 /**
  * A theme: a stylesheet that sets the `--kb-` tokens of engine/ui/tokens.css. `modes` says
@@ -218,4 +219,6 @@ export interface InstanceUi {
   readonly pips: Readonly<Record<string, PipImages>>;
   /** The glass: smoke, tokens, fonts and class colors for every screen outside the board. */
   readonly glass: GlassTheme;
+  /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
+  readonly cards: readonly CardUi[];
 }

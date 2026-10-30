@@ -18,14 +18,9 @@
  * Where the fixture is less than the real thing, it says so:
  *  - Posts and reactions need accounts to make them: four more players (Ringside 1 to 4) hold the
  *    crowd's reactions, which one player cannot (a player reacts once to a kind on a post).
- *  - Card plays against the boards. The boards number the posts #41 to #46 with no gap and draw a card
- *    as a frame on its post. The engine gives a card play a number in its thread, as the server does,
- *    and `engine/ui/thread/Post.tsx` draws each one as its own line ("X played Whoops! on post #41").
- *    Written between the posts, the plays would renumber them, so they are written after the moment's
- *    posts, dated as they happened: on page 3 the six posts come first and the lines follow at #47 and
- *    up, out of time order. The owner chose the boards' way (the cards plan's amendment of
- *    2026-10-30): cards Task 3 gives a play no number and draws it as its post's tag, and then
- *    writes the plays here in time order. Until then boards.test.ts pins the fact.
+ *  - Card plays are written in time order between the posts, as they happened. A play takes no number
+ *    in its thread (supabase/migrations/0035_card_takes_no_seq.sql), so the posts are #41 to #46 with
+ *    no gap whenever it falls, and `engine/ui/cards/` draws each as the tag on its post.
  *  - The marker the production bundle is checked for is the fake's (`FAKE_BACKEND_MARKER`); the
  *    fixture carries no marker of its own.
  *  - The Whoops! on #41 is a card Act by Mrs. Hooligan with no spend in Pipewrench's wallet, which the
@@ -200,15 +195,9 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
 
   const steps: Step[] = [];
   const when = (at: number, run: (at: number) => void) => steps.push({ at, run });
-  /*
-   * A card play is an Act that takes a number in its thread, as the server's does, so one written
-   * between two posts would move every post after it (the boards number #41 to #46 without a gap).
-   * The plays are written after the moment's posts, dated as they happened: a post keeps its number
-   * at every moment, and a card's own number is the thread's next.
-   */
-  const plays: Step[] = [];
+  /* A card play takes no number in its thread, so it is written where it happened, between the posts. */
   const play = (at: number, character: string, target: number, card: string, message: string) =>
-    plays.push({ at, run: (when) => { seed.card(character, posts[target]!, card, { message, at: when }); } });
+    when(at, (when_) => { seed.card(character, posts[target]!, card, { message, at: when_ }); });
   const post = (n: keyof typeof POSTED, character: string, body: string, quote?: number) =>
     when(POSTED[n], (at) => { posts[n] = seed.post(opener.thread, character, body, { at, ...(quote === undefined ? {} : { quote: posts[quote]! }) }); });
 
@@ -294,7 +283,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   });
 
   // Stable by time: steps given in the order a day happened stay in it where two share a minute.
-  for (const step of [...steps.filter((s) => s.at <= now).sort((a, b) => a.at - b.at), ...plays.filter((s) => s.at <= now).sort((a, b) => a.at - b.at)]) step.run(step.at);
+  for (const step of steps.filter((s) => s.at <= now).sort((a, b) => a.at - b.at)) step.run(step.at);
 
   fake.signInAs({ player, rival, reader }[MOMENTS[moment].account]);
   /*

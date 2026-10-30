@@ -35,7 +35,7 @@ async function mine(fake: Fake) {
 async function nameOf(fake: Fake, id: string | null) {
   return id === null ? null : (await fake.characters([id]))[0]?.name ?? null;
 }
-/** The thread's posts, in order, apart from the card plays that take their own numbers after them. */
+/** The thread's posts, in order (a card play is no post, and takes no number). */
 async function postsOf(fake: Fake, thread: string) {
   const last = must(await fake.thread(thread)).lastSeq;
   return (await fake.acts(thread, 1, last)).filter((a) => a.kind === 'post');
@@ -180,11 +180,22 @@ describe('the thread', () => {
     expect(posts.map((a) => a.seq)).toEqual(Array.from({ length: last }, (_, i) => i + 1));
   });
 
-  it('writes the card plays after the moment\'s posts, dated as they happened, so a post keeps its number whenever the moment is', async () => {
+  it('writes the card plays in time order between the posts, dated as they happened, and the posts keep their numbers whenever the moment is', async () => {
     const { fake, thread } = await load('06-turn');
-    const all = await fake.acts(thread, 1, must(await fake.thread(thread)).lastSeq);
-    expect(all.slice(0, 46).every((a) => a.kind === 'post')).toBe(true);
-    expect(all.slice(46).map((a) => [a.seq, a.kind, a.createdAt])).toEqual([[47, 'card', iso(29, 21, 16)], [48, 'card', iso(29, 21, 41)], [49, 'card', iso(29, 21, 52)]]);
+    const last = must(await fake.thread(thread)).lastSeq;
+    expect(last).toBe(46);
+    const all = await fake.acts(thread, 1, last);
+    expect(all.map((a) => [a.seq, a.kind])).toEqual(Array.from({ length: 46 }, (_, i) => [i + 1, 'post']));
+    /* The plays are Acts of their own with no number, found through their posts, in the order they were played. */
+    const posts = all.map((a) => a.id);
+    const plays = await fake.cardsOnMany(posts, 50);
+    expect(plays.map((a) => [a.seq, a.kind, a.createdAt, a.targetActId === posts[40] ? 41 : a.targetActId === posts[43] ? 44 : 46])).toEqual([
+      [null, 'card', iso(29, 21, 16), 41], [null, 'card', iso(29, 21, 41), 44], [null, 'card', iso(29, 21, 52), 46],
+    ]);
+    /* In time order: #41's play (21:16) is dated between #41 (21:14) and #42 (21:20), #44's before #45. */
+    const posted = all.map((a) => Date.parse(a.createdAt));
+    expect(Date.parse(plays[0]!.createdAt)).toBeGreaterThan(posted[40]!);
+    expect(Date.parse(plays[0]!.createdAt)).toBeLessThan(posted[41]!);
   });
 
   it('puts the cards on the posts the boards show: Whoops! on #41 by Mrs. Hooligan, Stick Around on #44 by Gloomba, and Pipewrench\'s Whoops! on #46 only from 21:52', async () => {
@@ -303,15 +314,12 @@ describe('the marker', () => {
   });
 });
 
-/* A fact about the engine today, pinned so a change to either side is seen (see the fixture's header). */
 describe('card plays in the thread', () => {
-  it('at 01-main page 3 holds the six posts and then the card Acts, at seqs above 46', async () => {
+  it('at 01-main page 3 holds #41 to #46 and nothing else: a play takes no number, so the page is the six posts', async () => {
     const { fake, thread } = await load('01-main');
     const perPage = (await fake.settings()).postsPerPage;
     const page3 = await fake.acts(thread, 2 * perPage + 1, 3 * perPage);
-    expect(page3.map((a) => [a.seq, a.kind])).toEqual([
-      ...[41, 42, 43, 44, 45, 46].map((n) => [n, 'post']),
-      [47, 'card'], [48, 'card'],
-    ]);
+    expect(page3.map((a) => [a.seq, a.kind])).toEqual([41, 42, 43, 44, 45, 46].map((n) => [n, 'post']));
+    expect((await fake.cardsOnMany(page3.map((a) => a.id), 50)).map((a) => a.payload.card)).toEqual(['whoops', 'stick-around']);
   });
 });

@@ -1,14 +1,16 @@
 /**
  * One Act in a thread, as an `<article id="post-<seq>">` with a permalink. A post has its
- * character's postbit; a card, an unmask, a tally and a reveal are plainer, until the screens that
- * draw them are built (the cards plan draws a card's effect, the profile and reveal tasks the
- * rest). The words of an Act are shown as text or as BBCode, never as markup.
+ * character's postbit; an unmask, a tally and a reveal are plainer, until the screens that draw them
+ * are built (the profile and reveal tasks). The words of an Act are shown as text or as BBCode, never
+ * as markup. A card play is no Act of the thread's: it takes no number and shows as a tag on its post
+ * (engine/ui/cards/), whose effect wraps the post's words.
  *
  * A post is memoized on its Act, its person and its layout, and its reactions read their own tally
  * from the tallies store, so a reaction re-renders the post it is on and nothing else.
  */
 import { memo, useEffect, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
+import { PlayTags, PostEffects } from '../cards/Effects.tsx';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -19,7 +21,7 @@ import { SpinForm } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
-import { CardLine, LastEdited, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
+import { LastEdited, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
 export { ThreadCtx, type ThreadContext };
@@ -37,9 +39,8 @@ interface Props {
 const nameOf = (act: Act, person: PostbitPerson | undefined) => (act.character === null ? SYSTEM : person?.character.name ?? 'A character');
 
 function Body({ act, name, person, editing, onDone }: { readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
-  const { summary, tallies, mine, changed } = useThread();
+  const { summary, tallies, mine, changed, plays } = useThread();
   switch (act.kind) {
-    case 'card': return <CardLine act={act} name={name} />;
     case 'unmask': return <UnmaskLine act={act} name={name} />;
     case 'tally':
     case 'reveal':
@@ -58,7 +59,7 @@ function Body({ act, name, person, editing, onDone }: { readonly act: Act; reado
           {origin && <Origin summary={summary} />}
           {editing
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
-            : <BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} />}
+            : <PostEffects plays={plays} post={act} place="thread"><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
@@ -94,7 +95,7 @@ function Actions({ act, editing, onEdit, editButton }: { readonly act: Act; read
 }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
-  const { thread, perPage, observer } = useThread();
+  const { thread, perPage, observer, plays, nameOf: casterName } = useThread();
   const ref = useRef<HTMLElement>(null);
   const seq = act.seq!;
   useEffect(() => {
@@ -112,7 +113,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
     if (wasEditing.current && !editing) editButton.current?.focus();
     wasEditing.current = editing;
   }, [editing]);
-  const plain = act.kind === 'card' || act.kind === 'unmask';
+  const plain = act.kind === 'unmask';
   return (
     <article
       ref={ref}
@@ -135,6 +136,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>
       <div className="kb-act-main">
+        {act.kind === 'post' && <PlayTags plays={plays} post={act.id} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} />}
         <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} />
         <SpunInto act={act.id} />
         <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} />

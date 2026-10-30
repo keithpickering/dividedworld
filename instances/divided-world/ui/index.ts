@@ -7,6 +7,7 @@
  */
 import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
 import glassData from './glass.json';
+import { cardsUi } from './cards.ts';
 import theme from './theme.css?url';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
@@ -81,4 +82,5 @@ export const instanceUi: InstanceUi = Object.freeze({
   }),
   pips: Object.freeze({ default: { full: pipFull, empty: pipEmpty } }),
   glass,
+  cards: cardsUi,
 });

@@ -6,7 +6,8 @@
  *
  * Left out until the part that builds them (the glass build plan, Part 3, the cards):
  *  - the hand's fanned postcards, the armed card's tag, "Play Whoops! here" on #42 (cards Tasks 2 and 3);
- *  - "Hold to scrub" on #41, the splat it scrubs and the Whoops! tag over #41 (cards Task 5).
+ *  - "Hold to scrub" on #41 and the splat it scrubs (cards Task 5). The Whoops! tag over #41 is built
+ *    (cards Task 3), as the card's tag on its post.
  * Left out because the fixture cannot hold it: the "3 new posts" bar, which is the thread's answer
  * to posts that arrive while the reader is higher up, and a seeded page has nothing arriving.
  * Not compared: the post counts and the avatars (the fixture's numbers and the board's placeholders),
@@ -56,18 +57,20 @@ const manifest: BoardManifest = {
     { id: 'jump', role: 'link', name: 'Jump to latest', box: 'none' },
 
     /*
-     * The posts, by position and type. #41's height on the board is its splat and the line under it
-     * (cards Task 5, Part 3), so where #42 and #43 start waits on Part 3: they are compared by type
-     * until then, and Part 3 turns them to `position`.
+     * The posts, by position and type. A card play takes no number and shows as its tag on its post
+     * (cards Task 3), so the page holds #41 to #46 and nothing else. Where #42 and #43 start still
+     * waits on cards Task 5 (Part 3): #41's height on the board is its splat's 150px and the line
+     * under it ("This post is splatted..."), which the build draws only when Whoops!'s effect is
+     * built (measured with the tag in: #42 starts 77px above the board's), so they are compared by
+     * type until then and Task 5 turns them to `position`.
      */
     ...post(41, 0, 'Spritey', 4, 'Main Eventer', 'position'),
     ...post(42, 1, 'Mrs. Hooligan', 3, 'Midcarder', 'none'),
     ...post(43, 2, 'Pipewrench', 2, 'Enhancement Talent', 'none'),
 
     /*
-     * The Game HUD. The thread below #46 is left out, and the plays' lines the fixture writes there
-     * until cards Task 3 (section 3, the sixth departure) do not reach the HUD, which is docked at
-     * the bottom of the window: it is compared in full. Part 3 keeps it so.
+     * The Game HUD, docked at the bottom of the window, is compared in full. The thread below #46 is
+     * left out: the board draws no pager there.
      */
     { id: 'hud', role: 'region', name: 'Game HUD', type: false },
     { id: 'hud-name', role: 'text', name: 'Pipewrench', within: 'hud' },

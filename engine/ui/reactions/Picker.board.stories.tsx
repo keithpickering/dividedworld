@@ -16,6 +16,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
 import { userEvent, within } from 'storybook/test';
+import { createPlays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
 import { useLocation } from '../router.tsx';
 import { seqOfHash } from '../thread/pages.ts';
@@ -52,7 +53,7 @@ function OnePost() {
       mine.merge(act.id, await api.myReactions([act.id]));
       setRead({
         act, person,
-        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, observer: null, quote: null, changed: () => {} },
+        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays: createPlays(), nameOf: () => 'A character', observer: null, quote: null, changed: () => {} },
       });
     })();
   }, [api, settings, thread, seq, tallies, mine]);

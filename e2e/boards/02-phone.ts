@@ -8,9 +8,9 @@
  * Left out until the part that builds them (the glass build plan, Part 3, the cards): the hand's
  * heading and its cards, the armed card, the line about it and the Vending Machine link (cards
  * Tasks 2 and 3), and "Play Whoops! here" on #42 (cards Task 3). The thread is not compared here:
- * the board draws #42 alone under the title, and below #46 the build holds the plays' lines the
- * fixture writes there until cards Task 3 (section 3, the sixth departure); neither is under the
- * sheet and the HUD, which sit at the bottom of the window.
+ * the board draws #42 alone under the title, and the build's thread holds the posts of its page
+ * (a card play takes no number, so none is a line below #46); neither is under the sheet and the HUD,
+ * which sit at the bottom of the window.
  * The Boards button is set in the board's 12px words, not at a control's 11px (engine/ui/frame/frame.css).
  */
 import type { BoardManifest } from '../board-match.ts';

@@ -766,6 +766,91 @@ describe('what a list row shows', () => {
     expect(await fake.cardsOn(second.id, 1)).toHaveLength(1);
   });
 
+  test('a card play takes no thread number, as an edit takes none: the posts keep theirs, and the play is found through its post', async () => {
+    const { fake, anaFace, boFace, thread } = world();
+    const second = must(await fake.post(thread, anaFace, 'second', null));
+    const play = fake.seed.card(boFace, second.id, 'whoops', { message: 'oops' });
+    const third = must(await fake.post(thread, anaFace, 'third', null));
+    expect(second.seq).toBe(2);
+    expect(third.seq).toBe(3);
+    const played = await fake.act(play);
+    expect([played?.kind, played?.seq, played?.targetActId]).toEqual(['card', null, second.id]);
+    expect((await fake.acts(thread, 1, 10)).map((a) => [a.kind, a.seq])).toEqual([['post', 1], ['post', 2], ['post', 3]]);
+    const row = await fake.thread(thread);
+    expect([row?.lastSeq, row?.lastAct, row?.replies]).toEqual([3, third.id, 2]);
+    expect((await fake.cardsOn(second.id, 5)).map((c) => c.seq)).toEqual([null]);
+  });
+
+  test('cardsOnMany reads the card plays on any of several posts in one read, oldest first, at most the limit', async () => {
+    const { fake, anaFace, boFace, thread, opener } = world();
+    const second = must(await fake.post(thread, anaFace, 'second', null));
+    const third = must(await fake.post(thread, anaFace, 'third', null));
+    const a = fake.seed.card(boFace, second.id, 'whoops', { message: 'one' });
+    const b = fake.seed.card(boFace, opener, 'whoops');
+    fake.seed.card(boFace, third.id, 'whoops');
+    const many = await fake.cardsOnMany([second.id, opener], 50);
+    expect(many.map((c) => [c.id, c.targetActId])).toEqual([[a, second.id], [b, opener]]);
+    expect(await fake.cardsOnMany([], 50)).toEqual([]);
+    expect((await fake.cardsOnMany([second.id, opener, third.id], 2)).map((c) => c.id)).toEqual([a, b]);
+  });
+
+  test('a card seeded live is heard by the thread\'s subscribers, with no number', async () => {
+    const { fake, boFace, thread, opener } = world();
+    const heard: Act[] = [];
+    fake.subscribeThread(thread, { onAct: (a) => heard.push(a) });
+    fake.seed.card(boFace, opener, 'whoops', { live: true });
+    fake.seed.card(boFace, opener, 'stick-around');
+    await flush();
+    expect(heard.map((a) => [a.kind, a.seq, a.payload.card])).toEqual([['card', null, 'whoops']]);
+  });
+
+  test('effect state: the post\'s author saves it, every reader reads it, and the subscribers hear of it', async () => {
+    const { fake, anaFace, anaHeel, boFace, thread } = world();
+    const mine = must(await fake.post(thread, anaFace, 'a post to ruin', null));
+    const play = fake.seed.card(boFace, mine.id, 'whoops');
+    expect(await fake.effectStates([play])).toEqual({});
+    const heard: [string, string][] = [];
+    fake.subscribeThread(thread, { onEffect: (p, at) => heard.push([p, at]) });
+    const saved = must(await fake.saveEffect(play, anaFace, { strokes: [1, 2] }));
+    expect(saved.play).toBe(play);
+    expect(await fake.effectStates([play, 'nothing'])).toEqual({ [play]: { state: { strokes: [1, 2] }, savedAt: saved.savedAt } });
+    await flush();
+    expect(heard).toEqual([[play, saved.savedAt]]);
+    /* Saved again, the newest is what is kept. */
+    fake.clock.advance(1000);
+    const again = must(await fake.saveEffect(play, anaFace, { strokes: [] }));
+    expect((await fake.effectStates([play]))[play]).toEqual({ state: { strokes: [] }, savedAt: again.savedAt });
+    expect(again.savedAt > saved.savedAt).toBe(true);
+    /* Refused in the server's words: not the post's author (another of the player's own characters included), not a play, not signed in, not an object. */
+    expect(await fake.saveEffect(play, anaHeel, { strokes: [] })).toEqual(refused('only the post\'s author saves what is on it'));
+    expect(await fake.saveEffect(mine.id, anaFace, { strokes: [] })).toEqual(refused('there is no such card on a post'));
+    expect(await fake.saveEffect(play, boFace, { strokes: [] })).toEqual(refused('you do not play that character'));
+    expect(await fake.saveEffect(play, anaFace, null as never)).toEqual(refused('is the effect\'s state, an object', 'state'));
+    fake.signInAs(null);
+    expect(await fake.saveEffect(play, anaFace, { strokes: [] })).toEqual(refused('sign in to act'));
+  });
+
+  test('releasing from an effect is the player\'s own, kept from the first, and read back only for the plays asked about', async () => {
+    const { fake, bo, anaFace, boFace, thread, opener } = world();
+    const mine = must(await fake.post(thread, anaFace, 'held', null));
+    const play = fake.seed.card(boFace, mine.id, 'stick-around');
+    const other = fake.seed.card(boFace, opener, 'stick-around');
+    expect(await fake.myReleases([play, other])).toEqual([]);
+    const first = must(await fake.releaseEffect(play));
+    expect(first.play).toBe(play);
+    fake.clock.advance(1000);
+    expect(must(await fake.releaseEffect(play)).releasedAt).toBe(first.releasedAt);
+    expect(await fake.myReleases([play, other])).toEqual([play]);
+    expect(await fake.myReleases([other])).toEqual([]);
+    expect(await fake.releaseEffect(mine.id)).toEqual(refused('there is no such card on a post'));
+    /* Another player's release is not this one's. */
+    fake.signInAs(bo);
+    expect(await fake.myReleases([play])).toEqual([]);
+    fake.signInAs(null);
+    expect(await fake.releaseEffect(play)).toEqual(refused('sign in to act'));
+    expect(await fake.myReleases([play])).toEqual([]);
+  });
+
   test('loseNextAnswer: the next post answers with an uncertain refusal, done or not as asked, once', async () => {
     const { fake, anaFace, thread } = world();
     fake.seed.loseNextAnswer(true);

@@ -95,8 +95,7 @@
   min-width: 0;
 }
 
-/* A line of the game's (a card, an unmask): no postbit, the words across the whole width. */
-.kb-act[data-kb-kind="card"],
+/* A line of the game's (an unmask): no postbit, the words across the whole width. */
 .kb-act[data-kb-kind="unmask"] {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
@@ -147,7 +146,6 @@
     border-bottom: 1px solid var(--kb-rule);
   }
 
-  .kb-act[data-kb-kind="card"],
   .kb-act[data-kb-kind="unmask"] {
     grid-template-areas:
       "meta"

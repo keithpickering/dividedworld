@@ -116,7 +116,10 @@ export interface Act {
   readonly kind: ActKind;
   readonly thread: Id;
   readonly targetActId: Id | null;
-  /** Null for an edit, which is a version of its post and no place in the thread. */
+  /**
+   * Null for an edit, which is a version of its post, and for a card, which is a tag on its post: neither is a place in the
+   * thread, and a post's number is never moved by one. (A card played before that change keeps the number it was given.)
+   */
   readonly seq: number | null;
   readonly createdAt: string;
   readonly payload: Readonly<Record<string, unknown>>;
@@ -124,6 +127,12 @@ export interface Act {
   readonly editedAt: string | null;
   /** Set only by an edit made after the grace period: what "Last edited" says. */
   readonly shownEditedAt: string | null;
+}
+
+/** The state a card's effect has saved on one play, and when: what every reader loads, the post author's version. */
+export interface EffectState {
+  readonly state: unknown;
+  readonly savedAt: string;
 }
 
 /** A crop frame, in fractions of the picture it was cut from. */
@@ -389,6 +398,14 @@ export interface KayfaApi {
   spunFromMany(acts: readonly Id[], limit: number): Promise<readonly ThreadSummary[]>;
   /** The card plays on an Act, oldest first, at most `limit`: the effects an ORIGIN box lists under the Act it shows. A result as long as `limit` may be cut. */
   cardsOn(act: Id, limit: number): Promise<readonly Act[]>;
+  /**
+   * The card plays on any of these Acts, oldest first, in one read (a page of a thread asks once, never once per post), at most
+   * `limit` rows in all; each names its post in `targetActId`. A result as long as `limit` may be cut, and a post with none in it
+   * may have some.
+   */
+  cardsOnMany(acts: readonly Id[], limit: number): Promise<readonly Act[]>;
+  /** The state each play's effect has saved (the post's author saves it), by play; a play that has saved none is absent. Any signed-in reader may read it. */
+  effectStates(plays: readonly Id[]): Promise<Readonly<Record<Id, EffectState>>>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */
   characters(ids: readonly Id[]): Promise<readonly Character[]>;
   characterCounts(id: Id): Promise<CharacterCounts>;
@@ -437,6 +454,8 @@ export interface KayfaApi {
   wallet(): Promise<Wallet>;
   myReactions(acts: readonly Id[]): Promise<readonly MyReaction[]>;
   myCards(): Promise<readonly HeldCard[]>;
+  /** Which of these plays the player has released themselves from (Stick Around's certification): the player's own rows, never counted or broadcast. */
+  myReleases(plays: readonly Id[]): Promise<readonly Id[]>;
   /** The furthest seq read in each thread asked about; a thread never read is absent. */
   reading(threads: readonly Id[]): Promise<Readonly<Record<Id, number>>>;
   /**
@@ -457,6 +476,10 @@ export interface KayfaApi {
   post(thread: Id, character: Id, body: string, quote: Id | null): Promise<Answer<Act>>;
   edit(post: Id, character: Id, body: string): Promise<Answer<Act>>;
   spin(origin: Id, character: Id, title: string, body: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  /** Release the player from a play's effect, for good and on every device; the player's own, and said again it is the same. */
+  releaseEffect(play: Id): Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
+  /** Save the state of a play's effect, as the character that wrote the post it landed on (no one else may); the card's rules bound what it holds. */
+  saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Promise<Answer<{ readonly play: Id; readonly savedAt: string }>>;
   react(act: Id, character: Id, kind: string): Promise<Answer<{ readonly act: Id; readonly tally: Tally }>>;
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
