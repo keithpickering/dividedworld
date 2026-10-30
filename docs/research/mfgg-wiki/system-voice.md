@@ -38,25 +38,24 @@ experienced the present, and now, you are the future." "So you want to know a re
 [MFGG 2.0]. A new administrator's acceptance speech came "with all sorts of pointless graphs" [Black Squirrel]. This is
 the weekly turnover's voice, with one limit: a chart shown out of character is honest.
 
-**The absent god.** Of the founder: "He now almost never appears, leading him to be comparable to Jesus." [Thunder Dragon]. The
-System can invoke a higher authority that never shows up, and the community kept a statue players were not to touch
-(see `lexicon.md`).
+**The absent god.** Of the founder: "He now almost never appears, leading him to be comparable to Jesus." [Thunder
+Dragon]. The System can invoke a higher authority that never shows up, and the community kept a statue players were not
+to touch (see `lexicon.md`).
 
 **The institution unsure of its own name.** On television: "Standing for... uh... Mario Fan Games... uh..." "Gallery,
 maybe?" [Mario Fan Game Gallery]. A board that renames itself weekly can forget what it was called.
 
 ## The moves
 
-1. **Quote the offense back.** A member bumped a dead thread with "...Damn, this topic is dead."; a moderator banned
-   them fifteen minutes later with "And so is your account here!" [a member page]. Six themed duplicate accounts were
-   banned with "Apparently it's not as fun to stay at the M-F-G-G." and the thread locked [Village People]. The best
-   ruling plays along with the player's own words.
-2. **Read the player's log to them.** A permaban came with the note that someone with that warn log "should have
-   changed for the better by now" [a member page]. The System may cite what the log says, and the log is always true.
+1. **Quote the offense back.** The ban lines the wiki kept and retold were quick and turned the offender's own words, or
+   their own joke, back on them, so the ruling read as a punchline the whole board could enjoy. The best ruling plays
+   along with what the player said.
+2. **Read the player's record to them.** A permaban was justified by the history behind it: someone with that warn log
+   "should have changed for the better by now". The System may cite what the log says, and the log is always true.
 3. **"Permanent" is a word in the fiction.** "Contrary to the name, permanent bans are occasionally lifted"; "Requests
-   for indefinite bans are no longer honored." [Permaban]. A banned member's page reads "permanently banned from all
-   aspects of MFGG... or rather, we would like to think so." [a member page]. The System may say "forever"; the code
-   says when it ends ("No player is ever stuck").
+   for indefinite bans are no longer honored." [Permaban]. Staff admitted, with a shrug, that the people they banned
+   kept coming back, and the community treated each return as a running joke rather than a failure. The System may say
+   "forever"; the code says when it ends ("No player is ever stuck").
 4. **Silence, and the back of the line.** "the site staff may chose not to respond if we feel the situation has been
    adequately explained"; "Every time a submission is modified by the user, its status in the moderation queue is
    'reset'."; "DO NOT SEND MESSAGES TO THE SITE STAFF ABOUT THIS ISSUE." [Submissions FAQ]. Cruel and legible, as long
@@ -66,9 +65,10 @@ maybe?" [Mario Fan Game Gallery]. A board that renames itself weekly can forget 
    of character, plainly.
 6. **Lock the complaints.** "Discussion was restricted to stop members from moaning about the system before it had had
    a chance to work its magic." [Friday 12th 2009]. A candidate effect, bounded and timed.
-7. **Mint a title for one offender.** Staff made a user group for a single member, and a punishment became an honor
-   [Mindblowingly Stupid]. Expect every shame effect to become a status symbol: players sought out the dungeon forum
-   until a rule stopped it, and a forced red confession signature became a fad [Worthless Post Palace, Trasher].
+7. **Expect shame to become a status symbol.** A punishment made just for one person was taken as an honor; players
+   sought out the dungeon forum until a rule stopped it [Worthless Post Palace]; a confession forced into a member's
+   signature was copied by others until it was a fad. Punishment that is public and a little absurd turns into
+   belonging, so a shame effect should be designed to be worn.
 8. **The one room where the jokes stop.** "Take this board a little more seriously than the other ones; try to make
    sure each post is furthering the discussion" [Suggestions]. And from the 2.0 launch: "Admin change one of your
    files? You'll be told why." [MFGG 2.0]. That is the Old Guard's version of the honest log and the plain
@@ -87,15 +87,17 @@ the moderating team." The bands and the decay are code; the classification is ju
 Its Invision predecessor gave each member three hearts, restored one every three months, and "once a year on
 Valentine's day, a heart would be restored just to be nice." [Warn]: a dated amnesty, ready as a holiday effect.
 
-The Old Guard's edicts were small, timed and legible: a rule, while the board waited on a restore from backup, "that all posts must contain the word 'meatballs'" [The
-Great Mistake]; an April Fools "Supreme Dictator" who banned three members for an hour each for "resistance to his
-actions" [April Fool's Prank]; a slap with a Cheep-Cheep for anyone who opened a topic with "I don't know if this is
-General Chat worthy" [General Chat]. Each is the size of one of The System's effects.
+The Old Guard's edicts were small, timed and legible: a rule, while the board waited on a restore from backup, "that all
+posts must contain the word 'meatballs'" [The Great Mistake]; an April Fools "Supreme Dictator" who banned three members
+for an hour each for "resistance to his actions" [April Fool's Prank]; a slap with a Cheep-Cheep for anyone who opened a
+topic with "I don't know if this is General Chat worthy" [General Chat]. Each is the size of one of The System's
+effects.
 
 ## Mod Bots: the precedents
 
-- **Event Leaders** [Event Leader]: puppet accounts several staff logged into (Director of HR, Lemony Snicket, Santa,
-  King Boo, Ω). One, Wario, "doesn't actually have any Event Leader powers": a persona that is all show.
+- **Event Leaders** [Event Leader]: accounts made for events, with powers to match: a shared account staff logged
+  into to run hiring, a narrator for a murder-mystery event who reported the "deaths", a host for each holiday event,
+  and one host listed "although he doesn't actually have any Event Leader powers": a persona that is all show.
 - **Storyline accounts**: staff ran characters that lied to the members as part of a story [Life on MFGG, The Lounge].
   The fiction lying is old; Divided World adds that the log never does.
 - **Goonbot** [Goonbot]: a chat bot "Known for having very bad intelligence, he creates his own words and insults",
