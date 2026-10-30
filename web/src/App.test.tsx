@@ -133,6 +133,18 @@ test('a signed-in page load mounts its screen once: each of its reads is asked o
   expect(asked).toHaveBeenCalledTimes(1);
 });
 
+test('another account signing in takes the last account\'s look off the page, and keeps the device\'s if its own cannot be read', async () => {
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedDemo(fake);
+  await fake.setPreferences({ textSize: 200, contrast: 'high' });
+  render(<App api={fake} />);
+  await waitFor(() => expect(document.documentElement).toHaveAttribute('data-kb-text-size', '200'));
+  fake.preferences = () => Promise.reject(new Error('no answer came back'));
+  fake.signInAs(fake.seed.account('next'));
+  await waitFor(() => expect(document.documentElement).not.toHaveAttribute('data-kb-text-size'));
+  expect(document.documentElement).not.toHaveAttribute('data-kb-contrast');
+}, 15_000);
+
 test('the instance\'s glass is on the page: its standard key on the root, and its fonts in the font set', async () => {
   /* jsdom has no font set and no FontFace; the browser's are stood in for, as far as the app reaches. */
   const fonts = new Set<{ family: string }>();

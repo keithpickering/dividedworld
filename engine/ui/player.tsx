@@ -153,6 +153,11 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
      * other account's estimate is never filed as this one's.
      */
     if (!account || current.current !== account) return;
+    /*
+     * The same check on the held timer and on the answer below is defense in depth: with the
+     * generation and this check, either can only run between the next account's render and the
+     * cleanup that resets them. This one is the check the tests hold.
+     */
     const gen = a.gen;
     const later = (ms: number) => { a.timer = setTimeout(() => { if (a.gen !== gen || current.current !== account) return; a.timer = null; a.held = false; ask(); }, ms); };
     const wait = a.freshAt - Date.now();

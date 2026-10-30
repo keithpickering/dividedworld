@@ -235,6 +235,26 @@ describe('from PR #49\'s fifth review: what the provider holds is the account\'s
     await act(async () => {});
     expect(screen.getByTestId('pending').textContent).not.toBe('77');
   });
+
+  test('a reaction landed for the last account takes nothing from the one signed in now: its own next reaction still shows', async () => {
+    let bAsked = 0;
+    const w = twoAccounts({ a: async () => answer(11), b: async () => answer(++bAsked === 1 ? 77 : 88) });
+    let landedForA: (() => void) | null = null;
+    let landed: () => void = () => {};
+    function Keep() {
+      const p = usePlayer();
+      if (p.session.account === 'acc-a' && landedForA === null) landedForA = p.reactionLanded;
+      landed = p.reactionLanded;
+      return <span data-testid="pending">{p.pending}</span>;
+    }
+    render(<PlayerProvider api={w.api}><Keep /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('pending').textContent).toBe('11'));
+    w.switchTo('acc-b');
+    await waitFor(() => expect(screen.getByTestId('pending').textContent).toBe('77'));
+    /* A's late reaction, then B's own, in one turn: B's must be asked and shown. */
+    await act(async () => { landedForA!(); landed(); });
+    await waitFor(() => expect(screen.getByTestId('pending').textContent).toBe('88'));
+  });
 });
 
 describe('from the Task 7 re-review: drafts leave the device only with their account', () => {

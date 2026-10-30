@@ -86,7 +86,9 @@ function Moved({ to }: { readonly to: string }) {
 function Appearance({ api }: { readonly api: KayfaApi }) {
   const { session } = usePlayer();
   useEffect(() => {
-    if (!session.account) { applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes, instanceUi.glass); return; }
+    /* The device's look first, on every change of account: the last account's never stands for the next. */
+    applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes, instanceUi.glass);
+    if (!session.account) return;
     let live = true;
     void api.preferences().then((p) => { if (live) applyAppearance(document, p, instanceUi.themes, instanceUi.glass); }, () => { /* keep the device's choice */ });
     return () => { live = false; };
