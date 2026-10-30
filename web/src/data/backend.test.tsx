@@ -120,7 +120,7 @@ describe('createBackend and the boards fixture', () => {
     const api = await createBackend();
     expect(window.location.pathname + window.location.search + window.location.hash).toBe(MOMENTS['12-log'].route(''));
     expect((await api.session()).signedIn).toBe(true);
-    expect((await api.wallet()).balance).toBe(372);
+    expect((await api.wallet()).balance).toBe(472);
     expect((await api.myCharacters()).map((c) => c.name)).toContain('Pipewrench');
     /* The fixture's General, not the demo's: the night's thread and the two where Thwompson and Gloomba said their classes. */
     const general = (await api.boards()).find((b) => b.slug === 'general')!;

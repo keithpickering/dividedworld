@@ -143,7 +143,7 @@ const FILLER = [
 /*
  * The money, in hundredths of an orb, derived from the instance's own prices so the timeline reads as
  * arithmetic (glass plan, section 2.1): the wallet after the Oct 29 settlement, less the Whoops! bought
- * at 20:10, less the card and the long post at the 21:52 play, plus what the Oct 30 settlement scored.
+ * at 20:10, less the long post's surcharge at the 21:52 play (the card was paid for at the machine, #78), plus what the Oct 30 settlement scored.
  */
 const economy = instance.settings.economy;
 const WHOOPS = economy['whoops.price']!;
@@ -152,7 +152,8 @@ const WHOOPS_INK = { color: '#ff2bd6', seed: 20261029 };
 const LONG_POST_COST = economy['whoops.perLength']! * Math.floor(LONG_POST_LENGTH / economy['whoops.lengthStep']!);
 const WALLET_START = 562;
 const WALLET_BOUGHT = WALLET_START - WHOOPS;
-const WALLET_PLAYED = WALLET_BOUGHT - WHOOPS - LONG_POST_COST;
+/* A card is paid for once, at the machine (#78): playing it costs only what the long post adds. */
+const WALLET_PLAYED = WALLET_BOUGHT - LONG_POST_COST;
 /** The settlement's scoring as a Heel: drew heat, stole thunder (the play on #46), a polite shrug. */
 const SCORED = [['heel.drewHeat', 20], ['heel.stoleThunder', 20], ['heel.shrugged', -5]] as const;
 const WALLET_SETTLED = WALLET_PLAYED + SCORED.reduce((sum, [, amount]) => sum + amount, 0);

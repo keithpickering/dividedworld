@@ -114,12 +114,12 @@ describe('Pipewrench through the season', () => {
     '01-main': { wallet: 462, pending: 30, hand: 3, rank: 'Enhancement Talent', class: 'heel', turning: false },
     '02-phone': { wallet: 462, pending: 30, hand: 3, rank: 'Enhancement Talent', class: 'heel', turning: false },
     '05-cards': { wallet: 462, pending: 30, hand: 3, rank: 'Enhancement Talent', class: 'heel', turning: false },
-    '06-turn': { wallet: 337, pending: 35, hand: 2, rank: 'Enhancement Talent', class: 'heel', turning: false },
-    '09-settlement': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
-    '10-roster': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
-    '11-settings': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
-    '12-log': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
-    '13-rankings': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
+    '06-turn': { wallet: 437, pending: 35, hand: 2, rank: 'Enhancement Talent', class: 'heel', turning: false },
+    '09-settlement': { wallet: 472, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
+    '10-roster': { wallet: 472, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
+    '11-settings': { wallet: 472, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
+    '12-log': { wallet: 472, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
+    '13-rankings': { wallet: 472, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
   };
 
   it.each(Object.entries(AT))('at %s: wallet, what is pending, the hand, the rank and the Turn are the timeline\'s', async (moment, want) => {
@@ -149,6 +149,17 @@ describe('Pipewrench through the season', () => {
     expect(me.turnOpensAt).toBe(iso(30, 8, 17).replace('2026-10-30', '2026-11-29'));
     const turned = await fake.turnsAnnounced([me.id]);
     expect(turned).toEqual([expect.objectContaining({ character: me.id, was: 'heel', at: iso(30, 8, 17) })]);
+  });
+
+  it('plays the card for the long post alone: the same play, made on the fake, leaves the wallet the fixture has after the 21:52 play (#78)', async () => {
+    const { fake, thread } = await load('05-cards');
+    const me = must((await fake.myCharacters()).find((c) => c.name === 'Pipewrench'));
+    const last = must(await postsOf(fake, thread)).at(-1)!;
+    expect((await fake.wallet()).balance).toBe(462);
+    const played = await fake.playCard('whoops', me.id, last.id, { color: '#ff2bd6', seed: 20261029 }, 'you dropped your ink');
+    expect(played.ok).toBe(true);
+    expect((await fake.wallet()).balance).toBe(437);
+    expect((await (await load('06-turn')).fake.wallet()).balance).toBe(437);
   });
 
   it('shows the estimate of the 21:52 play as the settlement scored it: drew heat, stole thunder, a polite shrug', async () => {

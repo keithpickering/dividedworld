@@ -16,8 +16,9 @@
  *  - A card is paid for at the Vending Machine; playing it costs only what the post adds (the core loop's
  *    design: "1.00 to buy, plus 0.25 per 500 characters of the target when played"). The board charges the
  *    card again, "Card 1.00 ... Total 1.25, 4.62 -> 3.37", and the form draws what the server charges: the
- *    card paid ("Card: Paid"), the long post 0.25, "To pay now" 0.25 and a wallet of 4.37 after. The amounts are
- *    left out and the rows' places compared. This is a design question for the owner (the report names it).
+ *    card paid ("Card: Paid"), the long post 0.25, "To pay now" 0.25 and a wallet of 4.37 after. The owner
+ *    decided it (#78, the glass plan's section 2.1): a card is paid for once, at the machine. So the card's row
+ *    and the total's words are the build's (`buildName`) and the amounts are compared as the build draws them.
  *
  * Not compared: a card's face, which is the instance's art (each article is compared by its box and
  * its name; its parts are aria-hidden pictures and words said once by the article's name and
@@ -83,12 +84,16 @@ const manifest: BoardManifest = {
        * The card's own form is taller than the board's six swatches (the picker and the preview of the
        * ink, the screens' design, section 11), so the dialog is taller than the board's 952px and
        * everything between it and the foot stands lower than on the board and is compared by its size;
-       * the rows' amounts are the server's (see the header).
+       * the rows' words are the build's where #78 decided a card is paid once (see the header).
        */
       { id: 'cost-card', role: 'text', name: 'Card', within: 'dialog', box: 'none' },
       { id: 'cost-long', role: 'text', name: 'Long post, +0.25 per 500 characters', within: 'dialog', box: 'size' },
       /* "Total" is "To pay now" in the build, and 22px on the board where the closed list's nearest is body's 21. */
       { id: 'cost-total', role: 'text', name: 'Total', buildName: 'To pay now', buildSize: 21, within: 'dialog', box: 'none' },
+      /* The amounts. The board charges the card again (1.00, total 1.25); the build says it is paid and charges the post's 0.25 (#78). */
+      { id: 'cost-card-amount', role: 'text', name: '1.00', buildName: 'Paid', within: 'dialog', box: 'none', type: false },
+      { id: 'cost-long-amount', role: 'text', name: '0.25', within: 'dialog', box: 'none', type: false },
+      { id: 'cost-total-amount', role: 'text', name: '1.25', buildName: '0.25', within: 'dialog', box: 'none', type: false },
       { id: 'wallet', role: 'img', name: 'Wallet after playing: 3.37 of 6.00', buildName: 'Wallet after playing: 4.37 of 6.00', within: 'dialog', box: 'size', type: false },
       { id: 'fine', role: 'text', name: 'Playing is a public Act under Pipewrench\'s name. Only solid Aura is spent; the ghost doesn\'t count.', within: 'dialog', box: 'size' },
 
