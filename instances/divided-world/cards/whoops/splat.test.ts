@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { contrast, covers, makeSplat, mulberry32, shading, tagText } from './splat.ts';
+import { contrast, covers, luminance, makeSplat, mulberry32, shading, tagText } from './splat.ts';
 import { NAMED_COLORS } from '../../../../engine/bbcode/parse.ts';
 
 test('the generator is deterministic: one seed and one post height always give one splat', () => {
@@ -40,9 +40,81 @@ test('the splat sits on the post: its blob keeps inside the post laid out that t
   for (const seed of [3, 4, 5, 6]) {
     const s = makeSplat(seed, 8);
     assert.ok(s.placement.cy - s.placement.ry >= -1e-9 && s.placement.cy + s.placement.ry <= 8 + 1e-9);
-    const tall = makeSplat(seed, 500);
-    assert.ok(tall.placement.cy <= 64, 'within the 64 widths a stroke can reach');
+    assert.deepEqual(makeSplat(seed, 500), makeSplat(seed, 64), 'the post counts only to the 64 widths a stroke can reach');
   }
+});
+
+test('on a tall post the blob is one place, not a smear: its height is at most 1.3 times its width', () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const { rx, ry } = makeSplat(seed, 64).placement;
+    assert.ok(ry <= 1.3 * rx + 1e-3, `seed ${seed}: ry ${ry} against rx ${rx}`);
+    assert.ok(rx >= 0.42 - 1e-3 && rx <= 0.56 + 1e-3);
+  }
+});
+
+test('where the splat sits down a tall post is the seed\'s, and the whole blob stays inside the post', () => {
+  const centers = new Set<number>();
+  for (let seed = 1; seed <= 200; seed++) {
+    for (const height of [8, 20, 64]) {
+      const s = makeSplat(seed, height);
+      let top = Infinity, bottom = -Infinity;
+      for (const [, y] of s.blob) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
+      assert.ok(top >= -1e-9 && bottom <= height + 1e-9, `seed ${seed}, ${height} tall: blob from ${top} to ${bottom}`);
+    }
+    centers.add(makeSplat(seed, 64).placement.cy);
+  }
+  assert.ok(centers.size > 150, 'the center falls in different places for different seeds');
+  const ys = [...centers];
+  assert.ok(Math.max(...ys) - Math.min(...ys) > 20, 'and over a wide stretch of the post');
+});
+
+test('a post of any height, or a height that is not a number, still gives a finite splat', () => {
+  assert.deepEqual(makeSplat(5, Infinity), makeSplat(5, 64), 'an unbounded height is the deepest, not zero');
+  assert.notDeepEqual(makeSplat(5, Infinity), makeSplat(5, 0));
+  assert.deepEqual(makeSplat(5, NaN), makeSplat(5, 0));
+  assert.deepEqual(makeSplat(5, -Infinity), makeSplat(5, 0));
+  assert.equal(makeSplat(5, Infinity).path.includes('NaN'), false);
+});
+
+test('covers holds the blob and every arm and droplet circle, and nothing outside', () => {
+  for (const seed of [1, 2, 3, 99]) {
+    const s = makeSplat(seed, 12);
+    const blobOnly = { blob: s.blob, circles: [], bounds: s.bounds };
+    const outside = s.circles.filter(([x, y]) => !covers(blobOnly, x, y));
+    assert.ok(outside.length > 0, 'some arm or droplet sits outside the blob');
+    for (const [x, y, r] of outside) {
+      assert.equal(covers(s, x, y), true, 'the circle\'s center is inked');
+      assert.equal(covers(s, x + r * 0.9, y), true, 'and so is a point just inside its edge');
+    }
+    let rightmost = s.blob[0]!;
+    for (const p of s.blob) if (p[0] > rightmost[0]) rightmost = p;
+    assert.equal(covers(blobOnly, rightmost[0] + 0.001, rightmost[1]), false, 'just outside the blob');
+    assert.equal(covers(blobOnly, s.placement.cx, s.placement.cy), true);
+    const { minX, maxX, minY, maxY } = s.bounds;
+    for (const [x, y] of [[minX - 0.01, s.placement.cy], [maxX + 0.01, s.placement.cy], [s.placement.cx, minY - 0.01], [s.placement.cx, maxY + 0.01]] as const) {
+      assert.equal(covers(s, x, y), false, 'outside the bounds');
+    }
+  }
+});
+
+test('the arcs turn the way the blob does, so the nonzero rule fills the union and no overlap cuts a hole', () => {
+  for (const seed of [1, 2, 3, 99]) {
+    const s = makeSplat(seed, 12);
+    let area = 0;
+    for (let i = 0, j = s.blob.length - 1; i < s.blob.length; j = i++) area += s.blob[j]![0] * s.blob[i]![1] - s.blob[i]![0] * s.blob[j]![1];
+    assert.ok(area > 0, 'the blob is clockwise on a y-down plane (positive shoelace area)');
+    const arcs = [...s.path.matchAll(/A([\d.]+) ([\d.]+) 0 (\d) (\d) /g)];
+    assert.equal(arcs.length, s.circles.length * 2, 'two arcs make each circle');
+    for (const arc of arcs) assert.equal(arc[4], '1', 'an arc sweeps clockwise on a y-down plane, as the blob winds');
+  }
+});
+
+test('luminance is the WCAG relative luminance of the primaries', () => {
+  assert.ok(Math.abs(luminance('#ff0000') - 0.2126) < 1e-9);
+  assert.ok(Math.abs(luminance('#00ff00') - 0.7152) < 1e-9);
+  assert.ok(Math.abs(luminance('#0000ff') - 0.0722) < 1e-9);
+  assert.equal(luminance('#000'), 0);
+  assert.ok(Math.abs(luminance('white') - 1) < 1e-9);
 });
 
 test('the shading: the highlight falls and the shadows rise with the ink\'s luminance', () => {

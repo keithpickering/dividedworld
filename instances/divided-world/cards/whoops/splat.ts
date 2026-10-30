@@ -16,7 +16,10 @@
  * runs past the post's top and bottom into the margins, as ink may; its radius
  * across is 0.42 to 0.56 widths, and down it is about two fifths of the post's height, never more than
  * 1.3 times the radius across, so a tall post is splattered in one place, not smeared along its length.
- * The post's height counts only to 64 widths, the deepest a stroke reaches.
+ * The post's height counts only to 64 widths, the deepest a stroke reaches: an unbounded height is that deepest, and
+ * only NaN is read as no height.
+ *
+ * A splat's path is about 13 KB, so the Effect draws only the splats near the viewport, never every one on a page.
  */
 import { STROKES } from '../whoops.ts';
 
@@ -54,7 +57,7 @@ const POINTS = 160;
 /** The splat for a seed, on a post laid out `postHeight` widths tall. */
 export function makeSplat(seed: number, postHeight: number): Splat {
   const r = mulberry32(seed);
-  const height = clamp(Number.isFinite(postHeight) ? postHeight : 0, 0, STROKES.deepest);
+  const height = clamp(Number.isNaN(postHeight) ? 0 : postHeight, 0, STROKES.deepest);
   const rx = 0.42 + r() * 0.14;
   const ry = clamp(height * (0.34 + r() * 0.12), 0.25, rx * 1.3);
   const cx = 0.42 + r() * 0.16;
@@ -107,7 +110,11 @@ export function makeSplat(seed: number, postHeight: number): Splat {
   return { path, blob, circles, bounds: { minX, maxX, minY, maxY }, placement: { cx: round(cx), cy: round(cy), rx: round(rx), ry: round(ry) } };
 }
 
-/** Whether the splat's ink holds a point, in the same widths: the blob (a ray cast over its outline) or any circle. */
+/**
+ * Whether the splat's ink holds a point, in the same widths: the blob (a ray cast over its outline) or any circle.
+ * It costs a pass over every circle and blob vertex, so it is for a stroke's points, a few hundred a play, and not
+ * for asking per pixel.
+ */
 export function covers(splat: Pick<Splat, 'blob' | 'circles' | 'bounds'>, x: number, y: number): boolean {
   const { minX, maxX, minY, maxY } = splat.bounds;
   if (x < minX || x > maxX || y < minY || y > maxY) return false;

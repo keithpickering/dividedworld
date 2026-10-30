@@ -12,6 +12,10 @@ export const TUNING = {
   mostlyInView: 0.6,
   /** How much of the bar one screen of scroll pushed past an end of the post fills, 0 to 1. */
   fillPerScreen: 0.2,
+  /** The most a second of pushing can fill the bar, however hard the reader pushes. */
+  maxFillPerSecond: 1.3,
+  /** The least time between two presses of BREAK FREE that both count, so a held key does not out-fill scrolling. */
+  minPressGapMs: 120,
   /** How much of the bar drains away each second, whatever the reader does. */
   drainPerSecond: 0.3,
   /** How much of the bar one press of BREAK FREE fills, 0 to 1. */
@@ -113,16 +117,51 @@ export interface BarInput {
   presses: number;
 }
 
+/** A number that is not finite is treated as `fallback`: one bad reading from the page must never poison the bar for good. */
+const finiteOr = (n: number, fallback: number) => (Number.isFinite(n) ? n : fallback);
+
 /**
  * One step of the bar: it fills by what was pushed or pressed and drains at a constant rate, and stays within 0 and
  * FULL. A push slower than drainPerSecond / fillPerScreen screens a second never gets anywhere, and the button is
  * costed against the same drain, so its accessible path takes about as long as scrolling does.
+ *
+ * What a step counts from pushing is capped at maxFillPerSecond * dt, so one wheel jump of five screens fills no more
+ * than a hard push held for that moment would: only a sustained burst frees anyone. Pressing is capped the same way, at
+ * one press per minPressGapMs of the step (see countPresses). Input that is not a number is treated as nothing, so the
+ * bar can never stick at NaN, which would be a dead end: a NaN or negative or infinite dt is no time, a NaN push or NaN
+ * presses are none, an infinite push counts as the cap, a screen that is not positive (or not finite) means no push is
+ * counted, and a level that is NaN is empty and one outside 0 to FULL is clamped.
  */
 export function barStep(level: number, input: BarInput, dt: number): number {
-  const pushed = input.screen > 0 ? (Math.abs(input.push) / input.screen) * TUNING.fillPerScreen : 0;
-  const pressed = input.presses * TUNING.fillPerPress;
-  const next = level + pushed + pressed - TUNING.drainPerSecond * Math.max(dt, 0);
+  const seconds = Number.isFinite(dt) && dt > 0 ? dt : 0;
+  const start = Math.min(Math.max(finiteOr(level, 0), 0), FULL);
+  const push = Number.isNaN(input.push) ? 0 : Math.abs(input.push);
+  const pushed =
+    Number.isFinite(input.screen) && input.screen > 0
+      ? Math.min((push / input.screen) * TUNING.fillPerScreen, TUNING.maxFillPerSecond * seconds)
+      : 0;
+  const pressCap = Math.ceil((seconds * 1000) / TUNING.minPressGapMs);
+  const pressed = Math.min(Math.max(finiteOr(input.presses, 0), 0), pressCap) * TUNING.fillPerPress;
+  const next = start + pushed + pressed - TUNING.drainPerSecond * seconds;
   return Math.min(Math.max(next, 0), FULL);
+}
+
+/**
+ * Which of the presses of BREAK FREE since the last step count: at most one per minPressGapMs, so a held Enter that
+ * autorepeats thirty times a second fills the bar no faster than a reader pressing eight times a second, and the button
+ * costs about what a fast scroll does. `pressTimesMs` are the presses' timestamps in order; `lastCountedMs` is the time
+ * of the last press that counted (-Infinity before any), and the new one is returned to carry into the next step. A
+ * time that is not finite is no press.
+ */
+export function countPresses(pressTimesMs: readonly number[], lastCountedMs: number): { counted: number; lastCountedMs: number } {
+  let counted = 0;
+  let last = Number.isNaN(lastCountedMs) ? -Infinity : lastCountedMs;
+  for (const time of pressTimesMs) {
+    if (!Number.isFinite(time) || time - last < TUNING.minPressGapMs) continue;
+    counted++;
+    last = time;
+  }
+  return { counted, lastCountedMs: last };
 }
 
 /** Which side of the post a full bar puts the reader on: the one they were last pushing toward. */
@@ -133,7 +172,7 @@ export function releaseSide(lastPush: number): 'after' | 'before' {
 /** How long a pull over `distance` pixels takes. Reduced motion makes it instant: the pull still happens. */
 export function pullDuration(distance: number, reducedMotion: boolean): number {
   if (reducedMotion) return 0;
-  return Math.min(TUNING.pullBaseMs + TUNING.pullMsPerPx * Math.abs(distance), TUNING.pullMaxMs);
+  return Math.min(TUNING.pullBaseMs + TUNING.pullMsPerPx * Math.abs(finiteOr(distance, 0)), TUNING.pullMaxMs);
 }
 
 /**
@@ -142,6 +181,8 @@ export function pullDuration(distance: number, reducedMotion: boolean): number {
  * at most pullOvershootPx and a damped bounce settles it exactly on the target.
  */
 export function pullOffset(elapsedMs: number, distance: number, reducedMotion: boolean): number {
+  if (!Number.isFinite(distance)) return 0;
+  if (Number.isNaN(elapsedMs)) elapsedMs = 0;
   const total = pullDuration(distance, reducedMotion);
   if (total <= 0 || elapsedMs >= total) return distance;
   if (elapsedMs <= 0) return 0;
