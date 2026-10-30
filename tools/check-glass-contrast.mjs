@@ -32,7 +32,7 @@
  * set on; every text token opaque (a translucent one has no ratio to check); the ground opaque. Each
  * class color: its ink 4.5:1 on its fill and its large text 3:1 against the calmed worst of every
  * recipe (the plans give Heel's large text as #ff8a96, which is 1.66:1 on any full smoke, so a class's
- * large text is read calmed; docs/plans/2026-10-30-glass-build-plan.md's report names this gap). Each
+ * large text is read calmed; PR #39's design questions put this to the owner). Each
  * size step: its px times its face's ink ratio at 18 or more, a phone step at 16px of computed size.
  * Each font has a family, a file, a weight, a style and an ink ratio. Every `GlassSurface` the engine
  * lists (read from engine/ui/types.ts) names a recipe the theme has, and no other surface is named.

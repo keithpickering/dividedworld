@@ -186,6 +186,12 @@ Task 3 lands, the fixture writes its plays after the moment's posts, so page 3 s
 and Phone manifests leave the thread below #46 out, and compare what stands below it (the pager, the HUD) by
 `position` only, each with a comment naming Part 3, which turns them back to `full`.
 
+**Amended 2026-10-30, after Part 1's final review.** The sentence above overstates what moves below #46. The Game HUD
+is docked to the window, so the play lines cannot move it, and the Main and Phone manifests compare it in `full`, which
+holds it closer than `position`. Board 01 draws no pager below #46, so the build's bottom pager has no landmark on
+either side. What the play lines do move is #42 and #43's own post lines, behind #41's splat and the play tags, so those
+two posts are compared by type with box `none`. Part 3 adds the tags and the hand, and turns #42 and #43 to `position`.
+
 ## 4. The glass's tokens: a closed list
 
 Web Task 1 gives the token names; this is the list, closed. `engine/ui/glass/tokens.css` names exactly these, and
