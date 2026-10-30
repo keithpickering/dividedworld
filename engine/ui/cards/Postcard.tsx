@@ -33,6 +33,16 @@ export interface PostcardProps extends Omit<HTMLAttributes<HTMLElement>, 'childr
   readonly disabled?: boolean;
 }
 
+/**
+ * The name of a postcard that is a button: the words it shows, in the order the markup holds them (the
+ * name, the tag, and on the fan the tagline), then the word that says what it is. The fan shows its
+ * tagline, so its name holds it too.
+ */
+export function cardLabel(face: CardFace, size: PostcardSize): string {
+  const shown = size === 'fan' && face.tagline ? `${face.name}, ${face.tag}. ${face.tagline}` : `${face.name}, ${face.tag}`;
+  return `${shown} postcard`;
+}
+
 export function Postcard({ face, size, as: As = 'span', armed = false, className, style, ...rest }: PostcardProps) {
   const vars = { '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink, ...style } as CSSProperties;
   return (
@@ -48,11 +58,18 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
     >
       <span className="kb-postcard-glow" aria-hidden="true" />
       {face.art.image ? <img className="kb-postcard-art" src={face.art.image} alt="" aria-hidden="true" draggable={false} /> : null}
+      {/*
+        * WCAG 2.5.3 (Label in Name): a button's visible words must appear, in order and together, in its
+        * name (`cardLabel`). So the name is drawn before the tag and the tagline in the markup, with a space
+        * between (every part is placed, so the order is not the eye's), and every word stays real text.
+        */}
+      <span className="kb-postcard-name" aria-hidden="true">{face.name}</span>
+      {' '}
       {size !== 'slot' && <span className="kb-postcard-tag" aria-hidden="true">{face.tag}</span>}
+      {' '}
       {size === 'sheet' && (
         <span className="kb-postcard-price kb-num" aria-hidden="true"><span className="kb-postcard-orb" />{priceOf(face)}</span>
       )}
-      <span className="kb-postcard-name" aria-hidden="true">{face.name}</span>
       {size === 'fan' && face.tagline && <span className="kb-postcard-line" aria-hidden="true">{face.tagline}</span>}
       {size === 'sheet' && <span className="kb-postcard-line" aria-hidden="true">{face.summary}</span>}
       {size === 'sheet' && (

@@ -26,7 +26,7 @@
  * printing, outside the rendered type measurement; a code printed on a slot is an attribute the
  * stylesheet writes out, so a button's visible text is the card's name alone and the name it is
  * given, "Buy Stick Around, 1.00 orb", contains it), and the instance's stylesheet
- * (instances/divided-world/ui/vending.css) gives them their colors, their words and their glow. What
+ * (instances/divided-world/ui/vending/vending.css) gives them their colors, their words and their glow. What
  * a player reads and presses is real text in the glass's tokens, so a card, a price and a refusal
  * are said once, in words.
  *

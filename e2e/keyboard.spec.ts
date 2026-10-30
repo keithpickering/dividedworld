@@ -79,7 +79,7 @@ test('plays a card: from a post, picks a card in the hand, plays it from the for
   /* The hand opens for this post and takes focus; a card is picked with Enter, which opens its form. */
   const hand = page.getByRole('region', { name: 'Your hand' });
   await expect(hand).toBeFocused();
-  const card = hand.getByRole('button', { name: /^Whoops!, Salty postcard/ }).first();
+  const card = hand.getByRole('button', { name: /^Whoops!, Salty\b/ }).first();
   await tabTo(page, card);
   await page.keyboard.press('Enter');
   const form = page.getByRole('dialog', { name: 'Whoops!' });
@@ -90,7 +90,7 @@ test('plays a card: from a post, picks a card in the hand, plays it from the for
   await expect(post).toBeFocused();
   /* Armed from the hand alone: Esc puts the card back and the post's own button with it. */
   await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
-  await page.getByRole('button', { name: /^Whoops!, Salty postcard/ }).first().click();
+  await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
   const here = page.locator('#post-3').getByRole('button', { name: 'Play Whoops! here' });
   await expect(here).toBeVisible();
   await page.keyboard.press('Escape');

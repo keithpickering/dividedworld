@@ -23,7 +23,7 @@ import { useId, useState, type CSSProperties } from 'react';
 import type { HeldCard } from '../data/api.ts';
 import { useBoard } from '../glass/useBoard.ts';
 import { Link } from '../router.tsx';
-import { Postcard } from './Postcard.tsx';
+import { Postcard, cardLabel } from './Postcard.tsx';
 import type { CardFace } from './faces.ts';
 
 /** The most faces drawn for one kind of card. */
@@ -109,7 +109,7 @@ export function Hand({ held, faces, armed = null, onPick, forPost, onClose, vend
                   face={face}
                   size={board === 'main' ? 'fan' : 'phone'}
                   armed={isArmed}
-                  aria-label={`${face.name}, ${face.tag} postcard${total ? `, ${total} in hand` : ''}${isArmed ? ', armed: pick a post' : ''}`}
+                  aria-label={`${cardLabel(face, board === 'main' ? 'fan' : 'phone')}${total ? `, ${total} in hand` : ''}${isArmed ? ', armed: pick a post' : ''}`}
                   aria-describedby={says}
                   aria-pressed={onPick ? isArmed : undefined}
                   onClick={() => { setViewed(face.key); onPick?.(face); }}

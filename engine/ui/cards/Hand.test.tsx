@@ -84,3 +84,14 @@ describe('the hand', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe('a postcard button\'s name (Label in Name)', () => {
+  test('holds the words the card shows, in order, tagline included on the fan', () => {
+    const line = { ...stick, tagline: 'Hold a reader on a post.' };
+    hand([{ card: 'stick', held: 1 }], { faces: [line, whoops] });
+    const button = screen.getByRole('button', { name: /^Stick Around/ });
+    const shown = (button.textContent ?? '').replace(/\s+/g, ' ').trim();
+    expect(shown).toBe('Stick Around Sweet Hold a reader on a post.');
+    expect(button.getAttribute('aria-label')!.replace(/[^\w ]/g, ' ').replace(/\s+/g, ' ')).toContain(shown.replace(/[^\w ]/g, ' ').replace(/\s+/g, ' '));
+  });
+});

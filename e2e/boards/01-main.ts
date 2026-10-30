@@ -41,11 +41,20 @@ function post(n: number, index: number, author: string, pips: number, rank: stri
   ];
 }
 
+/*
+ * The fanned cards' names in the build. The board names them "Stick Around, Sweet postcard", but the
+ * Main hand's cards show their tagline too, and a button's name must hold the words it shows in order
+ * (WCAG 2.5.3, cardLabel in engine/ui/cards/Postcard.tsx), so the build's name holds the tagline
+ * between the tag and the word "postcard".
+ */
+const STICK = 'Stick Around, Sweet. Hold a reader on a post. postcard';
+const WHOOPS = 'Whoops!, Salty. Splat a post in ink. postcard';
+
 const manifest: BoardManifest = {
   board: '01-main',
   size: { width: 1440, height: 1120 },
   build: { moment: '01-main' },
-  press: [{ role: 'button', name: 'Hand, 3 postcards' }, { role: 'button', name: 'Whoops!, Salty postcard' }],
+  press: [{ role: 'button', name: 'Hand, 3 postcards' }, { role: 'button', name: WHOOPS }],
   landmarks: [
     /* The banner: Index and the instance's boards. The board's Search is not built (section 3). */
     { id: 'nav', role: 'navigation', name: 'Main' },
@@ -123,9 +132,9 @@ const manifest: BoardManifest = {
     { id: 'hud-esc', role: 'text', name: 'ESC', within: 'hud' },
     { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', buildName: 'Hand, 3 postcards, open', within: 'hud' },
     /* The fanned postcards at -11, -1 and 10 degrees: each a button by its name, compared by the turned card's bounds. */
-    { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', type: false },
-    { id: 'card-whoops-armed', role: 'button', name: 'Whoops!, Salty postcard, armed: pick a post', type: false },
-    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', type: false },
+    { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', buildName: STICK, type: false },
+    { id: 'card-whoops-armed', role: 'button', name: 'Whoops!, Salty postcard, armed: pick a post', buildName: `${WHOOPS}, armed: pick a post`, type: false },
+    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', buildName: WHOOPS, type: false },
     /* The armed card's floating tag. */
     { id: 'armed-tag', role: 'text', name: 'Armed · pick a post' },
   ],

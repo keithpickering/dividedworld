@@ -112,7 +112,7 @@ const PAGES: readonly Screen[] = [
     path: '/b/general',
     then: async (page) => {
       await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
-      await page.getByRole('button', { name: /^Whoops!, Salty postcard/ }).first().click();
+      await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
     },
   },
   { name: 'Settings', path: '/settings' },
@@ -196,7 +196,7 @@ const FIXTURE_OVERLAYS: readonly Screen[] = [
     path: '/?fixture=boards&moment=05-cards',
     then: async (page) => {
       await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
-      await page.getByRole('button', { name: 'Whoops!, Salty postcard' }).first().click();
+      await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
       await page.getByRole('button', { name: 'Play Whoops! here' }).last().click();
       await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
     },

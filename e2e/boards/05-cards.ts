@@ -56,7 +56,8 @@ const manifest: BoardManifest = {
     build: { moment: '05-cards' },
     press: [
       { role: 'button', name: 'Hand, 3 postcards' },
-      { role: 'button', name: 'Whoops!, Salty postcard' },
+      /* The Main hand's card names its tagline too (cardLabel in engine/ui/cards/Postcard.tsx). */
+      { role: 'button', name: 'Whoops!, Salty. Splat a post in ink. postcard' },
       /* The last post of the page, #46, the longest of them. */
       { role: 'button', name: 'Play Whoops! here', nth: -1 },
       { role: 'textbox', name: 'Your message', fill: 'you dropped your ink' },
