@@ -44,6 +44,11 @@ for (const scheme of ['light', 'dark'] as const) {
           await expect(ready(page, path)).toBeVisible();
           expect(await pageViolations(page)).toEqual([]);
         });
+        test(`${label} does not scroll sideways`, async ({ page }) => {
+          await page.goto(path);
+          await expect(ready(page, path)).toBeVisible();
+          expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+        });
       }
 
       test('a thread, a picker and a spin form have none', async ({ page }) => {

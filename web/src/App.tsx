@@ -22,7 +22,7 @@ import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
 import { StandingsScreen } from '../../engine/ui/standings/Standings.tsx';
-import { RouterProvider, useLocation } from '../../engine/ui/router.tsx';
+import { Link, RouterProvider, useLocation } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
@@ -40,7 +40,12 @@ const ROUTES: readonly Route[] = [
   { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
   { path: '/register', render: () => <SignInScreen mode="register" /> },
   { path: '/invites', render: () => <InvitesScreen /> },
-  { path: '/settings', render: () => <SettingsScreen /> },
+  /*
+   * Invites stands in here, beside Settings, until the web build's Task 2.4 and the glass build's
+   * Task 2.4 move it into Settings › Account: the glass's menu bar holds no Invites tab and the
+   * banner no longer links it, so without this link the page could be reached only by its address.
+   */
+  { path: '/settings', render: () => <><SettingsScreen /><p><Link to="/invites">Invites</Link></p></> },
   { path: '/t/:thread', render: ({ thread }) => <ThreadScreen thread={thread!} /> },
 ];
 
@@ -71,7 +76,13 @@ function Appearance({ api }: { readonly api: KayfaApi }) {
   return null;
 }
 
-/** A glass page in the glass's shell, every other page in the board's frame. */
+/**
+ * A glass page in the glass's shell, every other page in the board's frame. A move between a glass
+ * route and a board route swaps one shell for the other, so the screen inside remounts: that is on
+ * purpose, since the two are different places (the glass is entered and left, not scrolled into),
+ * and each shell starts its own page at its top with focus on its main. A move within one shell
+ * keeps it mounted and only the routed screen changes.
+ */
 function Shell() {
   const { path } = useLocation();
   const surface = GLASS[path];

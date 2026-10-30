@@ -21,4 +21,13 @@ export default meta;
 type Story = StoryObj<typeof Page>;
 
 export const SignedIn: Story = { parameters: { world: playerWorld, path: '/settings' } };
+/*
+ * For the owner's review: the menu bar on a 390px phone, on Settings, whose tab sits past the strip's
+ * right edge until the bar scrolls it into view as the page opens.
+ */
+export const PhoneMenuBar390: Story = {
+  name: 'Phone menu bar, 390 × 844 (owner review)',
+  parameters: { world: playerWorld, path: '/settings' },
+  globals: { viewport: { value: 'glassPhone390', isRotated: false } },
+};
 export const SignedOut: Story = { args: { surface: 'account' }, parameters: { world: () => {}, path: '/sign-in' } };

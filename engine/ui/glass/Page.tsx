@@ -16,12 +16,13 @@ import { Smoke } from './Smoke.tsx';
 import './shell.css';
 
 export function Page({ surface, children }: { readonly surface: GlassSurface; readonly children: ReactNode }) {
-  const { path } = useLocation();
+  const { path, hash, popped } = useLocation();
   const main = useRef<HTMLElement>(null);
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
-    globalThis.scrollTo?.(0, 0);
+    /* As the frame's: a fragment is the page's to scroll to, and back or forward keeps the browser's scroll. */
+    if (!hash && !popped) globalThis.scrollTo?.(0, 0);
     main.current?.focus({ preventScroll: true });
   }, [path]);
   return (

@@ -72,3 +72,40 @@ describe('the overlay', () => {
     expect(screen.getByRole('button', { name: 'Open over' })).toHaveFocus();
   });
 });
+
+describe('from the Task 1.4 reviews', () => {
+  function Twice() {
+    const [open, setOpen] = useState(0);
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(1)}>Open</button>
+        {open >= 1 && (
+          <Overlay title="First" surface="turn" onClose={() => setOpen(0)}>
+            <button type="button" onClick={() => setOpen(2)}>Open the second</button>
+            {open >= 2 && <Overlay title="Second" surface="effect" onClose={() => setOpen(1)}><button type="button">Inside</button></Overlay>}
+          </Overlay>
+        )}
+      </>
+    );
+  }
+  test('an overlay over an overlay: Esc closes the top one, then the next, and the page is clean after', async () => {
+    const { container } = renderInWorld(<Twice />, { path: '/characters', seed: signedIn });
+    const opener = screen.getByRole('button', { name: 'Open' });
+    await userEvent.click(opener);
+    await userEvent.click(screen.getByRole('button', { name: 'Open the second' }));
+    expect(screen.getByRole('button', { name: 'Inside' })).toHaveFocus();
+    expect(screen.getByRole('dialog', { name: 'First' }).closest('.kb-glass-overlay')).toHaveAttribute('inert');
+    await userEvent.keyboard('{Escape}');
+    await act(async () => {});
+    expect(screen.queryByRole('dialog', { name: 'Second' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'First' }).closest('.kb-glass-overlay')).not.toHaveAttribute('inert');
+    expect(screen.getByRole('button', { name: 'Open the second' })).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    await act(async () => {});
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(container).not.toHaveAttribute('inert');
+    expect([...document.body.children].filter((el) => el.hasAttribute('inert'))).toEqual([]);
+    expect(document.body.style.overflow).toBe('');
+    expect(opener).toHaveFocus();
+  });
+});

@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test } from 'vitest';
 import { createFake } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
@@ -40,15 +41,24 @@ test('the instance\'s glass is on the page: its standard key on the root, and it
   expect(document.getElementById('kb-glass-fonts')?.textContent).toContain('font-family: "Anton"');
 });
 
-for (const path of ['/characters', '/characters/new', '/characters/edit', '/invites', '/settings']) {
-  test(`${path} is a glass page: the menu bar and no banner or HUD, its content unchanged`, async () => {
+/* Each glass route and what only its own screen shows, so the wrapped content is that screen's, unchanged. */
+const OWN: readonly [string, () => HTMLElement][] = [
+  ['/characters', () => screen.getByRole('heading', { level: 1, name: /^Your characters \(/ })],
+  ['/characters/new', () => screen.getByRole('button', { name: 'Make the character' })],
+  ['/characters/edit', () => screen.getByRole('heading', { level: 1, name: /^Edit / })],
+  ['/invites', () => screen.getByRole('heading', { level: 1, name: 'Invites' })],
+  ['/settings', () => screen.getByRole('button', { name: 'Sign out' })],
+];
+
+for (const [path, own] of OWN) {
+  test(`${path} is a glass page: the menu bar and no banner or HUD, its own screen's content inside`, async () => {
     window.history.pushState(null, '', path);
     const fake = createFake({ instance, settings: fallbackSettings });
     seedDemo(fake);
     render(<App api={fake} />);
     expect(await screen.findByRole('navigation', { name: 'Menu' })).toBeInTheDocument();
-    /* A screen may swap its loading heading for its own; what holds is that one is there. */
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument());
+    /* A screen may swap its loading content for its own; what holds is that its own is there, in main. */
+    await waitFor(() => expect(within(screen.getByRole('main')).getByText((_, el) => el === own())).toBeInTheDocument());
     expect(screen.queryByRole('banner')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Game HUD' })).toBeNull();
   });
@@ -64,3 +74,14 @@ for (const path of ['/sign-in', '/register']) {
     expect(screen.queryByRole('banner')).toBeNull();
   });
 }
+
+test('Invites is reached from Settings, standing in until it moves into Settings › Account', async () => {
+  window.history.pushState(null, '', '/settings');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedDemo(fake);
+  render(<App api={fake} />);
+  await screen.findByRole('button', { name: 'Sign out' });
+  await userEvent.click(within(screen.getByRole('main')).getByRole('link', { name: 'Invites' }));
+  expect(window.location.pathname).toBe('/invites');
+  expect(await screen.findByRole('heading', { level: 1, name: 'Invites' })).toBeInTheDocument();
+});
