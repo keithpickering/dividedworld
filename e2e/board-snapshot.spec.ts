@@ -82,7 +82,13 @@ test('a landmark with no text has no type, and type:false skips reading it', asy
 });
 
 test('the fonts route answers the stylesheet and the files, by their own types, and refuses the rest', async ({ page }) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'glass-ui-'));
+  const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'glass-fonts-'));
+  const root = path.join(outer, 'ui');
+  fs.mkdirSync(root);
+  /* Files that exist outside root: one above it, one in a sibling whose name starts with root's. */
+  fs.writeFileSync(path.join(outer, 'outside.woff2'), 'outside');
+  fs.mkdirSync(path.join(outer, 'ui-evil'));
+  fs.writeFileSync(path.join(outer, 'ui-evil', 'sibling.woff2'), 'sibling');
   try {
     const woff2 = path.join(here, '..', 'node_modules', 'storybook', 'assets', 'browser', 'nunito-sans-bold-italic.woff2');
     fs.copyFileSync(woff2, path.join(root, 'Face One.woff2'));
@@ -102,7 +108,8 @@ test('the fonts route answers the stylesheet and the files, by their own types, 
         one: await head('http://glass-fonts.test/Face%20One.woff2'),
         two: await head('http://glass-fonts.test/Face2.otf'),
         missing: await head('http://glass-fonts.test/nope.woff2'),
-        escape: await head('http://glass-fonts.test/..%2Fglass.json'),
+        escape: await head('http://glass-fonts.test/..%2Foutside.woff2'),
+        sibling: await head('http://glass-fonts.test/..%2Fui-evil%2Fsibling.woff2'),
         loaded: document.fonts.check('italic 700 16px "Test One"'),
       };
     });
@@ -112,8 +119,9 @@ test('the fonts route answers the stylesheet and the files, by their own types, 
     expect(result.two).toEqual({ status: 200, type: 'font/otf' });
     expect(result.missing.status).toBe(404);
     expect(result.escape.status).toBe(404);
+    expect(result.sibling.status).toBe(404);
     expect(result.loaded).toBe(true);
   } finally {
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outer, { recursive: true, force: true });
   }
 });
