@@ -91,7 +91,9 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   const [estimateHeld, setEstimateHeld] = useState<{ readonly for: Id | null; readonly estimate: Estimate | null }>({ for: null, estimate: null });
 
   const account = session.account;
-  const mine = held.for === account ? held : emptyFor(account);
+  /* Nothing read yet for the account signed in now: one value per account, not a new one each render. */
+  const empty = useMemo(() => emptyFor(account), [account]);
+  const mine = held.for === account ? held : empty;
   const { characters, chosen, wallet, walletSeen, cards } = mine;
   /* No account has nothing to load; an account's rows are loaded once they were read for it. */
   const loaded = account === null ? true : mine.loaded;
@@ -145,9 +147,14 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   const asking = useRef<{ gen: number; out: boolean; held: boolean; timer: ReturnType<typeof setTimeout> | null; freshAt: number }>({ gen: 0, out: false, held: false, timer: null, freshAt: 0 });
   const ask = useCallback(() => {
     const a = asking.current;
-    if (!account) return;
+    /*
+     * An ask is its account's: kept by something that outlived the account (the picker's choose,
+     * answering after its await), it asks nothing once another account is signed in, so the
+     * other account's estimate is never filed as this one's.
+     */
+    if (!account || current.current !== account) return;
     const gen = a.gen;
-    const later = (ms: number) => { a.timer = setTimeout(() => { if (a.gen !== gen) return; a.timer = null; a.held = false; ask(); }, ms); };
+    const later = (ms: number) => { a.timer = setTimeout(() => { if (a.gen !== gen || current.current !== account) return; a.timer = null; a.held = false; ask(); }, ms); };
     const wait = a.freshAt - Date.now();
     if (a.out || wait > 0) {
       a.held = true;
@@ -156,7 +163,7 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
     }
     a.out = true;
     void api.estimate().then((e) => {
-      if (a.gen !== gen) return;
+      if (a.gen !== gen || current.current !== account) return;
       setEstimateHeld({ for: account, estimate: e });
       /* Counted from receipt, as the function's header says: freshAfter - asOf from now. */
       const hold = e.asOf && e.freshAfter ? Date.parse(e.freshAfter) - Date.parse(e.asOf) : 0;

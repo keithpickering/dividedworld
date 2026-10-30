@@ -1,3 +1,4 @@
+import { useLayoutEffect } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Estimate, KayfaApi, MyCharacter, Session } from './data/api.ts';
@@ -169,6 +170,70 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
     await waitFor(() => expect(screen.getByTestId('seen').textContent).toBe('null:240'));
     /* The write is an effect after the render that shows the wallet, so it is waited for, not assumed. */
     await waitFor(() => expect(localStorage.getItem('kb-wallet-seen:acc-1')).toBe('240'));
+  });
+});
+
+describe('from PR #49\'s fifth review: what the provider holds is the account\'s it was read for', () => {
+  /* Two accounts with their own rows and their own estimates; the session is switched as another tab would. */
+  function twoAccounts(estimates: { readonly a: () => Promise<Estimate>; readonly b: () => Promise<Estimate> }) {
+    let listener: (s: Session) => void = () => {};
+    let account = 'acc-a';
+    const rows = {
+      'acc-a': { chars: [char('a')], wallet: { balance: 100, cap: 600 } },
+      'acc-b': { chars: [char('z')], wallet: { balance: 500, cap: 600 } },
+    } as const;
+    const api = {
+      session: async () => ({ signedIn: true, account }),
+      onSession: (l: (s: Session) => void) => { listener = l; return () => {}; },
+      myCharacters: async () => rows[account as keyof typeof rows].chars,
+      wallet: async () => rows[account as keyof typeof rows].wallet,
+      myCards: async () => [],
+      estimate: vi.fn(() => (account === 'acc-a' ? estimates.a() : estimates.b())),
+    } as unknown as KayfaApi;
+    const switchTo = (next: string) => act(() => { account = next; listener({ signedIn: true, account: next }); });
+    return { api, switchTo };
+  }
+  const answer = (amount: number): Estimate => ({ entries: [{ character: 'x', reason: 'face.cheered', amount }], lines: [], asOf: null, freshAfter: null });
+
+  test('no commit pairs the account signed in now with rows read for the last one', async () => {
+    const w = twoAccounts({ a: async () => answer(11), b: async () => answer(77) });
+    const commits: string[] = [];
+    function Record() {
+      const p = usePlayer();
+      useLayoutEffect(() => {
+        commits.push(`${p.session.account}|${p.wallet?.balance ?? '-'}|${p.hudCharacter?.id ?? '-'}|${p.characters.map((c) => c.id).join(',')}`);
+      });
+      return null;
+    }
+    render(<PlayerProvider api={w.api}><Record /></PlayerProvider>);
+    await waitFor(() => expect(commits.at(-1)).toBe('acc-a|100|a|a'));
+    w.switchTo('acc-b');
+    await waitFor(() => expect(commits.at(-1)).toBe('acc-b|500|z|z'));
+    expect(commits.filter((c) => c.startsWith('acc-b|') && (c.includes('|100|') || /\|a(\||,|$)/u.test(c)))).toEqual([]);
+  });
+
+  test('a reaction landed for one account asks nothing, and files nothing, once another is signed in', async () => {
+    let aAsked = 0;
+    const w = twoAccounts({
+      /* A answers its first ask; its asks after that never answer. */
+      a: () => (++aAsked === 1 ? Promise.resolve(answer(11)) : new Promise<Estimate>(() => {})),
+      b: async () => answer(77),
+    });
+    let landedForA: (() => void) | null = null;
+    function Keep() {
+      const p = usePlayer();
+      if (p.session.account === 'acc-a' && landedForA === null) landedForA = p.reactionLanded;
+      return <span data-testid="pending">{p.pending}</span>;
+    }
+    render(<PlayerProvider api={w.api}><Keep /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('pending').textContent).toBe('11'));
+    w.switchTo('acc-b');
+    await waitFor(() => expect(screen.getByTestId('pending').textContent).toBe('77'));
+    /* A's reaction answers late, as the picker's choose does after its await, with B signed in. */
+    await act(async () => { landedForA!(); });
+    w.switchTo('acc-a');
+    await act(async () => {});
+    expect(screen.getByTestId('pending').textContent).not.toBe('77');
   });
 });
 
