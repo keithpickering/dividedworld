@@ -111,7 +111,9 @@ accessible name, as section 7 gives them, each with:
 - `buildName` where the build's accessible name differs from the board's by a decision (section 3 and 7 name each);
 - `box`: `full` (the default: x and y within 8px, width and height within 4px), `position` (x and y only, for a
   landmark whose text the fixture changes), `height` (y and height only, for a row of variable count) or `none`;
-- `type: false` for a landmark whose type is not the glass's to compare (an image).
+- `type: false` for a landmark whose type is not the glass's to compare (an image);
+- `buildSize` where the build's font size differs from the board's by a decision (amended 2026-10-30, the owner's
+  answer on #54: board 03's quadrant labels); the rest of the type is still the board's.
 
 The match is on role and name, with names compared case-insensitively and with `aria-hidden` glyphs left out: the
 boards write their capitals into the text, and the build writes the instance's copy in sentence case and sets
@@ -360,7 +362,9 @@ every text node, large or not, stands in a calm.
 size, which let the React picker's quadrant labels (22px Anton in the classes' large colors) stand at 3:1 on the react
 smoke under a size no rule calls large. The owner chose to set them at WCAG's large size: "24px should work for #54".
 So text that may stand at 3:1 as large is text at WCAG's large size or more (24px, or 18.66px at a weight of 700 or
-more) as well as the design's large (36px of ink); a token still needs its `large` tag to be read so. A class's large
+more) as well as the design's large (36px of ink); a token still needs its `large` tag to be read so. That reaches past
+the class colors to the `large`-tagged tokens too, under the owner's answer on #53 that a rule is not to be stricter
+than accessibility needs: WCAG's large size is accessibility's own line. A class's large
 color under that size takes the body path: it stands in a calm, on an opaque panel, or on a recipe whose full worst is
 under its color's 4.5:1 ceiling, worked out from its color as the guard works out a token's. The picker's labels are
 24px. **Poison:** a class's large color at 22px, bare on the react smoke, fails.
