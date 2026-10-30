@@ -106,6 +106,54 @@ describe('over a glass page (the web plan\'s 2026-10-30 amendment to Task 9)', (
     await userEvent.click(screen.getByRole('button', { name: 'Turn' }));
     expect(overlayOf('Turn Pipewrench').style.getPropertyValue('--kb-glass-overlay-top')).toBe('0px');
   });
+
+  test('two stacked: the menu bar stays dimmed and inert until the last one closes', async () => {
+    function Stacked() {
+      const [open, setOpen] = useState(0);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(1)}>Open</button>
+          {open >= 1 && (
+            <Overlay title="First" surface="turn" onClose={() => setOpen(0)}>
+              <button type="button" onClick={() => setOpen(2)}>Open the second</button>
+              {open >= 2 && <Overlay title="Second" surface="turn" onClose={() => setOpen(1)}><button type="button">Inside</button></Overlay>}
+            </Overlay>
+          )}
+        </>
+      );
+    }
+    renderInWorld(<Page surface="characters"><Stacked /></Page>, { path: '/characters', seed: signedIn });
+    const menu = await screen.findByRole('navigation', { name: 'Menu' });
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open the second' }));
+    await userEvent.keyboard('{Escape}');
+    await act(async () => {});
+    expect(screen.queryByRole('dialog', { name: 'Second' })).toBeNull();
+    expect(menu).toHaveAttribute('data-kb-dimmed');
+    expect(menu.closest('[inert]')).not.toBeNull();
+    await userEvent.keyboard('{Escape}');
+    await act(async () => {});
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(menu).not.toHaveAttribute('data-kb-dimmed');
+    expect(menu.closest('[inert]')).toBeNull();
+  });
+
+  test('one that goes without closing (its page moved on under it) leaves the menu bar lit', async () => {
+    let hide: () => void = () => {};
+    function Gone() {
+      const [shown, setShown] = useState(true);
+      hide = () => setShown(false);
+      return shown ? <Overlay title="Gone" surface="turn" onClose={() => {}}><button type="button">Inside</button></Overlay> : null;
+    }
+    renderInWorld(<Page surface="characters"><Gone /></Page>, { path: '/characters', seed: signedIn });
+    const menu = await screen.findByRole('navigation', { name: 'Menu' });
+    expect(menu).toHaveAttribute('data-kb-dimmed');
+    act(() => hide());
+    await act(async () => {});
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(menu).not.toHaveAttribute('data-kb-dimmed');
+    expect(menu.closest('[inert]')).toBeNull();
+  });
 });
 
 /*

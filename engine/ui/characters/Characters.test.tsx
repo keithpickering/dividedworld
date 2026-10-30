@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Page } from '../glass/Page.tsx';
 import { usePlayer } from '../player.tsx';
+import type { Instance } from '../../rules/types.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { Characters } from './Characters.tsx';
 
@@ -13,9 +14,9 @@ const DAY = 86_400_000;
 const T0 = Date.parse('2026-10-01T12:00:00Z');
 
 /** The player's three characters: one free to Turn, one in its cooldown, one still waiting to debut. */
-function world(options: { readonly per?: number } = {}) {
+function world(options: { readonly per?: number; readonly instance?: Instance } = {}) {
   const per = options.per ?? 4;
-  const fake = buildWorld({ charactersPerPlayer: per });
+  const fake = buildWorld({ charactersPerPlayer: per }, options.instance);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'face', { at: T0 });
@@ -511,11 +512,12 @@ describe('My characters on the glass (the Roster board)', () => {
 
   test('a card shows its character\'s rank once the standings are read', async () => {
     const w = world();
-    const ranks = testInstance.ranks;
     open(w);
     await ready();
-    const names = ranks.map((r) => r.name);
-    await waitFor(() => expect(names).toContain(within(card('Pipewrench')).getByTestId('kb-roster-rank').textContent));
+    /* Pipewrench stands at 14.20, past Main Eventer's 6.00 in the test world's ranks. */
+    expect(testInstance.ranks.map((r) => [r.name, r.from])).toContainEqual(['Main Eventer', 600]);
+    expect(await within(card('Pipewrench')).findByTestId('kb-roster-rank')).toHaveTextContent(/^Main Eventer$/u);
+    expect(within(card('Mrs. Hooligan')).getByTestId('kb-roster-rank')).toHaveTextContent(/^Main Eventer$/u);
   });
 
   test('a card selects its character into the panel, marked current, and no address names it', async () => {
@@ -673,16 +675,65 @@ describe('the Turn modal over My characters (the Turn board)', () => {
 });
 
 describe('the panel\'s pip style (the Roster board)', () => {
-  test('is the character\'s own, and choosing one saves it with the profile\'s title and signature as they are', async () => {
-    const w = world();
-    const setProfile = vi.spyOn(w.fake, 'setProfile');
-    open(w);
-    await ready();
+  /* Two styles, so a choice can change one. */
+  const twoStyles: Instance = { ...testInstance, pipStyles: [...testInstance.pipStyles, { key: 'stars', name: 'Stars', full: 's.svg', empty: 'se.svg' }] };
+  const openTwo = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', instance: twoStyles, settings: { charactersPerPlayer: w.per } });
+  const champ = async () => {
+    const w = world({ instance: twoStyles });
+    expect((await w.fake.setProfile(w.pipe, 'Champ', 'Belts and all.', 'default')).ok).toBe(true);
+    return w;
+  };
+  const pipSelect = async () => {
     const select = await within(row('Pipewrench')).findByRole('combobox', { name: 'Pip style' });
-    expect(select).toHaveValue('default');
-    await userEvent.selectOptions(select, 'default');
-    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, '', '', 'default'));
+    await waitFor(() => expect(select).toHaveValue('default'));
+    return select;
+  };
+
+  test('saves the chosen style with the title and signature the profile was loaded with, and shows it after a fresh load', async () => {
+    const w = await champ();
+    const setProfile = vi.spyOn(w.fake, 'setProfile');
+    openTwo(w);
+    await ready();
+    const select = await pipSelect();
+    await userEvent.selectOptions(select, 'stars');
+    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, 'Champ', 'Belts and all.', 'stars'));
+    await waitFor(() => expect(select).toHaveValue('stars'));
     expect(within(row('Spritey')).queryByRole('combobox', { name: 'Pip style' })).toBeNull();
+    cleanup();
+    openTwo(w);
+    await ready();
+    expect(await within(row('Pipewrench')).findByRole('combobox', { name: 'Pip style' })).toHaveValue('stars');
+  });
+
+  test('keeps the keyboard on the select while it saves, and a second change made meanwhile is not sent', async () => {
+    const w = await champ();
+    let finish: () => void = () => {};
+    const real = w.fake.setProfile.bind(w.fake);
+    const setProfile = vi.spyOn(w.fake, 'setProfile').mockImplementation((...args) => new Promise((done) => { finish = () => done(real(...args)); }));
+    openTwo(w);
+    await ready();
+    const select = await pipSelect();
+    await userEvent.selectOptions(select, 'stars');
+    expect(select).toHaveFocus();
+    expect(select).toBeEnabled();
+    expect(select).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.selectOptions(select, 'default');
+    expect(setProfile).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(); });
+    await waitFor(() => expect(select).not.toHaveAttribute('aria-disabled', 'true'));
+    expect(select).toHaveValue('stars');
+    expect(select).toHaveFocus();
+  });
+
+  test('a refused save says why, and the select shows the style that is saved', async () => {
+    const w = await champ();
+    vi.spyOn(w.fake, 'setProfile').mockResolvedValue({ ok: false, error: 'there is no pip style "stars"' });
+    openTwo(w);
+    await ready();
+    const select = await pipSelect();
+    await userEvent.selectOptions(select, 'stars');
+    expect(await within(row('Pipewrench')).findByRole('alert')).toHaveTextContent('there is no pip style "stars"');
+    expect(select).toHaveValue('default');
   });
 });
 

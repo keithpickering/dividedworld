@@ -5,8 +5,9 @@
  * beside them. A card shows the character's class in its own color, its rank and its Turn; the
  * panel holds everything a character offers: its class marked "only you" and since when, what it
  * was where a Turn said so in public, its rank and standing and pips, the wallet, its posts and the
- * month it joined, its pip style (the profile's, saved as it is chosen), and its Turn: the button, the date it opens, or a pending Turn with Change and
- * Withdraw. A character waiting to debut says so, and offers to drop it now or change how it debuts.
+ * month it joined, its pip style (the profile's, saved as it is chosen), and its Turn: the button,
+ * the date it opens, or a pending Turn with Change and Withdraw. A character waiting to debut says
+ * so, and offers to drop it now or change how it debuts.
  *
  * Nothing here is public: a waiting character is in no list anyone else reads, and every class is
  * drawn from the player's own rows to the player alone ("A response never proves a private fact").
@@ -62,6 +63,8 @@ export function Characters() {
   const [flash, setFlash] = useState('');
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<Id | null>(null);
+  /* A pip style being saved: its character and the style chosen, shown while the save is out. */
+  const [savingPip, setSavingPip] = useState<{ readonly id: Id; readonly style: string } | null>(null);
   const [problem, setProblem] = useState<{ readonly id: Id; readonly text: string; readonly pip?: boolean } | null>(null);
   const [focusRow, setFocusRow] = useState<Id | null>(null);
   const [picked, setPicked] = useState<Id | null>(() => carried(location.state));
@@ -148,19 +151,25 @@ export function Characters() {
     }
   };
 
-  /* The pip style is the profile's: it is saved with the title and signature the profile holds now (the profile editor sets those). */
+  /*
+   * The pip style is the profile's: it is saved with the title and signature the profile holds now
+   * (the profile editor sets those). While a save is out the select keeps the keyboard (it is
+   * aria-disabled, never disabled, which would drop focus to the page) and a further change waits:
+   * it is not sent. A refused save puts the select back on the style that is saved.
+   */
   const pipStyle = async (face: Character, style: string) => {
-    setBusy(face.id);
+    if (savingPip !== null) return;
+    setSavingPip({ id: face.id, style });
     setProblem(null);
     setFlash('');
     try {
       const answer = await api.setProfile(face.id, face.title, face.signature, style);
       if (!answer.ok) { setProblem({ id: face.id, text: answer.error, pip: true }); return; }
-      setFaces((was) => new Map(was).set(face.id, answer.value));
+      setFaces((before) => new Map(before).set(face.id, answer.value));
     } catch {
       setProblem({ id: face.id, text: 'That could not be sent. Check your connection and try again.', pip: true });
     } finally {
-      setBusy(null);
+      setSavingPip(null);
     }
   };
 
@@ -263,7 +272,12 @@ export function Characters() {
         {live && face && (
           <label className="kb-roster-pip">
             Pip style
-            <select className="kb-glass-select" value={face.pipStyle} disabled={busy === c.id} onChange={(e) => void pipStyle(face, e.target.value)}>
+            <select
+              className="kb-glass-select"
+              value={savingPip?.id === c.id ? savingPip.style : face.pipStyle}
+              aria-disabled={savingPip?.id === c.id || undefined}
+              onChange={(e) => void pipStyle(face, e.target.value)}
+            >
               {instance.pipStyles.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
             </select>
           </label>
