@@ -141,10 +141,11 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
   );
 }
 
+/** A read's outcome, with the page and the account it was read for (`key`): one read for another is not shown. */
 type State =
   | { readonly status: 'loading' }
-  | { readonly status: 'failed' }
-  | { readonly status: 'ready'; readonly props: Omit<RankingsProps, 'page' | 'href'> };
+  | { readonly status: 'failed'; readonly key: string }
+  | { readonly status: 'ready'; readonly key: string; readonly props: Omit<RankingsProps, 'page' | 'href'> };
 
 /** Rankings at /rankings, `?page=` choosing the page. */
 export function RankingsScreen() {
@@ -154,11 +155,17 @@ export function RankingsScreen() {
   const { account } = usePlayer().session;
   const { query } = useLocation();
   const page = Math.min(MAX_PAGE, Math.max(1, Number.parseInt(query.get('page') ?? '', 10) || 1));
-  const [state, setState] = useState<State>({ status: 'loading' });
+  const [read, setState] = useState<State>({ status: 'loading' });
+  /*
+   * A new page, or a new account, starts from nothing: never the last page's rows, the last
+   * account's marks or the last read's error. The read's key is checked as the screen renders, so
+   * the first commit after a change already draws nothing of the last read; an effect that cleared
+   * it would land a commit late.
+   */
+  const key = `${page}:${account ?? ''}`;
+  const state: State = read.status !== 'loading' && read.key === key ? read : { status: 'loading' };
   useEffect(() => {
     if (!signedIn) return undefined;
-    /* A new page, or a new account, starts from nothing: never the last page's rows, the last account's marks or the last read's error. */
-    setState({ status: 'loading' });
     let live = true;
     (async () => {
       const [standings, total, season, settledAt, mine] = await Promise.all([
@@ -169,11 +176,11 @@ export function RankingsScreen() {
       const [reveals, turns] = ids.length === 0 ? [[], []] : await Promise.all([api.classReveals(ids), api.turnsAnnounced(ids)]);
       return { standings, total, season, settledAt, mine, reveals, turns };
     })().then(
-      (props) => { if (live) setState({ status: 'ready', props }); },
-      () => { if (live) setState({ status: 'failed' }); },
+      (props) => { if (live) setState({ status: 'ready', key, props }); },
+      () => { if (live) setState({ status: 'failed', key }); },
     );
     return () => { live = false; };
-  }, [api, page, signedIn, account]);
+  }, [api, page, signedIn, key]);
   if (signedIn === false) return <div className="kb-rankings"><div className="kb-rankings-empty kb-calm"><SignInPrompt /></div></div>;
   if (signedIn === null || state.status === 'loading') return <div className="kb-rankings" aria-busy="true" />;
   if (state.status === 'failed') return <div className="kb-rankings"><p className="kb-rankings-empty kb-calm">The rankings could not be loaded. Reload the page to try again.</p></div>;

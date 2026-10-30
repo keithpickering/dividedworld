@@ -5,9 +5,12 @@
  * so nothing it asks for or shows is computed from another player's private rows.
  */
 import { act, screen, waitFor, within } from '@testing-library/react';
+import { useLayoutEffect } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { usePlayer } from '../player.tsx';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
+import { useLocation } from '../router.tsx';
 import { RankingsScreen } from './Rankings.tsx';
 
 const at = (day: number, hour = 12) => Date.UTC(2026, 9, day, hour);
@@ -196,6 +199,47 @@ describe('Rankings', () => {
     await act(async () => { w.fake.signInAs(w.other); });
     await waitFor(() => expect(within(rowOf('Spritey')).queryByText('Yours')).not.toBeNull());
     expect(within(rowOf('Pipewrench')).queryByText('Yours')).toBeNull();
+  });
+
+  test('no commit after another account signs in paints the last account\'s marks or classes', async () => {
+    const w = world();
+    w.fake.signInAs(w.me);
+    /*
+     * Read the page in every commit once the new account is known, after the DOM is written and
+     * before any effect of the screen's runs: what a first paint would show.
+     */
+    const painted: string[][] = [];
+    function Probe() {
+      const { account } = usePlayer().session;
+      useLayoutEffect(() => {
+        if (account === w.other) painted.push([...document.querySelectorAll('.kb-rankings-yours, .kb-rankings-class[data-kb-kind="own"]')].map((el) => el.closest('tr')?.querySelector('a')?.textContent ?? ''));
+      });
+      return null;
+    }
+    renderIn(w.fake, <><RankingsScreen /><Probe /></>, { path: '/rankings' });
+    await screen.findByRole('table');
+    expect(within(rowOf('Pipewrench')).getByText('Yours')).toBeInTheDocument();
+    await act(async () => { w.fake.signInAs(w.other); });
+    await waitFor(() => expect(within(rowOf('Spritey')).queryByText('Yours')).not.toBeNull());
+    expect(painted.length).toBeGreaterThan(0);
+    for (const marked of painted) expect(marked).not.toContain('Pipewrench');
+  });
+
+  test('no commit after a page change paints the last page\'s rows', async () => {
+    const fake = crowd(120);
+    const painted: string[] = [];
+    function Probe() {
+      const { query } = useLocation();
+      useLayoutEffect(() => {
+        if (query.get('page') === '2') painted.push(...[...document.querySelectorAll('.kb-rankings-name a')].map((a) => a.textContent ?? ''));
+      });
+      return null;
+    }
+    renderIn(fake, <><RankingsScreen /><Probe /></>, { path: '/rankings' });
+    await screen.findByRole('link', { name: 'Name 000' });
+    await goTo('/rankings?page=2');
+    await screen.findByRole('link', { name: 'Name 050' });
+    expect(painted).not.toContain('Name 000');
   });
 
   test('one page has no pager, and a page past the end says so and links back to the first', async () => {
