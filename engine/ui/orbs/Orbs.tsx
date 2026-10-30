@@ -10,6 +10,9 @@
  * `Orb` is one orb on its own, for a page that shows the orbs apart from a wallet: the Orbs board's
  * anatomy and the cascade's frames, held still.
  *
+ * A wallet past its cap marks its last orb (`kb-orb-over`), which only the Phone board's layout draws: there
+ * the words "past the cap" would cost the docked HUD a line, so they are left to the name below (issue 48).
+ *
  * A screen reader hears the wallet's name (fill.ts's walletName), always the wallet as it now is,
  * never a frame of the animation.
  */
@@ -102,6 +105,7 @@ export function Orbs({ settled, pending, cap, cascadeFrom = null, figures = true
         {orbs.map((o, i) => (
           <span key={i} className={`kb-orb${o.solid === 1 ? ' kb-orb--full' : ''}${flash === i ? ' kb-orb--flash' : ''}`} style={orbStyle(o, i)}>
             {orbParts}
+            {overflow > 0 && i === orbs.length - 1 && <span className="kb-orb-over" aria-hidden="true" />}
           </span>
         ))}
       </span>

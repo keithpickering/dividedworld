@@ -600,7 +600,7 @@
  * does not draw, or text spaced wider by the reader, needs more.
  */
 :where(:root[data-kb-layout='phone']) .kb-hud-glass {
-  box-sizing: content-box;
+  box-sizing: border-box;
   min-height: 124px;
   border-top: 1.5px solid var(--kb-glass-pale);
   box-shadow: 0 -2px 18px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
@@ -773,15 +773,15 @@
 /*
  * The Phone board's orbs are 30px; the row under the mask picker has 41px of the glass's 124. What
  * the row holds wraps rather than runs past the window's edge: a wallet past its cap, which the
- * board does not draw, puts its figure on a line of its own at the right, whole, and the glass
- * grows to hold it. Each figure keeps its words on one line.
+ * board does not draw, is shown by a mark on the last orb and not in words (issue 48), so the
+ * glass keeps its 124px; the words stay in the orbs' name. The estimate keeps its words on one line.
  */
 :where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs {
   --kb-orb-size: 30px;
   --kb-orb-gap: 6px;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 2px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-row {
@@ -810,7 +810,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-over {
-  margin-left: auto;
+  display: none;
 }
 
 @media (max-width: 40em) {

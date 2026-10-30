@@ -145,8 +145,16 @@ for (const scheme of ['light', 'dark'] as const) {
         });
         await expect(page.locator('.kb-hud-orbs')).toHaveCount(0);
         await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbDemo.me); });
-        await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d past the cap$/);
+        /* The Main board's layout draws the words as board 04 does; the Phone board's draws a mark on the last orb instead (issue 48). */
+        if (width >= ABOVE_SWITCH) await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d past the cap$/);
+        else {
+          await expect(page.locator('.kb-hud-orbs .kb-orb:last-child .kb-orb-over')).toBeVisible();
+          await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toBeHidden();
+          await expect(page.locator('.kb-hud-orbs [role="img"]')).toHaveAttribute('aria-label', /\d\.\d\d past the cap/);
+        }
         expect(await hudCut(page)).toEqual([]);
+        /* The docked HUD keeps its 124px on a phone with an over-cap wallet: the words are not drawn there. */
+        if (width === 360) expect(Math.abs((await page.locator('.kb-hud-glass').boundingBox())!.height - 124)).toBeLessThanOrEqual(0.5);
         expect(await pageViolations(page)).toEqual([]);
       });
 
