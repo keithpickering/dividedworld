@@ -249,6 +249,16 @@ describe('the hand', () => {
     expect(close).toHaveTextContent(/^$/u);
     expect(close.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
   });
+  test('on the Phone board arming a card puts the sheet away, and the card waits armed in the hand', async () => {
+    width(390);
+    setup();
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
+    await userEvent.click(hand);
+    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard' }));
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(hand);
+    expect(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard, armed: pick a post' })).toBeInTheDocument();
+  });
   test('Close the hand closes it', async () => {
     width(390);
     setup();

@@ -14,9 +14,15 @@
  * its own ("Playing a card"): that a card is armed, that it was put back, that it was played. The
  * form itself is `PlayForm`, opened here so it stands over whichever page the player is on, and so a
  * post that is no longer on screen when the play lands does not take the form down with it.
+ *
+ * All of it is the signed-in account's: the armed card, the hand's post, the open form and what was
+ * said are kept with the account they were made for and read against the account signed in now, so
+ * a switch (or a sign-out) takes them away in the very commit it happens, and an answer that comes
+ * back for the other account changes nothing here.
  */
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
+import { usePlayer } from '../player.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { PlayForm } from './PlayForm.tsx';
 import type { Plays } from './plays.ts';
@@ -61,11 +67,31 @@ export function usePlay(): PlayControls | null {
 
 export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const { instance } = useKayfa();
-  const [armed, setArmed] = useState<string | null>(null);
+  const account = usePlayer().session.account;
+  /* The account the screen is on now, for the callbacks that outlive a render. */
+  const accountNow = useRef(account);
+  accountNow.current = account;
+  /* Each is kept with the account it was made for, and reads as nothing under another. */
+  const [armedHeld, setArmedHeld] = useState<{ readonly card: string; readonly for: Id | null } | null>(null);
+  const [handForHeld, setHandForHeld] = useState<{ readonly target: PlayTarget; readonly for: Id | null } | null>(null);
+  const [formHeld, setFormHeld] = useState<{ readonly card: string; readonly target: PlayTarget; readonly for: Id | null } | null>(null);
+  const [saidHeld, setSaidHeld] = useState<{ readonly words: string; readonly for: Id | null }>({ words: '', for: null });
   const [handOpen, setHandOpenState] = useState(false);
-  const [handFor, setHandFor] = useState<PlayTarget | null>(null);
-  const [form, setForm] = useState<{ readonly card: string; readonly target: PlayTarget } | null>(null);
-  const [said, setSaid] = useState('');
+  const armed = armedHeld?.for === account ? armedHeld.card : null;
+  const handFor = handForHeld?.for === account ? handForHeld.target : null;
+  const form = formHeld?.for === account ? formHeld : null;
+  const said = saidHeld.for === account ? saidHeld.words : '';
+  const setArmed = useCallback((card: string | null) => setArmedHeld(card === null ? null : { card, for: accountNow.current }), []);
+  const setHandFor = useCallback((target: PlayTarget | null) => setHandForHeld(target === null ? null : { target, for: accountNow.current }), []);
+  const setSaid = useCallback((words: string) => setSaidHeld({ words, for: accountNow.current }), []);
+  /* Read against the account in the commit it changes; dropped just after, so signing back in finds none of it. */
+  useEffect(() => () => {
+    setArmedHeld(null);
+    setHandForHeld(null);
+    setFormHeld(null);
+    setSaidHeld({ words: '', for: null });
+    setHandOpenState(false);
+  }, [account]);
   const nameOf = useCallback((card: string) => instance.cards.find((c) => c.key === card)?.name ?? card, [instance]);
   /* Read by the callbacks below without making each of them a new function when the state moves. */
   const armedNow = useRef(armed);
@@ -75,20 +101,20 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     setHandOpenState(open);
     /* The hand opened for a post is that post's alone: opened or closed any other way, it is the whole hand. */
     setHandFor(null);
-  }, []);
+  }, [setHandFor]);
   const arm = useCallback((card: string | null) => {
     const was = armedNow.current;
     setArmed(card);
     if (card !== null) setSaid(`${nameOf(card)} is armed. Press Play ${nameOf(card)} here on a post, or Esc to put it back.`);
     else if (was !== null) setSaid(`${nameOf(was)} is put back.`);
-  }, [nameOf]);
+  }, [nameOf, setArmed, setSaid]);
   const openHandFor = useCallback((target: PlayTarget) => {
     setHandFor(target);
     setHandOpenState(true);
-  }, []);
+  }, [setHandFor]);
   const openForm = useCallback((card: string, target: PlayTarget) => {
     setHandOpen(false);
-    setForm({ card, target });
+    setFormHeld({ card, target, for: accountNow.current });
   }, [setHandOpen]);
 
   const controls = useMemo<PlayControls>(
@@ -104,10 +130,11 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
         <PlayForm
           card={form.card}
           target={form.target}
-          onClose={() => setForm(null)}
+          onClose={() => setFormHeld(null)}
           onPlayed={() => {
+            if (accountNow.current !== form.for) return;
             const target = form.target;
-            setForm(null);
+            setFormHeld(null);
             setArmed(null);
             setSaid(`Played ${nameOf(form.card)} on ${target.author}'s post #${target.post.seq}.`);
           }}

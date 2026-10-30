@@ -6,7 +6,7 @@
  * three, a wallet of 4.62, a long post (812 characters, so Whoops! costs 0.25 more on it) and a
  * post that already carries three Whoops!.
  */
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect, useId } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -83,7 +83,7 @@ function world() {
   fake.signInAs(me);
   /* The HUD is on Pipewrench, as the boards draw it: the player's choice on this device. */
   localStorage.setItem(hudKey(me), pipe);
-  return { fake, thread, ids: [p1, p2, p3, p4], pipe, me };
+  return { fake, thread, ids: [p1, p2, p3, p4], pipe, me, other, hooligan, gloomba };
 }
 
 async function open(w: ReturnType<typeof world>) {
@@ -372,5 +372,188 @@ describe('the play form', () => {
     expect(await within(post(2)).findByRole('list', { name: 'Cards played on this post' })).toBeInTheDocument();
     await waitFor(() => expect(handButton()).toHaveAccessibleName('Hand, 2 postcards'));
     await act(async () => {});
+  });
+});
+
+describe('from the Task 3 quality review', () => {
+  const playHere = async (user: ReturnType<typeof userEvent.setup>, seq: number) => {
+    await arm(user);
+    await user.click(within(post(seq)).getByRole('button', { name: 'Play Whoops! here' }));
+    return screen.findByRole('dialog', { name: 'Whoops!' });
+  };
+  const threeOn = (w: ReturnType<typeof world>, post: number, live: boolean) => {
+    for (const layer of [1, 2, 3]) w.fake.seed.card(w.gloomba, w.ids[post - 1]!, 'whoops', { message: `layer ${layer}`, layer, config: { color: '#ff2bd6' }, live });
+  };
+  /* The play is held until the test lets it go, so the form is mid-submit. */
+  const held = (w: ReturnType<typeof world>) => {
+    const real = w.fake.playCard.bind(w.fake);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const spy = vi.spyOn(w.fake, 'playCard').mockImplementation(async (...args) => { const answer = await real(...args); await gate; return answer; });
+    return { spy, release };
+  };
+
+  describe('the post as it stands', () => {
+    test('an edit that makes the post longer changes the length, the price, the wallet after and what Play does', async () => {
+      const user = userEvent.setup();
+      const w = world();
+      await open(w);
+      const form = await playHere(user, 3);
+      expect(form).toHaveTextContent('17 characters long');
+      expect(within(form).getByText('To pay now').closest('div')).toHaveTextContent('0.00');
+      await act(async () => { await w.fake.edit(w.ids[2]!, w.hooligan, 'y'.repeat(1000)); });
+      await waitFor(() => expect(form).toHaveTextContent('1000 characters long'));
+      /* Two surcharges of 0.25: the rules' price for 1000 characters, not the 17 it was opened on. */
+      expect(within(form).getByText('To pay now').closest('div')).toHaveTextContent('0.50');
+      expect(within(form).getByRole('img', { name: 'Wallet after playing: 4.12 of 6.00' })).toBeInTheDocument();
+      await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(462 - (await w.fake.wallet()).balance).toBe(50);
+    });
+
+    test('a wallet that held enough for the short post and not for the long one stops the play', async () => {
+      const user = userEvent.setup();
+      const w = world();
+      w.fake.seed.wallet(w.me, 30);
+      await open(w);
+      const form = await playHere(user, 3);
+      expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled();
+      await act(async () => { await w.fake.edit(w.ids[2]!, w.hooligan, 'y'.repeat(1000)); });
+      await waitFor(() => expect(within(form).getByRole('status', { name: 'Cost' })).toHaveTextContent('That costs 0.50, and your wallet holds 0.30.'));
+      expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeDisabled();
+    });
+  });
+
+  describe('a post that cannot take the play any more', () => {
+    test('a refusal because a fourth landed first re-reads the post: Play waits, says why, and the post stops offering it', async () => {
+      const user = userEvent.setup();
+      const w = world();
+      await open(w);
+      const form = await playHere(user, 2);
+      /* Three others landed that this screen has not heard of: the server refuses, and nothing is mocked. */
+      threeOn(w, 2, false);
+      await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+      expect(await within(form).findByRole('alert')).toHaveTextContent(/already carries 3/u);
+      await waitFor(() => expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeDisabled());
+      expect(within(form).getByRole('status', { name: 'Cost' })).toHaveTextContent(/already carries 3/u);
+      await user.click(within(form).getByRole('button', { name: 'Cancel' }));
+      expect(here(2)).toBeNull();
+      expect(here(1)).toBeInTheDocument();
+    });
+
+    test('three Whoops! arriving live while the form is open do the same, and a submit that gets past the button plays nothing', async () => {
+      const user = userEvent.setup();
+      const w = world();
+      await open(w);
+      const form = await playHere(user, 2);
+      const played = vi.spyOn(w.fake, 'playCard');
+      await act(async () => { threeOn(w, 2, true); });
+      await waitFor(() => expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeDisabled());
+      expect(within(form).getByRole('status', { name: 'Cost' })).toHaveTextContent(/already carries 3/u);
+      fireEvent.submit(form.querySelector('form')!);
+      await act(async () => {});
+      expect(played).not.toHaveBeenCalled();
+      await user.click(within(form).getByRole('button', { name: 'Cancel' }));
+      expect(here(2)).toBeNull();
+    });
+  });
+
+  describe('another account', () => {
+    test('an open form and an armed card are the account\'s: signed in as another they are gone, and do not come back', async () => {
+      const user = userEvent.setup();
+      const w = world();
+      await open(w);
+      await playHere(user, 2);
+      act(() => w.fake.signInAs(w.other));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      act(() => w.fake.signInAs(w.me));
+      await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(here(1)).toBeNull();
+      expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('');
+    });
+
+    test('an answer held while the account changed shows nothing, and arms nothing', async () => {
+      const user = userEvent.setup();
+      const w = world();
+      await open(w);
+      const form = await playHere(user, 2);
+      const { release } = held(w);
+      await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+      act(() => w.fake.signInAs(w.other));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await act(async () => { release(); });
+      await act(async () => {});
+      expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('');
+      act(() => w.fake.signInAs(w.me));
+      await screen.findByRole('button', { name: /^Hand, \d postcards?/u });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('');
+    });
+  });
+
+  describe('guards', () => {
+    test('a second submit while the first is out plays once, even past the button', async () => {
+      const user = userEvent.setup();
+      const w = world();
+      await open(w);
+      const form = await playHere(user, 2);
+      const { spy, release } = held(w);
+      const el = form.querySelector('form')!;
+      fireEvent.submit(el);
+      fireEvent.submit(el);
+      expect(spy).toHaveBeenCalledTimes(1);
+      await act(async () => { release(); });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+      ['Cancel', async (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: 'Cancel' }))],
+      ['Esc', async (user: ReturnType<typeof userEvent.setup>) => user.keyboard('{Escape}')],
+    ])('%s on the armed route gives focus back to the post\'s "Play Whoops! here"', async (_name, leave) => {
+      const user = userEvent.setup();
+      const w = world();
+      await open(w);
+      await playHere(user, 2);
+      await leave(user);
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await waitFor(() => expect(here(2)).toHaveFocus());
+    });
+
+    test('when the post stops taking the card, its button goes and focus falls back to the post', async () => {
+      const user = userEvent.setup();
+      const w = world();
+      await open(w);
+      const form = await playHere(user, 2);
+      await act(async () => { threeOn(w, 2, true); });
+      await waitFor(() => expect(here(2)).toBeNull());
+      await user.click(within(form).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await waitFor(() => expect(post(2)).toHaveFocus());
+    });
+
+    test('the hand opened from the HUD after one opened from a post shows every card', async () => {
+      const user = userEvent.setup();
+      const w = world();
+      await open(w);
+      await user.click(within(post(4)).getByRole('button', { name: 'Play card' }));
+      expect(within(drawer()).queryByRole('button', { name: /^Whoops!/u })).toBeNull();
+      await user.keyboard('{Escape}');
+      await user.click(handButton());
+      expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(2);
+      expect(within(drawer()).getByRole('button', { name: 'Stick Around, Sweet postcard' })).toBeInTheDocument();
+    });
+  });
+
+  test('the link to the post closes the form, as Cancel does, and the armed card stays armed', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const form = await playHere(user, 2);
+    await user.click(within(form).getByRole('link', { name: /Gloomba's post #2/u }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(window.location.hash).toBe('#post-2');
+    expect(here(1)).toBeInTheDocument();
   });
 });
