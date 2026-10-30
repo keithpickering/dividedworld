@@ -602,6 +602,19 @@ describe('signing in goes through the account function', () => {
     expect(await h.api.session()).toEqual({ signedIn: false, account: null });
     expect(h.log).toEqual([]);
   });
+
+  it('names the address the session signed in with from the session itself, reading no table, and none signed out', async () => {
+    const user = { ...SESSION.user, email: 'pip@example.test' };
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/account') return json({ session: { ...SESSION, user }, account: true });
+      if (r.url.pathname === '/auth/v1/user') return json(user);
+      return undefined;
+    });
+    expect(await h.api.signInAddress()).toBeNull();
+    await h.api.verifyCode('pip@example.test', '123456');
+    expect(await h.api.signInAddress()).toBe('pip@example.test');
+    expect(h.rest()).toEqual([]);
+  });
 });
 
 describe('the estimate', () => {

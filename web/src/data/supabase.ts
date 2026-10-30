@@ -462,6 +462,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       lastEstimate = null;
       await client.auth.signOut();
     },
+    /* Auth's own session holds the address; no table is read for it. */
+    async signInAddress() {
+      return (await client.auth.getSession()).data.session?.user.email ?? null;
+    },
     async isAdmin() {
       try {
         return (await read(() => client.rpc('is_admin'))).data === true;

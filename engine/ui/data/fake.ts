@@ -580,6 +580,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return refuse(opened.why);
     },
     signOut() { setSession({ email: null, account: null }); },
+    signInAddress: () => session.email,
     isAdmin: () => me()?.admin ?? false,
     settings: () => screen,
 

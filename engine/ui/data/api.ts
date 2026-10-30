@@ -358,6 +358,8 @@ export interface KayfaApi {
   verifyCode(email: string, code: string): Promise<Answer<{ readonly account: boolean; readonly why?: string }>>;
   openAccount(invite: string | null): Promise<Answer<{ readonly opened: boolean }>>;
   signOut(): Promise<void>;
+  /** The address the session signed in with, the player's own, for Settings › Account; null signed out. */
+  signInAddress(): Promise<string | null>;
   isAdmin(): Promise<boolean>;
 
   settings(): Promise<ScreenSettings>;

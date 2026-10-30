@@ -529,6 +529,12 @@ describe('reading', () => {
 });
 
 describe('the account', () => {
+  test('the sign-in address is the signed-in login\'s own, and none signed out', async () => {
+    const { fake, ana } = world();
+    expect(await fake.signInAddress()).toBe(fake.emailOf(ana));
+    fake.signInAs(null);
+    expect(await fake.signInAddress()).toBeNull();
+  });
   test('a code request says the same words for an address with an account and one without', async () => {
     const { fake, ana } = world();
     fake.signInAs(null);
