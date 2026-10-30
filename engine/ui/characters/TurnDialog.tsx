@@ -146,7 +146,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
           {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
           <div className="kb-turn-actions">
             <button type="button" className="kb-glass-action kb-glass-skew" onClick={onClose}><span className="kb-glass-upright">Cancel</span></button>
-            <button type="submit" className="kb-glass-confirm kb-glass-skew" disabled={!to || busy}><span className="kb-glass-upright">{pending ? 'Change the Turn' : `Turn ${character.name}`}</span></button>
+            <button type="submit" className="kb-glass-confirm kb-glass-skew" disabled={!to || busy}><span className="kb-glass-upright">{pending ? 'Change the Turn' : 'Confirm Turn'}</span></button>
           </div>
         </div>
       </form>

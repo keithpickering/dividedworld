@@ -10,7 +10,6 @@
  *    web Task 9's two (Silent, Announced) and the class reveal design's two checkboxes (name the old
  *    class, name the new class), and the board's way waits on the owner (issue #51), so the build
  *    names the old class by its checkbox and the board's third row has no landmark here.
- *  - The confirm keeps web Task 9's words, "Turn Pipewrench", for the board's CONFIRM TURN.
  *  - The class cards' words are the instance's descriptions, longer than the board's, so the cards
  *    are taller and everything under them stands lower: from the map down, a landmark whose words are
  *    the board's is compared by its size, and the foot, held to the dialog's own foot, by its place
@@ -95,11 +94,11 @@ const manifest: BoardManifest = {
     { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned from Heel', within: 'dialog', box: 'none' },
 
     /*
-     * The foot: Cancel by its size, and the confirm, its words the screen's, by its top and height
-     * from Cancel's corner. Where the foot stands follows the footer's sentence, which is left out (above).
+     * The foot: Cancel by its size, and Confirm Turn in full from Cancel's corner. Where the foot
+     * stands follows the footer's sentence, which is left out (above).
      */
     { id: 'cancel', role: 'button', name: 'Cancel', within: 'dialog', box: 'size' },
-    { id: 'confirm', role: 'button', name: 'Confirm Turn', buildName: 'Turn Pipewrench', within: 'dialog', box: 'height', origin: 'cancel' },
+    { id: 'confirm', role: 'button', name: 'Confirm Turn', within: 'dialog', origin: 'cancel' },
   ],
 };
 

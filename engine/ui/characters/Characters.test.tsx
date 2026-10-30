@@ -257,7 +257,7 @@ describe('the Turn', () => {
     open(w);
     await ready();
     const dialog = await openTurn();
-    expect(within(dialog).getByRole('button', { name: 'Turn Pipewrench' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Confirm Turn' })).toBeDisabled();
   });
 
   test('is asked for, shows pending with Change and Withdraw, is changed, and is withdrawn', async () => {
@@ -268,7 +268,7 @@ describe('the Turn', () => {
     await ready();
     let dialog = await openTurn();
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Turn Pipewrench' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(turn).toHaveBeenCalledWith(w.pipe, 'heel', 'announced', false, false);
 
@@ -304,7 +304,7 @@ describe('the Turn', () => {
     await ready();
     let dialog = await openTurn();
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Turn Pipewrench' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     await waitFor(() => expect(within(row('Pipewrench')).getByText(/Turn waiting/u)).toBeInTheDocument());
     expect(within(row('Pipewrench')).getByText('Takes effect at the next settlement.')).toBeInTheDocument();
     cleanup();
@@ -321,7 +321,7 @@ describe('the Turn', () => {
     await ready();
     const dialog = await openTurn();
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Turn Pipewrench' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('this character can Turn again at 2026-11-28T12:00:00Z');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
@@ -426,7 +426,7 @@ describe('My characters: stale words', () => {
     await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
     const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Turn Pipewrench' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   };
 

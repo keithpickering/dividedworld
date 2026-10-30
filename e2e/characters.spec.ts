@@ -41,7 +41,7 @@ test('asks for a Turn, sees it pending, and withdraws it, with the keyboard alon
     await page.keyboard.press('Tab');
     expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
   }
-  const confirm = dialog.getByRole('button', { name: 'Turn Pipewrench' });
+  const confirm = dialog.getByRole('button', { name: 'Confirm Turn' });
   await tabTo(page, confirm);
   await page.keyboard.press('Enter');
 
