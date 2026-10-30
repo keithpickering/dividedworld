@@ -174,7 +174,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
       test('signed out: sign-in and register have none', async ({ page }) => {
         /* The demo world starts signed in and starts over on a load, so sign out in the app and go on from there. */
-        await page.goto('/settings');
+        await page.goto('/settings?section=account');
         await page.getByRole('button', { name: 'Sign out' }).click();
         await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
         await page.getByRole('link', { name: 'Sign in' }).first().click();
@@ -307,7 +307,7 @@ test.describe('between the boards\' widths', () => {
    * Rankings story, a restyled page with calms to the column's edge, and on the restyled pages of
    * the app, at the Phone board's width.
    */
-  for (const [label, path] of [['Rankings', '/?fixture=boards&story=boards-13-rankings--season'], ['My characters', '/characters'], ['New character', '/characters/new']] as const) {
+  for (const [label, path] of [['Rankings', '/?fixture=boards&story=boards-13-rankings--season'], ['My characters', '/characters'], ['New character', '/characters/new'], ['Settings', '/settings'], ['Settings › Account', '/settings?section=account']] as const) {
     test(`on a phone 390 wide, the restyled ${label} page does not scroll sideways`, async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto(path);
@@ -319,24 +319,27 @@ test.describe('between the boards\' widths', () => {
   }
 
   /*
-   * The menu bar and the content column are drawn at the board's scale; the board's own content
-   * panel, until Part 2, keeps the board's sizes and undoes the column's zoom (shell.css), so its
-   * effective zoom is 1 while the menu bar's is the scale.
+   * The menu bar and the content column are drawn at the board's scale, and since every glass page
+   * is restyled (the glass build's Task 2.4 restyled the last of them) its content is the glass's own
+   * type and takes the column's scale with it: no page draws the board's content panel any more.
    */
-  test(`at ${ABOVE_SWITCH}px a glass page's content panel undoes the column's zoom, and the menu bar keeps it`, async ({ page }) => {
+  test(`at ${ABOVE_SWITCH}px a glass page's content takes the column's zoom, with the menu bar, and no board panel`, async ({ page }) => {
     await page.setViewportSize({ width: ABOVE_SWITCH, height: 900 });
     await page.goto('/settings');
     await expect(ready(page, '/settings')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
     const got = await page.evaluate(() => ({
       layout: document.documentElement.dataset.kbLayout,
       menu: document.querySelector('.kb-glass-menu')!.currentCSSZoom,
       column: document.querySelector('.kb-glass-content')!.currentCSSZoom,
-      panel: document.querySelector('.kb-glass-content-panel')!.currentCSSZoom,
+      heading: document.querySelector('main h1')!.currentCSSZoom,
+      panel: document.querySelector('.kb-glass-content-panel'),
     }));
     expect(got.layout).toBe('main');
     expect(got.menu).toBeCloseTo(ABOVE_SWITCH / MAIN_BOARD_WIDTH, 3);
     expect(got.column).toBeCloseTo(ABOVE_SWITCH / MAIN_BOARD_WIDTH, 3);
-    expect(got.panel).toBeCloseTo(1, 3);
+    expect(got.heading).toBeCloseTo(ABOVE_SWITCH / MAIN_BOARD_WIDTH, 3);
+    expect(got.panel).toBeNull();
   });
 });
 

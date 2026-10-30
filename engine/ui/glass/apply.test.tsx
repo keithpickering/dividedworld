@@ -33,10 +33,10 @@ describe('glassVars', () => {
     expect(glassVars(glass, 'high')['--kb-glass-ground']).toBe('#000000');
   });
 
-  it('sets each size step in px and the calm\'s opacity and feather', () => {
+  it('sets each size step in rem, its px over 16, so the player\'s text size scales it, and the calm\'s opacity and feather', () => {
     const v = glassVars(glass, 'standard');
-    expect(v['--kb-glass-size-body']).toBe('21px');
-    expect(v['--kb-glass-size-display-xl']).toBe('96px');
+    expect(v['--kb-glass-size-body']).toBe('1.3125rem');
+    expect(v['--kb-glass-size-display-xl']).toBe('6rem');
     expect(v['--kb-glass-calm-opacity']).toBe('0.85');
     expect(v['--kb-glass-calm-feather']).toBe('32px');
   });

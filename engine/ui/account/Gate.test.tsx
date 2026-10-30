@@ -71,10 +71,10 @@ describe('Signing out', () => {
     const me = fake.seed.account('me');
     fake.seed.character(me, 'Pipewrench', 'face');
     fake.signInAs(me);
-    renderIn(fake, <Frame><SettingsScreen /></Frame>, { path: '/settings' });
+    renderIn(fake, <Frame><SettingsScreen /></Frame>, { path: '/settings?section=account' });
     await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('combobox', { name: 'Swap mask' })).toBeInTheDocument());
     localStorage.setItem(`kb-draft:${me}:thread-1`, JSON.stringify({ text: 'half a thought', as: null }));
-    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
     await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('link', { name: 'Sign in' })).toBeInTheDocument());
     expect(localStorage.getItem(`kb-draft:${me}:thread-1`)).toBeNull();
   });

@@ -29,7 +29,7 @@
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Board, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
   Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
@@ -63,6 +63,15 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+/** A row of account_preferences, or set_preferences' answer, in the screens' words; a column it lacks is its default. */
+function toPreferences(r: Row): Preferences {
+  const d = DEFAULT_PREFERENCES;
+  return {
+    theme: r['theme'] ?? d.theme, postbit: r['postbit'] ?? d.postbit, motion: r['motion'] ?? d.motion,
+    smoke: r['smoke'] ?? d.smoke, contrast: r['contrast'] ?? d.contrast, textSize: num(r['text_size'], d.textSize) as Preferences['textSize'],
+  };
+}
 
 function toAct(r: Row): Act {
   return {
@@ -453,6 +462,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       lastEstimate = null;
       await client.auth.signOut();
     },
+    /* Reads the client's own session for its address, which is not signing in, up or a reset, so it is outside Task 11's rule that those go through the account function; no table is read. */
+    async signInAddress() {
+      return (await client.auth.getSession()).data.session?.user.email ?? null;
+    },
     async isAdmin() {
       try {
         return (await read(() => client.rpc('is_admin'))).data === true;
@@ -646,12 +659,15 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return (await rpcWrite(() => client.rpc('mark_read', { in_thread: thread, seq, through }))).ok;
     },
     async preferences(): Promise<Preferences> {
-      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion').limit(1)))[0];
-      return { theme: r?.['theme'] ?? 'system', postbit: r?.['postbit'] ?? 'side', motion: r?.['motion'] ?? 'system' };
+      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size').limit(1)))[0];
+      return r ? toPreferences(r) : DEFAULT_PREFERENCES;
     },
     async setPreferences(p) {
-      const a = await rpcWrite(() => client.rpc('set_preferences', { theme: p.theme ?? null, postbit: p.postbit ?? null, motion: p.motion ?? null }));
-      return a.ok ? { ok: true, value: { theme: a.value['theme'], postbit: a.value['postbit'], motion: a.value['motion'] } } : a;
+      const a = await rpcWrite(() => client.rpc('set_preferences', {
+        theme: p.theme ?? null, postbit: p.postbit ?? null, motion: p.motion ?? null,
+        smoke: p.smoke ?? null, contrast: p.contrast ?? null, text_size: p.textSize ?? null,
+      }));
+      return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
     },
     estimate() {
       if (lastEstimate && Date.now() < lastEstimate.until) return Promise.resolve(lastEstimate.answer);

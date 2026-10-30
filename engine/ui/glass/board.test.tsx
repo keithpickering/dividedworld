@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import type { GlassTheme } from '../types.ts';
 import { testGlass } from '../test-world.tsx';
-import { boardLayout, boardSwitch, MAIN_BOARD_WIDTH } from './board.ts';
+import { boardLayout, boardSwitch, FOLD_ABOVE_TEXT_SIZE, MAIN_BOARD_WIDTH } from './board.ts';
 
 const sized = (sizes: Record<string, { px: number; phone?: boolean }>) =>
   ({ sizes: Object.fromEntries(Object.entries(sizes).map(([k, s]) => [k, { family: 'F', weight: 400, ...s }])) }) as unknown as GlassTheme;
@@ -45,6 +45,14 @@ describe('boardLayout', () => {
     expect(boardLayout(at - 0.5, glass)).toEqual({ board: 'phone', scale: 1 });
     expect(boardLayout(390, glass)).toEqual({ board: 'phone', scale: 1 });
   });
+  test('above 150% text it is the Phone board\'s at any width, and at 150% or less the width decides', () => {
+    expect(FOLD_ABOVE_TEXT_SIZE).toBe(150);
+    expect(boardLayout(1920, glass, 200)).toEqual({ board: 'phone', scale: 1 });
+    expect(boardLayout(1280, glass, 200)).toEqual({ board: 'phone', scale: 1 });
+    expect(boardLayout(1920, glass, 150)).toEqual({ board: 'main', scale: 1 });
+    expect(boardLayout(1300, glass, 125)).toEqual({ board: 'main', scale: 1300 / 1440 });
+    expect(boardLayout(390, glass, 100)).toEqual({ board: 'phone', scale: 1 });
+  });
   test('at the switch the smallest scaled text is the smallest phone size', () => {
     expect(14 * boardLayout(at, glass).scale).toBeCloseTo(12, 9);
   });
@@ -63,24 +71,35 @@ describe('boardLayout', () => {
  *     (`.kb-glass-content-panel`), which keeps the board's sizes and undoes the scale (shell.css).
  * A rule inside an at-rule (a media query, a @supports) is read like any other.
  *
+ * A size in rem is read as its px at the root's 16px, the size it draws at 100% text.
+ *
  * What it does not see: a size given through a variable (`var(--kb-glass-size-label)`, which is a
- * token, or anything else) or a calc(), a size in any unit but px, and a size set from script or
- * inline. Those are kept honest by the glass plan's closed list of tokens (section 4), not here.
+ * token, or anything else) or a calc(), a size in any unit but px and rem, and a size set from
+ * script or inline. Those are kept honest by the glass plan's closed list of tokens (section 4), not
+ * here.
+ *
+ * The same sheets are read for a second claim, the text size's (the web plan's glass amendment to
+ * Task 11): the player's text size is the root's font size, so a size follows it only when it is in
+ * rem or a glass size token (rem, apply.ts). No sheet the glass is drawn from writes a font size in
+ * px, the phone's rules included, or that size would stay put at 200% while the rest grew.
  *
  * The floor is the smallest Main board size of the test world's glass (engine/ui/test-world.tsx:
  * its `label`, 20px), which is also the smallest of Divided World's.
  */
 const here = path.dirname(fileURLToPath(import.meta.url));
-const SHEETS = [
-  path.join(here, '../frame/frame.css'),
-  ...fs.readdirSync(here).filter((f) => f.endsWith('.css')).map((f) => path.join(here, f)),
-  ...fs.readdirSync(path.join(here, '../orbs')).filter((f) => f.endsWith('.css')).map((f) => path.join(here, '../orbs', f)),
-  path.join(here, '../rankings/rankings.css'),
-  path.join(here, '../characters/characters.css'),
-  path.join(here, '../profile-edit/profile-edit.css'),
-  /* The React picker, restyled in the glass's type (Part 2, Task 2.1). */
-  path.join(here, '../reactions/reactions.css'),
-];
+const UI = path.join(here, '..');
+
+/*
+ * The folders under engine/ui/ whose stylesheets draw the glass (the glass itself, the frame's HUD
+ * and hand, the orbs, and each glass page and overlay), and the folders that draw the 2003 board.
+ * Every sheet in a glass folder is read, so a sheet added there is read without being listed; and
+ * every folder that holds a sheet is one or the other, so a new folder is a failure until it is
+ * named here.
+ */
+const GLASS_FOLDERS = ['glass', 'frame', 'orbs', 'account', 'characters', 'profile-edit', 'rankings', 'reactions'];
+const BOARD_FOLDERS = ['bbcode', 'board', 'composer', 'index', 'postbit', 'profile', 'reveal', 'spin', 'standings', 'thread'];
+const sheetsIn = (folder: string) => fs.readdirSync(path.join(UI, folder)).filter((f) => f.endsWith('.css')).map((f) => path.join(UI, folder, f));
+const SHEETS = GLASS_FOLDERS.flatMap(sheetsIn);
 const PHONE = ":where(:root[data-kb-layout='phone'])";
 
 /** Each style rule in a stylesheet, its selectors and its declarations, with the at-rules around it opened. */
@@ -106,15 +125,33 @@ function styleRules(css: string): { selectors: string[]; body: string }[] {
   return out;
 }
 
-/** The font sizes in px a rule's declarations write as numbers. */
-function pxSizes(body: string): number[] {
-  const sizes: number[] = [];
-  for (const m of body.matchAll(/(?:^|;)\s*font-size\s*:\s*([\d.]+)px\b/g)) sizes.push(Number(m[1]));
+/** The font sizes a rule's declarations write as numbers, in px or rem, each with its unit. */
+function writtenSizes(body: string): { n: number; unit: 'px' | 'rem' }[] {
+  const sizes: { n: number; unit: 'px' | 'rem' }[] = [];
+  for (const m of body.matchAll(/(?:^|;)\s*font-size\s*:\s*([\d.]+)(px|rem)\b/g)) sizes.push({ n: Number(m[1]), unit: m[2] as 'px' | 'rem' });
   for (const m of body.matchAll(/(?:^|;)\s*font\s*:\s*([^;]*)/g)) {
-    const size = /([\d.]+)px\b/.exec(m[1]!.split('/')[0]!);
-    if (size) sizes.push(Number(size[1]));
+    const size = /([\d.]+)(px|rem)\b/.exec(m[1]!.split('/')[0]!);
+    if (size) sizes.push({ n: Number(size[1]), unit: size[2] as 'px' | 'rem' });
   }
   return sizes;
+}
+
+/** The font sizes a rule writes as numbers, in px at 100% text (a rem at the root's 16px). */
+function pxSizes(body: string): number[] {
+  return writtenSizes(body).map((s) => (s.unit === 'rem' ? s.n * 16 : s.n));
+}
+
+/** Every font size the sheets write in px, which the player's text size would not move; `read` gives each sheet's text. */
+function sizesInPx(read: (sheet: string) => string = (sheet) => fs.readFileSync(sheet, 'utf8')): string[] {
+  const found: string[] = [];
+  for (const sheet of SHEETS) {
+    const css = read(sheet).replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const { selectors, body } of styleRules(css)) {
+      if (selectors.every((s) => s.includes('.kb-glass-content-panel'))) continue;
+      for (const w of writtenSizes(body)) if (w.unit === 'px') found.push(`${path.basename(sheet)}: ${selectors.join(', ')} { font-size: ${w.n}px }`);
+    }
+  }
+  return found;
 }
 
 function smallFixedSizes(floor: number): string[] {
@@ -134,14 +171,38 @@ describe('the smallest text on the scaled layout', () => {
   const floor = Math.min(...Object.values(testGlass.sizes).filter((s) => !s.phone).map((s) => s.px));
   test('the floor is the test world\'s smallest Main board size, and the sheets it reads are there', () => {
     expect(floor).toBe(20);
-    expect(SHEETS.map((s) => path.basename(s))).toEqual(expect.arrayContaining(['frame.css', 'shell.css', 'base.css', 'orbs.css', 'orbs-board.css', 'rankings.css', 'characters.css', 'profile-edit.css', 'reactions.css']));
+    expect(SHEETS.map((s) => path.basename(s))).toEqual(expect.arrayContaining(['frame.css', 'shell.css', 'base.css', 'calm.css', 'contrast.css', 'orbs.css', 'orbs-board.css', 'rankings.css', 'characters.css', 'profile-edit.css', 'reactions.css', 'reactions-board.css', 'account.css']));
   });
-  test('reads a phone rule\'s fixed size and passes it, and reads a Main rule\'s', () => {
-    const rules = styleRules(`${PHONE} .a, ${PHONE} .b { font-size: 18px; } .c { color: red; font: bold 14px / 1.2 F; } @media (x) { .d { font-size: 12px } }`);
+  test('every folder under engine/ui/ that holds a stylesheet is named as the glass\'s or the board\'s', () => {
+    const folders = fs.readdirSync(UI, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
+      .filter((d) => fs.readdirSync(path.join(UI, d)).some((f) => f.endsWith('.css')));
+    expect(folders.filter((d) => !GLASS_FOLDERS.includes(d) && !BOARD_FOLDERS.includes(d))).toEqual([]);
+    expect(GLASS_FOLDERS.filter((d) => BOARD_FOLDERS.includes(d))).toEqual([]);
+  });
+  test('reads a phone rule\'s fixed size and passes it, and reads a Main rule\'s, in px or rem', () => {
+    const rules = styleRules(`${PHONE} .a, ${PHONE} .b { font-size: 18px; } .c { color: red; font: bold 14px / 1.2 F; } @media (x) { .d { font-size: 0.75rem } }`);
     expect(rules.map((r) => r.selectors.every((s) => s.startsWith(PHONE)))).toEqual([true, false, false]);
     expect(rules.map((r) => pxSizes(r.body))).toEqual([[18], [14], [12]]);
+    expect(rules.map((r) => writtenSizes(r.body).map((w) => w.unit))).toEqual([['px'], ['px'], ['rem']]);
   });
   test('no fixed font size in px on the Main board\'s layout is below the smallest Main board token', () => {
     expect(smallFixedSizes(floor)).toEqual([]);
+  });
+});
+
+describe('the text size', () => {
+  test('no font size in the glass\'s sheets is written in px, so every one follows the player\'s text size', () => {
+    expect(sizesInPx()).toEqual([]);
+  });
+  test('finds a px font size planted in a real glass sheet, in the Main board\'s rules and the phone\'s alike', () => {
+    const sheet = path.join(UI, 'account', 'account.css');
+    const planted = (css: string) => css
+      .replace('.kb-acct-title {\n', '.kb-acct-title {\n  font-size: 112px;\n')
+      .replace(":where(:root[data-kb-layout='phone']) .kb-acct-value {\n", ":where(:root[data-kb-layout='phone']) .kb-acct-value {\n  font: 700 20px/1.1 sans-serif;\n");
+    const found = sizesInPx((s) => (s === sheet ? planted(fs.readFileSync(s, 'utf8')) : fs.readFileSync(s, 'utf8')));
+    expect(found).toEqual([
+      'account.css: .kb-acct-title { font-size: 112px }',
+      "account.css: :where(:root[data-kb-layout='phone']) .kb-acct-value { font-size: 20px }",
+    ]);
   });
 });

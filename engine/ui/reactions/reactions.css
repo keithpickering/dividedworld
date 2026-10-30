@@ -57,7 +57,7 @@
 }
 
 .kb-picker .kb-glass-dialog-head {
-  font-size: 30px;
+  font-size: 1.875rem;
   line-height: 1;
   letter-spacing: 0.5px;
   color: var(--kb-glass-text);
@@ -145,7 +145,7 @@
 }
 
 .kb-picker-label {
-  font-size: 22px;
+  font-size: 1.375rem;
   line-height: 1;
   color: var(--kb-picker-large);
 }
@@ -168,7 +168,7 @@
   width: 52px;
   height: 52px;
   padding: 0;
-  font-size: 26px;
+  font-size: 1.625rem;
   line-height: 1;
   color: var(--kb-glass-text-hi);
   background: color-mix(in srgb, var(--kb-glass-text-hi) 4%, transparent);
