@@ -5,7 +5,7 @@
  * paints nothing, so these read the elements and their attributes: what the page looks like is
  * tools/check-glass-contrast.mjs's model and e2e/glass-text.spec.ts's measurement (Part 2, not yet written).
  */
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
@@ -38,6 +38,7 @@ const opacities = (c: HTMLElement, narrow = false) => rects(c, narrow).map((r) =
 
 afterEach(() => {
   document.documentElement.removeAttribute('data-kb-motion');
+  document.documentElement.removeAttribute('data-kb-smoke');
 });
 
 describe('Smoke', () => {
@@ -66,6 +67,18 @@ describe('Smoke', () => {
     expect(got[0]).toBeCloseTo(1 / 3, 6);
     expect(got[1]).toBeCloseTo(0.55 / 3, 6);
     expect(opacities(container, true)[0]).toBeCloseTo(0.6 / 3, 6);
+  });
+
+  it('takes the player\'s preference from the root when no level is given, and follows it when it changes', async () => {
+    const root = document.documentElement;
+    root.setAttribute('data-kb-smoke', 'off');
+    const { container } = render(inWorld(<Smoke surface="hud" />));
+    expect(container.querySelector('[data-kb-smoke]')).toBeNull();
+    expect(container.querySelector('[data-kb-ground]')).not.toBeNull();
+    await act(async () => { root.setAttribute('data-kb-smoke', 'low'); await Promise.resolve(); });
+    expect(opacities(container)[0]).toBeCloseTo(1 / 3, 6);
+    await act(async () => { root.removeAttribute('data-kb-smoke'); await Promise.resolve(); });
+    expect(opacities(container)).toEqual([1, 0.55]);
   });
 
   it('draws the narrow layers too, for the stylesheet to choose between below 600px', () => {

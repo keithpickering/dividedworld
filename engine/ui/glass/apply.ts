@@ -12,7 +12,7 @@ import type { ClassLargeDraw, GlassSurface, GlassTheme } from '../types.ts';
 export type GlassKeyName = 'standard' | 'high';
 
 /**
- * Every property a key sets: its tokens, each size step in px, and the calm's opacity and feather.
+ * Every property a key sets: its tokens, each size step (in rem: its px over 16), and the calm's opacity and feather.
  * Then the instance's own colors, which are its data and not tokens (the glass plan, section 4):
  * each orb's three stops by its place in the row (`--kb-glass-orb-<n>-highlight`, `-color`,
  * `-shade`) and the orb's body (`--kb-glass-orb-body-core`, `-edge`), and each class's fill, ink and
@@ -22,7 +22,8 @@ export type GlassKeyName = 'standard' | 'high';
 export function glassVars(glass: GlassTheme, key: GlassKeyName): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [name, token] of Object.entries(glass.keys[key])) out[name] = token.value;
-  for (const [name, size] of Object.entries(glass.sizes)) out[`--kb-glass-size-${name}`] = `${size.px}px`;
+  /* In rem, so the player's text size (the root's font size, engine/ui/appearance.ts) scales the glass with the board; at 100% it is the px. */
+  for (const [name, size] of Object.entries(glass.sizes)) out[`--kb-glass-size-${name}`] = `${size.px / 16}rem`;
   out['--kb-glass-calm-opacity'] = String(glass.calm.opacity);
   out['--kb-glass-calm-feather'] = `${glass.calm.feather}px`;
   glass.orbs.gradients.forEach((g, i) => {

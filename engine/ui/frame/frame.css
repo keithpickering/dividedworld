@@ -260,7 +260,7 @@
   min-height: 52px;
   max-width: 12em;
   font: inherit;
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: none;
@@ -329,7 +329,7 @@
 }
 
 .kb-hud-orbs .kb-orbs-figure {
-  font-size: 46px;
+  font-size: 2.875rem;
   line-height: 1;
   text-shadow: 0 0 20px color-mix(in srgb, var(--kb-glass-ready) 50%, transparent);
 }
@@ -337,7 +337,7 @@
 .kb-hud-orbs .kb-orbs-cap,
 .kb-hud-orbs .kb-orbs-pending,
 .kb-hud-orbs .kb-orbs-over {
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 700;
   line-height: normal;
 }
@@ -372,7 +372,7 @@
 }
 
 .kb-hud-clock-time {
-  font-size: 44px;
+  font-size: 2.75rem;
   font-weight: 800;
   line-height: 1;
   color: var(--kb-glass-pale);
@@ -441,7 +441,7 @@
 
 .kb-hud-hand-count {
   padding: 2px 8px;
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 800;
   line-height: 1;
   color: var(--kb-glass-salty-text);
@@ -651,14 +651,14 @@
 
 :where(:root[data-kb-layout='phone']) .kb-hud-menu > span,
 :where(:root[data-kb-layout='phone']) .kb-hud-hand > span:first-child {
-  font-size: 18px;
+  font-size: 1.125rem;
   letter-spacing: 0.5px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-hand-count {
   padding: 0;
   font-family: var(--kb-glass-font-display);
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 400;
   color: inherit;
   background: none;
