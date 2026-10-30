@@ -56,6 +56,9 @@ const store = {
   },
 };
 
+/** Where this device keeps the account's HUD character. */
+export const hudKey = (account: Id) => `kb-hud:${account}`;
+
 const canAct = (c: MyCharacter) => c.debutedAt !== null && c.retiredAt === null;
 
 export function PlayerProvider({ api, children }: { readonly api: KayfaApi; readonly children: ReactNode }) {
@@ -84,7 +87,7 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
       setCards(held);
       const seen = store.get(`kb-wallet-seen:${account}`);
       setWalletSeen(seen !== null && Number(seen) !== w.balance ? Number(seen) : null);
-      setChosen(store.get(`kb-hud:${account}`));
+      setChosen(store.get(hudKey(account)));
     } catch {
       /* The rows as they were: the next action or page asks again. Loading still ends, so the HUD is never blank. */
     } finally {
@@ -168,7 +171,7 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
 
   const setHudCharacter = useCallback((id: Id) => {
     setChosen(id);
-    if (account) store.set(`kb-hud:${account}`, id);
+    if (account) store.set(hudKey(account), id);
   }, [account]);
 
   const markWalletSeen = useCallback(() => {

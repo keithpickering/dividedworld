@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { boardsToRun, compareBoard, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
-import { routeBoardFonts, snapshotPage } from './board-snapshot.ts';
+import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage } from './board-snapshot.ts';
 
 /**
  * The board match, end to end: each board the two-worlds session drew (docs/research/2026-10-29-two-worlds/)
@@ -14,7 +14,9 @@ import { routeBoardFonts, snapshotPage } from './board-snapshot.ts';
  * writes its manifest (e2e/boards/<NN>-<name>.ts, a default-exported BoardManifest).
  *
  * The board's Google Fonts requests are routed to the instance's own files (the build serves the
- * same files itself), and both pages are opened at device scale 1 and reduced motion. A report goes to e2e/report/boards/<board>/ on a
+ * same files itself), and both pages are opened at device scale 1 and reduced motion. The build is
+ * pressed where the manifest says the board draws a state reached by a press, and read once it has
+ * rendered (e2e/board-snapshot.ts). A report goes to e2e/report/boards/<board>/ on a
  * pass as well as a failure: both screenshots with the manifest's boxes outlined, side by side in an
  * index.html with the mismatches listed, which CI uploads.
  */
@@ -25,8 +27,6 @@ const REPORT = path.join(here, 'report', 'boards');
 
 /** The boards not built yet, each with the part of docs/plans/2026-10-30-glass-build-plan.md that builds it. */
 const PENDING: Readonly<Record<string, string>> = {
-  '01-main': 'Part 1 (Task 1.5)',
-  '02-phone': 'Part 1 (Task 1.5)',
   '04-orbs': 'Part 1 (Task 1.5)',
   '03-react': 'Part 2',
   '06-turn': 'Part 2',
@@ -92,9 +92,10 @@ for (const id of run) {
         await boardPage.goto(pathToFileURL(path.join(BOARDS, `${id}.html`)).href);
         const query = 'moment' in manifest.build ? `moment=${encodeURIComponent(manifest.build.moment)}` : `story=${encodeURIComponent(manifest.build.story)}`;
         await buildPage.goto(`/?fixture=boards&${query}`);
+        await pressControls(buildPage, manifest.press);
         for (const page of [boardPage, buildPage]) await page.evaluate(() => document.fonts.ready);
         shots.board = await snapshotPage(boardPage, manifest, 'board');
-        shots.build = await snapshotPage(buildPage, manifest, 'build');
+        shots.build = await settledSnapshot(buildPage, manifest, 'build');
         mismatches = compareBoard(shots.board, shots.build, manifest);
       } catch (error) {
         failure = error;

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { rankIndex } from '../../../../engine/rules/ranks.ts';
 import { FAKE_BACKEND_MARKER, TEST_CODE, type Fake } from '../../../../engine/ui/data/fake.ts';
 import { instance } from '../../../../instances/divided-world/index.ts';
+import { hudKey } from '../../../../engine/ui/player.tsx';
 import { createBoardsFake, EMAILS, MOMENTS, seedBoards, type MomentName } from './boards.ts';
 
 const NAMES = Object.keys(MOMENTS) as MomentName[];
@@ -84,6 +85,13 @@ describe('the moments', () => {
     expect(fake.clock.now()).toBe(MOMENTS[moment].at);
     expect((await fake.session()).signedIn).toBe(true);
     expect(await mine(fake)).toEqual([...WHO[moment]].sort());
+  });
+
+  it.each(NAMES.filter((n) => MOMENTS[n].account === 'player'))('%s: this device has the HUD on Pipewrench, as the boards draw it (the device\'s own choice, never the server\'s)', async (moment) => {
+    globalThis.localStorage.clear();
+    const { fake } = await load(moment);
+    const account = must((await fake.session()).account);
+    expect(await nameOf(fake, globalThis.localStorage.getItem(hudKey(account)))).toBe('Pipewrench');
   });
 
   it('refuses a fake whose clock is not the moment\'s, since the moment is what its Acts are dated against', () => {

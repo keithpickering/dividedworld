@@ -4,9 +4,11 @@
  * build uses. Nothing here decides a match; it only reads.
  *
  * A landmark is found by role and accessible name (`getByRole`), the name matched whole and
- * without case; the build's side searches for `buildName ?? name`. What a landmark's type is
+ * without case; the build's side searches for `buildName ?? name`, and picks `buildNth ?? nth`. The role `text` is the one
+ * that is not ARIA's: a part a board drew with no role at all (the HUD's clock label, a legend, a
+ * class tag) is found by its own words (`getByText`), matched the same way. What a landmark's type is
  * is read from its first text-bearing element: the element itself, or its first descendant that
- * holds a non-blank text node, skipping any `aria-hidden` or `display:none` subtree and any
+ * holds a non-blank text node, skipping any `aria-hidden` (below the landmark) or `display:none` subtree and any
  * `visibility:hidden` text, so a decorative glyph or a hidden span is not the text. The boards
  * load Anton and Barlow Condensed from Google Fonts, which an offline run cannot reach and a
  * fallback face could pass or fail by luck, so `routeBoardFonts` answers those requests from the
@@ -69,15 +71,20 @@ export async function routeBoardFonts(page: Page, root: string = UI_DIR): Promis
 function locate(page: Page, landmark: Landmark, side: 'board' | 'build', found: ReadonlyMap<string, Locator>): Locator {
   const name = side === 'build' ? landmark.buildName ?? landmark.name : landmark.name;
   const root: Page | Locator = landmark.within ? found.get(landmark.within) ?? page.locator(':not(*)') : page;
-  return root.getByRole(landmark.role as Parameters<Page['getByRole']>[0], { name: new RegExp(`^${escapeRegExp(name)}$`, 'i') }).nth(landmark.nth ?? 0);
+  const whole = new RegExp(`^${escapeRegExp(name)}$`, 'i');
+  const nth = side === 'build' ? landmark.buildNth ?? landmark.nth ?? 0 : landmark.nth ?? 0;
+  /* A text's own words are read raw, so the markup's line breaks and indents around and between them are spaces. */
+  if (landmark.role === 'text') return root.getByText(new RegExp(`^\\s*${name.trim().split(/\s+/).map(escapeRegExp).join('\\s+')}\\s*$`, 'i')).nth(nth);
+  return root.getByRole(landmark.role as Parameters<Page['getByRole']>[0], { name: whole }).nth(nth);
 }
 
 /** The computed type of an element's first text-bearing element, in the page; null when it holds no text. */
 async function readType(locator: Locator): Promise<TypeRead | null> {
   return locator.evaluate((el): TypeRead | null => {
     const hasText = (e: Element) => [...e.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && /\S/.test(n.textContent ?? ''));
-    const first = (e: Element): Element | null => {
-      if (e.getAttribute('aria-hidden') === 'true' || getComputedStyle(e).display === 'none') return null;
+    /* The landmark itself is read whatever its aria-hidden: a text found by its own words is on screen. */
+    const first = (e: Element, root = false): Element | null => {
+      if ((!root && e.getAttribute('aria-hidden') === 'true') || getComputedStyle(e).display === 'none') return null;
       /* A hidden element's own text is not seen, but a child may show itself again. */
       if (hasText(e) && getComputedStyle(e).visibility === 'visible') return e;
       for (const child of e.children) {
@@ -86,7 +93,7 @@ async function readType(locator: Locator): Promise<TypeRead | null> {
       }
       return null;
     };
-    const text = first(el);
+    const text = first(el, true);
     if (!text) return null;
     const s = getComputedStyle(text);
     return {
@@ -116,4 +123,38 @@ export async function snapshotPage(page: Page, manifest: BoardManifest, side: 'b
     shots.push(type ? { id: landmark.id, found: true, box: rect, type } : { id: landmark.id, found: true, box: rect });
   }
   return { shots };
+}
+
+/**
+ * Press the manifest's controls on the build's page, in order, each found by role and whole name
+ * as a landmark is. A control that does not come within `timeout` fails by name, since a state the
+ * board draws that the build cannot reach is the finding.
+ */
+export async function pressControls(page: Page, controls: BoardManifest['press'] = [], timeout = 5000): Promise<void> {
+  for (const control of controls) {
+    const target = page.getByRole(control.role as Parameters<Page['getByRole']>[0], { name: new RegExp(`^${escapeRegExp(control.name)}$`, 'i') }).first();
+    try {
+      await target.click({ timeout });
+    } catch {
+      throw new Error(`the build has no ${control.role} named "${control.name}" to press`);
+    }
+  }
+}
+
+const sameSnapshot = (a: Snapshot, b: Snapshot) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * The app renders after its page loads (the fixture answers, then the thread lands), so the build
+ * is read once every landmark is found and two reads a frame's breath apart agree; when `timeout`
+ * runs out first it is read as it stands, and what is missing is reported as missing.
+ */
+export async function settledSnapshot(page: Page, manifest: BoardManifest, side: 'board' | 'build', timeout = 5000): Promise<Snapshot> {
+  const until = Date.now() + timeout;
+  let last = await snapshotPage(page, manifest, side);
+  for (;;) {
+    await page.waitForTimeout(100);
+    const next = await snapshotPage(page, manifest, side);
+    if ((next.shots.every((s) => s.found) && sameSnapshot(last, next)) || Date.now() > until) return next;
+    last = next;
+  }
 }

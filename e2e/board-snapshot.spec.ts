@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { BoardManifest, Landmark } from './board-match.ts';
-import { routeBoardFonts, snapshotPage } from './board-snapshot.ts';
+import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage } from './board-snapshot.ts';
 
 /**
  * The board snapshot's self-test: e2e/board-snapshot.ts read over pages built in place with
@@ -55,6 +55,68 @@ test('within scopes the search to the found landmark, and nth picks among matche
   expect(shots[1]!.box!.y + shots[1]!.box!.height).toBeLessThanOrEqual(side.y + side.height + 0.5);
   expect(shots[2]!.box!.y).toBeLessThan(side.y);
   expect(shots[3]!.found).toBe(false);
+});
+
+test('the build side picks buildNth among its matches where it is given, nth otherwise', async ({ page }) => {
+  await page.setContent(`<article aria-label="One">1</article><article aria-label="Two">2</article>`);
+  const m = manifest(lm('two', { role: 'article', name: '', nth: 1, buildName: 'Two', buildNth: 0 }));
+  expect((await snapshotPage(page, m, 'build')).shots[0]!.found).toBe(true);
+});
+
+test('the build is pressed in order before it is read, and a control that is not there fails by name', async ({ page }) => {
+  await page.setContent(`<button onclick="document.querySelector('#b').hidden=false">Open</button>
+    <button id="b" hidden onclick="this.textContent='Shut'">Close</button>`);
+  await pressControls(page, [{ role: 'button', name: 'Open' }, { role: 'button', name: 'Close' }]);
+  expect(await page.locator('#b').textContent()).toBe('Shut');
+  await expect(pressControls(page, [{ role: 'button', name: 'Nowhere' }], 300)).rejects.toThrow(/button named "Nowhere"/);
+});
+
+test('a page that renders after it loads is read once every landmark is found and still', async ({ page }) => {
+  await page.setContent(`<div id="r"></div><script>
+    setTimeout(() => { document.querySelector('#r').innerHTML = '<button style="margin-top:0">Late</button>'; }, 150);
+    setTimeout(() => { document.querySelector('#r button').style.marginTop = '90px'; }, 180);
+  </script>`);
+  const m = manifest(lm('late', { name: 'Late' }));
+  const { shots } = await settledSnapshot(page, m, 'build', 3000);
+  expect(shots[0]!.found).toBe(true);
+  expect(shots[0]!.box!.y).toBeGreaterThan(80);
+});
+
+test('a page whose landmark never comes is read when the wait runs out, with the landmark not found', async ({ page }) => {
+  await page.setContent(`<button>Here</button>`);
+  const started = Date.now();
+  const { shots } = await settledSnapshot(page, manifest(lm('gone'), lm('Here')), 'build', 400);
+  expect(shots[0]!.found).toBe(false);
+  expect(shots[1]!.found).toBe(true);
+  expect(Date.now() - started).toBeLessThan(3000);
+});
+
+test('a text landmark is found by its own words, whole, without case and across the markup\'s line breaks, where a board drew a part with no role', async ({ page }) => {
+  await page.setContent(`<style>.c{font-size:20px;color:rgb(7,8,9)}</style>
+    <section aria-label="HUD"><div class="c">NEXT SETTLEMENT</div><div>07:42:10</div><div>Next settlement soon</div>
+      <span>
+        <svg aria-hidden="true" width="9" height="9"></svg>
+        Only you
+        see this
+      </span><span aria-hidden="true" class="c">+0.30 est.</span></section>
+    <div>Next settlement</div>`);
+  const m = manifest(
+    lm('hud', { role: 'region', name: 'HUD' }),
+    lm('clock', { role: 'text', name: 'Next settlement', within: 'hud' }),
+    lm('outside', { role: 'text', name: 'Next settlement', nth: 1, within: 'hud' }),
+    lm('part', { role: 'text', name: 'Next' }),
+    lm('padded', { role: 'text', name: 'Only you see this', within: 'hud' }),
+    /* A figure hidden from the screen reader, because a name already says it, is still the text on screen. */
+    lm('figure', { role: 'text', name: '+0.30 est.', within: 'hud' }),
+  );
+  const { shots } = await snapshotPage(page, m, 'board');
+  expect(shots[1]!.found).toBe(true);
+  expect(shots[1]!.type).toMatchObject({ size: 20, color: 'rgb(7, 8, 9)' });
+  expect(shots[1]!.box!.y).toBeLessThan(shots[0]!.box!.y + 30);
+  expect(shots[2]!.found).toBe(false);
+  expect(shots[3]!.found).toBe(false);
+  expect(shots[4]!.found).toBe(true);
+  expect(shots[5]!.type).toMatchObject({ size: 20, color: 'rgb(7, 8, 9)' });
 });
 
 test('a missing landmark is reported as not found, with no box', async ({ page }) => {

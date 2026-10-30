@@ -78,6 +78,14 @@ describe('the banner: the board\'s own', () => {
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
     expect(screen.getByRole('main')).toHaveTextContent('page');
   });
+  test('the links are a row of their own under the name, as the Main board draws them, and the phone\'s Boards button stays in the banner', async () => {
+    setup();
+    const banner = screen.getByRole('banner');
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    expect(banner).not.toContainElement(nav);
+    expect(banner.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(banner).toContainElement(screen.getByText('Boards', { selector: 'button' }));
+  });
   test('signed out, it holds Index and Sign in, and no Sign out', async () => {
     setup(false);
     const nav = screen.getByRole('navigation', { name: 'Main' });
@@ -132,6 +140,9 @@ describe('the HUD: the glass, docked at the bottom', () => {
     const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
     expect(menu).toHaveAttribute('aria-keyshortcuts', 'Escape');
     expect(menu).toHaveAttribute('aria-haspopup', 'true');
+    /* Its key cap is read by sight; the button's name stays Menu. */
+    expect(within(menu).getByText('ESC')).toBeInTheDocument();
+    expect(menu).toHaveAccessibleName('Menu');
     await userEvent.click(menu);
     expect(here()).toBe('/characters');
     expect(boardPlace()).toMatchObject({ href: '/b/general?page=2' });
@@ -185,6 +196,17 @@ describe('the hand', () => {
     expect(hand).toHaveAttribute('aria-expanded', 'false');
     expect(hand).toHaveFocus();
     expect(here()).toBe('/b/general');
+  });
+  test('the hand is a sheet of its own above the HUD, not inside it, and its close button is an icon named for what it does', async () => {
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Hand, 3 postcards' }));
+    const sheet = screen.getByRole('region', { name: 'Your hand' });
+    const h = await hud();
+    expect(h).not.toContainElement(sheet);
+    expect(sheet.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const close = within(sheet).getByRole('button', { name: 'Close the hand' });
+    expect(close).toHaveTextContent(/^$/u);
+    expect(close.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
   });
   test('Close the hand closes it', async () => {
     setup();

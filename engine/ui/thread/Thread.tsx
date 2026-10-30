@@ -4,8 +4,9 @@
  * A page is a range of seqs (pages.ts), and an address is `?page=N#post-M` and nothing else: no
  * character, the HUD's included, is ever in it. "Continue to page N" reads the next page and puts
  * it below, in place, and the address follows without scrolling. A permalink to a post opens the
- * page it is on, at it. Reading is remembered on the server: the highest seq that has come into
- * view, sent debounced and never lower than what was sent (and never lower on the server either).
+ * page it is on, at it; a page opened with no post asked opens at its top, and a page the reader
+ * moves to opens at its first post. Reading is remembered on the server: the highest seq that has
+ * come into view, sent debounced and never lower than what was sent (and never lower on the server either).
  *
  * Live (the thread's channel): on the last page with the reader at the bottom a new Act slides in
  * (not under reduced motion). Otherwise the page never moves by itself: a bar above the HUD says
@@ -212,7 +213,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const to_ = threadHref(thread, page, seq ?? undefined);
       selfNav.current = to_.slice(to_.indexOf('?'));
       navigate(to_, { replace: true });
-      scrollTo.current = { seq: seq ?? start, scroll: true, focus: seq !== null || reloaded.current };
+      /* A page opened with no post asked stays at its top, where its title and pages are; a later read is the reader's move, and lands at it. */
+      scrollTo.current = { seq: seq ?? start, scroll: seq !== null || reloaded.current, focus: seq !== null || reloaded.current };
       reloaded.current = true;
     })().catch(() => { if (live) setStatus((s) => (s === 'ready' ? s : 'failed')); }).finally(() => { if (live) setBusy(false); });
     return () => { live = false; };

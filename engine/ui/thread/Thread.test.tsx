@@ -134,14 +134,23 @@ describe('pages and permalinks', () => {
     await screen.findByRole('article', { name: /^Post 41 /u });
   });
 
+  test('a page opened with no post asked stays at its top, where its breadcrumb, title and pages are; a page the reader moves to lands at its first post', async () => {
+    const w = world(45);
+    open(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 41 /u });
+    await screen.findByRole('article', { name: /^Post 45 /u });
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    await userEvent.click(screen.getAllByRole('link', { name: 'Page 1' })[0]!);
+    await screen.findByRole('article', { name: /^Post 1 /u });
+    await waitFor(() => expect((Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.contexts.at(-1)).toBe(post(1)));
+  });
+
   test('a page is twenty posts, then "Continue to page 2" loads the next in place and updates the address without scrolling', async () => {
     const w = world(45);
     open(w);
     await screen.findByRole('article', { name: /^Post 20 /u });
     expect(document.querySelectorAll('article.kb-act')).toHaveLength(20);
-    /* The landing scroll happens in an effect that can trail the post; let it finish before counting. */
-    await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
-    (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mockClear();
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
     await userEvent.click(screen.getAllByRole('link', { name: 'Continue to page 2' })[0]!);
     await screen.findByRole('article', { name: /^Post 40 /u });
     expect(document.querySelectorAll('article.kb-act')).toHaveLength(40);

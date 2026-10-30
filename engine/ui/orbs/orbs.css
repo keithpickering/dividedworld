@@ -4,7 +4,8 @@
  * place in the row (--kb-orb-highlight, -color and -shade, which Orbs.tsx points at
  * --kb-glass-orb-<n>-*). The liquid rises from the bottom by the settled fill; the estimate's gain
  * is the same liquid, hatched, above it; a loss is a pale band over the liquid it would take; a
- * gloss sits over all. Sizes in em, so the orbs scale with the HUD's text.
+ * gloss sits over all. Sizes in em, so the orbs scale with the HUD's text, unless the place they
+ * stand in sets an orb's size and the gap between them (`--kb-orb-size`, `--kb-orb-gap`).
  */
 .kb-orbs {
   display: inline-flex;
@@ -15,14 +16,15 @@
 
 .kb-orbs-row {
   display: inline-flex;
-  gap: 0.35em;
+  gap: var(--kb-orb-gap, 0.35em);
   align-items: center;
 }
 
 .kb-orb {
   position: relative;
-  width: 1.7em;
-  height: 1.7em;
+  flex: none;
+  width: var(--kb-orb-size, 1.7em);
+  height: var(--kb-orb-size, 1.7em);
   border-radius: 50%;
   overflow: hidden;
   isolation: isolate;

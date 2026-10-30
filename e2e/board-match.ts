@@ -21,7 +21,7 @@ export type BoxMode = 'full' | 'position' | 'height' | 'none';
 export interface Landmark {
   /** Names the landmark in a snapshot and a report; unique in its manifest. */
   readonly id: string;
-  /** An ARIA role, as `getByRole` takes it. */
+  /** An ARIA role, as `getByRole` takes it, or `text` for a part with no role, found by its own words (`getByText`). */
   readonly role: string;
   /** The board's accessible name, matched whole and without case. */
   readonly name: string;
@@ -31,6 +31,8 @@ export interface Landmark {
   readonly within?: string;
   /** Which of several matches (0 is the first). */
   readonly nth?: number;
+  /** Which of the build's matches, where the build names a landmark the board leaves unnamed (`nth` otherwise). */
+  readonly buildNth?: number;
   readonly box?: BoxMode;
   /** `false` for a landmark whose type is not the glass's to compare (an image). */
   readonly type?: boolean;
@@ -42,6 +44,11 @@ export interface BoardManifest {
   readonly size: { readonly width: number; readonly height: number };
   /** What renders the build side: the app at a fixture moment, or a story. */
   readonly build: { readonly moment: string } | { readonly story: string };
+  /**
+   * Controls pressed on the build's page, in order, before it is read: a board that draws a state
+   * the player reaches by a press (the Phone board's hand, open) is reached the same way.
+   */
+  readonly press?: readonly { readonly role: string; readonly name: string }[];
   readonly landmarks: readonly Landmark[];
 }
 

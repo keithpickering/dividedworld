@@ -4,9 +4,9 @@
  * HUD is its status bar; the glass's pages (My characters, Settings and the rest) are not in the
  * frame but in the glass's own page shell (engine/ui/glass/Page.tsx), reached from the HUD's Menu.
  *
- * The banner holds the board's navigation: Index and the boards, and Sign in when signed out. It
- * holds no Sign out (that is Settings › Account's) and none of the glass's pages. On a phone its
- * links fold behind a button that reads Boards, so it is never confused with the HUD's Menu.
+ * The banner is the instance's name, and under it, a row of its own as the Main board draws it, the
+ * board's navigation: Index and the boards, and Sign in when signed out. It holds no Sign out (that is Settings › Account's) and none of the glass's pages. On a phone its
+ * links fold behind the banner's button that reads Boards, so it is never confused with the HUD's Menu.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { signInHref } from '../account/next.ts';
@@ -60,14 +60,14 @@ export function Frame({ children }: { readonly children: ReactNode }) {
         <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
           Boards
         </button>
-        <nav id={navId} className="kb-nav" aria-label="Main" data-kb-open={open || undefined}>
-          <ul>
-            {links.map((l) => (
-              <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.label}</Link></li>
-            ))}
-          </ul>
-        </nav>
       </header>
+      <nav id={navId} className="kb-nav" aria-label="Main" data-kb-open={open || undefined}>
+        <ul>
+          {links.map((l) => (
+            <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.label}</Link></li>
+          ))}
+        </ul>
+      </nav>
       <main ref={main} className="kb-page" tabIndex={-1}>{children}</main>
       <Hud />
     </div>

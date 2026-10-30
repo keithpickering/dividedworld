@@ -11,8 +11,9 @@
  *
  * A moment is a clock time, an account and a route. `seedBoards` seeds only what has happened by the
  * moment's time (a post, a purchase, a settlement dated after it is not there), signs in the moment's
- * account and returns the route. The fake must have been made for the moment (`createBoardsFake`),
- * because the clock is what its estimate, its cooldowns and "next settlement" are read against.
+ * account (and, for the player's moments, puts this device's HUD on Pipewrench) and returns the
+ * route. The fake must have been made for the moment (`createBoardsFake`), because the clock is
+ * what its estimate, its cooldowns and "next settlement" are read against.
  *
  * Where the fixture is less than the real thing, it says so:
  *  - Posts and reactions need accounts to make them: four more players (Ringside 1 to 4) hold the
@@ -34,6 +35,7 @@
  */
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
+import { hudKey } from '../../../../engine/ui/player.tsx';
 import { instance } from '../../../../instances/divided-world/index.ts';
 import { fallbackSettings } from '../settings.ts';
 
@@ -271,5 +273,13 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   for (const step of [...steps.filter((s) => s.at <= now).sort((a, b) => a.at - b.at), ...plays.filter((s) => s.at <= now).sort((a, b) => a.at - b.at)]) step.run(step.at);
 
   fake.signInAs({ player, rival, reader }[MOMENTS[moment].account]);
+  /*
+   * The boards draw the player's HUD on Pipewrench. Which character the HUD shows is this device's
+   * choice (engine/ui/player.tsx), not the server's, so the fixture makes it on the device, as the
+   * player would by the swap; without it the HUD shows the first of the player's characters by name.
+   */
+  if (MOMENTS[moment].account === 'player') {
+    try { globalThis.localStorage?.setItem(hudKey(player), pipewrench); } catch { /* a device that keeps nothing shows the default */ }
+  }
   return MOMENTS[moment].route(opener.thread);
 }
