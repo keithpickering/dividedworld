@@ -7,9 +7,10 @@
  *
  * Departures, by decision:
  *  - How loud: the board draws three radios, the last "Announced with old class". The build keeps
- *    web Task 9's two (Silent, Announced) and the class reveal design's two checkboxes (name the old
- *    class, name the new class), and the board's way waits on the owner (issue #51), so the build
- *    names the old class by its checkbox and the board's third row has no landmark here.
+ *    web Task 9's two (Silent, Announced) and the class reveal design's two names (the old class,
+ *    the new class), which the owner chose over the board's radios (issue #51). The names stand in
+ *    the board's third tile, lit as the board's chosen tile is, so the build names the old class by
+ *    its toggle and that toggle's word is placed where the board's third radio's is.
  *  - The class cards' words are the instance's descriptions, longer than the board's, so the cards
  *    are taller and everything under them stands lower: from the map down, a landmark whose words are
  *    the board's is compared by its size, and the foot, held to the dialog's own foot, by its place
@@ -33,7 +34,7 @@ const manifest: BoardManifest = {
   press: [
     { role: 'button', name: 'Turn Pipewrench' },
     { role: 'radio', name: 'Face' },
-    { role: 'checkbox', name: 'Name the old class. The post says what Pipewrench was.' },
+    { role: 'checkbox', name: 'Name the old class. Adds “from Heel” to the post.' },
   ],
   landmarks: [
     /*
@@ -81,14 +82,14 @@ const manifest: BoardManifest = {
     /* Below the cards: by size where the words are the board's (the module comment says why). */
     { id: 'map', role: 'text', name: 'THE MAP: HEAT · HYPE on top, GROAN · CALM below, the same grid as the React picker.', within: 'dialog', box: 'size' },
     /*
-     * How loud's two radios, placed from the group's corner. A radio's bold word is as wide as the
-     * line under it, which is the screen's words, so its size is not compared. Issue #51: the board's
-     * third radio, "Announced with old class", waits on the owner and is left out.
+     * How loud's two radios and the third tile's first name, placed from the group's corner. A bold
+     * word is as wide as the line under it, which is the screen's words, so its size is not compared.
      */
-    /* The group holds a second row, the two checkboxes #51 waits on, so its own box is not compared. */
+    /* The third tile holds two names where the board's holds one line, so the group is taller and its own box is not compared. */
     { id: 'loud', role: 'group', name: 'How loud', within: 'dialog', type: false, box: 'none' },
     { id: 'silent', role: 'text', name: 'SILENT', buildName: 'Silent.', within: 'loud', box: 'position', origin: 'loud' },
     { id: 'announced', role: 'text', name: 'ANNOUNCED', buildName: 'Announced.', within: 'loud', box: 'position', origin: 'loud' },
+    { id: 'name-old', role: 'text', name: 'ANNOUNCED WITH OLD CLASS', buildName: 'Name the old class.', within: 'loud', box: 'position', origin: 'loud' },
     { id: 'preview-head', role: 'text', name: 'What everyone will see', within: 'dialog', box: 'size' },
     { id: 'preview-by', role: 'text', name: 'The System', within: 'dialog', box: 'size' },
     { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned from Heel', within: 'dialog', box: 'none' },
