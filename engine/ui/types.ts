@@ -51,6 +51,122 @@ export interface UiCopy {
   readonly shopName: string;
 }
 
+/**
+ * Where the glass draws smoke: the engine's closed list. Each surface names one of the instance's
+ * smoke recipes (`GlassTheme.smoke.surfaces`), so a surface the engine adds is a surface every
+ * instance must name a recipe for, and tools/check-glass-contrast.mjs refuses one that does not.
+ */
+export type GlassSurface =
+  | 'hud' | 'hand' | 'play' | 'react' | 'turn' | 'effect' | 'vending'
+  | 'characters' | 'rankings' | 'log' | 'settings' | 'account' | 'settlement';
+
+/**
+ * One layer of smoke: SVG fractal noise through a color matrix, blurred. `color` is the matrix's
+ * constant color as an 8-bit hex (what the browser quantizes it to); `alpha` is the matrix's alpha
+ * row (r, g, b, a, bias), which turns the noise into the layer's cloud; `opacity` is the opacity of
+ * the rect the filter is drawn on.
+ */
+export interface SmokeLayer {
+  readonly color: string;
+  readonly opacity: number;
+  readonly alpha: readonly number[];
+  /** feTurbulence's baseFrequency, x then y. */
+  readonly frequency: readonly number[];
+  readonly octaves: number;
+  readonly seed: number;
+  /** feGaussianBlur's stdDeviation. */
+  readonly blur: number;
+}
+
+/** A strip of smoke wider than its frame that slides `travel` px back and forth, `seconds` each way. */
+export interface SmokeDrift {
+  readonly width: number;
+  readonly seconds: number;
+  readonly travel: number;
+}
+
+/**
+ * The smoke of one kind of screen. `calm` is this surface's calm opacity where it differs from the
+ * theme's; `calmAll` says every text node on the surface stands in a calm, large text too (the
+ * guard does not hold its large text to the full smoke); `narrow` replaces `layers` below 600px.
+ */
+export interface SmokeRecipe {
+  readonly layers: readonly SmokeLayer[];
+  readonly drift?: SmokeDrift;
+  readonly calm?: number;
+  readonly calmAll?: boolean;
+  readonly narrow?: readonly SmokeLayer[];
+}
+
+/**
+ * How the contrast guard reads a token: `body` (4.5:1 against its surface's calmed worst pixel),
+ * `large` (3:1 against the full smoke), `waiting` (3:1 calmed), `ink` (4.5:1 against the fill it is
+ * for, named by `on`). A token with no tag is not text.
+ */
+export type GlassTag = 'body' | 'large' | 'waiting' | 'ink';
+
+export interface GlassToken {
+  readonly value: string;
+  readonly tags?: readonly GlassTag[];
+  /** For an ink: the tokens it is set on. */
+  readonly on?: readonly string[];
+}
+
+/** A key: every `--kb-glass-*` token the glass reads, name to value. */
+export type GlassKey = Readonly<Record<string, GlassToken>>;
+
+/** A size step: `--kb-glass-size-<name>`, in px, in the face (family and weight) it is set in. */
+export interface GlassSize {
+  readonly px: number;
+  readonly family: string;
+  readonly weight: number;
+  /** A phone's step: held to 16px of computed size, not to ink. */
+  readonly phone?: boolean;
+}
+
+/** One font file: the family it joins, its weight and style, and its ink ratio (see tools/check-glass-contrast.mjs). */
+export interface GlassFont {
+  readonly family: string;
+  /** In glass.json a path under the instance's ui/ folder; in `InstanceUi.glass` the URL the instance resolved it to. */
+  readonly file: string;
+  readonly weight: number;
+  readonly style: 'normal' | 'italic';
+  /** The share of its em the face inks from ascender to descender. */
+  readonly ink: number;
+}
+
+/** A class's color on the glass: its fill, the ink set on that fill, and its color as large text. */
+export interface GlassClassColor {
+  readonly fill: string;
+  readonly ink: string;
+  readonly large: string;
+}
+
+/** An orb's three stops: highlight, color, shade. */
+export interface GlassOrbStops {
+  readonly highlight: string;
+  readonly color: string;
+  readonly shade: string;
+}
+
+/** The glass: an instance's look for everything outside the board, as data (docs/plans/2026-10-30-glass-to-the-boards-plan.md, sections 4 to 6). */
+export interface GlassTheme {
+  /** Standard and high contrast: the same tokens, each with its tags, the high key's values reaching 7:1. */
+  readonly keys: { readonly standard: GlassKey; readonly high: GlassKey };
+  readonly smoke: {
+    readonly recipes: Readonly<Record<string, SmokeRecipe>>;
+    readonly surfaces: Readonly<Record<GlassSurface, string>>;
+  };
+  /** The calm's backing: its opacity and the width of its feathered edge in px. */
+  readonly calm: { readonly opacity: number; readonly feather: number };
+  readonly sizes: Readonly<Record<string, GlassSize>>;
+  readonly fonts: readonly GlassFont[];
+  /** Each class's glass colors, by the class's key. */
+  readonly classes: Readonly<Record<string, GlassClassColor>>;
+  /** The orbs: six gradients and the orb's body. */
+  readonly orbs: { readonly gradients: readonly GlassOrbStops[]; readonly body: { readonly from: string; readonly to: string } };
+}
+
 export interface InstanceUi {
   /** The themes a player may pick; the first is the house theme, used when the account says "system". */
   readonly themes: readonly ThemeOption[];
@@ -68,4 +184,6 @@ export interface InstanceUi {
   readonly copy: UiCopy;
   /** Each pip style's images, by key; `default` is always there. */
   readonly pips: Readonly<Record<string, PipImages>>;
+  /** The glass: smoke, tokens, fonts and class colors for every screen outside the board. */
+  readonly glass: GlassTheme;
 }

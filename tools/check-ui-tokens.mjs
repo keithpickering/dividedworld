@@ -10,8 +10,9 @@
  * can reach it. It changes no test and looks right in the house theme, which is why it is read
  * on every build rather than trusted.
  *
- * Read: every `.css`, `.ts` and `.tsx` under engine/ui/ but tokens.css, which holds the names and
- * their plain defaults, and but tests, which may assert a computed color. In a stylesheet each
+ * Read: every `.css`, `.ts` and `.tsx` under engine/ui/ (the glass's folder, engine/ui/glass/, too)
+ * but the two names files, engine/ui/tokens.css and engine/ui/glass/tokens.css, which hold the
+ * names and their plain defaults, and but tests, which may assert a computed color. In a stylesheet each
  * declaration is read with comments and `url()` stripped; a color property's value may not hold a
  * hex, a color function (rgb, hsl, hwb, lab, lch, oklab, oklch, color) or a named color, and a font
  * family may only come from `var()`. A fallback inside `var()` is a literal too. In a script every
@@ -40,7 +41,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 /** The files the guard reads. */
 export const SOURCE = /^engine\/ui\/.*\.(css|ts|tsx)$/;
-const EXEMPT = /^engine\/ui\/tokens\.css$|\.test\.tsx?$/;
+const EXEMPT = /^engine\/ui\/tokens\.css$|^engine\/ui\/glass\/tokens\.css$|\.test\.tsx?$/;
 
 /** CSS's named colors (CSS Color 4), lowercased. */
 const NAMED = new Set(('aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood '
@@ -213,9 +214,11 @@ export function treeFiles() {
 function main() {
   const files = treeFiles();
   /* A guard reading nothing would pass; the screens' tokens file is always there, so an empty read is a broken read. */
-  if (!('engine/ui/tokens.css' in files)) {
-    console.error('  ui-tokens: engine/ui/tokens.css was not read, which cannot be right; refusing to report a pass on nothing');
-    process.exit(1);
+  for (const names of ['engine/ui/tokens.css', 'engine/ui/glass/tokens.css']) {
+    if (!(names in files)) {
+      console.error(`  ui-tokens: ${names} was not read, which cannot be right; refusing to report a pass on nothing`);
+      process.exit(1);
+    }
   }
   const faults = tokenFaults(files);
   if (faults.length) {

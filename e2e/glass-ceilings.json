@@ -1,0 +1,675 @@
+{
+  "divided-world": {
+    "surfaces": {
+      "hud": {
+        "recipe": "hud",
+        "calmAll": false,
+        "worst": 0.2161,
+        "calmedWorst": 0.0196,
+        "narrowWorst": 0.2492,
+        "narrowCalmedWorst": 0.0136,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "hand": {
+        "recipe": "cards",
+        "calmAll": false,
+        "worst": 0.1933,
+        "calmedWorst": 0.0141,
+        "narrowWorst": 0.2108,
+        "narrowCalmedWorst": 0.0127,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "play": {
+        "recipe": "cards",
+        "calmAll": false,
+        "worst": 0.1933,
+        "calmedWorst": 0.0141,
+        "narrowWorst": 0.2108,
+        "narrowCalmedWorst": 0.0127,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "react": {
+        "recipe": "react",
+        "calmAll": false,
+        "worst": 0.0875,
+        "calmedWorst": 0.0053,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "turn": {
+        "recipe": "turn",
+        "calmAll": false,
+        "worst": 0.1167,
+        "calmedWorst": 0.0079,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "effect": {
+        "recipe": "effect",
+        "calmAll": false,
+        "worst": 0.1032,
+        "calmedWorst": 0.0094,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "vending": {
+        "recipe": "vending",
+        "calmAll": false,
+        "worst": 0.2297,
+        "calmedWorst": 0.0145,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "characters": {
+        "recipe": "characters",
+        "calmAll": false,
+        "worst": 0.196,
+        "calmedWorst": 0.011,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "rankings": {
+        "recipe": "page",
+        "calmAll": false,
+        "worst": 0.231,
+        "calmedWorst": 0.0126,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "log": {
+        "recipe": "page",
+        "calmAll": false,
+        "worst": 0.231,
+        "calmedWorst": 0.0126,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "settings": {
+        "recipe": "page",
+        "calmAll": false,
+        "worst": 0.231,
+        "calmedWorst": 0.0126,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "account": {
+        "recipe": "page",
+        "calmAll": false,
+        "worst": 0.231,
+        "calmedWorst": 0.0126,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      },
+      "settlement": {
+        "recipe": "settlement",
+        "calmAll": true,
+        "worst": 0.2744,
+        "calmedWorst": 0.0167,
+        "tokens": {
+          "--kb-glass-text": {
+            "body": 0.152,
+            "large": 0.253
+          },
+          "--kb-glass-text-2": {
+            "body": 0.1288
+          },
+          "--kb-glass-text-hi": {
+            "body": 0.1833,
+            "large": 0.3
+          },
+          "--kb-glass-pale": {
+            "body": 0.1539,
+            "large": 0.2559
+          },
+          "--kb-glass-neon-text": {
+            "body": 0.1371,
+            "waiting": 0.2306
+          },
+          "--kb-glass-neon": {
+            "body": 0.0997
+          },
+          "--kb-glass-sweet": {
+            "body": 0.1042
+          },
+          "--kb-glass-ready": {
+            "body": 0.1194
+          },
+          "--kb-glass-ready-text": {
+            "body": 0.1324
+          },
+          "--kb-glass-salty-text": {
+            "body": 0.0697
+          },
+          "--kb-glass-estimate": {
+            "body": 0.1002
+          },
+          "--kb-glass-loss": {
+            "body": 0.0557
+          },
+          "--kb-glass-over": {
+            "body": 0.0536
+          }
+        }
+      }
+    }
+  }
+}

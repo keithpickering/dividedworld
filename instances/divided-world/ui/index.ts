@@ -5,10 +5,29 @@
  * The quadrant labels, each class's look and description, and the shop's name are placeholders
  * the owner has not yet named (the web plan's brief, item 7); each is marked where it stands.
  */
-import type { InstanceUi } from '../../../engine/ui/types.ts';
+import type { GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
+import glassData from './glass.json';
 import theme from './theme.css?url';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
+
+/** The font files, as URLs the bundler gives them, by their path under this folder. */
+const FONT_URLS = import.meta.glob<string>('./fonts/*.woff2', { query: '?url', import: 'default', eager: true });
+
+/**
+ * The glass, from glass.json (the contrast guard reads the same file): each font's `file`, a path
+ * under this folder there, becomes the URL the bundler serves it at.
+ */
+const glass: GlassTheme = Object.freeze({
+  ...(glassData as unknown as GlassTheme),
+  fonts: Object.freeze(
+    (glassData.fonts as GlassTheme['fonts'][number][]).map((f) => {
+      const url = FONT_URLS[`./${f.file}`];
+      if (!url) throw new Error(`glass.json names font ${f.file}, which is not in ui/fonts/`);
+      return Object.freeze({ ...f, file: url });
+    }),
+  ),
+});
 
 /** Each ledger reason, as the log says it: what the character did or drew, plainly. */
 const REASONS: Readonly<Record<string, string>> = {
@@ -52,4 +71,5 @@ export const instanceUi: InstanceUi = Object.freeze({
     shopName: 'The Vending Machine',
   }),
   pips: Object.freeze({ default: { full: pipFull, empty: pipEmpty } }),
+  glass,
 });
