@@ -81,7 +81,8 @@ describe('stories', () => {
       }
       const dir = /\/([a-z-]+)\/[^/]+\.stories\.tsx$/u.exec(file)?.[1] ?? '';
       const selector = SCREENS.find(([d]) => d === dir)?.[1];
-      if (selector && container.querySelector(selector)) {
+      /* A glass overlay the story opens (the React picker) is put on the body, outside the story's container. */
+      if (selector && (container.querySelector(selector) ?? document.body.querySelector(selector))) {
         if (!shown.has(dir)) shown.set(dir, new Set());
         shown.get(dir)!.add(name);
       }

@@ -31,7 +31,7 @@ test('the reaction picker: every kind the arrows reach shows a focus indicator',
   /* Opened by keyboard, as the picker's own focus is only drawn for a keyboard user. */
   await page.locator('#post-3').getByRole('button', { name: 'React' }).focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog', { name: /^React as / })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
   const seen = new Set<string>();
   for (let i = 0; i < 12; i += 1) {
     const f = await focusedIndicator(page);

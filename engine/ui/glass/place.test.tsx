@@ -23,6 +23,15 @@ describe('placing the desktop popover', () => {
     expect(200 + p.top).toBe(4); // its top edge is the margin below the viewport's top
   });
 
+  test('is kept inside the window when its button has scrolled out of it, above or below', () => {
+    const up = placePopover({ ...base, container: box(20, 0, 900, 40), button: box(20, -300, 60, 20) });
+    expect(up.side).toBe('below');
+    expect(0 + up.top).toBe(4);
+    const down = placePopover({ ...base, hudTop: 500, container: box(20, 0, 900, 40), button: box(20, 900, 60, 20) });
+    expect(down.side).toBe('above');
+    expect(0 + down.top + 200).toBe(500 - 4);
+  });
+
   test('is pulled back inside the right edge', () => {
     const p = placePopover({ ...base, container: box(900, 80, 80, 40), button: box(900, 80, 60, 20) });
     expect(900 + p.left + 300).toBe(1000 - 4);

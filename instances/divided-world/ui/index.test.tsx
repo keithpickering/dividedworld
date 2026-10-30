@@ -5,6 +5,7 @@ import { describe, expect, test } from 'vitest';
 import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
+import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { instance } from '../index.ts';
 import { instanceUi } from './index.ts';
 
@@ -31,6 +32,14 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('every class has a glass color', () => {
     for (const c of instance.classes) expect(instanceUi.glass.classes[c.key], c.key).toBeDefined();
+  });
+  test('every quadrant wears a class on the picker, a class of the rules with glass colors, each a different one', () => {
+    const worn = QUADRANTS.map((q) => instanceUi.quadrantClasses?.[q]);
+    for (const [i, key] of worn.entries()) {
+      expect(instance.classes.map((c) => c.key), QUADRANTS[i]).toContain(key);
+      expect(instanceUi.glass.classes[key!], QUADRANTS[i]).toBeDefined();
+    }
+    expect(new Set(worn).size).toBe(QUADRANTS.length);
   });
   test('every font file glass.json names exists, and the glass holds the URL it resolved to', () => {
     const dir = path.dirname(fileURLToPath(import.meta.url));
