@@ -1,10 +1,18 @@
 /**
  * Where an overlay opened by an anchor goes on the Main board's layout (Overlay.tsx; the React
  * picker's, which this was first written for), as numbers: below its button if it fits above the HUD, else above
- * it, else on the roomier side with a height cap (the popover scrolls inside it); and pulled back
- * inside the window's left and right edges. Everything is in viewport pixels in, and out relative to
+ * it, else on the roomier side with a height cap (the popover scrolls inside it); held between the
+ * window's top and the HUD when its button has scrolled out of view; and pulled back inside the
+ * window's left and right edges. Everything is in viewport pixels in, and out relative to
  * the popover's containing block (the container's top-left), which is what an absolute element needs.
  */
+/**
+ * The HUD, docked at the foot of the window (engine/ui/frame/Hud.tsx gives its element this class): an
+ * anchored overlay stays clear of its top edge, and a sheet stands on it.
+ */
+export const HUD_CLASS = 'kb-hud';
+export const HUD_SELECTOR = `.${HUD_CLASS}`;
+
 export interface Box { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
 
 export interface PlaceInput {
@@ -36,7 +44,8 @@ export function placePopover({ button, container, size, viewport, hudTop, gap = 
   const room = side === 'below' ? below : above;
   const capped = size.height > room;
   const height = capped ? Math.max(0, room) : size.height;
-  const edge = side === 'below' ? button.bottom + gap : button.top - gap - height;
+  /* An anchor scrolled out of the window would take the popover with it: it is held inside, between the window's top and the HUD. */
+  const edge = Math.min(Math.max(side === 'below' ? button.bottom + gap : button.top - gap - height, margin), Math.max(margin, hudTop - margin - height));
   const maxWidth = viewport.width - 2 * margin;
   const width = Math.min(size.width, maxWidth);
   const left = Math.min(Math.max(container.left, margin), viewport.width - margin - width);

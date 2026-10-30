@@ -13,14 +13,16 @@
  * inside the window (place.ts); in a narrower window it is a sheet the width of the window, standing
  * on the HUD's top edge. The room is the popover's own, not the HUD's switch between the boards'
  * layouts: the React board draws the popover in a 900px window, below that switch. It is placed as it
- * opens and again when the window resizes or the page under it scrolls, and tells its opener which
- * it took (`onPlace`), so what it holds can be laid out for it.
+ * opens, and again, at most once a frame, when the window resizes, the page under it scrolls, its own
+ * content changes size, or it has just changed from popover to sheet or back (what it holds is laid
+ * out anew for that). It tells its opener which it took (`onPlace`), so what it holds can be laid
+ * out for it. Each placement is measured from the box's unplaced state, never from the last one's.
  */
 import { useId, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
-import { placePopover } from './place.ts';
+import { HUD_SELECTOR, placePopover } from './place.ts';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
@@ -32,7 +34,7 @@ export interface OverlayProps {
   readonly surface: GlassSurface;
   /** Where focus goes on close when the control that opened the overlay is no longer on the page. */
   readonly returnFocusTo?: () => HTMLElement | null;
-  /** The dialog's name where it says more than the title shown (the React picker's "React to Spritey's post", headed "React"). */
+  /** The dialog's name where it says more than the title shown (the React picker's "React to Alex's post", headed "React"). */
   readonly label?: string;
   /** The id of what describes the dialog (the picker's count of what is left). */
   readonly describedBy?: string;
@@ -57,12 +59,18 @@ export type Placed = 'below' | 'above' | 'sheet';
 const GAP = 30;
 const MARGIN = 4;
 
-/** Places `box` by `anchor`, as the module comment says; returns the side it took. */
+/** The HUD's top edge in the window; the window's foot where there is no HUD, or one that is not laid out (hidden, collapsed, detached: no height). */
+function hudTopOf(viewportHeight: number): number {
+  const hud = document.querySelector(HUD_SELECTOR)?.getBoundingClientRect();
+  return hud && hud.height > 0 ? Math.min(hud.top, viewportHeight) : viewportHeight;
+}
+
+/** Places `box` by `anchor`, as the module comment says, measured from its unplaced state; returns the side it took. */
 function place(box: HTMLElement, anchor: HTMLElement, sheetBelow: number): Placed {
   for (const k of ['top', 'left', 'bottom', 'maxHeight', 'maxWidth'] as const) box.style[k] = '';
+  box.removeAttribute('data-kb-place');
   const viewport = { width: document.documentElement.clientWidth || window.innerWidth, height: window.innerHeight };
-  const hud = document.querySelector('.kb-hud')?.getBoundingClientRect().top;
-  const hudTop = Math.min(hud ?? viewport.height, viewport.height);
+  const hudTop = hudTopOf(viewport.height);
   if (viewport.width < sheetBelow) {
     box.style.bottom = `${Math.max(0, viewport.height - hudTop)}px`;
     box.style.maxHeight = `${Math.max(0, hudTop - MARGIN)}px`;
@@ -93,19 +101,35 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
   useLayoutEffect(() => {
     const el = box.current;
     if (!anchor || !el) return;
-    const again = () => {
+    let last: Placed | null = null;
+    let frame: number | null = null;
+    const now = () => {
+      frame = null;
       const target = anchor.current;
       if (!target) return;
       const at = place(el, target, sheetBelow);
       el.setAttribute('data-kb-place', at);
       told.current?.(at);
+      /* Popover to sheet or back: what it holds is laid out anew for it (the picker's kinds two or four across), so it is measured again once that has landed. */
+      if (last !== null && at !== last) soon();
+      last = at;
     };
-    again();
-    window.addEventListener('resize', again);
+    /* Placing reads the layout, so the events that ask for it (a scroll brings many) are gathered into one placement a frame. */
+    const soon = () => { if (frame === null) frame = requestAnimationFrame(now); };
+    now();
+    window.addEventListener('resize', soon);
     /* The page scrolling moves the anchor; the overlay's own scrolling is no reason to place it again. */
-    const onScroll = (e: Event) => { if (e.target !== el) again(); };
+    const onScroll = (e: Event) => { if (e.target !== el) soon(); };
     window.addEventListener('scroll', onScroll, true);
-    return () => { window.removeEventListener('resize', again); window.removeEventListener('scroll', onScroll, true); };
+    /* Its own content changing size (a refusal shown, a count changed) can move it to the other side or past the HUD. */
+    const grown = typeof ResizeObserver === 'function' ? new ResizeObserver(soon) : null;
+    grown?.observe(el);
+    return () => {
+      window.removeEventListener('resize', soon);
+      window.removeEventListener('scroll', onScroll, true);
+      grown?.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
   }, [anchor, box, sheetBelow]);
 
   const close = <button ref={closeButton} type="button" className="kb-glass-dialog-close kb-glass-cut-button" onClick={onClose}>Close</button>;

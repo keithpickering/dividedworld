@@ -46,7 +46,7 @@
   --kb-cut: var(--kb-glass-chamfer-3);
   line-height: normal; /* the board's: its words set at the face's own line */
   --kb-border: 1px;
-  width: 540px;
+  width: 540px; /* Picker.tsx's POPOVER_WIDTH */
   max-width: 100%;
   padding: 14px 20px 34px;
   background: var(--kb-glass-pale);

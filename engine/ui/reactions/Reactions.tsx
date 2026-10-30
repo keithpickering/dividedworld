@@ -22,7 +22,7 @@ interface Props {
   readonly act: Id;
   /** Who wrote the Act; null for The System. */
   readonly author: Id | null;
-  /** The author's name as the thread shows it, which the picker is named by ("React to Spritey's post"). */
+  /** The author's name as the thread shows it, which the picker is named by ("React to Alex's post"). */
   readonly authorName?: string;
   readonly tallies: Tallies;
   readonly mine: Mine;

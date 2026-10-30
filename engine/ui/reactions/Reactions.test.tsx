@@ -3,7 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Id } from '../data/api.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Page } from '../glass/Page.tsx';
+import { POPOVER_ROOM, POPOVER_WIDTH } from './Picker.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { usePlayer } from '../player.tsx';
 import { createTallies } from '../thread/tallies.ts';
@@ -579,5 +583,15 @@ describe('in the glass', () => {
     await open();
     expect(picker().querySelector('.kb-picker-grid')).toHaveAttribute('data-kb-columns', '2');
     expect(picker()).toHaveAttribute('data-kb-place', 'sheet');
+  });
+});
+
+/* The room the picker asks the overlay for is its stylesheet's width with the phone's gutters, so the two cannot drift apart. */
+describe('the popover\'s room', () => {
+  test('is reactions.css\'s picker width and 16px either side', () => {
+    const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'reactions.css'), 'utf8');
+    const width = /\.kb-glass-dialog\.kb-picker\s*\{[^}]*?\bwidth:\s*(\d+)px/u.exec(css)?.[1];
+    expect(Number(width)).toBe(POPOVER_WIDTH);
+    expect(POPOVER_ROOM).toBe(Number(width) + 2 * 16);
   });
 });

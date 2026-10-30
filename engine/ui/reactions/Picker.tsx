@@ -28,8 +28,10 @@ import { readable } from './Reactions.tsx';
 const GRID: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
 /** How many kinds a quadrant holds side by side: four in the popover, two on the sheet (reactions.css lays them so). */
 export const KIND_COLUMNS = { popover: 4, sheet: 2 } as const;
-/** The room the popover needs: its width (reactions.css's 540px, the board's) with the phone's 16px gutters either side. */
-export const POPOVER_ROOM = 540 + 2 * 16;
+/** The popover's width, the board's: reactions.css draws it at this (Reactions.test.tsx holds the two together). */
+export const POPOVER_WIDTH = 540;
+/** The room the popover needs: its width with the phone's 16px gutters either side. */
+export const POPOVER_ROOM = POPOVER_WIDTH + 2 * 16;
 
 /**
  * Where each kind sits in the whole grid: a row and a column, the quadrants' own rows and columns

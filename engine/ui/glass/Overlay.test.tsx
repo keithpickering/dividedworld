@@ -7,7 +7,7 @@
 import { act, cleanup, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRef, useState } from 'react';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { Modal } from '../modal.tsx';
 import { renderInWorld } from '../test-world.tsx';
@@ -87,7 +87,7 @@ describe('a popover overlay (the React picker\'s)', () => {
         <div ref={row} data-testid="row"><button type="button" onClick={() => setOpen(true)}>React</button></div>
         {open && (
           <Overlay
-            title="React" label="React to Spritey's post" surface="react" describedBy="count" closeAt="foot"
+            title="React" label="React to Alex's post" surface="react" describedBy="count" closeAt="foot"
             aside={<span id="count">2 of 3 left</span>} anchor={anchored ? row : undefined} sheetBelow={572} onClose={() => setOpen(false)}
           >
             <button type="button">Fire</button>
@@ -103,7 +103,7 @@ describe('a popover overlay (the React picker\'s)', () => {
   test('is named by its label where that says more than its title, described by what it names, with its aside in the bar', async () => {
     renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
     await userEvent.click(screen.getByRole('button', { name: 'React' }));
-    const dialog = screen.getByRole('dialog', { name: 'React to Spritey\'s post' });
+    const dialog = screen.getByRole('dialog', { name: 'React to Alex\'s post' });
     expect(dialog).toHaveAccessibleDescription('2 of 3 left');
     expect(within(dialog).getByRole('heading', { name: 'React' })).toBeInTheDocument();
     expect(dialog.querySelector('.kb-glass-dialog-bar')).toHaveTextContent(/^React2 of 3 left$/u);
@@ -112,7 +112,7 @@ describe('a popover overlay (the React picker\'s)', () => {
   test('with its Close at the foot, Close comes after the body: Tab reaches it last and comes back round', async () => {
     renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
     await userEvent.click(screen.getByRole('button', { name: 'React' }));
-    const dialog = screen.getByRole('dialog', { name: 'React to Spritey\'s post' });
+    const dialog = screen.getByRole('dialog', { name: 'React to Alex\'s post' });
     expect(within(dialog).getAllByRole('button').map((b) => b.textContent)).toEqual(['Fire', 'Close']);
     expect(screen.getByRole('button', { name: 'Fire' })).toHaveFocus();
     await userEvent.tab();
@@ -127,7 +127,7 @@ describe('a popover overlay (the React picker\'s)', () => {
     renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
     vi.spyOn(screen.getByTestId('row'), 'getBoundingClientRect').mockReturnValue(rect(224, 160, 300, 24));
     await userEvent.click(screen.getByRole('button', { name: 'React' }));
-    const dialog = screen.getByRole('dialog', { name: 'React to Spritey\'s post' });
+    const dialog = screen.getByRole('dialog', { name: 'React to Alex\'s post' });
     expect(dialog).toHaveAttribute('data-kb-place', 'below');
     expect(dialog.style.position).toBe('absolute');
     expect(parseFloat(dialog.style.left)).toBe(224);
@@ -138,7 +138,7 @@ describe('a popover overlay (the React picker\'s)', () => {
     vi.stubGlobal('innerWidth', 571);
     renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
     await userEvent.click(screen.getByRole('button', { name: 'React' }));
-    const dialog = screen.getByRole('dialog', { name: 'React to Spritey\'s post' });
+    const dialog = screen.getByRole('dialog', { name: 'React to Alex\'s post' });
     expect(dialog).toHaveAttribute('data-kb-place', 'sheet');
     expect(dialog.style.top).toBe('');
   });
@@ -148,13 +148,156 @@ describe('a popover overlay (the React picker\'s)', () => {
     vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList);
     renderInWorld(<Pop />, { path: '/t/1', seed: signedIn });
     await userEvent.click(screen.getByRole('button', { name: 'React' }));
-    expect(screen.getByRole('dialog', { name: 'React to Spritey\'s post' })).toHaveAttribute('data-kb-place', 'below');
+    expect(screen.getByRole('dialog', { name: 'React to Alex\'s post' })).toHaveAttribute('data-kb-place', 'below');
   });
 
   test('with no anchor, it stands where every overlay does', async () => {
     renderInWorld(<Pop anchored={false} />, { path: '/t/1', seed: signedIn });
     await userEvent.click(screen.getByRole('button', { name: 'React' }));
-    expect(screen.getByRole('dialog', { name: 'React to Spritey\'s post' })).not.toHaveAttribute('data-kb-place');
+    expect(screen.getByRole('dialog', { name: 'React to Alex\'s post' })).not.toHaveAttribute('data-kb-place');
+  });
+});
+
+/*
+ * Where an anchored overlay stands, with the page's geometry stubbed (jsdom lays nothing out): the
+ * anchor's box, the HUD's, the dialog's own size, and the window. The dialog is 540 by 452 as a
+ * popover and the window's width as a sheet, as the React picker is.
+ */
+describe('placing a popover overlay', () => {
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+  const geo: { anchor: DOMRect; hud: DOMRect | null; height: number } = { anchor: rect(0, 0, 0, 0), hud: null, height: 452 };
+  const observers: { cb: ResizeObserverCallback }[] = [];
+  let anchorReads = 0;
+
+  function Placed() {
+    const [open, setOpen] = useState(false);
+    const row = useRef<HTMLDivElement>(null);
+    return (
+      <>
+        <div ref={row} data-testid="row"><button type="button" onClick={() => setOpen(true)}>React</button></div>
+        <div className="kb-hud" />
+        {open && <Overlay title="React" label="React to Alex's post" surface="react" anchor={row} sheetBelow={572} onClose={() => setOpen(false)}><button type="button">Fire</button></Overlay>}
+      </>
+    );
+  }
+  function windowOf(width: number, height: number) {
+    vi.stubGlobal('innerWidth', width);
+    vi.stubGlobal('innerHeight', height);
+  }
+  beforeEach(() => {
+    geo.anchor = rect(224, 160, 300, 24);
+    geo.hud = null;
+    geo.height = 452;
+    anchorReads = 0;
+    observers.length = 0;
+    windowOf(900, 700);
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: ResizeObserverCallback) { observers.push({ cb }); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.testid === 'row') { anchorReads += 1; return geo.anchor; }
+      if (this.classList.contains('kb-hud')) return geo.hud ?? rect(0, 0, 0, 0);
+      if (this.getAttribute('role') === 'dialog') {
+        return this.getAttribute('data-kb-place') === 'sheet' ? rect(0, 0, window.innerWidth, geo.height + 200) : rect(0, 0, 540, geo.height);
+      }
+      return rect(0, 0, 0, 0);
+    });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  const dialog = () => screen.getByRole('dialog', { name: 'React to Alex\'s post' });
+  const openIt = async () => { renderInWorld(<Placed />, { path: '/t/1', seed: signedIn }); await userEvent.click(screen.getByRole('button', { name: 'React' })); return dialog(); };
+  const frame = () => act(() => new Promise<void>((r) => { requestAnimationFrame(() => r()); }));
+  const px = (v: string) => parseFloat(v);
+
+  test('stands 30px below its anchor, its left edge at the anchor\'s', async () => {
+    const d = await openIt();
+    expect(d).toHaveAttribute('data-kb-place', 'below');
+    expect(px(d.style.top)).toBe(184 + 30);
+    expect(px(d.style.left)).toBe(224);
+  });
+
+  test('is pulled back inside the window\'s right edge', async () => {
+    geo.anchor = rect(600, 160, 100, 24);
+    const d = await openIt();
+    expect(px(d.style.left)).toBe(900 - 4 - 540);
+  });
+
+  test('stands above its anchor where below would run under the HUD', async () => {
+    windowOf(900, 800);
+    geo.hud = rect(0, 700, 900, 100);
+    geo.anchor = rect(100, 600, 300, 20);
+    const d = await openIt();
+    expect(d).toHaveAttribute('data-kb-place', 'above');
+    expect(px(d.style.top)).toBe(600 - 30 - 452);
+    expect(d.style.maxHeight).toBe('');
+  });
+
+  test('is capped to the roomier side\'s height where neither side holds it', async () => {
+    geo.hud = rect(0, 500, 900, 200);
+    geo.anchor = rect(100, 200, 300, 20);
+    const d = await openIt();
+    expect(d).toHaveAttribute('data-kb-place', 'below');
+    expect(px(d.style.top)).toBe(220 + 30);
+    expect(px(d.style.maxHeight)).toBe(500 - 220 - 30 - 4);
+  });
+
+  test('as a sheet, its bottom edge is the HUD\'s top edge', async () => {
+    windowOf(400, 844);
+    geo.hud = rect(0, 700, 400, 144);
+    const d = await openIt();
+    expect(d).toHaveAttribute('data-kb-place', 'sheet');
+    expect(d.style.bottom).toBe('144px');
+    expect(d.style.maxHeight).toBe(`${700 - 4}px`);
+  });
+
+  test('a HUD that is not laid out (no height) is no HUD: the sheet stands on the window\'s foot', async () => {
+    windowOf(400, 844);
+    geo.hud = rect(0, 0, 0, 0);
+    const d = await openIt();
+    expect(d.style.bottom).toBe('0px');
+    expect(d.style.maxHeight).toBe(`${844 - 4}px`);
+  });
+
+  test('one resize from a sheet\'s width to a popover\'s is measured as a popover, not the sheet it was', async () => {
+    windowOf(500, 700);
+    geo.anchor = rect(100, 160, 300, 24);
+    const d = await openIt();
+    expect(d).toHaveAttribute('data-kb-place', 'sheet');
+    windowOf(700, 700);
+    window.dispatchEvent(new Event('resize'));
+    await frame();
+    expect(d).toHaveAttribute('data-kb-place', 'below');
+    expect(px(d.style.left)).toBe(100);
+    expect(d.style.bottom).toBe('');
+  });
+
+  test('the page\'s scrolling places it again, once a frame however many scroll events the frame brings', async () => {
+    const d = await openIt();
+    const reads = anchorReads;
+    geo.anchor = rect(224, 100, 300, 24);
+    for (let i = 0; i < 5; i++) document.dispatchEvent(new Event('scroll'));
+    expect(anchorReads).toBe(reads);
+    await frame();
+    expect(anchorReads).toBe(reads + 1);
+    expect(px(d.style.top)).toBe(124 + 30);
+  });
+
+  test('its own content growing or shrinking places it again', async () => {
+    windowOf(900, 800);
+    geo.hud = rect(0, 700, 900, 100);
+    geo.anchor = rect(100, 600, 300, 20);
+    const d = await openIt();
+    expect(px(d.style.top)).toBe(600 - 30 - 452);
+    geo.height = 300;
+    expect(observers.length).toBeGreaterThan(0);
+    act(() => { for (const o of observers) o.cb([], {} as ResizeObserver); });
+    await frame();
+    expect(px(d.style.top)).toBe(600 - 30 - 300);
   });
 });
 

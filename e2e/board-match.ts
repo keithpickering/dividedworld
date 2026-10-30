@@ -119,13 +119,13 @@ function compareBox(id: string, mode: BoxMode, board: Box, build: Box, origin?: 
   if (mode === 'height') fields.push({ name: 'y', tolerance: POSITION_TOLERANCE });
   if (mode === 'full' || mode === 'size') fields.push({ name: 'width', tolerance: SIZE_TOLERANCE }, { name: 'height', tolerance: SIZE_TOLERANCE });
   if (mode === 'height') fields.push({ name: 'height', tolerance: SIZE_TOLERANCE });
-  const from = origin === undefined ? '' : `, measured from ${origin}`;
+  const measured = origin === undefined ? '' : `, measured from ${origin}`;
   return fields.filter((f) => Math.abs(board[f.name] - build[f.name]) > f.tolerance)
-    .map((f) => mismatch(id, f.name, String(board[f.name]), String(build[f.name]), `more than ${f.tolerance}px apart${from}`));
+    .map((f) => mismatch(id, f.name, String(board[f.name]), String(build[f.name]), `more than ${f.tolerance}px apart${measured}`));
 }
 
 /** A box's place as an offset from another's top-left. */
-const from = (box: Box, origin: Box): Box => ({ ...box, x: box.x - origin.x, y: box.y - origin.y });
+const offsetFrom = (box: Box, origin: Box): Box => ({ ...box, x: box.x - origin.x, y: box.y - origin.y });
 
 function compareType(id: string, board: TypeRead, build: TypeRead): Mismatch[] {
   const out: Mismatch[] = [];
@@ -165,7 +165,7 @@ export function compareBoard(board: Snapshot, build: Snapshot, manifest: BoardMa
         out.push(mismatch(l.id, 'origin', l.origin, l.origin, `measured from ${l.origin}, which is no landmark of the manifest`));
       } else if (!ob?.found || !ou?.found || !ob.box || !ou.box) {
         out.push(mismatch(l.id, 'origin', ob?.found ? 'found' : 'missing', ou?.found ? 'found' : 'missing', `measured from ${l.origin}, which is missing, so its place cannot be compared`));
-      } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', from(b.box, ob.box), from(u.box, ou.box), l.origin));
+      } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', offsetFrom(b.box, ob.box), offsetFrom(u.box, ou.box), l.origin));
     } else if (b.box && u.box) out.push(...compareBox(l.id, l.box ?? 'full', b.box, u.box));
     if (l.type !== false) {
       if (b.type && u.type) out.push(...compareType(l.id, b.type, u.type));
