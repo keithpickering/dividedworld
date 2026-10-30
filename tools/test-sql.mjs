@@ -131,11 +131,12 @@ export function nullBlind(code) {
  * The bounds every connection to the scratch database starts with (see the header). A healthy lock wait in
  * this suite is a race's barrier or one session waiting out another's commit, both well under a second and
  * the barrier capped at 10 s (tests.race_as); 30 s is three times the longest, and is the most a lock
- * regression costs. The longest healthy statement is a whole `do` block of an assertion file, a few seconds
- * on this container's Postgres (0037-standings-page.sql's every-page sweep, 0036's 400-character plans); 120 s
- * is a wide margin over it for a slow CI runner, and still ends a hang in two minutes.
+ * regression costs. The longest healthy statements, measured on this container's Postgres, are
+ * e2e/0004-names.ts's one query over every folded code point (between 30 and 50 s: a 30 s bound cut it) and
+ * 0032-unmask.sql's 20,000-post insert (over 10 s); 300 s is six times the longest, room for a CI runner a
+ * few times slower, and still ends any other hang in five minutes.
  */
-export const SESSION_BOUNDS = Object.freeze({ lock_timeout: '30s', statement_timeout: '0' });
+export const SESSION_BOUNDS = Object.freeze({ lock_timeout: '30s', statement_timeout: '300s' });
 
 /**
  * How long one psql (a migration, an assertion file) or one end-to-end file may run before it is killed:
@@ -162,9 +163,7 @@ function main() {
   const scratch = `kayfabb_scratch_${process.pid}_${Date.now()}`;
   const target = withDatabase(url, scratch);
   let failed = 0;
-  let last = Date.now();
   const step = (label, err) => {
-    console.log(`  TIME ${((Date.now() - last) / 1000).toFixed(1)}s ${label}`); last = Date.now();
     console.log(`  ${err ? 'FAIL' : 'PASS'}  ${label}${err ? `\n        ${err.split('\n').join('\n        ')}` : ''}`);
     if (err) failed++;
     return !err;
