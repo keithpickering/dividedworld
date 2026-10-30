@@ -77,9 +77,10 @@ const mismatch = (landmark: string, field: string, board: string, build: string,
   message: field === 'presence' ? `${landmark}: ${note}` : `${landmark}: ${field} is ${build} in the build, ${board} on the board${note ? ` (${note})` : ''}`,
 });
 
-/** `rgb(r, g, b)`, `rgba(r, g, b, a)`, `rgb(r g b / a)` or a hex color, as channels and alpha; null when unreadable. */
+/** `rgb(r, g, b)`, `rgba(r, g, b, a)`, `rgb(r g b / a)` (channels may be percents), a hex color or `transparent`, as channels 0-255 and alpha 0-1; null when unreadable. */
 function parseColor(value: string): { r: number; g: number; b: number; a: number } | null {
   const text = value.trim().toLowerCase();
+  if (text === 'transparent') return { r: 0, g: 0, b: 0, a: 0 };
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(text);
   if (hex) {
     const h = hex[1]!.length === 3 ? [...hex[1]!].map((c) => c + c).join('') : hex[1]!;
@@ -87,9 +88,12 @@ function parseColor(value: string): { r: number; g: number; b: number; a: number
   }
   const fn = /^rgba?\(([^)]+)\)$/.exec(text);
   if (!fn) return null;
-  const parts = fn[1]!.split(/[\s,/]+/).filter(Boolean).map((p) => (p.endsWith('%') ? parseFloat(p) / 100 : parseFloat(p)));
-  if (parts.length < 3 || parts.length > 4 || parts.some(Number.isNaN)) return null;
-  return { r: parts[0]!, g: parts[1]!, b: parts[2]!, a: parts[3] ?? 1 };
+  const raw = fn[1]!.split(/[\s,/]+/).filter(Boolean);
+  if (raw.length < 3 || raw.length > 4) return null;
+  /* A percent is of 255 in a color channel and of 1 in the alpha. */
+  const parts = raw.map((p, i) => (p.endsWith('%') ? (parseFloat(p) / 100) * (i < 3 ? 255 : 1) : parseFloat(p)));
+  if (parts.some(Number.isNaN)) return null;
+  return { r: Math.round(parts[0]!), g: Math.round(parts[1]!), b: Math.round(parts[2]!), a: parts[3] ?? 1 };
 }
 
 const firstFamily = (family: string) => family.split(',')[0]!.trim().replace(/^["']|["']$/g, '').toLowerCase();

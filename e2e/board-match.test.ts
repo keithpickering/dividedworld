@@ -190,3 +190,27 @@ describe('boardsToRun: the folder\'s boards against the manifests and the pendin
     expect(boardsToRun(['01-main.html', 'README.md', 'notes.txt'], ['01-main'], {}).problems).toEqual([]);
   });
 });
+
+describe('compareBoard: the color syntaxes a browser or a board may hand back', () => {
+  const colored = (color: string): Snapshot => retype('line', { color });
+  const colorOf = (a: string, b: string) => compareBoard(retype('line', { color: a }), retype('line', { color: b }), manifest(lm('line'))).map((m) => m.message);
+  test('hex, short and long, equals the same rgb()', () => {
+    expect(colorOf('#e4def7', 'rgb(228, 222, 247)')).toEqual([]);
+    expect(colorOf('#fff', 'rgb(255, 255, 255)')).toEqual([]);
+    expect(colorOf('#fff', 'rgb(255, 255, 254)')).toHaveLength(1);
+  });
+  test('the space syntax with a slash alpha is read, and an alpha below 1 is not an opaque match', () => {
+    expect(colorOf('rgb(228 222 247)', 'rgb(228, 222, 247)')).toEqual([]);
+    expect(colorOf('rgb(228 222 247 / 0.5)', 'rgb(228 222 247 / 0.5)')[0]).toMatch(/translucent/);
+    expect(colorOf('rgb(228 222 247 / 100%)', 'rgb(228, 222, 247)')).toEqual([]);
+  });
+  test('percent channels scale to 255', () => {
+    expect(colorOf('rgb(100%, 0%, 0%)', 'rgb(255, 0, 0)')).toEqual([]);
+    expect(colorOf('rgb(100% 50% 0%)', 'rgb(255, 128, 0)')).toEqual([]);
+    expect(colorOf('rgb(100%, 0%, 0%)', 'rgb(1, 0, 0)')).toHaveLength(1);
+  });
+  test('transparent is a translucent color, not an unreadable one', () => {
+    expect(colorOf('transparent', 'transparent')[0]).toMatch(/translucent/);
+    expect(colored('transparent').shots).toHaveLength(4);
+  });
+});

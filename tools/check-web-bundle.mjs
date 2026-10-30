@@ -9,9 +9,9 @@
  * fake, the `?fixture=boards` URL, and a configuration slip that let either into a production
  * bundle would ship a page that answers from memory and seeds a world nobody made. Nothing at the
  * type level or in a test notices: the app works. So the fake carries a marker, the string
- * `KAYFA_FAKE_BACKEND`, as a value on the object `createFake` returns (and the fixture carries the
- * same), and this check reads every file `npm run build:web` wrote and fails naming each one that
- * holds it.
+ * `KAYFA_FAKE_BACKEND`, as a value on the object `createFake` returns (the boards fixture, which
+ * Task 1.2 of the glass build plan adds under web/src/data/fixtures/, carries the same), and
+ * this check reads every file `npm run build:web` wrote and fails naming each one that holds it.
  *
  * Every file is read whole, so a marker split across two chunks is not a case: a bundler never cuts
  * inside a string literal, and a file read in two halves is not how the check works. An empty or

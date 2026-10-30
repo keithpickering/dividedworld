@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { boardsToRun, compareBoard, type BoardManifest, type Mismatch } from './board-match.ts';
+import { boardsToRun, compareBoard, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
 import { routeBoardFonts, snapshotPage } from './board-snapshot.ts';
 
 /**
@@ -13,8 +13,8 @@ import { routeBoardFonts, snapshotPage } from './board-snapshot.ts';
  * map cannot go stale. The part that builds a board takes it out of PENDING in the same change that
  * writes its manifest (e2e/boards/<NN>-<name>.ts, a default-exported BoardManifest).
  *
- * Both pages load the same faces (the board's Google Fonts requests are answered from the instance's
- * own files), at device scale 1 and reduced motion. A report goes to e2e/report/boards/<board>/ on a
+ * The board's Google Fonts requests are routed to the instance's own files (the build serves the
+ * same files itself), and both pages are opened at device scale 1 and reduced motion. A report goes to e2e/report/boards/<board>/ on a
  * pass as well as a failure: both screenshots with the manifest's boxes outlined, side by side in an
  * index.html with the mismatches listed, which CI uploads.
  */
@@ -38,9 +38,6 @@ const PENDING: Readonly<Record<string, string>> = {
   '09-settlement': 'Part 4',
   '12-log': 'Part 4',
 };
-
-/* The report's outlines are drawn by script into the page. */
-test.use({ bypassCSP: true });
 
 const folder = fs.readdirSync(BOARDS);
 const manifestIds = fs.existsSync(MANIFESTS) ? fs.readdirSync(MANIFESTS).filter((f) => f.endsWith('.ts')).map((f) => f.slice(0, -3)) : [];
@@ -67,12 +64,12 @@ async function outline(page: Page, boxes: readonly { id: string; box: { x: numbe
   }, boxes);
 }
 
-function reportPage(board: string, mismatches: readonly Mismatch[]): string {
-  const rows = mismatches.map((m) => `<li><code>${escapeHtml(m.message)}</code></li>`).join('');
+function reportPage(board: string, mismatches: readonly Mismatch[], error?: string): string {
+  const rows = (error === undefined ? '' : `<li><code>${escapeHtml(`the run failed before it could compare: ${error}`)}</code></li>`) + mismatches.map((m) => `<li><code>${escapeHtml(m.message)}</code></li>`).join('');
   return `<!doctype html><meta charset="utf-8"><title>${escapeHtml(board)}: board and build</title>
 <style>body{font:14px system-ui;margin:16px}.pair{display:flex;gap:16px;align-items:flex-start;overflow:auto}figure{margin:0}img{border:1px solid #888;display:block;max-width:none}figcaption{font-weight:700;margin-bottom:4px}</style>
 <h1>${escapeHtml(board)}</h1>
-<h2>${mismatches.length ? `${mismatches.length} mismatch(es)` : 'No mismatch'}</h2><ul>${rows}</ul>
+<h2>${error !== undefined ? 'The run failed' : mismatches.length ? `${mismatches.length} mismatch(es)` : 'No mismatch'}</h2><ul>${rows}</ul>
 <div class="pair"><figure><figcaption>Board</figcaption><img src="board.png" alt="The board"></figure><figure><figcaption>Build</figcaption><img src="build.png" alt="The build"></figure></div>`;
 }
 
@@ -85,23 +82,33 @@ for (const id of run) {
     try {
       const boardPage = await context.newPage();
       const buildPage = await context.newPage();
-      await routeBoardFonts(boardPage);
-      await boardPage.goto(pathToFileURL(path.join(BOARDS, `${id}.html`)).href);
-      const query = 'moment' in manifest.build ? `moment=${encodeURIComponent(manifest.build.moment)}` : `story=${encodeURIComponent(manifest.build.story)}`;
-      await buildPage.goto(`/?fixture=boards&${query}`);
-      for (const page of [boardPage, buildPage]) await page.evaluate(() => document.fonts.ready);
-
-      const board = await snapshotPage(boardPage, manifest, 'board');
-      const build = await snapshotPage(buildPage, manifest, 'build');
-      const mismatches = compareBoard(board, build, manifest);
-
+      let mismatches: Mismatch[] = [];
+      const shots = { board: { shots: [] } as Snapshot, build: { shots: [] } as Snapshot };
       const dir = path.join(REPORT, id);
-      fs.mkdirSync(dir, { recursive: true });
-      for (const [page, snap, file] of [[boardPage, board, 'board.png'], [buildPage, build, 'build.png']] as const) {
-        await outline(page, snap.shots.flatMap((s) => (s.found && s.box ? [{ id: s.id, box: s.box }] : [])));
-        await page.screenshot({ path: path.join(dir, file), fullPage: true });
+      /* The report is written whether the pages loaded or not, with the error in it. */
+      let failure: unknown;
+      try {
+        await routeBoardFonts(boardPage);
+        await boardPage.goto(pathToFileURL(path.join(BOARDS, `${id}.html`)).href);
+        const query = 'moment' in manifest.build ? `moment=${encodeURIComponent(manifest.build.moment)}` : `story=${encodeURIComponent(manifest.build.story)}`;
+        await buildPage.goto(`/?fixture=boards&${query}`);
+        for (const page of [boardPage, buildPage]) await page.evaluate(() => document.fonts.ready);
+        shots.board = await snapshotPage(boardPage, manifest, 'board');
+        shots.build = await snapshotPage(buildPage, manifest, 'build');
+        mismatches = compareBoard(shots.board, shots.build, manifest);
+      } catch (error) {
+        failure = error;
+      } finally {
+        fs.mkdirSync(dir, { recursive: true });
+        for (const [page, snap, file] of [[boardPage, shots.board, 'board.png'], [buildPage, shots.build, 'build.png']] as const) {
+          try {
+            await outline(page, snap.shots.flatMap((s) => (s.found && s.box ? [{ id: s.id, box: s.box }] : [])));
+            await page.screenshot({ path: path.join(dir, file), fullPage: true });
+          } catch { /* a page that never loaded has no screenshot; the error below says why */ }
+        }
+        fs.writeFileSync(path.join(dir, 'index.html'), reportPage(id, mismatches, failure === undefined ? undefined : String(failure instanceof Error ? failure.message : failure)));
       }
-      fs.writeFileSync(path.join(dir, 'index.html'), reportPage(id, mismatches));
+      if (failure !== undefined) throw failure;
 
       expect(mismatches.map((m) => m.message), `${id} differs from its board; see e2e/report/boards/${id}/index.html`).toEqual([]);
     } finally {

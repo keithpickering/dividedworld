@@ -97,6 +97,13 @@ export const STEPS = [
 export const SERIAL = new Set(['npm run test:engine', 'npm run build:web', 'node tools/check-web-bundle.mjs']);
 
 /**
+ * Steps that read what another step wrote: each key must come after its value in STEPS, and both
+ * must be SERIAL, since the pool runs in parallel with no order. Checked by `problems()`.
+ * check-web-bundle reads web/dist/, which build:web writes.
+ */
+export const AFTER = { 'node tools/check-web-bundle.mjs': 'npm run build:web' };
+
+/**
  * `check-*.mjs` and `test-*.mjs` files in tools/ that are deliberately not in STEPS, each
  * with the reason. `problems()` names any such file that is in neither place, so a guard
  * that exists but runs nowhere cannot pass as one that runs. An excuse names a tracked
@@ -155,12 +162,24 @@ function expand(list, scripts, seen = []) {
  * @param {Record<string,string>} input.scripts  package.json's scripts
  * @param {Record<string,string>} [input.outside]  OUTSIDE_THE_BUILD
  * @param {Set<string>} [input.serial]  SERIAL
+ * @param {Record<string,string>} [input.after]  AFTER
  */
-export function problems({ plain, checked, tracked, scripts, outside = OUTSIDE_THE_BUILD, serial = SERIAL }) {
+export function problems({ plain, checked, tracked, scripts, outside = OUTSIDE_THE_BUILD, serial = SERIAL, after = AFTER }) {
   const out = [];
 
   /* SERIAL: a subset of STEPS. */
   for (const r of serial) if (!plain.includes(r)) out.push(`SERIAL names "${r}", which is not in STEPS`);
+
+  /* AFTER: a reader runs after its writer in STEPS, and both are SERIAL (the pool has no order). */
+  for (const [reader, writer] of Object.entries(after)) {
+    for (const r of [reader, writer]) {
+      if (!plain.includes(r)) out.push(`AFTER names "${r}", which is not in STEPS`);
+      else if (!serial.has(r)) out.push(`${r} must be SERIAL: AFTER orders it against another step`);
+    }
+    if (plain.includes(reader) && plain.includes(writer) && plain.indexOf(reader) < plain.indexOf(writer)) {
+      out.push(`${reader} must come after ${writer} in STEPS: it reads what ${writer} writes`);
+    }
+  }
 
   /* Shape: every top-level step is something the runner can spawn. */
   for (const s of plain) {

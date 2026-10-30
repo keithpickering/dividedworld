@@ -17,7 +17,7 @@
  */
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { steps, problems, runSteps, defaultJobs, SERIAL, OUTSIDE_THE_BUILD, SCRIPTS } from './build.mjs';
+import { steps, problems, runSteps, defaultJobs, SERIAL, AFTER, OUTSIDE_THE_BUILD, SCRIPTS } from './build.mjs';
 
 const TRACKED = new Set(execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean));
 const PKG = JSON.parse(fs.readFileSync('package.json', 'utf8')).scripts;
@@ -114,6 +114,19 @@ if (PKG.build !== SCRIPTS.build || PKG['build:ci'] !== SCRIPTS['build:ci']) {
 red('SERIAL names a step that is not in STEPS',
   { serial: new Set([...SERIAL, 'node tools/check-nowhere.mjs']) }, /SERIAL names "node tools\/check-nowhere\.mjs", which is not in STEPS/);
 
+/* ---- AFTER: a step that reads another's output runs after it, and both are SERIAL ---- */
+const READER = 'node tools/check-web-bundle.mjs';
+const WRITER = 'npm run build:web';
+const swapped = (list) => list.map((s) => (s === READER ? WRITER : s === WRITER ? READER : s));
+red('a step before the step whose output it reads',
+  { plain: swapped(REAL.plain), checked: ['npm run typecheck', ...swapped(REAL.plain)], after: AFTER }, /node tools\/check-web-bundle\.mjs must come after npm run build:web in STEPS/);
+red('a reader that is not SERIAL',
+  { serial: new Set([...SERIAL].filter((s) => s !== READER)), after: AFTER }, /node tools\/check-web-bundle\.mjs must be SERIAL/);
+red('a writer that is not SERIAL',
+  { serial: new Set([...SERIAL].filter((s) => s !== WRITER)), after: AFTER }, /npm run build:web must be SERIAL/);
+red('an AFTER that names a step not in STEPS',
+  { after: { ...AFTER, 'node tools/check-nowhere.mjs': WRITER } }, /AFTER names "node tools\/check-nowhere\.mjs", which is not in STEPS/);
+
 /* ---- the runner, on a fake step list ---- */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** A fake spawn: `plan[step]` is { status, signal, out, ms, never }. It records dispatch order, what ran alone and what was killed.
@@ -194,7 +207,7 @@ const test = async (name, fn) => {
 }
 
 /* ---- and the real thing passes ---- */
-const real = problems(REAL);
+const real = problems({ ...REAL, after: AFTER });
 if (real.length) {
   failures += 1;
   console.error(`FAIL  the committed step list has ${real.length} problem(s):${real.map((f) => `\n        - ${f}`).join('')}`);
