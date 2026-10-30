@@ -83,15 +83,18 @@ export const STEPS = [
   'npm run test:engine',
   'npm run test:ui',
   'npm run build:web',
+  'node tools/test-web-bundle.mjs',
+  'node tools/check-web-bundle.mjs',
 ];
 
 /**
  * The steps that run alone, after the pool, in STEPS order: a step that writes a tree the
  * steps after it read, and every step whose file asserts an absolute wall-clock bound, which a
  * loaded pool could trip. A subset of STEPS, checked by `problems()`. test:engine times the
- * settlement at a busy instance's scale (engine/rules/settle.scale.test.ts).
+ * settlement at a busy instance's scale (engine/rules/settle.scale.test.ts). build:web writes
+ * web/dist/, which check-web-bundle reads, so the two run in that order, alone.
  */
-export const SERIAL = new Set(['npm run test:engine']);
+export const SERIAL = new Set(['npm run test:engine', 'npm run build:web', 'node tools/check-web-bundle.mjs']);
 
 /**
  * `check-*.mjs` and `test-*.mjs` files in tools/ that are deliberately not in STEPS, each
