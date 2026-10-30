@@ -1,5 +1,7 @@
 import { createRequire } from 'node:module';
 import { expect, test, type Page } from '@playwright/test';
+import type { Fake } from '../engine/ui/data/fake.ts';
+import type { Demo } from '../web/src/demo.ts';
 
 /**
  * axe-core in the real browser, over the built demo world, with the color-contrast rule jsdom
@@ -29,6 +31,26 @@ const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.ha
   ? page.getByRole('navigation', { name: 'Menu' })
   : page.getByRole('region', { name: 'Game HUD' }));
 
+type E2eWindow = typeof globalThis & { readonly __kbFake: Fake; readonly __kbDemo: Demo };
+
+/**
+ * What the Game HUD shows that ends below its glass or the window, by class and pixels over: what it
+ * holds must fit, or its last row is cut at the window's foot. Measured once the faces have loaded,
+ * since the fallback's metrics are not what a player sees.
+ */
+async function hudCut(page: Page): Promise<(readonly [string, number])[]> {
+  return page.evaluate(async () => {
+    await document.fonts.ready;
+    const hud = document.querySelector('[aria-label="Game HUD"]')!;
+    const glass = hud.querySelector('.kb-hud-glass') ?? hud;
+    const floor = Math.min(glass.getBoundingClientRect().bottom, window.innerHeight);
+    return [...hud.querySelectorAll('*')]
+      .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden')
+      .map((el) => [el.getAttribute('class') ?? el.tagName, Math.round(el.getBoundingClientRect().bottom - floor)] as const)
+      .filter(([, over]) => over > 0);
+  });
+}
+
 const PAGES: readonly [string, string][] = [
   ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['standings', '/standings'], ['settings', '/settings'], ['invites', '/invites'],
 ];
@@ -49,25 +71,31 @@ for (const scheme of ['light', 'dark'] as const) {
           await expect(ready(page, path)).toBeVisible();
           expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
         });
-        /* The docked HUD has a fixed height, the Phone board's 124px; what it holds must fit in it, or its last row is cut at the window's foot. */
         if (!GLASS.has(path)) test(`${label}'s Game HUD holds all it shows inside its glass and the window`, async ({ page }) => {
           await page.goto(path);
           await expect(ready(page, path)).toBeVisible();
           await expect(page.locator('.kb-hud-orbs .kb-orb').first()).toBeVisible();
-          /* Measured once the orbs have come and the faces have loaded: the fallback's metrics are not what a player sees. */
-          const cut = await page.evaluate(async () => {
-            await document.fonts.ready;
-            const hud = document.querySelector('[aria-label="Game HUD"]')!;
-            const glass = hud.querySelector('.kb-hud-glass') ?? hud;
-            const floor = Math.min(glass.getBoundingClientRect().bottom, window.innerHeight);
-            return [...hud.querySelectorAll('*')]
-              .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden')
-              .map((el) => [el.className.toString() || el.tagName, Math.round(el.getBoundingClientRect().bottom - floor)] as const)
-              .filter(([, over]) => over > 0);
-          });
-          expect(cut).toEqual([]);
+          expect(await hudCut(page)).toEqual([]);
         });
       }
+
+      /* The longest the HUD's wallet gets: a full wallet with an estimate on top, and the part past the cap, which the Phone board does not draw. */
+      test('the Game HUD holds a wallet past its cap inside its glass and the window', async ({ page }) => {
+        await page.goto('/b/general');
+        await expect(ready(page, '/b/general')).toBeVisible();
+        await page.waitForFunction(() => '__kbFake' in globalThis);
+        await page.evaluate(() => {
+          const w = globalThis as E2eWindow;
+          /* A full wallet: the demo's estimate then lies wholly past the cap. */
+          w.__kbFake.seed.wallet(w.__kbDemo.me, 600);
+          /* The HUD reads the wallet when the account changes: out, and once the HUD has seen that, back in. */
+          w.__kbFake.signInAs(null);
+        });
+        await expect(page.locator('.kb-hud-orbs')).toHaveCount(0);
+        await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbDemo.me); });
+        await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d past the cap$/);
+        expect(await hudCut(page)).toEqual([]);
+      });
 
       test('a thread, a picker and a spin form have none', async ({ page }) => {
         await page.goto('/b/general');

@@ -526,9 +526,14 @@
 
 /* ---- below 1340px: the Phone board's HUD ---- */
 @media (max-width: 1339.98px) {
+  /*
+   * The Phone board's glass is 124px, and so is this one while what it holds fits. It grows past
+   * that rather than cut its last row at the window's foot: a wallet past its cap, which the board
+   * does not draw, or text spaced wider by the reader, needs more.
+   */
   .kb-hud-glass {
     box-sizing: content-box;
-    height: 124px;
+    min-height: 124px;
     border-top: 1.5px solid var(--kb-glass-pale);
     box-shadow: 0 -2px 18px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
   }
@@ -658,7 +663,7 @@
     margin: 0;
   }
 
-  /* The Phone board's orbs are 30px; the row under the mask picker has 38px of the glass's 124. */
+  /* The Phone board's orbs are 30px; the row under the mask picker has 41px of the glass's 124. */
   .kb-hud-orbs .kb-orbs {
     --kb-orb-size: 30px;
     --kb-orb-gap: 6px;
