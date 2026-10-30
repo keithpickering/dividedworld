@@ -64,11 +64,9 @@ describe('boardLayout', () => {
  * and reaches the smallest phone size exactly at the switch. A fixed size under that token would
  * fall below the phone's first, and the switch would be wrong. This reads the stylesheets the
  * scaled layout is drawn from (the HUD's, the glass's and the orbs') and finds every font size
- * written as a number of px, in `font-size` or in the `font` shorthand. It skips:
- *   - a rule every selector of which is the Phone board's (the `:where(:root[data-kb-layout='phone'])`
- *     prefix), which is drawn unscaled at the phone's own sizes;
- *   - a rule every selector of which is in the board's own content panel
- *     (`.kb-glass-content-panel`), which keeps the board's sizes and undoes the scale (shell.css).
+ * written as a number of px, in `font-size` or in the `font` shorthand. It skips a rule every
+ * selector of which is the Phone board's (the `:where(:root[data-kb-layout='phone'])` prefix), which
+ * is drawn unscaled at the phone's own sizes.
  * A rule inside an at-rule (a media query, a @supports) is read like any other.
  *
  * A size in rem is read as its px at the root's 16px, the size it draws at 100% text.
@@ -147,7 +145,6 @@ function sizesInPx(read: (sheet: string) => string = (sheet) => fs.readFileSync(
   for (const sheet of SHEETS) {
     const css = read(sheet).replace(/\/\*[\s\S]*?\*\//g, '');
     for (const { selectors, body } of styleRules(css)) {
-      if (selectors.every((s) => s.includes('.kb-glass-content-panel'))) continue;
       for (const w of writtenSizes(body)) if (w.unit === 'px') found.push(`${path.basename(sheet)}: ${selectors.join(', ')} { font-size: ${w.n}px }`);
     }
   }
@@ -160,7 +157,6 @@ function smallFixedSizes(floor: number): string[] {
     const css = fs.readFileSync(sheet, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     for (const { selectors, body } of styleRules(css)) {
       if (selectors.every((s) => s.startsWith(PHONE))) continue;
-      if (selectors.every((s) => s.includes('.kb-glass-content-panel'))) continue;
       for (const px of pxSizes(body)) if (px < floor) found.push(`${path.basename(sheet)}: ${selectors.join(', ')} { font-size: ${px}px }`);
     }
   }

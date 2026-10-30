@@ -12,7 +12,7 @@
  * player's own screen only. No board draws Rankings, so its look is the glass plan's description,
  * drawn first as a story for the owner (Rankings.board.stories.tsx) and approved (issue #50): the
  * heading as the Settings board sets its own, and a table set as the Log board's. The page shell
- * and the menu bar are the route's (web/src/App.tsx puts it in `Page`, restyled).
+ * and the menu bar are the route's (web/src/App.tsx puts it in `Page`).
  *
  * `RankingsScreen` reads it at /rankings, fifty to a page as the standings are. Every read but one
  * is public and asked the same for every player: the page of standings, its count, the season, the

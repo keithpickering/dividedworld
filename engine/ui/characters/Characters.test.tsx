@@ -599,7 +599,7 @@ describe('the class, in its own color, to its own player only', () => {
 });
 
 describe('the Turn modal over My characters (the Turn board)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters" restyled><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
 
   test('is a glass overlay on the turn smoke, with the menu bar left in view, dimmed and inert', async () => {
     const w = world();

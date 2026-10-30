@@ -60,7 +60,7 @@ const empty: World = (fake) => {
 
 /** The screen at /rankings, in its page shell. */
 function RankingsStory() {
-  return <Page surface="rankings" restyled><RankingsScreen /></Page>;
+  return <Page surface="rankings"><RankingsScreen /></Page>;
 }
 
 const meta: Meta<typeof RankingsStory> = {

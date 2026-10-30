@@ -49,9 +49,8 @@ const ROUTES: readonly Route[] = [
 
 /**
  * The routes that are glass pages (the glass build's Task 1.4), each with the surface whose smoke it
- * stands on. Their content is the board's screen as it was until Part 2 restyles it, and a route in
- * RESTYLED draws its screen on the glass itself (`Page`'s `restyled`); every other route is a board
- * page, in the frame with its banner and Game HUD.
+ * stands on, its screen drawn on the glass itself; every other route is a board page, in the frame
+ * with its banner and Game HUD.
  */
 const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/characters': 'characters',
@@ -65,9 +64,6 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
 };
 
 const isGlass = (path: string): boolean => Object.hasOwn(GLASS, path);
-
-/** The glass routes whose screens Part 2 has restyled, drawn on the glass with no board panel (Page's `restyled`). */
-const RESTYLED: ReadonlySet<string> = new Set(['/characters', '/characters/new', '/characters/edit', '/rankings', '/settings', '/invites', '/sign-in', '/register']);
 
 /** Every move into the glass keeps the board's place for Back, and every move out forgets it (engine/ui/glass/back.ts). */
 const keepPlace = keepBoardPlace(isGlass);
@@ -113,7 +109,7 @@ function Shell() {
       <Routes routes={ROUTES} />
     </AccountGate>
   );
-  return surface ? <GlassPage surface={surface} restyled={RESTYLED.has(path)}>{content}</GlassPage> : <Frame>{content}</Frame>;
+  return surface ? <GlassPage surface={surface}>{content}</GlassPage> : <Frame>{content}</Frame>;
 }
 
 /** The instance's glass on the page: its standard key's tokens and colors on the root, and its fonts. */

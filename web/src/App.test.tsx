@@ -75,18 +75,18 @@ for (const [path, own] of OWN) {
 }
 
 /* The glass build's Tasks 2.2 and 2.4 restyle the characters pages and Settings: drawn on the glass, with no board panel. */
-for (const [path, restyled] of [['/characters', true], ['/characters/new', true], ['/characters/edit', true], ['/settings', true]] as const) {
-  test(`${path} is ${restyled ? 'restyled, with no board panel' : 'not restyled yet, on the board\'s panel'}`, async () => {
+for (const path of ['/characters', '/characters/new', '/characters/edit', '/settings'] as const) {
+  test(`${path} is drawn on the glass, with no board panel`, async () => {
     window.history.pushState(null, '', path);
     const fake = createFake({ instance, settings: fallbackSettings });
     seedDemo(fake);
     render(<App api={fake} />);
     await screen.findByRole('navigation', { name: 'Menu' });
-    expect(document.querySelector('main > .kb-glass-content-panel') !== null).toBe(!restyled);
+    expect(document.querySelector('.kb-glass-content-panel')).toBeNull();
   });
 }
 
-test('/rankings is restyled: drawn on the glass with no board panel, and its menu bar tab is the current page', async () => {
+test('/rankings is drawn on the glass with no board panel, and its menu bar tab is the current page', async () => {
   window.history.pushState(null, '', '/rankings');
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
