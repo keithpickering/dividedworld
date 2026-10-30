@@ -20,7 +20,7 @@
  * run that dies between a send and its clearing sends that batch again, which a client, keeping
  * each Act by its id, takes as the same Act.
  */
-import { settle } from '../../../engine/rules/settle.ts';
+import { settle, shareEntries } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
 import type { Db } from '../_shared/rpc.ts';
 import type { Broadcast, Delivery } from '../_shared/broadcast.ts';
@@ -87,12 +87,16 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     tuned ??= await withDatabaseSettings(instance, db);
     const input = await db.rpc<SettlementInput>('settlement_input', { window_start: window.start, window_end: window.end });
     const result = settle(input, tuned);
+    // Each entry split across the posts the live estimate valued, written with it (the log shares
+    // design): a second run of settle over the window, with the shared vote and the halving off.
+    const shares = shareEntries(input, tuned, result.entries);
     const applied = await db.rpc<{ applied: boolean; masks?: string; reveal?: string }>('apply_settlement', {
       window_start: window.start,
       window_end: window.end,
       entries: result.entries.map((e) => ({ player: e.player, character: e.character, reason: e.reason, amount: e.amount })),
       class_totals: result.byClass,
       paid: result.paid,
+      shares: shares.map((s) => ({ character: s.character, reason: s.reason, act: s.act, ...(s.quadrant ? { quadrant: s.quadrant } : {}), amount: s.amount })),
     });
     // A tally or a reveal that could not be written leaves what waited for the next settlement;
     // said in the log, so an admin sees what to seed, and in the outcome.
