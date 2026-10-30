@@ -912,6 +912,30 @@
   box-shadow: inset 0 0 0 3px var(--kb-glass-ink-neon), 0 0 12px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
 }
 
+/*
+ * Forced colors (Windows High Contrast) repaint the square's fill and border and drop its shadow, so
+ * on and off would look alike: there the square keeps its own colors, the system's, an outline in
+ * ButtonText when off and filled with Highlight when on.
+ */
+@media (forced-colors: active) {
+  .kb-turn-toggle input {
+    forced-color-adjust: none;
+    border-color: ButtonText;
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .kb-turn-toggle input:checked {
+    border-color: Highlight;
+    background: Highlight;
+    box-shadow: inset 0 0 0 3px Canvas;
+  }
+
+  .kb-turn-name:disabled .kb-turn-toggle input {
+    border-color: GrayText;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-kb-motion='full']) :is(.kb-turn-name, .kb-turn-toggle input) { transition: none; }
 }

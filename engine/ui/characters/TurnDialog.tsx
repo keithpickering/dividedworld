@@ -24,7 +24,7 @@ import { ClassChip } from './ClassChip.tsx';
 import { Portrait } from './Portrait.tsx';
 import { dayAndTime, figure, spanWords, withArticle } from './format.ts';
 import { PreviewBox } from './PreviewBox.tsx';
-import { turnPreview } from './previews.ts';
+import { turnNamedWords, turnPreview } from './previews.ts';
 import './characters.css';
 
 export interface TurnDialogProps {
@@ -132,11 +132,11 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
               <legend className="kb-visually-hidden">Name in the post</legend>
               <label className="kb-turn-toggle" data-kb-chosen={showFrom || undefined}>
                 <input type="checkbox" checked={showFrom} onChange={(e) => setNamed({ ...named, was: e.target.checked })} />
-                <span><b>Name the old class.</b> “Was {withArticle(now)}” becomes public.</span>
+                <span><b>Name the old class.</b> Adds “{turnNamedWords({ was: now, to: '' }).from}” to the post.</span>
               </label>
               <label className="kb-turn-toggle" data-kb-chosen={showTo || undefined}>
                 <input type="checkbox" checked={showTo} onChange={(e) => setNamed({ ...named, to: e.target.checked })} />
-                <span><b>Name the new class.</b> {to ? `A reveal: “Now ${withArticle(nameOf(to))}.”` : 'A reveal of the class you choose.'}</span>
+                <span><b>Name the new class.</b> {to ? `Adds “${turnNamedWords({ was: now, to: nameOf(to) }).to}” to the post, and reveals it.` : 'Adds the class you choose to the post, and reveals it.'}</span>
               </label>
             </fieldset>
           </fieldset>

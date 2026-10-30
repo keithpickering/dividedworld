@@ -42,11 +42,20 @@ export function debutPreview(o: { readonly name: string; readonly className: str
   };
 }
 
+/**
+ * The words naming a class adds to a Turn's tally line, which the Turn's names quote: the one
+ * function both read, so a name never promises words the post does not carry.
+ */
+export function turnNamedWords(o: { readonly was: string; readonly to: string }): { readonly from: string; readonly to: string } {
+  return { from: `from ${o.was}`, to: `to ${o.to}` };
+}
+
 export function turnPreview(o: { readonly name: string; readonly was: string; readonly to: string; readonly loudness: 'silent' | 'announced'; readonly showFrom: boolean; readonly showTo: boolean }): Preview {
   if (o.loudness === 'silent') {
     return { lines: [], nothing: `Nothing is posted. Nobody is told that ${o.name} has Turned.`, where: 'At the next settlement' };
   }
-  const tally = `${o.name} has Turned${o.showFrom ? ` from ${o.was}` : ''}${o.showTo ? ` to ${o.to}` : ''}`;
+  const words = turnNamedWords(o);
+  const tally = `${o.name} has Turned${o.showFrom ? ` ${words.from}` : ''}${o.showTo ? ` ${words.to}` : ''}`;
   return {
     lines: o.showTo ? [say(tally), say(`${o.name} revealed: ${o.to}`)] : [say(tally)],
     nothing: null,

@@ -34,7 +34,7 @@ const manifest: BoardManifest = {
   press: [
     { role: 'button', name: 'Turn Pipewrench' },
     { role: 'radio', name: 'Face' },
-    { role: 'checkbox', name: 'Name the old class. “Was a Heel” becomes public.' },
+    { role: 'checkbox', name: 'Name the old class. Adds “from Heel” to the post.' },
   ],
   landmarks: [
     /*

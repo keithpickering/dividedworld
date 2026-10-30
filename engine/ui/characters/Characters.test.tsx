@@ -272,6 +272,48 @@ describe('the Turn', () => {
     expect(naming).toBeEnabled();
   });
 
+  test('keeps the names chosen across a silent Turn, so going back to Announced names what it named', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const dialog = await openTurn();
+    const loud = within(dialog).getByRole('group', { name: 'How loud' });
+    await userEvent.click(within(loud).getByRole('checkbox', { name: /^Name the old class/u }));
+    await userEvent.click(within(loud).getByRole('radio', { name: /^Silent/u }));
+    expect(within(loud).getByRole('checkbox', { name: /^Name the old class/u })).not.toBeChecked();
+    await userEvent.click(within(loud).getByRole('radio', { name: /^Announced/u }));
+    expect(within(loud).getByRole('checkbox', { name: /^Name the old class/u })).toBeChecked();
+    expect(within(loud).getByRole('checkbox', { name: /^Name the new class/u })).not.toBeChecked();
+  });
+
+  /* A name quotes the words it adds to The System's post; the preview below is the post, so the two are held together. */
+  test('says in each name the words it adds to the post, and the preview then shows them', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const dialog = await openTurn();
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    const preview = within(dialog).getByRole('group', { name: 'What everyone will see' });
+    const quoted = (box: HTMLElement) => {
+      const found = /“([^”]+)”/u.exec(box.closest('label')?.textContent ?? '');
+      expect(found, 'the name quotes the words it adds').not.toBeNull();
+      return found![1]!;
+    };
+
+    const old = within(dialog).getByRole('checkbox', { name: /^Name the old class/u });
+    expect(preview).not.toHaveTextContent(quoted(old));
+    await userEvent.click(old);
+    expect(preview).toHaveTextContent(quoted(old));
+    await userEvent.click(old);
+
+    const now = within(dialog).getByRole('checkbox', { name: /^Name the new class/u });
+    expect(preview).not.toHaveTextContent(quoted(now));
+    await userEvent.click(now);
+    expect(preview).toHaveTextContent(quoted(now));
+    expect(now.closest('label')).toHaveTextContent(/reveals/u);
+    expect(preview).toHaveTextContent('Pipewrench revealed: Heel');
+  });
+
   test('cannot be confirmed until a class is chosen', async () => {
     const w = world();
     open(w);
