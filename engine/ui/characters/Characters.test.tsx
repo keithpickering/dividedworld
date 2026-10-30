@@ -515,7 +515,7 @@ describe('My characters on the glass (the Roster board)', () => {
     open(w);
     await ready();
     /* Pipewrench stands at 14.20, past Main Eventer's 6.00 in the test world's ranks. */
-    expect(testInstance.ranks.map((r) => [r.name, r.from])).toContainEqual(['Main Eventer', 600]);
+    expect(testInstance.ranks.find((r) => r.name === 'Main Eventer')).toHaveProperty('from', 600);
     expect(await within(card('Pipewrench')).findByTestId('kb-roster-rank')).toHaveTextContent(/^Main Eventer$/u);
     expect(within(card('Mrs. Hooligan')).getByTestId('kb-roster-rank')).toHaveTextContent(/^Main Eventer$/u);
   });
