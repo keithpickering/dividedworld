@@ -11,7 +11,9 @@
  * drawn with, whatever the post's height.
  *
  * Where the splat sits is the seed's too. The blob's center is across the middle of the post (0.42 to
- * 0.58) and anywhere down it that keeps the blob (arms and droplets aside) inside the post; its radius
+ * 0.58) and anywhere down it that keeps the blob (arms and droplets aside) inside the post, where the post
+ * is tall enough to hold it: the blob is never under half a width tall, so on a post of a line or two it
+ * runs past the post's top and bottom into the margins, as ink may; its radius
  * across is 0.42 to 0.56 widths, and down it is about two fifths of the post's height, never more than
  * 1.3 times the radius across, so a tall post is splattered in one place, not smeared along its length.
  * The post's height counts only to 64 widths, the deepest a stroke reaches.
@@ -121,8 +123,9 @@ export function covers(splat: Pick<Splat, 'blob' | 'circles' | 'bounds'>, x: num
 
 /**
  * The colors a card accepts are `color()`'s in engine/rules/cards.ts: a named one from the post parser's
- * list, or #rgb or #rrggbb. These are the CSS values of those names (the parser's NAMED_COLORS, which a
- * test holds this table to), so a luminance is computed without a DOM.
+ * list, or #rgb or #rrggbb. These are the CSS values of those names, so a luminance is computed without a
+ * DOM. A test holds this table to name every one of the parser's NAMED_COLORS, so no ink a card accepts
+ * throws when drawn; the values themselves are CSS's, read off its named-color list.
  */
 const NAMED: Readonly<Record<string, string>> = {
   black: '#000000', silver: '#c0c0c0', gray: '#808080', grey: '#808080', white: '#ffffff', maroon: '#800000', red: '#ff0000',
