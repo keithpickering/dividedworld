@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>My log: the two worlds board</title>
+<!-- A board of the two-worlds design session, 1440 by 1240, as the owner approved it on 2026-10-29. A reference for the
+     look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what was decided. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+a:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+/* game sizes (XAG 101/102): nothing under 20px Barlow, which inks 18px; table cells set at 1.5 */
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font:800 20px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#9ef4ff;padding:0 16px 12px 0;border-bottom:1px solid rgba(201,248,255,.55)}
+td{vertical-align:top;padding:12px 16px 12px 0;border-bottom:1px solid rgba(241,236,255,.2);font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+td.when{font-weight:600;color:#e4def7;white-space:nowrap}
+td.what{font:800 22px/1.4 'Barlow Condensed',sans-serif;color:#f1ecff;letter-spacing:.5px}
+td.num,th.num{text-align:right;white-space:nowrap;padding-right:0}
+td.num{font:700 22px/1.4 'Barlow Condensed',sans-serif;font-variant-numeric:tabular-nums}
+.up{color:#9ef4ff}.down{color:#ff8ab0}
+td a{color:#c9f8ff}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1240px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+
+  <svg aria-hidden="true" width="1440" height="1240" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="lA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="57"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="lB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="8"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="lsoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+      <mask id="lcalm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="1240">
+        <rect width="1440" height="1240" fill="#ffffff"></rect>
+        <rect x="40" y="320" width="1360" height="880" fill="#000000" opacity="0.9" filter="url(#lsoft)"></rect>
+        <rect x="40" y="230" width="760" height="100" fill="#000000" opacity="0.8" filter="url(#lsoft)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#lcalm)">
+      <rect width="1440" height="1240" filter="url(#lA)" opacity="0.95"></rect>
+      <rect width="1440" height="1240" filter="url(#lB)" opacity="0.5"></rect>
+    </g>
+  </svg>
+
+  <!-- the menu bar every glass page shares, in place of the board's header -->
+  <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 0 40px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+    <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 18px"><b><kbd style="display: inline-block; margin-right: 10px; padding: 0 6px; border: 1px solid #ffffff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>VENDING MACHINE</b></a>
+    <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+    <a href="#" class="tab"><b>RANKINGS</b></a>
+    <a href="#" class="tab" aria-current="page" style="background: rgba(25,227,255,.16); box-shadow: inset 0 -3px 0 #19e3ff; color: #ffffff"><b>MY LOG</b></a>
+    <a href="#" class="tab"><b>SETTINGS</b></a>
+  </nav>
+
+  <header style="position: absolute; left: 64px; right: 64px; top: 116px; display: flex; justify-content: space-between; align-items: flex-end">
+    <h1 style="margin: 0; font: 112px/1 Anton, Impact, sans-serif; letter-spacing: 1px; text-shadow: 0 0 30px rgba(25,227,255,.35)">MY LOG</h1>
+    <nav aria-label="Whose log" style="display: flex; gap: 6px; margin-bottom: 12px">
+      <a href="#" class="tab" style="border: 1px solid rgba(241,236,255,.6)"><b>ALL</b></a>
+      <a href="#" class="tab" aria-current="page" style="background: #19e3ff; color: #03141a; box-shadow: 0 0 18px rgba(25,227,255,.55)"><b>PIPEWRENCH</b></a>
+      <a href="#" class="tab" style="border: 1px solid rgba(241,236,255,.6)"><b>MRS. HOOLIGAN</b></a>
+      <a href="#" class="tab" style="border: 1px solid rgba(241,236,255,.6)"><b>SPRITEY</b></a>
+    </nav>
+  </header>
+
+  <p style="position: absolute; left: 64px; top: 246px; width: 680px; margin: 0; font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #f1ecff">Everything on this page is true. Each line names the Act that did it, what it changed and how much Aura moved. It never says who reacted, or any character's class but your own.</p>
+
+  <div style="position: absolute; left: 64px; right: 64px; top: 352px">
+    <table>
+      <caption style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Pipewrench's log, newest first</caption>
+      <colgroup><col style="width: 170px"><col style="width: 250px"><col><col style="width: 110px"><col style="width: 120px"></colgroup>
+      <thead><tr><th scope="col">WHEN (UTC)</th><th scope="col">WHAT</th><th scope="col">DETAILS</th><th scope="col" class="num">AURA</th><th scope="col" class="num">WALLET</th></tr></thead>
+      <tbody>
+        <tr><td class="when">Oct 30 · 08:17</td><td class="what">Settlement</td><td>Scored as a Heel for Oct 29: drew heat +0.20, stole thunder +0.20, polite shrug −0.05. <a href="#">Act 2214</a></td><td class="num up">+0.35</td><td class="num">3.72</td></tr>
+        <tr><td class="when">Oct 30 · 08:17</td><td class="what">Turn took effect</td><td>Pipewrench is a Face now. Announced with its old class in Season 1: Who Turned. <a href="#">Act 2215</a></td><td class="num">0.00</td><td class="num">3.72</td></tr>
+        <tr><td class="when">Oct 30 · 08:17</td><td class="what">Rank up</td><td>Enhancement Talent to Midcarder. Standing 2.95 to 3.30 this season. <a href="#">Act 2216</a></td><td class="num">0.00</td><td class="num">3.72</td></tr>
+        <tr><td class="when">Oct 29 · 22:04</td><td class="what">Reactions on your post</td><td>Four reactions on post #43. They count at the next settlement. Who reacted is never shown. <a href="#">Post #43</a></td><td class="num">0.00</td><td class="num">3.37</td></tr>
+        <tr><td class="when">Oct 29 · 21:52</td><td class="what">You played Whoops!</td><td>On Gloomba's post #46, in magenta ink. Card 1.00, long post 0.25. <a href="#">Act 2190</a></td><td class="num down">−1.25</td><td class="num">3.37</td></tr>
+        <tr><td class="when">Oct 29 · 21:34</td><td class="what">Released</td><td>You checked the box on Spritey's post #44. Stick Around has let you go. <a href="#">Act 2187</a></td><td class="num">0.00</td><td class="num">4.62</td></tr>
+        <tr><td class="when">Oct 29 · 21:31</td><td class="what">Stick Around held you</td><td>Played by Gloomba on Spritey's post #44, with the message “required reading”. <a href="#">Act 2185</a></td><td class="num">0.00</td><td class="num">4.62</td></tr>
+        <tr><td class="when">Oct 29 · 20:10</td><td class="what">You bought Whoops!</td><td>From the Vending Machine, slot A2. Your hand went from 3 cards to 4. <a href="#">Act 2170</a></td><td class="num down">−1.00</td><td class="num">4.62</td></tr>
+      </tbody>
+    </table>
+    <p style="margin: 20px 0 0; font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">If a line here looks wrong, that is a bug and not the game. <a href="#" style="color: #c9f8ff">Tell an admin</a>.</p>
+  </div>
+</div>
+</body>
+</html>

@@ -10,6 +10,33 @@ The two working prototypes are the reference for feel and numbers:
 `docs/research/2026-10-29-screens/proto-q15-whoops.html`. They are prototypes, not code to copy: the effects are
 rebuilt as components and pure modules with tests, and the numbers below are starting points the season of play tunes.
 
+**Amended 2026-10-29, after the two-worlds design** (`docs/plans/2026-10-29-two-worlds-design.md`, carried into the
+web plan's brief, layout and Tasks 1, 3 and 12 by its own amendment). A card's machinery is the glass's and a post is
+the board's. The boards in `docs/research/2026-10-29-two-worlds/` are the look; where a task below says otherwise, this
+wins:
+
+- **Task 2:** the Vending Machine is a glass page under the menu bar, as the Vending board draws it, its slots, price
+  display and tray in the glass's type at the glass's sizes. The hand drawer is a glass overlay over the board, rising
+  from the HUD, as the Main and Phone boards draw it; each card's description is its rules in plain words (design,
+  section 3).
+- **Task 3:** the play form is a glass overlay over the board, as the Cards board draws it. Arming a card marks each
+  eligible post with a "Play Whoops! here" button in the glass's look over the post, which stays the board's.
+- **Tasks 4 and 5:** the post a card lands on stays the board's 2003 post. What the card adds is the glass reaching
+  in: Stick Around's frame, tag, handle, BREAK FREE button and certification panel, and Whoops!'s tag and Hold to scrub
+  button, each in the glass's type, sizes and contrast rules (the web plan's Task 1 guard reads their tokens, and its
+  Task 12 measurement covers them). Stick Around's frame is the board's cyan neon, as the Hold board draws it, in place
+  of the gold frame Task 4 names; the ink of Whoops! is the caster's own color, as before.
+- **Task 6:** the card lines are the log's, in the glass, in the words this task gives them.
+- **Ways out:** unchanged; an overlay's way out is the web plan's (Esc or its close, onto what it was opened over).
+
+**Amended 2026-10-30, after the boards' audit** (`docs/plans/2026-10-30-glass-to-the-boards-plan.md`), which wins over
+the amendment above where they differ. Task 2 adds the board match's manifests for the Vending board, the Cards
+board's hand sheet and the hand in the Main and Phone boards; Task 3 for the Cards board's play form, on Gloomba's #46,
+and the Main board's armed card; Task 4 for the Hold board, seen by a reader who owns none of its characters (the
+author is never held); Task 5 names Whoops!'s keyboard path "Hold to scrub" where the Main board wrote "Scrub with the
+keyboard"; Task 6's log holds no Stick Around lines, so the Log board's eight rows are six. Stick Around's frame and
+Whoops!'s tag draw the `effect` smoke recipe.
+
 ## The layers
 
 The card-effect interface is engine (`engine/ui/cards/`); Stick Around's and Whoops!'s effects are Divided World's
@@ -150,3 +177,5 @@ behavior the engine's.
   own gestures at the screen's edges.
 - Whether a theme can hide a splat or a hold for everyone who uses it.
 - The tuning numbers on a real phone, against the owner's slider numbers.
+- The glass over a post: whether Stick Around's frame or a card's controls, drawn over the board, can be hidden or
+  thinned by a board theme.

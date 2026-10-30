@@ -343,3 +343,20 @@ owner deciding, changed these:
 Act, and the postbit and profile show it as a dated fact. Section 13's reveal no longer shows a timeline of every
 character's classes: each character's post carries its place, rank and standing and only what its player made public,
 and class secrets roll over into the next season.
+
+## Amended 2026-10-29: after the two-worlds design
+
+`docs/plans/2026-10-29-two-worlds-design.md` divides these screens into two worlds, and where it says otherwise it
+wins. The board (sections 4, 5, 6, 10, 11 and 13: the index, threads, posts, reactions on a post, the card effects on a
+post, the profile, the standings and the reveal) keeps every decision here and the 2003 look; a card's frame and
+controls over a post take the glass's look (the cards plan's amendment). Everything else is the
+glass, a game's own interface in the look of the boards in `docs/research/2026-10-29-two-worlds/`:
+
+- **Section 2:** the 2003 banner holds the board's own navigation; the HUD is the glass, docked at the bottom as
+  decided, and its Menu button, orbs, avatar and hand are the only ways into the rest of the glass, a set of full-screen
+  pages under one menu bar (the pause menu), with Back and Esc returning the reader to the post they left.
+- **Sections 3, 5's picker, 7, 8, 9 and 12:** the orbs, the React picker, the log, My characters, the Turn modal, the
+  Vending Machine, the hand, the play form and the out-of-character screens are glass. Each keeps every decision of its
+  section; only its look changes. The log gains the settlement's summary, and the glass gains Rankings.
+- **Section 15:** the board meets WCAG 2.2 AA; the glass meets it and the Xbox Accessibility Guidelines 101 and 102,
+  as the two-worlds design's section 4 reads them.

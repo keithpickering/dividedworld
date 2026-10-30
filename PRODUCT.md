@@ -27,13 +27,19 @@ and the reveal.
 
 ## Positioning
 
-A 2003 BBCode message board that is secretly a game HUD. Any character might be someone you know; the masks hold
-because the system never tells and never lets anyone measure who is behind them.
+Two worlds, as the name says: a 2003 BBCode message board that is the game's arena, and behind the glass the game's
+own interface, dark, smoky and neon in the manner of the newer WWE games, as separate from the board as a video game's
+HUD and menus are from its play. Any character might be someone you know; the masks hold because the system never tells
+and never lets anyone measure who is behind them.
 
 ## Operating Context
 
-- The forum is the game screen; a HUD docked at the bottom of every page shows the character being played, the orbs
-  (the wallet, live), and the hand of postcards.
+- The board (the index, threads, posts, profiles, the standings, the reveal) is the arena, in the 2003 look. The glass
+  is everything else: the HUD docked at the bottom of every board page (the character being played, the orbs, the
+  hand), the hand drawer, the React picker, the play form, the Turn modal, and full-screen pages under one menu bar
+  like a game's pause menu (the Vending Machine, My characters, Rankings, My log, Settings), plus the account screens
+  and errors. Every way into the glass is the HUD's, and Back or Esc returns the reader to the post they left.
+- The System speaks only on the board, as its posts, and may bluff there; the glass never speaks in character.
 - Daily settlement turns the day's reactions into Aura; between settlements the HUD shows a live estimate.
 - Postcards are played on posts as Acts of their own: Stick Around holds a reader on a post; Whoops! splats it in ink
   that readers scrub and the author washes.
@@ -50,7 +56,8 @@ because the system never tells and never lets anyone measure who is behind them.
 - Every state a player can be put in names its way out; the fiction may bluff, but the player's own log and every
   out-of-character screen speak plainly.
 - Themeable: every color, font and border comes from named tokens and every screen has stable hooks, so a theme is a
-  CSS file of overrides; admins consider player-made themes for the selector.
+  CSS file of overrides; admins consider player-made themes for the selector. A theme restyles the board; whether one
+  can reach the glass is open. The engine owns the two worlds and their rules; the instance owns both looks.
 - Open: the Vending Machine's name, rank names, pip styles beyond the default, card art.
 
 ## Brand Commitments
@@ -58,8 +65,14 @@ because the system never tells and never lets anyone measure who is behind them.
 - The house style: a 2003 BBCode message board. Verdana for body and UI, bold Courier New for headers, logs and system
   text; black and white, in light and dark themes; color only on the game's own pieces (orbs, postcards and their
   effects, reactions, rank pips, the Vending Machine).
-- The 2003 look governs how things look, not which interactions are allowed: a modal or a bottom sheet is used where it
-  is the best experience.
+- The glass: a near-black violet ground under two layers of slow procedural smoke, violet and cyan; cyan for the
+  selected, gold for the ready and earned, Salty pink for loss; Anton for headings and moments, Barlow Condensed for
+  the rest, both served from the instance's own files; buttons and tabs skewed, panels chamfered, no rounded pills and
+  no soft shadows. The boards in `docs/research/2026-10-29-two-worlds/` are its reference, and a build aims at exactly
+  that look.
+- The board and the glass touch at a seam: a 1px rule of pale cyan with a cyan glow.
+- Neither look governs which interactions are allowed: a modal or a bottom sheet is used where it is the best
+  experience.
 - Paper Mario: The Thousand-Year Door's HUD and orbs; WWE crowd psychology (Faces, Heels, Turns); Minus World's spells.
 
 ## Evidence on Hand
@@ -78,5 +91,9 @@ The owner's prototypes of the Whoops! splat and the TTYD Aura bar, and Minus Wor
 ## Accessibility & Inclusion
 
 WCAG 2.2 AA for the forum itself: reading, posting, navigating, settings and the log (contrast, focus, keyboard,
-labels, reflow to 320px, reduced motion). Game obstacles follow CLAUDE.md's "An accessible path costs what the obstacle
-costs": reduced motion makes an effect instant, never absent.
+labels, reflow to 320px, reduced motion). The glass meets it and also follows the rules games use for text, the Xbox
+Accessibility Guidelines 101 and 102 read at PC sizes: text inks at least 18px at 1080p (Barlow Condensed at 20px or
+more, body copy 21px), large text may stand on the smoke at 3:1, everything else reaches 4.5:1 on a calm thinned
+behind it, and a player may choose high contrast at 7:1, text up to 200%, the smoke low or off, and reduced motion
+(`docs/plans/2026-10-29-two-worlds-design.md`, section 4). Game obstacles follow CLAUDE.md's "An accessible path costs
+what the obstacle costs": reduced motion makes an effect instant, never absent.

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>The settlement: the two worlds board</title>
+<!-- A board of the two-worlds design session, 1440 by 960, as the owner approved it on 2026-10-29. A reference for the
+     look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what was decided. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+/* Glass type at game sizes (XAG 101/102 at 1080p): Barlow Condensed inks 0.90 of its em, so 20px is the
+   floor that reaches 18px body height; nothing on this page is smaller. Lines past two set at 1.5. */
+body{margin:0}
+a{color:#c9f8ff}a:hover{color:#ffffff}
+.orb{position:relative;width:74px;height:74px;border-radius:50%;overflow:hidden;flex:none;background:radial-gradient(circle at 50% 60%,#1c1533,#07060c 72%);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.22),inset 0 -10px 16px rgba(0,0,0,.65)}
+.orb .liq{position:absolute;left:0;right:0;bottom:0}
+.orb .gloss{position:absolute;left:17%;top:8%;width:48%;height:30%;border-radius:50%;background:radial-gradient(ellipse at 50% 40%,rgba(255,255,255,.9),rgba(255,255,255,0) 70%)}
+.orb .shine{position:absolute;top:-20%;left:30%;width:22%;height:140%;transform:rotate(28deg);background:rgba(255,255,255,.75);filter:blur(3px)}
+.c1{background:radial-gradient(circle at 38% 30%,#ead6ff,#b46cff 52%,#3d1475)}
+.c2{background:radial-gradient(circle at 38% 30%,#d6e9ff,#3d9bff 52%,#0c3275)}
+.c3{background:radial-gradient(circle at 38% 30%,#d6fff0,#2ef0a0 52%,#08603f)}
+.c4{background:radial-gradient(circle at 38% 30%,#fff7d6,#ffd93d 52%,#7a5c06)}
+.g1{box-shadow:0 0 22px rgba(180,108,255,.7)}.g2{box-shadow:0 0 22px rgba(61,155,255,.7)}.g3{box-shadow:0 0 22px rgba(46,240,160,.6)}.g4{box-shadow:0 0 34px rgba(255,255,255,.7)}
+button:focus-visible,a:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 960px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+  <!-- smoke, thinned behind the text: the header row, the wallet column, the two cards and the buttons each sit
+       in a calm; only the Anton heading and the big figures stand on full smoke, at large-text size -->
+  <svg aria-hidden="true" width="1440" height="960" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="5"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.78"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="27"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 0.85  0 0 0 0 0.24  0 2 0 0 -1.05"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sC" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0034 0.006" numOctaves="4" seed="66"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 0 2 0 -1.12"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="ssoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+      <mask id="scalm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="960">
+        <rect width="1440" height="960" fill="#ffffff"></rect>
+        <rect x="40" y="0" width="1360" height="120" fill="#000000" opacity="0.8" filter="url(#ssoft)"></rect>
+        <rect x="40" y="320" width="700" height="520" fill="#000000" opacity="0.9" filter="url(#ssoft)"></rect>
+        <rect x="740" y="220" width="660" height="600" fill="#000000" opacity="0.8" filter="url(#ssoft)"></rect>
+        <rect x="880" y="830" width="520" height="110" fill="#000000" opacity="0.8" filter="url(#ssoft)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#scalm)">
+      <rect width="1440" height="960" filter="url(#sA)" opacity="0.85"></rect>
+      <rect width="1440" height="960" filter="url(#sB)" opacity="0.35"></rect>
+      <rect width="1440" height="960" filter="url(#sC)" opacity="0.4"></rect>
+    </g>
+    <g stroke="#ffd93d" stroke-width="1" opacity=".18"><path d="M1060 0 L847 960"></path><path d="M1120 0 L907 960"></path><path d="M1180 0 L967 960"></path></g>
+  </svg>
+
+  <header style="position: absolute; left: 64px; top: 36px; right: 64px">
+    <div style="display: flex; justify-content: space-between; align-items: center">
+      <div style="font: 800 20px 'Barlow Condensed', sans-serif; letter-spacing: 4px; color: #ffc48a">SETTLED OCT 30 · 08:17 UTC</div>
+      <nav aria-label="Your characters" style="display: flex; gap: 8px; font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px">
+        <a href="#" aria-current="true" style="display: flex; align-items: center; min-height: 52px; box-sizing: border-box; padding: 0 18px; background: #19e3ff; color: #03141a; text-decoration: none; transform: skewX(-10deg)">PIPEWRENCH</a>
+        <a href="#" style="display: flex; align-items: center; min-height: 52px; box-sizing: border-box; padding: 0 18px; border: 1px solid rgba(241,236,255,.5); color: #f1ecff; text-decoration: none; transform: skewX(-10deg)">MRS. HOOLIGAN</a>
+        <a href="#" style="display: flex; align-items: center; min-height: 52px; box-sizing: border-box; padding: 0 18px; border: 1px solid rgba(241,236,255,.5); color: #f1ecff; text-decoration: none; transform: skewX(-10deg)">SPRITEY</a>
+      </nav>
+    </div>
+    <h1 style="margin: 10px 0 0; font: 112px/0.95 Anton, Impact, sans-serif; letter-spacing: 2px; text-shadow: 0 0 40px rgba(255,217,61,.35)">WHILE YOU WERE AWAY</h1>
+  </header>
+
+  <!-- the wallet -->
+  <section aria-label="Wallet" style="position: absolute; left: 64px; top: 244px; width: 640px">
+    <div role="img" aria-label="Wallet now 3.72 of 6.00" style="display: flex; gap: 18px">
+      <div class="orb g1"><div class="liq c1" style="height: 100%"></div><div class="gloss"></div></div>
+      <div class="orb g2"><div class="liq c2" style="height: 100%"></div><div class="gloss"></div></div>
+      <div class="orb g3"><div class="liq c3" style="height: 100%"></div><div class="gloss"></div></div>
+      <div class="orb g4"><div class="liq c4" style="height: 72%; border-top: 1.5px solid rgba(255,255,255,.9)"></div><div class="shine"></div><div class="gloss"></div></div>
+      <div class="orb"><div class="gloss" style="opacity: .5"></div></div>
+      <div class="orb"><div class="gloss" style="opacity: .5"></div></div>
+    </div>
+    <div style="display: flex; align-items: baseline; gap: 18px; margin-top: 18px">
+      <span style="font: 600 30px 'Barlow Condensed', sans-serif; color: #e4def7">3.37 →</span>
+      <span style="font: 96px/1 Anton, Impact, sans-serif; color: #ffd93d; text-shadow: 0 0 34px rgba(255,217,61,.55)">3.72</span>
+      <span style="font: 800 34px 'Barlow Condensed', sans-serif; color: #2ef0a0">+0.35</span>
+    </div>
+
+    <h2 style="margin: 34px 0 10px; font: 800 20px/1.2 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">WHY, IN PLAIN WORDS · SCORED AS A HEEL</h2>
+    <ul style="margin: 0; padding: 0; list-style: none; border-top: 1px solid rgba(241,236,255,.3)">
+      <li style="display: flex; gap: 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid rgba(241,236,255,.3)">
+        <span style="flex: 1; max-width: 680px; font: 600 21px/1.5 'Barlow Condensed', sans-serif">Drew heat: 6 heat reactions on 2 posts. The live estimate said up to +0.30; the shared vote and halving made it +0.20.</span>
+        <span style="font: 800 24px 'Barlow Condensed', sans-serif; color: #2ef0a0">+0.20</span>
+      </li>
+      <li style="display: flex; gap: 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid rgba(241,236,255,.3)">
+        <span style="flex: 1; max-width: 680px; font: 600 21px/1.5 'Barlow Condensed', sans-serif">Stole thunder: your Whoops! on <a href="#">Spritey's post #41</a> drew more reactions than the post.</span>
+        <span style="font: 800 24px 'Barlow Condensed', sans-serif; color: #2ef0a0">+0.20</span>
+      </li>
+      <li style="display: flex; gap: 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid rgba(241,236,255,.3)">
+        <span style="flex: 1; max-width: 680px; font: 600 21px/1.5 'Barlow Condensed', sans-serif">The polite shrug: 1 calm reaction on <a href="#">your post #43</a>.</span>
+        <span style="font: 800 24px 'Barlow Condensed', sans-serif; color: #ff8a96">−0.05</span>
+      </li>
+    </ul>
+    <p style="margin: 12px 0 0"><a href="#" style="font: 600 21px 'Barlow Condensed', sans-serif">Every Act behind these lines is in your log</a></p>
+  </section>
+
+  <!-- the title card: a rank up -->
+  <section aria-label="Rank up" style="position: absolute; left: 760px; top: 240px; width: 616px; height: 330px; box-sizing: border-box; padding: 26px 32px; background: rgba(10,6,20,.8); border: 1px solid #ffd93d; box-shadow: 0 0 50px rgba(255,217,61,.35), inset 0 0 50px rgba(255,217,61,.08); clip-path: polygon(0 0, calc(100% - 36px) 0, 100% 36px, 100% 100%, 36px 100%, 0 calc(100% - 36px))">
+    <div style="font: 800 20px/1.2 'Barlow Condensed', sans-serif; letter-spacing: 4px; color: #ffe27a">NEW RANK</div>
+    <div style="font: 600 26px 'Barlow Condensed', sans-serif; color: #e4def7; text-decoration: line-through; margin-top: 6px">ENHANCEMENT TALENT</div>
+    <div style="font: 80px/1 Anton, Impact, sans-serif; letter-spacing: 1px; color: #fff4c4; text-shadow: 0 0 10px #ffd93d, 0 0 34px rgba(255,217,61,.7)">MIDCARDER</div>
+    <div role="img" aria-label="Rank: 3 of 6 pips" style="display: flex; gap: 14px; margin-top: 22px">
+      <span style="width: 18px; height: 18px; transform: rotate(45deg); background: #f5b301; box-shadow: 0 0 12px #f5b301"></span>
+      <span style="width: 18px; height: 18px; transform: rotate(45deg); background: #f5b301; box-shadow: 0 0 12px #f5b301"></span>
+      <span style="width: 18px; height: 18px; transform: rotate(45deg); background: #fff4c4; box-shadow: 0 0 24px #ffffff, 0 0 40px #ffd93d"></span>
+      <span style="width: 18px; height: 18px; transform: rotate(45deg); border: 1.5px solid #b7afd6; box-sizing: border-box"></span>
+      <span style="width: 18px; height: 18px; transform: rotate(45deg); border: 1.5px solid #b7afd6; box-sizing: border-box"></span>
+      <span style="width: 18px; height: 18px; transform: rotate(45deg); border: 1.5px solid #b7afd6; box-sizing: border-box"></span>
+    </div>
+    <p style="margin: 18px 0 0; max-width: 680px; font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Season standing 2.95 → 3.30. Every post of Pipewrench's now shows the new rank.</p>
+  </section>
+
+  <!-- the Turn landed -->
+  <section aria-label="Turn" style="position: absolute; left: 760px; top: 600px; width: 616px; box-sizing: border-box; padding: 20px 28px; background: rgba(10,6,20,.8); border: 1px solid #3db8ff; box-shadow: 0 0 34px rgba(61,184,255,.35)">
+    <div style="display: flex; gap: 16px; align-items: center">
+      <span style="font: 44px/1 Anton, Impact, sans-serif; color: #e4def7; text-decoration: line-through">HEEL</span>
+      <svg aria-hidden="true" width="40" height="20" viewBox="0 0 40 20"><path d="M2 10 H34 M26 3 L35 10 L26 17" fill="none" stroke="#9fdcff" stroke-width="2.5" stroke-linecap="round"></path></svg>
+      <span style="font: 52px/1 Anton, Impact, sans-serif; color: #9fdcff; text-shadow: 0 0 22px rgba(61,184,255,.8)">FACE</span>
+    </div>
+    <p style="margin: 10px 0 0; max-width: 680px; font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Pipewrench's Turn took effect. From today it scores as a Face. The System announced it, with the old class, in <a href="#">Season 1: Who Turned</a>.</p>
+  </section>
+
+  <div style="position: absolute; left: 64px; bottom: 44px; right: 64px; display: flex; gap: 16px; justify-content: flex-end">
+    <a href="#" style="display: flex; align-items: center; min-height: 60px; padding: 0 26px; transform: skewX(-10deg); border: 1px solid rgba(241,236,255,.6); color: #f1ecff; text-decoration: none"><span style="transform: skewX(10deg); font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 2px">OPEN MY LOG</span></a>
+    <a href="#" style="display: flex; align-items: center; min-height: 60px; padding: 0 36px; transform: skewX(-10deg); background: #ffd93d; color: #1a1403; text-decoration: none; box-shadow: 0 0 30px rgba(255,217,61,.6)"><span style="transform: skewX(10deg); font: 26px/1 Anton, Impact, sans-serif">BACK TO THE BOARD</span></a>
+  </div>
+</div>
+</body>
+</html>
