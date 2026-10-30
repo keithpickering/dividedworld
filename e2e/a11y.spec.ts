@@ -49,6 +49,24 @@ for (const scheme of ['light', 'dark'] as const) {
           await expect(ready(page, path)).toBeVisible();
           expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
         });
+        /* The docked HUD has a fixed height, the Phone board's 124px; what it holds must fit in it, or its last row is cut at the window's foot. */
+        if (!GLASS.has(path)) test(`${label}'s Game HUD holds all it shows inside its glass and the window`, async ({ page }) => {
+          await page.goto(path);
+          await expect(ready(page, path)).toBeVisible();
+          await expect(page.locator('.kb-hud-orbs .kb-orb').first()).toBeVisible();
+          /* Measured once the orbs have come and the faces have loaded: the fallback's metrics are not what a player sees. */
+          const cut = await page.evaluate(async () => {
+            await document.fonts.ready;
+            const hud = document.querySelector('[aria-label="Game HUD"]')!;
+            const glass = hud.querySelector('.kb-hud-glass') ?? hud;
+            const floor = Math.min(glass.getBoundingClientRect().bottom, window.innerHeight);
+            return [...hud.querySelectorAll('*')]
+              .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden')
+              .map((el) => [el.className.toString() || el.tagName, Math.round(el.getBoundingClientRect().bottom - floor)] as const)
+              .filter(([, over]) => over > 0);
+          });
+          expect(cut).toEqual([]);
+        });
       }
 
       test('a thread, a picker and a spin form have none', async ({ page }) => {

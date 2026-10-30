@@ -584,8 +584,10 @@
     letter-spacing: 1.5px;
   }
 
+  /* The Phone board sets the label at its face's own line, not the page's: the 124px glass holds both rows only so. */
   .kb-hud-swap-label {
     display: block;
+    line-height: normal;
   }
 
   .kb-hud-select {
@@ -656,8 +658,9 @@
     margin: 0;
   }
 
+  /* The Phone board's orbs are 30px; the row under the mask picker has 38px of the glass's 124. */
   .kb-hud-orbs .kb-orbs {
-    --kb-orb-size: 40px;
+    --kb-orb-size: 30px;
     --kb-orb-gap: 6px;
     flex-wrap: nowrap;
     align-items: center;
