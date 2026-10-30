@@ -7,18 +7,25 @@
  * focus is on its main, so a keyboard and a screen reader begin there. Until the glass build's
  * Part 2 restyles each page, its content keeps the board's own look on a panel in the board's
  * colors, so every screen reads as it did.
+ *
+ * Its menu bar and column are the Main board's layout from the width useBoard works out and the
+ * Phone board's below it, the switch the HUD makes at the same width; between that width and
+ * 1440px the Main board's is drawn at the window's scale (shell.css).
  */
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useLocation } from '../router.tsx';
 import type { GlassSurface } from '../types.ts';
 import { MenuBar } from './MenuBar.tsx';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
+import { useBoard } from './useBoard.ts';
 import './shell.css';
 
 export function Page({ surface, children }: { readonly surface: GlassSurface; readonly children: ReactNode }) {
   const { path, hash, popped } = useLocation();
   const main = useRef<HTMLElement>(null);
   const calm = useSurfaceStyle(surface);
+  /* The page's layout is the board's the window is wide enough for, as the HUD's is: the two switch at one width. */
+  useBoard();
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }

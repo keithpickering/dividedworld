@@ -78,7 +78,14 @@ const manifest: BoardManifest = {
     { id: 'hud-orbs', role: 'img', name: 'Aura: 4.62 of 6.00 settled, about 0.30 more estimated', buildName: 'Wallet 4.62 of 6 orbs, 0.30 pending until the next settlement (estimate)', within: 'hud', type: false },
     { id: 'hud-estimate', role: 'text', name: '+0.30 est.', within: 'hud' },
     { id: 'hud-clock', role: 'text', name: 'Next settlement', within: 'hud', box: 'position' },
-    { id: 'hud-menu', role: 'button', name: 'Menu', within: 'hud' },
+    /*
+     * Menu's box, then its word and its Esc key cap each by its own type. The build hides the key cap
+     * from the accessibility tree and takes the button's name from its word (engine/ui/frame/Hud.tsx),
+     * where the board sets aria-label over a visible key cap, which axe's label-in-name rule refuses;
+     * so the button's first text differs between the two, and its type is read from each part instead.
+     */
+    { id: 'hud-menu', role: 'button', name: 'Menu', within: 'hud', type: false },
+    { id: 'hud-menu-word', role: 'text', name: 'Menu', within: 'hud-menu' },
     /* The Menu button's Esc key cap, a <kbd> with no role. The AURA label beside the orbs is not in section 7's list. */
     { id: 'hud-esc', role: 'text', name: 'ESC', within: 'hud' },
     { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', within: 'hud' },

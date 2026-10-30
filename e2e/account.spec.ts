@@ -26,7 +26,8 @@ test('signs out, then signs in again with a code, by keyboard alone', async ({ p
   await expect(page.getByLabel('Code from the email')).toBeFocused();
   await page.keyboard.type(TEST_CODE);
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('combobox', { name: 'Posting as' })).toBeVisible();
+  /* Playwright's 1280px window is above the switch (engine/ui/glass/board.ts): the Main board's HUD, scaled, whose swap is Swap mask. */
+  await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('combobox', { name: 'Swap mask' })).toBeVisible();
 });
 
 test('a theme chosen in Settings is still there after a reload', async ({ page }) => {

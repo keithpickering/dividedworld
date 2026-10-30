@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import { glassVars } from '../../../engine/ui/glass/apply.ts';
+import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
 import { instance } from '../index.ts';
 import { instanceUi } from './index.ts';
@@ -77,5 +78,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const reasons = ['face.cheered', 'face.liftedAPost', 'face.boredTheRoom', 'face.stoleThunder', 'heel.drewHeat', 'heel.stoleThunder', 'heel.shrugged',
       'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch'];
     for (const r of reasons) expect(instanceUi.reasonWords(r), r).not.toMatch(/^Settled under/);
+  });
+  test('the Main board\'s layout becomes the Phone board\'s at 1152px: 1440 times the smallest phone size (16) over the smallest Main board size (20)', () => {
+    expect(boardSwitch(instanceUi.glass)).toBe(1152);
   });
 });

@@ -1,8 +1,8 @@
 /**
  * The glass page shell with its menu bar (the glass plan, section 8: the glass between the boards'
  * widths, and the menu bar on a phone). Signed in, the bar holds Back and the four pages, Settings
- * current; signed out, Back alone. Widen and narrow the canvas to see the bar become the phone's
- * below 900px.
+ * current; signed out, Back alone. Widen and narrow the canvas to see the bar scale with the window
+ * below 1440px and become the phone's below the width the HUD switches at (engine/ui/glass/board.ts).
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { playerWorld } from '../story.tsx';

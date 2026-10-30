@@ -53,7 +53,11 @@ export const testGlass = {
     surfaces: Object.fromEntries(['hud', 'hand', 'play', 'react', 'turn', 'effect', 'vending', 'characters', 'rankings', 'log', 'settings', 'account', 'settlement'].map((s) => [s, 'plain'])),
   },
   calm: { opacity: 0.85, feather: 32 },
-  sizes: {},
+  /* The smallest of each kind, as Divided World's: the Main board's layout holds from 1440 × 16 / 20 = 1152px. */
+  sizes: {
+    label: { px: 20, family: 'Body', weight: 700 },
+    'phone-small': { px: 16, family: 'Body', weight: 600, phone: true },
+  },
   fonts: [],
   classes: {},
   orbs: { gradients: [], body: { core: '', edge: '' } },

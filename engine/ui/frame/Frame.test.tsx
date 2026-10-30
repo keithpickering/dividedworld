@@ -7,6 +7,7 @@ import { PlayerProvider } from '../player.tsx';
 import { RouterProvider } from '../router.tsx';
 import { testGlass } from '../test-world.tsx';
 import { boardPlace, forgetBoard, keepBoardPlace } from '../glass/back.ts';
+import { boardSwitch } from '../glass/board.ts';
 import { Frame } from './Frame.tsx';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
@@ -67,6 +68,7 @@ function width(px: number) {
     const matches = m ? (m[1] === 'min' ? px >= Number(m[2]) : px <= Number(m[2])) : false;
     return { matches, media: q, addEventListener: () => {}, removeEventListener: () => {} } as unknown as MediaQueryList;
   });
+  vi.stubGlobal('innerWidth', px);
 }
 
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
@@ -121,8 +123,11 @@ describe('the HUD: the glass, docked at the bottom', () => {
     expect(within(h).getByText('Heel')).toBeInTheDocument();
     expect(within(h).getByText('Only you see this')).toBeInTheDocument();
   });
-  test('the swap is "Swap mask" on a wide screen and "Posting as" below 1340px, and it changes the HUD\'s character', async () => {
-    width(1440);
+  test('the swap is "Swap mask" from the width where the Main board\'s layout holds and "Posting as" below it, and it changes the HUD\'s character', async () => {
+    /* testGlass's smallest phone size is 16px and its smallest Main board size 20px: 1440 × 16 / 20. */
+    const at = boardSwitch(testGlass);
+    expect(at).toBe(1152);
+    width(at);
     const { unmount } = setup();
     const select = await within(await hud()).findByRole('combobox', { name: 'Swap mask' });
     await waitFor(() => expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['Pipewrench', 'Mrs. Hooligan']));
@@ -130,9 +135,30 @@ describe('the HUD: the glass, docked at the bottom', () => {
     expect(localStorage.getItem('kb-hud:acc')).toBe('b');
     expect(window.location.href).not.toContain('b');
     unmount();
-    width(1024);
+    width(at - 1);
     setup();
     expect(await within(await hud()).findByRole('combobox', { name: 'Posting as' })).toBeInTheDocument();
+  });
+  test('marks the root with the board\'s layout and the scale the Main board\'s is drawn at, which the stylesheets read', async () => {
+    const root = document.documentElement;
+    width(1300);
+    const { unmount } = setup();
+    await hud();
+    expect(root).toHaveAttribute('data-kb-board', 'main');
+    expect(Number(root.style.getPropertyValue('--kb-board-scale'))).toBeCloseTo(1300 / 1440, 9);
+    unmount();
+    expect(root).not.toHaveAttribute('data-kb-board');
+    width(1600);
+    const second = setup();
+    await hud();
+    expect(root).toHaveAttribute('data-kb-board', 'main');
+    expect(root.style.getPropertyValue('--kb-board-scale')).toBe('1');
+    second.unmount();
+    width(1151);
+    setup();
+    await hud();
+    expect(root).toHaveAttribute('data-kb-board', 'phone');
+    expect(root.style.getPropertyValue('--kb-board-scale')).toBe('1');
   });
   test('the clock says when the next settlement is', async () => {
     setup();
