@@ -8,8 +8,8 @@
  * Yours, and the classes, with both ways a stranger's class shows (Gloomba's reveal; Thwompson's,
  * Turned since).
  *
- * The season's line is in the reader's own time; the board draws it at UTC, where the board match
- * runs (the browser's zone is the machine's, UTC on CI).
+ * The season's line and the dates are in the reader's own time; the board draws them in UTC, and the
+ * board match opens both pages in UTC (e2e/boards.spec.ts), whatever the machine's zone.
  */
 import type { BoardManifest, Landmark } from '../board-match.ts';
 
