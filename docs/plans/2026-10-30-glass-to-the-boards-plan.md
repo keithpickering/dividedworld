@@ -320,9 +320,11 @@ The look is the board's, so the smoke becomes recipes, and the guard checks each
 
 **Amended 2026-10-30, the owner's answer on class large text (PR #39's Design question 2).** The owner chose "Per
 screen + 9% lift". A class's large text is checked at 3:1 against the full worst only of the recipes for the surfaces
-where the boards draw that class's large text on the full smoke, and against the calmed worst on the surfaces where the
-boards draw it inside a calm (the page surfaces, settlement, hud and vending, whose clouds are still too bright). The
-engine names, for every `GlassSurface`, whether a class's large text is drawn there on the full smoke, in a calm, or not
+where the boards draw that class's large text on the full smoke (turn and react), and against the calmed worst where the
+boards draw it inside a calm (settlement). The boards draw no class large text on the other surfaces (effect, hud,
+vending, characters, the hand, the play and the page surfaces: there a class is a chip, body text, or a gold that is
+`--kb-glass-ready-text`), so the list says none for each, and a screen that later draws it there keeps it in a calm, as
+those surfaces' clouds are still too bright, and changes the list first. The engine names, for every `GlassSurface`, whether a class's large text is drawn there on the full smoke, in a calm, or not
 at all; the guard checks each class against that list and writes a class ceiling only for the surfaces that draw it,
 so Part 2's rendered measurement fails class large text on a surface with no ceiling. Heel's large text is lifted 9%,
 from `#ff8a96` to `#ff959f`, which meets 3:1 on the turn recipe's full worst (`#ff8a96` is 2.80:1 there). Face, Lurker
