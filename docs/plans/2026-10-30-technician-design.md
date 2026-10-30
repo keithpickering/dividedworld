@@ -69,8 +69,9 @@ of the current set". The Technician follows the three older quadrant classes.
   quadrant in the color of the class that earns from it (`InstanceUi.quadrantClasses`), and Calm wore the Lurker's
   green only because no class owned it. `quadrantClasses.calmPositive` becomes `technician`, so the picker looks the
   same.
-- **The Lurker takes violet.** Fill `#b97aff`, ink `#12051f`, large text `#d4b0ff`: the smoke's own color, hidden in
-  plain sight. It owns no quadrant, and its marks are dotted across all four.
+- **The Lurker takes purple.** Fill `#b97aff`, ink `#12051f`, large text `#d4b0ff`. The owner: "Lurker might be a
+  purple? Mysterious." It is the smoke's own hue, hidden in plain sight. It owns no quadrant, and its marks are dotted
+  across all four.
 
 Both pass `tools/check-glass-contrast.mjs` as it stands on main: a trial run on 2026-10-30 put every token over its
 smoke at its ratio. The guard holds them from then on.

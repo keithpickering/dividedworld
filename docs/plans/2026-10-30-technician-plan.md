@@ -81,14 +81,14 @@ land together. A build session that finds #49 still open stops and says so; it d
   order. `classes[1]` is still the Heel; `supabase/tests/e2e/0002-actions.ts` and `0005-estimate.ts` are read for any
   index past it.
 
-### Task 3. The Technician's look, the Lurker's violet and the words
+### Task 3. The Technician's look, the Lurker's purple and the words
 
 - `instances/divided-world/ui/glass.json` `classes`:
   - `technician`: fill `#2ef0a0`, ink `#03141a`, large `#7dffc8`;
   - `lurker`: fill `#b97aff`, ink `#12051f`, large `#d4b0ff`.
 
   Then `node tools/check-glass-contrast.mjs --write` regenerates `e2e/glass-ceilings.json`, and its plain run passes.
-  The guard is unchanged, so its poisons stand. Its class large-text poison is re-run against the Lurker's violet
+  The guard is unchanged, so its poisons stand. Its class large-text poison is re-run against the Lurker's purple
   darkened to `#8a4dff`, which must fail on the turn recipe, to show the guard reads the new color.
 - `instances/divided-world/ui/index.ts`:
   - **`quadrantClasses.calmPositive`** becomes `'technician'`.
@@ -186,5 +186,5 @@ The design's section 3. `engine/ui/characters/ClassCards.tsx` and `characters.cs
   `ResizeObserver` and a scroll listener on one row.
 - **The masks.** Nothing the carousel or the picker draws depends on a class a player does not own. The card marked
   Now is drawn only on its own player's Turn.
-- **Contrast in the build, not only the guard.** The Lurker's violet large text on the turn surface, under the real
+- **Contrast in the build, not only the guard.** The Lurker's purple large text on the turn surface, under the real
   smoke, in glass Part 2's rendered measurement (`e2e/glass-text.spec.ts`).
