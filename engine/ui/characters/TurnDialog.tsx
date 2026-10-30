@@ -132,11 +132,11 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
               <legend className="kb-visually-hidden">Name in the post</legend>
               <label className="kb-turn-toggle" data-kb-chosen={showFrom || undefined}>
                 <input type="checkbox" checked={showFrom} onChange={(e) => setNamed({ ...named, was: e.target.checked })} />
-                <span><b>Name the old class.</b> Adds “{turnNamedWords({ was: now, to: '' }).from}” to the post.</span>
+                <span><b>Name the old class.</b> Adds “{turnNamedWords({ was: now, to: '' }).old}” to the post.</span>
               </label>
               <label className="kb-turn-toggle" data-kb-chosen={showTo || undefined}>
                 <input type="checkbox" checked={showTo} onChange={(e) => setNamed({ ...named, to: e.target.checked })} />
-                <span><b>Name the new class.</b> {to ? `Adds “${turnNamedWords({ was: now, to: nameOf(to) }).to}” to the post, and reveals it.` : 'Adds the class you choose to the post, and reveals it.'}</span>
+                <span><b>Name the new class.</b> {to ? `Adds “${turnNamedWords({ was: now, to: nameOf(to) }).new}” to the post, and reveals it.` : 'Adds the class you choose to the post, and reveals it.'}</span>
               </label>
             </fieldset>
           </fieldset>
