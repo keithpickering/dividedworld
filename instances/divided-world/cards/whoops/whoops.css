@@ -106,7 +106,7 @@
 }
 
 .kb-whoops-status {
-  flex-basis: 100%;
+  margin: 0 1% 8px;
   color: var(--kb-muted);
 }
 
@@ -196,4 +196,40 @@
   width: 100%;
   max-height: 140px;
   overflow: visible;
+}
+
+/*
+ * Forced colors drop the scrub button's glow and recolor its border, the tools' bold and the chosen
+ * swatch's rings, which are shadows, and the swatches' own fill. So the button and the tools are each
+ * outlined in a system color (the chosen tool in Highlight, as thick as the board's bold), and the chosen
+ * swatch has a Highlight border inside its ink, which stays the ink: the choice is the color.
+ */
+@media (forced-colors: active) {
+  .kb-whoops-scrub {
+    outline: 2px solid ButtonText;
+    outline-offset: 1px;
+  }
+
+  .kb-whoops-scrub:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .kb-whoops-tools button {
+    outline: 1px solid ButtonText;
+    outline-offset: 2px;
+  }
+
+  .kb-whoops-tools button[aria-pressed="true"] {
+    outline: 3px solid Highlight;
+  }
+
+  .kb-whoops-swatch input {
+    forced-color-adjust: none;
+    box-sizing: border-box;
+  }
+
+  .kb-whoops-swatch input:checked {
+    border: 4px solid Highlight;
+    box-shadow: none;
+  }
 }

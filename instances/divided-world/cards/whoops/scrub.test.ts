@@ -100,6 +100,15 @@ test('a stroke is kept to what the card\'s rules take, however long the drag', (
   assert.equal(validated.ok, true, validated.ok ? '' : validated.why);
 });
 
+test('a drag\'s near-duplicate points are thinned out of what is kept', () => {
+  /* A drag reports points a thousandth apart while the hand barely moves: they add nothing to a path and count against the layer's points. */
+  const crawl: Stroke = { tool: 'wash', width: BRUSH, points: [[0.2, 1], [0.2005, 1], [0.201, 1], [0.2015, 1], [0.4, 1], [0.4004, 1]] };
+  const [only] = fitStroke(crawl);
+  assert.deepEqual(only!.points, [[0.2, 1], [0.4, 1]], 'points under a step from the last one kept are dropped');
+  const dab: Stroke = { tool: 'wash', width: BRUSH, points: [[0.5, 1], [0.5002, 1]] };
+  assert.deepEqual(fitStroke(dab)[0]!.points, [[0.5, 1]], 'a dab is one point');
+});
+
 test('a layer\'s strokes fit while they are within the card\'s counts, and not past them', () => {
   const stroke = (n: number): Stroke => ({ tool: 'wash', width: BRUSH, points: Array.from({ length: n }, (_, i): [number, number] => [i / n, 1]) });
   assert.equal(fits(Array.from({ length: STROKES.most }, () => stroke(10))), true);

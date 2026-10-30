@@ -33,3 +33,48 @@ test('the splat on #41 is drawn, scrubbed by a drag, and back after a reload', a
   await page.goto('/?fixture=boards&moment=01-main');
   await expect.poll(() => inked(page)).toBeGreaterThan(before * 0.95);
 });
+
+/*
+ * The scrub button, the author's tool toggles and the chosen ink swatch are drawn with a border, a
+ * glow and underlining, which forced colors (Windows High Contrast) drop or recolor: each is also
+ * marked by an outline or a border in a system color there. The swatch is the play form's, which a
+ * moment does not open, so a swatch is made from the card's own markup beside the post.
+ */
+test.describe('in forced colors', () => {
+  test.use({ forcedColors: 'active' });
+
+  test('the scrub button, the author\'s tools and the chosen swatch are marked in system colors', async ({ page }) => {
+    await page.goto('/?fixture=boards&moment=01-main');
+    await expect(page.locator('#post-41 .kb-whoops-scrub')).toBeVisible();
+    const marks = await page.evaluate(() => {
+      const system = (color: string) => {
+        const probe = document.createElement('div');
+        probe.style.cssText = `forced-color-adjust: none; color: ${color}`;
+        document.body.append(probe);
+        const resolved = getComputedStyle(probe).color;
+        probe.remove();
+        return resolved;
+      };
+      const form = document.createElement('div');
+      form.innerHTML = '<label class="kb-whoops-swatch"><input type="radio" name="t" checked></label><label class="kb-whoops-swatch"><input type="radio" name="t"></label>';
+      document.body.append(form);
+      const outline = (el: Element) => { const c = getComputedStyle(el); return { style: c.outlineStyle, width: c.outlineWidth, color: c.outlineColor }; };
+      const border = (el: Element) => { const c = getComputedStyle(el); return { style: c.borderTopStyle, width: c.borderTopWidth, color: c.borderTopColor }; };
+      const [chosen, other] = [...form.querySelectorAll('input')];
+      const tools = [...document.querySelectorAll('#post-41 .kb-whoops-tools button')];
+      return {
+        buttonText: system('ButtonText'), highlight: system('Highlight'),
+        scrub: outline(document.querySelector('#post-41 .kb-whoops-scrub')!),
+        tools: tools.map((t) => ({ pressed: t.getAttribute('aria-pressed'), ...outline(t) })),
+        chosen: border(chosen!), other: border(other!),
+      };
+    });
+    expect(marks.scrub).toEqual({ style: 'solid', width: '2px', color: marks.buttonText });
+    expect(marks.tools).toHaveLength(2);
+    for (const t of marks.tools) {
+      expect(t).toEqual(t.pressed === 'true' ? { pressed: 'true', style: 'solid', width: '3px', color: marks.highlight } : { pressed: 'false', style: 'solid', width: '1px', color: marks.buttonText });
+    }
+    expect(marks.chosen).toEqual({ style: 'solid', width: '4px', color: marks.highlight });
+    expect(marks.other.style).not.toBe('solid');
+  });
+});

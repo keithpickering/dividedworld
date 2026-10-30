@@ -12,10 +12,24 @@ import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts
 import type { Act, EffectState } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { whoops } from '../whoops.ts';
-import { Effect } from './Effect.tsx';
+import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
+import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS } from './Effect.tsx';
 import { paint, type PaintLayer } from './paint.ts';
 import { BRUSH, LayerInk, PEN, ROW, layoutOf, type Stroke } from './scrub.ts';
 import { makeSplat } from './splat.ts';
+
+/* Every ink grid the component builds is counted, so a test can tell a rebuild from a kept grid. Tests that count do not build their own. */
+const built = vi.hoisted(() => ({ grids: 0 }));
+vi.mock('./scrub.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./scrub.ts')>();
+  class Counted extends real.LayerInk {
+    constructor(...args: ConstructorParameters<typeof real.LayerInk>) {
+      super(...args);
+      built.grids++;
+    }
+  }
+  return { ...real, LayerInk: Counted };
+});
 
 const LINES = 30;
 const LINE_PX = 18;
@@ -45,6 +59,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   document.documentElement.removeAttribute('data-kb-motion');
   delete (HTMLElement.prototype as { clientWidth?: unknown }).clientWidth;
   delete (HTMLElement.prototype as { offsetHeight?: unknown }).offsetHeight;
@@ -68,7 +83,8 @@ interface Options {
   readonly states?: Record<string, EffectState>;
   readonly author?: boolean;
   readonly save?: EffectProps['save'];
-  readonly clean?: number;
+  /** The instance's share washed that counts as clean; null is an instance whose settings carry none. */
+  readonly clean?: number | null;
 }
 
 function mount(o: Options = {}) {
@@ -84,7 +100,7 @@ function mount(o: Options = {}) {
     push = set;
     return <Effect {...props} states={held} />;
   }
-  const world = renderInWorld(<Host />, { settings: { cardSettings: { 'whoops.clean': o.clean ?? 95 } } });
+  const world = renderInWorld(<Host />, { settings: { cardSettings: o.clean === null ? {} : { 'whoops.clean': o.clean ?? 95 } } });
   const root = world.container.querySelector('.kb-whoops') as HTMLElement;
   return { ...world, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)) };
 }
@@ -532,5 +548,311 @@ describe('the canvas', () => {
     paint(canvas, { dpr: 1, width: 360, offset: 0, top: 0, scale: 1 }, layers);
     expect(penColors).toEqual(['work:#19e3ff']);
     expect(log.filter((l) => l === 'main.stroke')).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ the quality review ---- */
+
+const SAVED_AT = '2026-10-29T22:00:00.000Z';
+const settle = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+const authorClock = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+/** The three strokes a test makes, each on a row of its own, so none is a duplicate of another. */
+const rows = () => {
+  const [x, y] = inkSpot(new LayerInk(splatFor(0), []));
+  return [0, 1, 2].map((k): [number, number][] => [[x, y + k * 0.05], [x + 0.06, y + k * 0.05], [x + 0.12, y + k * 0.05]]);
+};
+
+/** A save the test answers by hand: the calls that are on their way, and the most that were on their way at once. */
+function gated() {
+  const calls: { play: string; state: Record<string, unknown>; answer: (a: unknown) => void }[] = [];
+  const flight = { now: 0, most: 0 };
+  const heard: { current: (next: Record<string, EffectState>) => void } = { current: () => {} };
+  const save = vi.fn((play: string, state: Record<string, unknown>) => new Promise((resolve) => {
+    flight.now++;
+    flight.most = Math.max(flight.most, flight.now);
+    calls.push({ play, state, answer: (a) => { flight.now--; resolve(a); } });
+  }));
+  /* The answer the server gives, and the state it then holds for everyone, this screen's own included. */
+  const accept = async (k: number) => {
+    const call = calls[k]!;
+    await act(async () => {
+      call.answer({ ok: true, value: { play: call.play, savedAt: SAVED_AT } });
+      heard.current({ [call.play]: { state: call.state, savedAt: SAVED_AT } });
+    });
+  };
+  return { save: save as unknown as EffectProps['save'], calls, flight, heard, accept };
+}
+
+describe('saving, one at a time', () => {
+  test('a save slower than the debounce is not overlapped: every stroke is saved, and the last state saved is the newest', async () => {
+    authorClock();
+    const net = gated();
+    const [a, b, c] = rows();
+    const { frame, hear } = mount({ author: true, save: net.save });
+    net.heard.current = hear;
+    drag(frame, a!);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(1);
+    /* The first save is still on its way when the author strokes again, and the debounce runs out twice over. */
+    drag(frame, b!);
+    await settle(SAVE_AFTER_MS * 2);
+    drag(frame, c!);
+    await settle(SAVE_AFTER_MS * 2);
+    expect(net.calls, 'nothing more is sent while a save is on its way').toHaveLength(1);
+    await net.accept(0);
+    await settle(SAVE_AFTER_MS * 2);
+    expect(net.calls).toHaveLength(2);
+    await net.accept(1);
+    await settle(SAVE_AFTER_MS * 4);
+    expect(net.flight.most).toBe(1);
+    expect(net.calls, 'and nothing is left to save').toHaveLength(2);
+    const last = net.calls.at(-1)!.state as { strokes: Stroke[] };
+    expect(last.strokes).toHaveLength(3);
+    expect(last.strokes.map((s) => s.points[0]![1])).toEqual([a, b, c].map((r) => Math.round(r![0]![1] * 1000) / 1000));
+  });
+
+  test('strokes made while a save is on its way are sent after it, not lost with the ones it carried', async () => {
+    authorClock();
+    const net = gated();
+    const [a, b, c] = rows();
+    const { frame, hear } = mount({ author: true, save: net.save });
+    net.heard.current = hear;
+    drag(frame, a!);
+    await settle(SAVE_AFTER_MS);
+    drag(frame, b!);
+    await settle(SAVE_AFTER_MS);
+    await net.accept(0);
+    drag(frame, c!);
+    await settle(SAVE_AFTER_MS * 2);
+    await net.accept(1);
+    await settle(SAVE_AFTER_MS * 4);
+    expect(net.calls).toHaveLength(2);
+    expect((net.calls.at(-1)!.state as { strokes: unknown[] }).strokes).toHaveLength(3);
+  });
+});
+
+describe('a save that did not get through', () => {
+  const lost = { ok: false as const, error: LOST_ANSWER, uncertain: true as const };
+
+  test('is sent again after a backoff, so a clean mark that failed reaches everyone, with no stroke after it', async () => {
+    authorClock();
+    const answers = [lost, lost];
+    const save = vi.fn(async (play: string) => answers.shift() ?? { ok: true as const, value: { play, savedAt: SAVED_AT } });
+    const { frame, root } = mount({ author: true, clean: 40, save: save as unknown as EffectProps['save'] });
+    scrubTo(frame, root, 0, new LayerInk(splatFor(0), []), 0.5);
+    await settle(SAVE_AFTER_MS);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent(LOST_ANSWER);
+    await settle(RETRY_AFTER_MS - 1);
+    expect(save).toHaveBeenCalledTimes(1);
+    await settle(1);
+    expect(save).toHaveBeenCalledTimes(2);
+    /* The backoff doubles. */
+    await settle(RETRY_AFTER_MS);
+    expect(save).toHaveBeenCalledTimes(2);
+    await settle(RETRY_AFTER_MS);
+    expect(save).toHaveBeenCalledTimes(3);
+    expect((save.mock.calls.at(-1) as unknown as [string, { clean?: boolean }])[1].clean).toBe(true);
+    expect(screen.queryByRole('status')).toBeNull();
+    await settle(RETRY_AFTER_MS * 100);
+    expect(save).toHaveBeenCalledTimes(3);
+  });
+
+  test('is sent again when the call itself threw', async () => {
+    authorClock();
+    const save = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockImplementation(async (play: string) => ({ ok: true as const, value: { play, savedAt: SAVED_AT } }));
+    const { frame } = mount({ author: true, save: save as unknown as EffectProps['save'] });
+    drag(frame, rows()[0]!);
+    await settle(SAVE_AFTER_MS + RETRY_AFTER_MS);
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+
+  test('is retried a bounded number of times, then left to the next stroke', async () => {
+    authorClock();
+    const save = vi.fn(async () => lost);
+    const { frame } = mount({ author: true, save: save as unknown as EffectProps['save'] });
+    drag(frame, rows()[0]!);
+    await settle(SAVE_AFTER_MS + RETRY_AFTER_MS * 2 ** (MAX_SAVE_RETRIES + 2));
+    expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
+    drag(frame, rows()[1]!);
+    await settle(SAVE_AFTER_MS);
+    expect(save).toHaveBeenCalledTimes(2 + MAX_SAVE_RETRIES);
+  });
+
+  test('is not sent again when the card refused it: the refusal is shown, and a retry would only be refused again', async () => {
+    authorClock();
+    const save = vi.fn(async () => ({ ok: false as const, error: 'at most 200 strokes' }));
+    const { frame } = mount({ author: true, save: save as unknown as EffectProps['save'] });
+    drag(frame, rows()[0]!);
+    await settle(SAVE_AFTER_MS + RETRY_AFTER_MS * 100);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent('at most 200 strokes');
+  });
+});
+
+describe('the debounce', () => {
+  test('two strokes 700ms apart are one save', async () => {
+    authorClock();
+    const [a, b] = rows();
+    const { frame, save } = mount({ author: true });
+    drag(frame, a!);
+    await settle(700);
+    drag(frame, b!);
+    await settle(SAVE_AFTER_MS * 3);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect((save.mock.calls[0]![1] as { strokes: unknown[] }).strokes).toHaveLength(2);
+  });
+
+  test('two strokes 900ms apart are two', async () => {
+    authorClock();
+    const [a, b] = rows();
+    const { frame, save } = mount({ author: true });
+    drag(frame, a!);
+    await settle(900);
+    drag(frame, b!);
+    await settle(SAVE_AFTER_MS * 3);
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('what stays on a reader\'s screen', () => {
+  test('a reader\'s strokes, and a reader reaching clean, send nothing, however long they wait', async () => {
+    authorClock();
+    const [a] = rows();
+    const stroked = mount();
+    drag(stroked.frame, a!);
+    await settle(10_000);
+    expect(stroked.save).not.toHaveBeenCalled();
+    stroked.unmount();
+    const reaching = mount({ clean: 40 });
+    scrubTo(reaching.frame, reaching.root, 0, new LayerInk(splatFor(0), []), 0.5);
+    expect(states(reaching.root)).toEqual(['clean']);
+    await settle(10_000);
+    expect(reaching.save).not.toHaveBeenCalled();
+    reaching.unmount();
+  });
+});
+
+describe('the share that counts as clean', () => {
+  /** Scrub one row at a time, noting the share washed and whether the layer was clean after each. */
+  function scrubWatching(o: { clean?: number | null }) {
+    const { frame, root, save } = mount({ ...o, author: false });
+    const ink = new LayerInk(splatFor(0), []);
+    const seen: { share: number; clean: boolean }[] = [];
+    const { minY, maxY } = ink.splat.bounds;
+    for (let y = minY; y <= maxY && states(root)[0] === 'live'; y += BRUSH * 0.2) {
+      const row = rowAcross(ink, y);
+      if (row.length < 2) continue;
+      drag(frame, row);
+      ink.wash(row, BRUSH);
+      seen.push({ share: washed(root)[0]!, clean: states(root)[0] === 'clean' });
+    }
+    return { seen, save };
+  }
+
+  test('with no setting the layer is clean at 95 percent washed, and not before', () => {
+    const { seen } = scrubWatching({ clean: null });
+    const before = seen.filter((s) => s.share < 0.949);
+    expect(before.length).toBeGreaterThan(3);
+    expect(before.every((s) => !s.clean)).toBe(true);
+    const last = seen.at(-1)!;
+    expect(last.clean).toBe(true);
+    expect(last.share).toBeGreaterThanOrEqual(0.95);
+  });
+
+  test('a layer just under the share stays live, and one at it goes clean', () => {
+    /* The same strokes, three times: the share they reach, then the share a hair above it, then the share itself. */
+    const reach = (clean: number) => {
+      const { frame, root } = mount({ clean });
+      const ink = new LayerInk(splatFor(0), []);
+      const { minY, maxY } = ink.splat.bounds;
+      let share = 0;
+      for (let y = minY; y <= maxY && share < 0.5 && states(root)[0] === 'live'; y += BRUSH * 0.7) {
+        const row = rowAcross(ink, y);
+        if (row.length >= 2) { drag(frame, row); share = washed(root)[0]!; }
+      }
+      return { state: states(root)[0], root };
+    };
+    const probe = reach(100);
+    expect(probe.state).toBe('live');
+    /* The unrounded share, as the ink holds it: read it back from a rebuild of the same strokes. */
+    const mirror = new LayerInk(splatFor(0), [], { minX: 0, maxX: 1, minY: 0, maxY: HEIGHT });
+    const { minY, maxY } = mirror.splat.bounds;
+    let share = 0;
+    for (let y = minY; y <= maxY && share < 0.5; y += BRUSH * 0.7) {
+      const row = rowAcross(mirror, y);
+      if (row.length >= 2) { mirror.wash(row, BRUSH); share = mirror.washed; }
+    }
+    expect(reach(share * 100 * (1 + 1e-6)).state, 'a hair under the share').toBe('live');
+    expect(reach(share * 100).state, 'at the share').toBe('clean');
+  });
+});
+
+describe('what a post costs a page', () => {
+  const stubObserver = () => {
+    const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    return (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+  };
+  const canvases = (root: HTMLElement) => root.querySelectorAll('canvas');
+
+  test('the pixel density is capped at two', () => {
+    vi.stubGlobal('devicePixelRatio', 3);
+    expect(mount().root.querySelector('canvas')!.width).toBe(620 * 2);
+  });
+
+  test('below the cap the density is the screen\'s own', () => {
+    vi.stubGlobal('devicePixelRatio', 1.5);
+    expect(mount().root.querySelector('canvas')!.width).toBe(620 * 1.5);
+  });
+
+  test('a post not near the viewport draws no canvas, and one that comes near draws it, hidden from a screen reader', () => {
+    const see = stubObserver();
+    const { root } = mount();
+    expect(canvases(root)).toHaveLength(0);
+    see(true);
+    expect(canvases(root)).toHaveLength(1);
+    expect(canvases(root)[0]).toHaveAttribute('aria-hidden', 'true');
+    see(false);
+    expect(canvases(root)).toHaveLength(0);
+  });
+
+  test('a post that leaves the viewport lets go of its ink grids, keeps the author\'s unsaved strokes, and builds the grids again on its return', () => {
+    authorClock();
+    const see = stubObserver();
+    const { root, frame } = mount({ author: true });
+    see(true);
+    expect(root.dataset.kbHeld).toBe('1');
+    drag(frame, rows()[0]!);
+    const kept = washed(root)[0]!;
+    expect(kept).toBeGreaterThan(0);
+    see(false);
+    expect(root.dataset.kbHeld, 'the grids are let go').toBe('0');
+    const before = built.grids;
+    see(true);
+    expect(root.dataset.kbHeld).toBe('1');
+    expect(built.grids).toBe(before + 1);
+    expect(washed(root)[0]).toBe(kept);
+  });
+
+  test('a saved state that is the echo of the author\'s own save does not rebuild the grids, and another device\'s does', async () => {
+    authorClock();
+    const net = gated();
+    const { frame, hear } = mount({ author: true, save: net.save });
+    net.heard.current = hear;
+    drag(frame, rows()[0]!);
+    await settle(SAVE_AFTER_MS);
+    const before = built.grids;
+    await net.accept(0);
+    expect(built.grids, 'the echo of what was just sent').toBe(before);
+    hear({ 'play-1': { state: { strokes: [{ tool: 'wash', width: BRUSH, points: [[0.5, 0.5]] }] }, savedAt: SAVED_AT } });
+    expect(built.grids, 'a state from somewhere else').toBe(before + 1);
   });
 });

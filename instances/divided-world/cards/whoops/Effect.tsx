@@ -15,12 +15,16 @@
  * are the same on every screen. The author's pen strokes (written back in a layer's ink) are that layer's ink
  * like the splat: a reader's stroke scrubs them on their screen, a line under one is hidden from a screen reader,
  * and the layers above them cover them. The canvas (paint.ts) only draws that model, and only for a post near
- * the viewport: a page can hold many splatted posts and a canvas is megabytes.
+ * the viewport: a page can hold many splatted posts and a canvas is megabytes. The grids the model keeps
+ * are let go with it (a post that has left holds only the strokes made on this screen) and are built
+ * again when it returns.
  *
  * Whose strokes. A stroke scrubs the top layer that still has ink where it starts. A reader's strokes
  * are kept in this component's memory only, so a reload brings the ink back. The post author's are
  * also saved, debounced, to that layer's play through `save`, within the card's bounds (`fitStroke`,
- * `fits`); everyone loads the saved version. A layer washed to the instance's share (`cardSettings['whoops.clean']`) is
+ * `fits`); everyone loads the saved version. A play has one save on its way at a time, what is made
+ * meanwhile is sent after it, and a save that never got an answer is sent again after a backoff (a save
+ * replaces the saved state, so sending it twice is the same as once); a refusal is shown and not retried. A layer washed to the instance's share (`cardSettings['whoops.clean']`) is
  * clean: the author's save says so for everyone, and a reader who gets there sees it fade on their own.
  *
  * Screen readers. A line of text under ink is hidden from them as from the eye (the body is `inert`
@@ -29,6 +33,7 @@
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
+import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { Smoke, useSurfaceStyle } from '../../../../engine/ui/glass/Smoke.tsx';
@@ -43,6 +48,10 @@ import './whoops.css';
 
 /** A burst of strokes is saved once it has been quiet this long. */
 export const SAVE_AFTER_MS = 800;
+/** How long after a save that did not get through the next try waits, doubling on each failure. */
+export const RETRY_AFTER_MS = 2000;
+/** How many times in a row a save is sent again before it is left to the author's next stroke. */
+export const MAX_SAVE_RETRIES = 6;
 /** The share of a layer washed that counts as clean where the instance's settings do not say (an instance seeded before the setting existed). */
 const DEFAULT_CLEAN = 95;
 /** How long a layer takes to fade once it is washed clean, unless motion is reduced. */
@@ -91,6 +100,9 @@ function savedOf(saved: unknown): { strokes: Stroke[]; clean: boolean } {
   return { strokes, clean: state?.clean === true };
 }
 
+/** A saved state as one string, whatever order the server's copy lists its keys in, to tell a copy of what was just sent from a different state. */
+const canonical = (state: unknown): string => JSON.stringify(savedOf(state));
+
 /** A stroke being made. */
 interface Live { readonly layer: number; readonly tool: 'wash' | 'ink'; readonly width: number; readonly color: string; readonly points: Pt[]; readonly pointer: number | null }
 
@@ -114,6 +126,8 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
   const [tool, setTool] = useState<'wash' | 'ink'>('wash');
   const [report, setReport] = useState('');
   const [view, setView] = useState<View | null>(null);
+  /** How many layers' ink grids are held: none for a post that has left the viewport. */
+  const [held, setHeld] = useState(0);
 
   const frameRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);
@@ -129,6 +143,13 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
   const localClean = useRef(new Set<string>());
   const wantClean = useRef(new Set<string>());
   const dirty = useRef(new Set<string>());
+  /** The plays with a save on its way, and the state last sent for each (compared as `canonical`, so the server's echo of it is told from news). */
+  const sending = useRef(new Set<string>());
+  const lastSent = useRef(new Map<string, string>());
+  /** How many saves in a row have not got through, by play. */
+  const failures = useRef(new Map<string, number>());
+  /** What the ink grids were built from, so a state that changes nothing in them does not build them again. */
+  const builtFrom = useRef<{ splats: readonly Splat[]; height: number; payload: unknown; states: Map<string, string> } | null>(null);
   const cleanedAt = useRef(new Map<string, number>());
   const wasClean = useRef<readonly boolean[] | null>(null);
   const live = useRef<Live | null>(null);
@@ -206,10 +227,28 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
     });
   }, [cleanOf]);
 
-  /* Rebuild every layer's ink when the splats change (the post's height, the plays) or a saved state arrives. */
+  /* Rebuild every layer's ink when the splats change (the post's height, the plays) or a saved state arrives, and let it go when the post is far from the viewport. */
   const splats = useMemo<readonly Splat[] | null>(() => (built ? layers.map((l) => makeSplat(l.seed)) : null), [built, layers]);
   useEffect(() => {
     if (!splats) return;
+    if (!near) {
+      /* Only the grids go: the strokes made on this screen are in `mine`, the saved ones are in the states, and both come back with the grids. */
+      inks.current = [];
+      builtFrom.current = null;
+      setHeld(0);
+      return;
+    }
+    const fromStates = new Map(layers.map((l) => [l.play.id, canonical(states[l.play.id]?.state)]));
+    const was = builtFrom.current;
+    /* The state that comes back from this screen's own save is what the grids already hold (the strokes in it were washed into them as they were made). */
+    const echo = was !== null && inks.current.length === layers.length && was.splats === splats && was.height === height && was.payload === post.currentPayload
+      && layers.every((l) => fromStates.get(l.play.id) === was.states.get(l.play.id) || fromStates.get(l.play.id) === lastSent.current.get(l.play.id));
+    builtFrom.current = { splats, height, payload: post.currentPayload, states: fromStates };
+    if (echo) {
+      refresh();
+      schedulePaint();
+      return;
+    }
     inks.current = splats.map((splat, i) => {
       const id = layers[i]!.play.id;
       const ink = new LayerInk(splat, savedOf(states[id]?.state).strokes, { minX: 0, maxX: 1, minY: 0, maxY: height });
@@ -219,6 +258,7 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
       }
       return ink;
     });
+    setHeld(inks.current.length);
     const body = layoutRef.current;
     if (body) {
       const read = readLines(body, layoutOf(now.current.size.frame || REF_WIDTH).scale);
@@ -227,7 +267,7 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
     refresh();
     schedulePaint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [splats, states, post.currentPayload, height]);
+  }, [splats, states, post.currentPayload, height, near]);
 
   /* ----------------------------------------------------------------- the canvas ---- */
 
@@ -321,31 +361,51 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
     const ids = [...dirty.current];
     dirty.current.clear();
     for (const id of ids) {
-      const kept = mine.current.get(id) ?? [];
-      const clean = wantClean.current.has(id) || savedFor(id).clean;
+      /* One save per play on its way: a second would send the strokes of the first again, and an answer out of order could leave the older state saved. What is made meanwhile goes after this one answers. */
+      if (sending.current.has(id)) {
+        dirty.current.add(id);
+        continue;
+      }
+      const kept = [...(mine.current.get(id) ?? [])];
+      const cleanNow = wantClean.current.has(id);
+      const clean = cleanNow || savedFor(id).clean;
       const strokes = [...savedFor(id).strokes, ...kept];
       if (!fits(strokes)) {
         setReport('This layer has no room for more strokes to save. What you wash from here shows on your screen only.');
         continue;
       }
-      const answer = await now.current.save(id, clean ? { strokes, clean: true } : { strokes });
+      const state = clean ? { strokes, clean: true } : { strokes };
+      sending.current.add(id);
+      lastSent.current.set(id, canonical(state));
+      let answer: Answer<unknown>;
+      try {
+        answer = await now.current.save(id, state);
+      } catch {
+        answer = { ok: false, error: LOST_ANSWER, uncertain: true };
+      }
+      sending.current.delete(id);
       if (!answer.ok) {
         setReport(answer.error);
+        /* A refusal is the card's answer and would be the same again. A save that got no answer is sent again, a little later each time, and given up on after a few: the strokes stay, and the author's next one sends them. */
+        const failed = (failures.current.get(id) ?? 0) + 1;
+        failures.current.set(id, failed);
+        if (answer.uncertain && failed <= MAX_SAVE_RETRIES) queueSave(id, RETRY_AFTER_MS * 2 ** (failed - 1));
         continue;
       }
+      failures.current.delete(id);
       setReport('');
       /* What was sent is now the saved version; strokes made while it was on its way are still to send. */
       mine.current.set(id, (mine.current.get(id) ?? []).slice(kept.length));
-      wantClean.current.delete(id);
-      if ((mine.current.get(id) ?? []).length > 0) queueSave(id);
+      if (cleanNow) wantClean.current.delete(id);
+      if (dirty.current.has(id) || (mine.current.get(id) ?? []).length > 0 || wantClean.current.has(id)) queueSave(id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedFor]);
 
-  const queueSave = useCallback((id: string) => {
+  const queueSave = useCallback((id: string, after = SAVE_AFTER_MS) => {
     dirty.current.add(id);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { void flush(); }, SAVE_AFTER_MS);
+    saveTimer.current = setTimeout(() => { void flush(); }, after);
   }, [flush]);
 
   /* A post left with strokes unsaved saves them as it goes. */
@@ -427,11 +487,11 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
     s.points.push(p);
     suppress.current = true;
     if (s.tool === 'wash') {
-      inks.current[s.layer]!.wash([last, p], BRUSH);
+      inks.current[s.layer]?.wash([last, p], BRUSH);
       const [sx, sy] = screenAt(e);
       sud(sx, sy);
     } else {
-      inks.current[s.layer]!.pen([last, p], PEN);
+      inks.current[s.layer]?.pen([last, p], PEN);
     }
     schedulePaint();
   };
@@ -467,7 +527,7 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
   }, [checkClean, closeSweepStroke, refresh, schedulePaint]);
 
   const startSweep = useCallback(() => {
-    if (sweeping.current || !built) return;
+    if (sweeping.current || !built || inks.current.length !== now.current.layers.length) return;
     const rows = bandsOf(now.current.size.height / REF_WIDTH);
     const run = { raf: 0, last: performance.now(), sweep: { row: Math.min(sweepFrom.current, rows.length - 1), x: 0 } as Sweep, row: -1 };
     sweeping.current = run;
@@ -542,6 +602,7 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
       data-kb-layers={view ? view.clean.map((c) => (c ? 'clean' : 'live')).join(' ') : layers.map(() => 'live').join(' ')}
       data-kb-washed={view ? view.washed.map((w) => w.toFixed(3)).join(' ') : layers.map(() => '0').join(' ')}
       data-kb-fading={view?.fading ? 'true' : undefined}
+      data-kb-held={held}
       data-kb-splat={splats?.map((sp) => `${sp.placement.cx},${sp.placement.cy},${sp.placement.rx},${sp.placement.ry}`).join(' ')}
     >
       <div
@@ -589,9 +650,10 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
               <button type="button" className="kb-link-button kb-small" aria-pressed={tool === 'ink'} onClick={() => setTool('ink')}>Write in ink</button>
             </span>
           )}
-          {report && <span role="status" className="kb-whoops-status kb-small">{report}</span>}
         </div>
       )}
+      {/* Said whether or not a layer is left: a clean mark that did not get through is the author's to know of, with no ink under it. */}
+      {report && <p role="status" className="kb-whoops-status kb-small">{report}</p>}
     </div>
   );
 }
