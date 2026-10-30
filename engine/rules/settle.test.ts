@@ -716,7 +716,7 @@ const assertSharesAddUp = (entries: readonly LedgerEntry[], shares: ReturnType<t
   const totals = shareTotals(shares);
   for (const s of shares) {
     assert.ok(Number.isInteger(s.amount) && s.amount !== 0, 'a share is whole hundredths, never 0');
-    assert.ok(totals.has(`${s.player}\u0000${s.character}\u0000${s.reason}`) && entries.some((e) => e.player === s.player && e.character === s.character && e.reason === s.reason), 'a share names an entry');
+    assert.ok(entries.some((e) => e.player === s.player && e.character === s.character && e.reason === s.reason), 'a share names an entry');
   }
   for (const e of entries) {
     const k = `${e.player}\u0000${e.character}\u0000${e.reason}`;
@@ -840,4 +840,40 @@ test('the shares are the same in any input order', () => {
   const shuffled: SettlementInput = { ...input, characters: [...input.characters].reverse(), acts: [...input.acts].reverse(), reactions: [...input.reactions].reverse() };
   assert.ok(one.length > 0);
   assert.deepEqual(shareEntries(shuffled, instance, [...entries].reverse()), one);
+});
+
+/* A class that pays a cheer and charges a groan under one reason, each on the reaction's post. */
+const mixed: ClassRules = {
+  key: 'mixed',
+  name: 'Mixed',
+  earn: (input, settings) => input.received.flatMap((r): Earning[] =>
+    r.quadrant === 'excitedPositive' ? [{ reason: 'mixed.feel', amount: settings.vote * r.votes, act: r.act, at: r.at }]
+    : r.quadrant === 'boredNegative' ? [{ reason: 'mixed.feel', amount: -settings.vote * r.votes, act: r.act, at: r.at }]
+    : []),
+};
+
+test('a reason that pays and costs: each post\'s lines are netted, and a post of the other sign is no share', () => {
+  const b = base();
+  const input: SettlementInput = {
+    ...b,
+    characters: b.characters.map((c) => (c.id === 'ann-fan' ? { ...c, classes: [{ class: 'mixed', from: 0 }] } : c)),
+    acts: [...b.acts, post('p3', 'ann-fan', FROM + 3 * H + 1)],
+    reactions: [...b.reactions, react('p3', 'dee', 'dee-1', 'zzz', FROM + 7 * H)],
+  };
+  const world = withClasses(mixed);
+  const { entries } = settle(input, world);
+  // Exact: p1 10 + 5 - 5, p2 5, p3 -10. The estimate: p1 10 + 10 - 10, p2 10, p3 -10.
+  assert.deepEqual(entries.filter((e) => e.reason === 'mixed.feel').map((e) => e.amount), [5]);
+  const shares = shareEntries(input, world, entries).filter((s) => s.reason === 'mixed.feel');
+  assert.deepEqual(shares.map((s) => [s.act, s.amount]), [['p1', 3], ['p2', 2]], 'p1 nets to one cheer, p2 is one, and p3\'s groan is of the other sign');
+});
+
+test('an entry whose estimate holds weight of its sign on no Act has no shares, rather than handing that part to a post', () => {
+  const placed: ClassRules = { key: 'placed', name: 'Placed', earn: (input) => input.posts.flatMap((p): Earning[] => [{ reason: 'placed.both', amount: 10, act: p.act }, { reason: 'placed.both', amount: 10 }, { reason: 'placed.post', amount: 10, act: p.act }]) };
+  const b = base();
+  const input: SettlementInput = { ...b, characters: b.characters.map((c) => (c.id === 'bob-1' ? { ...c, classes: [{ class: 'placed', from: 0 }] } : c)) };
+  const world = withClasses(placed);
+  const { entries } = settle(input, world);
+  assert.equal(entries.find((e) => e.reason === 'placed.both')?.amount, 20);
+  assert.deepEqual(shareEntries(input, world, entries).filter((s) => s.character === 'bob-1').map((s) => [s.reason, s.act, s.amount]), [['placed.post', 'q1', 10]]);
 });

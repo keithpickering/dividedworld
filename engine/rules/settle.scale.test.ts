@@ -89,6 +89,8 @@ test('the same busy window\'s shares add up to every entry, and the second run f
     const k = `${e.player}\u0000${e.character}\u0000${e.reason}`;
     if (totals.has(k)) assert.equal(totals.get(k), e.amount, `${e.character} ${e.reason}`);
   }
+  console.log(`  ${totals.size} of ${r.entries.length} entries shared`);
+  assert.ok(totals.size >= 0.9 * r.entries.length, `${totals.size} of ${r.entries.length} entries shared`);
   assert.ok(ms < 30_000, `took ${Math.round(ms)} ms`);
 });
 

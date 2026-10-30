@@ -426,8 +426,9 @@ export interface Share {
  * halving off, as estimateForOwner runs it, its lines summed by Act and quadrant, and the entry's
  * exact amount split across those of the entry's sign in proportion to their size. A card's lift
  * is weighed on the card's own Act. The shares of an entry add up to it exactly, by the details'
- * rounding (apportion). An entry whose estimate holds no weight of its sign has no shares, and a
- * share of 0 is none.
+ * rounding (apportion). An entry whose estimate holds no weight of its sign has no shares, nor
+ * one whose estimate holds some of that weight on no Act, which no post could be shown as
+ * earning; the log says such an entry was scored over the whole window. A share of 0 is none.
  *
  * So a share says nothing past the entry, already shown, and the estimate the player watched
  * live: no share moves with how reactions group into players, and where the estimate and the
@@ -436,9 +437,15 @@ export interface Share {
 export function shareEntries(input: SettlementInput, instance: Instance, entries: readonly LedgerEntry[]): Share[] {
   const estimate = settle(input, instance, { sharedVote: false, halving: false });
   const weights = new Map<string, Map<string, { act: string; quadrant?: Quadrant; amount: number }>>();
+  const unplaced = new Map<string, { up: boolean; down: boolean }>();
   for (const d of estimate.details) {
-    if (!d.act) continue;
     const k = `${d.player}\u0000${d.character}\u0000${d.reason}`;
+    if (!d.act) {
+      const u = unplaced.get(k) ?? { up: false, down: false };
+      if (d.amount > 0) u.up = true; else u.down = true;
+      unplaced.set(k, u);
+      continue;
+    }
     const byPost = weights.get(k) ?? new Map();
     const key = `${d.act}\u0000${d.quadrant ?? ''}`;
     const w = byPost.get(key) ?? { act: d.act, ...(d.quadrant ? { quadrant: d.quadrant } : {}), amount: 0 };
@@ -449,7 +456,10 @@ export function shareEntries(input: SettlementInput, instance: Instance, entries
   const shares: Share[] = [];
   for (const e of [...entries].sort((a, b) => cmp(a.player, b.player) || cmp(a.character, b.character) || cmp(a.reason, b.reason))) {
     const sign = Math.sign(e.amount);
-    const posts = [...(weights.get(`${e.player}\u0000${e.character}\u0000${e.reason}`) ?? [])]
+    const k = `${e.player}\u0000${e.character}\u0000${e.reason}`;
+    // Weight of the entry's sign on no Act: the split would hand its part to the posts, so the entry is scored over the window.
+    if (sign > 0 ? unplaced.get(k)?.up : unplaced.get(k)?.down) continue;
+    const posts = [...(weights.get(k) ?? [])]
       .filter(([, w]) => Math.sign(w.amount) === sign && sign !== 0)
       .sort((a, b) => cmp(a[0], b[0]));
     const total = posts.reduce((s, [, w]) => s + Math.abs(w.amount), 0);
