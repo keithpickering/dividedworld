@@ -61,6 +61,16 @@ export function recordAvatarUploads(fake: Fake): void {
 }
 
 /**
+ * For the end-to-end flows only: the fake and its demo world on `globalThis.__kbFake` and
+ * `globalThis.__kbDemo`, so a test can play the part of another player, or of the reader in another
+ * tab, while the page is open (a post that comes while the reader is in the glass, e2e/focus.spec.ts).
+ * Only the e2e build calls it; a development build and every Supabase build leave both unset.
+ */
+export function exposeFake(fake: Fake, demo: Demo): void {
+  Object.assign(globalThis, { __kbFake: fake, __kbDemo: demo });
+}
+
+/**
  * The demo world starts over on every load, so a player's saved preferences are kept for the tab
  * (session storage) and put back on the demo account: "change the theme, reload, still dark"
  * is then something the end-to-end flow can see. The real backend keeps them in the account.

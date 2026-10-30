@@ -26,9 +26,12 @@
 
   --kb-font-body: Verdana, Geneva, sans-serif;
   --kb-font-mono: "Courier New", Courier, monospace;
-  --kb-size-body: 0.8125rem;
+  /* The Main board's sizes: 12px words, 11px links and controls, a 10px post line, an 18px title. */
+  --kb-size-body: 0.75rem;
   --kb-size-small: 0.6875rem;
+  --kb-size-fine: 0.625rem;
   --kb-size-heading: 0.9375rem;
+  --kb-size-title: 1.125rem;
   --kb-size-logo: 1.25rem;
   --kb-line: 1.45;
 

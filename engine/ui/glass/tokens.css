@@ -1,0 +1,62 @@
+/*
+ * The glass's token names, with plain defaults: black ground, white text, system fonts. An instance's
+ * glass.json sets them (engine/ui/glass/apply.ts puts its standard or high key on a glass root), and
+ * tools/check-glass-contrast.mjs holds each value to its ratio. With this file, engine/ui/tokens.css,
+ * the two files in engine/ui/ that may hold a color or a font family (tools/check-ui-tokens.mjs).
+ *
+ * The names are the glass plan's closed list (docs/plans/2026-10-30-glass-to-the-boards-plan.md,
+ * section 4). A screen reads these and no literal; the instance's own colors never reach the engine.
+ */
+:root {
+  /* Surfaces: the opaque ground the smoke is laid over, and the panels and fields on it. */
+  --kb-glass-ground: #000;
+  --kb-glass-panel-soft: rgb(0 0 0 / 0.72);
+  --kb-glass-panel: rgb(0 0 0 / 0.82);
+  --kb-glass-panel-strong: rgb(0 0 0 / 0.88);
+  --kb-glass-sheet: rgb(0 0 0 / 0.92);
+  --kb-glass-field: #111;
+  --kb-glass-field-2: #0a0a0a;
+  --kb-glass-card: #050505;
+
+  /* Text. */
+  --kb-glass-text: #eee;
+  --kb-glass-text-2: #ddd;
+  --kb-glass-text-hi: #fff;
+  --kb-glass-pale: #eee;
+  --kb-glass-neon-text: #fff;
+  --kb-glass-neon: #fff;
+  --kb-glass-sweet: #fff;
+  --kb-glass-ready: #fff;
+  --kb-glass-ready-text: #fff;
+  --kb-glass-salty: #fff;
+  --kb-glass-salty-text: #fff;
+  --kb-glass-estimate: #fff;
+  --kb-glass-loss: #fff;
+  --kb-glass-over: #fff;
+
+  /* The ink set on a bright fill. */
+  --kb-glass-ink-neon: #000;
+  --kb-glass-ink-salty: #000;
+  --kb-glass-ink-ready: #000;
+
+  --kb-glass-font-display: sans-serif;
+  --kb-glass-font-body: sans-serif;
+
+  /* The size steps, in px, as the boards set them. */
+  --kb-glass-size-label: 20px;
+  --kb-glass-size-body: 21px;
+  --kb-glass-size-lead: 24px;
+  --kb-glass-size-title: 34px;
+  --kb-glass-size-display-xs: 20px;
+  --kb-glass-size-display-s: 26px;
+  --kb-glass-size-display-m: 40px;
+  --kb-glass-size-display-l: 52px;
+  --kb-glass-size-display-xl: 96px;
+  --kb-glass-size-phone-small: 16px;
+  --kb-glass-size-phone-body: 17px;
+  --kb-glass-size-phone-display: 20px;
+
+  /* The calm: how much of the ground a text block's backing lays over the smoke, and its feathered edge. */
+  --kb-glass-calm-opacity: 0.85;
+  --kb-glass-calm-feather: 32px;
+}

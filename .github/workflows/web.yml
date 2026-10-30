@@ -26,3 +26,10 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
         env: { CI: '1' }
+      # The board match's side-by-side pictures and mismatch lists (e2e/boards.spec.ts), on a pass as well.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: board-match-report
+          path: e2e/report/boards/
+          if-no-files-found: ignore

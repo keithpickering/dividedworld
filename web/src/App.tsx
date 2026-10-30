@@ -2,7 +2,7 @@
  * The app: the backend, the instance, its look and words, and the screens, put together. This and
  * web/src/data/ are the only places the engine's screens and an instance meet.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import type { KayfaApi, ScreenSettings } from '../../engine/ui/data/api.ts';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
@@ -16,19 +16,18 @@ import { NewCharacter } from '../../engine/ui/characters/NewCharacter.tsx';
 import { ProfileScreen } from '../../engine/ui/profile/Profile.tsx';
 import { RecordScreen } from '../../engine/ui/profile/Record.tsx';
 import { Frame } from '../../engine/ui/frame/Frame.tsx';
+import { keepBoardPlace } from '../../engine/ui/glass/back.ts';
+import { applyGlass, installGlassFonts, type GlassSurface } from '../../engine/ui/glass/index.ts';
+import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
 import { StandingsScreen } from '../../engine/ui/standings/Standings.tsx';
-import { RouterProvider } from '../../engine/ui/router.tsx';
+import { Link, RouterProvider, useLocation } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
-
-const LINKS = [{ to: '/', label: 'Index' }, { to: '/standings', label: 'Standings' }, { to: '/characters', label: 'Characters' }];
-/** What only a player with an account has a use for. */
-const PLAYER_LINKS = [{ to: '/invites', label: 'Invites' }, { to: '/settings', label: 'Settings' }];
 
 const ROUTES: readonly Route[] = [
   { path: '/', render: () => <IndexScreen /> },
@@ -42,9 +41,34 @@ const ROUTES: readonly Route[] = [
   { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
   { path: '/register', render: () => <SignInScreen mode="register" /> },
   { path: '/invites', render: () => <InvitesScreen /> },
-  { path: '/settings', render: () => <SettingsScreen /> },
+  /*
+   * Invites stands in here, beside Settings, until the web build's Task 2.4 and the glass build's
+   * Task 2.4 move it into Settings › Account: the glass's menu bar holds no Invites tab and the
+   * banner no longer links it, so without this link the page could be reached only by its address.
+   */
+  { path: '/settings', render: () => <><SettingsScreen /><p><Link to="/invites">Invites</Link></p></> },
   { path: '/t/:thread', render: ({ thread }) => <ThreadScreen thread={thread!} /> },
 ];
+
+/**
+ * The routes that are glass pages (the glass build's Task 1.4), each with the surface whose smoke it
+ * stands on. Their content is the board's screen as it was until Part 2 restyles it; every other
+ * route is a board page, in the frame with its banner and Game HUD.
+ */
+const GLASS: Readonly<Record<string, GlassSurface>> = {
+  '/characters': 'characters',
+  '/characters/new': 'characters',
+  '/characters/edit': 'characters',
+  '/invites': 'account',
+  '/settings': 'settings',
+  '/sign-in': 'account',
+  '/register': 'account',
+};
+
+const isGlass = (path: string): boolean => Object.hasOwn(GLASS, path);
+
+/** Every move into the glass keeps the board's place for Back, and every move out forgets it (engine/ui/glass/back.ts). */
+const keepPlace = keepBoardPlace(isGlass);
 
 /** The account's theme and motion, once it is known; the device decides until then. */
 function Appearance({ api }: { readonly api: KayfaApi }) {
@@ -58,19 +82,34 @@ function Appearance({ api }: { readonly api: KayfaApi }) {
   return null;
 }
 
-/** The frame, with the links for a player who has an account. */
-function Page() {
-  const { session } = usePlayer();
-  return (
-    <Frame links={session.account ? [...LINKS, ...PLAYER_LINKS] : LINKS}>
-      <AccountGate>
-        <Routes routes={ROUTES} />
-      </AccountGate>
-    </Frame>
+/**
+ * A glass page in the glass's shell, every other page in the board's frame. A move between a glass
+ * route and a board route swaps one shell for the other, so the screen inside remounts: that is on
+ * purpose, since the two are different places (the glass is entered and left, not scrolled into),
+ * and each shell starts its own page at its top with focus on its main. A move within one shell
+ * keeps it mounted and only the routed screen changes.
+ */
+function Shell() {
+  const { path } = useLocation();
+  const surface = isGlass(path) ? GLASS[path] : undefined;
+  const content = (
+    <AccountGate>
+      <Routes routes={ROUTES} />
+    </AccountGate>
   );
+  return surface ? <GlassPage surface={surface}>{content}</GlassPage> : <Frame>{content}</Frame>;
+}
+
+/** The instance's glass on the page: its standard key's tokens and colors on the root, and its fonts. */
+function useGlass() {
+  useLayoutEffect(() => {
+    applyGlass(document.documentElement, instanceUi.glass, 'standard');
+    installGlassFonts(document, instanceUi.glass);
+  }, []);
 }
 
 export function App({ api }: { readonly api: KayfaApi }) {
+  useGlass();
   const [settings, setSettings] = useState<ScreenSettings | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -79,11 +118,11 @@ export function App({ api }: { readonly api: KayfaApi }) {
   if (failed) return <main className="kb-page"><p className="kb-notice" data-kb-tone="refusal">The board could not be reached. Reload the page to try again.</p></main>;
   if (!settings) return <main className="kb-page" aria-busy="true" />;
   return (
-    <RouterProvider>
+    <RouterProvider onMove={keepPlace}>
       <KayfaProvider value={{ api, instance, ui: instanceUi, settings }}>
         <PlayerProvider api={api}>
           <Appearance api={api} />
-          <Page />
+          <Shell />
         </PlayerProvider>
       </KayfaProvider>
     </RouterProvider>

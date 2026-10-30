@@ -1,23 +1,62 @@
-/* A thread. Posts are a grid: the postbit beside the words, or above them when stacked or on a phone (40em and under). */
+/*
+ * A thread, as the Main board draws it. The head is the title with the pages beside it, then the
+ * table: a column head over side-by-side posts, and each post a grid, the postbit in the left
+ * column the post's full height and the post's line (when, and its permalink) over the words. Stacked
+ * or on a phone (40em and under), the postbit heads the post and there is no column head.
+ */
 .kb-thread {
   min-width: 0;
 }
 
-.kb-thread-info {
-  margin: 0 0 0.6em;
+.kb-thread-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 0.2em 1em;
+  margin-bottom: 0.5em;
+}
+
+.kb-thread-head > h1 {
+  margin: 0;
+  padding: 0;
+}
+
+.kb-thread-head > .kb-pager {
+  margin: 0;
 }
 
 .kb-acts {
+  --kb-postbit-column: minmax(8em, min(18%, 14em));
   border: 1px solid var(--kb-rule);
-  margin: 0.6em 0;
+  margin: 0 0 0.6em;
+}
+
+.kb-acts-head {
+  display: grid;
+  grid-template-columns: var(--kb-postbit-column) minmax(0, 1fr);
+  border-bottom: 1px solid var(--kb-rule);
+}
+
+/* The type is on the cells, so the column's em is the posts' and the rules line up. */
+.kb-acts-head > span {
+  font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
+  padding: 0.25em 6%;
+  border-right: 1px solid var(--kb-rule);
+}
+
+.kb-acts-head > span + span {
+  padding-inline: 1%;
+  border-right: 0;
 }
 
 .kb-act {
   display: grid;
-  grid-template-columns: minmax(8em, min(18%, 14em)) minmax(0, 1fr);
+  grid-template-columns: var(--kb-postbit-column) minmax(0, 1fr);
   grid-template-areas:
-    "meta meta"
+    "bit meta"
     "bit main";
+  grid-template-rows: auto 1fr;
   border-bottom: 1px solid var(--kb-rule);
   scroll-margin-top: 0.5em;
 }
@@ -26,13 +65,21 @@
   border-bottom: 0;
 }
 
+/* The post's line: when, and its permalink, small and in the muted ink, the link with them. */
 .kb-act-meta {
   grid-area: meta;
   display: flex;
   justify-content: space-between;
   gap: 1em;
-  padding: 0.25em 1.5%;
+  padding: 0.25em 1%;
   border-bottom: 1px solid var(--kb-rule);
+  font-size: var(--kb-size-fine);
+  color: var(--kb-muted);
+}
+
+.kb-act-meta a,
+.kb-act-meta a:visited {
+  color: inherit;
 }
 
 .kb-act > .kb-postbit,
@@ -44,7 +91,7 @@
 
 .kb-act-main {
   grid-area: main;
-  padding: 0.5em 1.5%;
+  padding: 0.5em 1%;
   min-width: 0;
 }
 
@@ -55,6 +102,7 @@
   grid-template-areas:
     "meta"
     "main";
+  grid-template-rows: none;
 }
 
 .kb-act-line {
@@ -68,6 +116,7 @@
     "bit"
     "meta"
     "main";
+  grid-template-rows: none;
 }
 
 .kb-act[data-kb-postbit="stacked"] > .kb-postbit,
@@ -77,6 +126,10 @@
 }
 
 @media (max-width: 40em) {
+  .kb-acts-head {
+    display: none;
+  }
+
   .kb-act,
   .kb-act[data-kb-postbit] {
     grid-template-columns: minmax(0, 1fr);
@@ -84,6 +137,7 @@
       "bit"
       "meta"
       "main";
+    grid-template-rows: none;
   }
 
   .kb-act > .kb-postbit,

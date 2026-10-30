@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { Link, RouterProvider, useLocation, useNavigate } from './router.tsx';
+import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, type Location } from './router.tsx';
 
 function Where() {
   const l = useLocation();
@@ -63,5 +64,53 @@ describe('the router', () => {
     expect(screen.getByTestId('popped').textContent).toBe('false');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
     expect(screen.getByTestId('popped').textContent).toBe('true');
+  });
+
+  test('every move is told to onMove, from what was shown to what will be, while the page moved from is still drawn', () => {
+    const seen: string[] = [];
+    const where = (l: Location | null) => (l ? `${addressOf(l)}${l.popped ? ' (popped)' : ''}` : 'nothing');
+    const onMove = (from: Location | null, to: Location) => seen.push(`${where(from)} -> ${where(to)} [drawn ${screen.queryByTestId('path')?.textContent ?? 'nothing'}]`);
+    window.history.replaceState(null, '', '/t/abc');
+    render(<RouterProvider onMove={onMove}><Where /></RouterProvider>);
+    act(() => screen.getByText('go').click());
+    act(() => {
+      window.history.replaceState(null, '', '/settings');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(seen).toEqual([
+      'nothing -> /t/abc [drawn /t/abc]',
+      '/t/abc -> /b/general?page=2 [drawn /t/abc]',
+      '/b/general?page=2 -> /settings (popped) [drawn /b/general?page=2]',
+    ]);
+  });
+  test('the document\'s first move is told first, before a screen that moves as it mounts moves it', () => {
+    /* As the sign-in screen does for a reader already signed in: it replaces the address in its mount effect. */
+    function Away() { const navigate = useNavigate(); useEffect(() => { navigate('/b/general', { replace: true }); }, [navigate]); return null; }
+    const seen: [string | null, string][] = [];
+    window.history.replaceState(null, '', '/sign-in');
+    render(<RouterProvider onMove={(from, to) => seen.push([from?.path ?? null, to.path])}><Away /></RouterProvider>);
+    expect(seen).toEqual([[null, '/sign-in'], ['/sign-in', '/b/general']]);
+  });
+});
+
+/*
+ * URLSearchParams.size is missing before Safari 17, where a test on it reads undefined and drops
+ * every query. jsdom has it, so no test here can see that browser fail; what is held is that the
+ * helpers read the query by its text, which every browser has.
+ */
+describe('an address read from a location', () => {
+  const at = (path: string, search: string) => ({ path, query: new URLSearchParams(search) });
+  test('is the path alone when there is no query', () => {
+    expect(addressOf(at('/b/general', ''))).toBe('/b/general');
+    expect(searchOf(new URLSearchParams())).toBe('');
+  });
+  test('carries the query when there is one', () => {
+    expect(addressOf(at('/t/abc', '?page=3'))).toBe('/t/abc?page=3');
+    expect(searchOf(new URLSearchParams('page=3&x=a b'))).toBe('?page=3&x=a+b');
+  });
+  test('reads the query by its text, not by its size', () => {
+    const query = new URLSearchParams('page=2');
+    Object.defineProperty(query, 'size', { value: undefined });
+    expect(addressOf({ path: '/t/abc', query })).toBe('/t/abc?page=2');
   });
 });

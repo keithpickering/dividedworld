@@ -74,6 +74,8 @@ export const STEPS = [
   'node tools/check-engine-boundary.mjs',
   'node tools/test-ui-tokens.mjs',
   'node tools/check-ui-tokens.mjs',
+  'node tools/test-glass-contrast.mjs',
+  'node tools/check-glass-contrast.mjs',
   'node tools/test-theme.mjs',
   'node tools/check-theme.mjs',
   'node tools/test-web-reads.mjs',
@@ -83,15 +85,25 @@ export const STEPS = [
   'npm run test:engine',
   'npm run test:ui',
   'npm run build:web',
+  'node tools/test-web-bundle.mjs',
+  'node tools/check-web-bundle.mjs',
 ];
 
 /**
  * The steps that run alone, after the pool, in STEPS order: a step that writes a tree the
  * steps after it read, and every step whose file asserts an absolute wall-clock bound, which a
  * loaded pool could trip. A subset of STEPS, checked by `problems()`. test:engine times the
- * settlement at a busy instance's scale (engine/rules/settle.scale.test.ts).
+ * settlement at a busy instance's scale (engine/rules/settle.scale.test.ts). build:web writes
+ * web/dist/, which check-web-bundle reads, so the two run in that order, alone.
  */
-export const SERIAL = new Set(['npm run test:engine']);
+export const SERIAL = new Set(['npm run test:engine', 'npm run build:web', 'node tools/check-web-bundle.mjs']);
+
+/**
+ * Steps that read what another step wrote: each key must come after its value in STEPS, and both
+ * must be SERIAL, since the pool runs in parallel with no order. Checked by `problems()`.
+ * check-web-bundle reads web/dist/, which build:web writes.
+ */
+export const AFTER = { 'node tools/check-web-bundle.mjs': 'npm run build:web' };
 
 /**
  * `check-*.mjs` and `test-*.mjs` files in tools/ that are deliberately not in STEPS, each
@@ -152,12 +164,24 @@ function expand(list, scripts, seen = []) {
  * @param {Record<string,string>} input.scripts  package.json's scripts
  * @param {Record<string,string>} [input.outside]  OUTSIDE_THE_BUILD
  * @param {Set<string>} [input.serial]  SERIAL
+ * @param {Record<string,string>} [input.after]  AFTER
  */
-export function problems({ plain, checked, tracked, scripts, outside = OUTSIDE_THE_BUILD, serial = SERIAL }) {
+export function problems({ plain, checked, tracked, scripts, outside = OUTSIDE_THE_BUILD, serial = SERIAL, after = AFTER }) {
   const out = [];
 
   /* SERIAL: a subset of STEPS. */
   for (const r of serial) if (!plain.includes(r)) out.push(`SERIAL names "${r}", which is not in STEPS`);
+
+  /* AFTER: a reader runs after its writer in STEPS, and both are SERIAL (the pool has no order). */
+  for (const [reader, writer] of Object.entries(after)) {
+    for (const r of [reader, writer]) {
+      if (!plain.includes(r)) out.push(`AFTER names "${r}", which is not in STEPS`);
+      else if (!serial.has(r)) out.push(`${r} must be SERIAL: AFTER orders it against another step`);
+    }
+    if (plain.includes(reader) && plain.includes(writer) && plain.indexOf(reader) < plain.indexOf(writer)) {
+      out.push(`${reader} must come after ${writer} in STEPS: it reads what ${writer} writes`);
+    }
+  }
 
   /* Shape: every top-level step is something the runner can spawn. */
   for (const s of plain) {

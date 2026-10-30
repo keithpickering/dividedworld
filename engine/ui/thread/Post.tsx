@@ -126,13 +126,14 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       data-kb-arrived={slid ? 'slide' : undefined}
     >
       <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
-      <header className="kb-act-meta kb-small">
-        <time dateTime={act.createdAt}>{when(act.createdAt)}</time>
-        <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
-      </header>
+      {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
       {!plain && (person
         ? <Postbit person={person} layout={layout} />
         : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
+      <header className="kb-act-meta">
+        <time dateTime={act.createdAt}>{when(act.createdAt)}</time>
+        <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
+      </header>
       <div className="kb-act-main">
         <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} />
         <SpunInto act={act.id} />

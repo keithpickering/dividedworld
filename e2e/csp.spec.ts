@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test';
 /**
  * The page under the headers the site is served with (web/headers.ts, served by `vite preview`):
  * they are there, and walking the main flows, the avatar editor's WebAssembly fallback included,
- * the browser reports no Content-Security-Policy violation.
+ * the browser reports no Content-Security-Policy violation, and the glass's faces have loaded under
+ * the policy (engine/ui/glass/apply.ts adds them to the font set, not in a style element).
  */
 test('the response carries the security headers and the asset cache rule', async ({ page, request }) => {
   const res = await request.get('/');
@@ -34,4 +35,10 @@ test('the main flows run under the policy with no violation', async ({ page }) =
   await page.getByRole('radio', { name: /^Dark/u }).check();
   await expect(page.locator('html')).toHaveAttribute('data-kb-mode', 'dark');
   expect(violations).toEqual([]);
+  /* The glass's own faces loaded under the policy: a glass page set in them, not in a fallback. */
+  const loaded = await page.evaluate(async () => {
+    await document.fonts.ready;
+    return [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family.replace(/"/gu, ''));
+  });
+  expect(loaded).toEqual(expect.arrayContaining(['Anton', 'Barlow Condensed']));
 });

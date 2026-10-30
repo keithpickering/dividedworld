@@ -74,8 +74,8 @@ export const Postbit = memo(function Postbit({ person, layout }: { readonly pers
       <div className="kb-postbit-text">
         <span className="kb-postbit-name"><Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link></span>
         {c.title && <span className="kb-postbit-title kb-small kb-muted">{c.title}</span>}
-        <span className="kb-postbit-rank kb-small">
-          <b className="kb-postbit-rank-name" aria-hidden={instance.ranks.length > 0 || undefined}>{rank}</b>
+        <span className="kb-postbit-rank">
+          <span className="kb-postbit-rank-name" aria-hidden={instance.ranks.length > 0 || undefined}>{rank}</span>
           {instance.ranks.length > 0 && <Pips ranks={instance.ranks.length} index={index} name={rank} style={pipImages} />}
         </span>
         <span className="kb-postbit-counts kb-small kb-muted">

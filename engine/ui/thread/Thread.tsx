@@ -4,8 +4,9 @@
  * A page is a range of seqs (pages.ts), and an address is `?page=N#post-M` and nothing else: no
  * character, the HUD's included, is ever in it. "Continue to page N" reads the next page and puts
  * it below, in place, and the address follows without scrolling. A permalink to a post opens the
- * page it is on, at it. Reading is remembered on the server: the highest seq that has come into
- * view, sent debounced and never lower than what was sent (and never lower on the server either).
+ * page it is on, at it; a page opened with no post asked opens at its top, and a page the reader
+ * moves to opens at its first post. Reading is remembered on the server: the highest seq that has
+ * come into view, sent debounced and never lower than what was sent (and never lower on the server either).
  *
  * Live (the thread's channel): on the last page with the reader at the bottom a new Act slides in
  * (not under reduced motion). Otherwise the page never moves by itself: a bar above the HUD says
@@ -13,6 +14,15 @@
  * them when clicked, or when the reader gets to the bottom. Tallies and edits update in place. One
  * polite live region says "New post by <name>" once per new post, and nothing about a reaction or
  * an edit. The bar's way out: click it, or read on.
+ *
+ * Back from the glass (engine/ui/glass/back.ts) reopens the thread at the post the reader was at,
+ * with what it showed and knew of then (in history.state, never the address): the posts that came
+ * while the reader was away wait behind the same bar, as live posts do, and the reader is not moved.
+ * Everything shown is read again, so a post edited or splatted meanwhile shows as it is now. The
+ * thread says what it knows of (`data-kb-known`) so the move into the glass can keep it.
+ *
+ * The head is the Main board's: the title with the pages beside it, then the table's Author and
+ * Message column head over side-by-side posts.
  *
  * Cost: a page is one read of the Acts, one each of its characters, stats, standings, reveals,
  * turns and tallies for the characters and Acts it holds, never one per post; a character that
@@ -23,13 +33,14 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
-import { Ago, SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
+import { SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
 import { motionReduced } from '../appearance.ts';
 import { usePlayer } from '../player.tsx';
 import type { PostbitLayout, PostbitPerson } from '../postbit/Postbit.tsx';
 import { reveals } from '../postbit/reveals.ts';
 import { Link, useLocation, useNavigate } from '../router.tsx';
-import { emptyFeed, feedReducer, newer, ordered, shownEnd } from './feed.ts';
+import { returnOf } from '../glass/back.ts';
+import { emptyFeed, feedReducer, newer, ordered, shownEnd, waitingPosts } from './feed.ts';
 import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
 import { ActArticle } from './Post.tsx';
@@ -142,6 +153,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const [loadKey, setLoadKey] = useState(0);
   /* Set once the first read has landed: a later one is the reader's own move, and focus follows it. */
   const reloaded = useRef(false);
+  /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first read only. */
+  const back = useRef(returnOf(loc.state));
 
   /* ---------------------------------------------------------------------- reading ---- */
   const sent = useRef(0);
@@ -205,14 +218,15 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       /* Known before the first post is drawn, so the reply box and the posts' Quote links do not change the page after it. */
       setSystemBoard(board ? board.isSystem : null);
       setBoardUnread(!board);
-      dispatch({ type: 'loaded', summary, firstPage: page, lastPage: page, acts, tailLoaded: acts.length < end - start + 1 });
+      dispatch({ type: 'loaded', summary, firstPage: page, lastPage: page, acts, tailLoaded: acts.length < end - start + 1, back: reloaded.current ? null : back.current });
       setStatus('ready');
       const seq = goal.current.seq !== null && goal.current.seq <= summary.lastSeq ? goal.current.seq : null;
       /* The canonical address of where this landed: the page, and the post when one was asked for. */
       const to_ = threadHref(thread, page, seq ?? undefined);
       selfNav.current = to_.slice(to_.indexOf('?'));
       navigate(to_, { replace: true });
-      scrollTo.current = { seq: seq ?? start, scroll: true, focus: seq !== null || reloaded.current };
+      /* A page opened with no post asked stays at its top, where its title and pages are; a later read is the reader's move, and lands at it. */
+      scrollTo.current = { seq: seq ?? start, scroll: seq !== null || reloaded.current, focus: seq !== null || reloaded.current };
       reloaded.current = true;
     })().catch(() => { if (live) setStatus((s) => (s === 'ready' ? s : 'failed')); }).finally(() => { if (live) setBusy(false); });
     return () => { live = false; };
@@ -261,12 +275,17 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const { start, end } = pageRange(page, P);
       const acts = await api.acts(thread, start, end);
       await prepare(acts);
+      /* Posts held behind a return's bar that the run now passes come in before the page read. What
+         is shown and held is read as it stands after the read, not as it stood when the reader asked. */
+      const now = feedRef.current;
+      const from = shownEnd(now) + 1;
+      const heldNext = [...now.held.values()].some((a) => a.seq === from);
       dispatch({ type: 'more', page, acts, tailLoaded: acts.length < end - start + 1 });
       const href = threadHref(thread, page);
       selfNav.current = href.slice(href.indexOf('?'));
       navigate(href, { replace: true });
       /* Focus moves to the first new post and nothing scrolls: it is just below what the reader had. */
-      const first = acts[0]?.seq;
+      const first = heldNext ? from : acts[0]?.seq;
       if (first != null) scrollTo.current = { seq: first, scroll: false, focus: true };
       /* Nothing more after all: the link that had focus is gone, so focus stays with the last post. */
       else { const last = ordered(feedRef.current.shown).at(-1)?.seq; if (last != null) scrollTo.current = { seq: last, scroll: false, focus: true }; }
@@ -428,20 +447,18 @@ function ThreadView({ thread }: { readonly thread: Id }) {
 
   const summary = feed.summary;
   const lastPage = pageOf(feed.knownLast, P);
-  const heldList = ordered(feed.held);
-  const waiting = heldList.length;
-  const noun = `${waiting} new ${waiting === 1 ? 'post' : 'posts'}`;
+  const waiting = waitingPosts(feed);
   let bar: { readonly href: string | null; readonly text: string } | null = null;
   /* Whenever posts are held and the screen is not about to show them by itself: at the bottom with no gap it does, and after a gap has waited its time it does not. */
   const comesByItself = atBottom && feed.tailLoaded && (gapStart === null || gapWaited !== gapStart);
-  if (waiting > 0 && !comesByItself) {
+  if (waiting && !comesByItself) {
+    const noun = `${waiting.count} new ${waiting.count === 1 ? 'post' : 'posts'}`;
     if (feed.tailLoaded) bar = { href: null, text: noun };
     else {
       /* On an earlier page: say which page the new posts are on, and lead there. */
-      const firstSeq = heldList[0]!.seq!;
-      const lo = pageOf(firstSeq, P);
-      const hi = pageOf(heldList.at(-1)!.seq!, P);
-      bar = { href: threadHref(thread, lo, firstSeq), text: `${noun} on ${hi === lo ? `page ${lo}` : `pages ${lo} to ${hi}`}` };
+      const lo = pageOf(waiting.first, P);
+      const hi = pageOf(waiting.last, P);
+      bar = { href: threadHref(thread, lo, waiting.first), text: `${noun} on ${hi === lo ? `page ${lo}` : `pages ${lo} to ${hi}`}` };
     }
   }
 
@@ -458,14 +475,22 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   );
 
   return (
-    <div className="kb-thread" data-kb-thread={thread} aria-busy={busy || undefined}>
+    <div className="kb-thread" data-kb-thread={thread} data-kb-known={feed.knownLast} aria-busy={busy || undefined}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {summary.title}</p>
-      <h1 className="kb-heading kb-thread-title">{summary.title}</h1>
-      <p className="kb-thread-info kb-small kb-muted">Started <Ago at={summary.createdAt} /></p>
-      {pager('top')}
+      <div className="kb-thread-head">
+        <h1 className="kb-heading kb-thread-title">{summary.title}</h1>
+        {pager('top')}
+      </div>
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
           <div className="kb-acts">
+            {/* The 2003 table's column head, over side-by-side posts; each article names its own author for a screen reader. */}
+            {layout === 'side' && (
+              <div className="kb-acts-head" aria-hidden="true">
+                <span>Author</span>
+                <span>Message</span>
+              </div>
+            )}
             {shown.map((a) => <ActArticle key={a.id} act={a} person={a.character ? people.current.get(a.character) : undefined} layout={layout} slid={feed.slid.has(a.id)} />)}
           </div>
         </ThreadCtx.Provider>

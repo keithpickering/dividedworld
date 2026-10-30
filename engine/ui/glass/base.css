@@ -1,0 +1,169 @@
+/*
+ * The glass's base: the smoke's layout and drift, the shapes (the chamfered panel with its border
+ * drawn on the cut, the skewed tab), the type and the focus ring. Every color and family is a
+ * token (engine/ui/glass/tokens.css); the shapes are the boards' (docs/plans/2026-10-30-glass-to-the-boards-plan.md,
+ * section 5).
+ *
+ * Motion is the smoke's drift only here, stopped under reduced motion with the end state shown;
+ * the player's override (`data-kb-motion` on <html>, engine/ui/appearance.ts) outranks the device.
+ */
+.kb-glass {
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text);
+  background: var(--kb-glass-ground);
+}
+
+.kb-glass-display {
+  font-family: var(--kb-glass-font-display);
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+/* ---- the smoke ---- */
+
+.kb-smoke {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.kb-smoke-ground {
+  position: absolute;
+  inset: 0;
+}
+
+.kb-smoke-layers,
+.kb-smoke-wide,
+.kb-smoke-narrow,
+.kb-smoke-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* A drifting recipe is a strip wider than its frame (its width is set inline), slid by its travel. */
+.kb-smoke-strip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+}
+
+.kb-smoke-strip[data-kb-drift] {
+  will-change: transform;
+  animation: kb-smoke-drift var(--kb-smoke-seconds) ease-in-out infinite alternate;
+}
+
+@keyframes kb-smoke-drift {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(var(--kb-smoke-travel) * -1)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-smoke-strip[data-kb-drift] { animation: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-smoke-strip[data-kb-drift] { animation: none; }
+
+/* A recipe's narrow layers stand in below 600px. */
+.kb-smoke-narrow { display: none; }
+
+@media (max-width: 599.98px) {
+  .kb-smoke-wide + .kb-smoke-narrow { display: block; }
+  .kb-smoke-strip:has(.kb-smoke-narrow) .kb-smoke-wide { display: none; }
+}
+
+/* ---- the shapes ---- */
+
+:root {
+  /* Skew: buttons, tabs and plates; and the steeper one for tags. */
+  --kb-glass-skew: -10deg;
+  --kb-glass-skew-tag: -12deg;
+  /* The five chamfer steps. A component picks one with --kb-cut: style={{ '--kb-cut': 'var(--kb-glass-chamfer-4)' }}. */
+  --kb-glass-chamfer-1: 16px;
+  --kb-glass-chamfer-2: 20px;
+  --kb-glass-chamfer-3: 24px;
+  --kb-glass-chamfer-4: 34px;
+  --kb-glass-chamfer-5: 40px;
+}
+
+/*
+ * Skewed shapes. Text inside is set upright by the opposite skew on an inner element
+ * (`<span class="kb-glass-upright">`), as the boards do with the <b> in a tab.
+ */
+.kb-glass-skew { transform: skewX(var(--kb-glass-skew)); }
+.kb-glass-skew-tag { transform: skewX(var(--kb-glass-skew-tag)); }
+.kb-glass-skew > .kb-glass-upright { display: inline-block; transform: skewX(calc(var(--kb-glass-skew) * -1)); }
+.kb-glass-skew-tag > .kb-glass-upright { display: inline-block; transform: skewX(calc(var(--kb-glass-skew-tag) * -1)); }
+
+/*
+ * Chamfers, cut with clip-path, in three placements: panel (top right), dialog (top right and
+ * bottom left), button (bottom right). The element is the border's color, cut; its ::after is the
+ * panel, one border in and cut by the same line, so the border is drawn on the cut and not under it.
+ * The inner cut is the outer one less 0.5858 of the border: a 45 degree edge moved in by b along
+ * its normal moves its ends along the sides by b (2 - sqrt 2) less than the cut.
+ */
+.kb-glass-cut-panel,
+.kb-glass-cut-dialog,
+.kb-glass-cut-button {
+  --kb-cut: var(--kb-glass-chamfer-3);
+  --kb-border: 1.5px;
+  --kb-cut-in: calc(var(--kb-cut) - var(--kb-border) * 0.5858);
+  position: relative;
+  isolation: isolate;
+  background: var(--kb-glass-neon);
+}
+
+.kb-glass-cut-panel::after,
+.kb-glass-cut-dialog::after,
+.kb-glass-cut-button::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: var(--kb-border);
+  background: var(--kb-glass-panel);
+}
+
+.kb-glass-cut-panel { clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, 0 100%); }
+.kb-glass-cut-panel::after { clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, 0 100%); }
+
+.kb-glass-cut-dialog { clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, var(--kb-cut) 100%, 0 calc(100% - var(--kb-cut))); }
+.kb-glass-cut-dialog::after { clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in))); }
+
+.kb-glass-cut-button { clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--kb-cut)), calc(100% - var(--kb-cut)) 100%, 0 100%); }
+.kb-glass-cut-button::after { clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--kb-cut-in)), calc(100% - var(--kb-cut-in)) 100%, 0 100%); }
+
+/*
+ * The HUD's top edge is a tab: 24px tall, 28px slopes, its four points (--tab-a to --tab-d, set
+ * from the aura block's own position) following the orbs at every width. The seam is an SVG
+ * polyline along the same points at y + 6, drawn twice: the glow under a blur, then the core.
+ */
+.kb-glass-hud-tab { clip-path: polygon(0 24px, var(--tab-a) 24px, var(--tab-b) 0, var(--tab-c) 0, var(--tab-d) 24px, 100% 24px, 100% 100%, 0 100%); }
+
+.kb-glass-seam-glow {
+  fill: none;
+  stroke: var(--kb-glass-neon);
+  stroke-width: 6;
+  opacity: 0.7;
+  filter: blur(4px);
+}
+
+.kb-glass-seam-core {
+  fill: none;
+  stroke: var(--kb-glass-pale);
+  stroke-width: 1.5;
+}
+
+/* ---- focus ---- */
+
+/* A 3px ring on every control, offset 3px; a skewed control's is the skewed shape's. */
+.kb-glass :focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}

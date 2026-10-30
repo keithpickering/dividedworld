@@ -63,6 +63,10 @@ export interface Seed {
   nextSettlementAt(at: number | null): void;
   views(thread: Id, count: number): void;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
+  /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). */
+  wallet(account: Id, balance: number): void;
+  /** A character's Turn asked by its player, waiting for the next settlement; refused in the server's words like any other. */
+  turn(character: Id, to: string, options?: { loudness?: 'silent' | 'announced'; showFrom?: boolean; showTo?: boolean }): void;
   /** What the account's next estimate holds; its times are the ask's. */
   estimate(account: Id, estimate: { entries?: Estimate['entries']; lines?: readonly EstimateLine[] }): void;
   /** A character's unmask Act in a thread, as its player's reveal (`via` 'act') or a debut's or a Turn's. */
@@ -101,6 +105,8 @@ export interface Fake extends KayfaApi {
     flush(options?: { reverse?: boolean; twice?: boolean }): number;
   };
   readonly seed: Seed;
+  /** Always `KAYFA_FAKE_BACKEND`: what the bundle guard finds if the fake ever reaches a production build. */
+  readonly marker: string;
 }
 
 interface CharRec {
@@ -154,6 +160,12 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard']);
 type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R> ? (...a: A) => R : T[K] };
 
+/**
+ * The string tools/check-web-bundle.mjs looks for in the production bundle. It is a value on the
+ * object createFake returns, not an export nothing reads, because a bundler drops an unused
+ * export and keeps a property of an object that is built.
+ */
+export const FAKE_BACKEND_MARKER = 'KAYFA_FAKE_BACKEND';
 export function createFake(options: { instance: Instance; settings?: Partial<ScreenSettings>; now?: () => number }): Fake {
   const settings: Settings = { ...options.instance.settings, ...options.settings };
   const instance: Instance = { ...options.instance, settings };
@@ -801,6 +813,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return write({ character: null, kind: o.kind ?? 'tally', thread, payload: { ...(o.payload ?? { body }) }, at: o.at });
   };
 
+  const seeded = (account: Id): AccountRec => accepted(accounts.has(account) ? ok(accounts.get(account)!) : refuse(`no such account ${account}`));
+  /** An account's settled wallet: whole hundredths, never under nothing, held to the cap as a settlement holds it. */
+  const setWallet = (account: Id, balance: number) => {
+    const a = seeded(account);
+    if (!Number.isInteger(balance) || balance < 0) accepted(refuse(`a wallet is a whole number of hundredths, not ${balance}`));
+    a.wallet = Math.min(balance, settings.walletCap);
+  };
+
   const seed: Seed = {
     account(name, o) {
       const email = (o?.email ?? `${name.toLowerCase()}@example.test`).toLowerCase();
@@ -846,7 +866,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           c.pending = null;
         }
       }
-      for (const [account, balance] of Object.entries(o.wallet ?? {})) accounts.get(account)!.wallet = Math.max(0, Math.min(balance, settings.walletCap));
+      for (const [account, balance] of Object.entries(o.wallet ?? {})) setWallet(account, balance);
       for (const [character, amount] of Object.entries(o.standings ?? {})) standingOf.set(character, amount);
       lastSettled = at;
     },
@@ -859,7 +879,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     nextSettlementAt(at) { nextSettlement = at; },
     views(thread, count) { views.set(thread, count); },
-    cards(account, held) { accounts.get(account)!.cards = { ...held }; },
+    cards(account, held) { seeded(account).cards = { ...held }; },
+    wallet(account, balance) { setWallet(account, balance); },
+    turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
     estimate(account, e) {
       const a = accounts.get(account)!;
       a.estimate = { entries: e.entries ?? [], lines: e.lines ?? [] };
@@ -917,5 +939,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       },
     },
     seed,
+    marker: FAKE_BACKEND_MARKER,
   });
 }

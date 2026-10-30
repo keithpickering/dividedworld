@@ -43,6 +43,20 @@ which says where they start and wins where it differs; Task 6 waits on issue #25
 **Amended 2026-10-30, after issue #25's design.** Task 6 is Task 6 of `docs/plans/2026-10-30-log-shares-plan.md`, on
 the log that plan builds.
 
+**Amended 2026-10-30, the owner's answer on where a card play shows** (PR #39, Design questions). A card play is
+shown only as its tag on the post it lands on ("Mrs. Hooligan played Whoops! on this post: “you dropped your ink”",
+with when), as the Cards board draws it, and never as a line of its own in the thread. Main gave a card's Act a
+number in its thread, like a post, and the thread drew it as a numbered line nobody could react to; in time order those
+numbers fall between the posts and renumber them. The owner chose the tag ("We can go with your recommendation"):
+reactions on the post are already what a play earns from (the settlement counts the target's reactions toward the
+play), the posts keep their numbers, and the play stays a public Act, dated on its tag and true in the log. So Task 3
+adds, tests first: a migration under which a `card` Act takes no thread number, as an `edit` takes none (the check on
+`acts.seq` and `acts_take_seq` in `supabase/migrations/0001_core.sql`); the fake backend (`engine/ui/data/fake.ts`)
+the same; the thread no longer drawing a card Act as a line (`CardLine` in `engine/ui/thread/lines.tsx` and its case in
+`engine/ui/thread/Post.tsx`); the play's tag on its post, linking to the play; and the boards fixture
+(`web/src/data/fixtures/boards.ts`) writing its plays in time order between the posts, its pinning test turned to
+assert that page 3 holds #41 to #46 and nothing else.
+
 ## The layers
 
 The card-effect interface is engine (`engine/ui/cards/`); Stick Around's and Whoops!'s effects are Divided World's

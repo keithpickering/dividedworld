@@ -1,6 +1,8 @@
 /*
- * The frame: the banner, the links, and the HUD docked at the bottom. The banner is the 2003
- * board's; the HUD is the game's status bar, a 2px rule above it, always on screen while reading.
+ * The frame: the banner, the links, and the Game HUD docked at the bottom. The banner is the 2003
+ * board's, as the Main board draws it: the name on a row, the links on a row of their own under it,
+ * each ruled off, and the page the window's width less a 2% gutter each side. On a phone the links
+ * fold behind Boards, a 44px control, as the Phone board draws it.
  */
 .kb-frame {
   --kb-hud-height: 3.4em;
@@ -8,11 +10,11 @@
 
 .kb-banner {
   display: flex;
-  flex-wrap: wrap;
+  justify-content: space-between;
   align-items: baseline;
   gap: 0.4em 1.2em;
   border-bottom: 1px solid var(--kb-rule);
-  padding: 0.6em 2%;
+  padding: 12px 2%;
 }
 
 .kb-logo {
@@ -24,7 +26,8 @@
 }
 
 .kb-nav {
-  margin-left: auto;
+  padding: 5px 2%;
+  border-bottom: 1px solid var(--kb-rule);
   font-size: var(--kb-size-small);
 }
 
@@ -47,33 +50,131 @@
   margin-left: auto;
 }
 
+/* The page clears the HUD at its real height, and spans the window less the board's 2% gutters. */
+.kb-frame > .kb-page {
+  width: auto;
+  max-width: none;
+  padding-left: 2%;
+  padding-right: 2%;
+  padding-bottom: calc(var(--kb-hud-measured, 9em) + 1.5em);
+}
+
+/*
+ * The Game HUD: the glass, docked at the bottom (the glass plan, sections 5, 7 and 8). Its ground
+ * is the `hud` smoke cut by the shapes' HUD tab (`kb-glass-hud-tab`, engine/ui/glass/base.css,
+ * from the four points Hud.tsx sets as --tab-a to --tab-d), and the seam is drawn along the same
+ * points (`kb-glass-seam-glow` under `kb-glass-seam-core`).
+ *
+ * Which board's layout it is, and its scale, are set on the root by useBoard
+ * (engine/ui/glass/useBoard.ts, from engine/ui/glass/board.ts): `data-kb-layout` and
+ * `--kb-board-scale`. A media query cannot read the width the instance's sizes work out, so the
+ * Phone board's rules below are read under the root's mark, at no added specificity.
+ *
+ * On the Main board's layout it is the board's: 212px tall, the skewed plate (420 by 150, 40px
+ * down), the aura in the tab (452 wide, 10px down: its legend, the orbs at 56px, the figures), and
+ * beside it the clock (30px down) over Menu and the hand (52px tall, 142px down), in the board's
+ * columns and gaps. From 1440px up it is drawn at that size, centered, with the glass and the seam
+ * full width. Below 1440px it keeps that arrangement and is drawn at the window's width over 1440
+ * (`zoom`), every length in it alike, the plate, the orbs, the glass's height, the seam and the
+ * text, so the gaps between the groups give nothing up. Where its smallest text would fall below the
+ * Phone board's smallest size, it is the Phone board's, unscaled: 124px tall under a ruled seam, the
+ * mask picker beside Menu and the hand, the orbs on a row under them. The page's foot and the hand's
+ * sheet clear its height as the window draws it (`--kb-hud-measured`, Hud.tsx), and the sheet,
+ * which is the Phone board's at every width, is not scaled.
+ */
 .kb-hud {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 30;
-  background: var(--kb-hud-bg);
-  border-top: 2px solid var(--kb-rule);
+  zoom: var(--kb-board-scale, 1);
+}
+
+/*
+ * Clicks pass through only the transparent strip beside the tab, where the page shows: the glass
+ * itself takes none, and the ground takes them where it is drawn, since its clip-path (the tab's
+ * polygon) bounds its hit area too. So nothing opaque lets a click fall through to a link beneath.
+ */
+.kb-hud-glass {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  pointer-events: none;
+}
+
+.kb-hud-ground,
+.kb-hud-bar {
+  pointer-events: auto;
+}
+
+.kb-hud-ground {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--kb-glass-ground);
+}
+
+.kb-hud-seam {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 36px;
+  overflow: visible;
+  pointer-events: none;
 }
 
 .kb-hud-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5em 3%;
-  min-height: var(--kb-hud-height);
+  position: relative;
+  display: grid;
+  grid-template-columns: 420px minmax(0, 44px) 452px minmax(0, 28px) 426px;
+  align-items: start;
+  height: 212px;
+  max-width: 1440px;
+  margin: 0 auto;
   box-sizing: border-box;
-  padding: 0.4em 2%;
+  padding: 0 34px 0 36px;
+  pointer-events: auto;
+}
+
+/* ---- the character plate: a skewed panel, its contents set upright where the board sets them ---- */
+
+.kb-hud-plate {
+  grid-column: 1;
+  margin-top: 40px;
+}
+
+.kb-hud-plate--cast {
+  position: relative;
+  height: 150px;
+  transform: skewX(var(--kb-glass-skew));
+  background: var(--kb-glass-panel-soft);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+  box-shadow: inset 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 12%, transparent);
+}
+
+.kb-hud-plate--cast > .kb-hud-plate-in {
+  position: absolute;
+  inset: 0;
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+.kb-hud-plate--cast .kb-hud-avatar {
+  position: absolute;
+  left: 22px;
+  top: 31px;
 }
 
 .kb-hud-avatar {
-  display: inline-block;
-  width: 2.2em;
-  height: 2.2em;
-  border: 1px solid var(--kb-rule);
+  display: block;
+  width: 84px;
+  height: 84px;
+  box-sizing: border-box;
   overflow: hidden;
-  flex: none;
+  border: 2px solid var(--kb-glass-neon);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+  background: var(--kb-glass-field-2);
 }
 
 .kb-hud-avatar img {
@@ -87,40 +188,547 @@
   display: grid;
   place-items: center;
   height: 100%;
-  font: bold var(--kb-size-body) var(--kb-font-mono);
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-s);
+  color: var(--kb-glass-text-2);
+}
+
+.kb-hud-name {
+  position: absolute;
+  left: 118px;
+  top: 10px;
+  max-width: calc(100% - 134px);
+  font-size: var(--kb-glass-size-title);
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-hud-class-line {
+  position: absolute;
+  left: 120px;
+  top: 52px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  line-height: normal;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+/* The class tag, skewed as a tag (base.css) with its word, as the board sets it, in its class's own fill and ink. */
+.kb-hud-class {
+  display: inline-block;
+  padding: 0 8px;
+  background: var(--kb-hud-class-fill);
+  color: var(--kb-hud-class-ink);
+}
+
+.kb-hud-secret {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-hud-secret svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+}
+
+.kb-hud-swap {
+  position: absolute;
+  left: 120px;
+  top: 88px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--kb-glass-size-label);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
 }
 
 .kb-hud-select {
-  max-width: 40%;
+  min-height: 52px;
+  max-width: 12em;
+  font: inherit;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: none;
+  color: var(--kb-glass-text);
+  background: var(--kb-glass-field);
+  border: 1px solid var(--kb-glass-neon);
+  border-radius: 0;
+  padding: 0 8px;
 }
 
-.kb-hand-button {
+/* ---- the aura, in the tab ---- */
+
+.kb-hud-aura {
+  grid-column: 3;
+  margin-top: 10px;
+}
+
+.kb-hud-aura-legend {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-hud-aura-ghost {
+  letter-spacing: 1px;
+  color: var(--kb-glass-estimate);
+}
+
+.kb-hud-orbs {
+  display: block;
+  margin-top: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+/*
+ * The orbs stand on the tab's smoke, with no plate of their own, as the board draws them; focused,
+ * they take the soft plate, so the ring is read against a ground of the link's own and not against
+ * whatever smoke drifts under it.
+ */
+.kb-hud-orbs:focus-visible {
+  background: var(--kb-glass-panel-soft);
+}
+
+.kb-hud-orbs .kb-orbs {
+  --kb-orb-size: 56px;
+  --kb-orb-gap: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.kb-hud-orbs .kb-orbs-row {
+  flex-basis: 100%;
+}
+
+.kb-hud-orbs .kb-orbs-figures {
+  gap: 10px;
+}
+
+.kb-hud-orbs .kb-orbs-figure {
+  font-size: 46px;
+  line-height: 1;
+  text-shadow: 0 0 20px color-mix(in srgb, var(--kb-glass-ready) 50%, transparent);
+}
+
+.kb-hud-orbs .kb-orbs-cap,
+.kb-hud-orbs .kb-orbs-pending,
+.kb-hud-orbs .kb-orbs-over {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: normal;
+}
+
+.kb-hud-orbs .kb-orbs-pending {
   margin-left: auto;
+  padding: 0 8px;
+  text-transform: uppercase;
+  border: 1px dashed color-mix(in srgb, var(--kb-glass-estimate) 70%, transparent);
 }
 
+/* ---- the clock, over Menu and the hand ---- */
+
+.kb-hud-side {
+  grid-column: 5;
+  align-self: stretch;
+  position: relative;
+}
+
+.kb-hud-clock {
+  display: flex;
+  flex-direction: column;
+  margin: 30px 0 0;
+}
+
+.kb-hud-clock-label {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-hud-clock-time {
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--kb-glass-pale);
+  text-shadow: 0 0 16px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+}
+
+.kb-hud-actions {
+  position: absolute;
+  top: 142px;
+  left: 10px;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* The HUD's buttons: skewed (base.css), their words set upright, at the boards' sizes. */
+.kb-hud-menu,
+.kb-hud-hand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.kb-hud-menu > span,
+.kb-hud-hand > span:first-child {
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.kb-hud-menu {
+  width: 210px;
+  color: var(--kb-glass-text);
+  background: var(--kb-glass-panel-strong);
+  border: 1px solid var(--kb-glass-neon);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 50%, transparent);
+}
+
+/* Menu's key cap: the key for the eye; for a screen reader it is the button's aria-keyshortcuts. */
+.kb-hud-key {
+  padding: 0 6px;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 1px;
+  color: var(--kb-glass-pale);
+  border: 1px solid var(--kb-glass-pale);
+}
+
+.kb-hud-hand {
+  width: 170px;
+  color: var(--kb-glass-ink-salty);
+  background: var(--kb-glass-salty);
+  border: 0;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--kb-glass-salty) 60%, transparent);
+}
+
+.kb-hud-hand-count {
+  padding: 2px 8px;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--kb-glass-salty-text);
+  background: var(--kb-glass-ink-salty);
+}
+
+.kb-hud-sign-in,
+.kb-hud-make {
+  --kb-cut: var(--kb-glass-chamfer-1);
+  display: inline-flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 20px;
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-lead);
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--kb-glass-text-hi);
+}
+
+/*
+ * The hand: the `hand` smoke, a sheet of its own drawn above the HUD (the Phone board's: 364px
+ * under a ruled seam, its close a 48px icon at the top right). Its heading and its cards are the
+ * cards part's (the glass build plan, Part 3), which fills the sheet the board draws.
+ */
 .kb-hand-drawer {
-  border-bottom: 1px solid var(--kb-rule);
-  padding: 0.6em 2%;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--kb-hud-measured, 124px);
+  z-index: 31;
+  isolation: isolate;
+  box-sizing: content-box;
+  height: 364px;
+  overflow: auto;
+  border-top: 1.5px solid var(--kb-glass-pale);
+  box-shadow: 0 -2px 18px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+}
+
+.kb-hand-drawer[hidden] {
+  display: none;
+}
+
+.kb-hand-bar {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px 0;
+}
+
+.kb-hand-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-left: auto;
+  padding: 0;
+  color: var(--kb-glass-text);
+  background: color-mix(in srgb, var(--kb-glass-text-hi) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-pale) 60%, transparent);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.kb-hand-close svg {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
 .kb-hand-cards {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6em 3%;
+  gap: 12px;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 14px 16px 0;
 }
 
 .kb-hand-card {
-  border: 1px solid var(--kb-rule);
-  padding: 0.3em 0.8em;
-  font: bold var(--kb-size-small) var(--kb-font-mono);
+  padding: 6px 14px;
+  background: var(--kb-glass-card);
+  border: 1.5px solid var(--kb-glass-neon);
+}
+
+.kb-hand-empty {
+  position: relative;
+  margin: 14px 16px 0;
+}
+
+/* ---- below the switch: the Phone board's HUD ---- */
+
+/*
+ * The Phone board's glass is 124px, and so is this one while what it holds fits. It grows past
+ * that rather than cut its last row at the window's foot: a wallet past its cap, which the board
+ * does not draw, or text spaced wider by the reader, needs more.
+ */
+:where(:root[data-kb-layout='phone']) .kb-hud-glass {
+  box-sizing: content-box;
+  min-height: 124px;
+  border-top: 1.5px solid var(--kb-glass-pale);
+  box-shadow: 0 -2px 18px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-ground {
+  clip-path: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-seam,
+:where(:root[data-kb-layout='phone']) .kb-hud-who,
+:where(:root[data-kb-layout='phone']) .kb-hud-aura-legend,
+:where(:root[data-kb-layout='phone']) .kb-hud-clock,
+:where(:root[data-kb-layout='phone']) .kb-hud-menu > .kb-hud-key {
+  display: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-bar {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 8px 10px;
+  height: auto;
+  padding: 8px 16px 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-plate,
+:where(:root[data-kb-layout='phone']) .kb-hud-plate-in,
+:where(:root[data-kb-layout='phone']) .kb-hud-side,
+:where(:root[data-kb-layout='phone']) .kb-hud-actions {
+  display: contents;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-plate--cast .kb-hud-avatar {
+  position: static;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-avatar {
+  grid-column: 1;
+  grid-row: 1;
+  width: 44px;
+  height: 44px;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-swap {
+  position: static;
+  grid-column: 2;
+  grid-row: 1;
+  display: block;
+  min-width: 0;
+  font-size: var(--kb-glass-size-phone-small);
+  font-weight: 600;
+  letter-spacing: 1.5px;
+}
+
+/* The Phone board sets the label at its face's own line, not the page's: the 124px glass holds both rows only so. */
+:where(:root[data-kb-layout='phone']) .kb-hud-swap-label {
+  display: block;
+  line-height: normal;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-select {
+  display: block;
+  width: 100%;
+  max-width: none;
+  min-height: 48px;
+  padding: 0;
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-phone-display);
+  font-weight: 400;
+  line-height: 1;
+  text-transform: uppercase;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--kb-glass-neon);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-sign-in,
+:where(:root[data-kb-layout='phone']) .kb-hud-make {
+  grid-column: 1 / -1;
+  min-height: 48px;
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-menu,
+:where(:root[data-kb-layout='phone']) .kb-hud-hand {
+  grid-row: 1;
+  width: auto;
+  min-width: 64px;
+  height: 48px;
+  padding: 0 6px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-menu {
+  grid-column: 3;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--kb-glass-neon) 50%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-hand {
+  grid-column: 4;
+  gap: 0.25em;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-salty) 70%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-menu > span,
+:where(:root[data-kb-layout='phone']) .kb-hud-hand > span:first-child {
+  font-size: 18px;
+  letter-spacing: 0.5px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-hand-count {
+  padding: 0;
+  font-family: var(--kb-glass-font-display);
+  font-size: 18px;
+  font-weight: 400;
+  color: inherit;
+  background: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-aura {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs {
+  margin: 0;
+}
+
+/*
+ * The Phone board's orbs are 30px; the row under the mask picker has 41px of the glass's 124. What
+ * the row holds wraps rather than runs past the window's edge: a wallet past its cap, which the
+ * board does not draw, puts its figure on a line of its own at the right, whole, and the glass
+ * grows to hold it. Each figure keeps its words on one line.
+ */
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs {
+  --kb-orb-size: 30px;
+  --kb-orb-gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-row {
+  flex-basis: auto;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-figures {
+  margin-left: auto;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-figure {
+  font-size: var(--kb-glass-size-display-s);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-cap {
+  display: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-pending,
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-over {
+  margin-left: 0;
+  padding: 0;
+  font-size: var(--kb-glass-size-phone-body);
+  white-space: nowrap;
+  border: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-over {
+  margin-left: auto;
 }
 
 @media (max-width: 40em) {
+  .kb-banner {
+    align-items: center;
+    padding: 6px 16px;
+  }
+
+  /* Boards is set in the board's words, as the Phone board draws it, not at a control's smaller size. */
   .kb-menu-button {
     display: inline-block;
+    min-height: 44px;
+    padding: 0 12px;
+    font-size: var(--kb-size-body);
   }
 
   .kb-tagline {
@@ -129,7 +737,7 @@
 
   .kb-nav {
     display: none;
-    flex-basis: 100%;
+    padding: 5px 16px;
   }
 
   .kb-nav[data-kb-open] {
@@ -144,23 +752,14 @@
   .kb-nav li + li::before {
     content: none;
   }
-
-  .kb-hud-select {
-    max-width: 50%;
-  }
-
-  /* Two rows on a phone: who is posting and the hand, then the orbs. */
-  .kb-hud-bar > .kb-hand-button {
-    order: 1;
-  }
-
-  .kb-hud-bar > .kb-orbs {
-    order: 2;
-    flex-basis: 100%;
-  }
 }
 
 /* Focus moves to the page on a move between pages; the page itself draws no ring for it. */
 .kb-page:focus {
+  outline: none;
+}
+
+/* Focus moves into the hand as it opens; the sheet itself draws no ring for it, its buttons do. */
+.kb-hand-drawer:focus {
   outline: none;
 }

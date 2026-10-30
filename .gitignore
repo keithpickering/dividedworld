@@ -10,3 +10,6 @@ dist/
 # Playwright run output.
 test-results/
 playwright-report/
+
+# The board match's side-by-side report (e2e/boards.spec.ts); CI uploads it as an artifact.
+e2e/report/
