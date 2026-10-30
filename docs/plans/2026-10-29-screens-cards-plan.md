@@ -37,6 +37,9 @@ author is never held); Task 5 names Whoops!'s keyboard path "Hold to scrub" wher
 keyboard"; Task 6's log holds no Stick Around lines, so the Log board's eight rows are six. Stick Around's frame and
 Whoops!'s tag draw the `effect` smoke recipe.
 
+**Amended 2026-10-30, after PR #24 merged.** Tasks 1 to 5 are Part 3 of `docs/plans/2026-10-30-glass-build-plan.md`,
+which says where they start and wins where it differs; Task 6 waits on issue #25's design of the log.
+
 ## The layers
 
 The card-effect interface is engine (`engine/ui/cards/`); Stick Around's and Whoops!'s effects are Divided World's

@@ -13,6 +13,12 @@ is shown to match its boards, that the boards' smoke is not one recipe but nine,
 breaks five decided rules. This plan settles each of those, and says which choices it made where nobody had decided
 (section 9), so the owner can overturn any of them in review.
 
+**Amended 2026-10-30, after PR #24 merged.** The order this plan is built in, and every place main differs from
+what it assumed, are in `docs/plans/2026-10-30-glass-build-plan.md`, which wins where they differ: the e2e suite is the
+root `e2e/` (so `web/e2e/board-match.ts` is `e2e/board-match.ts`, and so on), the fake backend is
+`engine/ui/data/fake.ts`, the build is the existing `--mode e2e`, the bundle assertion is the guard
+`tools/check-web-bundle.mjs`, and section 10's task map is replaced by that plan's parts.
+
 ## 1. How this plan relates to the others
 
 - It adds no task of its own. Each section below rides with a named task of

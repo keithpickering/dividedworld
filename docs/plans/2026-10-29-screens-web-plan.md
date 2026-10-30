@@ -169,6 +169,10 @@ surfaces) with the guard's new poisons, and the comparator `web/e2e/board-match.
 its fixture, `web/src/data/fixtures/boards.ts`, and the boards' moments. Tasks 3, 5, 6 and 8 to 12 each add the
 manifests of the boards they build, as its section 10 lists, and are not done until those are green.
 
+**Amended 2026-10-30, after PR #24 merged.** PR #24 built this plan's tasks except Task 8; the glass amendments
+above are built onto it in the order, and at the paths, of `docs/plans/2026-10-30-glass-build-plan.md`, which wins
+where they differ. Task 8 waits on issue #25's design.
+
 The mockups each screen follows are in `docs/research/2026-10-29-screens/`; the design's sections say what was decided
 and why. Where a mockup and the design disagree, the design wins. impeccable is installed (`.claude/skills/impeccable/`)
 with its product record (`PRODUCT.md`); a builder runs `.claude/skills/impeccable/scripts/impeccable context` once, then
