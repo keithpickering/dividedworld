@@ -25,8 +25,6 @@ export interface PostcardProps extends Omit<HTMLAttributes<HTMLElement>, 'childr
   /** The element: a button where it acts, an article on a sheet. */
   readonly as?: ElementType;
   readonly armed?: boolean;
-  /** The card is the machine's current pick. */
-  readonly selected?: boolean;
   readonly ref?: Ref<HTMLElement>;
   /** Passed to a button. */
   readonly type?: 'button';
@@ -35,7 +33,7 @@ export interface PostcardProps extends Omit<HTMLAttributes<HTMLElement>, 'childr
   readonly disabled?: boolean;
 }
 
-export function Postcard({ face, size, as: As = 'span', armed = false, selected = false, className, style, ...rest }: PostcardProps) {
+export function Postcard({ face, size, as: As = 'span', armed = false, className, style, ...rest }: PostcardProps) {
   const vars = { '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink, ...style } as CSSProperties;
   return (
     <As
@@ -47,7 +45,6 @@ export function Postcard({ face, size, as: As = 'span', armed = false, selected 
       data-kb-alignment={face.alignment}
       data-armed={armed ? '' : undefined}
       data-kb-art={size === 'slot' ? '' : undefined}
-      data-selected={selected ? '' : undefined}
     >
       <span className="kb-postcard-glow" aria-hidden="true" />
       {face.art.image ? <img className="kb-postcard-art" src={face.art.image} alt="" aria-hidden="true" draggable={false} /> : null}

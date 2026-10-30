@@ -126,6 +126,103 @@ describe('buying', () => {
   });
 });
 
+describe('a lost answer, two presses in one tick, and a held answer', () => {
+  test('a lost answer that did go through still updates the wallet and the hand, and the page says to look before trying again', async () => {
+    const fake = seeded(562);
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fake.seed.loseNextAnswer(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('look before you try again');
+    /* The server did it before the answer was lost, so the rows read again show it. */
+    await waitFor(() => expect(document.querySelector('.kb-vending-sum')).toHaveTextContent(/^4\.62/), { timeout: 800 });
+    expect((await fake.myCards()).find((c) => c.card === 'whoops')?.held).toBe(2);
+    expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent('3');
+  });
+
+  test('two presses in one tick buy once', async () => {
+    const fake = seeded(562);
+    const buy = vi.spyOn(fake, 'buyCard');
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    const button = screen.getByRole('button', { name: 'Buy Whoops! · 1.00' });
+    act(() => { fireEvent.click(button); fireEvent.click(button); });
+    await waitFor(() => expect(document.querySelector('.kb-vending-outcome')).toHaveTextContent(/is in your hand/));
+    expect(buy).toHaveBeenCalledTimes(1);
+    expect((await fake.wallet()).balance).toBe(462);
+  });
+
+  test('with two purchases in flight the hand\'s count is two behind what it holds', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const fake = seeded(562);
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    vi.useFakeTimers();
+    for (let i = 0; i < 2; i++) {
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })); await Promise.resolve(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    }
+    /* The hand holds 4 now; neither card has landed, so it reads 2 (and the pick would make 3). */
+    expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent('2 → 3');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 400); });
+    expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent('4 → 5');
+  });
+
+  /* Account A presses Buy and the answer is held; B signs in; then the answer lands. */
+  function heldAnswer() {
+    const fake = seeded(562);
+    const other = fake.seed.account('bo');
+    fake.seed.character(other, 'Sprocket', 'face');
+    fake.seed.wallet(other, 300);
+    fake.seed.cards(other, { stick: 1 });
+    const real = fake.buyCard.bind(fake);
+    let release: () => void = () => {};
+    vi.spyOn(fake, 'buyCard').mockImplementation(async (card) => {
+      const answer = await real(card);
+      await new Promise<void>((resolve) => { release = resolve; });
+      return answer;
+    });
+    return { fake, other, land: async () => { await act(async () => { release(); await Promise.resolve(); }); } };
+  }
+
+  const nothingOfA = async () => {
+    await waitFor(() => expect(document.querySelector('.kb-vending-sum')).toHaveTextContent(/^3\.00$/), { timeout: 800 });
+    expect(document.querySelector('.kb-vending-wallet')).not.toHaveTextContent(/is in your hand|4\.62/);
+    expect(document.querySelector('.kb-vending-lcd')).toHaveAttribute('aria-label', 'Nothing selected');
+    expect(document.querySelector('.kb-vending-buy')).toBeDisabled();
+    expect(document.querySelector('.kb-vending-drop')).toBeNull();
+    expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent(/^1$/);
+  };
+
+  test('an answer held while another account signs in shows nothing of the first account under the second', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const { fake, other, land } = heldAnswer();
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toBeDisabled());
+    act(() => fake.signInAs(other));
+    await land();
+    await nothingOfA();
+  });
+
+  test('signing out and in as another account clears the first one\'s pick and its outcome too', async () => {
+    const fake = seeded(562);
+    const other = fake.seed.account('bo');
+    fake.seed.character(other, 'Sprocket', 'face');
+    fake.seed.wallet(other, 300);
+    fake.seed.cards(other, { stick: 1 });
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
+    expect(await screen.findByText('Whoops! is in your hand. 4.62 is left, solid.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb' }));
+    act(() => fake.signInAs(null));
+    act(() => fake.signInAs(other));
+    await nothingOfA();
+  });
+});
+
 describe('the cascade, backwards', () => {
   test('the wallet drains from the last orb down, one a second, from the wallet it had to the wallet it has', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');

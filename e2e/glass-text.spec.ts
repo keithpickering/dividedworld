@@ -371,6 +371,34 @@ test.describe('the instance\'s drawn art', () => {
   });
 });
 
+/*
+ * The picked slot and the armed card are marked by a glow (box-shadow), which forced colors
+ * (Windows High Contrast) drop: each is also marked by a border in the system's Highlight there.
+ */
+test.describe('the picked slot and the armed card in forced colors', () => {
+  test.use({ viewport: { width: 1920, height: 1080 } });
+
+  test('are ringed in Highlight, and a slot that is not picked is not', async ({ page }) => {
+    await page.emulateMedia({ forcedColors: 'active' });
+    await open(page, PAGES.find((p) => p.path === '/vending')!);
+    const slots = page.locator('button.kb-vending-slot');
+    await slots.first().click();
+    const ring = (selector: string) => page.locator(selector).first().evaluate((el) => {
+      const probe = document.createElement('div');
+      probe.style.cssText = 'forced-color-adjust: none; color: Highlight';
+      document.body.append(probe);
+      const highlight = getComputedStyle(probe).color;
+      probe.remove();
+      const ring = getComputedStyle(el, '::after');
+      return { style: ring.borderTopStyle, width: ring.borderTopWidth, highlight: ring.borderTopColor === highlight };
+    });
+    expect(await ring('button.kb-vending-slot[aria-pressed="true"]')).toEqual({ style: 'solid', width: '3px', highlight: true });
+    expect((await ring('button.kb-vending-slot[aria-pressed="false"]')).style).not.toBe('solid');
+    await page.locator('button.kb-vending-slot > .kb-postcard').first().evaluate((card) => card.setAttribute('data-armed', ''));
+    expect(await ring('.kb-postcard[data-armed]')).toEqual({ style: 'solid', width: '3px', highlight: true });
+  });
+});
+
 test.describe('the poisons, planted in a real page', () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
   const rankings = PAGES.find((p) => p.path === '/rankings')!;

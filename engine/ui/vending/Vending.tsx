@@ -27,12 +27,13 @@
  * What is bought is private: nothing here is sent to anyone, and a lost answer is read again from
  * the wallet and the hand rather than guessed at (player.tsx's buyCard).
  */
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { motionReduced } from '../appearance.ts';
 import { Postcard } from '../cards/Postcard.tsx';
 import { facesOf, orbs, priceOf, type CardFace } from '../cards/faces.ts';
 import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
+import type { Id } from '../data/api.ts';
 import { backHref, boardPlace } from '../glass/back.ts';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
@@ -68,13 +69,34 @@ interface Outcome {
   readonly text: string;
 }
 
+/** The cards on their way to the hand: the last one's key (a new one restarts the drop) and how many have not landed. */
+interface Drop {
+  readonly key: string;
+  readonly n: number;
+  readonly flying: number;
+}
+
+/** What the screen holds, with the account it was held for. */
+interface Kept {
+  readonly for: Id | null;
+  readonly pickedKey: string | null;
+  readonly busy: boolean;
+  readonly outcome: Outcome | null;
+  /* The wallet the drain starts from, until it has played. */
+  readonly drainFrom: number | null;
+  readonly drop: Drop | null;
+}
+
+/** Nothing held yet for `account`. */
+const emptyFor = (account: Id | null): Kept => ({ for: account, pickedKey: null, busy: false, outcome: null, drainFrom: null, drop: null });
+
 function Machine({ faces, picked, onPick, onBuy, busy, drop, onLanded, shopName }: {
   readonly faces: readonly CardFace[];
   readonly picked: CardFace | null;
   readonly onPick: (key: string) => void;
   readonly onBuy: () => void;
   readonly busy: boolean;
-  readonly drop: { readonly key: string; readonly n: number } | null;
+  readonly drop: Drop | null;
   readonly onLanded: () => void;
   readonly shopName: string;
 }) {
@@ -113,7 +135,7 @@ function Machine({ faces, picked, onPick, onBuy, busy, drop, onLanded, shopName 
                 style={{ '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink } as CSSProperties}
                 onClick={() => onPick(face.key)}
               >
-                <Postcard face={face} size="slot" selected={selected} />
+                <Postcard face={face} size="slot" />
                 <svg className="kb-vending-coil" aria-hidden="true" focusable="false" width="120" height="22" viewBox="0 0 120 22" data-kb-art>
                   <path d="M4 11 q8 -10 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0" fill="none" strokeWidth="2.5" />
                 </svg>
@@ -161,20 +183,34 @@ export function Vending() {
   const player = usePlayer();
   const location = useLocation();
   const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings), [instance, ui.cards]);
-  const [pickedKey, setPickedKey] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
-  /* The wallet the drain starts from, until it has played. */
-  const [drainFrom, setDrainFrom] = useState<number | null>(null);
-  /* A card on its way to the hand: it is in the hand when it lands. */
-  const [drop, setDrop] = useState<{ readonly key: string; readonly n: number } | null>(null);
+  /*
+   * What the screen holds (the pick, the answer in words, the drain, the card in flight, the press
+   * in progress) is kept with the account it was made for and read in render against the account
+   * signed in now, as player.tsx keeps its rows: another account's pick and answer read as nothing
+   * in the very commit the account changes, so a held answer for the last player is never worded
+   * under the next one's wallet.
+   */
+  const account = player.session.account;
+  const [kept, setKept] = useState<Kept>(() => emptyFor(null));
+  const empty = useMemo(() => emptyFor(account), [account]);
+  const mine = kept.for === account ? kept : empty;
+  const { pickedKey, busy, outcome, drainFrom, drop } = mine;
+  /* The account the screen is on now: an answer for another one is dropped, and a change is that account's own. */
+  const showing = useRef<Id | null>(null);
+  showing.current = account;
+  const change = (for_: Id | null, patch: (m: Kept) => Partial<Kept>) => {
+    if (showing.current !== for_) return;
+    setKept((k) => { const m = k.for === for_ ? k : emptyFor(for_); return { ...m, ...patch(m) }; });
+  };
+  /* Two presses in one tick both see `busy` false, so the guard is a ref too: the accounts with a purchase out. */
+  const pressed = useRef(new Set<Id>());
 
   const wallet = player.wallet;
   const balance = wallet?.balance ?? 0;
   const cap = wallet?.cap ?? 0;
   const heldNow = player.cards.reduce((n, c) => n + c.held, 0);
-  /* On its way, the card has not reached the hand: the count moves when it lands. */
-  const held = drop !== null ? heldNow - 1 : heldNow;
+  /* On their way, the cards have not reached the hand: the count moves when they land. */
+  const held = heldNow - (drop?.flying ?? 0);
   const picked = faces.find((f) => f.key === pickedKey) ?? null;
   const short = picked !== null && balance < picked.price;
   const shortWords = picked ? `${picked.name} costs ${orbs(picked.price)} and your wallet holds ${orbs(balance)}. Only solid Aura can be spent; the ghost estimate cannot.` : '';
@@ -183,37 +219,39 @@ export function Vending() {
   /* The drain, once played, is forgotten, so a later change of the wallet starts from where it stands. */
   useEffect(() => {
     if (drainFrom === null) return;
-    const t = setTimeout(() => setDrainFrom(null), cascade(drainFrom, balance, cap).length * CASCADE_BEAT_MS + 600);
+    const t = setTimeout(() => change(account, () => ({ drainFrom: null })), cascade(drainFrom, balance, cap).length * CASCADE_BEAT_MS + 600);
     return () => clearTimeout(t);
-  }, [drainFrom, balance, cap]);
+  }, [drainFrom, balance, cap, account]);
 
   /* A card that never reports landing (a browser without animation events) still reaches the hand. */
   useEffect(() => {
     if (drop === null) return;
-    const t = setTimeout(() => setDrop(null), DELIVERY_MS + 400);
+    const t = setTimeout(() => change(account, () => ({ drop: null })), DELIVERY_MS + 400);
     return () => clearTimeout(t);
-  }, [drop]);
+  }, [drop, account]);
 
   async function buy() {
-    if (!picked || busy) return;
+    if (!picked || !account || busy || pressed.current.has(account)) return;
     if (balance < picked.price) {
-      setOutcome({ tone: 'refusal', text: shortWords });
+      change(account, () => ({ outcome: { tone: 'refusal', text: shortWords } }));
       return;
     }
-    setBusy(true);
-    setOutcome(null);
+    pressed.current.add(account);
+    change(account, () => ({ busy: true, outcome: null }));
     const before = balance;
     const bought = await player.buyCard(picked.key);
-    setBusy(false);
+    pressed.current.delete(account);
+    /* The answer is the account's that pressed: for anyone signed in now it is not shown. */
     if (!bought.ok) {
-      setOutcome({ tone: 'refusal', text: plainRefusal(bought.error) });
+      change(account, () => ({ busy: false, outcome: { tone: 'refusal', text: plainRefusal(bought.error) } }));
       return;
     }
-    setOutcome({ tone: 'done', text: `${picked.name} is in your hand. ${orbs(bought.value.balance)} is left, solid.` });
-    if (!motionReduced()) {
-      setDrainFrom(before);
-      setDrop((d) => ({ key: picked.key, n: (d?.n ?? 0) + 1 }));
-    }
+    const text = `${picked.name} is in your hand. ${orbs(bought.value.balance)} is left, solid.`;
+    change(account, (m) => ({
+      busy: false,
+      outcome: { tone: 'done', text },
+      ...(motionReduced() ? {} : { drainFrom: before, drop: { key: picked.key, n: (m.drop?.n ?? 0) + 1, flying: (m.drop?.flying ?? 0) + 1 } }),
+    }));
   }
 
   if (!player.sessionKnown || (player.session.signedIn && !player.loaded)) return <div className="kb-vending" aria-busy="true" />;
@@ -263,9 +301,9 @@ export function Vending() {
 
       <Machine
         faces={faces} picked={picked} busy={busy} drop={drop} shopName={ui.copy.shopName}
-        onPick={(key) => { setPickedKey(key); setOutcome(null); }}
+        onPick={(key) => change(account, () => ({ pickedKey: key, outcome: null }))}
         onBuy={() => void buy()}
-        onLanded={() => setDrop(null)}
+        onLanded={() => change(account, () => ({ drop: null }))}
       />
 
       <section className="kb-vending-list" aria-label="In the machine">

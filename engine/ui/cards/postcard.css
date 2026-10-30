@@ -201,3 +201,14 @@ button.kb-postcard {
 }
 
 :root[data-kb-motion='reduce'] .kb-postcard[data-armed] { animation: none; }
+
+/* Forced colors drop the ring and its glow, which are shadows: the armed card is ringed in the system's Highlight instead. */
+@media (forced-colors: active) {
+  .kb-postcard[data-armed]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 3px solid Highlight;
+    pointer-events: none;
+  }
+}

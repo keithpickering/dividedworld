@@ -289,6 +289,10 @@ describe('what the measurement does not read', () => {
       <article class="kb-hold-post"><b id="inside">The board's post</b><span><i id="deeper">deeper still</i></span></article>
       <p class="kb-hold-post-line" id="lookalike">A glass line whose class only starts like the board's</p>
       <span data-kb-art><b id="art">VEND</b></span>
+      <div class="kb-hand-board-post-bar"><span id="bar">Spritey · #41</span></div>
+      <div class="kb-hand-board-post-foot"><span id="foot">quote</span></div>
+      <p class="kb-hand-board-post-barely" id="barLookalike">A glass line whose class only starts like the bar's</p>
+      <p class="kb-hand-board-post-footer" id="footLookalike">A glass line whose class only starts like the foot's</p>
     </div></body>`) as { window: { document: Document } }).window.document;
   const at = (id: string) => page.getElementById(id)!;
 
@@ -297,6 +301,14 @@ describe('what the measurement does not read', () => {
     expect(isSkipped(at('deeper'))).toBe(true);
     expect(isSkipped(at('outside'))).toBe(false);
     expect(isSkipped(at('lookalike'))).toBe(false);
+  });
+
+  test('a node inside the 2003 window\'s post bar or foot on the hand sheet\'s story is skipped, and one outside them is not', () => {
+    expect(isSkipped(at('bar'))).toBe(true);
+    expect(isSkipped(at('foot'))).toBe(true);
+    expect(isSkipped(at('outside'))).toBe(false);
+    expect(isSkipped(at('barLookalike'))).toBe(false);
+    expect(isSkipped(at('footLookalike'))).toBe(false);
   });
 
   test('the instance\'s art is skipped too', () => {
