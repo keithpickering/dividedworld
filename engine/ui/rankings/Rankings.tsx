@@ -27,6 +27,7 @@ import { useKayfa } from '../context.tsx';
 import type { ClassReveal, MyCharacter, Season, Standing, TurnAnnounced } from '../data/api.ts';
 import { shortDate } from '../postbit/dates.ts';
 import { PageLinks, SignInPrompt, useSignedIn } from '../mini.tsx';
+import { usePlayer } from '../player.tsx';
 import { reveals as statements, type Statement } from '../postbit/reveals.ts';
 import { Link, useLocation } from '../router.tsx';
 import './rankings.css';
@@ -149,11 +150,15 @@ type State =
 export function RankingsScreen() {
   const { api } = useKayfa();
   const signedIn = useSignedIn(api);
+  /* Whose rows are marked: another account signing in reads the page again, with its own. */
+  const { account } = usePlayer().session;
   const { query } = useLocation();
   const page = Math.min(MAX_PAGE, Math.max(1, Number.parseInt(query.get('page') ?? '', 10) || 1));
   const [state, setState] = useState<State>({ status: 'loading' });
   useEffect(() => {
     if (!signedIn) return undefined;
+    /* A new page, or a new account, starts from nothing: never the last page's rows, the last account's marks or the last read's error. */
+    setState({ status: 'loading' });
     let live = true;
     (async () => {
       const [standings, total, season, settledAt, mine] = await Promise.all([
@@ -168,7 +173,7 @@ export function RankingsScreen() {
       () => { if (live) setState({ status: 'failed' }); },
     );
     return () => { live = false; };
-  }, [api, page, signedIn]);
+  }, [api, page, signedIn, account]);
   if (signedIn === false) return <div className="kb-rankings"><div className="kb-rankings-empty kb-calm"><SignInPrompt /></div></div>;
   if (signedIn === null || state.status === 'loading') return <div className="kb-rankings" aria-busy="true" />;
   if (state.status === 'failed') return <div className="kb-rankings"><p className="kb-rankings-empty kb-calm">The rankings could not be loaded. Reload the page to try again.</p></div>;

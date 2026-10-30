@@ -4,8 +4,8 @@
  * as its player made it public. Its requests are the same for every player but the own-row read,
  * so nothing it asks for or shows is computed from another player's private rows.
  */
-import { screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { act, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { RankingsScreen } from './Rankings.tsx';
@@ -33,6 +33,23 @@ function world() {
   seed.settle({ at: at(29, 8), debut: false, standings: { [spritey]: 650, [pipe]: 330, [gloomba]: 180, [quiet]: 40 } });
   return { fake, me, other, pipe, spritey, gloomba, quiet };
 }
+
+afterEach(() => { vi.restoreAllMocks(); });
+
+/** A season of `count` characters, named in order, signed in as their player. */
+function crowd(count: number) {
+  const fake = buildWorld();
+  const account = fake.seed.account('x');
+  for (let i = 0; i < count; i++) fake.seed.character(account, `Name ${String(i).padStart(3, '0')}`, 'face', { at: at(1) });
+  fake.signInAs(account);
+  return fake;
+}
+
+/** Move to an address as Back or Forward does, which the router hears. */
+const goTo = (path: string) => act(() => {
+  window.history.pushState(null, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+});
 
 const bodyRows = () => screen.getAllByRole('row').slice(1);
 const rowOf = (name: string) => bodyRows().find((r) => within(r).queryByRole('rowheader', { name: new RegExp(`^${name}`, 'u') }))!;
@@ -128,6 +145,57 @@ describe('Rankings', () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(20));
     expect(screen.getByText(/Page 3 of 3/u)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Previous page' })).toHaveAttribute('href', '/rankings?page=2');
+  });
+
+  test('a season of exactly fifty is one page with no pager, and fifty-one is two', async () => {
+    const { unmount } = renderIn(crowd(50), <RankingsScreen />, { path: '/rankings' });
+    await waitFor(() => expect(bodyRows()).toHaveLength(50));
+    expect(screen.queryByRole('navigation', { name: 'Pages of the rankings' })).toBeNull();
+    unmount();
+    renderIn(crowd(51), <RankingsScreen />, { path: '/rankings' });
+    await waitFor(() => expect(bodyRows()).toHaveLength(50));
+    const pager = screen.getByRole('navigation', { name: 'Pages of the rankings' });
+    expect(pager).toHaveTextContent('Page 1 of 2');
+    expect(within(pager).getByRole('link', { name: 'Next page' })).toHaveAttribute('href', '/rankings?page=2');
+  });
+
+  test('a page change shows neither the old page\'s rows nor its error while the new page loads', async () => {
+    const fake = crowd(120);
+    renderIn(fake, <RankingsScreen />, { path: '/rankings' });
+    await screen.findByRole('link', { name: 'Name 000' });
+    /* Page 2 is asked for and not yet answered. */
+    vi.spyOn(fake, 'standingsPage').mockReturnValueOnce(new Promise(() => {}));
+    await goTo('/rankings?page=2');
+    expect(screen.queryByRole('link', { name: 'Name 000' })).toBeNull();
+    expect(screen.queryByText(/Page 1 of 3/u)).toBeNull();
+    expect(document.querySelector('.kb-rankings[aria-busy="true"]')).not.toBeNull();
+  });
+
+  test('a failed read is tried again on a page change, and its error does not stay while it is', async () => {
+    const fake = crowd(120);
+    const real = fake.standingsPage.bind(fake);
+    let answer: (rows: Awaited<ReturnType<typeof real>>) => void = () => {};
+    const page = vi.spyOn(fake, 'standingsPage')
+      .mockRejectedValueOnce(new Error('the network dropped'))
+      .mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    renderIn(fake, <RankingsScreen />, { path: '/rankings' });
+    expect(await screen.findByText(/could not be loaded/u)).toBeInTheDocument();
+    await goTo('/rankings?page=2');
+    expect(page).toHaveBeenLastCalledWith(50, 50);
+    expect(screen.queryByText(/could not be loaded/u)).toBeNull();
+    await act(async () => { answer(await real(50, 50)); });
+    expect(await screen.findByRole('link', { name: 'Name 050' })).toBeInTheDocument();
+  });
+
+  test('another account signing in reads the page again, with that account\'s own rows', async () => {
+    const w = world();
+    w.fake.signInAs(w.me);
+    renderIn(w.fake, <RankingsScreen />, { path: '/rankings' });
+    await screen.findByRole('table');
+    expect(within(rowOf('Pipewrench')).getByText('Yours')).toBeInTheDocument();
+    await act(async () => { w.fake.signInAs(w.other); });
+    await waitFor(() => expect(within(rowOf('Spritey')).queryByText('Yours')).not.toBeNull());
+    expect(within(rowOf('Pipewrench')).queryByText('Yours')).toBeNull();
   });
 
   test('one page has no pager, and a page past the end says so and links back to the first', async () => {
