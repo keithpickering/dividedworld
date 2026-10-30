@@ -261,6 +261,46 @@ test.describe('between the boards\' widths', () => {
   }
 
   /*
+   * The menu bar is the boards' (06, 07, 10, 11 and 12 draw it alike): 85px tall over the strong
+   * panel with a pale rule at its foot, its tabs skewed -10 degrees in uppercase Barlow Condensed
+   * 800 at 21px spaced 2px, Back outlined in white with its ESC key cap before its words, the current
+   * tab lit with a neon rule along its foot.
+   */
+  test('at 1440px a glass page\'s menu bar is drawn as the boards draw it', async ({ page }) => {
+    await page.setViewportSize({ width: MAIN_BOARD_WIDTH, height: 900 });
+    await page.goto('/characters');
+    await expect(ready(page, '/characters')).toBeVisible();
+    const got = await page.evaluate(async () => {
+      await document.fonts.ready;
+      const nav = document.querySelector('nav.kb-glass-menu')!;
+      const back = nav.querySelector('a[aria-keyshortcuts="Escape"]')!;
+      const tab = nav.querySelector('a[aria-current="page"]')!;
+      const words = (a: Element) => {
+        const s = getComputedStyle(a.querySelector('.kb-glass-upright') ?? a);
+        return { family: s.fontFamily.split(',')[0]!.replace(/"/g, ''), size: s.fontSize, weight: s.fontWeight, spacing: s.letterSpacing, upper: s.textTransform };
+      };
+      const key = getComputedStyle(back.querySelector('.kb-glass-menu-key')!, '::before');
+      /* The key cap comes before Back's words. */
+      const keyFirst = (a: Element) => {
+        const kids = [...(a.querySelector('.kb-glass-upright') ?? a).childNodes];
+        return kids.findIndex((n) => n instanceof Element && n.classList.contains('kb-glass-menu-key')) < kids.findIndex((n) => n.nodeType === Node.TEXT_NODE && /\S/.test(n.textContent ?? ''));
+      };
+      return {
+        height: Math.round(nav.getBoundingClientRect().height),
+        rule: getComputedStyle(nav).borderBottomStyle,
+        back: { ...words(back), border: getComputedStyle(back).borderTopStyle, skewed: getComputedStyle(back).transform !== 'none', keyFirst: keyFirst(back), key: key.content },
+        current: { ...words(tab), skewed: getComputedStyle(tab).transform !== 'none', lit: getComputedStyle(tab).boxShadow.includes('inset') },
+      };
+    });
+    const type = { family: 'Barlow Condensed', size: '21px', weight: '800', spacing: '2px', upper: 'uppercase' };
+    expect(got).toEqual({
+      height: 85, rule: 'solid',
+      back: { ...type, border: 'solid', skewed: true, keyFirst: true, key: '"ESC"' },
+      current: { ...type, skewed: true, lit: true },
+    });
+  });
+
+  /*
    * A calm's feather reaches 32px past its words, wider than the phone's 16px gutter, so a restyled
    * glass page whose text runs to the column's edge would push the page sideways. The page shell
    * contains it for every glass page (shell.css), so no page has to remember to. Read on the

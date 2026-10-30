@@ -26,6 +26,8 @@ const manifest: BoardManifest = {
     /* The board writes the key cap into the link's name; the build hides it (MenuBar.tsx). */
     { id: 'menu-back', role: 'link', name: 'ESC BACK TO THE BOARD', buildName: 'Back to the board', within: 'menu' },
     { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu', box: 'none' },
+    { id: 'menu-rankings', role: 'link', name: 'Rankings', within: 'menu', box: 'none' },
+    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu', box: 'none' },
     { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu', box: 'none' },
 
     /*
