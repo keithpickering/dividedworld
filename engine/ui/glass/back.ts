@@ -26,7 +26,7 @@
  * value cannot send Back elsewhere or carry markup into an address.
  */
 import { useCallback } from 'react';
-import { useNavigate, type Location } from '../router.tsx';
+import { addressOf, useNavigate, type Location } from '../router.tsx';
 
 /** What a thread showed and knew of when the reader left it: the last seq on screen, and the last the thread had heard of. */
 export interface ThreadReturn {
@@ -202,7 +202,7 @@ export function keepBoardPlace(isGlass: (path: string) => boolean, doc: Document
     const into = isGlass(to.path);
     if (from === null) { if (!into) forgetBoard(); return; }
     const out = isGlass(from.path);
-    if (!out && into) rememberBoard(`${from.path}${from.query.size ? `?${from.query}` : ''}`, doc);
+    if (!out && into) rememberBoard(addressOf(from), doc);
     else if (out && !into) forgetBoard();
   };
 }

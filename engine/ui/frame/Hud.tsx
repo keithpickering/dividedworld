@@ -30,7 +30,7 @@ import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { signInHref } from '../account/next.ts';
 import { dayAndTime } from '../characters/format.ts';
-import { Link, useLocation, useNavigate } from '../router.tsx';
+import { Link, searchOf, useLocation, useNavigate } from '../router.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { motionReduced } from '../appearance.ts';
@@ -208,7 +208,7 @@ export function Hud() {
             <div className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast' : ''}`}>
               <div className="kb-hud-plate-in">
                 {!signedIn ? (
-                  <Link to={signInHref(location.path, location.query.size ? `?${location.query}` : '')} className="kb-hud-sign-in kb-glass-cut-button">Sign in</Link>
+                  <Link to={signInHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-glass-cut-button">Sign in</Link>
                 ) : !player.loaded ? null : !hud ? (
                   <Link to="/characters/new" className="kb-hud-make kb-glass-cut-button">Make a character</Link>
                 ) : (

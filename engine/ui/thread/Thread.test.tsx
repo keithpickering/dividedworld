@@ -614,7 +614,6 @@ describe('live updates', () => {
   });
 });
 
-/* ---------------------------------------------------------------------------- announcer ---- */
 /* ------------------------------------------------------------------- back from the glass ---- */
 /* A find waits five seconds (web/test-setup.ts), so a test is given longer than that to say what it did not find. */
 describe('back from the glass, to a thread that grew meanwhile', { timeout: 15_000 }, () => {
@@ -692,6 +691,7 @@ describe('back from the glass, to a thread that grew meanwhile', { timeout: 15_0
   });
 });
 
+/* ---------------------------------------------------------------------------- announcer ---- */
 describe('the announcer', () => {
   test('says each new post once, however many times it arrives, and no reaction or edit', async () => {
     const w = world(5);

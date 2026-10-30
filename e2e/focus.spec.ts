@@ -172,7 +172,7 @@ test('Back from "Make a character" in the reply box returns to the same post in 
   await backAtOneOf(page, seen);
 });
 
-test('Back lands on the thread the glass was last entered from, not one left by a crumb before', async ({ page }) => {
+test('a crumb out of the glass forgets the thread, and Back lands on the one the glass was last entered from', async ({ page }) => {
   await page.goto('/b/general');
   await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Who keeps reacting with tea?' })).toBeVisible();
@@ -180,6 +180,16 @@ test('Back lands on the thread the glass was last entered from, not one left by 
   await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
   /* Out of the glass by the page's own crumb, not by Back. */
   await page.locator('.kb-crumb').getByRole('link', { name: 'Index', exact: true }).click();
+  await expect(page.getByRole('main').getByRole('link', { name: 'General', exact: true })).toBeVisible();
+  /*
+   * The crumb forgot the thread, which entering again would overwrite anyway; a glass page opened and
+   * then reloaded, with no move into the glass, reads what the tab kept, and shows it was forgotten.
+   */
+  await page.goto('/settings');
+  await page.reload();
+  const back = page.getByRole('navigation', { name: 'Menu' }).getByRole('link', { name: 'Back to the board' });
+  await expect(back).toHaveAttribute('href', '/');
+  await back.click();
   await page.getByRole('main').getByRole('link', { name: 'General', exact: true }).click();
   await page.getByRole('link', { name: 'The long one', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();

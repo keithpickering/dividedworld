@@ -186,7 +186,7 @@ describe('Back, with the rule in the router', () => {
   }
   const mount = (path: string) => {
     window.history.replaceState(null, '', path);
-    render(<RouterProvider onMove={keepBoardPlace(isGlass)}><Screen /></RouterProvider>);
+    return render(<RouterProvider onMove={keepBoardPlace(isGlass)}><Screen /></RouterProvider>);
   };
   const scrolled = () => {
     Object.defineProperty(window, 'scrollY', { value: 500, configurable: true, writable: true });
@@ -194,10 +194,19 @@ describe('Back, with the rule in the router', () => {
     vi.spyOn(document.getElementById('post-2')!, 'getBoundingClientRect').mockReturnValue({ top: -5, bottom: 300 } as DOMRect);
   };
 
-  it('lands on the board the glass was last entered from, after a crumb out and a link in that keeps nothing itself', () => {
-    mount('/t/A');
+  it('forgets the board on a crumb out, and lands on the one the glass was last entered from by a link that keeps nothing itself', () => {
+    const first = mount('/t/A');
     act(() => go('/characters'));
     act(() => go('/'));
+    /*
+     * The crumb out forgot /t/A, which re-entering would overwrite anyway; a glass page reloaded
+     * now, with no move into the glass, shows whether it was forgotten: Back is the index.
+     */
+    first.unmount();
+    arrivedBy('reload');
+    mount('/settings');
+    act(() => back());
+    expect(window.location.pathname + window.location.hash).toBe('/');
     act(() => go('/t/B'));
     scrolled();
     act(() => go('/characters/new'));

@@ -16,7 +16,7 @@ import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
 import type { BoardSummary } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
-import { Link, useLocation } from '../router.tsx';
+import { Link, searchOf, useLocation } from '../router.tsx';
 import { Hud } from './Hud.tsx';
 import './frame.css';
 
@@ -49,7 +49,7 @@ export function Frame({ children }: { readonly children: ReactNode }) {
     return () => { live = false; };
   }, [api, session.signedIn]);
 
-  const here = query.size ? `?${query}` : '';
+  const here = searchOf(query);
   const links: readonly { readonly to: string; readonly label: string }[] = [
     { to: '/', label: 'Index' },
     ...boards.map((b) => ({ to: `/b/${b.slug}`, label: b.name })),

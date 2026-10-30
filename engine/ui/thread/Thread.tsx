@@ -275,9 +275,11 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const { start, end } = pageRange(page, P);
       const acts = await api.acts(thread, start, end);
       await prepare(acts);
-      /* Posts held behind a return's bar that the run now passes come in before the page read. */
-      const from = shownEnd(f) + 1;
-      const heldNext = [...f.held.values()].some((a) => a.seq === from);
+      /* Posts held behind a return's bar that the run now passes come in before the page read. What
+         is shown and held is read as it stands after the read, not as it stood when the reader asked. */
+      const now = feedRef.current;
+      const from = shownEnd(now) + 1;
+      const heldNext = [...now.held.values()].some((a) => a.seq === from);
       dispatch({ type: 'more', page, acts, tailLoaded: acts.length < end - start + 1 });
       const href = threadHref(thread, page);
       selfNav.current = href.slice(href.indexOf('?'));

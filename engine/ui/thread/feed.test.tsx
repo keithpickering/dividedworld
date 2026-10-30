@@ -89,6 +89,12 @@ describe('a return to an earlier page', () => {
   it('says nothing when nothing came', () => {
     expect(waitingPosts(reduce(loaded({ acts: run(1, 20), last: 45, page: 1, full: true, back: { shown: 20, known: 45 } })))).toBeNull();
   });
+  it('counts a live post that came before the read as what came, not the pages between', () => {
+    /* 46 arrives live while the return's read is out, and the read was answered before it was written. */
+    const f = reduce({ type: 'live', act: act(46) }, loaded({ acts: run(1, 20), last: 45, page: 1, full: true, back: { shown: 20, known: 45 } }));
+    expect(seqs(f.shown)).toEqual(run(1, 20).map((a) => a.seq));
+    expect(waitingPosts(f)).toEqual({ count: 1, first: 46, last: 46 });
+  });
 });
 
 describe('what a return cannot make of a read', () => {

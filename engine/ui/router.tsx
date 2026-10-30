@@ -6,7 +6,7 @@
  * about (a profile's): an address is shared, bookmarked and sent as a Referer, and a character in
  * it would say which masks one browser plays (the web plan, "What could vary with a private fact").
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode } from 'react';
 
 export interface Location {
   readonly path: string;
@@ -27,6 +27,20 @@ interface Router {
 }
 
 const RouterContext = createContext<Router | null>(null);
+
+/**
+ * A query as an address carries it: `?` and its text, or nothing when it is empty. It is read by its
+ * text, since URLSearchParams.size is missing before Safari 17, where a test on it drops every query.
+ */
+export function searchOf(query: URLSearchParams): string {
+  const text = String(query);
+  return text ? `?${text}` : '';
+}
+
+/** A location's path and query, without its fragment: the address a link back to it is given. */
+export function addressOf(l: Pick<Location, 'path' | 'query'>): string {
+  return l.path + searchOf(l.query);
+}
 
 const read = (w: Window, popped = false): Location => ({ path: w.location.pathname, query: new URLSearchParams(w.location.search), hash: w.location.hash.replace(/^#/, ''), popped, state: w.history.state });
 
@@ -50,7 +64,14 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     shown.current = to;
     setLocation(to);
   }, []);
-  useEffect(() => { moved.current?.(null, shown.current); }, []);
+  /*
+   * The document's first move is told in a layout effect: a parent's passive effect runs after its
+   * children's, so a screen that moves as it mounts (sign-in, for a reader already signed in) would
+   * otherwise be told before it, and the first move would name the address it moved to. A layout
+   * effect runs once the page is in the document and before every passive effect, a child's
+   * included; a screen that moved in a layout effect of its own would still come first, and none does.
+   */
+  useLayoutEffect(() => { moved.current?.(null, shown.current); }, []);
   useEffect(() => {
     const onPop = () => show(read(w, true));
     w.addEventListener('popstate', onPop);

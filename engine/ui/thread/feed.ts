@@ -14,9 +14,10 @@
  * thread showed and knew of when the reader left: the Acts the read holds after the last one shown
  * are held as live Acts are, so a thread that grew meanwhile shows its bar rather than moving the
  * reader, and every Act is drawn as it is now. Where the page read is not the tail, `newFrom` is
- * the first Act that came since (the first held, or the first the thread had not known of), so the
- * bar counts what came and leads to it, not to pages the reader had simply not reached; reading on
- * past it, or opening a page that holds it, lets it go.
+ * the first Act that came since (the first the read holds after the last one shown, or the first
+ * the thread had not known of, live Acts collected before the read included), so the bar counts
+ * what came and leads to it, not to pages the reader had simply not reached; reading on past it,
+ * or opening a page that holds it, lets it go.
  */
 import type { Act, Id, ThreadSummary } from '../data/api.ts';
 import type { ThreadReturn } from '../glass/back.ts';
@@ -90,7 +91,9 @@ export function feedReducer(f: Feed, a: FeedAction): Feed {
       for (const x of a.acts) if (!shown.has(x.id)) held.set(x.id, x);
       const knownLast = maxSeq(held.values(), serverLast);
       let newFrom: number | null = null;
-      if (back) newFrom = held.size > 0 ? back.shown + 1 : serverLast > back.known ? back.known + 1 : null;
+      /* Only the read says what follows the last post shown: a live Act collected before it is past
+         what the thread knew of, or it is a post the read covers. */
+      if (back) newFrom = a.acts.some((x) => x.seq !== null && x.seq > back.shown) ? back.shown + 1 : knownLast > back.known ? back.known + 1 : null;
       else if (f.newFrom !== null) newFrom = f.newFrom > baseEnd ? f.newFrom : knownLast > baseEnd ? baseEnd + 1 : null;
       return {
         ready: true, summary: a.summary, firstPage: a.firstPage, lastPage: a.lastPage, baseEnd, serverLast,
