@@ -31,8 +31,6 @@ const REPORT = path.join(here, 'report', 'boards');
 /** The boards not built yet, each with the part of docs/plans/2026-10-30-glass-build-plan.md that builds it. */
 const PENDING: Readonly<Record<string, string>> = {
   '03-react': 'Part 2',
-  '06-turn': 'Part 2',
-  '10-roster': 'Part 2',
   '11-settings': 'Part 2',
   '05-cards': 'Part 3',
   '07-vending': 'Part 3',

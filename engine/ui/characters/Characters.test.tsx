@@ -1,8 +1,9 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { Page } from '../glass/Page.tsx';
 import { usePlayer } from '../player.tsx';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { Characters } from './Characters.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -23,13 +24,25 @@ function world(options: { readonly per?: number } = {}) {
   const stranger = fake.seed.character(other, 'Stranger', 'heel', { at: T0 });
   fake.seed.settle({ at: T0 + 2 * DAY, debut: false, standings: { [pipe]: 1420, [hoolie]: 685, [stranger]: 100 } });
   fake.signInAs(me);
-  return { fake, me, pipe, hoolie, waiting, stranger, per };
+  return { fake, me, other, pipe, hoolie, waiting, stranger, per };
 }
 type World = ReturnType<typeof world>;
 
 const open = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', settings: { charactersPerPlayer: w.per } });
-const row = (name: string) => screen.getByRole('row', { name: new RegExp(`^${name}`, 'u') });
-const ready = async () => { await screen.findByRole('heading', { level: 1, name: /Your characters/u }); await screen.findByText('Pipewrench'); };
+/*
+ * On the glass, My characters is the Roster board's: a card per character, and the selected one's
+ * panel, which holds what a table row held. So a character's "row" is its panel, reached as a
+ * player reaches it, by its card (a click that moves no focus, as a row's controls were always in
+ * view). Before the glass this read the table's row.
+ */
+const roster = () => screen.getByRole('list', { name: /^Roster, /u });
+const card = (name: string) => within(roster()).getByRole('button', { name: new RegExp(`^${name}`, 'u') });
+const row = (name: string) => {
+  fireEvent.click(card(name));
+  return screen.getByRole('region', { name });
+};
+/* Before the glass this waited for the name, which the card and the panel now both show. */
+const ready = async () => { await screen.findByRole('heading', { level: 1, name: /Your characters/u }); await within(await screen.findByRole('list', { name: /^Roster, /u })).findByText('Pipewrench'); };
 
 /** Mrs. Hooligan has Turned once, today, so she cannot Turn for 30 days. */
 async function cooldown(w: World) {
@@ -469,5 +482,200 @@ describe('A pending Turn and a reveal', () => {
     open(w);
     await ready();
     expect(screen.queryByText(NOTE)).toBeNull();
+  });
+});
+
+describe('My characters on the glass (the Roster board)', () => {
+  test('the roster is a list of the slots used, a card per character with its class, rank and Turn state, then New character', async () => {
+    const w = world();
+    await cooldown(w);
+    open(w);
+    await ready();
+    expect(roster()).toHaveAccessibleName('Roster, 3 of 4 slots used');
+    /* In the order they joined, the one still waiting last. */
+    expect(within(roster()).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      expect.stringMatching(/^Pipewrench/u), expect.stringMatching(/^Mrs\. Hooligan/u), expect.stringMatching(/^Spritey/u),
+    ]);
+    expect(within(card('Pipewrench')).getByText('Face')).toBeInTheDocument();
+    expect(within(card('Pipewrench')).getByText('Turn ready')).toBeInTheDocument();
+    expect(within(card('Mrs. Hooligan')).getByText(/^Next Turn opens Nov 28$/u)).toBeInTheDocument();
+    expect(within(card('Spritey')).getByText('Waiting to debut')).toBeInTheDocument();
+    expect(within(roster()).getByRole('link', { name: 'New character' })).toHaveAttribute('href', '/characters/new');
+  });
+
+  test('a card shows its character\'s rank once the standings are read', async () => {
+    const w = world();
+    const ranks = testInstance.ranks;
+    open(w);
+    await ready();
+    const names = ranks.map((r) => r.name);
+    await waitFor(() => expect(names).toContain(within(card('Pipewrench')).getByTestId('kb-roster-rank').textContent));
+  });
+
+  test('a card selects its character into the panel, marked current, and no address names it', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    await userEvent.click(card('Mrs. Hooligan'));
+    expect(card('Mrs. Hooligan')).toHaveAttribute('aria-current', 'true');
+    expect(card('Pipewrench')).not.toHaveAttribute('aria-current');
+    const panel = screen.getByRole('region', { name: 'Mrs. Hooligan' });
+    expect(within(panel).getByText('Selected')).toBeInTheDocument();
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe('/characters');
+  });
+
+  test('opens on the character a navigation carried, else on the HUD\'s', async () => {
+    const w = world();
+    renderIn(w.fake, <Characters />, { path: '/characters', state: { character: w.hoolie }, settings: { charactersPerPlayer: w.per } });
+    await ready();
+    expect(card('Mrs. Hooligan')).toHaveAttribute('aria-current', 'true');
+    cleanup();
+    localStorage.setItem(`kb-hud:${w.me}`, w.pipe);
+    open(w);
+    await ready();
+    expect(card('Pipewrench')).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('the panel says what the Roster board says: the class with its date, rank and standing, the wallet, the posts and the month joined', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const panel = row('Pipewrench');
+    expect(await within(panel).findByText('14.20')).toBeInTheDocument();
+    expect(within(panel).getByText(/this season/u)).toBeInTheDocument();
+    expect(within(panel).getByText('Wallet')).toBeInTheDocument();
+    expect(await within(panel).findByText(/joined Oct 2026/u)).toBeInTheDocument();
+    expect(within(panel).getByText(/characters at most/u)).toBeInTheDocument();
+  });
+
+  test('a character that Turned, announced with its old class, says what it was', async () => {
+    const w = world();
+    const turns = w.fake.seed.thread('the-system', null, 'Season 1: Who Turned', 'Every Turn.');
+    w.fake.seed.announceTurn(w.pipe, turns.thread, { was: 'heel' });
+    open(w);
+    await ready();
+    expect(await within(row('Pipewrench')).findByText('Heel, announced publicly')).toBeInTheDocument();
+    expect(within(row('Mrs. Hooligan')).queryByText(/announced publicly/u)).toBeNull();
+  });
+
+  test('a Turn in its cooldown says on its button when it opens, and why', async () => {
+    const w = world();
+    await cooldown(w);
+    open(w);
+    await ready();
+    const panel = row('Mrs. Hooligan');
+    expect(within(panel).getByRole('button', { name: 'Turn Mrs. Hooligan' })).toHaveTextContent('Turn · opens Nov 28');
+    expect(within(panel).getByText(/^A character can Turn once every 30 days\. Mrs\. Hooligan last Turned at the Oct \d+ settlement\.$/u)).toBeInTheDocument();
+  });
+});
+
+describe('the class, in its own color, to its own player only', () => {
+  test('each of the player\'s characters shows its class as a chip in that class\'s colors', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const chip = within(card('Pipewrench')).getByText('Face').closest<HTMLElement>('[data-kb-class]')!;
+    expect(chip).toHaveAttribute('data-kb-class', 'face');
+    expect(chip.getAttribute('style')).toContain('--kb-glass-class-face-fill');
+  });
+
+  test('the page is drawn from the account\'s own rows: another player sees none of these classes', async () => {
+    const w = world();
+    w.fake.signInAs(w.other);
+    open(w);
+    await within(await screen.findByRole('list', { name: /^Roster, /u })).findByText('Stranger');
+    expect(screen.queryByText('Pipewrench')).toBeNull();
+    expect(document.querySelector('[data-kb-class="face"]')).toBeNull();
+    expect(document.querySelector('[style*="--kb-glass-class-face"]')).toBeNull();
+  });
+});
+
+describe('the Turn modal over My characters (the Turn board)', () => {
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters" restyled><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+
+  test('is a glass overlay on the turn smoke, with the menu bar left in view, dimmed and inert', async () => {
+    const w = world();
+    page(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    expect(dialog.querySelector('.kb-smoke')).toHaveAttribute('data-kb-surface', 'turn');
+    expect(within(dialog).getByText('My characters › Turn')).toBeInTheDocument();
+    const menu = document.querySelector('nav[aria-label="Menu"]')!;
+    expect(menu.closest('[inert]')).not.toBeNull();
+    expect(menu).toHaveAttribute('data-kb-dimmed');
+  });
+
+  for (const how of ['Close', 'Esc'] as const) {
+    test(`${how} returns to My characters, focus on the Turn button and the menu bar lit again`, async () => {
+      const w = world();
+      page(w);
+      await ready();
+      const turn = within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' });
+      await userEvent.click(turn);
+      const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+      if (how === 'Close') await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+      else await userEvent.keyboard('{Escape}');
+      await act(async () => {});
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(window.location.pathname).toBe('/characters');
+      expect(turn).toHaveFocus();
+      const menu = screen.getByRole('navigation', { name: 'Menu' });
+      expect(menu.closest('[inert]')).toBeNull();
+      expect(menu).not.toHaveAttribute('data-kb-dimmed');
+    });
+  }
+
+  test('shows the class the character holds as a card marked Now, which cannot be chosen', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    const group = within(dialog).getByRole('group', { name: 'Turn to' });
+    expect(within(group).getByText('Now')).toBeInTheDocument();
+    expect(within(group).getByText('Face')).toBeInTheDocument();
+    expect(within(group).queryByRole('radio', { name: /^Face/u })).toBeNull();
+    expect(within(group).getAllByRole('radio')).toHaveLength(1);
+  });
+
+  test('names each class\'s quadrant marks in words, from the instance', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    expect(within(dialog).getByRole('img', { name: 'Earns from heat, hurt by the calm' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('img', { name: 'Earns from hype, hurt by the groan' })).toBeInTheDocument();
+    expect(within(dialog).getByText((_, el) => el?.classList.contains('kb-turn-map') === true)).toHaveTextContent('The map: Heat · Hype on top, Groan · Calm below, the same grid as the React picker.');
+  });
+
+  test('shows the character beside the choice: its rank, its season standing, and its class, seen by its player alone', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    const who = within(dialog).getByRole('complementary');
+    expect(within(who).getByText('Season standing')).toBeInTheDocument();
+    expect(await within(who).findByText('14.20')).toBeInTheDocument();
+    expect(within(who).getByText('Class now')).toBeInTheDocument();
+    expect(within(who).getByText('Face')).toBeInTheDocument();
+    expect(within(who).getByText('Only you')).toBeInTheDocument();
+    expect(within(who).getByRole('img', { name: /^Rank \d of \d: / })).toBeInTheDocument();
+  });
+});
+
+describe('the panel\'s pip style (the Roster board)', () => {
+  test('is the character\'s own, and choosing one saves it with the profile\'s title and signature as they are', async () => {
+    const w = world();
+    const setProfile = vi.spyOn(w.fake, 'setProfile');
+    open(w);
+    await ready();
+    const select = await within(row('Pipewrench')).findByRole('combobox', { name: 'Pip style' });
+    expect(select).toHaveValue('default');
+    await userEvent.selectOptions(select, 'default');
+    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, '', '', 'default'));
+    expect(within(row('Spritey')).queryByRole('combobox', { name: 'Pip style' })).toBeNull();
   });
 });

@@ -148,6 +148,8 @@ for (const scheme of ['light', 'dark'] as const) {
 
       test('the Turn, Reveal and Debut dialogs have none', async ({ page }) => {
         await page.goto('/characters');
+        /* On the glass a character's controls are in its panel, chosen by its card (the Roster board). */
+        await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
         await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
         await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
@@ -249,7 +251,8 @@ test.describe('between the boards\' widths', () => {
       });
       if (board === 'main') {
         expect(got).toMatchObject({ board, tabsUnderBack: false, key: true });
-        expect(got.backHeight).toBeCloseTo(48 * (width / MAIN_BOARD_WIDTH), 0);
+        /* The boards' tabs are 52px tall (they were 48 before the menu bar took the boards' look, in the glass build's Task 2.2). */
+        expect(got.backHeight).toBeCloseTo(52 * (width / MAIN_BOARD_WIDTH), 0);
       } else {
         expect(got).toMatchObject({ board, tabsUnderBack: true, key: false, backHeight: 48 });
       }

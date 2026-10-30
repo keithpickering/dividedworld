@@ -123,3 +123,149 @@
 .kb-crop-preview-square {
   width: 3em;
 }
+
+/*
+ * On the glass. No board draws the profile editor; it is My characters' own page (its heading and
+ * buttons are engine/ui/characters/characters.css's), its words on the glass's text at the body's
+ * size, its fields the HUD's, the cropper's frames drawn in the glass's light. The signature's
+ * preview stays the board's own post, as it will read beside the character's posts.
+ */
+.kb-glass .kb-profile-edit {
+  max-width: 900px;
+  padding-top: 27px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-glass .kb-profile-edit :is(.kb-small, .kb-muted, p) {
+  font-size: var(--kb-glass-size-body);
+  color: var(--kb-glass-text-2);
+}
+
+.kb-glass .kb-profile-edit form,
+.kb-glass .kb-avatar-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.kb-glass .kb-profile-edit .kb-heading {
+  margin: 24px 0 0;
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-m);
+  font-weight: 400;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+.kb-glass .kb-profile-edit .kb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-glass .kb-profile-edit :is(.kb-input, .kb-select, .kb-textarea) {
+  min-height: 52px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px 12px;
+  border: 1px solid var(--kb-glass-neon);
+  background: var(--kb-glass-field);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--kb-glass-text);
+}
+
+.kb-glass .kb-profile-edit .kb-button {
+  min-height: 52px;
+  padding: 0 20px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
+  background: transparent;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+  cursor: pointer;
+}
+
+.kb-glass .kb-profile-edit .kb-button[data-kb-primary] {
+  border: 0;
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+}
+
+.kb-glass .kb-profile-edit .kb-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.kb-glass .kb-profile-edit .kb-notice {
+  color: var(--kb-glass-text);
+}
+
+.kb-glass .kb-signature-preview {
+  background: var(--kb-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-rule);
+  font-family: var(--kb-font-body);
+  font-size: var(--kb-size-body);
+  font-weight: normal;
+}
+
+.kb-glass .kb-profile-edit .kb-signature-preview :is(p, span) {
+  font-size: inherit;
+  color: inherit;
+}
+
+.kb-glass .kb-crop-stage,
+.kb-glass .kb-crop-preview {
+  border-color: var(--kb-glass-neon);
+}
+
+.kb-glass .kb-crop-frame[data-kb-frame="portrait"],
+.kb-glass .kb-crop-key[data-kb-frame="portrait"] {
+  border-color: var(--kb-glass-text-hi);
+  box-shadow: 0 0 0 1px var(--kb-glass-ground);
+}
+
+.kb-glass .kb-crop-frame[data-kb-frame="square"],
+.kb-glass .kb-crop-key[data-kb-frame="square"] {
+  border-color: var(--kb-glass-neon);
+  box-shadow: 0 0 0 1px var(--kb-glass-ground), inset 0 0 0 1px var(--kb-glass-ground);
+}
+
+.kb-glass .kb-crop-corner {
+  background: var(--kb-glass-ground);
+  border-color: var(--kb-glass-text-hi);
+}
+
+.kb-glass .kb-avatar-editor .kb-dialog-actions {
+  border-top-color: color-mix(in srgb, var(--kb-glass-neon-text) 35%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass .kb-profile-edit {
+  padding-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass .kb-profile-edit :is(.kb-small, .kb-muted, p, .kb-field, .kb-input, .kb-select, .kb-textarea, .kb-button) {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass .kb-profile-edit .kb-heading {
+  font-size: var(--kb-glass-size-phone-display);
+}

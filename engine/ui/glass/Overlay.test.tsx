@@ -73,6 +73,41 @@ describe('the overlay', () => {
   });
 });
 
+describe('over a glass page (the web plan\'s 2026-10-30 amendment to Task 9)', () => {
+  /* jsdom lays nothing out: the menu bar's box is given, the board's 84px at the top or scrolled away. */
+  const boxAt = (top: number) => () => ({ x: 0, y: top, top, left: 0, right: 1440, bottom: top + 84, width: 1440, height: 84, toJSON: () => ({}) });
+  const overlayOf = (name: string) => screen.getByRole('dialog', { name }).closest<HTMLElement>('.kb-glass-overlay')!;
+
+  test('leaves the menu bar in view, dimmed and inert, and starts under it; Esc gives the page back as it was', async () => {
+    renderInWorld(<Page surface="characters"><Opener /></Page>, { path: '/characters', seed: signedIn });
+    const menu = await screen.findByRole('navigation', { name: 'Menu' });
+    menu.getBoundingClientRect = boxAt(0);
+    const turn = screen.getByRole('button', { name: 'Turn' });
+    await userEvent.click(turn);
+    expect(overlayOf('Turn Pipewrench').style.getPropertyValue('--kb-glass-overlay-top')).toBe('84px');
+    expect(menu.closest('[inert]')).not.toBeNull();
+    expect(menu).toHaveAttribute('data-kb-dimmed');
+    await userEvent.keyboard('{Escape}');
+    await act(async () => {});
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(menu.closest('[inert]')).toBeNull();
+    expect(menu).not.toHaveAttribute('data-kb-dimmed');
+    expect(turn).toHaveFocus();
+  });
+  test('a menu bar scrolled out of view is not made room for: the overlay covers the window', async () => {
+    renderInWorld(<Page surface="characters"><Opener /></Page>, { path: '/characters', seed: signedIn });
+    const menu = await screen.findByRole('navigation', { name: 'Menu' });
+    menu.getBoundingClientRect = boxAt(-400);
+    await userEvent.click(screen.getByRole('button', { name: 'Turn' }));
+    expect(overlayOf('Turn Pipewrench').style.getPropertyValue('--kb-glass-overlay-top')).toBe('0px');
+  });
+  test('on the board, with no menu bar, the overlay covers the window', async () => {
+    renderInWorld(<Opener />, { path: '/characters', seed: signedIn });
+    await userEvent.click(screen.getByRole('button', { name: 'Turn' }));
+    expect(overlayOf('Turn Pipewrench').style.getPropertyValue('--kb-glass-overlay-top')).toBe('0px');
+  });
+});
+
 describe('from the Task 1.4 reviews', () => {
   function Twice() {
     const [open, setOpen] = useState(0);

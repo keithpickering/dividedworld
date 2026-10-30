@@ -73,6 +73,18 @@ for (const [path, own] of OWN) {
   });
 }
 
+/* The glass build's Task 2.2 restyles the characters pages: drawn on the glass, with no board panel; the rest keep it until their task. */
+for (const [path, restyled] of [['/characters', true], ['/characters/new', true], ['/characters/edit', true], ['/settings', false]] as const) {
+  test(`${path} is ${restyled ? 'restyled, with no board panel' : 'not restyled yet, on the board\'s panel'}`, async () => {
+    window.history.pushState(null, '', path);
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    render(<App api={fake} />);
+    await screen.findByRole('navigation', { name: 'Menu' });
+    expect(document.querySelector('main > .kb-glass-content-panel') !== null).toBe(!restyled);
+  });
+}
+
 for (const path of ['/sign-in', '/register']) {
   test(`${path}, signed out, is a glass page with Back to the board alone`, async () => {
     window.history.pushState(null, '', path);
