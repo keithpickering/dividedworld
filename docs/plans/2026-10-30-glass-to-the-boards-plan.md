@@ -511,6 +511,15 @@ picked by hand, and a test asserts it. The one width also replaces the menu bar'
 bar, so a glass page and the HUD change layout together. The 1024px story is replaced by two, one just above that
 width and one just below it, and the owner reviews those.
 
+**Amended 2026-10-30, the owner's answer on #48 (a wallet past its cap on a phone).** The owner chose (c): "it's
+normal to need to hide some explanatory text on mobile layouts and an additional 40px is not nothing for a sticky
+bar." On the Phone board's layout (below the switch above), a wallet past its cap shows as a visible marker on the last
+orb, and the words "past the cap" and its amount are not drawn in the HUD's row: they are in the orbs' accessible name
+only, which already says them (`walletName`, `engine/ui/orbs/fill.ts`). The docked HUD keeps its 124px with an
+over-cap wallet at 360px. The Main board's layout keeps the words as board 04 draws them ("+0.40 past the cap"). Built
+in Part 3, tests first: the docked HUD's height with an over-cap wallet at 360px, the marker visible, and the orbs'
+accessible name saying past the cap with its amount.
+
 - **The glass between the boards' widths.** A glass page's content sits in a column at most 1312px wide (the boards'
   1440 less two 64px gutters), centered past 1440px; its gutters are `clamp(16px, 4.44vw, 64px)`; text blocks stay at
   most 680px wide; at more than 150% text size the page is one column (web Task 11). The menu bar spans the width: its
