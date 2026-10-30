@@ -179,6 +179,13 @@ Search (not built; the banner holds Index and the instance's boards from `instan
 Settings board's menu bar has no Rankings (every glass page has the same six tabs, web Task 3); the Settings board's
 Notifications, Privacy and Export my data sections and its Read-outs row (not built, web Task 11).
 
+**Amended 2026-10-30, the owner's answer on where a card play shows.** A sixth: main numbers a card play in its
+thread and draws it as its own line, where the boards show #41 to #46 with no gap and the play as its tag on the post.
+The owner chose the boards' way (the cards plan's amendment of this date says what cards Task 3 changes). Until cards
+Task 3 lands, the fixture writes its plays after the moment's posts, so page 3 shows their lines below #46; the Main
+and Phone manifests leave the thread below #46 out, and compare what stands below it (the pager, the HUD) by
+`position` only, each with a comment naming Part 3, which turns them back to `full`.
+
 ## 4. The glass's tokens: a closed list
 
 Web Task 1 gives the token names; this is the list, closed. `engine/ui/glass/tokens.css` names exactly these, and

@@ -22,8 +22,9 @@
  *    and `engine/ui/thread/Post.tsx` draws each one as its own line ("X played Whoops! on post #41").
  *    Written between the posts, the plays would renumber them, so they are written after the moment's
  *    posts, dated as they happened: on page 3 the six posts come first and the lines follow at #47 and
- *    up, out of time order. Nothing here changes either side; it is a question for the owner, and
- *    boards.test.ts pins the fact so a change on either side is seen.
+ *    up, out of time order. The owner chose the boards' way (the cards plan's amendment of
+ *    2026-10-30): cards Task 3 gives a play no number and draws it as its post's tag, and then
+ *    writes the plays here in time order. Until then boards.test.ts pins the fact.
  *  - The marker the production bundle is checked for is the fake's (`FAKE_BACKEND_MARKER`); the
  *    fixture carries no marker of its own.
  *  - The Whoops! on #41 is a card Act by Mrs. Hooligan with no spend in Pipewrench's wallet, which the
