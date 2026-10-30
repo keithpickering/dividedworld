@@ -803,8 +803,7 @@
   display: none;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-pending,
-:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-over {
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-pending {
   margin-left: 0;
   padding: 0;
   font-size: var(--kb-glass-size-phone-body);

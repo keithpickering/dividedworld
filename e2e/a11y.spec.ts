@@ -164,10 +164,14 @@ for (const scheme of ['light', 'dark'] as const) {
           });
           expect(mark.fill).toBe(mark.over);
           expect(mark.ring).toBe(mark.ground);
+          /* Under forced colors the mark keeps its cross, in the system's colors, so it still reads as more than an empty orb. */
+          await page.emulateMedia({ forcedColors: 'active' });
+          expect(await page.locator('.kb-hud-orbs .kb-orb:last-child .kb-orb-over').evaluate((el) => getComputedStyle(el).backgroundImage)).toMatch(/gradient.*gradient/);
+          await page.emulateMedia({ forcedColors: 'none' });
         }
         expect(await hudCut(page)).toEqual([]);
         /* The docked HUD keeps its 124px on a phone with an over-cap wallet: the words are not drawn there. */
-        if (width === 360) expect(Math.abs((await page.locator('.kb-hud-glass').boundingBox())!.height - 124)).toBeLessThanOrEqual(0.5);
+        if (width < ABOVE_SWITCH) expect(Math.abs((await page.locator('.kb-hud-glass').boundingBox())!.height - 124)).toBeLessThanOrEqual(0.5);
         expect(await pageViolations(page)).toEqual([]);
       });
 

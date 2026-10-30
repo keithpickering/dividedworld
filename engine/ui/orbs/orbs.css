@@ -96,7 +96,8 @@
  * A wallet past its cap, marked on the last orb where the Phone board's layout leaves the words out: a
  * disc in the over-cap color, ringed and crossed with a "+" in the ground's, so it stands apart from the
  * liquid under it whatever the orb's color, and no text is drawn (its words are the row's name). The
- * Main board's layout says it in words instead, so there the mark is not drawn.
+ * Main board's layout says it in words instead, so there the mark is not drawn. It is drawn wherever an
+ * orb row stands on the Phone board's layout, the HUD's and any other, since none there says it in words.
  */
 .kb-orb > .kb-orb-over {
   display: none;
@@ -117,6 +118,18 @@
 
 :where(:root[data-kb-layout='phone']) .kb-orb > .kb-orb-over {
   display: block;
+}
+
+/* Forced colors drop a background's images, which would leave the mark an empty ring: it is drawn in the system's colors instead. */
+@media (forced-colors: active) {
+  .kb-orb > .kb-orb-over {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+    background:
+      linear-gradient(CanvasText, CanvasText) center / 60% 2px no-repeat,
+      linear-gradient(CanvasText, CanvasText) center / 2px 60% no-repeat,
+      Canvas;
+  }
 }
 
 /* The cascade's beat: a flash and a shine on an orb as it fills. */
