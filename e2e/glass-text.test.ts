@@ -143,6 +143,21 @@ describe('the web plan\'s five poisons', () => {
     expect(found).toEqual(['"Every character this season" in p.kb-rankings-lead (surface rankings): under high contrast the smoke shows through under it (it changes a channel by 37 levels), not solid ground']);
   });
 
+  test('under high contrast, a line on solid ground that is too bright for its color', () => {
+    /* #ffffff at 7:1 needs ground under 0.1 of luminance: a solid ground of 0.2 is no smoke and still too bright. */
+    const white: TextFact = { ...body, color: [255, 255, 255, 1], smoke: 0, brightest: 0.2 };
+    expect(judged({ ...white, brightest: 0.02 }, 'rankings', { palette: high, high: true })).toEqual([]);
+    expect(judged(white, 'rankings', { palette: high, high: true })).toEqual([
+      '"Every character this season" in p.kb-rankings-lead (surface rankings): under high contrast its brightest pixel, luminance 0.2000, is not under the 7:1 ceiling 0.1 for its color, rgb(255, 255, 255)',
+    ]);
+  });
+
+  test('under high contrast an ink is read on its fill, not against a ceiling over a ground', () => {
+    const ink: TextFact = { ...body, color: [0, 0, 0, 1], smoke: 0, brightest: 0.62, calm: null };
+    expect(judged({ ...ink, panels: [{ box: { x: 90, y: 190, width: 420, height: 45 }, opacity: 1 }] }, 'rankings', { palette: high, high: true })).toEqual([]);
+    expect(judged(ink, 'rankings', { palette: high, high: true })[0]).toMatch(/is ink, and stands on no opaque fill/);
+  });
+
   test('under high contrast, a line in a color the high key does not name', () => {
     /* #e4def7 is the standard key's --kb-glass-text-2; the high key lifts it to #f1ecff. */
     const found = judged({ ...body, color: [228, 222, 247, 1], smoke: 0 }, 'rankings', { palette: high, high: true });

@@ -278,6 +278,8 @@
 
 .kb-orbs-board-total-figure {
   font-family: var(--kb-glass-font-display);
+  /* The display face's one weight: an inherited 600 would draw it in a faux bold. */
+  font-weight: 400;
   font-size: var(--kb-glass-size-display-l);
   line-height: 1;
   color: var(--kb-glass-ready);

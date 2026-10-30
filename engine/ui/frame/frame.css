@@ -207,6 +207,8 @@
   place-items: center;
   height: 100%;
   font-family: var(--kb-glass-font-display);
+  /* The display face's one weight: the glass's 600 would draw it in a faux bold. */
+  font-weight: 400;
   font-size: var(--kb-glass-size-display-s);
   color: var(--kb-glass-text-2);
 }
@@ -474,6 +476,7 @@
   min-height: 52px;
   padding: 0 20px;
   font-family: var(--kb-glass-font-display);
+  font-weight: 400;
   font-size: var(--kb-glass-size-lead);
   text-transform: uppercase;
   text-decoration: none;

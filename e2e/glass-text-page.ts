@@ -113,30 +113,74 @@ function visiblePart(line: Box, el: Element): Box | null {
   return box;
 }
 
-/** Where a positioned `::before` or `::after` of `el` is laid out: its insets from `el`'s padding box, then its translation. */
-function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box {
+/**
+ * How much the transforms on `el` and every element above it scale it, on each axis: the product
+ * of their matrices, read as the lengths its x and y axes are drawn at. A skew leaves both near 1;
+ * a `scale()` anywhere above shrinks the text and its calm alike.
+ */
+function scaleOf(el: Element): { x: number; y: number } {
+  let m = new DOMMatrix();
+  for (let a: Element | null = el; a; a = a.parentElement) {
+    const t = getComputedStyle(a).transform;
+    if (t && t !== 'none') m = new DOMMatrix(t).multiply(m);
+  }
+  return { x: Math.hypot(m.a, m.b), y: Math.hypot(m.c, m.d) };
+}
+
+/** A pseudo-element's own transform, about its origin: its `translate`, `rotate` and `scale` properties, then `transform`. */
+function ownMatrix(ps: CSSStyleDeclaration, w: number, h: number): DOMMatrix {
+  const origin = ps.transformOrigin.split(' ').map((v, i) => (v.endsWith('%') ? (parseFloat(v) / 100) * (i === 0 ? w : h) : parseFloat(v)));
+  const [ox = w / 2, oy = h / 2] = origin;
+  let m = new DOMMatrix().translate(ox, oy);
+  const t = /^(-?[\d.]+)px(?:\s+(-?[\d.]+)px)?/.exec(ps.translate);
+  if (t) m = m.translate(+t[1]!, +(t[2] ?? 0));
+  const r = /^(-?[\d.]+)deg$/.exec(ps.rotate);
+  if (r) m = m.rotate(+r[1]!);
+  const sc = ps.scale && ps.scale !== 'none' ? ps.scale.split(' ').map(Number) : null;
+  if (sc) m = m.scale(sc[0]!, sc[1] ?? sc[0]!);
+  if (ps.transform && ps.transform !== 'none') m = m.multiply(new DOMMatrix(ps.transform));
+  return m.translate(-ox, -oy);
+}
+
+/**
+ * Where a positioned `::before` or `::after` of `el` is drawn: its insets from `el`'s padding box,
+ * then its own transform (all of it, about its origin, so a scaled calm is measured at its drawn
+ * size), the whole at the scale `el` is drawn at. `scale` is the pseudo's own: how much its
+ * transform shrinks what it draws, its mask's feather with it.
+ */
+function pseudoBox(el: Element, ps: CSSStyleDeclaration): Box & { readonly scale: number } {
   const r = el.getBoundingClientRect();
   const s = getComputedStyle(el);
   const z = zoomOf(el);
-  const px = (v: string) => parseFloat(v) * z;
-  const pad = { left: r.left + px(s.borderLeftWidth), top: r.top + px(s.borderTopWidth), right: r.right - px(s.borderRightWidth), bottom: r.bottom - px(s.borderBottomWidth) };
-  let left = ps.left === 'auto' ? NaN : pad.left + px(ps.left);
-  let right = ps.right === 'auto' ? NaN : pad.right - px(ps.right);
-  let top = ps.top === 'auto' ? NaN : pad.top + px(ps.top);
-  let bottom = ps.bottom === 'auto' ? NaN : pad.bottom - px(ps.bottom);
-  const w = px(ps.width);
-  const h = px(ps.height);
-  if (Number.isNaN(left)) left = Number.isNaN(right) ? pad.left : right - w;
+  const k = scaleOf(el);
+  const kx = z * k.x;
+  const ky = z * k.y;
+  const n = (v: string) => parseFloat(v);
+  /* The padding box, in the element's own px, from the drawn box's top-left. */
+  const bl = n(s.borderLeftWidth);
+  const bt = n(s.borderTopWidth);
+  const pw = r.width / kx - bl - n(s.borderRightWidth);
+  const ph = r.height / ky - bt - n(s.borderBottomWidth);
+  let left = ps.left === 'auto' ? NaN : n(ps.left);
+  let right = ps.right === 'auto' ? NaN : pw - n(ps.right);
+  let top = ps.top === 'auto' ? NaN : n(ps.top);
+  let bottom = ps.bottom === 'auto' ? NaN : ph - n(ps.bottom);
+  const w = n(ps.width);
+  const h = n(ps.height);
+  if (Number.isNaN(left)) left = Number.isNaN(right) ? 0 : right - w;
   if (Number.isNaN(right)) right = left + w;
-  if (Number.isNaN(top)) top = Number.isNaN(bottom) ? pad.top : bottom - h;
+  if (Number.isNaN(top)) top = Number.isNaN(bottom) ? 0 : bottom - h;
   if (Number.isNaN(bottom)) bottom = top + h;
-  let dx = 0;
-  let dy = 0;
-  const m = /^matrix\(([^)]+)\)$/.exec(ps.transform);
-  if (m) { const v = m[1]!.split(',').map(Number); dx += v[4]! * z; dy += v[5]! * z; }
-  const t = /^(-?[\d.]+)px(?:\s+(-?[\d.]+)px)?/.exec(ps.translate);
-  if (t) { dx += +t[1]! * z; dy += +(t[2] ?? 0) * z; }
-  return { x: left + dx, y: top + dy, width: right - left, height: bottom - top };
+  const m = ownMatrix(ps, right - left, bottom - top);
+  const corners = [[0, 0], [right - left, 0], [right - left, bottom - top], [0, bottom - top]].map(([x, y]) => m.transformPoint(new DOMPoint(x, y)));
+  const xs = corners.map((c) => c.x + left);
+  const ys = corners.map((c) => c.y + top);
+  const x0 = r.left + (bl + Math.min(...xs)) * kx;
+  const y0 = r.top + (bt + Math.min(...ys)) * ky;
+  return {
+    x: x0, y: y0, width: (Math.max(...xs) - Math.min(...xs)) * kx, height: (Math.max(...ys) - Math.min(...ys)) * ky,
+    scale: Math.min(Math.hypot(m.a, m.b), Math.hypot(m.c, m.d)),
+  };
 }
 
 /** A mask's feather: the longest length its gradients ramp over (calm.css: `currentColor var(--kb-glass-calm-feather)`). */
@@ -156,8 +200,10 @@ function calmOf(el: Element, holder: Element): Calm | null {
     if (drawn(ps)) break;
   }
   if (!c || c === holder || !holder.contains(c) || !ps) return null;
-  const backing = pseudoBox(c, ps);
-  const feather = featherOf(ps.maskImage || ps.getPropertyValue('-webkit-mask-image')) * zoomOf(c);
+  const { scale, ...backing } = pseudoBox(c, ps);
+  const k = scaleOf(c);
+  /* The feather is drawn by the backing's mask, so it shrinks with the backing and with the element. */
+  const feather = featherOf(ps.maskImage || ps.getPropertyValue('-webkit-mask-image')) * zoomOf(c) * scale * Math.min(k.x, k.y);
   const bg = parseColor(ps.backgroundColor);
   const opacity = (bg ? bg[3] : parseFloat(getComputedStyle(c).getPropertyValue('--kb-glass-calm-opacity'))) * opacityOf(c);
   const box = { x: backing.x + feather, y: backing.y + feather, width: backing.width - 2 * feather, height: backing.height - 2 * feather };
@@ -180,7 +226,7 @@ function panelsOf(el: Element, holder: Element): Backing[] {
       .filter((ps) => drawn(ps) && (ps.position === 'absolute' || ps.position === 'fixed'))
       .map((ps) => ({ ps, bg: parseColor(ps.backgroundColor) }))
       .find(({ bg }) => bg && bg[3] > 0);
-    if (pseudo) { out.push({ box: pseudoBox(a, pseudo.ps), opacity: pseudo.bg![3] * o }); continue; }
+    if (pseudo) { const { scale: _scale, ...box } = pseudoBox(a, pseudo.ps); out.push({ box, opacity: pseudo.bg![3] * o }); continue; }
     const bg = parseColor(getComputedStyle(a).backgroundColor);
     if (bg && bg[3] > 0) out.push({ box: toBox(a.getBoundingClientRect()), opacity: bg[3] * o });
   }
@@ -201,13 +247,30 @@ const metrics = new Map<string, Metrics>();
  */
 const MEASURED_AT = 1000;
 
+/**
+ * The line's own face is loaded: a face in the document's font set for its first family, weight
+ * and style, its status `loaded`. Otherwise the canvas would measure the fallback the browser
+ * draws in its place, and a size could pass or fail on a face the player never sees, so it throws,
+ * naming the face.
+ */
+function assertLoaded(style: string, weight: string, family: string, name: string): void {
+  const first = family.split(',')[0]!.replace(/["']/g, '').trim();
+  const italic = style !== 'normal';
+  const faces = [...document.fonts].filter((f) => f.family.replace(/["']/g, '').trim() === first);
+  const face = faces.find((f) => Number(f.weight) === Number(weight) && (f.style !== 'normal') === italic);
+  if (!face || face.status !== 'loaded') {
+    throw new Error(`The face ${first} ${weight}${italic ? ' italic' : ''} is not loaded (${face ? face.status : faces.length ? 'no face at that weight and style' : 'no such face in the document'}), so ${name} would be measured in a fallback`);
+  }
+}
+
 /** A face's metrics at a size, in the loaded face. */
-async function metricsOf(style: string, weight: string, family: string, size: number): Promise<Metrics> {
+async function metricsOf(style: string, weight: string, family: string, size: number, name: string): Promise<Metrics> {
   const key = `${style} ${weight} ${family}`;
   let m = metrics.get(key);
   if (!m) {
     const font = `${style} ${weight} ${MEASURED_AT}px ${family}`;
     await document.fonts.load(font, INK_SAMPLE);
+    assertLoaded(style, weight, family, name);
     ctx.font = font;
     const t = ctx.measureText(INK_SAMPLE);
     metrics.set(key, (m = { inkUp: t.actualBoundingBoxAscent, inkDown: t.actualBoundingBoxDescent, fontUp: t.fontBoundingBoxAscent, fontDown: t.fontBoundingBoxDescent }));
@@ -264,8 +327,9 @@ export async function gather(): Promise<Gathered[]> {
     const fill = parseColor(s.getPropertyValue('-webkit-text-fill-color')) ?? parseColor(s.color);
     if (!fill) throw new Error(`The color of ${nameOf(n.data, el)} cannot be read: ${s.color}`);
     const color: Rgba = [fill[0], fill[1], fill[2], fill[3] * opacity];
-    const size = parseFloat(s.fontSize) * zoomOf(el);
-    const m = await metricsOf(s.fontStyle, s.fontWeight, s.fontFamily, size);
+    /* The size the line is drawn at: its computed size, its zoom, and any transform above it that scales it. */
+    const size = parseFloat(s.fontSize) * zoomOf(el) * scaleOf(el).y;
+    const m = await metricsOf(s.fontStyle, s.fontWeight, s.fontFamily, size, nameOf(n.data, el));
     const ink = m.inkUp + m.inkDown;
     const calm = calmOf(el, ground.holder);
     const panels = panelsOf(el, ground.holder);

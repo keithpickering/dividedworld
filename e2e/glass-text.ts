@@ -36,7 +36,7 @@
  *   box is under its color's ceiling for the surface.
  * - **High contrast.** Under the `high` key every line is in one of that key's text colors and
  *   stands on solid ground: with the text made transparent, taking the smoke away changes no pixel
- *   under it by more than a level.
+ *   under it by more than a level, and its brightest pixel is under its color's 7:1 ceiling.
  *
  * "A panel at least as solid as the calm" is how this reads the plan's "an opaque panel": the guard
  * holds body text to 4.5:1 on the calmed worst, the smoke thinned by the calm's opacity, so a panel
@@ -252,6 +252,14 @@ export function judge(fact: TextFact, ctx: JudgeContext): string[] {
   /* Under high contrast the ground is solid, so the smoke's ceilings do not apply; the key's colors, which the guard holds at 7:1 on that ground, do. */
   if (ctx.high) {
     if (fact.smoke > 1) out.push(`${at}: under high contrast the smoke shows through under it (it changes a channel by ${fact.smoke} levels), not solid ground`);
+    /* An ink stands on its fill, which the guard holds at 7:1 under the high key; it has no ceiling over a ground. */
+    if (roles.some((r) => r.kind === 'ink')) {
+      if (!fact.panels.some((p) => p.opacity >= 1 && within(fact.box, p.box))) out.push(`${at}: is ink, and stands on no opaque fill`);
+      return out;
+    }
+    /* Solid is not enough: the ground must be dark enough for the line's color at 7:1, the high key's ratio. */
+    const high = ceilingOf(luminance(fact.color[0], fact.color[1], fact.color[2]), 7);
+    if (!(fact.brightest < high)) out.push(`${at}: under high contrast its brightest pixel, luminance ${fact.brightest.toFixed(4)}, is not under the 7:1 ceiling ${high} for its color, ${colorText([fact.color[0], fact.color[1], fact.color[2], 1])}`);
     return out;
   }
   if (roles.length === 0) return out;

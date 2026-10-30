@@ -255,6 +255,15 @@ test.describe('under high contrast', () => {
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): its color rgb\(228, 222, 247\) is not one of the glass's text colors in the high key$/u));
   });
 
+  test('the poison: a line on solid ground too bright for its color at 7:1 is named', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await chooseHighContrast(page);
+    await open(page, PAGES.find((p) => p.path === '/rankings')!);
+    /* The lead's calm is the solid ground under high contrast; drawn white, it is still solid, and far too bright for the high key's white text. */
+    await plant(page, '.kb-rankings-lead.kb-calm::before { background: #ffffff !important; }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): under high contrast its brightest pixel, luminance 1\.0000, is not under the 7:1 ceiling 0\.1 for its color, rgb\(255, 255, 255\)$/u));
+  });
+
   test('the poison: one line left on the smoke is named', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await chooseHighContrast(page);
@@ -319,6 +328,74 @@ test.describe('the poisons, planted in a real page', () => {
     await open(page, OVERLAYS.find((o) => o.name.startsWith('The React picker'))!);
     await plant(page, '.kb-picker-label { font-size: 22px !important; }');
     expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Heat" in .*div\.kb-picker-label[^(]* \(surface react\): stands in no calm and on no panel as solid as the calm \(0\.85\), and its recipe's full worst, 0\.0875, is not under the ceiling 0\.0617 for class heel's large color as body text .* \(this is 22px at weight 400\)/u));
+  });
+
+  test('a calm shrunk by a transform, which leaves its text outside', async ({ page }) => {
+    await open(page, rankings);
+    await plant(page, '.kb-rankings-lead.kb-calm::before { transform: scale(0.5); }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): lies outside its calm's interior \(its backing inset by its 16px feather\)/u));
+  });
+
+  test('a label shrunk by a transform above it is measured at the size it is drawn', async ({ page }) => {
+    await open(page, rankings);
+    /* 21px drawn at 0.9 is 18.9px, 17.4px of ink. */
+    await plant(page, '.kb-glass-menu-list { transform: scale(0.9); transform-origin: left center; }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Rankings" in .*\(surface rankings\): inks 17\.\dpx at 18\.9px of Barlow Condensed, under the floor of 18px of ink$/u));
+  });
+
+  test('a line in a face the page has not loaded fails loudly, not in the fallback', async ({ page }) => {
+    await open(page, rankings);
+    await plant(page, '.kb-rankings-lead { font-family: "Barlow Condensed Missing", sans-serif !important; }');
+    await expect(measure(page)).rejects.toThrow(/The face Barlow Condensed Missing 600 is not loaded \(no such face in the document\), so "The season's standings[^"]*" in div\.kb-rankings > p\.kb-rankings-lead would be measured in a fallback/u);
+  });
+
+  test('a line that never lies wholly in the window is named as cut off', async ({ page }) => {
+    await open(page, rankings);
+    await page.locator('.kb-glass-page').evaluate((glassPage) => {
+      const p = document.createElement('p');
+      p.className = 'kb-calm kb-planted';
+      p.style.cssText = 'position: fixed; left: 40px; bottom: -12px; margin: 0';
+      p.textContent = 'A line the window always cuts';
+      glassPage.append(p);
+    });
+    expect(await measure(page)).toContainEqual('"A line the window always cuts" in div.kb-glass > p.kb-planted: never lies wholly in the window, so it is cut off');
+  });
+
+  test('a line on a page longer than the window is found by reading it a window at a time', async ({ page }) => {
+    await open(page, rankings);
+    await page.locator('main').evaluate((main) => {
+      const spacer = document.createElement('div');
+      spacer.style.height = '3600px';
+      const p = document.createElement('p');
+      p.className = 'kb-calm kb-planted';
+      p.style.color = 'rgba(241, 236, 255, 0.8)';
+      p.textContent = 'A line three windows down';
+      main.append(spacer, p);
+    });
+    expect(await page.evaluate(() => document.documentElement.scrollHeight > 3 * innerHeight)).toBe(true);
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"A line three windows down" in .*p\.kb-planted \(surface rankings\): its color rgba\(241, 236, 255, 0\.8\) is translucent/u));
+  });
+
+  test('a line at the foot of an overlay that scrolls itself is found by scrolling the overlay', async ({ page }) => {
+    await open(page, OVERLAYS.find((o) => o.name.startsWith('The Turn modal'))!);
+    await page.locator('.kb-glass-dialog-body').evaluate((body) => {
+      const spacer = document.createElement('div');
+      spacer.style.height = '2400px';
+      const p = document.createElement('p');
+      p.className = 'kb-planted';
+      p.style.color = 'rgba(241, 236, 255, 0.8)';
+      p.textContent = 'A line at the dialog foot';
+      body.append(spacer, p);
+    });
+    expect(await page.evaluate(() => { const o = document.querySelector('.kb-glass-overlay')!; return o.scrollHeight > 2 * o.clientHeight; })).toBe(true);
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"A line at the dialog foot" in .*p\.kb-planted \(surface turn\): its color rgba\(241, 236, 255, 0\.8\) is translucent/u));
+  });
+
+  test('on the phone, a 15px label is under the phone\'s floor', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page, rankings);
+    await plant(page, '.kb-glass-menu-tab, .kb-glass-menu-tab * { font-size: 15px !important; }');
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Rankings" in .*\(surface rankings\): is 15px of [^,]+, under the phone's floor of 16px$/u));
   });
 
   test('a translucent text color', async ({ page }) => {

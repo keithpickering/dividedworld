@@ -2,6 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { storyNameFromExport, toId } from 'storybook/internal/csf';
+/*
+ * Storybook ships its id functions only under `storybook/internal/csf` (an export its package
+ * declares, but internal: it may move in a minor release). The a11y spec's check against the story
+ * route's own list fails by name if it does, so a moved export cannot leave a story unread.
+ */
 
 /**
  * The board stories' ids, worked out where Playwright collects its tests: every
