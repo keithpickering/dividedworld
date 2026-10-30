@@ -21,3 +21,25 @@ begin
     raise exception 'pgcrypto digest() is not in place after the shim';
   end if;
 end $$;
+
+-- Every connection to the scratch database starts bounded (tools/test-sql.mjs, SESSION_BOUNDS), this
+-- file's and a dblink session's alike, so a lock regression whose two sides are this connection and a
+-- session it waits on fails at lock_timeout, naming its file, instead of hanging the suite. The bounds are
+-- read where each side reads them; a harness that set them on one connection only, or not at all, fails here.
+reset role;
+do $$
+declare
+  remote record;
+begin
+  if current_setting('lock_timeout') in ('0', '') or current_setting('statement_timeout') in ('0', '') then
+    raise exception 'this file''s connection is unbounded: lock_timeout %, statement_timeout %', current_setting('lock_timeout'), current_setting('statement_timeout');
+  end if;
+  select * into remote from extensions.dblink(current_setting('kayfabb.scratch_url'),
+    $sql$select current_setting('lock_timeout'), current_setting('statement_timeout')$sql$) as x(lock_timeout text, statement_timeout text);
+  if remote.lock_timeout in ('0', '') or remote.statement_timeout in ('0', '') then
+    raise exception 'a dblink session is unbounded: lock_timeout %, statement_timeout %', remote.lock_timeout, remote.statement_timeout;
+  end if;
+  if remote.lock_timeout is distinct from current_setting('lock_timeout') or remote.statement_timeout is distinct from current_setting('statement_timeout') then
+    raise exception 'a dblink session''s bounds (%, %) are not this connection''s (%, %)', remote.lock_timeout, remote.statement_timeout, current_setting('lock_timeout'), current_setting('statement_timeout');
+  end if;
+end $$;

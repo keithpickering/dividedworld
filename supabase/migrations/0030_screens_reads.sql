@@ -206,7 +206,7 @@ create function threads_count_board() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   update board_thread_counts set threads = threads + 1
-   where board = new.board and shard = coalesce((select c.shard from board_thread_counts c where c.board = new.board order by c.shard limit 1), 0);
+   where board = new.board and shard = coalesce((select c.shard from board_thread_counts c where c.board = new.board order by c.shard for update skip locked limit 1), 0);
   return new;
 end $$;
 create trigger threads_count_board after insert on threads for each row execute function threads_count_board();
@@ -454,8 +454,10 @@ $$;
 -- every avatar): read with a filter on character, which is a probe of the standings' primary key
 -- (season, character) per character, so a page of twenty postbits costs twenty probes however large the
 -- season. The season is standings_season()'s, so a postbit shows the standing the profile and the standings
--- screen show; nothing here chooses one of its own. A view runs as its owner, so standings_season() stays
--- uncallable by the API roles. Public, as standings_page is: a character and its standing, never a player.
+-- screen show; nothing here chooses one of its own. A view reads its tables as its owner, but a function it
+-- calls is checked against the reader, so a player may execute standings_season() (granted below): it names a
+-- season, which seasons already shows every player. Public, as standings_page is: a character and its
+-- standing, never a player.
 create view current_standings as
   select s.character, s.amount as standing from standings s where s.season = standings_season();
 
@@ -520,7 +522,7 @@ revoke execute on function backfill_thread_counters(), backfill_character_post_c
   backfill_board_counts(), threads_count_board(), boards_make_thread_counts(), backfill_debuted_count(), characters_count_debuted(), standing_place(uuid),
   standings_take_name(), characters_rename_standings(), standings_season(), standings_roster_lock(boolean), characters_join_standings(), seasons_open_standings(),
   backfill_standings_roster(), standings_page(integer, integer) from public, anon, authenticated;
-grant execute on function standing_place(uuid), standings_page(integer, integer) to authenticated;
+grant execute on function standing_place(uuid), standings_page(integer, integer), standings_season() to authenticated;
 -- season_standings (0021) stays, as the definition of the ranking that standings_page and standing_place answer
 -- for (the SQL tests compare them against it), but no client reads it: it ranks every debuted character with a
 -- window whatever page is asked of it, so a player reads a page through standings_page, whose cost is the page.
