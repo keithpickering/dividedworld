@@ -237,6 +237,13 @@ The splat covers the post's whole bordered body, edge to edge, since no control 
 Stick Around's in-thread frame and tag hold to the same principle. Board 01 draws the scrub sentence in the post; its
 manifest names that region as differing by this answer.
 
+**Amended 2026-10-30, the owner on Whoops!'s line breaks and the board's width (in Part 3's build session).** With the
+2003 board at most 960px wide (the glass plan's section 8 amendment of this date), the owner chose that the fixed
+layout's reference width is the post body's width at the board's max, not 360px: at the board's max a splatted post is
+laid out as any other post is, and the ink fills its body edge to edge; below it the layout is scaled down as a whole,
+never up, so line breaks stay the same everywhere. This replaces the 360px reference (#76's cap at 1× stands: never
+scaled up). On a phone a splatted post's text is small until it is scrubbed; the owner chose that knowingly.
+
 ### Task 6. The log's card lines, and the audit
 
 - The log names, plainly: a card bought, a card played and on whose post (one of the player's own characters' posts

@@ -584,6 +584,15 @@ accessible name saying past the cap with its amount.
   `account`.
 - **High contrast and 200% text** have no board. Their tests are web Tasks 11 and 12's.
 
+**Amended 2026-10-30, the owner on the 2003 board's width (in Part 3's build session).** The owner: "Looks like we
+need a smaller max width for the 2003 board in general. There's the need to keep the line breaks the same for whoops,
+and widening the table too much makes it look a bit silly." Asked for a width, the owner chose 960px. So the board's
+own pages (the banner, the index, the boards, the threads, the profile, the standings) stand in a column at most 960px
+wide, centered past it; the glass (the HUD, the menu bar, the glass pages and overlays) keeps its own widths. The boards
+drawn at 1440 (01 and 08 among them) draw the board across the window; their manifests compare the board's parts by
+the decision (`box` modes or an `origin`, each saying so). Whoops!'s layout follows it (the cards plan's Task 5
+amendment of this date).
+
 ## 9. Choices this plan made, for the owner to overturn
 
 Nothing here was decided by the owner; each is the plan's default, chosen so the build can go on, and each is listed
