@@ -105,6 +105,8 @@ export interface Fake extends KayfaApi {
     flush(options?: { reverse?: boolean; twice?: boolean }): number;
   };
   readonly seed: Seed;
+  /** Always `KAYFA_FAKE_BACKEND`: what the bundle guard finds if the fake ever reaches a production build. */
+  readonly marker: string;
 }
 
 interface CharRec {
@@ -158,6 +160,12 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard']);
 type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R> ? (...a: A) => R : T[K] };
 
+/**
+ * The string tools/check-web-bundle.mjs looks for in the production bundle. It is a value on the
+ * object createFake returns, not an export nothing reads, because a bundler drops an unused
+ * export and keeps a property of an object that is built.
+ */
+export const FAKE_BACKEND_MARKER = 'KAYFA_FAKE_BACKEND';
 export function createFake(options: { instance: Instance; settings?: Partial<ScreenSettings>; now?: () => number }): Fake {
   const settings: Settings = { ...options.instance.settings, ...options.settings };
   const instance: Instance = { ...options.instance, settings };
@@ -923,5 +931,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       },
     },
     seed,
+    marker: FAKE_BACKEND_MARKER,
   });
 }

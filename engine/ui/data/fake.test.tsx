@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
 import type { Act, Refusal, Tally } from './api.ts';
-import { createFake, TEST_CODE } from './fake.ts';
+import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 
 const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
@@ -57,6 +57,13 @@ function world(overrides: Partial<Settings> = {}) {
   fake.signInAs(ana);
   return { fake, ana, bo, anaFace, anaHeel, boFace, thread, opener };
 }
+
+describe('the fake carries a marker the production bundle is checked for', () => {
+  test('the object createFake returns holds KAYFA_FAKE_BACKEND as a value, which a bundler cannot drop with an unused export', () => {
+    expect(FAKE_BACKEND_MARKER).toBe('KAYFA_FAKE_BACKEND');
+    expect(createFake({ instance }).marker).toBe('KAYFA_FAKE_BACKEND');
+  });
+});
 
 describe('a thread\'s replies this week are counted only up to hotReplies, as thread_list counts them', () => {
   test('a thread with more recent replies than the threshold reads the threshold, and replies stays the whole count', async () => {

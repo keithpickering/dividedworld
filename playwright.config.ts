@@ -7,6 +7,8 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: 'e2e',
+  /* Vitest runs e2e/*.test.ts (the board match's self-test); Playwright runs only the specs. */
+  testMatch: '**/*.spec.ts',
   timeout: 30_000,
   use: { baseURL: 'http://localhost:4173' },
   webServer: {
