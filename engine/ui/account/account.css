@@ -1,0 +1,45 @@
+/* Sign in, Register, Invites, Settings: plain forms on the board's own boxes. */
+.kb-account {
+  max-width: 40em;
+  min-width: 0;
+}
+
+.kb-account .kb-input {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 24em;
+}
+
+.kb-account .kb-invite-link {
+  max-width: 100%;
+}
+
+.kb-ack {
+  display: flex;
+  gap: 0.5em;
+  align-items: baseline;
+}
+
+.kb-setting {
+  border: 1px solid var(--kb-rule);
+  margin: 0.8em 0;
+  padding: 0.4em 0.8em 0.6em;
+}
+
+.kb-setting legend {
+  font-weight: bold;
+  padding: 0 0.3em;
+}
+
+.kb-setting-option {
+  display: block;
+  margin: 0.3em 0;
+}
+
+.kb-invite-new {
+  margin: 1em 0;
+}
+
+.kb-invite-table {
+  width: 100%;
+}

@@ -6,3 +6,7 @@ dist/
 
 # impeccable's engine binary: downloaded by its launcher on first run, never committed.
 .claude/skills/impeccable/scripts/bin/
+
+# Playwright run output.
+test-results/
+playwright-report/

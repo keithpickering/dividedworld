@@ -86,6 +86,7 @@ test('an instance exported and imported into a fresh database is the same instan
       p uuid := tests.post(a, t, 'Carried across, with a backslash \\ and a tab' || chr(9) || 'and a line' || chr(10) || 'break.');
       play uuid;
     begin
+      perform tests.post(b, t, 'A reply, counted on the thread and on its author');
       insert into reactions (act, reactor_account, reactor_character, kind, slot) values (p, bob, b, 'up', 1);
       insert into reaction_tallies (act, kind, count) values (p, 'up', 1);
       insert into wallets (account, balance) values (ann, 0) on conflict (account) do nothing;
@@ -110,7 +111,7 @@ test('an instance exported and imported into a fresh database is the same instan
       -- A waiting Turn naming the class it Turns to and from (0028), and a character's reveal of its class (0027).
       insert into pending_turns (character, class_key, loudness, show_from, show_to) values (b, 'heel', 'announced', true, true);
       perform write_unmask(a, t, 'act', now(), 'Exported, and unmasked.');
-      insert into standings (character, season, amount) values (a, (select max(id) from seasons), 10) on conflict do nothing;
+      insert into standings (character, season, amount) values (a, (select max(id) from seasons), 10) on conflict (season, character) do update set amount = excluded.amount;
       insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));

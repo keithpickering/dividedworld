@@ -1,0 +1,40 @@
+# The static site: web/ built by Vite, served as a single-page app.
+#
+# The only build environment is VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Both are public by
+# design (the browser sends them with every request; row-level security is what protects the
+# data), and both are set in Netlify's UI under Site configuration > Environment variables, never
+# in this file. No secret is a build environment: a service-role key, a model provider's key or
+# anything else that must stay private has no place in a static build. Without the two, the build
+# succeeds and the app refuses to start, saying so (web/src/data/backend.ts).
+
+[build]
+  command = "npm run build:web"
+  publish = "web/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Any path that is not a built file is the app's own route (/b/general, /t/<id>, /c/<id>).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# The headers every response carries. The Content-Security-Policy allows the page itself and the
+# Supabase origin and nothing else: https://*.supabase.co for connections and images, wss for
+# Realtime, and 'wasm-unsafe-eval' in script-src for the WebAssembly WebP encoder the avatar
+# fallback needs. These values are the ones in web/headers.ts, which `vite preview` serves for the
+# end-to-end run; web/headers.test.tsx fails if the two differ.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    Referrer-Policy = "strict-origin"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+
+# Built files are named by a hash of their content.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

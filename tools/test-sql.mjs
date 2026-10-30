@@ -30,6 +30,16 @@
  * named with a number that the pattern does not take fails rather than being skipped, since
  * either would otherwise be a test nobody knew never ran.
  *
+ * A hang fails, and names its file. Every connection to the scratch database, each file's psql and every
+ * dblink session a race test opens, starts with SESSION_BOUNDS, set on the database itself so no helper
+ * has to remember them: a lock regression whose two sides are this file's connection and a dblink session
+ * it waits on (removing 0030's `for update skip locked` from threads_count_board did exactly this to
+ * 0012-cards.sql) is a deadlock Postgres cannot see, since one side waits on a lock and the other on a
+ * socket, and without a bound the suite never ends. The lock wait then fails at lock_timeout, and any
+ * other statement that never ends fails at statement_timeout. A psql that outlives both (a backend stuck
+ * where neither reaches) is killed at FILE_TIMEOUT_MS and reported as such. A file or statement setting
+ * its own shorter lock_timeout (the racers' 20s in tests.raced) is unaffected.
+ *
  * psql is the only tool: no driver, no pgTAP. Outside the build (tools/build.mjs,
  * OUTSIDE_THE_BUILD), which has no database; it runs in .github/workflows/sql.yml against a
  * Postgres service, and locally against the container's own Postgres
@@ -79,10 +89,11 @@ const withDatabase = (url, db) => { const u = new URL(url); u.pathname = `/${db}
 
 function psql(url, sql) {
   try {
-    execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-q', '-X', url, '-f', '-'], { input: sql, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8' });
+    execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-q', '-X', url, '-f', '-'], { input: sql, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });
     return null;
   } catch (err) {
     if (err.code === 'ENOENT') { console.error('\n  psql not found; run scripts/setup-container.sh'); process.exit(2); }
+    if (timedOut(err)) return killedWhy();
     return (err.stderr || err.stdout || String(err)).trim();
   }
 }
@@ -116,6 +127,31 @@ export function nullBlind(code) {
   return found;
 }
 
+/**
+ * The bounds every connection to the scratch database starts with (see the header). A healthy lock wait in
+ * this suite is a race's barrier or one session waiting out another's commit, both well under a second and
+ * the barrier capped at 10 s (tests.race_as); 30 s is three times the longest, and is the most a lock
+ * regression costs. The longest healthy statements, measured on this container's Postgres, are
+ * e2e/0004-names.ts's one query over every folded code point (between 30 and 50 s: a 30 s bound cut it) and
+ * 0032-unmask.sql's 20,000-post insert (over 10 s); 300 s is six times the longest, room for a CI runner a
+ * few times slower, and still ends any other hang in five minutes.
+ */
+export const SESSION_BOUNDS = Object.freeze({ lock_timeout: '30s', statement_timeout: '300s' });
+
+/**
+ * How long one psql (a migration, an assertion file) or one end-to-end file may run before it is killed:
+ * past every statement_timeout a file can meet in a row of statements that each come in under it would be
+ * unbounded, so the process has a bound of its own, wider than one statement's. KAYFABB_SQL_FILE_TIMEOUT_MS
+ * overrides it for tools/test-sql-refusal.mjs, which drives the kill with a psql that never answers.
+ */
+export const FILE_TIMEOUT_MS = Number(process.env.KAYFABB_SQL_FILE_TIMEOUT_MS) > 0 ? Number(process.env.KAYFABB_SQL_FILE_TIMEOUT_MS) : 10 * 60 * 1000;
+
+/** The SQL that gives every new connection to a database the bounds. */
+export const boundsSql = (db) => Object.entries(SESSION_BOUNDS).map(([k, v]) => `alter database ${db} set ${k} to '${v}';`).join('\n');
+
+const timedOut = (err) => err.code === 'ETIMEDOUT' || (err.signal != null && err.status == null);
+const killedWhy = () => `did not finish within ${FILE_TIMEOUT_MS / 1000}s and was killed: a hang that neither lock_timeout (${SESSION_BOUNDS.lock_timeout}) nor statement_timeout (${SESSION_BOUNDS.statement_timeout}) ended`;
+
 /** Assertion files: four digits, a hyphen, a name. Ordered by number, then name. */
 export const ASSERTION_FILE = /^(\d{4})-[\w.-]+\.sql$/;
 
@@ -138,6 +174,8 @@ function main() {
   /* A race test opens connections of its own to the scratch database (dblink), so it is told
      where that is; the URL is this machine's and the database is dropped with it. */
   if (!step('scratch_url', psql(url, `alter database ${scratch} set kayfabb.scratch_url to '${target.replaceAll("'", "''")}';`))) process.exit(1);
+  /* Before any connection to it, so the shim, every migration, every file and every dblink session start bounded. */
+  if (!step('bounds', psql(url, boundsSql(scratch)))) process.exit(1);
   try {
     if (!step('setup/auth-shim.sql', psql(target, fs.readFileSync(shim, 'utf8')))) return 1;
 
@@ -177,11 +215,11 @@ function main() {
     for (const f of e2e) {
       try {
         execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', '--test', path.join(e2eDir, f)], {
-          env: { ...process.env, KAYFABB_SCRATCH_URL: target }, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8',
+          env: { ...process.env, KAYFABB_SCRATCH_URL: target }, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL',
         });
         step(`e2e/${f}`, null);
       } catch (err) {
-        step(`e2e/${f}`, String(err.stdout || '') + String(err.stderr || ''));
+        step(`e2e/${f}`, (timedOut(err) ? `${killedWhy()}\n` : '') + String(err.stdout || '') + String(err.stderr || ''));
       }
     }
     console.log(`\n  sql: ${migrations.length} migration(s); ${ran} assertion file(s); ${e2e.length} end-to-end file(s); ${failed} failed`);

@@ -1,0 +1,82 @@
+/*
+ * The orbs: a game piece, so in color (the instance's --kb-orb-1 to -6). Each orb is a ring; the
+ * solid fill sweeps clockwise from the top; the gain is hatched after it; a loss is a pale band
+ * over the solid it would take. Sizes in em, so the orbs scale with the HUD's text.
+ */
+.kb-orbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  flex-wrap: wrap;
+}
+
+.kb-orbs-row {
+  display: inline-flex;
+  gap: 0.35em;
+  align-items: center;
+}
+
+.kb-orb {
+  position: relative;
+  width: 1.55em;
+  height: 1.55em;
+  border-radius: 50%;
+  border: 1px solid var(--kb-orb-rim);
+  overflow: hidden;
+  background: conic-gradient(var(--kb-orb-color) calc(var(--kb-solid) * 360deg), transparent 0);
+}
+
+.kb-orb--full {
+  background: radial-gradient(circle at 50% 25%, var(--kb-orb-shine) 0 22%, transparent 45%), var(--kb-orb-color);
+}
+
+/* The gain: the orb's color, hatched, from the solid fill on. */
+.kb-orb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(transparent calc(var(--kb-gain-from) * 360deg), var(--kb-orb-color) 0 calc(var(--kb-gain-to) * 360deg), transparent 0);
+  mask: repeating-linear-gradient(45deg, var(--kb-fg) 0 2px, transparent 2px 4px);
+}
+
+/* The loss: a pale band over the solid it would take. */
+.kb-orb::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(transparent calc(var(--kb-loss-from) * 360deg), var(--kb-orb-loss) 0 calc(var(--kb-loss-to) * 360deg), transparent 0);
+  z-index: 1;
+}
+
+.kb-orbs-figure {
+  font-size: var(--kb-size-body);
+}
+
+.kb-orbs-pending,
+.kb-orbs-over {
+  font-size: var(--kb-size-small);
+}
+
+/* The cascade's beat: a flash and a shine on an orb as it fills. */
+.kb-orb--flash {
+  animation: kb-orb-flash 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.kb-orb--flash::after {
+  background: linear-gradient(115deg, transparent 30%, var(--kb-orb-shine) 50%, transparent 70%) no-repeat;
+  background-size: 250% 100%;
+  mask: none;
+  animation: kb-orb-shine 600ms ease-out;
+}
+
+@keyframes kb-orb-flash {
+  0% { filter: brightness(2.2); transform: scale(1.25); }
+  100% { filter: none; transform: none; }
+}
+
+@keyframes kb-orb-shine {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}

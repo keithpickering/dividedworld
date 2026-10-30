@@ -1,0 +1,78 @@
+/* A character's public profile and its public record. A phone (40em and under) folds to one column. */
+.kb-profile,
+.kb-record {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kb-profile-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em 3%;
+  padding: 0.6em 2%;
+  border: 1px solid var(--kb-rule);
+}
+
+.kb-profile-avatar {
+  flex: 0 0 8em;
+  width: 8em;
+  aspect-ratio: 1 / 2;
+  border: 1px solid var(--kb-rule);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.kb-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.kb-profile-none {
+  font: bold 2.5em / 1 var(--kb-font-mono);
+}
+
+.kb-profile-facts {
+  flex: 1 1 14em;
+  min-width: 0;
+}
+
+.kb-profile-facts p {
+  margin: 0 0 0.5em;
+}
+
+.kb-profile-rank {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2em 0.5em;
+}
+
+.kb-profile-record {
+  margin-top: 1em;
+}
+
+.kb-record-table {
+  width: 100%;
+}
+
+.kb-record-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em 1em;
+  margin: 0.5em 0;
+}
+
+@media (max-width: 40em) {
+  .kb-profile-avatar {
+    flex-basis: 5em;
+    width: 5em;
+  }
+}
+
+.kb-record-kind[aria-current] {
+  font-weight: bold;
+}

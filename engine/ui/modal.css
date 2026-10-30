@@ -1,0 +1,28 @@
+/* The modal's bar: its title and its Close, over the box base.css draws. */
+.kb-modal-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8em;
+  border-bottom: 1px solid var(--kb-rule);
+  margin-bottom: 0.6em;
+}
+
+.kb-modal-bar .kb-modal-head {
+  margin: 0 0 0.5em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kb-modal-close {
+  flex: none;
+}
+
+.kb-modal:focus {
+  outline: none;
+}
+
+/* A scroll that reaches the end of the box stops there; it does not carry on to the page behind. */
+.kb-overlay {
+  overscroll-behavior: contain;
+}

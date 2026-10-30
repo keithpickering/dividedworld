@@ -1,0 +1,38 @@
+/* The small shared parts of the index and the thread list. */
+.kb-mini {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 1.5em;
+  height: 1.5em;
+  vertical-align: middle;
+  margin-right: 0.35em;
+  border: 1px solid var(--kb-rule);
+  overflow: hidden;
+  line-height: 1;
+}
+
+.kb-mini img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kb-mini-none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font: bold var(--kb-size-small) / 1 var(--kb-font-mono);
+  text-transform: uppercase;
+}
+
+.kb-system-name {
+  font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
+  text-transform: uppercase;
+}
+
+.kb-sign-in-prompt {
+  margin: 1em 0;
+}

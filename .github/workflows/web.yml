@@ -1,0 +1,28 @@
+# The web app's keyboard end-to-end flows on a pull request once it is ready, and by hand:
+# Playwright against `vite preview` of a build on the in-memory backend (playwright.config.ts).
+# It cannot live in build:ci, which has no browser (tools/build.mjs's OUTSIDE_THE_BUILD).
+# Same trigger shape as build.yml: a draft's push shows a skipped job, and a PR is run when it
+# is marked ready.
+name: Web
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ['docs/**']
+  workflow_dispatch:
+concurrency:
+  group: web-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  e2e:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      # The runner has no browser of its own; CI is the one place one is downloaded.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env: { CI: '1' }

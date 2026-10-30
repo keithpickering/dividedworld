@@ -1,0 +1,81 @@
+/*
+ * Divided World's house theme: the 2003 board in black and white, light and dark, with color only
+ * on the game's pieces (the screens' design, section 12; PRODUCT.md). It sets the tokens
+ * engine/ui/tokens.css names, in the shape every theme follows: light on :root, dark under the
+ * device's prefers-color-scheme unless the player chose light, and again for a player who chose
+ * dark. The orbs are the six from the owner's TTYD pen (docs/research/2026-10-29-screens/).
+ */
+:root {
+  --kb-fg: #000;
+  --kb-bg: #fff;
+  --kb-rule: #000;
+  --kb-muted: #555;
+  --kb-link: #000;
+  --kb-link-visited: #3a3a3a;
+  --kb-focus: #000;
+  --kb-selection-fg: #fff;
+  --kb-selection-bg: #000;
+  --kb-hud-bg: #fff;
+  --kb-overlay: rgb(0 0 0 / 0.55);
+
+  --kb-font-body: Verdana, Geneva, "DejaVu Sans", sans-serif;
+  --kb-font-mono: "Courier New", Courier, "Liberation Mono", monospace;
+
+  --kb-orb-1: #9b59b6;
+  --kb-orb-2: #3498db;
+  --kb-orb-3: #2ecc71;
+  --kb-orb-4: #f1c40f;
+  --kb-orb-5: #e67e22;
+  --kb-orb-6: #e74c3c;
+  --kb-orb-rim: #000;
+  --kb-orb-shine: rgb(255 255 255 / 0.6);
+  --kb-orb-loss: rgb(255 255 255 / 0.65);
+  --kb-pip: #000;
+  --kb-pip-empty: #bbb;
+  --kb-chip-bg: #fff;
+  --kb-chip-own: #000;
+  --kb-sweet: #e86fa8;
+  --kb-salty: #3f8fd2;
+  --kb-pepperoni: #d24a2c;
+  --kb-gold: #d4a017;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-kb-mode="light"]) {
+    --kb-fg: #fff;
+    --kb-bg: #000;
+    --kb-rule: #fff;
+    --kb-muted: #aaa;
+    --kb-link: #fff;
+    --kb-link-visited: #cfcfcf;
+    --kb-focus: #fff;
+    --kb-selection-fg: #000;
+    --kb-selection-bg: #fff;
+    --kb-hud-bg: #000;
+    --kb-orb-rim: #fff;
+    --kb-orb-loss: rgb(0 0 0 / 0.55);
+    --kb-pip: #fff;
+    --kb-pip-empty: #555;
+    --kb-chip-bg: #000;
+    --kb-chip-own: #fff;
+  }
+}
+
+:root[data-kb-mode="dark"] {
+  --kb-fg: #fff;
+  --kb-bg: #000;
+  --kb-rule: #fff;
+  --kb-muted: #aaa;
+  --kb-link: #fff;
+  --kb-link-visited: #cfcfcf;
+  --kb-focus: #fff;
+  --kb-selection-fg: #000;
+  --kb-selection-bg: #fff;
+  --kb-hud-bg: #000;
+  --kb-orb-rim: #fff;
+  --kb-orb-loss: rgb(0 0 0 / 0.55);
+  --kb-pip: #fff;
+  --kb-pip-empty: #555;
+  --kb-chip-bg: #000;
+  --kb-chip-own: #fff;
+}

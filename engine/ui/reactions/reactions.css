@@ -1,0 +1,74 @@
+/* Reactions under a post: chips (a game piece, so color is allowed through tokens) and the picker. */
+.kb-reactions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+  align-items: center;
+  margin: 0.6em 0 0;
+}
+
+.kb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.kb-chip {
+  border: 1px solid var(--kb-rule);
+  background: var(--kb-chip-bg);
+  padding: 0 0.5em;
+  white-space: nowrap;
+}
+
+.kb-chip[data-kb-own] {
+  outline: 2px solid var(--kb-chip-own);
+  outline-offset: 1px;
+  font-weight: bold;
+}
+
+.kb-react-button {
+  padding: 0 0.6em;
+  border-style: dashed;
+}
+
+/* The picker is a .kb-sheet (fixed above the HUD, z-index 35 over the HUD's 30) on a phone; above that width a popover by the button, placed by place.ts on open. */
+.kb-picker:focus { outline: none; }
+.kb-picker-head { display: flex; justify-content: space-between; align-items: center; gap: 1em; }
+.kb-picker-axis { text-align: center; }
+.kb-picker-grid { display: grid; grid-template-columns: 1fr 1fr; }
+.kb-picker-quad { border: 1px solid var(--kb-rule); margin: -1px 0 0 -1px; padding: 0.3em 0.4em; }
+.kb-picker-kinds { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.2em; } /* two across: Picker.tsx's KIND_COLUMNS */
+.kb-picker-kind {
+  font-size: 1.5em;
+  line-height: 1;
+  min-width: 2em;
+  min-height: 2em;
+  background: var(--kb-chip-bg);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.kb-picker-kind:disabled { cursor: default; }
+.kb-picker-kind:disabled > span { opacity: 0.4; } /* the emoji only: a kind already left keeps its border's contrast */
+.kb-picker-kind[data-kb-own] { border: 2px solid var(--kb-chip-own); }
+.kb-picker-none, .kb-picker-refusal { margin: 0.5em 0 0; }
+.kb-picker-foot { display: flex; justify-content: flex-end; margin: 0.5em 0 0; }
+
+@media (min-width: 40.01em) {
+  /* :root twice: base.css's motion rules for .kb-sheet are three classes deep and would otherwise slide the popover in from below. */
+  :root:root .kb-picker.kb-sheet {
+    position: absolute;
+    left: 0;
+    right: auto;
+    bottom: auto;
+    top: calc(100% + 0.3em);
+    box-sizing: border-box; /* so place.ts's height cap is the whole box */
+    width: min(24em, 96%);
+    border: 2px solid var(--kb-rule);
+    padding: 0.4em 0.6em;
+    animation: none;
+  }
+}

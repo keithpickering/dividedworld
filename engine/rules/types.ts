@@ -81,6 +81,10 @@ export interface Settings {
   readonly postMaxLength: number;
   /** The longest a thread's title may be, in characters. */
   readonly titleMaxLength: number;
+  /** How many posts a thread shows on one page. */
+  readonly postsPerPage: number;
+  /** A thread is HOT when it has had at least this many replies in the last 7 days. */
+  readonly hotReplies: number;
   /**
    * The instance's own numbers (a class's bonus, a card's price), each named by the instance
    * ("lurker.earlyMatch"). The engine checks each is a number and never reads one; the classes

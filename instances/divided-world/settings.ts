@@ -32,6 +32,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   /** Long enough for an effortpost; short enough that one post is never a page of its own. */
   postMaxLength: 20_000,
   titleMaxLength: 120,
+  /** A page of a thread: long enough to read in one sitting, short enough to load at once. */
+  postsPerPage: 20,
+  /** HOT: ten replies in the last 7 days. */
+  hotReplies: 10,
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */

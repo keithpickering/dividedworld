@@ -62,6 +62,112 @@ check('a file in a subdirectory of engine/ is held to the same line',
 check('a .mjs file in engine/ is held to the same line',
   fires(`import x from '../instances/divided-world/index.ts';`, 'engine/x.mjs').length === 1);
 
+/* ---- a glob names files as an import does, and a file outside engine/ can carry the engine to an instance ---- */
+{
+  const r = fires(`const m = import.meta.glob('../../instances/*/ui/**/*.stories.tsx', { eager: true });`, 'engine/ui/a11y.test.tsx');
+  check('import.meta.glob of a string naming instances/ fires in engine/', r.length === 1 && r[0]?.file === 'engine/ui/a11y.test.tsx' && r[0]?.line === 1, JSON.stringify(r));
+}
+check('import.meta.glob of an array naming instances/ fires, whichever element names it',
+  fires(`const m = import.meta.glob(['./**/*.stories.tsx', '../../instances/*/ui/**/*.stories.tsx'], { eager: true });`, 'engine/ui/a11y.test.tsx').length === 1);
+check('import.meta.glob with a pattern it cannot read fires in engine/, as a dynamic import does',
+  fires('const m = import.meta.glob(pattern);', 'engine/ui/a11y.test.tsx').length === 1);
+check('import.meta.glob of the engine\'s own files is clean',
+  fires(`const m = import.meta.glob(['./**/*.stories.tsx', '!./**/skip.stories.tsx'], { eager: true });`, 'engine/ui/a11y.test.tsx').length === 0);
+{
+  const tree = { '.storybook/preview.tsx': `import { ui } from '../instances/divided-world/ui/index.ts';\nexport default {};` };
+  const r = fires(`import * as preview from '../../.storybook/preview.tsx';`, 'engine/ui/a11y.test.tsx', tree);
+  check('an engine file importing a composition-root file that imports an instance fires, naming the chain',
+    r.length === 1 && r[0]?.file === 'engine/ui/a11y.test.tsx' && /\.storybook\/preview\.tsx/.test(r[0]?.why ?? '') && /instances\/divided-world/.test(r[0]?.why ?? ''), JSON.stringify(r));
+}
+{
+  const tree = {
+    'web/src/shared.ts': `export * from './deeper.ts';`,
+    'web/src/deeper.ts': `export const x = import.meta.glob('../../instances/*/ui/index.ts');`,
+  };
+  const r = fires(`import { x } from '../../web/src/shared.ts';`, 'engine/ui/thing.tsx', tree);
+  check('the chain is followed through several files, and a glob in a followed file counts', r.length === 1, JSON.stringify(r));
+}
+{
+  const tree = { 'web/a.ts': `import './b.ts';`, 'web/b.ts': `import './a.ts';\nimport { z } from '../engine/rules/z.ts';` };
+  check('a cycle outside the engine ends, and a file that only reaches the engine is clean',
+    fires(`import '../../web/a.ts';`, 'engine/ui/thing.tsx', tree).length === 0);
+}
+check('an engine import of a bare package, or of a file the tree does not hold, is not followed',
+  fires(`import x from 'react';\nimport y from '../../elsewhere/y.ts';`, 'engine/ui/thing.tsx', {}).length === 0);
+check('a composition-root file that imports an instance is clean on its own',
+  fires(`import { ui } from '../instances/divided-world/ui/index.ts';`, '.storybook/preview.tsx').length === 0);
+
+/* ---- the engine reaching an instance through the filesystem ---- */
+{
+  const poison = `import { readdirSync } from 'node:fs';\nimport { join } from 'node:path';\nconst themes = readdirSync(join(process.cwd(), 'instances'));`;
+  const r = fires(poison, 'engine/ui/x.test.tsx');
+  check('readdirSync(join(cwd, \'instances\')) in an engine test fires', r.length === 1 && r[0]?.line === 3 && /filesystem/.test(r[0]?.why ?? ''), JSON.stringify(r));
+}
+check('readFileSync of a path string naming instances/ fires', fires(`readFileSync('instances/divided-world/ui/theme.css', 'utf8');`, 'engine/ui/x.test.tsx').length === 1);
+check('existsSync with a join of segments naming instances fires', fires(`existsSync(join(root, 'instances', d, 'ui/theme.css'));`, 'engine/ui/x.test.tsx').length === 1);
+check('path.resolve fires', fires(`path.resolve(here, '../../instances');`, 'engine/ui/x.test.tsx').length === 1);
+check('new URL naming instances fires', fires(`new URL('../../instances/divided-world/ui/theme.css', import.meta.url);`, 'engine/ui/x.test.tsx').length === 1);
+check('a template literal naming instances fires', fires('readFileSync(`instances/${name}/ui/theme.css`, "utf8");', 'engine/ui/x.test.tsx').length === 1);
+check('a string that merely contains the word (a sentence, a longer segment) is clean',
+  fires(`join(root, 'instances-old'); readFileSync('notes about instances.txt'); expect(x).toBe('instances');`, 'engine/ui/x.test.tsx').length === 0);
+check('the same call in an instance or in the composition root is clean',
+  fires(`readdirSync(join(process.cwd(), 'instances'));`, 'web/contrast.test.tsx').length === 0
+  && fires(`readdirSync(join(process.cwd(), 'instances'));`, 'instances/divided-world/ui/index.test.tsx').length === 0);
+
+/* ---- the screens: .tsx files and stylesheets are read too ---- */
+check('an engine/ui component importing an instance\'s theme stylesheet fires',
+  fires(`import '../../../instances/divided-world/ui/theme.css';\nexport const Frame = () => <div />;`, 'engine/ui/frame/Frame.tsx').length === 1);
+check('a .tsx re-export from engine/ui into an instance fires',
+  fires(`export { theme } from '../../../instances/divided-world/ui/index.ts';`, 'engine/ui/frame/index.tsx').length === 1);
+{
+  const r = fires(`@import "../../instances/divided-world/ui/theme.css";\n.kb-frame { color: var(--kb-fg); }`, 'engine/ui/base.css');
+  check('a CSS @import from engine/ui into an instance fires', r.length === 1 && r[0]?.target === 'instances/divided-world/ui/theme.css', JSON.stringify(r));
+}
+check('a CSS @import url() from engine/ui into an instance fires',
+  fires(`@import url('../../instances/divided-world/ui/theme.css') screen;`, 'engine/ui/base.css').length === 1);
+check('a CSS url() from engine/ui into an instance\'s image fires',
+  fires(`.kb-pip { background: url(../../instances/divided-world/ui/pip.png) no-repeat; }`, 'engine/ui/base.css').length === 1);
+check('a CSS url() inside a comment is not an import',
+  fires(`/* url(../../instances/divided-world/ui/pip.png) */\n.kb-pip { color: var(--kb-pip); }`, 'engine/ui/base.css').length === 0);
+check('a CSS data: url and an engine-relative url are clean',
+  fires(`.a { background: url("data:image/svg+xml,%3Csvg/%3E"); }\n@import "./tokens.css";`, 'engine/ui/base.css').length === 0);
+check('CSS keywords are read in any case',
+  fires(`@IMPORT "../../instances/divided-world/ui/t.css";\n.a { background: URL(../../instances/divided-world/p.png); }`, 'engine/ui/base.css').length === 2);
+check('an @import with no space before its string fires',
+  fires(`@import"../../instances/divided-world/ui/t.css";`, 'engine/ui/base.css').length === 1);
+check('an @import string with a media query fires',
+  fires(`@import "../../instances/divided-world/ui/t.css" screen and (min-width: 40em);`, 'engine/ui/base.css').length === 1);
+check('a url() with spaces inside its parentheses fires',
+  fires(`.a { background: url(  "../../instances/divided-world/p.png"  ); }`, 'engine/ui/base.css').length === 1);
+check('an image-set() string fires',
+  fires(`.a { background-image: image-set("../../instances/divided-world/p.png" 1x, "../../instances/divided-world/p2.png" 2x); }`, 'engine/ui/base.css').length === 2);
+{
+  const r = fires(`/* a comment\n   over two lines */\n.a { background: url(../../instances/divided-world/p.png); }`, 'engine/ui/base.css');
+  check('a stylesheet\'s line numbers survive its comments', r.length === 1 && r[0]?.line === 3, JSON.stringify(r));
+}
+check('a comment marker inside a CSS string does not hide the rules after it',
+  fires(`.a { content: "/*"; } .b { background: url(../../instances/divided-world/p.png); } .c { content: "*/"; }`, 'engine/ui/base.css').length === 1);
+check('an unquoted data: url is clean',
+  fires(`.a { background: url(data:image/png;base64,AAAA); }`, 'engine/ui/base.css').length === 0);
+check('a bare relative url() is read against its file, so a folder named instances inside engine/ui is clean',
+  fires(`.a { background: url(img/instances/pip.png); }`, 'engine/ui/base.css').length === 0);
+check('a url() that climbs into instances/ fires, one level short is clean',
+  fires(`.a { background: url(../../instances/divided-world/p.png); }`, 'engine/ui/x/y.css').length === 0
+  && fires(`.a { background: url(../../../instances/divided-world/p.png); }`, 'engine/ui/x/y.css').length === 1);
+check('a protocol-relative or absolute URL naming instances/ fires, as a bare specifier does',
+  fires(`.a { background: url(//cdn.example/instances/divided-world/x.png); }`, 'engine/ui/base.css').length === 1
+  && fires(`.a { background: url(https://cdn.example/instances/divided-world/x.png); }`, 'engine/ui/base.css').length === 1);
+check('a url(#fragment), an SVG filter in the same document, is clean',
+  fires(`.a { filter: url(#instances); }`, 'engine/ui/base.css').length === 0);
+check('an instance\'s ui importing another instance\'s stylesheet fires',
+  fires(`@import "../../other-world/ui/theme.css";`, 'instances/divided-world/ui/theme.css').length === 1);
+check('an instance\'s ui .tsx importing another instance fires',
+  fires(`import { copy } from '../../other-world/ui/index.ts';`, 'instances/divided-world/ui/Badge.tsx').length === 1);
+check('an instance\'s ui importing engine/ui is clean, the direction the boundary allows',
+  fires(`import type { InstanceUi } from '../../../engine/ui/types.ts';`, 'instances/divided-world/ui/index.ts').length === 0);
+check('web/, the composition root, may import both',
+  fires(`import { instanceUi } from '../../instances/divided-world/ui/index.ts';\nimport { App } from '../../engine/ui/App.tsx';`, 'web/src/main.tsx').length === 0);
+
 /* ---- one instance importing another ---- */
 check('an instance importing another instance fires',
   fires(`import x from '../other-world/index.ts';`, 'instances/divided-world/index.ts').length === 1);

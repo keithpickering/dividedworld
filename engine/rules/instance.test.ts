@@ -19,6 +19,8 @@ const settings: Settings = {
   registrationMode: 'invite',
   postMaxLength: 20000,
   titleMaxLength: 120,
+  postsPerPage: 20,
+  hotReplies: 10,
   economy: { 'a.bonus': 5, 'splat.price': 100 },
   settlementLength: { unit: 'day', count: 1 },
 };
@@ -63,6 +65,16 @@ test('the view counts are recounted on a cron of their own', () => {
   const { viewCountCron: _gone, ...without } = settings;
   assert.match(settingsProblems(without as Settings).join('\n'), /setting "viewCountCron" is missing/);
   assert.match(settingsProblems({ ...settings, viewCountCron: 'hourly' }).join('\n'), /viewCountCron/);
+});
+
+test('a thread\'s page and what makes it hot are whole numbers, at least 1', () => {
+  for (const key of ['postsPerPage', 'hotReplies'] as const) {
+    const { [key]: _gone, ...without } = settings;
+    assert.match(settingsProblems(without as Settings).join('\n'), new RegExp(`setting "${key}" is missing`));
+    for (const bad of [0, 2.5, '20', null, Number.NaN]) {
+      assert.match(settingsProblems({ ...settings, [key]: bad as number }).join('\n'), new RegExp(`setting "${key}"`), `${String(bad)}`);
+    }
+  }
 });
 
 test('ranks start at 0 and rise, each named', () => {

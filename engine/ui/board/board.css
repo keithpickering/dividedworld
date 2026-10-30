@@ -1,0 +1,204 @@
+/* A board's thread list. A phone (40em and under) folds each row into a card. */
+.kb-board {
+  min-width: 0;
+}
+
+.kb-board-description {
+  margin: 0 0 0.6em;
+}
+
+.kb-board-readonly {
+  border: 1px dashed var(--kb-rule);
+  padding: 0.4em 1%;
+  margin: 0.6em 0;
+}
+
+.kb-board-empty {
+  margin: 1em 0;
+}
+
+.kb-new-thread .kb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+  margin: 0.5em 0;
+}
+
+.kb-new-thread .kb-input,
+.kb-new-thread .kb-textarea {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.kb-new-thread-as {
+  margin: 0 0 0.4em;
+}
+
+.kb-thread-list {
+  table-layout: fixed;
+}
+
+.kb-thread-flags-head,
+.kb-thread-flags {
+  width: 6%;
+}
+
+.kb-thread-main {
+  width: 52%;
+  overflow-wrap: anywhere;
+}
+
+.kb-thread-replies,
+.kb-thread-views {
+  width: 8%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A fixed table takes its widths from its header row: say them there too. */
+.kb-thread-list th:nth-child(1) { width: 6%; }
+.kb-thread-list th:nth-child(2) { width: 52%; }
+.kb-thread-list th:nth-child(3),
+.kb-thread-list th:nth-child(4) { width: 9%; text-align: right; }
+.kb-thread-list th:nth-child(5) { width: 24%; }
+
+.kb-thread-last {
+  width: 24%;
+  overflow-wrap: anywhere;
+}
+
+.kb-thread-title,
+.kb-thread-last a {
+  /* A target of 24px at the least (WCAG 2.2, 2.5.8): the rows' links sit close together. */
+  display: inline-block;
+  padding-block: 0.3rem;
+}
+
+.kb-thread-last-label,
+.kb-thread-unit {
+  display: none;
+}
+
+.kb-flag {
+  display: inline-block;
+  margin: 0 0.2em 0.2em 0;
+  padding: 0 0.3em;
+  border: 1px solid var(--kb-rule);
+  font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
+  white-space: nowrap;
+}
+
+.kb-flag-new {
+  background: var(--kb-fg);
+  color: var(--kb-bg);
+}
+
+.kb-thread-meta {
+  margin-top: 0.2em;
+}
+
+.kb-thread-pages a,
+.kb-pager a {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0.1em 0.2em;
+  text-align: center;
+}
+
+.kb-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2em 0.6em;
+  margin: 0.6em 0;
+}
+
+.kb-pager-where {
+  font-weight: bold;
+}
+
+.kb-pager-here {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0.1em 0.2em;
+  text-align: center;
+  border: 1px solid var(--kb-rule);
+  font-weight: bold;
+}
+
+@media (max-width: 40em) {
+  .kb-thread-list,
+  .kb-thread-list tbody,
+  .kb-thread-list tr,
+  .kb-thread-list td {
+    display: block;
+    width: auto;
+  }
+
+  .kb-thread-list thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .kb-thread-row {
+    border: 1px solid var(--kb-rule);
+    padding: 0.4em 3%;
+  }
+
+  .kb-thread-row + .kb-thread-row {
+    border-top: 0;
+  }
+
+  .kb-thread-list td {
+    border: 0;
+    padding: 0.1em 0;
+  }
+
+  .kb-thread-list td.kb-thread-flags {
+    display: inline;
+    float: left;
+    padding-right: 0.4em;
+  }
+
+  .kb-thread-flags:empty {
+    display: none;
+  }
+
+  .kb-thread-replies,
+  .kb-thread-views {
+    display: inline-block;
+    text-align: left;
+    margin-right: 0.8em;
+    color: var(--kb-muted);
+    font-size: var(--kb-size-small);
+  }
+
+  .kb-thread-unit,
+  .kb-thread-last-label {
+    display: inline;
+  }
+
+  .kb-thread-last {
+    display: inline-block;
+  }
+}
+
+/* Focus lands on the heading after a page turn; it is a place to start reading, not a control. */
+.kb-board-title:focus {
+  outline: none;
+}
+
+.kb-new-thread-wrap {
+  margin: 0.6em 0;
+}
+
+.kb-new-thread-wrap .kb-new-thread {
+  margin-top: 0.4em;
+}
+
+.kb-new-thread[hidden] {
+  display: none;
+}

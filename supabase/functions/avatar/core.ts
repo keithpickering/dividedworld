@@ -20,8 +20,9 @@
  * format puts it, with zero padding and nothing past the RIFF's own length. EXIF and XMP, where a
  * camera writes a place and a time, are refused by name; a color profile (whose text can name its
  * maker), an animation, the header's flags for any of those, and any chunk this does not know are
- * refused too. A canvas in sRGB, which is what a browser re-encodes into, carries no color
- * profile. What a picture chunk holds past its frame header is not decoded here, so the byte
+ * refused too. Chromium's canvas does write an sRGB ICCP chunk into the WebP it encodes; the
+ * screens drop that chunk and its header flag before sending (engine/ui/profile-edit/webp.ts),
+ * which changes no pixel, since an untagged picture is read as sRGB. What a picture chunk holds past its frame header is not decoded here, so the byte
  * bounds below are what bounds anything a hand-made file could hide inside one; what is stored is
  * exactly what the player's browser made, never stripped by this.
  */

@@ -1,0 +1,208 @@
+/* A thread. Posts are a grid: the postbit beside the words, or above them when stacked or on a phone (40em and under). */
+.kb-thread {
+  min-width: 0;
+}
+
+.kb-thread-info {
+  margin: 0 0 0.6em;
+}
+
+.kb-acts {
+  border: 1px solid var(--kb-rule);
+  margin: 0.6em 0;
+}
+
+.kb-act {
+  display: grid;
+  grid-template-columns: minmax(8em, min(18%, 14em)) minmax(0, 1fr);
+  grid-template-areas:
+    "meta meta"
+    "bit main";
+  border-bottom: 1px solid var(--kb-rule);
+  scroll-margin-top: 0.5em;
+}
+
+.kb-act:last-child {
+  border-bottom: 0;
+}
+
+.kb-act-meta {
+  grid-area: meta;
+  display: flex;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.25em 1.5%;
+  border-bottom: 1px solid var(--kb-rule);
+}
+
+.kb-act > .kb-postbit,
+.kb-act > .kb-postbit-system {
+  grid-area: bit;
+  padding: 0.5em 6%;
+  border-right: 1px solid var(--kb-rule);
+}
+
+.kb-act-main {
+  grid-area: main;
+  padding: 0.5em 1.5%;
+  min-width: 0;
+}
+
+/* A line of the game's (a card, an unmask): no postbit, the words across the whole width. */
+.kb-act[data-kb-kind="card"],
+.kb-act[data-kb-kind="unmask"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "meta"
+    "main";
+}
+
+.kb-act-line {
+  margin: 0;
+}
+
+/* Stacked, chosen by the reader or forced on a phone: a header band, then the words. */
+.kb-act[data-kb-postbit="stacked"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "bit"
+    "meta"
+    "main";
+}
+
+.kb-act[data-kb-postbit="stacked"] > .kb-postbit,
+.kb-act[data-kb-postbit="stacked"] > .kb-postbit-system {
+  border-right: 0;
+  border-bottom: 1px solid var(--kb-rule);
+}
+
+@media (max-width: 40em) {
+  .kb-act,
+  .kb-act[data-kb-postbit] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "bit"
+      "meta"
+      "main";
+  }
+
+  .kb-act > .kb-postbit,
+  .kb-act > .kb-postbit-system {
+    padding: 0.4em 3%;
+    border-right: 0;
+    border-bottom: 1px solid var(--kb-rule);
+  }
+
+  .kb-act[data-kb-kind="card"],
+  .kb-act[data-kb-kind="unmask"] {
+    grid-template-areas:
+      "meta"
+      "main";
+  }
+
+  .kb-act-main {
+    padding: 0.5em 3%;
+  }
+
+  .kb-act-meta {
+    padding: 0.25em 3%;
+  }
+}
+
+.kb-postbit-system {
+  min-width: 0;
+}
+
+.kb-post-edited {
+  margin-top: 0.6em;
+}
+
+.kb-link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--kb-link);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.kb-act-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2em 1em;
+  margin-top: 0.6em;
+}
+
+.kb-post-history {
+  margin: 0.4em 0 0;
+  padding-left: 1.6em;
+}
+
+.kb-post-history li {
+  margin: 0.4em 0;
+}
+
+.kb-tallies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  list-style: none;
+  margin: 0.6em 0 0;
+  padding: 0;
+}
+
+.kb-tally {
+  border: 1px solid var(--kb-rule);
+  background: var(--kb-chip-bg);
+  padding: 0 0.5em;
+}
+
+.kb-system-list {
+  margin: 0.3em 0;
+  padding-left: 1.4em;
+}
+
+.kb-thread-continue {
+  margin: 0.6em 0;
+}
+
+.kb-thread-end {
+  height: 1px;
+}
+
+/* The bar above the HUD: fixed, so the page never moves for it. */
+.kb-new-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--kb-hud-measured, var(--kb-hud-height, 3.4em));
+  display: flex;
+  justify-content: center;
+  padding: 0.4em 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.kb-new-bar > * {
+  pointer-events: auto;
+}
+
+/* A new post slides in at the bottom; not for a reader who reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-kb-motion="reduce"]) .kb-act[data-kb-arrived="slide"] {
+    animation: kb-act-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+@keyframes kb-act-in {
+  from {
+    opacity: 0;
+    transform: translateY(1.5em);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

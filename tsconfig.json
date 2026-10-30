@@ -18,5 +18,6 @@
     "instances/**/*.ts",
     "supabase/functions/**/*.ts",
     "supabase/tests/**/*.ts"
-  ]
+  ],
+  "exclude": ["engine/ui/**", "instances/*/ui/**"]
 }

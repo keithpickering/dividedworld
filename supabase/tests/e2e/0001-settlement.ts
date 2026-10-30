@@ -60,7 +60,8 @@ test('a day on the board settles into wallets and standings, once', async () => 
   const lurk = Number(sql(`select balance from wallets where account = '${ids['e2e-lurk']}'`));
   assert.equal(heel, 20, 'two whole votes of heat on the Heel\'s post');
   assert.equal(lurk, 0, 'the Lurker reacted early, but one other player is no crowd: no call is paid yet');
-  assert.equal(Number(sql(`select amount from standings where character = '${characters.Pipewrench}'`)), 20);
+  // In the season the window settled into: a debut also wrote a row at 0 in the season the standings read (0030's roster).
+  assert.equal(Number(sql(`select amount from standings where character = '${characters.Pipewrench}' and season = (select season from settlements order by ends_at desc limit 1)`)), 20);
   assert.equal(sql(`select string_agg(reason, ',' order by reason) from ledger where character = '${characters.Pipewrench}'`), 'heel.drewHeat');
 
   const again = await runSettlement(db, instance, until);

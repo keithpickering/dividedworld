@@ -21,11 +21,11 @@ begin
   if n <> 0 then raise exception 'another player read an account'; end if;
   select count(*) into n from characters_public where id = mask and name = 'Pipewrench';
   if n <> 1 then raise exception 'the public projection should show the character by name'; end if;
-  -- And nothing else: a creation time to the microsecond would show which masks were made in one
-  -- sitting, which is to say whose.
+  -- And nothing else but the month it debuted in: a creation time to the microsecond would show
+  -- which masks were made in one sitting, which is to say whose (0030 adds the month, never the time).
   if (select string_agg(column_name::text, ',' order by ordinal_position) from information_schema.columns
-      where table_schema = 'public' and table_name = 'characters_public') is distinct from 'id,name' then
-    raise exception 'characters_public shows more than a character''s id and name: %',
+      where table_schema = 'public' and table_name = 'characters_public') is distinct from 'id,name,joined' then
+    raise exception 'characters_public shows more than a character''s id, name and month: %',
       (select string_agg(column_name::text, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'characters_public');
   end if;
 
@@ -86,6 +86,9 @@ begin
       -- my_reactions (0018) reads who reacted only to keep each caller to their own reactions,
       -- through their own masks; 0024-reading.sql holds that it shows nobody else's.
       and not (u.view_name = 'my_reactions' and u.table_name = 'reactions')
+      -- my_characters (0030) reads the owner to keep each caller to their own characters, and the class to say what it is now;
+      -- 0033-screens-reads.sql holds that it shows nobody else's.
+      and not (u.view_name = 'my_characters' and (u.table_name, u.column_name) in (('characters', 'owner'), ('class_history', 'class_key')))
   loop
     leaks := leaks || format(' %s reads %s.%s;', r.view_name, r.table_name, r.column_name);
   end loop;
