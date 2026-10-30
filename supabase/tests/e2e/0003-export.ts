@@ -100,7 +100,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into reading (account, thread, furthest_seq, first_character) values (bob, t, 1, b);
       insert into thread_reads (thread, reader) values (t, b);
       perform count_thread_views();
-      insert into account_preferences (account, theme, postbit, motion) values (ann, 'dark', 'stacked', 'reduce');
+      insert into account_preferences (account, theme, postbit, motion, smoke, contrast, text_size) values (ann, 'dark', 'stacked', 'reduce', 'low', 'high', 150);
       insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame)
       values (a, 'Exported', '[b]sig[/b]', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
       -- An original 0025 handed to the sweep: a row the export carries, naming a file it does not.
@@ -113,6 +113,8 @@ test('an instance exported and imported into a fresh database is the same instan
       perform write_unmask(a, t, 'act', now(), 'Exported, and unmasked.');
       insert into standings (character, season, amount) values (a, (select max(id) from seasons), 10) on conflict (season, character) do update set amount = excluded.amount;
       insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;
+      -- A share of a ledger line in e2e/0001's settlement (0034), on Ann's post.
+      insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 10 from ledger;
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
     end $$;
