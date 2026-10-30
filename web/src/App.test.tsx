@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { createFake } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
+import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 import { App } from './App.tsx';
 import { seedDemo } from './demo.ts';
 import { fallbackSettings } from './data/settings.ts';
@@ -55,8 +56,7 @@ const OWN: readonly [string, () => HTMLElement][] = [
   ['/characters', () => screen.getByRole('heading', { level: 1, name: /^Your characters \(/ })],
   ['/characters/new', () => screen.getByRole('button', { name: 'Make the character' })],
   ['/characters/edit', () => screen.getByRole('heading', { level: 1, name: /^Edit / })],
-  ['/invites', () => screen.getByRole('heading', { level: 1, name: 'Invites' })],
-  ['/settings', () => screen.getByRole('button', { name: 'Sign out' })],
+  ['/settings', () => screen.getByRole('radiogroup', { name: 'Smoke' })],
   ['/rankings', () => screen.getByRole('heading', { level: 1, name: 'Rankings' })],
 ];
 
@@ -74,19 +74,19 @@ for (const [path, own] of OWN) {
   });
 }
 
-/* The glass build's Task 2.2 restyles the characters pages: drawn on the glass, with no board panel; the rest keep it until their task. */
-for (const [path, restyled] of [['/characters', true], ['/characters/new', true], ['/characters/edit', true], ['/settings', false]] as const) {
-  test(`${path} is ${restyled ? 'restyled, with no board panel' : 'not restyled yet, on the board\'s panel'}`, async () => {
+/* The glass build's Tasks 2.2 and 2.4 restyle the characters pages and Settings: drawn on the glass, with no board panel. */
+for (const path of ['/characters', '/characters/new', '/characters/edit', '/settings'] as const) {
+  test(`${path} is drawn on the glass, with no board panel`, async () => {
     window.history.pushState(null, '', path);
     const fake = createFake({ instance, settings: fallbackSettings });
     seedDemo(fake);
     render(<App api={fake} />);
     await screen.findByRole('navigation', { name: 'Menu' });
-    expect(document.querySelector('main > .kb-glass-content-panel') !== null).toBe(!restyled);
+    expect(document.querySelector('.kb-glass-content-panel')).toBeNull();
   });
 }
 
-test('/rankings is restyled: drawn on the glass with no board panel, and its menu bar tab is the current page', async () => {
+test('/rankings is drawn on the glass with no board panel, and its menu bar tab is the current page', async () => {
   window.history.pushState(null, '', '/rankings');
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
@@ -109,13 +109,44 @@ for (const path of ['/sign-in', '/register']) {
   });
 }
 
-test('Invites is reached from Settings, standing in until it moves into Settings › Account', async () => {
-  window.history.pushState(null, '', '/settings');
+test('/invites opens Settings › Account, where invites now live, and keeps the address working', async () => {
+  window.history.pushState(null, '', '/invites');
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
   render(<App api={fake} />);
-  await screen.findByRole('button', { name: 'Sign out' });
-  await userEvent.click(within(screen.getByRole('main')).getByRole('link', { name: 'Invites' }));
-  expect(window.location.pathname).toBe('/invites');
-  expect(await screen.findByRole('heading', { level: 1, name: 'Invites' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { level: 2, name: 'Account' })).toBeInTheDocument();
+  expect(window.location.pathname + window.location.search).toBe('/settings?section=account');
+  expect(await screen.findByRole('button', { name: 'Make an invite' })).toBeInTheDocument();
+  expect(within(screen.getByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page');
+});
+
+test('the restyled account screens draw on the glass itself, with no board panel', async () => {
+  for (const path of ['/settings', '/sign-in', '/register']) {
+    window.history.pushState(null, '', path);
+    const fake = createFake({ instance, settings: fallbackSettings });
+    if (path === '/settings') seedDemo(fake);
+    const view = render(<App api={fake} />);
+    expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(document.querySelector('.kb-glass-content-panel'), path).toBeNull();
+    view.unmount();
+  }
+});
+
+test('the account\'s glass preferences are applied as the app loads them: smoke, the high key and the text size', async () => {
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedDemo(fake);
+  await fake.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 });
+  render(<App api={fake} />);
+  const root = document.documentElement;
+  await waitFor(() => expect(root).toHaveAttribute('data-kb-glass-key', 'high'));
+  expect(root).toHaveAttribute('data-kb-smoke-level', 'off');
+  expect(root).toHaveAttribute('data-kb-contrast', 'high');
+  expect(root).toHaveAttribute('data-kb-text-size', '200');
+  expect(root.style.getPropertyValue('--kb-glass-text')).toBe(instanceUi.glass.keys.high['--kb-glass-text']!.value);
+  /* The Game HUD's own smoke follows the preference: none drawn. */
+  const hud = await screen.findByRole('region', { name: 'Game HUD' });
+  await waitFor(() => expect(hud.querySelector('[data-kb-smoke]')).toBeNull());
+  await fake.signOut();
+  await waitFor(() => expect(root).toHaveAttribute('data-kb-glass-key', 'standard'));
+  expect(root).not.toHaveAttribute('data-kb-text-size');
 });

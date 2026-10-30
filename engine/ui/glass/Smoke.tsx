@@ -7,11 +7,15 @@
  * is legible before the smoke draws and when it never does.
  *
  * Under the `low` preference each layer is drawn at a third of its opacity; under `off` no smoke
- * element is drawn and the ground remains. A recipe with a `drift` is a strip wider than its
- * frame that slides back and forth (base.css holds the keyframes and stops them under reduced
- * motion, the device's or the player's override, so the strip and its crop are the same either
- * way). A recipe's `narrow` layers are drawn too, and base.css shows one set or the other at 600px. The filters work in sRGB: the boards were drawn there, and SVG's default
- * linearRGB brightens the noise, which tools/check-glass-contrast.mjs's numbers do not allow for.
+ * element is drawn and the ground remains. The preference is the player's, read from the root's
+ * `data-kb-smoke-level` (engine/ui/appearance.ts) and followed as it changes.
+ *
+ * A recipe with a `drift` is a strip wider than its frame that slides back and forth (base.css
+ * holds the keyframes and stops them under reduced motion, the device's or the player's override,
+ * so the strip and its crop are the same either way). A recipe's `narrow` layers are drawn too, and
+ * base.css shows one set or the other at 600px. The filters work in sRGB: the boards were drawn
+ * there, and SVG's default linearRGB brightens the noise, which tools/check-glass-contrast.mjs's
+ * numbers do not allow for.
  *
  * It says nothing to a screen reader. Where it is not drawn the page loses decoration only.
  *
@@ -22,6 +26,7 @@
 import { useId, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { GlassSurface, SmokeLayer } from '../types.ts';
+import { useSmokeLevel } from '../appearance.ts';
 import { surfaceCalm } from './apply.ts';
 
 /** The player's smoke preference (Settings, Accessibility). */
@@ -29,6 +34,7 @@ export type SmokeLevel = 'full' | 'low' | 'off';
 
 export interface SmokeProps {
   readonly surface: GlassSurface;
+  /** Fixes the level; left out, it is the player's preference (Settings, Accessibility). */
   readonly level?: SmokeLevel;
 }
 
@@ -67,8 +73,11 @@ function Layers({ layers, scale, ids, name }: { readonly layers: readonly SmokeL
   );
 }
 
-export function Smoke({ surface, level = 'full' }: SmokeProps) {
+export function Smoke({ surface, level: asked }: SmokeProps) {
   const { ui } = useKayfa();
+  /* The player's preference, as the root is marked (appearance.ts), unless the caller fixes one. */
+  const chosen = useSmokeLevel();
+  const level = asked ?? chosen;
   const ids = useId().replace(/:/g, '');
   const { recipes, surfaces } = ui.glass.smoke;
   const recipe = recipes[surfaces[surface]];

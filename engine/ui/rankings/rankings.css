@@ -26,7 +26,7 @@
 /* The Settings board's heading: Anton at 112px, set solid, with its neon glow. */
 .kb-rankings-title {
   margin: 0;
-  font-size: 112px;
+  font-size: 7rem;
   line-height: 1;
   letter-spacing: 1px;
   color: var(--kb-glass-text);
@@ -90,7 +90,7 @@
 }
 
 .kb-rankings-table td.kb-rankings-place {
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 700;
   line-height: 1.4;
   color: var(--kb-glass-text);
@@ -98,7 +98,7 @@
 
 .kb-rankings-table .kb-rankings-name {
   text-align: left;
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 800;
   line-height: 1.4;
   letter-spacing: 0.5px;
@@ -124,7 +124,7 @@
 }
 
 .kb-rankings-table td.kb-rankings-standing {
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 700;
   line-height: 1.4;
   color: var(--kb-glass-text);

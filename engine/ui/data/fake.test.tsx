@@ -529,6 +529,12 @@ describe('reading', () => {
 });
 
 describe('the account', () => {
+  test('the sign-in address is the signed-in login\'s own, and none signed out', async () => {
+    const { fake, ana } = world();
+    expect(await fake.signInAddress()).toBe(fake.emailOf(ana));
+    fake.signInAs(null);
+    expect(await fake.signInAddress()).toBeNull();
+  });
   test('a code request says the same words for an address with an account and one without', async () => {
     const { fake, ana } = world();
     fake.signInAs(null);
@@ -602,9 +608,20 @@ describe('the account', () => {
   });
   test('preferences have defaults and are set whole or in part', async () => {
     const { fake } = world();
-    expect(await fake.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system' });
-    expect(await fake.setPreferences({ motion: 'reduce' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'reduce' } });
+    const glass = { smoke: 'full', contrast: 'standard', textSize: 100 } as const;
+    expect(await fake.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', ...glass });
+    expect(await fake.setPreferences({ motion: 'reduce' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'reduce', ...glass } });
     expect(await fake.setPreferences({ theme: 'Loud!' })).toEqual(refused('a theme is named in lowercase words joined by hyphens'));
+  });
+  test('the glass\'s three preferences are set and kept as the server keeps them, and refused in its words', async () => {
+    const { fake } = world();
+    expect(await fake.setPreferences({ smoke: 'off' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'standard', textSize: 100 } });
+    expect(await fake.setPreferences({ contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200 } });
+    /* A fresh read is what the next load sees. */
+    expect(await fake.preferences()).toMatchObject({ smoke: 'off', contrast: 'high', textSize: 200 });
+    expect(await fake.setPreferences({ smoke: 'thick' as never })).toEqual(refused('the smoke is full, low or off'));
+    expect(await fake.setPreferences({ contrast: 'max' as never })).toEqual(refused('contrast is standard or high'));
+    expect(await fake.setPreferences({ textSize: 175 as never })).toEqual(refused('text size is 100, 125, 150 or 200 percent'));
   });
   test('the wallet is the settled balance under its cap', async () => {
     const { fake, ana } = world();

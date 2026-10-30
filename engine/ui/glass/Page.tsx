@@ -4,10 +4,8 @@
  * board's banner and HUD are not on it; Back to the board and Esc leave it (MenuBar.tsx).
  *
  * A move between glass pages reads as one, as the frame's does: the page starts at its top and
- * focus is on its main, so a keyboard and a screen reader begin there. A page the glass build's
- * Part 2 has not yet restyled keeps the board's own look on a panel in the board's colors, so it
- * reads as it did; a `restyled` page draws its content on the glass itself, at the column's scale.
- * Once every glass page is restyled the panel and the flag go.
+ * focus is on its main, so a keyboard and a screen reader begin there. The content is drawn on
+ * the glass itself, in the glass's type, at the column's scale.
  *
  * Its menu bar and column are the Main board's layout from the width useBoard works out and the
  * Phone board's below it, the switch the HUD makes at the same width; between that width and
@@ -24,11 +22,9 @@ import './shell.css';
 export interface PageProps {
   readonly surface: GlassSurface;
   readonly children: ReactNode;
-  /** The content is drawn in the glass's own type and colors, so it takes the column's scale and no board panel. */
-  readonly restyled?: boolean;
 }
 
-export function Page({ surface, children, restyled = false }: PageProps) {
+export function Page({ surface, children }: PageProps) {
   const { path, hash, popped } = useLocation();
   const main = useRef<HTMLElement>(null);
   const calm = useSurfaceStyle(surface);
@@ -46,7 +42,7 @@ export function Page({ surface, children, restyled = false }: PageProps) {
       <Smoke surface={surface} />
       <MenuBar />
       <main ref={main} className="kb-glass-content" tabIndex={-1}>
-        {restyled ? children : <div className="kb-glass-content-panel kb-glass-cut-panel">{children}</div>}
+        {children}
       </main>
     </div>
   );

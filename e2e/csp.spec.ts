@@ -35,15 +35,16 @@ test('the main flows run under the policy with no violation', async ({ page }) =
   await page.keyboard.press('Escape');
   /*
    * The glass's own faces loaded under the policy: a glass page set in them, not in a fallback. Read
-   * on My characters, whose heading is Anton; Settings, still on the board's panel, sets none since
-   * the menu bar took the boards' Barlow Condensed (the glass build's Task 2.2).
+   * on My characters, whose heading is Anton.
    */
   const loaded = await page.evaluate(async () => {
     await document.fonts.ready;
     return [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family.replace(/"/gu, ''));
   });
   await page.goto('/settings');
-  await page.getByRole('radio', { name: /^Dark/u }).check();
+  /* By keyboard: the scaled column's zoom leaves a pointer's hit test on the hidden radio to Chromium (e2e/account.spec.ts). */
+  await page.getByRole('radiogroup', { name: 'The board' }).getByRole('radio', { name: 'White on black' }).focus();
+  await page.keyboard.press('Space');
   await expect(page.locator('html')).toHaveAttribute('data-kb-mode', 'dark');
   expect(violations).toEqual([]);
   expect(loaded).toEqual(expect.arrayContaining(['Anton', 'Barlow Condensed']));

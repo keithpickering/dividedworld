@@ -515,7 +515,7 @@ describe('My characters on the glass (the Roster board)', () => {
     open(w);
     await ready();
     /* Pipewrench stands at 14.20, past Main Eventer's 6.00 in the test world's ranks. */
-    expect(testInstance.ranks.map((r) => [r.name, r.from])).toContainEqual(['Main Eventer', 600]);
+    expect(testInstance.ranks.find((r) => r.name === 'Main Eventer')).toHaveProperty('from', 600);
     expect(await within(card('Pipewrench')).findByTestId('kb-roster-rank')).toHaveTextContent(/^Main Eventer$/u);
     expect(within(card('Mrs. Hooligan')).getByTestId('kb-roster-rank')).toHaveTextContent(/^Main Eventer$/u);
   });
@@ -599,7 +599,7 @@ describe('the class, in its own color, to its own player only', () => {
 });
 
 describe('the Turn modal over My characters (the Turn board)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters" restyled><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
 
   test('is a glass overlay on the turn smoke, with the menu bar left in view, dimmed and inert', async () => {
     const w = world();

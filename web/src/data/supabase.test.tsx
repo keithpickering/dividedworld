@@ -402,7 +402,18 @@ describe('reads and their rows', () => {
 
   it('answers preferences with the defaults when no row exists', async () => {
     const h = harness(() => rows([]));
-    expect(await h.api.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system' });
+    expect(await h.api.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100 });
+  });
+
+  it('reads the glass\'s three preferences from their columns and sends them to set_preferences by its parameter names', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', text_size: 200 });
+      return rows([{ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150 }]);
+    });
+    expect(await h.api.preferences()).toEqual({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150 });
+    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,postbit,motion,smoke,contrast,text_size');
+    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200 } });
+    expect(h.to('rpc/set_preferences')[0]?.body).toEqual({ theme: null, postbit: null, motion: null, smoke: 'off', contrast: 'high', text_size: 200 });
   });
 
   it('keys tallies, view counts and reading by id', async () => {
@@ -590,6 +601,19 @@ describe('signing in goes through the account function', () => {
     const h = harness(() => undefined);
     expect(await h.api.session()).toEqual({ signedIn: false, account: null });
     expect(h.log).toEqual([]);
+  });
+
+  it('names the address the session signed in with from the session itself, reading no table, and none signed out', async () => {
+    const user = { ...SESSION.user, email: 'pip@example.test' };
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/account') return json({ session: { ...SESSION, user }, account: true });
+      if (r.url.pathname === '/auth/v1/user') return json(user);
+      return undefined;
+    });
+    expect(await h.api.signInAddress()).toBeNull();
+    await h.api.verifyCode('pip@example.test', '123456');
+    expect(await h.api.signInAddress()).toBe('pip@example.test');
+    expect(h.rest()).toEqual([]);
   });
 });
 

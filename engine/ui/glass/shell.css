@@ -3,14 +3,12 @@
  * the glass plan, section 8). Colors and families are tokens; the cuts and skews are base.css's.
  *
  * The content column is at most 1312px wide (the boards' 1440 less two 64px gutters), centered.
- * Until the glass build's Part 2 restyles each page, its content keeps the board's look on a panel
- * in the board's own colors.
  *
  * The page switches with the HUD, at the one width the instance's sizes work out
  * (engine/ui/glass/board.ts), read from the root's `data-kb-layout`, which useBoard sets. On the Main
  * board's layout the menu bar and the column have the board's 64px gutters, and below 1440px both
  * are drawn at the window's width over 1440 (`zoom: var(--kb-board-scale)`), the glass's text with
- * them; the board's own content panel, until Part 2, is not (see its rule). On the Phone board's
+ * them. On the Phone board's
  * layout the gutters are clamp(16px, 4.44vw, 64px), and the menu bar is the phone's.
  */
 .kb-glass-page {
@@ -192,30 +190,6 @@
  */
 .kb-glass-content {
   overflow-x: clip;
-}
-
-/*
- * Until Part 2: the page's own content, in the board's colors and type, on the glass's cut panel. Its
- * type is the board's own (12px body), which no board page scales, so the panel undoes the
- * column's scale; Part 2's glass type, drawn in the glass's sizes, takes it with the column.
- */
-.kb-glass-content-panel {
-  zoom: calc(1 / var(--kb-board-scale, 1));
-  --kb-cut: var(--kb-glass-chamfer-3);
-  font-family: var(--kb-font-body);
-  font-size: var(--kb-size-body);
-  font-weight: normal;
-  color: var(--kb-fg);
-  padding: 24px clamp(16px, 3vw, 40px);
-}
-
-.kb-glass-content-panel::after {
-  background: var(--kb-bg);
-}
-
-.kb-glass .kb-glass-content-panel :focus-visible {
-  outline: 2px solid var(--kb-focus);
-  outline-offset: 2px;
 }
 
 /* ---- the overlay ---- */

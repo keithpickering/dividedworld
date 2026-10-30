@@ -48,15 +48,12 @@ describe('from the Task 1.4 reviews', () => {
   });
 });
 
-describe('the board\'s panel, until Part 2 restyles each page', () => {
-  test('a page not yet restyled keeps its content on the board\'s panel, and a restyled page draws it on the glass', async () => {
-    const { container, unmount } = renderInWorld(<Page surface="settings"><p>old</p></Page>, { path: '/settings', seed: signedIn });
+describe('the content, once Part 2 restyled every glass page', () => {
+  test('is drawn on the glass itself, in main at the column\'s scale, with no board panel', async () => {
+    const { container } = renderInWorld(<Page surface="settings"><p>words</p></Page>, { path: '/settings', seed: signedIn });
     await screen.findByRole('navigation', { name: 'Menu' });
-    expect(container.querySelector('main > .kb-glass-content-panel')).toHaveTextContent('old');
-    unmount();
-    const glass = renderInWorld(<Page surface="settings" restyled><p>new</p></Page>, { path: '/settings', seed: signedIn });
-    await screen.findByRole('navigation', { name: 'Menu' });
-    expect(glass.container.querySelector('.kb-glass-content-panel')).toBeNull();
-    expect(screen.getByRole('main')).toHaveTextContent('new');
+    expect(container.querySelector('.kb-glass-content-panel')).toBeNull();
+    expect(screen.getByRole('main').firstElementChild).toHaveTextContent('words');
+    expect(screen.getByRole('main').firstElementChild?.tagName).toBe('P');
   });
 });

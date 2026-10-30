@@ -164,7 +164,7 @@
   left: 14px;
   max-width: calc(100% - 28px);
   top: 294px;
-  font-size: 32px;
+  font-size: 2rem;
   line-height: 1;
   overflow-wrap: anywhere;
 }
@@ -216,7 +216,7 @@
   gap: 10px;
   border: 1.5px dashed color-mix(in srgb, var(--kb-glass-ready) 55%, transparent);
   text-decoration: none;
-  font-size: 28px;
+  font-size: 1.75rem;
   line-height: 1;
   color: var(--kb-glass-ready-text);
 }
@@ -266,7 +266,7 @@
 
 .kb-roster-panel-name {
   margin: 2px 0 0;
-  font-size: 58px;
+  font-size: 3.625rem;
   line-height: 1;
   letter-spacing: 0.5px;
   color: var(--kb-glass-text);
@@ -401,14 +401,15 @@
   color: var(--kb-glass-text);
 }
 
-.kb-glass fieldset {
+/* The characters screens' own choices: Settings' rows set theirs (account.css). */
+.kb-glass :is(.kb-class-cards, .kb-choice) {
   min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
 }
 
-.kb-glass legend {
+.kb-glass :is(.kb-class-cards, .kb-choice) > legend {
   padding: 0;
   line-height: normal;
   font-size: var(--kb-glass-size-body);
@@ -686,7 +687,7 @@
 .kb-turn-dialog .kb-glass-dialog-head,
 .kb-debut-dialog .kb-glass-dialog-head {
   margin-top: 2px;
-  font-size: 68px;
+  font-size: 4.25rem;
   line-height: 1;
   letter-spacing: 1px;
   color: var(--kb-glass-text);
@@ -780,7 +781,7 @@
 
 .kb-turn-portrait-name > span {
   display: block;
-  font-size: 44px;
+  font-size: 2.75rem;
   line-height: 1;
   letter-spacing: 0.5px;
   color: var(--kb-glass-text-hi);

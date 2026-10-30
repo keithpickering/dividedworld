@@ -76,6 +76,8 @@ export const instanceUi: InstanceUi = Object.freeze({
     siteTagline: 'dw.gripe',
     // The owner names the machine later.
     shopName: 'The Vending Machine',
+    // The Settings board's words for Motion (docs/research/2026-10-29-two-worlds/11-settings.html).
+    reducedMotionCard: 'Stick Around still snaps you back, only instantly.',
   }),
   pips: Object.freeze({ default: { full: pipFull, empty: pipEmpty } }),
   glass,

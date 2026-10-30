@@ -10,6 +10,8 @@
  * tokens: 1440 times the smallest phone size over the smallest Main board size, worked out from the
  * instance's sizes and never picked by hand.
  *
+ * The player's text size folds it too: past 150% the glass is the Phone board's at any width.
+ *
  * Every text size the HUD and the glass pages draw at the Main board's layout is a size token or a
  * fixed size larger than the smallest token, so the smallest token is the smallest text; the
  * glass plan's closed list of tokens (section 4) is what keeps that so.
@@ -41,8 +43,15 @@ export function boardSwitch(glass: Pick<GlassTheme, 'sizes'>): number {
   return (MAIN_BOARD_WIDTH * Math.min(...phone)) / Math.min(...main);
 }
 
-/** The board's layout and its scale at a window this wide. */
-export function boardLayout(width: number, glass: Pick<GlassTheme, 'sizes'>): BoardLayout {
-  if (width < boardSwitch(glass)) return { board: 'phone', scale: 1 };
+/**
+ * Past this text size, in percent, the glass is one column at any width (the glass plan, section 8:
+ * "at more than 150% text size the page is one column"), and the one column is the Phone board's
+ * layout, the HUD's with it, so the two still switch together.
+ */
+export const FOLD_ABOVE_TEXT_SIZE = 150;
+
+/** The board's layout and its scale at a window this wide, with the player's text size in percent. */
+export function boardLayout(width: number, glass: Pick<GlassTheme, 'sizes'>, textSize = 100): BoardLayout {
+  if (textSize > FOLD_ABOVE_TEXT_SIZE || width < boardSwitch(glass)) return { board: 'phone', scale: 1 };
   return { board: 'main', scale: Math.min(1, width / MAIN_BOARD_WIDTH) };
 }

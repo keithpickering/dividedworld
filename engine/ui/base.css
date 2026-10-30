@@ -11,6 +11,16 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/*
+ * The player's text size (Settings, Accessibility; engine/ui/appearance.ts marks it): the root's
+ * font size, which every size on the board (tokens.css, in rem) and the glass (its size tokens, in
+ * rem) follows, so the two scale together. A percent of the browser's own size, so a reader who
+ * set that larger keeps it and gains this on top.
+ */
+:root[data-kb-text-size='125'] { font-size: 125%; }
+:root[data-kb-text-size='150'] { font-size: 150%; }
+:root[data-kb-text-size='200'] { font-size: 200%; }
+
 body {
   margin: 0;
   background: var(--kb-bg);

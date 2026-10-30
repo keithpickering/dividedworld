@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { applyAppearance, motionReduced, resolveAppearance } from './appearance.ts';
-import type { ThemeOption } from './types.ts';
+import { applyAppearance, motionReduced, resolveAppearance, smokeLevel, textSize } from './appearance.ts';
+import type { GlassTheme, ThemeOption } from './types.ts';
 
 const themes: ThemeOption[] = [
   { key: 'house', name: 'House', href: '/house.css', modes: 'both' },
@@ -68,5 +68,45 @@ describe('whether motion is reduced', () => {
     device(true);
     applyAppearance(document, { theme: 'system', motion: 'full' }, themes);
     expect(motionReduced()).toBe(false);
+  });
+});
+
+describe('the glass\'s three preferences on the page', () => {
+  const root = document.documentElement;
+  const glass = {
+    keys: {
+      standard: { '--kb-glass-text': { value: '#f1ecff', tags: ['body'] } },
+      high: { '--kb-glass-text': { value: '#ffffff', tags: ['body'] } },
+    },
+    smoke: { recipes: {}, surfaces: {} }, calm: { opacity: 0.85, feather: 32 }, sizes: {}, fonts: [], classes: {}, orbs: { gradients: [], body: {} },
+  } as unknown as GlassTheme;
+  const marks = () => ['data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'].map((a) => root.getAttribute(a));
+
+  test('their defaults set no mark, and the glass keeps its standard key', () => {
+    applyAppearance(document, { theme: 'system', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100 }, themes, glass);
+    expect(marks()).toEqual([null, null, null, 'standard']);
+    expect(root.style.getPropertyValue('--kb-glass-text')).toBe('#f1ecff');
+  });
+
+  test('each choice away from its default marks the root, and high contrast puts the high key\'s values on it', () => {
+    applyAppearance(document, { theme: 'system', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200 }, themes, glass);
+    expect(marks()).toEqual(['off', 'high', '200', 'high']);
+    expect(root.style.getPropertyValue('--kb-glass-text')).toBe('#ffffff');
+    expect(smokeLevel()).toBe('off');
+    expect(textSize()).toBe(200);
+    applyAppearance(document, { theme: 'system', motion: 'system', smoke: 'low', textSize: 125 }, themes, glass);
+    expect(marks()).toEqual(['low', null, '125', 'standard']);
+    expect(root.style.getPropertyValue('--kb-glass-text')).toBe('#f1ecff');
+  });
+
+  test('a preference left out or one the engine does not know is its default, so signing out takes every mark off', () => {
+    applyAppearance(document, { theme: 'system', motion: 'system', smoke: 'off', contrast: 'high', textSize: 150 }, themes, glass);
+    applyAppearance(document, { theme: 'system', motion: 'system', smoke: 'thick' as 'off', textSize: 175 as 150 }, themes, glass);
+    expect(marks()).toEqual([null, null, null, 'standard']);
+    applyAppearance(document, { theme: 'system', motion: 'system', smoke: 'off', contrast: 'high', textSize: 150 }, themes, glass);
+    applyAppearance(document, { theme: 'system', motion: 'system' }, themes, glass);
+    expect(marks()).toEqual([null, null, null, 'standard']);
+    expect(smokeLevel()).toBe('full');
+    expect(textSize()).toBe(100);
   });
 });
