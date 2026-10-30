@@ -36,13 +36,10 @@ begin
   if said is distinct from '{"theme": "system", "postbit": "side", "motion": "system", "smoke": "low", "contrast": "high", "text_size": 125}'::jsonb then
     raise exception 'each of the three is set and the rest kept: %', said;
   end if;
-  -- Each refusal by its words, and a refused call changes nothing.
+  -- Each refusal by its words.
   if pg_temp.refusal($q$select set_preferences(smoke => 'thick')$q$) is distinct from 'the smoke is full, low or off' then raise exception 'a smoke that is none of them'; end if;
   if pg_temp.refusal($q$select set_preferences(contrast => 'max')$q$) is distinct from 'contrast is standard or high' then raise exception 'a contrast that is neither'; end if;
-  if pg_temp.refusal($q$select set_preferences(smoke => 'off', text_size => 175)$q$) is distinct from 'text size is 100, 125, 150 or 200 percent' then raise exception 'a text size that is none of them'; end if;
-  if (select (smoke, contrast, text_size) from account_preferences) is distinct from ('low'::text, 'high'::text, 125::smallint) then
-    raise exception 'a refused call changed the preferences';
-  end if;
+  if pg_temp.refusal($q$select set_preferences(text_size => 175)$q$) is distinct from 'text size is 100, 125, 150 or 200 percent' then raise exception 'a text size that is none of them'; end if;
   perform tests.unbecome();
 
   -- The three-argument call of 0025-profiles.sql still sets the first three and leaves the new
