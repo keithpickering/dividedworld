@@ -28,19 +28,19 @@ export async function createBackend(): Promise<KayfaApi> {
   if (named !== null && named !== 'boards') throw new Error(`There is no fixture named "${named}". The fixture is boards.`);
   // `?fixture=boards&story=<id>` is a story's own seed (the board match's stories): that is not built here, and until it is the demo world loads.
   const boards = named === 'boards' && !(params!.has('story') && !params!.has('moment'));
-  const [{ createFake }, { instance }, { seedDemo, recordAvatarUploads }] = await Promise.all([
-    import('../../../engine/ui/data/fake.ts'),
-    import('../../../instances/divided-world/index.ts'),
-    import('../demo.ts'),
-  ]);
   if (boards) {
-    const { assertMoment, createBoardsFake, seedBoards } = await import('./fixtures/boards.ts');
+    const [{ assertMoment, createBoardsFake, seedBoards }, { recordAvatarUploads }] = await Promise.all([import('./fixtures/boards.ts'), import('../demo.ts')]);
     const moment = assertMoment(params!.get('moment'));
     const fake = createBoardsFake(moment);
     globalThis.history.replaceState(null, '', seedBoards(fake, moment));
     recordAvatarUploads(fake);
     return fake;
   }
+  const [{ createFake }, { instance }, { seedDemo, recordAvatarUploads }] = await Promise.all([
+    import('../../../engine/ui/data/fake.ts'),
+    import('../../../instances/divided-world/index.ts'),
+    import('../demo.ts'),
+  ]);
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
   if (e2e) recordAvatarUploads(fake);

@@ -23,11 +23,12 @@ describe('StartError', () => {
     for (const name of ['99-nope', ...Object.keys(MOMENTS)]) expect(shown).toContain(name);
   });
 
-  it('says plainly what is wrong with a build that names no project, and with something that is not an Error', () => {
+  it('says an Error\'s own message, and for something that is not an Error says only what is true of any start failure', () => {
     const { rerender } = render(<StartError error={new Error('This build names no Supabase project: set it.')} />);
     expect(screen.getByRole('main')).toHaveTextContent('This build names no Supabase project: set it.');
     rerender(<StartError error="odd" />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('This site could not start');
-    expect(screen.getByRole('main')).toHaveTextContent('This build names no Supabase project.');
+    expect(screen.getByRole('main')).toHaveTextContent('The site could not start: odd');
+    expect(screen.getByRole('main')).not.toHaveTextContent(/Supabase/);
   });
 });

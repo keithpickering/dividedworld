@@ -813,6 +813,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return write({ character: null, kind: o.kind ?? 'tally', thread, payload: { ...(o.payload ?? { body }) }, at: o.at });
   };
 
+  const seeded = (account: Id): AccountRec => accepted(accounts.has(account) ? ok(accounts.get(account)!) : refuse(`no such account ${account}`));
+  /** An account's settled wallet: whole hundredths, never under nothing, held to the cap as a settlement holds it. */
+  const setWallet = (account: Id, balance: number) => {
+    const a = seeded(account);
+    if (!Number.isInteger(balance) || balance < 0) accepted(refuse(`a wallet is a whole number of hundredths, not ${balance}`));
+    a.wallet = Math.min(balance, settings.walletCap);
+  };
+
   const seed: Seed = {
     account(name, o) {
       const email = (o?.email ?? `${name.toLowerCase()}@example.test`).toLowerCase();
@@ -858,7 +866,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           c.pending = null;
         }
       }
-      for (const [account, balance] of Object.entries(o.wallet ?? {})) accounts.get(account)!.wallet = Math.max(0, Math.min(balance, settings.walletCap));
+      for (const [account, balance] of Object.entries(o.wallet ?? {})) setWallet(account, balance);
       for (const [character, amount] of Object.entries(o.standings ?? {})) standingOf.set(character, amount);
       lastSettled = at;
     },
@@ -871,8 +879,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     nextSettlementAt(at) { nextSettlement = at; },
     views(thread, count) { views.set(thread, count); },
-    cards(account, held) { accounts.get(account)!.cards = { ...held }; },
-    wallet(account, balance) { accounts.get(account)!.wallet = Math.max(0, Math.min(balance, settings.walletCap)); },
+    cards(account, held) { seeded(account).cards = { ...held }; },
+    wallet(account, balance) { setWallet(account, balance); },
     turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
     estimate(account, e) {
       const a = accounts.get(account)!;

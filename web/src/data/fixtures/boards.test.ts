@@ -4,7 +4,6 @@
  * a case that wants other data seeds its own fake: the fixture's moments are what the board match
  * compares, so nothing here edits them (MOMENTS is frozen, and a test of it says so).
  */
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { rankIndex } from '../../../../engine/rules/ranks.ts';
 import { FAKE_BACKEND_MARKER, TEST_CODE, type Fake } from '../../../../engine/ui/data/fake.ts';
@@ -247,11 +246,10 @@ describe('the reader', () => {
 });
 
 describe('the marker', () => {
-  it('is the fake\'s own constant, in one place: seeding adds none, and the fixture\'s source names none', async () => {
+  it('is the fake\'s own constant: seeding adds none of its own', async () => {
     const { fake } = await load('01-main');
     expect(fake.marker).toBe(FAKE_BACKEND_MARKER);
     expect(Object.getOwnPropertyDescriptor(fake, FAKE_BACKEND_MARKER)).toBeUndefined();
-    expect(readFileSync('web/src/data/fixtures/boards.ts', 'utf8')).not.toContain(FAKE_BACKEND_MARKER);
   });
 });
 

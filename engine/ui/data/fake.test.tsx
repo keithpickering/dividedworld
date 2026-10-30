@@ -622,6 +622,18 @@ describe('the account', () => {
     expect((await fake.wallet()).balance).toBe(600);
     expect(await fake.lastSettledAt()).toBe(settledAt);
   });
+  test('a seeded wallet is a whole number of hundredths, not under nothing, of an account there is; settle\'s wallets and seed.cards hold to it too', async () => {
+    const { fake, ana } = world();
+    fake.seed.wallet(ana, 300);
+    for (const bad of [-1, Number.NaN, 2.5, Infinity]) {
+      expect(() => fake.seed.wallet(ana, bad)).toThrow(/the seed was refused/);
+      expect(() => fake.seed.settle({ wallet: { [ana]: bad } })).toThrow(/the seed was refused/);
+    }
+    expect(() => fake.seed.wallet('nobody', 1)).toThrow(/the seed was refused/);
+    expect(() => fake.seed.settle({ wallet: { nobody: 1 } })).toThrow(/the seed was refused/);
+    expect(() => fake.seed.cards('nobody', { whoops: 1 })).toThrow(/the seed was refused/);
+    expect(await fake.wallet()).toEqual({ balance: 300, cap: 600 });
+  });
   test('seed.turn asks a Turn as its player, waiting for the settlement, and is refused in the server\'s words', async () => {
     const { fake, bo, anaFace, boFace } = world();
     fake.seed.nextSettlementAt(fake.clock.now() + 8 * 3_600_000);
