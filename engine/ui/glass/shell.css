@@ -3,14 +3,12 @@
  * the glass plan, section 8). Colors and families are tokens; the cuts and skews are base.css's.
  *
  * The content column is at most 1312px wide (the boards' 1440 less two 64px gutters), centered.
- * Until the glass build's Part 2 restyles each page, its content keeps the board's look on a panel
- * in the board's own colors.
  *
  * The page switches with the HUD, at the one width the instance's sizes work out
  * (engine/ui/glass/board.ts), read from the root's `data-kb-layout`, which useBoard sets. On the Main
  * board's layout the menu bar and the column have the board's 64px gutters, and below 1440px both
  * are drawn at the window's width over 1440 (`zoom: var(--kb-board-scale)`), the glass's text with
- * them; the board's own content panel, until Part 2, is not (see its rule). On the Phone board's
+ * them. On the Phone board's
  * layout the gutters are clamp(16px, 4.44vw, 64px), and the menu bar is the phone's.
  */
 .kb-glass-page {
@@ -27,26 +25,46 @@
 
 /* ---- the menu bar ---- */
 
+/*
+ * The boards' menu bar: 84px of the strong panel over the smoke, a pale rule at its foot with the
+ * neon's glow under it, its tabs skewed with their words upright, at the label's weight and the
+ * body's size, spaced 2px. Back is outlined in white, its ESC key cap before its words; the current
+ * tab is lit with the neon's wash and a neon rule along its foot.
+ */
 .kb-glass-menu {
   position: relative;
-  padding: 16px clamp(16px, 4.44vw, 64px);
+  z-index: 5;
+  box-sizing: border-box;
+  min-height: 85px;
+  display: flex;
+  align-items: center;
+  padding: 16px 40px;
+  background: var(--kb-glass-panel-strong);
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-pale) 50%, transparent);
+  box-shadow: 0 1px 16px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
   zoom: var(--kb-board-scale, 1);
+}
+
+/* Dimmed while an overlay is open over the page, which also makes it inert (Overlay.tsx). */
+.kb-glass-menu[data-kb-dimmed] {
+  opacity: 0.6;
 }
 
 .kb-glass-menu-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: 8px;
+  width: 100%;
   margin: 0 auto;
-  max-width: 1312px;
+  max-width: 1360px;
 }
 
 .kb-glass-menu-list {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: 8px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -54,46 +72,51 @@
 
 .kb-glass-menu-back,
 .kb-glass-menu-tab {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 48px;
-  padding: 0 18px;
+  min-height: 52px;
+  padding: 0 20px;
   box-sizing: border-box;
-  font-family: var(--kb-glass-font-display);
-  font-size: var(--kb-glass-size-display-xs);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 2px;
   text-transform: uppercase;
   text-decoration: none;
-  color: var(--kb-glass-text-hi);
+  color: var(--kb-glass-text-2);
 }
 
 .kb-glass-menu-back {
-  --kb-cut: var(--kb-glass-chamfer-1);
-  margin-right: auto;
-}
-
-.kb-glass-menu-tab {
-  border-bottom: 3px solid transparent;
-  color: var(--kb-glass-text-2);
+  margin-right: 18px;
+  border: 1px solid var(--kb-glass-text-hi);
+  color: var(--kb-glass-text-hi);
 }
 
 .kb-glass-menu-tab[aria-current='page'] {
   color: var(--kb-glass-text-hi);
-  border-bottom-color: var(--kb-glass-neon);
+  background: color-mix(in srgb, var(--kb-glass-neon) 16%, transparent);
+  box-shadow: inset 0 -3px 0 var(--kb-glass-neon);
 }
 
-/* The arrow and the key cap: empty, hidden elements the stylesheet writes into. */
+/* The arrow and the key cap: empty, hidden elements the stylesheet writes into. The arrow is the phone's. */
 .kb-glass-menu-arrow::before,
 .kb-glass-menu-key::before {
   content: attr(data-kb-key);
 }
 
+.kb-glass-menu-arrow {
+  display: none;
+}
+
 .kb-glass-menu-key::before {
+  display: inline-block;
+  margin-right: 10px;
   padding: 0 6px;
-  font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-label);
-  border: 1px solid var(--kb-glass-text-2);
-  color: var(--kb-glass-text-2);
+  line-height: 1.25;
+  letter-spacing: 1px;
+  border: 1px solid var(--kb-glass-text-hi);
+  color: var(--kb-glass-text-hi);
 }
 
 /* Below the switch it is the phone's bar: Back on its own row, no key cap, the tabs a strip that scrolls sideways on its own. */
@@ -102,8 +125,19 @@
   align-items: stretch;
 }
 
+:where(:root[data-kb-layout='phone']) .kb-glass-menu {
+  min-height: 0;
+  padding: 12px clamp(16px, 4.44vw, 64px);
+}
+
 :where(:root[data-kb-layout='phone']) .kb-glass-menu-back {
   align-self: flex-start;
+  margin-right: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-menu-arrow {
+  display: inline;
+  margin-right: 8px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-glass-menu-list {
@@ -120,8 +154,11 @@
 
 :where(:root[data-kb-layout='phone']) .kb-glass-menu-back,
 :where(:root[data-kb-layout='phone']) .kb-glass-menu-tab {
+  min-height: 48px;
+  padding: 0 14px;
   white-space: nowrap;
   font-size: var(--kb-glass-size-phone-display);
+  letter-spacing: 1px;
 }
 
 /* ---- the content column ---- */
@@ -134,11 +171,7 @@
   zoom: var(--kb-board-scale, 1);
 }
 
-/* On the Main board's layout the gutters are the board's own 64px, drawn at its scale with the rest. */
-:where(:root[data-kb-layout='main']) .kb-glass-menu {
-  padding-inline: 64px;
-}
-
+/* On the Main board's layout the column's gutters are the board's own 64px (the menu bar's are its 40px), drawn at its scale with the rest. */
 :where(:root[data-kb-layout='main']) .kb-glass-content {
   padding-inline: 64px;
 }
@@ -148,34 +181,23 @@
 }
 
 /*
- * Until Part 2: the page's own content, in the board's colors and type, on the glass's cut panel. Its
- * type is the board's own (12px body), which no board page scales, so the panel undoes the
- * column's scale; Part 2's glass type, drawn in the glass's sizes, takes it with the column.
+ * A calm's feather reaches 32px past its words (calm.css), wider than the phone's 16px gutter, so a
+ * calm on text that runs to the column's edge would push the page sideways. The column clips
+ * sideways at its own edge, which is the window's on a phone and past the gutters everywhere else,
+ * so no glass page scrolls sideways for its feathers. `clip` makes no scroll container, so nothing
+ * else about the column changes. (An `overflow-clip-margin` would be ignored here: Chromium reads
+ * it only where both axes clip.)
  */
-.kb-glass-content-panel {
-  zoom: calc(1 / var(--kb-board-scale, 1));
-  --kb-cut: var(--kb-glass-chamfer-3);
-  font-family: var(--kb-font-body);
-  font-size: var(--kb-size-body);
-  font-weight: normal;
-  color: var(--kb-fg);
-  padding: 24px clamp(16px, 3vw, 40px);
-}
-
-.kb-glass-content-panel::after {
-  background: var(--kb-bg);
-}
-
-.kb-glass .kb-glass-content-panel :focus-visible {
-  outline: 2px solid var(--kb-focus);
-  outline-offset: 2px;
+.kb-glass-content {
+  overflow-x: clip;
 }
 
 /* ---- the overlay ---- */
 
+/* Over a glass page it starts under the menu bar's foot (Overlay.tsx sets the line), so the bar stays in view. */
 .kb-glass-overlay {
   position: fixed;
-  inset: 0;
+  inset: var(--kb-glass-overlay-top, 0px) 0 0 0;
   z-index: 50;
   display: grid;
   place-items: center;
@@ -210,6 +232,19 @@
   gap: 16px;
 }
 
+.kb-glass-dialog-titles {
+  min-width: 0;
+}
+
+.kb-glass-dialog-kicker {
+  margin: 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
 .kb-glass-dialog-head {
   margin: 0;
   font-size: var(--kb-glass-size-display-s);
@@ -226,7 +261,31 @@
   cursor: pointer;
 }
 
-.kb-glass-dialog-body {
+.kb-glass-dialog-body,
+.kb-glass-dialog-foot {
   position: relative;
   z-index: 1;
+}
+
+.kb-glass-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* An overlay opened by an anchor (Overlay.tsx places it): out of the middle of the window, at the anchor on the Main board's layout, a sheet on the HUD on the Phone board's. */
+.kb-glass-overlay[data-kb-anchored] {
+  display: block;
+  padding: 0;
+}
+
+.kb-glass-dialog[data-kb-place='sheet'] {
+  left: 0;
+  right: 0;
+  width: auto;
+  overflow-y: auto;
+}
+
+.kb-glass-dialog[data-kb-place='below'],
+.kb-glass-dialog[data-kb-place='above'] {
+  overflow-y: auto;
 }

@@ -176,6 +176,18 @@ where they differ. Task 8 waits on issue #25's design.
 **Amended 2026-10-30, after issue #25's design.** Task 8 is built by `docs/plans/2026-10-30-log-shares-plan.md`
 (Tasks 4 and 5), which adds the expansion of a settled line into its posts and wins where it differs.
 
+**Amended 2026-10-30, the owner's answer on #53.** Task 12's rendered measurement held every text node that is not
+`large` to a calm's backing or an opaque panel, and the Turn board draws its words on the turn recipe's smoke with no
+calm, where that recipe's full worst (0.116) is already under the body ceilings of the text tokens it uses. The owner:
+"#53 reword is fine, we should avoid being too strict with contrast, if we can still pass accessibility requirements by changing a rule slightly then that points to too much strictness in the rule itself." So the second point of Task 12's glass
+amendment now reads: each text node that is not `large` stands where the worst pixel its surface can put under it is
+under its color's ceiling, which means in a calm's interior (its backing inset by the feather), on an opaque panel, or
+on a recipe whose full worst is under that ceiling. On a `calmAll` surface every text node still stands in a calm; that
+is the settlement, whose full worst is under no ceiling, so it is unchanged. The measurement reads each surface's full
+worst from the guard's ceilings file (`e2e/glass-ceilings.json`), and on the Phone board's layout the greater of it and
+the recipe's narrow worst. **Poisons**, added to Task 12's: the same uncalmed line on a recipe too bright for its color
+(the characters recipe) still fails; a calm moved off its text still fails on a recipe too bright to stand bare on.
+
 The mockups each screen follows are in `docs/research/2026-10-29-screens/`; the design's sections say what was decided
 and why. Where a mockup and the design disagree, the design wins. impeccable is installed (`.claude/skills/impeccable/`)
 with its product record (`PRODUCT.md`); a builder runs `.claude/skills/impeccable/scripts/impeccable context` once, then

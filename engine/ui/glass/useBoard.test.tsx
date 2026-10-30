@@ -46,6 +46,7 @@ const scale = () => root.style.getPropertyValue('--kb-board-scale');
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  root.removeAttribute('data-kb-text-size');
   delete (root as { clientWidth?: number }).clientWidth;
 });
 
@@ -77,6 +78,19 @@ describe('useBoard', () => {
     const view = mount();
     expect(root).toHaveAttribute('data-kb-layout', 'phone');
     expect(scale()).toBe('1');
+    view.unmount();
+  });
+
+  test('above 150% text it is the Phone board\'s however wide the window, and it follows the text size as it changes', async () => {
+    window_(1440);
+    root.setAttribute('data-kb-text-size', '200');
+    const view = mount();
+    expect(root).toHaveAttribute('data-kb-layout', 'phone');
+    expect(scale()).toBe('1');
+    await act(async () => { root.setAttribute('data-kb-text-size', '150'); await Promise.resolve(); });
+    expect(root).toHaveAttribute('data-kb-layout', 'main');
+    await act(async () => { root.removeAttribute('data-kb-text-size'); await Promise.resolve(); });
+    expect(root).toHaveAttribute('data-kb-layout', 'main');
     view.unmount();
   });
 

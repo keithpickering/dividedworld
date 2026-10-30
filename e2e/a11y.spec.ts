@@ -4,12 +4,20 @@ import { expect, test, type Page } from '@playwright/test';
 import type { Fake } from '../engine/ui/data/fake.ts';
 import { boardSwitch, MAIN_BOARD_WIDTH } from '../engine/ui/glass/board.ts';
 import type { Demo } from '../web/src/demo.ts';
+import { boardStoryIds, routeStoryIds } from './board-stories.ts';
 
 /**
  * axe-core in the real browser, over the built demo world, with the color-contrast rule jsdom
  * cannot run (engine/ui/a11y.ts says why), in the device's light and dark, on the Phone board's
  * layout wide and narrow and on the Main board's just above the switch. The token pairs are held
  * separately in engine/ui/contrast.test.tsx.
+ *
+ * Every board story (`engine/ui/**\/*.board.stories.tsx`) is read the same way, through the
+ * end-to-end build's story route, so a story the board match opens is held as a page is; the ids
+ * are worked out from the story files (e2e/board-stories.ts) and checked against the route's own
+ * list, so a new story is never left out. Over the glass's smoke axe cannot read contrast and
+ * reports it as incomplete, not as a violation: tools/check-glass-contrast.mjs and
+ * e2e/glass-text.spec.ts decide it there.
  */
 const axePath = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
@@ -29,7 +37,7 @@ export async function pageViolations(page: Page): Promise<string[]> {
 test.use({ bypassCSP: true });
 
 /* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
-const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register']);
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/rankings']);
 const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.has(path)
   ? page.getByRole('navigation', { name: 'Menu' })
   : page.getByRole('region', { name: 'Game HUD' }));
@@ -74,8 +82,23 @@ const ABOVE_SWITCH = SWITCH + 8;
 const BELOW_SWITCH = SWITCH - 8;
 
 const PAGES: readonly [string, string][] = [
-  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['standings', '/standings'], ['settings', '/settings'], ['invites', '/invites'],
+  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['standings', '/standings'], ['rankings', '/rankings'], ['settings', '/settings'], ['invites', '/invites'],
 ];
+
+const STORIES = boardStoryIds();
+
+/** A story is ready once the route has rendered it and its faces have loaded. */
+async function openStory(page: Page, id: string) {
+  await page.goto(`/?fixture=boards&story=${id}`);
+  await expect(page.locator('#root > *').first()).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+}
+
+test('every board story the route serves is one the axe case reads', async ({ page }) => {
+  await page.goto('/?fixture=boards&story=boards-none--listed');
+  await expect(page.getByRole('heading', { name: 'This site could not start' })).toBeVisible();
+  expect(routeStoryIds(await page.locator('body').innerText())).toEqual(STORIES);
+});
 
 for (const scheme of ['light', 'dark'] as const) {
   for (const [name, width] of [['phone layout, wide', 1000], ['Main board layout, just above the switch', ABOVE_SWITCH], ['phone layout, narrow', 360]] as const) {
@@ -98,6 +121,13 @@ for (const scheme of ['light', 'dark'] as const) {
           await expect(ready(page, path)).toBeVisible();
           await expect(page.locator('.kb-hud-orbs .kb-orb').first()).toBeVisible();
           expect(await hudCut(page)).toEqual([]);
+        });
+      }
+
+      for (const id of STORIES) {
+        test(`the board story ${id} has no axe violation, color contrast included`, async ({ page }) => {
+          await openStory(page, id);
+          expect(await pageViolations(page)).toEqual([]);
         });
       }
 
@@ -126,7 +156,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         await page.locator('#post-1').getByRole('button', { name: 'Spin thread' }).click();
         await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
-        await expect(page.getByRole('dialog', { name: /^React as / })).toBeVisible();
+        await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
       });
 
@@ -148,6 +178,8 @@ for (const scheme of ['light', 'dark'] as const) {
 
       test('the Turn, Reveal and Debut dialogs have none', async ({ page }) => {
         await page.goto('/characters');
+        /* On the glass a character's controls are in its panel, chosen by its card (the Roster board). */
+        await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
         await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
         await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
@@ -172,7 +204,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
       test('signed out: sign-in and register have none', async ({ page }) => {
         /* The demo world starts signed in and starts over on a load, so sign out in the app and go on from there. */
-        await page.goto('/settings');
+        await page.goto('/settings?section=account');
         await page.getByRole('button', { name: 'Sign out' }).click();
         await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
         await page.getByRole('link', { name: 'Sign in' }).first().click();
@@ -249,7 +281,8 @@ test.describe('between the boards\' widths', () => {
       });
       if (board === 'main') {
         expect(got).toMatchObject({ board, tabsUnderBack: false, key: true });
-        expect(got.backHeight).toBeCloseTo(48 * (width / MAIN_BOARD_WIDTH), 0);
+        /* The boards' tabs are 52px tall (they were 48 before the menu bar took the boards' look, in the glass build's Task 2.2). */
+        expect(got.backHeight).toBeCloseTo(52 * (width / MAIN_BOARD_WIDTH), 0);
       } else {
         expect(got).toMatchObject({ board, tabsUnderBack: true, key: false, backHeight: 48 });
       }
@@ -258,24 +291,85 @@ test.describe('between the boards\' widths', () => {
   }
 
   /*
-   * The menu bar and the content column are drawn at the board's scale; the board's own content
-   * panel, until Part 2, keeps the board's sizes and undoes the column's zoom (shell.css), so its
-   * effective zoom is 1 while the menu bar's is the scale.
+   * The menu bar is the boards' (06, 07, 10, 11 and 12 draw it alike): 85px tall over the strong
+   * panel with a pale rule at its foot, its tabs skewed -10 degrees in uppercase Barlow Condensed
+   * 800 at 21px spaced 2px, Back outlined in white with its ESC key cap before its words, the current
+   * tab lit with a neon rule along its foot.
    */
-  test(`at ${ABOVE_SWITCH}px a glass page's content panel undoes the column's zoom, and the menu bar keeps it`, async ({ page }) => {
+  test('at 1440px a glass page\'s menu bar is drawn as the boards draw it', async ({ page }) => {
+    await page.setViewportSize({ width: MAIN_BOARD_WIDTH, height: 900 });
+    await page.goto('/characters');
+    await expect(ready(page, '/characters')).toBeVisible();
+    const got = await page.evaluate(async () => {
+      await document.fonts.ready;
+      const nav = document.querySelector('nav.kb-glass-menu')!;
+      const back = nav.querySelector('a[aria-keyshortcuts="Escape"]')!;
+      const tab = nav.querySelector('a[aria-current="page"]')!;
+      const words = (a: Element) => {
+        const s = getComputedStyle(a.querySelector('.kb-glass-upright') ?? a);
+        return { family: s.fontFamily.split(',')[0]!.replace(/"/g, ''), size: s.fontSize, weight: s.fontWeight, spacing: s.letterSpacing, upper: s.textTransform };
+      };
+      const key = getComputedStyle(back.querySelector('.kb-glass-menu-key')!, '::before');
+      /* The key cap comes before Back's words. */
+      const keyFirst = (a: Element) => {
+        const kids = [...(a.querySelector('.kb-glass-upright') ?? a).childNodes];
+        return kids.findIndex((n) => n instanceof Element && n.classList.contains('kb-glass-menu-key')) < kids.findIndex((n) => n.nodeType === Node.TEXT_NODE && /\S/.test(n.textContent ?? ''));
+      };
+      return {
+        height: Math.round(nav.getBoundingClientRect().height),
+        rule: getComputedStyle(nav).borderBottomStyle,
+        back: { ...words(back), border: getComputedStyle(back).borderTopStyle, skewed: getComputedStyle(back).transform !== 'none', keyFirst: keyFirst(back), key: key.content },
+        current: { ...words(tab), skewed: getComputedStyle(tab).transform !== 'none', lit: getComputedStyle(tab).boxShadow.includes('inset') },
+      };
+    });
+    const type = { family: 'Barlow Condensed', size: '21px', weight: '800', spacing: '2px', upper: 'uppercase' };
+    expect(got).toEqual({
+      height: 85, rule: 'solid',
+      back: { ...type, border: 'solid', skewed: true, keyFirst: true, key: '"ESC"' },
+      current: { ...type, skewed: true, lit: true },
+    });
+  });
+
+  /*
+   * A calm's feather reaches 32px past its words, wider than the phone's 16px gutter, so a restyled
+   * glass page whose text runs to the column's edge would push the page sideways. The page shell
+   * contains it for every glass page (shell.css), so no page has to remember to. Read on the
+   * Rankings story, a restyled page with calms to the column's edge, and on the restyled pages of
+   * the app, at the Phone board's width.
+   */
+  for (const [label, path] of [['Rankings', '/?fixture=boards&story=boards-13-rankings--season'], ['My characters', '/characters'], ['New character', '/characters/new'], ['Settings', '/settings'], ['Settings › Account', '/settings?section=account']] as const) {
+    test(`on a phone 390 wide, the restyled ${label} page does not scroll sideways`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      expect(await page.evaluate(() => document.documentElement.dataset.kbLayout)).toBe('phone');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    });
+  }
+
+  /*
+   * The menu bar and the content column are drawn at the board's scale, and since every glass page
+   * is restyled (the glass build's Task 2.4 restyled the last of them) its content is the glass's own
+   * type and takes the column's scale with it: no page draws the board's content panel any more.
+   */
+  test(`at ${ABOVE_SWITCH}px a glass page's content takes the column's zoom, with the menu bar, and no board panel`, async ({ page }) => {
     await page.setViewportSize({ width: ABOVE_SWITCH, height: 900 });
     await page.goto('/settings');
     await expect(ready(page, '/settings')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
     const got = await page.evaluate(() => ({
       layout: document.documentElement.dataset.kbLayout,
       menu: document.querySelector('.kb-glass-menu')!.currentCSSZoom,
       column: document.querySelector('.kb-glass-content')!.currentCSSZoom,
-      panel: document.querySelector('.kb-glass-content-panel')!.currentCSSZoom,
+      heading: document.querySelector('main h1')!.currentCSSZoom,
+      panel: document.querySelector('.kb-glass-content-panel'),
     }));
     expect(got.layout).toBe('main');
     expect(got.menu).toBeCloseTo(ABOVE_SWITCH / MAIN_BOARD_WIDTH, 3);
     expect(got.column).toBeCloseTo(ABOVE_SWITCH / MAIN_BOARD_WIDTH, 3);
-    expect(got.panel).toBeCloseTo(1, 3);
+    expect(got.heading).toBeCloseTo(ABOVE_SWITCH / MAIN_BOARD_WIDTH, 3);
+    expect(got.panel).toBeNull();
   });
 });
 

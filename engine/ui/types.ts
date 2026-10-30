@@ -27,6 +27,19 @@ export interface ClassLook {
   readonly pattern?: string;
   /** How the class earns and what hurts it, in plain words, for the class cards. */
   readonly description: string;
+  /**
+   * The class's marks on the reaction map, as the Turn board draws them on its class cards: the
+   * quadrants it earns from (a plus), is hurt by (a minus), or earns by calling where a post ends up
+   * (a dotted cell), and the same said in words, which is the marks' accessible name.
+   */
+  readonly marks?: ClassMarks;
+}
+
+export interface ClassMarks {
+  readonly label: string;
+  readonly earns?: readonly Quadrant[];
+  readonly hurts?: readonly Quadrant[];
+  readonly calls?: readonly Quadrant[];
 }
 
 /**
@@ -49,6 +62,12 @@ export interface UiCopy {
   readonly siteTagline: string;
   /** What the shop is called (the owner names it later; a placeholder until then). */
   readonly shopName: string;
+  /**
+   * How a card's effect stays under reduced motion, in Settings' Motion sentence after "A card's
+   * effect stays: ", naming the instance's own card the way its players know it (the engine names
+   * none), such as "a card that holds you in place still does, only instantly."
+   */
+  readonly reducedMotionCard: string;
 }
 
 /**
@@ -179,6 +198,12 @@ export interface InstanceUi {
   readonly themes: readonly ThemeOption[];
   /** The four quadrants' labels on the reaction picker. */
   readonly quadrantLabels: Readonly<Record<Quadrant, string>>;
+  /**
+   * The class whose glass colors (`GlassTheme.classes`) each quadrant wears on the reaction picker,
+   * by the class's key: its tint and its label in the class's large text, as the React board draws
+   * them. A quadrant the instance gives no class is drawn in the glass's own text.
+   */
+  readonly quadrantClasses?: Readonly<Partial<Record<Quadrant, string>>>;
   /** Each class's look, by the class's key. */
   readonly classLooks: Readonly<Record<string, ClassLook>>;
   /**

@@ -25,20 +25,27 @@ test('the main flows run under the policy with no violation', async ({ page }) =
   await page.goto('/b/general');
   await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
   await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
-  await expect(page.getByRole('dialog', { name: /^React as / })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
   await page.keyboard.press('Escape');
   await page.goto('/characters');
+  /* On the glass a character's controls are in its panel, chosen by its card (the Roster board). */
+  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
   await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
   await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await page.goto('/settings');
-  await page.getByRole('radio', { name: /^Dark/u }).check();
-  await expect(page.locator('html')).toHaveAttribute('data-kb-mode', 'dark');
-  expect(violations).toEqual([]);
-  /* The glass's own faces loaded under the policy: a glass page set in them, not in a fallback. */
+  /*
+   * The glass's own faces loaded under the policy: a glass page set in them, not in a fallback. Read
+   * on My characters, whose heading is Anton.
+   */
   const loaded = await page.evaluate(async () => {
     await document.fonts.ready;
     return [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family.replace(/"/gu, ''));
   });
+  await page.goto('/settings');
+  /* By keyboard: the scaled column's zoom leaves a pointer's hit test on the hidden radio to Chromium (e2e/account.spec.ts). */
+  await page.getByRole('radiogroup', { name: 'The board' }).getByRole('radio', { name: 'White on black' }).focus();
+  await page.keyboard.press('Space');
+  await expect(page.locator('html')).toHaveAttribute('data-kb-mode', 'dark');
+  expect(violations).toEqual([]);
   expect(loaded).toEqual(expect.arrayContaining(['Anton', 'Barlow Condensed']));
 });

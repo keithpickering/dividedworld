@@ -55,6 +55,35 @@ describe('the modal', () => {
     }
   });
 
+  /* A roving grid keeps all its controls but one out of the Tab order (tabindex -1): those are no stops of the dialog's. */
+  test('counts only the Tab stops: a control taken out of the Tab order is neither the first nor the last', async () => {
+    function Roving() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>Open it</button>
+          {open && (
+            <Modal title="React" onClose={() => setOpen(false)}>
+              <button type="button" tabIndex={-1}>Out first</button>
+              <button type="button">Stop A</button>
+              <button type="button">Stop B</button>
+              <button type="button" tabIndex={-1}>Out last</button>
+            </Modal>
+          )}
+        </>
+      );
+    }
+    render(<Roving />);
+    await userEvent.click(opener());
+    expect(screen.getByRole('button', { name: 'Stop A' })).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole('button', { name: 'Stop B' })).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(screen.getByRole('button', { name: 'Stop B' })).toHaveFocus();
+  });
+
   test('pulls focus back in if it somehow lands outside', async () => {
     render(<Host />);
     await userEvent.click(opener());

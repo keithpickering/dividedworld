@@ -9,6 +9,7 @@ import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER } from '../data/api.ts';
 import { useLocation, useNavigate } from '../router.tsx';
 import { useSession, useWhy } from './session.ts';
+import './account.css';
 
 export function OpenAccount() {
   const { api, settings } = useKayfa();
@@ -48,23 +49,23 @@ export function OpenAccount() {
 
   return (
     <form className="kb-open-account" aria-labelledby="kb-open-account-title" onSubmit={(e) => void submit(e)}>
-      <h2 id="kb-open-account-title" className="kb-heading">You are signed in, with no account yet</h2>
-      {why && <p className="kb-notice">{why}</p>}
+      <h2 id="kb-open-account-title" className="kb-acct-section-title kb-glass-display">You are signed in, with no account yet</h2>
+      {why && <p className="kb-acct-notice">{why}</p>}
       {closed ? (
-        <p>Registration is closed. When an admin opens it, your next sign-in opens your account.</p>
+        <p className="kb-acct-text">Registration is closed. When an admin opens it, your next sign-in opens your account.</p>
       ) : (
         <>
-          <label className="kb-field">
-            <span>Invite</span>
-            <input className="kb-input" value={invite} onChange={(e) => setInvite(e.target.value)} autoComplete="off" spellCheck={false} />
+          <label className="kb-acct-row kb-acct-field">
+            <span className="kb-acct-row-label">Invite</span>
+            <input className="kb-acct-input" value={invite} onChange={(e) => setInvite(e.target.value)} autoComplete="off" spellCheck={false} />
           </label>
-          <p><button type="submit" className="kb-button" data-kb-primary disabled={busy}>Open the account</button></p>
+          <p className="kb-acct-actions"><button type="submit" className="kb-acct-button kb-glass-skew" data-kb-primary="" disabled={busy}><b className="kb-glass-upright">Open the account</b></button></p>
         </>
       )}
-      {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-      <p>
-        <button type="button" className="kb-button" disabled={busy} onClick={() => void leave()}>Sign out</button>{' '}
-        <button type="button" className="kb-button" disabled={busy} onClick={() => void leave('/sign-in')}>Use another address</button>
+      {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
+      <p className="kb-acct-actions">
+        <button type="button" className="kb-acct-button kb-glass-skew" disabled={busy} onClick={() => void leave()}><b className="kb-glass-upright">Sign out</b></button>{' '}
+        <button type="button" className="kb-acct-button kb-glass-skew" disabled={busy} onClick={() => void leave('/sign-in')}><b className="kb-glass-upright">Use another address</b></button>
       </p>
     </form>
   );
@@ -76,7 +77,7 @@ export function AccountGate({ children }: { readonly children: ReactNode }) {
   const session = useSession(api);
   const { path } = useLocation();
   if (session?.signedIn && !session.account && path !== '/sign-in' && path !== '/register') {
-    return <div className="kb-account"><OpenAccount /></div>;
+    return <div className="kb-acct"><div className="kb-acct-panel kb-calm"><OpenAccount /></div></div>;
   }
   return <>{children}</>;
 }

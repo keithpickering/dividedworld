@@ -21,7 +21,7 @@
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { sameName } from '../../rules/names.ts';
-import { LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Board, BoardListener, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness,
   DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
@@ -529,7 +529,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   function addAccount(email: string): AccountRec {
     const a: AccountRec = {
-      id: uuid(), email, admin: false, prefs: { theme: 'system', postbit: 'side', motion: 'system' }, wallet: 0, cards: {}, reading: new Map(),
+      id: uuid(), email, admin: false, prefs: DEFAULT_PREFERENCES, wallet: 0, cards: {}, reading: new Map(),
       estimate: { entries: [], lines: [] }, asked: null,
     };
     accounts.set(a.id, a);
@@ -580,6 +580,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return refuse(opened.why);
     },
     signOut() { setSession({ email: null, account: null }); },
+    signInAddress: () => session.email,
     isAdmin: () => me()?.admin ?? false,
     settings: () => screen,
 
@@ -709,13 +710,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       account.reading.set(thread, Math.max(account.reading.get(thread) ?? 0, clamped));
       return true;
     },
-    preferences: () => me()?.prefs ?? { theme: 'system', postbit: 'side', motion: 'system' },
+    preferences: () => me()?.prefs ?? DEFAULT_PREFERENCES,
     setPreferences(p) {
       const account = me();
       if (!account) return refuse('sign in with an account first');
       if (p.theme !== undefined && !/^[a-z][a-z0-9-]{0,39}$/.test(p.theme)) return refuse('a theme is named in lowercase words joined by hyphens');
       if (p.postbit !== undefined && p.postbit !== 'side' && p.postbit !== 'stacked') return refuse('the postbit is side or stacked');
       if (p.motion !== undefined && p.motion !== 'system' && p.motion !== 'reduce' && p.motion !== 'full') return refuse('motion follows the system, or is reduced or full');
+      if (p.smoke !== undefined && !['full', 'low', 'off'].includes(p.smoke)) return refuse('the smoke is full, low or off');
+      if (p.contrast !== undefined && p.contrast !== 'standard' && p.contrast !== 'high') return refuse('contrast is standard or high');
+      if (p.textSize !== undefined && ![100, 125, 150, 200].includes(p.textSize)) return refuse('text size is 100, 125, 150 or 200 percent');
       account.prefs = { ...account.prefs, ...p };
       return ok(account.prefs);
     },

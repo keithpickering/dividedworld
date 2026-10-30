@@ -2,7 +2,7 @@ import { cleanup, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, renderIn } from '../test-world.tsx';
-import { InvitesScreen } from './Invites.tsx';
+import { Invites } from './Invites.tsx';
 
 beforeEach(() => { localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -13,7 +13,7 @@ function world(admin = false) {
   fake.signInAs(me);
   return { fake, me };
 }
-const open = (w: ReturnType<typeof world>) => renderIn(w.fake, <InvitesScreen />, { path: '/invites' });
+const open = (w: ReturnType<typeof world>) => renderIn(w.fake, <Invites />, { path: '/settings?section=account' });
 
 describe('Invites', () => {
   test('says the cap and the expiry before the cap is hit', async () => {

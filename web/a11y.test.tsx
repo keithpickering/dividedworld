@@ -34,9 +34,9 @@ const stories = Object.entries(modules).flatMap(([file, mod]) =>
 /** What proves a screen's own content is on the page: each screen's directory, and a selector only that content has. */
 const SCREENS: readonly (readonly [string, string])[] = [
   ['index', '.kb-board-row'], ['board', '.kb-thread-row'], ['thread', '.kb-act'], ['reactions', '.kb-picker'],
-  ['composer', '.kb-composer'], ['spin', '.kb-spin-form, [role="group"][aria-label="Origin"]'], ['characters', '.kb-character-row'],
+  ['composer', '.kb-composer'], ['spin', '.kb-spin-form, [role="group"][aria-label="Origin"]'], ['characters', '.kb-roster-card'],
   ['profile-edit', '.kb-profile-edit'], ['profile', '.kb-profile'], ['standings', '.kb-standings'], ['reveal', '.kb-reveal-post, .kb-tally-post'],
-  ['frame', '.kb-hud-bar'], ['account', '.kb-account'], ['postbit', '.kb-postbit-text'], ['orbs', '.kb-orbs-row'],
+  ['frame', '.kb-hud-bar'], ['account', '.kb-acct'], ['postbit', '.kb-postbit-text'], ['orbs', '.kb-orbs-row'],
 ];
 
 /** Stories that are an error or an empty state on purpose: a missing thing, a signed-out reader, a bare orb row. */
@@ -81,7 +81,8 @@ describe('stories', () => {
       }
       const dir = /\/([a-z-]+)\/[^/]+\.stories\.tsx$/u.exec(file)?.[1] ?? '';
       const selector = SCREENS.find(([d]) => d === dir)?.[1];
-      if (selector && container.querySelector(selector)) {
+      /* A glass overlay the story opens (the React picker) is put on the body, outside the story's container. */
+      if (selector && (container.querySelector(selector) ?? document.body.querySelector(selector))) {
         if (!shown.has(dir)) shown.set(dir, new Set());
         shown.get(dir)!.add(name);
       }

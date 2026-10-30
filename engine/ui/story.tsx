@@ -13,6 +13,13 @@ export type World = (fake: Fake, instance: Instance) => void;
 export interface WorldParameters {
   readonly world?: World;
   readonly path?: string;
+  /**
+   * A board story's moment (`Boards/03 React`): the name of a moment of the composition root's
+   * boards fixture, which the preview seeds in place of `world`, with the fake's clock at that
+   * moment and its account signed in, and opens at the moment's route, so the story shows the
+   * season the board match holds the app to. The engine names the moment and never the fixture's data.
+   */
+  readonly moment?: string;
 }
 
 /** A player with two characters that can act, a wallet, cards and an estimate: the ordinary signed-in HUD. */

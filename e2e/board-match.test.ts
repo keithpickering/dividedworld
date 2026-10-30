@@ -153,6 +153,66 @@ describe('compareBoard: the rest of the rules', () => {
   });
 });
 
+/*
+ * A popover opens by the part of the page it belongs to, and a story's page under it is the build's
+ * own (the React board's post is drawn, the build's is the thread's): the popover's parts are held to
+ * its own corner (`origin`), and the popover to its size (`size`).
+ */
+describe('compareBoard: a landmark measured from another one, and one compared by its size', () => {
+  const POP = { x: 236, y: 214, width: 540, height: 452 };
+  const HEAD = { x: 257, y: 229, width: 104, height: 30 };
+  const popBoard = snap(shot('pop', POP), shot('head', HEAD));
+  const pop = manifest(lm('pop', { box: 'size' }), lm('head', { origin: 'pop' }));
+  const shift = (by: { x: number; y: number }, s: Snapshot = popBoard) => snap(...s.shots.map((x) => ({ ...x, box: { ...x.box!, x: x.box!.x + by.x, y: x.box!.y + by.y } })));
+
+  test('the whole popover moved, its parts with it, is clean', () => {
+    expect(compareBoard(popBoard, shift({ x: -102, y: -36 }), pop)).toEqual([]);
+  });
+
+  test('a part 9px off within the popover fails, measured from the popover\'s corner, and 8px passes', () => {
+    const moved9 = snap(shot('pop', { ...POP, x: POP.x - 102 }), shot('head', { ...HEAD, x: HEAD.x - 102 + 9 }));
+    const r = compareBoard(popBoard, moved9, pop);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ landmark: 'head', field: 'x', board: '21', build: '30' });
+    expect(r[0]!.message).toContain('from pop');
+    const moved8 = snap(shot('pop', { ...POP, x: POP.x - 102 }), shot('head', { ...HEAD, x: HEAD.x - 102 + 8 }));
+    expect(compareBoard(popBoard, moved8, pop)).toEqual([]);
+  });
+
+  test('a part\'s width and height are still compared in full', () => {
+    const r = compareBoard(popBoard, snap(shot('pop', POP), shot('head', { ...HEAD, height: 40 })), pop);
+    expect(r).toMatchObject([{ landmark: 'head', field: 'height', board: '30', build: '40' }]);
+  });
+
+  test('size compares the width and the height, and never the place', () => {
+    expect(compareBoard(popBoard, snap(shot('pop', { ...POP, x: 0, y: 0 }), shot('head', { ...HEAD, x: HEAD.x - 236, y: HEAD.y - 214 })), pop)).toEqual([]);
+    const r = compareBoard(popBoard, snap(shot('pop', { ...POP, height: 470 }), shot('head', HEAD)), pop);
+    expect(r).toMatchObject([{ landmark: 'pop', field: 'height', board: '452', build: '470' }]);
+  });
+
+  test('an origin that is missing on either side is a mismatch, never a silent pass', () => {
+    const r = compareBoard(popBoard, snap({ id: 'pop', found: false }, shot('head', HEAD)), pop);
+    expect(r.map((m) => m.landmark)).toEqual(['pop', 'head']);
+    expect(r[1]!.message).toContain('pop');
+    const unknown = compareBoard(popBoard, popBoard, manifest(lm('pop', { box: 'size' }), lm('head', { origin: 'nowhere' })));
+    expect(unknown).toMatchObject([{ landmark: 'head', field: 'origin' }]);
+  });
+});
+
+describe('compareBoard: a size a decision moved off the board', () => {
+  /* The React picker's quadrant labels are 24px where the board draws 22px, by the owner's answer on #54. */
+  const at = (size: number) => snap(...board.shots.map((x) => (x.id === 'line' ? { ...x, type: { ...BARLOW, size } } : x)));
+  const decided = manifest(lm('menu-bar'), lm('tab-boards'), lm('hud-menu'), lm('line', { buildSize: 24 }));
+
+  test('the build at the decided size matches; the board keeps its own', () => {
+    expect(compareBoard(at(22), at(24), decided)).toEqual([]);
+  });
+
+  test('a build still at the board\'s size no longer matches, so the decision is held', () => {
+    expect(compareBoard(at(22), at(22), decided).map((m) => m.message)).toEqual(['line: font-size is 22 in the build, 24 by decision']);
+  });
+});
+
 describe('boardsToRun: the folder\'s boards against the manifests and the pending map', () => {
   const folder = ['01-main.html', '02-phone.html', '03-react.html', 'README.md'];
 

@@ -12,7 +12,7 @@ import type { ClassLargeDraw, GlassSurface, GlassTheme } from '../types.ts';
 export type GlassKeyName = 'standard' | 'high';
 
 /**
- * Every property a key sets: its tokens, each size step in px, and the calm's opacity and feather.
+ * Every property a key sets: its tokens, each size step (in rem: its px over 16), and the calm's opacity and feather.
  * Then the instance's own colors, which are its data and not tokens (the glass plan, section 4):
  * each orb's three stops by its place in the row (`--kb-glass-orb-<n>-highlight`, `-color`,
  * `-shade`) and the orb's body (`--kb-glass-orb-body-core`, `-edge`), and each class's fill, ink and
@@ -22,7 +22,8 @@ export type GlassKeyName = 'standard' | 'high';
 export function glassVars(glass: GlassTheme, key: GlassKeyName): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [name, token] of Object.entries(glass.keys[key])) out[name] = token.value;
-  for (const [name, size] of Object.entries(glass.sizes)) out[`--kb-glass-size-${name}`] = `${size.px}px`;
+  /* In rem, so the player's text size (the root's font size, engine/ui/appearance.ts) scales the glass with the board; at 100% it is the px. */
+  for (const [name, size] of Object.entries(glass.sizes)) out[`--kb-glass-size-${name}`] = `${size.px / 16}rem`;
   out['--kb-glass-calm-opacity'] = String(glass.calm.opacity);
   out['--kb-glass-calm-feather'] = `${glass.calm.feather}px`;
   glass.orbs.gradients.forEach((g, i) => {
@@ -59,9 +60,9 @@ export function surfaceCalm(glass: GlassTheme, surface: GlassSurface): Record<st
  * that is the ready-text or the over token, not a class, does not count. The guard
  * (tools/check-glass-contrast.mjs) reads this list from the source, holds each class's large text to
  * 3:1 against the full or the calmed worst of the surface's recipe, and writes a class ceiling only
- * for a surface that draws it, so Part 2's rendered measurement (e2e/glass-text.spec.ts, not yet
- * built) can fail class large text anywhere else; until it lands, review holds a screen that comes to
- * draw a class's large text where this says `none` to change this list first.
+ * for a surface that draws it, so Part 2's rendered measurement (e2e/glass-text.spec.ts) fails
+ * class large text anywhere else: a screen that comes to draw a class's large text where this says
+ * `none` changes this list first.
  */
 export const classLargeText: Readonly<Record<GlassSurface, ClassLargeDraw>> = {
   /* 01 main and 02 phone show the played character's class as a fill-and-ink chip; 04 orbs' bright words are the over and ready-text tokens. */

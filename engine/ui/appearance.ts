@@ -6,14 +6,27 @@
  * through the data layer) so it follows them across devices. The engine marks only an override on
  * <html>, `data-kb-mode` and `data-kb-motion`, so a theme's own media query holds otherwise
  * (engine/ui/tokens.css says the shape every theme follows).
+ *
+ * The glass's three preferences (the web plan's glass amendment to Task 11) are marked the same
+ * way, only when they leave their default: `data-kb-smoke-level` (low or off; Smoke.tsx reads it),
+ * `data-kb-contrast` (high; contrast.css puts solid ground under the glass's text) and
+ * `data-kb-text-size` (125, 150 or 200; base.css sets the root's font size from it, every size on
+ * the board and the glass is in rem or a glass size token, which is rem, so all of it follows; and
+ * past 150 useBoard folds the glass to the Phone board's one column). Given the instance's glass,
+ * high contrast also puts its `high` key on the root, and anything else its standard key.
  */
-import type { ThemeOption } from './types.ts';
+import { useSyncExternalStore } from 'react';
+import { applyGlass } from './glass/apply.ts';
+import type { GlassTheme, ThemeOption } from './types.ts';
 
 /** The account's preferences, as account_preferences holds them: "system" follows the device. */
 export interface AppearancePreference {
   /** "system", "light", "dark", or an instance theme's key. */
   readonly theme: string;
   readonly motion: 'system' | 'reduce' | 'full';
+  readonly smoke?: 'full' | 'low' | 'off';
+  readonly contrast?: 'standard' | 'high';
+  readonly textSize?: 100 | 125 | 150 | 200;
 }
 
 export interface Appearance {
@@ -37,7 +50,7 @@ export function resolveAppearance(pref: AppearancePreference, themes: readonly T
 }
 
 /** Puts an appearance on the page: one theme link, swapped in place, and the override attributes. */
-export function applyAppearance(doc: Document, pref: AppearancePreference, themes: readonly ThemeOption[]): Appearance {
+export function applyAppearance(doc: Document, pref: AppearancePreference, themes: readonly ThemeOption[], glass?: GlassTheme): Appearance {
   const a = resolveAppearance(pref, themes);
   let link = doc.querySelector<HTMLLinkElement>('link#kb-theme');
   if (!link) {
@@ -52,7 +65,54 @@ export function applyAppearance(doc: Document, pref: AppearancePreference, theme
   else root.removeAttribute('data-kb-mode');
   if (a.motion) root.setAttribute('data-kb-motion', a.motion);
   else root.removeAttribute('data-kb-motion');
+  /* A preference the engine does not know is its default, as a theme it does not know is the device's. */
+  const smoke = pref.smoke === 'low' || pref.smoke === 'off' ? pref.smoke : null;
+  const high = pref.contrast === 'high';
+  const size = pref.textSize === 125 || pref.textSize === 150 || pref.textSize === 200 ? pref.textSize : null;
+  mark(root, 'data-kb-smoke-level', smoke);
+  mark(root, 'data-kb-contrast', high ? 'high' : null);
+  mark(root, 'data-kb-text-size', size === null ? null : String(size));
+  if (glass) applyGlass(root, glass, high ? 'high' : 'standard');
   return a;
+}
+
+function mark(root: HTMLElement, name: string, value: string | null): void {
+  if (value === null) root.removeAttribute(name);
+  else root.setAttribute(name, value);
+}
+
+/** The smoke the player chose, as the root is marked now. */
+export function smokeLevel(doc: Document = document): 'full' | 'low' | 'off' {
+  const v = doc.documentElement.getAttribute('data-kb-smoke-level');
+  return v === 'low' || v === 'off' ? v : 'full';
+}
+
+/** The text size the player chose, in percent, as the root is marked now. */
+export function textSize(doc: Document = document): 100 | 125 | 150 | 200 {
+  const v = Number(doc.documentElement.getAttribute('data-kb-text-size'));
+  return v === 125 || v === 150 || v === 200 ? v : 100;
+}
+
+/*
+ * A mark on the root as a component reads it, again whenever it changes: the root is where the
+ * preferences are applied (by the app once they are read, by Settings the moment one is chosen), so
+ * a component reads them there rather than being handed them.
+ */
+function subscribeRoot(onChange: () => void): () => void {
+  if (typeof MutationObserver !== 'function') return () => {};
+  const watch = new MutationObserver(onChange);
+  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-smoke-level', 'data-kb-text-size'] });
+  return () => watch.disconnect();
+}
+
+/** The smoke level on the root, kept current. */
+export function useSmokeLevel(): 'full' | 'low' | 'off' {
+  return useSyncExternalStore(subscribeRoot, () => smokeLevel(), () => 'full');
+}
+
+/** The text size on the root, kept current. */
+export function useTextSize(): 100 | 125 | 150 | 200 {
+  return useSyncExternalStore(subscribeRoot, () => textSize(), () => 100);
 }
 
 /** Whether motion is reduced now: the player's override, else the device's setting. */

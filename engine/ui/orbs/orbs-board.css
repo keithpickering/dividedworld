@@ -48,7 +48,7 @@
 /* The heading is drawn in outline: a stroke in the ready color, with no fill. */
 .kb-orbs-board-title {
   margin: 0;
-  font-size: 112px;
+  font-size: 7rem;
   line-height: 1;
   letter-spacing: 2px;
   color: transparent;
@@ -221,7 +221,7 @@
 
 .kb-orbs-board-cascade-head h2 {
   margin: 0;
-  font-size: 30px;
+  font-size: 1.875rem;
   line-height: 1;
   letter-spacing: 0.5px;
 }
@@ -278,6 +278,8 @@
 
 .kb-orbs-board-total-figure {
   font-family: var(--kb-glass-font-display);
+  /* The display face's one weight: an inherited 600 would draw it in a faux bold. */
+  font-weight: 400;
   font-size: var(--kb-glass-size-display-l);
   line-height: 1;
   color: var(--kb-glass-ready);
@@ -285,7 +287,7 @@
 }
 
 .kb-orbs-board-total-gain {
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 800;
   color: var(--kb-glass-orb-3-color);
 }

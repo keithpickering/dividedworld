@@ -122,7 +122,9 @@ describe('createBackend and the boards fixture', () => {
     expect((await api.session()).signedIn).toBe(true);
     expect((await api.wallet()).balance).toBe(372);
     expect((await api.myCharacters()).map((c) => c.name)).toContain('Pipewrench');
-    expect((await api.boards()).find((b) => b.slug === 'general')!.threadCount).toBe(1);
+    /* The fixture's General, not the demo's: the night's thread and the two where Thwompson and Gloomba said their classes. */
+    const general = (await api.boards()).find((b) => b.slug === 'general')!;
+    expect((await api.threads(general.id, { offset: 0, limit: 5 })).threads.map((t) => t.title).sort()).toEqual(['cards on the table', 'i read everything', 'who keeps splatting my posts']);
   });
 
   it('opens a thread moment on the thread, page 3, as the moment\'s account', async () => {

@@ -31,7 +31,7 @@ test('the reaction picker: every kind the arrows reach shows a focus indicator',
   /* Opened by keyboard, as the picker's own focus is only drawn for a keyboard user. */
   await page.locator('#post-3').getByRole('button', { name: 'React' }).focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog', { name: /^React as / })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
   const seen = new Set<string>();
   for (let i = 0; i < 12; i += 1) {
     const f = await focusedIndicator(page);
@@ -172,15 +172,21 @@ test('Back from "Make a character" in the reply box returns to the same post in 
   await backAtOneOf(page, seen);
 });
 
-test('a crumb out of the glass forgets the thread, and Back lands on the one the glass was last entered from', async ({ page }) => {
+test('a link out of the glass forgets the thread, and Back lands on the one the glass was last entered from', async ({ page }) => {
   await page.goto('/b/general');
   await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Who keeps reacting with tea?' })).toBeVisible();
   await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
   await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
-  /* Out of the glass by the page's own crumb, not by Back. */
-  await page.locator('.kb-crumb').getByRole('link', { name: 'Index', exact: true }).click();
-  await expect(page.getByRole('main').getByRole('link', { name: 'General', exact: true })).toBeVisible();
+  /*
+   * Out of the glass by a link that is not Back: a character's name on Rankings, which opens its
+   * profile on the board. (My characters' crumb, then the Rankings tab while it stood in on the
+   * board's standings, were this link until the glass build's Tasks 2.2 and 2.3.)
+   */
+  await page.getByRole('navigation', { name: 'Menu' }).getByRole('link', { name: 'Rankings' }).click();
+  await page.getByRole('main').getByRole('table').getByRole('link').first().click();
+  await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Menu' })).toHaveCount(0);
   /*
    * The crumb forgot the thread, which entering again would overwrite anyway; a glass page opened and
    * then reloaded, with no move into the glass, reads what the tab kept, and shows it was forgotten.
@@ -237,4 +243,98 @@ test('Back to a thread that grew while the reader was in the glass holds the new
   await expect(bar).toBeVisible();
   await bar.click();
   await expect(page.locator('#post-171')).toContainText('Post 171, written while you were away.');
+});
+
+/*
+ * The HUD clips what it draws to the glass's own shape (frame.css), so a calm's feather never
+ * darkens the board beside it. A clip cuts whatever is drawn past it, focus outlines included, so
+ * each control Tab reaches in the HUD is held to this: its whole outline (its box grown by the
+ * outline's offset and width) lies inside every clip above it, read from each ancestor's computed
+ * clip-path (a polygon or an inset) and overflow.
+ */
+async function hudOutlinesCut(page: Page): Promise<string[]> {
+  const cut: string[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < 80; i += 1) {
+    await page.keyboard.press('Tab');
+    const found = await page.evaluate(() => {
+      const el = document.activeElement;
+      const hud = document.querySelector('section[aria-label="Game HUD"]');
+      if (!el || !hud || !hud.contains(el)) return null;
+      const s = getComputedStyle(el);
+      const grow = parseFloat(s.outlineOffset) + parseFloat(s.outlineWidth);
+      const r = el.getBoundingClientRect();
+      const box = { l: r.left - grow, t: r.top - grow, r: r.right + grow, b: r.bottom + grow };
+      const mx = (box.l + box.r) / 2;
+      const my = (box.t + box.b) / 2;
+      const points = [[box.l, box.t], [box.r, box.t], [box.r, box.b], [box.l, box.b], [mx, box.t], [mx, box.b], [box.l, my], [box.r, my]] as const;
+      /* A length in a clip: px, %, or calc(% ± px), against the clipping box's side. */
+      const len = (v: string, side: number): number => {
+        const calc = /^calc\(\s*(-?[\d.]+)%\s*([+-])\s*(-?[\d.]+)px\s*\)$/.exec(v.trim());
+        if (calc) return (+calc[1]! / 100) * side + (calc[2] === '+' ? 1 : -1) * +calc[3]!;
+        return v.trim().endsWith('%') ? (parseFloat(v) / 100) * side : parseFloat(v);
+      };
+      const parts = (v: string) => v.split(/\s+(?![^(]*\))/).filter(Boolean);
+      const inside = (x: number, y: number, a: Element): boolean => {
+        const z = (a as Element & { currentCSSZoom?: number }).currentCSSZoom ?? 1;
+        const ar = a.getBoundingClientRect();
+        const cs = getComputedStyle(a);
+        const lx = (x - ar.left) / z;
+        const ly = (y - ar.top) / z;
+        const w = ar.width / z;
+        const h = ar.height / z;
+        if ((cs.overflowX === 'clip' || cs.overflowX === 'hidden') && (lx < -0.5 || lx > w + 0.5)) return false;
+        if ((cs.overflowY === 'clip' || cs.overflowY === 'hidden') && (ly < -0.5 || ly > h + 0.5)) return false;
+        const poly = /^polygon\((.*)\)$/.exec(cs.clipPath);
+        if (poly) {
+          const pts = poly[1]!.split(/,(?![^(]*\))/).map((p) => { const [px, py] = parts(p); return [len(px!, w), len(py!, h)] as const; });
+          let inPoly = false;
+          for (let k = 0, j = pts.length - 1; k < pts.length; j = k++) {
+            const [xi, yi] = pts[k]!;
+            const [xj, yj] = pts[j]!;
+            if ((yi > ly) !== (yj > ly) && lx < ((xj - xi) * (ly - yi)) / (yj - yi) + xi) inPoly = !inPoly;
+          }
+          if (!inPoly) return false;
+        }
+        const ins = /^inset\((.*)\)$/.exec(cs.clipPath);
+        if (ins) {
+          const [t, r2 = t, b = t, l = r2] = parts(ins[1]!);
+          if (ly < len(t!, h) - 0.5 || lx > w - len(r2!, w) + 0.5 || ly > h - len(b!, h) + 0.5 || lx < len(l!, w) - 0.5) return false;
+        }
+        return true;
+      };
+      const name = el.getAttribute('aria-label') ?? (el.textContent?.trim() || el.tagName.toLowerCase());
+      const out: string[] = [];
+      for (let a: Element | null = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+        const host = a;
+        if (points.some(([x, y]) => !inside(x, y, host))) out.push(`${name}: its focus outline is cut by .${[...host.classList].join('.') || host.tagName.toLowerCase()}`);
+      }
+      return { key: el.outerHTML.slice(0, 120), out };
+    });
+    if (!found) { if (seen.size > 0) break; continue; }
+    if (seen.has(found.key)) break;
+    seen.add(found.key);
+    cut.push(...found.out);
+  }
+  if (seen.size === 0) cut.push('Tab reached no control in the Game HUD');
+  return cut;
+}
+
+for (const [label, viewport] of [['the Main board\'s layout, 1440 wide', { width: 1440, height: 900 }], ['a phone, 390 wide', { width: 390, height: 844 }]] as const) {
+  test(`on ${label}, every HUD control Tab reaches has its whole focus outline inside the HUD's clip`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto('/b/general');
+    await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    expect(await hudOutlinesCut(page)).toEqual([]);
+  });
+}
+
+test('the check sees a focus outline the HUD\'s clip cuts', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/b/general');
+  await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
+  /* The bar's clip drawn 14px short of its foot: Menu's and the hand's outlines reach 6px past their foot, 194px down. */
+  await page.addStyleTag({ content: '.kb-hud-bar { clip-path: inset(0 0 14px 0) !important; }' });
+  expect(await hudOutlinesCut(page)).toEqual(expect.arrayContaining([expect.stringMatching(/Menu: its focus outline is cut by \.kb-hud-bar$/u)]));
 });

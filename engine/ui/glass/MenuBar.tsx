@@ -11,7 +11,11 @@
  * was typed into a text field, where Esc belongs to the field, or it is a held key's repeat or the
  * end of an IME composition (keys.ts). A modified or middle click on Back opens the board as the
  * browser would and leaves this page and its kept place alone. Where the bar's pages live is
- * GLASS_NAV's (nav.ts): Rankings and My log stand in on the standings until their pages exist.
+ * GLASS_NAV's (nav.ts): My log stands in on the standings until its page exists.
+ *
+ * On the Main board's layout the bar is the boards': 84px, its tabs skewed with their words set
+ * upright, Back outlined in white with its ESC key cap before its words, the current tab lit. While
+ * an overlay is open over the page the bar stays in view, dimmed and inert (Overlay.tsx).
  *
  * On a phone Back is on its own row and the pages are a strip under it that scrolls sideways, so
  * the current page's tab is scrolled into view as a page opens; with reduced motion it is there at
@@ -30,7 +34,7 @@ interface Tab { readonly label: string; readonly to: string; readonly current: (
 
 const TABS: readonly Tab[] = [
   { label: 'My characters', to: GLASS_NAV.characters, current: (p) => p === '/characters' || p.startsWith('/characters/') },
-  { label: 'Rankings', to: GLASS_NAV.rankings, current: () => false },
+  { label: 'Rankings', to: GLASS_NAV.rankings, current: (p) => p === GLASS_NAV.rankings },
   { label: 'My log', to: GLASS_NAV.log, current: () => false },
   { label: 'Settings', to: GLASS_NAV.settings, current: (p) => p === '/settings' || p === '/invites' },
 ];
@@ -61,19 +65,21 @@ export function MenuBar() {
       <div className="kb-glass-menu-row">
         <Link
           to={backHref(boardPlace())}
-          className="kb-glass-menu-back kb-glass-cut-button"
+          className="kb-glass-menu-back kb-glass-skew"
           aria-keyshortcuts="Escape"
           onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
         >
-          <span className="kb-glass-menu-arrow" aria-hidden="true" data-kb-key="‹" />
-          Back to the board
-          <span className="kb-glass-menu-key" aria-hidden="true" data-kb-key="ESC" />
+          <span className="kb-glass-upright">
+            <span className="kb-glass-menu-arrow" aria-hidden="true" data-kb-key="‹" />
+            <span className="kb-glass-menu-key" aria-hidden="true" data-kb-key="ESC" />
+            Back to the board
+          </span>
         </Link>
         {session.signedIn && (
           <ul ref={list} className="kb-glass-menu-list">
             {TABS.map((t) => (
               <li key={t.label}>
-                <Link to={t.to} className="kb-glass-menu-tab" aria-current={t.current(path) ? 'page' : undefined}>{t.label}</Link>
+                <Link to={t.to} className="kb-glass-menu-tab kb-glass-skew" aria-current={t.current(path) ? 'page' : undefined}><span className="kb-glass-upright">{t.label}</span></Link>
               </li>
             ))}
           </ul>

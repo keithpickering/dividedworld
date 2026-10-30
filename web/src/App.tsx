@@ -8,7 +8,6 @@ import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
 import { AccountGate } from '../../engine/ui/account/OpenAccount.tsx';
-import { InvitesScreen } from '../../engine/ui/account/Invites.tsx';
 import { SettingsScreen } from '../../engine/ui/account/Settings.tsx';
 import { SignInScreen } from '../../engine/ui/account/SignIn.tsx';
 import { Characters } from '../../engine/ui/characters/Characters.tsx';
@@ -22,8 +21,9 @@ import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
+import { RankingsScreen } from '../../engine/ui/rankings/Rankings.tsx';
 import { StandingsScreen } from '../../engine/ui/standings/Standings.tsx';
-import { Link, RouterProvider, useLocation } from '../../engine/ui/router.tsx';
+import { RouterProvider, useLocation, useNavigate } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
@@ -36,24 +36,21 @@ const ROUTES: readonly Route[] = [
   { path: '/characters/new', render: () => <NewCharacter /> },
   { path: '/characters/edit', render: () => <ProfileEdit /> },
   { path: '/standings', render: () => <StandingsScreen /> },
+  { path: '/rankings', render: () => <RankingsScreen /> },
   { path: '/c/:id', render: ({ id }) => <ProfileScreen id={id!} /> },
   { path: '/c/:id/record', render: ({ id }) => <RecordScreen id={id!} /> },
   { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
   { path: '/register', render: () => <SignInScreen mode="register" /> },
-  { path: '/invites', render: () => <InvitesScreen /> },
-  /*
-   * Invites stands in here, beside Settings, until the web build's Task 2.4 and the glass build's
-   * Task 2.4 move it into Settings › Account: the glass's menu bar holds no Invites tab and the
-   * banner no longer links it, so without this link the page could be reached only by its address.
-   */
-  { path: '/settings', render: () => <><SettingsScreen /><p><Link to="/invites">Invites</Link></p></> },
+  /* Invites live in Settings › Account (the glass build's Task 2.4); the old address opens it, so a link to it still works. */
+  { path: '/invites', render: () => <Moved to={INVITES} /> },
+  { path: '/settings', render: () => <SettingsScreen /> },
   { path: '/t/:thread', render: ({ thread }) => <ThreadScreen thread={thread!} /> },
 ];
 
 /**
  * The routes that are glass pages (the glass build's Task 1.4), each with the surface whose smoke it
- * stands on. Their content is the board's screen as it was until Part 2 restyles it; every other
- * route is a board page, in the frame with its banner and Game HUD.
+ * stands on, its screen drawn on the glass itself; every other route is a board page, in the frame
+ * with its banner and Game HUD.
  */
 const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/characters': 'characters',
@@ -63,6 +60,7 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/settings': 'settings',
   '/sign-in': 'account',
   '/register': 'account',
+  '/rankings': 'rankings',
 };
 
 const isGlass = (path: string): boolean => Object.hasOwn(GLASS, path);
@@ -70,13 +68,29 @@ const isGlass = (path: string): boolean => Object.hasOwn(GLASS, path);
 /** Every move into the glass keeps the board's place for Back, and every move out forgets it (engine/ui/glass/back.ts). */
 const keepPlace = keepBoardPlace(isGlass);
 
-/** The account's theme and motion, once it is known; the device decides until then. */
+/** Where Settings › Account is, which `/invites` now opens. */
+const INVITES = '/settings?section=account';
+
+/** An address that moved: it opens the new one in its place, so Back does not return to it. */
+function Moved({ to }: { readonly to: string }) {
+  const navigate = useNavigate();
+  useEffect(() => { navigate(to, { replace: true }); }, [navigate, to]);
+  return null;
+}
+
+/**
+ * The account's preferences, once they are known: the theme and motion, and the glass's smoke,
+ * contrast and text size (engine/ui/appearance.ts). The device decides, and the glass is at its
+ * defaults, until then and once signed out.
+ */
 function Appearance({ api }: { readonly api: KayfaApi }) {
   const { session } = usePlayer();
   useEffect(() => {
-    if (!session.account) { applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes); return; }
+    /* The device's look first, on every change of account: the last account's never stands for the next. */
+    applyAppearance(document, { theme: 'system', motion: 'system' }, instanceUi.themes, instanceUi.glass);
+    if (!session.account) return;
     let live = true;
-    void api.preferences().then((p) => { if (live) applyAppearance(document, p, instanceUi.themes); }, () => { /* keep the device's choice */ });
+    void api.preferences().then((p) => { if (live) applyAppearance(document, p, instanceUi.themes, instanceUi.glass); }, () => { /* keep the device's choice */ });
     return () => { live = false; };
   }, [api, session.account]);
   return null;
@@ -91,10 +105,22 @@ function Appearance({ api }: { readonly api: KayfaApi }) {
  */
 function Shell() {
   const { path } = useLocation();
+  const { session, sessionKnown } = usePlayer();
   const surface = isGlass(path) ? GLASS[path] : undefined;
+  /*
+   * The routed screen is the signed-in account's: when the session changes under it (another tab
+   * signed someone else in, on a device two players share), it starts afresh in the same render, so
+   * nothing the last account typed, chose or was told is drawn for the next. The first reading of the
+   * session on a load is no change of account: the screen mounted while it was unknown is kept, and
+   * asks for nothing twice.
+   */
+  const [mountedFor, setMountedFor] = useState<{ readonly known: boolean; readonly account: string | null; readonly n: number }>({ known: false, account: null, n: 0 });
+  if (sessionKnown && (!mountedFor.known || mountedFor.account !== session.account)) {
+    setMountedFor({ known: true, account: session.account, n: mountedFor.known ? mountedFor.n + 1 : mountedFor.n });
+  }
   const content = (
     <AccountGate>
-      <Routes routes={ROUTES} />
+      <Routes key={mountedFor.n} routes={ROUTES} />
     </AccountGate>
   );
   return surface ? <GlassPage surface={surface}>{content}</GlassPage> : <Frame>{content}</Frame>;

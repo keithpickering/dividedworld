@@ -22,6 +22,8 @@ import { clearDrafts } from './composer/draft.ts';
 
 export interface Player {
   readonly session: Session;
+  /** Whether the session has been read yet: until then `session` stands signed out without being known to be. */
+  readonly sessionKnown: boolean;
   /** Every character the player plays, waiting and retired ones included. */
   readonly characters: readonly MyCharacter[];
   /** Those that can act now: debuted and not retired. */
@@ -61,17 +63,41 @@ export const hudKey = (account: Id) => `kb-hud:${account}`;
 
 const canAct = (c: MyCharacter) => c.debutedAt !== null && c.retiredAt === null;
 
+/** The player's rows as the provider holds them, with the account they were read for. */
+interface Held {
+  readonly for: Id | null;
+  readonly characters: readonly MyCharacter[];
+  readonly chosen: Id | null;
+  readonly wallet: Wallet | null;
+  readonly walletSeen: number | null;
+  readonly cards: readonly HeldCard[];
+  readonly loaded: boolean;
+}
+
+/** Nothing read yet for `account`. */
+const emptyFor = (account: Id | null): Held => ({ for: account, characters: [], chosen: null, wallet: null, walletSeen: null, cards: [], loaded: false });
+
 export function PlayerProvider({ api, children }: { readonly api: KayfaApi; readonly children: ReactNode }) {
   const [session, setSession] = useState<Session>(SIGNED_OUT);
-  const [characters, setCharacters] = useState<readonly MyCharacter[]>([]);
-  const [chosen, setChosen] = useState<Id | null>(null);
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [walletSeen, setWalletSeen] = useState<number | null>(null);
-  const [estimate, setEstimate] = useState<Estimate | null>(null);
-  const [cards, setCards] = useState<readonly HeldCard[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [sessionKnown, setSessionKnown] = useState(false);
+  /*
+   * What the provider holds is kept with the account it was read for, and read in render against
+   * the account signed in now: a value read for another account, or for none, reads as not loaded
+   * and empty in the very commit the account changes, before any effect has run. So a signed-in
+   * load never shows the empty roster for a commit, and the next player on a shared device never
+   * sees the last one's characters, wallet, cards or HUD character (issue #56).
+   */
+  const [held, setHeld] = useState<Held>(() => emptyFor(null));
+  const [estimateHeld, setEstimateHeld] = useState<{ readonly for: Id | null; readonly estimate: Estimate | null }>({ for: null, estimate: null });
 
   const account = session.account;
+  /* Nothing read yet for the account signed in now: one value per account, not a new one each render. */
+  const empty = useMemo(() => emptyFor(account), [account]);
+  const mine = held.for === account ? held : empty;
+  const { characters, chosen, wallet, walletSeen, cards } = mine;
+  /* No account has nothing to load; an account's rows are loaded once they were read for it. */
+  const loaded = account === null ? true : mine.loaded;
+  const estimate = estimateHeld.for === account ? estimateHeld.estimate : null;
 
   /* The account the screen is on now: an answer for another one (a sign-out or a switch since it was asked) is dropped. */
   const current = useRef<Id | null>(null);
@@ -80,24 +106,23 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   const refresh = useCallback(async () => {
     if (!account) return;
     try {
-      const [mine, w, held] = await Promise.all([api.myCharacters(), api.wallet(), api.myCards()]);
+      const [chars, w, hand] = await Promise.all([api.myCharacters(), api.wallet(), api.myCards()]);
       if (current.current !== account) return;
-      setCharacters(mine);
-      setWallet(w);
-      setCards(held);
       const seen = store.get(`kb-wallet-seen:${account}`);
-      setWalletSeen(seen !== null && Number(seen) !== w.balance ? Number(seen) : null);
-      setChosen(store.get(hudKey(account)));
+      setHeld({
+        for: account, characters: chars, wallet: w, cards: hand, loaded: true,
+        walletSeen: seen !== null && Number(seen) !== w.balance ? Number(seen) : null,
+        chosen: store.get(hudKey(account)),
+      });
     } catch {
       /* The rows as they were: the next action or page asks again. Loading still ends, so the HUD is never blank. */
-    } finally {
-      if (current.current === account) setLoaded(true);
+      if (current.current === account) setHeld((h) => ({ ...(h.for === account ? h : emptyFor(account)), loaded: true }));
     }
   }, [api, account]);
 
   useEffect(() => {
     let live = true;
-    void api.session().then((s) => { if (live) setSession(s); });
+    void api.session().then((s) => { if (live) { setSession(s); setSessionKnown(true); } });
     const off = api.onSession((s) => {
       /*
        * Signing out, or switching to another account, takes the account's unsent drafts off this
@@ -106,20 +131,13 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
       const was = current.current;
       if (was && (!s.signedIn || (s.account !== null && s.account !== was))) clearDrafts(was);
       setSession(s);
+      setSessionKnown(true);
     });
     return () => { live = false; off(); };
   }, [api]);
 
   useEffect(() => {
-    setCharacters([]);
-    setWallet(null);
-    setWalletSeen(null);
-    setEstimate(null);
-    setCards([]);
-    setChosen(null);
-    if (!account) { setLoaded(true); return; }
-    setLoaded(false);
-    void refresh();
+    if (account) void refresh();
   }, [account, refresh]);
 
   /*
@@ -129,9 +147,19 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   const asking = useRef<{ gen: number; out: boolean; held: boolean; timer: ReturnType<typeof setTimeout> | null; freshAt: number }>({ gen: 0, out: false, held: false, timer: null, freshAt: 0 });
   const ask = useCallback(() => {
     const a = asking.current;
-    if (!account) return;
+    /*
+     * An ask is its account's: kept by something that outlived the account (the picker's choose,
+     * answering after its await), it asks nothing once another account is signed in, so the
+     * other account's estimate is never filed as this one's.
+     */
+    if (!account || current.current !== account) return;
+    /*
+     * The same check on the held timer and on the answer below is defense in depth: with the
+     * generation and this check, either can only run between the next account's render and the
+     * cleanup that resets them. This one is the check the tests hold.
+     */
     const gen = a.gen;
-    const later = (ms: number) => { a.timer = setTimeout(() => { if (a.gen !== gen) return; a.timer = null; a.held = false; ask(); }, ms); };
+    const later = (ms: number) => { a.timer = setTimeout(() => { if (a.gen !== gen || current.current !== account) return; a.timer = null; a.held = false; ask(); }, ms); };
     const wait = a.freshAt - Date.now();
     if (a.out || wait > 0) {
       a.held = true;
@@ -140,8 +168,8 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
     }
     a.out = true;
     void api.estimate().then((e) => {
-      if (a.gen !== gen) return;
-      setEstimate(e);
+      if (a.gen !== gen || current.current !== account) return;
+      setEstimateHeld({ for: account, estimate: e });
       /* Counted from receipt, as the function's header says: freshAfter - asOf from now. */
       const hold = e.asOf && e.freshAfter ? Date.parse(e.freshAfter) - Date.parse(e.asOf) : 0;
       a.freshAt = Date.now() + Math.max(0, hold);
@@ -170,14 +198,14 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   const hudCharacter = actingCharacters.find((c) => c.id === chosen) ?? actingCharacters[0] ?? null;
 
   const setHudCharacter = useCallback((id: Id) => {
-    setChosen(id);
+    setHeld((h) => (h.for === account ? { ...h, chosen: id } : h));
     if (account) store.set(hudKey(account), id);
   }, [account]);
 
   const markWalletSeen = useCallback(() => {
     if (!account || !wallet) return;
     store.set(`kb-wallet-seen:${account}`, String(wallet.balance));
-    setWalletSeen(null);
+    setHeld((h) => (h.for === account ? { ...h, walletSeen: null } : h));
   }, [account, wallet]);
 
   /* A first visit on this device has seen nothing to cascade from: start from the wallet as it is. */
@@ -188,9 +216,9 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   const pending = estimate ? estimate.entries.reduce((s, e) => s + e.amount, 0) : 0;
 
   const value = useMemo<Player>(() => ({
-    session, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen,
+    session, sessionKnown, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen,
     pending, estimate, cards, reactionLanded: ask, refresh, loaded,
-  }), [session, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, loaded]);
+  }), [session, sessionKnown, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, loaded]);
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }

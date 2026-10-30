@@ -40,3 +40,19 @@ test('an id the build does not have says so, naming the ones it has', async ({ p
   await expect(page.getByRole('heading', { name: 'This site could not start' })).toBeVisible();
   await expect(page.getByText(/boards-99-nope--board/)).toContainText('boards-04-orbs--board');
 });
+
+/*
+ * The story route runs through the app's entry (web/src/main.tsx) and Storybook's preview
+ * (.storybook/preview.tsx), which both load the glass's stylesheets (web/src/stylesheets.test.ts holds
+ * the two lists to one), so a story is drawn as a page is: under high contrast's mark
+ * (engine/ui/glass/contrast.css) a smoke that is not a glass page's own is not drawn, and the story's
+ * lines stand on its ground.
+ */
+test('a board story under high contrast draws the solid ground a page does', async ({ page }) => {
+  await page.goto('/?fixture=boards&story=boards-04-orbs--board');
+  await expect(page.getByRole('heading', { name: 'Aura' })).toBeVisible();
+  const layers = page.locator('.kb-smoke-layers').first();
+  await expect(layers).toBeVisible();
+  await page.evaluate(() => document.documentElement.setAttribute('data-kb-contrast', 'high'));
+  await expect(layers).toBeHidden();
+});

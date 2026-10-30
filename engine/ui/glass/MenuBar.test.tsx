@@ -1,9 +1,9 @@
 /**
  * The menu bar on every glass page (the web plan's glass amendment to Task 3, and the glass plan's
  * section 8): Back to the board with its Esc key, then the pages, the current one marked; signed
- * out, Back alone. Rankings and My log stand in for the standings until Parts 2 and 4 build them.
+ * out, Back alone. My log stands in for the standings until Part 4 builds it.
  */
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
@@ -40,10 +40,19 @@ describe('the menu bar', () => {
     expect(await within(bar()).findByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page');
     expect(within(bar()).getByRole('link', { name: 'My characters' })).not.toHaveAttribute('aria-current');
   });
-  test('Rankings and My log stand in for the standings until their pages are built', async () => {
+  test('Rankings goes to its own page, marked current there', async () => {
+    const { unmount } = renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
+    const rankings = await within(bar()).findByRole('link', { name: 'Rankings' });
+    expect(rankings).toHaveAttribute('href', '/rankings');
+    expect(rankings).not.toHaveAttribute('aria-current');
+    unmount();
+    renderInWorld(<MenuBar />, { path: '/rankings', seed: signedIn });
+    expect(await within(bar()).findByRole('link', { name: 'Rankings' })).toHaveAttribute('aria-current', 'page');
+    expect(within(bar()).getByRole('link', { name: 'Settings' })).not.toHaveAttribute('aria-current');
+  });
+  test('My log stands in for the standings until its page is built', async () => {
     renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
-    expect(await within(bar()).findByRole('link', { name: 'Rankings' })).toHaveAttribute('href', '/standings');
-    expect(within(bar()).getByRole('link', { name: 'My log' })).toHaveAttribute('href', '/standings');
+    expect(await within(bar()).findByRole('link', { name: 'My log' })).toHaveAttribute('href', '/standings');
   });
   test('signed out, the bar holds Back to the board alone: its pages need an account', async () => {
     renderInWorld(<MenuBar />, { path: '/sign-in' });
@@ -139,11 +148,12 @@ describe('from the Task 1.4 reviews', () => {
     Element.prototype.scrollIntoView = function scrollIntoView(this: Element, opts?: unknown) { seen.push({ el: this, opts }); };
     const { unmount } = renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
     const settings = await within(bar()).findByRole('link', { name: 'Settings' });
-    expect(seen.at(-1)).toEqual({ el: settings, opts: { inline: 'nearest', block: 'nearest', behavior: 'smooth' } });
+    /* The scroll is an effect after the commit that shows the link: waited for, not assumed done (it raced under load). */
+    await waitFor(() => expect(seen.at(-1)).toEqual({ el: settings, opts: { inline: 'nearest', block: 'nearest', behavior: 'smooth' } }));
     unmount();
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     renderInWorld(<MenuBar />, { path: '/characters/new', seed: signedIn });
     const mine = await within(bar()).findByRole('link', { name: 'My characters' });
-    expect(seen.at(-1)).toEqual({ el: mine, opts: { inline: 'nearest', block: 'nearest', behavior: 'auto' } });
+    await waitFor(() => expect(seen.at(-1)).toEqual({ el: mine, opts: { inline: 'nearest', block: 'nearest', behavior: 'auto' } }));
   });
 });
