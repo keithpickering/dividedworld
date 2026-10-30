@@ -69,10 +69,11 @@ function width(px: number) {
     return { matches, media: q, addEventListener: () => {}, removeEventListener: () => {} } as unknown as MediaQueryList;
   });
   vi.stubGlobal('innerWidth', px);
+  Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, get: () => px });
 }
 
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); delete (document.documentElement as { clientWidth?: number }).clientWidth; });
 
 describe('the banner: the board\'s own', () => {
   test('holds the instance\'s name, then Index and the boards, and nothing of the glass', async () => {
@@ -144,20 +145,20 @@ describe('the HUD: the glass, docked at the bottom', () => {
     width(1300);
     const { unmount } = setup();
     await hud();
-    expect(root).toHaveAttribute('data-kb-board', 'main');
+    expect(root).toHaveAttribute('data-kb-layout', 'main');
     expect(Number(root.style.getPropertyValue('--kb-board-scale'))).toBeCloseTo(1300 / 1440, 9);
     unmount();
-    expect(root).not.toHaveAttribute('data-kb-board');
+    expect(root).not.toHaveAttribute('data-kb-layout');
     width(1600);
     const second = setup();
     await hud();
-    expect(root).toHaveAttribute('data-kb-board', 'main');
+    expect(root).toHaveAttribute('data-kb-layout', 'main');
     expect(root.style.getPropertyValue('--kb-board-scale')).toBe('1');
     second.unmount();
     width(1151);
     setup();
     await hud();
-    expect(root).toHaveAttribute('data-kb-board', 'phone');
+    expect(root).toHaveAttribute('data-kb-layout', 'phone');
     expect(root.style.getPropertyValue('--kb-board-scale')).toBe('1');
   });
   test('the clock says when the next settlement is', async () => {
@@ -320,6 +321,34 @@ describe('the measured HUD height', () => {
     unmount();
     expect(measured()).toBe('');
     expect(disconnected).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('the tab\'s points on the scaled Main board', () => {
+  /*
+   * The HUD is drawn at the board's scale (CSS zoom), so the aura's box, measured in the window,
+   * is divided by the zoom to give the tab's points in the HUD's own px. Where a browser draws the
+   * zoom but has no currentCSSZoom (older Safari), the board's scale is the zoom; reading it as 1
+   * would put the tab short of the aura by the scale. jsdom has no currentCSSZoom, so it is that
+   * browser here.
+   */
+  test('are the aura\'s edges in the HUD\'s own px, divided by the board\'s scale where currentCSSZoom is undefined', async () => {
+    width(1296);
+    let tell: () => void = () => {};
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { tell = cb; } observe() {} disconnect() {} });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('kb-hud-aura')) return { left: 450, width: 452 * 0.9, top: 0, height: 100, bottom: 100, right: 450 + 452 * 0.9 } as DOMRect;
+      if (this.classList.contains('kb-hud')) return { left: 0, width: 1296, top: 0, height: 190, bottom: 190, right: 1296 } as DOMRect;
+      return { left: 0, width: 0, top: 0, height: 0, bottom: 0, right: 0 } as DOMRect;
+    });
+    setup();
+    const h = await hud();
+    expect((h as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom).toBeUndefined();
+    /* The aura comes with the session; its box resizing is what the HUD hears. */
+    await waitFor(() => expect(h.querySelector('.kb-hud-aura')).not.toBeNull());
+    act(() => tell());
+    /* 450 / 0.9 = 500 and (450 + 406.8) / 0.9 = 952, each 20px wider for the tab's top and 28px more for its slopes. */
+    expect([h.style.getPropertyValue('--tab-a'), h.style.getPropertyValue('--tab-b'), h.style.getPropertyValue('--tab-c'), h.style.getPropertyValue('--tab-d')]).toEqual(['452px', '480px', '972px', '1000px']);
   });
 });
 

@@ -25,7 +25,7 @@
  *
  * The swap is named "Swap mask" on the Main board's layout and "Posting as" on the Phone board's.
  * Which layout it is comes from useBoard (engine/ui/glass/useBoard.ts): the Main board's from the
- * width the instance's sizes work out (engine/ui/glass/board.ts; 1152px for Divided World), drawn
+ * width worked out from the instance's sizes (engine/ui/glass/board.ts), drawn
  * at the window's scale below 1440px, and the Phone board's below that width. The glass pages
  * switch at the same width.
  */
@@ -109,7 +109,7 @@ export function Hud() {
    *
    * The HUD is drawn at the board's scale (`zoom`, frame.css), and a box measured here is the
    * window's, so the height is set as it stands, for what sits outside the HUD, and the tab's points
-   * are divided by the scale, since they are set on the HUD and drawn at it.
+   * are divided by the HUD's zoom, since they are set on the HUD and drawn at it.
    *
    * Watching the section and the bar's three groups is enough: the HUD's height changes only with
    * the section's box, and the aura moves only when the section's width or the size of a group
@@ -125,7 +125,8 @@ export function Hud() {
       const s = el.getBoundingClientRect();
       root.style.setProperty('--kb-hud-measured', `${Math.ceil(s.height)}px`);
       const a = aura.current?.getBoundingClientRect();
-      const zoom = el.currentCSSZoom || 1;
+      /* A browser that draws zoom but has no currentCSSZoom (older Safari) draws it at the board's scale. */
+      const zoom = el.currentCSSZoom ?? scale;
       if (a && a.width > 0) {
         const left = Math.round((a.left - s.left) / zoom) - TAB_OUT;
         const right = Math.round((a.left - s.left + a.width) / zoom) + TAB_OUT;

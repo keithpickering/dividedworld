@@ -7,8 +7,8 @@
  * among them, is the window's width over 1440 of the board's. That holds until the smallest text it
  * draws would fall below the smallest size the Phone board draws; from there down it is the Phone
  * board's layout, at the phone's own sizes. So the switch is worked out from the instance's size
- * tokens: 1440 times the smallest phone size over the smallest Main board size (for Divided World,
- * 1440 × 16 / 20 = 1152px), never picked by hand.
+ * tokens: 1440 times the smallest phone size over the smallest Main board size, worked out from the
+ * instance's sizes and never picked by hand.
  *
  * Every text size the HUD and the glass pages draw at the Main board's layout is a size token or a
  * fixed size larger than the smallest token, so the smallest token is the smallest text; the

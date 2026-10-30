@@ -7,8 +7,9 @@ import type { Demo } from '../web/src/demo.ts';
 
 /**
  * axe-core in the real browser, over the built demo world, with the color-contrast rule jsdom
- * cannot run (engine/ui/a11y.ts says why), in the device's light and dark and at desktop and phone
- * widths. The token pairs are held separately in engine/ui/contrast.test.tsx.
+ * cannot run (engine/ui/a11y.ts says why), in the device's light and dark, on the Phone board's
+ * layout wide and narrow and on the Main board's just above the switch. The token pairs are held
+ * separately in engine/ui/contrast.test.tsx.
  */
 const axePath = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
@@ -77,7 +78,7 @@ const PAGES: readonly [string, string][] = [
 ];
 
 for (const scheme of ['light', 'dark'] as const) {
-  for (const [name, width] of [['desktop', 1000], ['just above the switch', ABOVE_SWITCH], ['phone', 360]] as const) {
+  for (const [name, width] of [['phone layout, wide', 1000], ['Main board layout, just above the switch', ABOVE_SWITCH], ['phone layout, narrow', 360]] as const) {
     test.describe(`${scheme}, ${name}`, () => {
       test.use({ colorScheme: scheme, viewport: { width, height: 800 } });
 
@@ -208,7 +209,7 @@ test.describe('between the boards\' widths', () => {
           el.style.transform = was;
           return w;
         };
-        return { board: document.documentElement.dataset.kbBoard, plate: width('.kb-hud-plate'), aura: width('.kb-hud-aura'), side: width('.kb-hud-side') };
+        return { board: document.documentElement.dataset.kbLayout, plate: width('.kb-hud-plate'), aura: width('.kb-hud-aura'), side: width('.kb-hud-side') };
       });
       expect(got.board).toBe('main');
       expect(got.plate).toBeCloseTo(420 * scale, 0);
@@ -225,7 +226,7 @@ test.describe('between the boards\' widths', () => {
     await expect(page.getByRole('combobox', { name: 'Posting as' })).toBeVisible();
     await expect(page.locator('.kb-hud-key')).toBeHidden();
     const got = await page.evaluate(() => ({
-      board: document.documentElement.dataset.kbBoard,
+      board: document.documentElement.dataset.kbLayout,
       scale: document.documentElement.style.getPropertyValue('--kb-board-scale'),
       glass: document.querySelector('.kb-hud-glass')!.getBoundingClientRect().height,
       label: getComputedStyle(document.querySelector('.kb-hud-swap')!).fontSize,
@@ -244,7 +245,7 @@ test.describe('between the boards\' widths', () => {
         const back = document.querySelector('.kb-glass-menu-back')!.getBoundingClientRect();
         const tabs = document.querySelector('.kb-glass-menu-list')!.getBoundingClientRect();
         const key = document.querySelector('.kb-glass-menu-key')!.getClientRects().length > 0;
-        return { board: document.documentElement.dataset.kbBoard, tabsUnderBack: tabs.top >= back.bottom, key, backHeight: back.height };
+        return { board: document.documentElement.dataset.kbLayout, tabsUnderBack: tabs.top >= back.bottom, key, backHeight: back.height };
       });
       if (board === 'main') {
         expect(got).toMatchObject({ board, tabsUnderBack: false, key: true });
@@ -255,6 +256,27 @@ test.describe('between the boards\' widths', () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
     });
   }
+
+  /*
+   * The menu bar and the content column are drawn at the board's scale; the board's own content
+   * panel, until Part 2, keeps the board's sizes and undoes the column's zoom (shell.css), so its
+   * effective zoom is 1 while the menu bar's is the scale.
+   */
+  test(`at ${ABOVE_SWITCH}px a glass page's content panel undoes the column's zoom, and the menu bar keeps it`, async ({ page }) => {
+    await page.setViewportSize({ width: ABOVE_SWITCH, height: 900 });
+    await page.goto('/settings');
+    await expect(ready(page, '/settings')).toBeVisible();
+    const got = await page.evaluate(() => ({
+      layout: document.documentElement.dataset.kbLayout,
+      menu: document.querySelector('.kb-glass-menu')!.currentCSSZoom,
+      column: document.querySelector('.kb-glass-content')!.currentCSSZoom,
+      panel: document.querySelector('.kb-glass-content-panel')!.currentCSSZoom,
+    }));
+    expect(got.layout).toBe('main');
+    expect(got.menu).toBeCloseTo(ABOVE_SWITCH / MAIN_BOARD_WIDTH, 3);
+    expect(got.column).toBeCloseTo(ABOVE_SWITCH / MAIN_BOARD_WIDTH, 3);
+    expect(got.panel).toBeCloseTo(1, 3);
+  });
 });
 
 test('the check sees low-contrast text in the browser', async ({ page }) => {

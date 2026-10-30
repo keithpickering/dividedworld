@@ -66,7 +66,7 @@
  * points (`kb-glass-seam-glow` under `kb-glass-seam-core`).
  *
  * Which board's layout it is, and its scale, are set on the root by useBoard
- * (engine/ui/glass/useBoard.ts, from engine/ui/glass/board.ts): `data-kb-board` and
+ * (engine/ui/glass/useBoard.ts, from engine/ui/glass/board.ts): `data-kb-layout` and
  * `--kb-board-scale`. A media query cannot read the width the instance's sizes work out, so the
  * Phone board's rules below are read under the root's mark, at no added specificity.
  *
@@ -542,26 +542,26 @@
  * that rather than cut its last row at the window's foot: a wallet past its cap, which the board
  * does not draw, or text spaced wider by the reader, needs more.
  */
-:where(:root[data-kb-board='phone']) .kb-hud-glass {
+:where(:root[data-kb-layout='phone']) .kb-hud-glass {
   box-sizing: content-box;
   min-height: 124px;
   border-top: 1.5px solid var(--kb-glass-pale);
   box-shadow: 0 -2px 18px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-ground {
+:where(:root[data-kb-layout='phone']) .kb-hud-ground {
   clip-path: none;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-seam,
-:where(:root[data-kb-board='phone']) .kb-hud-who,
-:where(:root[data-kb-board='phone']) .kb-hud-aura-legend,
-:where(:root[data-kb-board='phone']) .kb-hud-clock,
-:where(:root[data-kb-board='phone']) .kb-hud-menu > .kb-hud-key {
+:where(:root[data-kb-layout='phone']) .kb-hud-seam,
+:where(:root[data-kb-layout='phone']) .kb-hud-who,
+:where(:root[data-kb-layout='phone']) .kb-hud-aura-legend,
+:where(:root[data-kb-layout='phone']) .kb-hud-clock,
+:where(:root[data-kb-layout='phone']) .kb-hud-menu > .kb-hud-key {
   display: none;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-bar {
+:where(:root[data-kb-layout='phone']) .kb-hud-bar {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   grid-template-rows: auto auto;
   align-items: center;
@@ -570,18 +570,18 @@
   padding: 8px 16px 0;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-plate,
-:where(:root[data-kb-board='phone']) .kb-hud-plate-in,
-:where(:root[data-kb-board='phone']) .kb-hud-side,
-:where(:root[data-kb-board='phone']) .kb-hud-actions {
+:where(:root[data-kb-layout='phone']) .kb-hud-plate,
+:where(:root[data-kb-layout='phone']) .kb-hud-plate-in,
+:where(:root[data-kb-layout='phone']) .kb-hud-side,
+:where(:root[data-kb-layout='phone']) .kb-hud-actions {
   display: contents;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-plate--cast .kb-hud-avatar {
+:where(:root[data-kb-layout='phone']) .kb-hud-plate--cast .kb-hud-avatar {
   position: static;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-avatar {
+:where(:root[data-kb-layout='phone']) .kb-hud-avatar {
   grid-column: 1;
   grid-row: 1;
   width: 44px;
@@ -589,7 +589,7 @@
   box-shadow: 0 0 12px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-swap {
+:where(:root[data-kb-layout='phone']) .kb-hud-swap {
   position: static;
   grid-column: 2;
   grid-row: 1;
@@ -601,12 +601,12 @@
 }
 
 /* The Phone board sets the label at its face's own line, not the page's: the 124px glass holds both rows only so. */
-:where(:root[data-kb-board='phone']) .kb-hud-swap-label {
+:where(:root[data-kb-layout='phone']) .kb-hud-swap-label {
   display: block;
   line-height: normal;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-select {
+:where(:root[data-kb-layout='phone']) .kb-hud-select {
   display: block;
   width: 100%;
   max-width: none;
@@ -622,15 +622,15 @@
   border-bottom: 1px solid var(--kb-glass-neon);
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-sign-in,
-:where(:root[data-kb-board='phone']) .kb-hud-make {
+:where(:root[data-kb-layout='phone']) .kb-hud-sign-in,
+:where(:root[data-kb-layout='phone']) .kb-hud-make {
   grid-column: 1 / -1;
   min-height: 48px;
   font-size: var(--kb-glass-size-phone-display);
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-menu,
-:where(:root[data-kb-board='phone']) .kb-hud-hand {
+:where(:root[data-kb-layout='phone']) .kb-hud-menu,
+:where(:root[data-kb-layout='phone']) .kb-hud-hand {
   grid-row: 1;
   width: auto;
   min-width: 64px;
@@ -638,24 +638,24 @@
   padding: 0 6px;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-menu {
+:where(:root[data-kb-layout='phone']) .kb-hud-menu {
   grid-column: 3;
   box-shadow: 0 0 12px color-mix(in srgb, var(--kb-glass-neon) 50%, transparent);
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-hand {
+:where(:root[data-kb-layout='phone']) .kb-hud-hand {
   grid-column: 4;
   gap: 0.25em;
   box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-salty) 70%, transparent);
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-menu > span,
-:where(:root[data-kb-board='phone']) .kb-hud-hand > span:first-child {
+:where(:root[data-kb-layout='phone']) .kb-hud-menu > span,
+:where(:root[data-kb-layout='phone']) .kb-hud-hand > span:first-child {
   font-size: 18px;
   letter-spacing: 0.5px;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-hand-count {
+:where(:root[data-kb-layout='phone']) .kb-hud-hand-count {
   padding: 0;
   font-family: var(--kb-glass-font-display);
   font-size: 18px;
@@ -664,13 +664,13 @@
   background: none;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-aura {
+:where(:root[data-kb-layout='phone']) .kb-hud-aura {
   grid-column: 1 / -1;
   grid-row: 2;
   margin: 0;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-orbs {
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs {
   margin: 0;
 }
 
@@ -680,7 +680,7 @@
  * board does not draw, puts its figure on a line of its own at the right, whole, and the glass
  * grows to hold it. Each figure keeps its words on one line.
  */
-:where(:root[data-kb-board='phone']) .kb-hud-orbs .kb-orbs {
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs {
   --kb-orb-size: 30px;
   --kb-orb-gap: 6px;
   flex-wrap: wrap;
@@ -688,24 +688,24 @@
   gap: 8px;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-orbs .kb-orbs-row {
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-row {
   flex-basis: auto;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-orbs .kb-orbs-figures {
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-figures {
   margin-left: auto;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-orbs .kb-orbs-figure {
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-figure {
   font-size: var(--kb-glass-size-display-s);
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-orbs .kb-orbs-cap {
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-cap {
   display: none;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-orbs .kb-orbs-pending,
-:where(:root[data-kb-board='phone']) .kb-hud-orbs .kb-orbs-over {
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-pending,
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-over {
   margin-left: 0;
   padding: 0;
   font-size: var(--kb-glass-size-phone-body);
@@ -713,7 +713,7 @@
   border: 0;
 }
 
-:where(:root[data-kb-board='phone']) .kb-hud-orbs .kb-orbs-over {
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-over {
   margin-left: auto;
 }
 
