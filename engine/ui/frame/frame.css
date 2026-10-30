@@ -63,6 +63,11 @@
   z-index: 30;
 }
 
+/*
+ * Clicks pass through only the transparent strip beside the tab, where the page shows: the glass
+ * itself takes none, and the ground takes them where it is drawn, since its clip-path (the tab's
+ * polygon) bounds its hit area too. So nothing opaque lets a click fall through to a link beneath.
+ */
 .kb-hud-glass {
   position: relative;
   isolation: isolate;
@@ -71,6 +76,7 @@
   pointer-events: none;
 }
 
+.kb-hud-ground,
 .kb-hud-bar {
   pointer-events: auto;
 }
@@ -366,5 +372,10 @@
 
 /* Focus moves to the page on a move between pages; the page itself draws no ring for it. */
 .kb-page:focus {
+  outline: none;
+}
+
+/* Focus moves into the hand as it opens; the sheet itself draws no ring for it, its buttons do. */
+.kb-hand-drawer:focus {
   outline: none;
 }

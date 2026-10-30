@@ -7,24 +7,24 @@
  * text are its words alone.
  *
  * Esc anywhere on a glass page goes back, as the Back link does, unless something else has
- * answered it first (an overlay, which closes and leaves the page; a control that handled it) or
- * it was typed into a text field, where Esc belongs to the field. Where the bar's pages live is
+ * answered it first (an overlay, which closes and leaves the page; a control that handled it), it
+ * was typed into a text field, where Esc belongs to the field, or it is a held key's repeat or the
+ * end of an IME composition (keys.ts). A modified or middle click on Back opens the board as the
+ * browser would and leaves this page and its kept place alone. Where the bar's pages live is
  * GLASS_NAV's (nav.ts): Rankings and My log stand in on the standings until their pages exist.
+ *
+ * On a phone Back is on its own row and the pages are a strip under it that scrolls sideways, so
+ * the current page's tab is scrolled into view as a page opens; with reduced motion it is there at
+ * once. Back stays out of the strip, so no tab ever slides under it.
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { motionReduced } from '../appearance.ts';
 import { usePlayer } from '../player.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { backHref, boardPlace, useBackToBoard } from './back.ts';
+import { pageEscape, plainClick } from './keys.ts';
 import { GLASS_NAV } from './nav.ts';
 import './shell.css';
-
-/** Where Esc belongs to the control it was typed in. */
-export function isEditable(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
-  return target instanceof HTMLInputElement && !['button', 'checkbox', 'radio', 'submit', 'reset', 'range', 'color', 'file', 'image'].includes(target.type);
-}
 
 interface Tab { readonly label: string; readonly to: string; readonly current: (path: string) => boolean }
 
@@ -39,10 +39,11 @@ export function MenuBar() {
   const { session } = usePlayer();
   const { path } = useLocation();
   const back = useBackToBoard();
+  const list = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented || isEditable(e.target)) return;
+      if (!pageEscape(e)) return;
       e.preventDefault();
       back();
     };
@@ -50,27 +51,34 @@ export function MenuBar() {
     return () => document.removeEventListener('keydown', onKey);
   }, [back]);
 
+  useEffect(() => {
+    const current = list.current?.querySelector('[aria-current="page"]');
+    current?.scrollIntoView?.({ inline: 'nearest', block: 'nearest', behavior: motionReduced() ? 'auto' : 'smooth' });
+  }, [path, session.signedIn]);
+
   return (
     <nav className="kb-glass-menu" aria-label="Menu">
-      <ul className="kb-glass-menu-list">
-        <li>
-          <Link
-            to={backHref(boardPlace())}
-            className="kb-glass-menu-back kb-glass-cut-button"
-            aria-keyshortcuts="Escape"
-            onClick={(e) => { e.preventDefault(); back(); }}
-          >
-            <span className="kb-glass-menu-arrow" aria-hidden="true" data-kb-key="‹" />
-            Back to the board
-            <span className="kb-glass-menu-key" aria-hidden="true" data-kb-key="ESC" />
-          </Link>
-        </li>
-        {session.signedIn && TABS.map((t) => (
-          <li key={t.label}>
-            <Link to={t.to} className="kb-glass-menu-tab" aria-current={t.current(path) ? 'page' : undefined}>{t.label}</Link>
-          </li>
-        ))}
-      </ul>
+      <div className="kb-glass-menu-row">
+        <Link
+          to={backHref(boardPlace())}
+          className="kb-glass-menu-back kb-glass-cut-button"
+          aria-keyshortcuts="Escape"
+          onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
+        >
+          <span className="kb-glass-menu-arrow" aria-hidden="true" data-kb-key="‹" />
+          Back to the board
+          <span className="kb-glass-menu-key" aria-hidden="true" data-kb-key="ESC" />
+        </Link>
+        {session.signedIn && (
+          <ul ref={list} className="kb-glass-menu-list">
+            {TABS.map((t) => (
+              <li key={t.label}>
+                <Link to={t.to} className="kb-glass-menu-tab" aria-current={t.current(path) ? 'page' : undefined}>{t.label}</Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </nav>
   );
 }

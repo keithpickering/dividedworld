@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Character, KayfaApi, MyCharacter } from '../data/api.ts';
@@ -126,12 +126,12 @@ describe('the HUD: the glass, docked at the bottom', () => {
     setup();
     expect(await within(await hud()).findByText('Next settlement')).toBeInTheDocument();
   });
-  test('Menu, with Esc as its key, opens the glass at My characters and keeps the board\'s place', async () => {
+  test('Menu, with Esc as its key, opens the glass at My characters and keeps the board\'s place; it navigates, so it claims no popup', async () => {
     window.history.replaceState(null, '', '/b/general?page=2');
     setup();
     const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
     expect(menu).toHaveAttribute('aria-keyshortcuts', 'Escape');
-    expect(menu).toHaveAttribute('aria-haspopup', 'true');
+    expect(menu).not.toHaveAttribute('aria-haspopup');
     await userEvent.click(menu);
     expect(here()).toBe('/characters');
     expect(boardPlace()).toMatchObject({ href: '/b/general?page=2' });
@@ -266,5 +266,61 @@ describe('the measured HUD height', () => {
     unmount();
     expect(measured()).toBe('');
     expect(disconnected).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('from the Task 1.4 reviews', () => {
+  test('a held Esc (its repeats) and an Esc that ends an IME composition do not open the menu', async () => {
+    window.history.replaceState(null, '', '/b/general');
+    setup();
+    await within(await hud()).findByRole('button', { name: 'Menu' });
+    fireEvent.keyDown(document.body, { key: 'Escape', repeat: true });
+    expect(here()).toBe('/b/general');
+    fireEvent.keyDown(document.body, { key: 'Escape', isComposing: true });
+    expect(here()).toBe('/b/general');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(here()).toBe('/characters');
+  });
+  test('a modified click on the avatar or the orbs opens as the browser would, and moves nothing here', async () => {
+    window.history.replaceState(null, '', '/t/abc');
+    setup();
+    const h = await hud();
+    const avatar = await within(h).findByRole('link', { name: 'My characters' });
+    const orbs = await within(h).findByRole('link', { name: /^My log: / });
+    for (const link of [avatar, orbs]) {
+      for (const mod of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+        fireEvent.click(link, mod);
+        expect(here()).toBe('/t/abc');
+      }
+    }
+  });
+  test('every way into the glass keeps the board\'s place: Make a character, and Sign in in the HUD and the banner', async () => {
+    window.history.replaceState(null, '', '/b/general?page=3');
+    const { unmount } = setup(true, []);
+    await userEvent.click(await within(await hud()).findByRole('link', { name: 'Make a character' }));
+    expect(boardPlace()).toMatchObject({ href: '/b/general?page=3' });
+    unmount();
+    for (const where of ['hud', 'banner'] as const) {
+      forgetBoard();
+      window.history.replaceState(null, '', '/b/general?page=3');
+      const view = setup(false);
+      const scope = where === 'hud' ? await hud() : screen.getByRole('navigation', { name: 'Main' });
+      await userEvent.click(await within(scope).findByRole('link', { name: 'Sign in' }));
+      expect(boardPlace()).toMatchObject({ href: '/b/general?page=3' });
+      view.unmount();
+    }
+  });
+  test('the hand, opened from the keyboard, takes focus into its sheet; Tab reaches Close the hand', async () => {
+    setup();
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
+    hand.focus();
+    await userEvent.keyboard('{Enter}');
+    const drawer = screen.getByRole('region', { name: 'Your hand' });
+    expect(drawer).toHaveFocus();
+    await userEvent.tab();
+    expect(within(drawer).getByRole('button', { name: 'Close the hand' })).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(hand).toHaveFocus();
   });
 });

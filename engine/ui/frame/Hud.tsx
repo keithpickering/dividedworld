@@ -9,12 +9,20 @@
  * It is the player's alone: what it shows is their own rows, and changing the character sends
  * nothing anywhere (player.tsx). Menu and Esc anywhere on the board open the glass at My characters,
  * keeping the board's place for Back (engine/ui/glass/back.ts); an Esc another control handled, or
- * one typed in a text field, is that control's. While the hand is open, Esc closes the hand.
+ * one typed in a text field, is that control's, and a held Esc's repeats and the Esc that ends an
+ * IME composition open nothing (engine/ui/glass/keys.ts). While the hand is open, Esc closes the
+ * hand. Every way from here into the glass keeps the place: the avatar, the orbs and Menu, and
+ * Make a character and Sign in. A modified or middle click on the avatar or the orbs opens its page
+ * as the browser would and leaves this one alone. Menu navigates rather than opening a menu, so it
+ * claims no popup.
+ *
+ * The hand opens as a region above the bar and takes focus, so a keyboard is in it at once; its
+ * Close the hand button, or Esc, closes it and returns focus to the hand.
  *
  * The swap is named "Swap mask" where the three groups fit (the Main board) and "Posting as" below
  * 1340px, where the HUD is the Phone board's.
  */
-import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
@@ -26,7 +34,7 @@ import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { motionReduced } from '../appearance.ts';
 import { Smoke } from '../glass/Smoke.tsx';
 import { rememberBoard } from '../glass/back.ts';
-import { isEditable } from '../glass/MenuBar.tsx';
+import { pageEscape, plainClick } from '../glass/keys.ts';
 import { GLASS_NAV } from '../glass/nav.ts';
 
 /** Where the HUD stops being the Main board's three groups and becomes the Phone board's. */
@@ -61,6 +69,7 @@ export function Hud() {
   const [handOpen, setHandOpen] = useState(false);
   const [tab, setTab] = useState<readonly [number, number, number, number] | null>(null);
   const handButton = useRef<HTMLButtonElement>(null);
+  const drawer = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
   const aura = useRef<HTMLDivElement>(null);
   const drawerId = useId();
@@ -101,6 +110,11 @@ export function Hud() {
    * What sits above the HUD (a sheet, the new-posts bar) needs the HUD's real height: on a narrow
    * screen its groups stack, and the hand drawer adds its own. The tab's four points follow the
    * aura's own box, so the tab sits over the orbs at every width.
+   *
+   * Watching the section and the bar's three groups is enough: the HUD's height changes only with
+   * the section's box, and the aura moves only when the section's width or the size of a group
+   * beside it changes (a longer name in the plate, the hand's count) or it changes size itself.
+   * Each of those resizes something watched here, so no move of the tab goes unmeasured.
    */
   useEffect(() => {
     const el = section.current;
@@ -119,25 +133,30 @@ export function Hud() {
     measure();
     const watch = new ResizeObserver(measure);
     watch.observe(el);
-    if (aura.current) watch.observe(aura.current);
+    for (const group of el.querySelectorAll('.kb-hud-bar > *')) watch.observe(group);
     return () => { watch.disconnect(); root.style.removeProperty('--kb-hud-measured'); };
   }, [signedIn]);
 
   const here = `${location.path}${location.query.size ? `?${location.query}` : ''}`;
   const toGlass = (to: string) => { rememberBoard(here); navigate(to); };
+  /** A link into the glass the router follows itself: it keeps the place on a plain click. */
+  const keepPlace = (e: MouseEvent) => { if (plainClick(e)) rememberBoard(here); };
+
+  /* The opened hand takes focus, so the keyboard is in it at once. */
+  useEffect(() => { if (handOpen) drawer.current?.focus(); }, [handOpen]);
 
   /* Esc on the board: the hand's when it is open, else the menu's. */
   useEffect(() => {
     if (!signedIn) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (e.key !== 'Escape' || e.defaultPrevented || e.repeat || e.isComposing) return;
       if (handOpen) {
         e.preventDefault();
         setHandOpen(false);
         handButton.current?.focus();
         return;
       }
-      if (isEditable(e.target)) return;
+      if (!pageEscape(e)) return;
       e.preventDefault();
       rememberBoard(here);
       navigate(GLASS_NAV.characters);
@@ -156,7 +175,7 @@ export function Hud() {
   return (
     <section ref={section} className="kb-hud" aria-label="Game HUD" style={tabVars} data-kb-wide={wide || undefined}>
       {signedIn && (
-        <div id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" hidden={!handOpen}>
+        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen}>
           <Smoke surface="hand" />
           <div className="kb-hand-bar">
             <button
@@ -187,16 +206,16 @@ export function Hud() {
         <div className="kb-hud-bar">
           <div className="kb-hud-plate">
             {!signedIn ? (
-              <Link to={signInHref(location.path, location.query.size ? `?${location.query}` : '')} className="kb-hud-sign-in kb-glass-cut-button">Sign in</Link>
+              <Link to={signInHref(location.path, location.query.size ? `?${location.query}` : '')} className="kb-hud-sign-in kb-glass-cut-button" onClick={keepPlace}>Sign in</Link>
             ) : !player.loaded ? null : !hud ? (
-              <Link to="/characters/new" className="kb-hud-make kb-glass-cut-button">Make a character</Link>
+              <Link to="/characters/new" className="kb-hud-make kb-glass-cut-button" onClick={keepPlace}>Make a character</Link>
             ) : (
               <>
                 <Link
                   to={GLASS_NAV.characters}
                   className="kb-hud-avatar"
                   aria-label="My characters"
-                  onClick={(e) => { e.preventDefault(); toGlass(GLASS_NAV.characters); }}
+                  onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); toGlass(GLASS_NAV.characters); }}
                 >
                   {face?.avatarSquare ? <img src={face.avatarSquare} alt="" /> : <span className="kb-hud-avatar-none" aria-hidden="true">{hud.name.slice(0, 1)}</span>}
                 </Link>
@@ -224,7 +243,7 @@ export function Hud() {
                 <Link
                   to={GLASS_NAV.log}
                   className="kb-hud-orbs"
-                  onClick={(e) => { e.preventDefault(); toGlass(GLASS_NAV.log); }}
+                  onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); toGlass(GLASS_NAV.log); }}
                 >
                   <span className="kb-visually-hidden">My log: </span>
                   <Orbs settled={player.wallet.balance} pending={player.pending} cap={player.wallet.cap ?? settings.walletCap} cascadeFrom={player.walletSeen} />
@@ -241,7 +260,6 @@ export function Hud() {
               <button
                 type="button"
                 className="kb-hud-menu kb-glass-cut-button"
-                aria-haspopup="true"
                 aria-keyshortcuts="Escape"
                 onClick={() => toGlass(GLASS_NAV.characters)}
               >

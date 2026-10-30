@@ -25,15 +25,23 @@
   padding: 16px clamp(16px, 4.44vw, 64px);
 }
 
+.kb-glass-menu-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 auto;
+  max-width: 1312px;
+}
+
 .kb-glass-menu-list {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
   list-style: none;
-  margin: 0 auto;
+  margin: 0;
   padding: 0;
-  max-width: 1312px;
 }
 
 .kb-glass-menu-back,
@@ -82,15 +90,21 @@
 
 /* Below 900px it is the phone's bar: Back on its own row, no key cap, the tabs a strip that scrolls sideways on its own. */
 @media (max-width: 899.98px) {
-  .kb-glass-menu-list {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    font-size: var(--kb-glass-size-phone-body);
+  .kb-glass-menu-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .kb-glass-menu-list > li:first-child {
-    position: sticky;
-    left: 0;
+  .kb-glass-menu-back {
+    align-self: flex-start;
+  }
+
+  .kb-glass-menu-list {
+    flex-wrap: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    font-size: var(--kb-glass-size-phone-body);
   }
 
   .kb-glass-menu-key {

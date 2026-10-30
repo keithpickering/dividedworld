@@ -48,7 +48,19 @@ const withWorld: Decorator = (Story, context) => {
 
 const preview: Preview = {
   decorators: [withWorld],
-  parameters: { a11y: { test: 'error' } },
+  parameters: {
+    a11y: { test: 'error' },
+    /*
+     * The widths the owner reviews the glass at, named for what they show: the glass plan's Phone
+     * board (a 390 by 844 phone) and the narrowest Main-board screen the docked HUD is drawn for.
+     */
+    viewport: {
+      options: {
+        glassPhone390: { name: 'Phone board, 390 × 844', styles: { width: '390px', height: '844px' }, type: 'mobile' },
+        hudDocked1024: { name: 'Docked HUD, 1024 × 768', styles: { width: '1024px', height: '768px' }, type: 'tablet' },
+      },
+    },
+  },
 };
 
 export default preview;
