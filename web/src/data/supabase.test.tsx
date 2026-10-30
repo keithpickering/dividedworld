@@ -402,7 +402,18 @@ describe('reads and their rows', () => {
 
   it('answers preferences with the defaults when no row exists', async () => {
     const h = harness(() => rows([]));
-    expect(await h.api.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system' });
+    expect(await h.api.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100 });
+  });
+
+  it('reads the glass\'s three preferences from their columns and sends them to set_preferences by its parameter names', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', text_size: 200 });
+      return rows([{ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150 }]);
+    });
+    expect(await h.api.preferences()).toEqual({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150 });
+    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,postbit,motion,smoke,contrast,text_size');
+    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200 } });
+    expect(h.to('rpc/set_preferences')[0]?.body).toEqual({ theme: null, postbit: null, motion: null, smoke: 'off', contrast: 'high', text_size: 200 });
   });
 
   it('keys tallies, view counts and reading by id', async () => {

@@ -277,7 +277,16 @@ export interface Preferences {
   readonly theme: string;
   readonly postbit: 'side' | 'stacked';
   readonly motion: 'system' | 'reduce' | 'full';
+  /** How much smoke stands behind the glass: all of it, a third of each layer, or none (plain ground). */
+  readonly smoke: 'full' | 'low' | 'off';
+  /** High puts solid ground under every line of glass text and switches the glass to its `high` key. */
+  readonly contrast: 'standard' | 'high';
+  /** The text's size for the board and the glass together, in percent; past 150 the glass is one column. */
+  readonly textSize: 100 | 125 | 150 | 200;
 }
+
+/** What an account's preferences are before it has set any (account_preferences' defaults). */
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100 };
 
 export interface MyInvite {
   readonly id: number;

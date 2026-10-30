@@ -1,7 +1,7 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import type { Answer, Preferences } from '../data/api.ts';
+import { DEFAULT_PREFERENCES, type Answer, type Preferences } from '../data/api.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { SettingsScreen } from './Settings.tsx';
 
@@ -88,7 +88,7 @@ describe('Settings', () => {
     calls[0]!.settle({ ok: false, error: 'a theme is named in lowercase words joined by hyphens' });
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1]!.patch).toEqual({ motion: 'reduce' });
-    calls[1]!.settle({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'reduce' } });
+    calls[1]!.settle({ ok: true, value: { ...DEFAULT_PREFERENCES, motion: 'reduce' } });
     expect(await screen.findByRole('alert')).toHaveTextContent('a theme is named in lowercase words joined by hyphens');
     expect(within(screen.getByRole('group', { name: 'Theme' })).getByRole('radio', { name: /^Device/u, checked: true })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /^Reduce/u, checked: true })).toBeInTheDocument();
