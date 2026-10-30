@@ -111,3 +111,37 @@ for (const width of [1440, 1280]) {
     await expect(page.getByRole('button', { name: 'Turn Pipewrench' })).toBeFocused();
   });
 }
+
+/*
+ * A name in the Turn's How loud is a skewed square drawn by its background and border, which forced
+ * colors (Windows High Contrast) override: its own forced-colors rules keep on and off apart there.
+ */
+test('in forced colors the Turn names still show which is on', async ({ page }) => {
+  await page.emulateMedia({ forcedColors: 'active' });
+  await page.goto('/characters');
+  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+  await page.getByRole('button', { name: 'Turn Pipewrench' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Turn Pipewrench' });
+  await dialog.getByRole('radio').first().check();
+  const on = dialog.getByRole('checkbox', { name: /^Name the old class/u });
+  const off = dialog.getByRole('checkbox', { name: /^Name the new class/u });
+  await on.check();
+  await expect(off).not.toBeChecked();
+  /*
+   * Forced colors keep a background's alpha and repaint its color, so a fill drawn in a token comes
+   * out as a pale wash of the page's own Canvas, the same as no fill: the checked box must be filled
+   * with the system's Highlight, and the unchecked one must not be.
+   */
+  const highlight = await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'forced-color-adjust: none; background-color: Highlight';
+    document.body.append(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  });
+  const fill = (box: typeof on) => box.evaluate((el) => getComputedStyle(el).backgroundColor);
+  /* Polled: a fill eases in under full motion, and the reading is of the state it settles in. */
+  await expect.poll(() => fill(on)).toBe(highlight);
+  await expect.poll(() => fill(off)).not.toBe(highlight);
+});

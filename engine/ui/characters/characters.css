@@ -836,6 +836,113 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.35fr);
 }
 
+/*
+ * The board's third tile, where it draws "Announced with old class": here the two names an
+ * announced Turn can carry, a tile of two toggles that lights as the board's chosen tile does once
+ * the post names a class, and dims with its toggles off while the Turn is silent.
+ */
+.kb-turn-name {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 35%, transparent);
+  transition: border-color 0.18s ease-out, box-shadow 0.18s ease-out, background-color 0.18s ease-out;
+}
+
+.kb-turn-name[data-kb-chosen] {
+  border: 2px solid var(--kb-glass-neon);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--kb-glass-neon) 45%, transparent);
+  background: color-mix(in srgb, var(--kb-glass-neon) 8%, transparent);
+}
+
+.kb-turn-name:disabled {
+  opacity: 0.6;
+}
+
+.kb-turn-toggle {
+  display: flex;
+  /* The skewed square leans 2px into the gap at its top, so the gap is the board's 12px less that. */
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--kb-glass-text-2);
+  cursor: pointer;
+}
+
+.kb-turn-toggle + .kb-turn-toggle {
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+.kb-turn-name:disabled .kb-turn-toggle {
+  cursor: default;
+}
+
+.kb-turn-toggle b {
+  display: block;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+/* The toggle is the board's skewed square, the class cards' map cell, lit and glowing when on. */
+.kb-turn-toggle input {
+  flex: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  margin: 2px 0 0;
+  box-sizing: border-box;
+  border: 2px solid var(--kb-glass-neon-text);
+  background: transparent;
+  transform: skewX(-10deg);
+  cursor: inherit;
+  transition: background-color 0.18s ease-out, box-shadow 0.18s ease-out;
+}
+
+.kb-turn-toggle input:checked {
+  border-color: var(--kb-glass-neon);
+  background: var(--kb-glass-neon);
+  box-shadow: inset 0 0 0 3px var(--kb-glass-ink-neon), 0 0 12px color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+}
+
+/*
+ * Forced colors (Windows High Contrast) repaint the square's fill and border and drop its shadow, so
+ * on and off would look alike: there the square keeps its own colors, the system's, an outline in
+ * ButtonText when off and filled with Highlight when on.
+ */
+@media (forced-colors: active) {
+  .kb-turn-toggle input {
+    forced-color-adjust: none;
+    transition: none;
+    border-color: ButtonText;
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .kb-turn-toggle input:checked {
+    border-color: Highlight;
+    background: Highlight;
+    box-shadow: inset 0 0 0 3px Canvas;
+  }
+
+  .kb-turn-name:disabled .kb-turn-toggle input {
+    border-color: GrayText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) :is(.kb-turn-name, .kb-turn-toggle input) { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] :is(.kb-turn-name, .kb-turn-toggle input) { transition: none; }
+
 .kb-turn-foot {
   grid-column: 1 / -1;
   display: flex;
@@ -1095,7 +1202,7 @@
   width: 30%;
 }
 
-:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog) :is(.kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-choice-option, .kb-characters-lead, .kb-glass-action, .kb-notice, .kb-glass-field, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
+:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog) :is(.kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-choice-option, .kb-turn-toggle, .kb-characters-lead, .kb-glass-action, .kb-notice, .kb-glass-field, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
   font-size: var(--kb-glass-size-phone-body);
 }
 
