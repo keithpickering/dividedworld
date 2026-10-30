@@ -1050,3 +1050,21 @@
 .kb-hand-drawer:focus {
   outline: none;
 }
+
+/*
+ * An armed card is the Phone board's hand button's words (the owner's answer on #80): "Armed · Whoops!"
+ * in the phone's smallest size, wrapping to two lines in the button's height so a longer card name
+ * never widens it into the mask picker beside it.
+ */
+:where(:root[data-kb-layout='phone']) .kb-hud-hand[data-kb-armed] {
+  max-width: 9rem;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-hand > span.kb-hud-hand-armed:first-child {
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-phone-small);
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}

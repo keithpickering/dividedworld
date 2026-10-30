@@ -53,17 +53,17 @@
   pointer-events: none;
 }
 
+/* The words and controls are the glass strip's (EffectStrip, engine/ui/cards/Effects.tsx), under the post. */
 .kb-whoops-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem 0.75rem;
-  margin: 0 1% 8px;
+  gap: 0.35rem 1rem;
 }
 
 .kb-whoops-hint {
   margin: 0;
-  color: var(--kb-muted);
+  color: var(--kb-glass-text-2);
 }
 
 /* The keyboard path: a skewed piece of glass, as the card's tag is, in the card's alignment. */
@@ -97,17 +97,42 @@
 
 .kb-whoops-tools {
   display: inline-flex;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  color: var(--kb-glass-text-2);
 }
 
-.kb-whoops-tools button[aria-pressed="true"] {
-  font-weight: bold;
+/* The author's tools are glass controls, not the post's links: the chosen one is bold and underlined. */
+.kb-whoops-tool {
+  min-height: 24px;
+  padding: 0 0.25rem;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: var(--kb-glass-neon-text);
   text-decoration: underline;
+  cursor: pointer;
+}
+
+.kb-whoops-tool[aria-pressed="true"] {
+  font-weight: 800;
+  text-decoration-thickness: 2px;
+}
+
+.kb-whoops-tool:focus-visible {
+  outline: 2px solid var(--kb-glass-text-hi);
+  outline-offset: 2px;
 }
 
 .kb-whoops-status {
-  margin: 0 1% 8px;
-  color: var(--kb-muted);
+  margin: 0.25rem 0 0;
+  color: var(--kb-glass-text-2);
+}
+
+/* On the Phone board's layout the strip's controls are a step smaller, at the phone's smallest size. */
+:where(:root[data-kb-layout='phone']) .kb-whoops-scrub-label {
+  font-size: var(--kb-glass-size-phone-small);
 }
 
 /* ---- the play form's ink: the card's swatches, any color, and a preview ---- */
@@ -214,12 +239,12 @@
     outline-color: Highlight;
   }
 
-  .kb-whoops-tools button {
+  .kb-whoops-tool {
     outline: 1px solid ButtonText;
     outline-offset: 2px;
   }
 
-  .kb-whoops-tools button[aria-pressed="true"] {
+  .kb-whoops-tool[aria-pressed="true"] {
     outline: 3px solid Highlight;
   }
 

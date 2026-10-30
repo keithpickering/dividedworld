@@ -148,6 +148,15 @@ describe('the take-over', () => {
     expect(view()).not.toBeNull();
   });
 
+  test('held in its thread, the post\'s 2003 body holds only the post\'s words: no glass and no control (the owner\'s notes on #80)', async () => {
+    await openThread(world());
+    const held = document.querySelector('.kb-hold') as HTMLElement;
+    expect(held).not.toBeNull();
+    expect(held.querySelector('.kb-glass, button, [role="button"], a[href]')).toBeNull();
+    /* The post's body holds no glass but the play's tag, which stands above its words. */
+    expect(held.closest('.kb-act-main')?.querySelector('.kb-glass:not(.kb-play-tag)')).toBeNull();
+  });
+
   test('a settled scroll with the post mostly out of the window does not take over; once it is mostly in, it does', async () => {
     await openThread(world());
     await settleOn({ top: 700, bottom: 1020 });
@@ -621,7 +630,7 @@ describe('an effect given more than one play', () => {
     return (
       <HoldStage.Provider value={{ mode: 'view', level: 0 }}>
         <StickAroundEffect
-          post={act1()} plays={plays} states={{}} released={released} reader={{ author: false, caster: false }} place="thread" save={vi.fn()}
+          post={act1()} plays={plays} states={{}} released={released} reader={{ author: false, caster: false }} place="thread" slot={null} save={vi.fn()}
           release={async (id) => { setReleased((r) => new Set([...r, id])); return { ok: true, value: { play: id, releasedAt: 'now' } } as never; }}
         >
           <p>the post</p>

@@ -38,6 +38,7 @@ const LINE_CHARS = 24;
 const TEXT = Array.from({ length: LINES }, (_, k) => `L${String(k).padStart(2, '0')} alpha beta gamma`.padEnd(LINE_CHARS)).join('');
 const HEIGHT = (LINES * LINE_PX) / 360;
 
+const slots: HTMLElement[] = [];
 let frameWidth = 620;
 /** How many lines tall the post is laid out; an edit changes it. */
 let layoutLines = LINES;
@@ -58,6 +59,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  while (slots.length > 0) slots.pop()!.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   document.documentElement.removeAttribute('data-kb-motion');
@@ -89,8 +91,13 @@ interface Options {
 
 function mount(o: Options = {}) {
   const save = o.save ?? vi.fn(ok as unknown as EffectProps['save']);
+  /* The place the engine gives an effect outside the post's 2003 chrome: a strip under the post (engine/ui/cards/Effects.tsx). */
+  const slot = document.createElement('div');
+  slot.className = 'kb-act-slot';
+  document.body.append(slot);
+  slots.push(slot);
   const props: EffectProps = {
-    post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
+    slot, post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
     place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), children: <p>{TEXT}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
@@ -102,7 +109,7 @@ function mount(o: Options = {}) {
   }
   const world = renderInWorld(<Host />, { settings: { cardSettings: o.clean === null ? {} : { 'whoops.clean': o.clean ?? 95 } } });
   const root = world.container.querySelector('.kb-whoops') as HTMLElement;
-  return { ...world, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)) };
+  return { ...world, slot, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)) };
 }
 
 /** The washed share of each layer, as the component publishes it. */
@@ -174,7 +181,7 @@ describe('the layers', () => {
     const { root } = mount({ layers: 2, states: { 'play-2': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
     expect(states(root)).toEqual(['live', 'clean']);
     const all = mount({ layers: 1, states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
-    expect(all.root.querySelector('[data-kb-scrub]')).toBeNull();
+    expect(all.slot.querySelector('[data-kb-scrub]')).toBeNull();
     expect(screen.getAllByRole('button', { name: 'Hold to scrub' })).toHaveLength(1);
   });
 });
@@ -306,6 +313,28 @@ describe('scrubbing', () => {
     hear({ 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } });
     expect(states(root)).toEqual(['clean']);
     expect(root).toHaveAttribute('data-kb-fading', 'true');
+  });
+});
+
+describe('the words and controls are glass, outside the post (the owner\'s notes on #80)', () => {
+  test('the hint, "Hold to scrub" and the author\'s tools are one glass element in the strip under the post, and the post\'s own body holds none of them', () => {
+    const { root, slot } = mount({ author: true });
+    const strip = slot.querySelector('.kb-effect-strip') as HTMLElement;
+    expect(strip).not.toBeNull();
+    expect(slot.querySelectorAll('.kb-effect-strip')).toHaveLength(1);
+    expect(strip).toHaveClass('kb-glass');
+    expect(strip).toHaveTextContent('This post is splatted. Drag across the ink to scrub it on your screen, or');
+    for (const name of ['Hold to scrub', 'Wash', 'Write in ink']) {
+      const button = screen.getByRole('button', { name });
+      expect(strip).toContainElement(button);
+      expect(root).not.toContainElement(button);
+    }
+    expect(root.textContent).not.toMatch(/splatted|Yours to wash/u);
+    expect(root.querySelector('button')).toBeNull();
+  });
+  test('a strip is drawn only while a layer holds ink, and says nothing of itself to a post that is plain', () => {
+    const { slot } = mount({ layers: 1, states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    expect(slot.querySelector('.kb-effect-strip')).toBeNull();
   });
 });
 

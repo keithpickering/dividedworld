@@ -255,9 +255,36 @@ describe('the hand', () => {
     const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     await userEvent.click(hand);
     await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard' }));
-    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(document.querySelector('.kb-hand-drawer')).toHaveAttribute('hidden');
+    /* The hand button now says the card is armed, and one press puts it back (#80), so the hand is opened again from there. */
+    const armed = screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' });
+    expect(armed).toHaveTextContent('Armed · Stick Around');
+    await userEvent.click(armed);
+    await userEvent.click(screen.getByRole('button', { name: 'Hand, 3 postcards' }));
+    expect(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: 'Stick Around, Sweet postcard' })).toHaveLength(1);
+  });
+  test('on the Phone board an armed card is the hand button\'s words, one press puts it back, and the status line says to press Armed (#80)', async () => {
+    width(390);
+    setup();
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     await userEvent.click(hand);
-    expect(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard, armed: pick a post' })).toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard' }));
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is armed. Press Play Stick Around here on a post, or press Armed to put it back.');
+    const armed = screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' });
+    expect(armed).not.toHaveAttribute('aria-expanded');
+    await userEvent.click(armed);
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is put back.');
+    expect(screen.getByRole('button', { name: 'Hand, 3 postcards' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /^Armed/u })).toBeNull();
+  });
+  test('on the Main board the hand button keeps its words while a card is armed, and the status line says Esc (#80)', async () => {
+    width(1440);
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Hand, 3 postcards' }));
+    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard' }));
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is armed. Press Play Stick Around here on a post, or Esc to put it back.');
+    expect(screen.getByRole('button', { name: 'Hand, 3 postcards, open' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Armed/u })).toBeNull();
   });
   test('Close the hand closes it', async () => {
     width(390);

@@ -23,6 +23,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
+import { useBoard } from '../glass/useBoard.ts';
 import type { Act, Id } from '../data/api.ts';
 import { PlayForm } from './PlayForm.tsx';
 import type { Plays } from './plays.ts';
@@ -92,6 +93,10 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     setSaidHeld({ words: '', for: null });
     setHandOpenState(false);
   }, [account]);
+  /* Which way out the status line names: on the Phone board's layout the hand button turns into Armed and puts the card back (#80), where a wide screen has Esc. */
+  const { board } = useBoard();
+  const phone = useRef(board === 'phone');
+  phone.current = board === 'phone';
   const nameOf = useCallback((card: string) => instance.cards.find((c) => c.key === card)?.name ?? card, [instance]);
   /* Read by the callbacks below without making each of them a new function when the state moves. */
   const armedNow = useRef(armed);
@@ -105,7 +110,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const arm = useCallback((card: string | null) => {
     const was = armedNow.current;
     setArmed(card);
-    if (card !== null) setSaid(`${nameOf(card)} is armed. Press Play ${nameOf(card)} here on a post, or Esc to put it back.`);
+    if (card !== null) setSaid(`${nameOf(card)} is armed. Press Play ${nameOf(card)} here on a post, or ${phone.current ? 'press Armed' : 'Esc'} to put it back.`);
     else if (was !== null) setSaid(`${nameOf(was)} is put back.`);
   }, [nameOf, setArmed, setSaid]);
   const openHandFor = useCallback((target: PlayTarget) => {

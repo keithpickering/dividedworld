@@ -207,7 +207,14 @@ export function Hud() {
   };
 
   const held = player.cards.reduce((n, c) => n + c.held, 0);
-  const handName = `Hand, ${held} ${held === 1 ? 'postcard' : 'postcards'}${handOpen ? ', open' : ''}`;
+  /*
+   * On the Phone board's layout an armed card is the hand button's words, and one press puts it back
+   * (the owner's answer on #80): the sheet is put away once a card is armed, so the HUD is where the
+   * player is told, and where the way out is. The name holds the visible words first (WCAG 2.5.3).
+   * The Main board keeps the fan open with the armed card and its tag, and Esc.
+   */
+  const armedName = !wide && armed !== null ? instance.cards.find((c) => c.key === armed)?.name ?? armed : null;
+  const handName = armedName !== null ? `Armed · ${armedName}, press to put it back` : `Hand, ${held} ${held === 1 ? 'postcard' : 'postcards'}${handOpen ? ', open' : ''}`;
   const className = hud ? instance.classes.find((c) => c.key === hud.class)?.name ?? hud.class : null;
   const tabVars = tab ? { '--tab-a': `${tab[0]}px`, '--tab-b': `${tab[1]}px`, '--tab-c': `${tab[2]}px`, '--tab-d': `${tab[3]}px` } as CSSProperties : undefined;
   const seam = tab ? `0,${TAB + 6} ${tab[0]},${TAB + 6} ${tab[1]},6 ${tab[2]},6 ${tab[3]},${TAB + 6} 10000,${TAB + 6}` : `0,${TAB + 6} 10000,${TAB + 6}`;
@@ -304,12 +311,14 @@ export function Hud() {
                     ref={handButton}
                     type="button"
                     className="kb-hud-hand kb-glass-skew"
-                    aria-expanded={handOpen}
-                    aria-controls={drawerId}
+                    {...(armedName === null ? { 'aria-expanded': handOpen, 'aria-controls': drawerId } : {})}
                     aria-label={handName}
-                    onClick={() => setHandOpen(!handOpen)}
+                    data-kb-armed={armedName !== null ? 'true' : undefined}
+                    onClick={() => (armedName !== null ? play.arm(null) : setHandOpen(!handOpen))}
                   >
-                    <span className="kb-glass-upright">Hand</span> <span className="kb-hud-hand-count kb-glass-upright kb-num">{held}</span>
+                    {armedName !== null
+                      ? <span className="kb-hud-hand-armed kb-glass-upright">Armed · {armedName}</span>
+                      : <><span className="kb-glass-upright">Hand</span> <span className="kb-hud-hand-count kb-glass-upright kb-num">{held}</span></>}
                   </button>
                 </div>
               </div>

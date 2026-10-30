@@ -313,6 +313,10 @@ describe('Acts that are not posts', () => {
     const tags = await within(post(2)).findByRole('list', { name: 'Cards played on this post' });
     expect(tags).toHaveTextContent('Pipewrench played Whoops! on this post: “oops”');
     expect(within(tags).getByText(/Oct 29, 2026/u)).toBeInTheDocument();
+    /* The caster's words are a line of their own under the card's name and the caster (the owner's notes on #80), so a long message wraps there and nowhere else. */
+    expect(tags.querySelector('.kb-play-tag-who')).toHaveTextContent(/^Pipewrench$/u);
+    expect(tags.querySelector('.kb-play-tag-message')).toHaveTextContent(/^“oops”$/u);
+    expect(tags.querySelector('.kb-play-tag-who')?.parentElement).toBe(tags.querySelector('.kb-play-tag-message')?.parentElement);
     /* Linking to the post it is on: a play is a layer on a post and has no number of its own to link to. */
     expect(within(tags).getByRole('link', { name: 'Pipewrench played Whoops! on this post: “oops”' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
     /* No line of its own: still three posts, and no other post carries the tag. */

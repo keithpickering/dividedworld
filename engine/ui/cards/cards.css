@@ -6,8 +6,10 @@
  * the body face. Every color is a glass token, the card's alignment choosing which (salty is the
  * pink, sweet the cyan); sizes are the glass's.
  *
- * Several plays on one post read side by side and wrap; the first is drawn over the post's own
- * top line as the board draws it, the rest below it in the flow, so none covers the post's words.
+ * A tag is two lines at every width (the owner's notes on #80): the card's name and its caster, with
+ * when, on the first, and the caster's words on a line of their own under them, a size smaller, where a
+ * longer message wraps. It stands in the flow at the top of the post's words and never covers the post's
+ * line (its date and permalink), which the board draws it over. Several plays read side by side and wrap.
  */
 .kb-play-tags {
   position: relative;
@@ -16,7 +18,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.4rem 0.9rem;
-  margin: -1.5rem 3% 0.5rem 0;
+  margin: 0.4rem 3% 0.6rem 0.9rem;
   padding: 0;
   list-style: none;
 }
@@ -26,10 +28,7 @@
   --kb-tag-text: var(--kb-glass-neon-text);
   position: relative;
   isolation: isolate;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  max-width: 100%;
+  max-width: min(100%, 36rem);
   padding: 0.3rem 1rem 0.35rem 0.75rem;
   transform: skewX(-12deg);
   overflow: hidden;
@@ -53,12 +52,14 @@
  * name legibly on no more than a measured few, and the glass's text colors are the ones measured.
  */
 
-/* The text stands upright on the skewed glass, over the smoke (which fills the glass behind it). */
-.kb-play-tag-card,
-.kb-play-tag-words,
-.kb-play-tag-when {
+/* The text stands upright on the skewed glass, over the smoke (which fills the glass behind it), on one calm. */
+.kb-play-tag-in {
   position: relative;
   z-index: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.1rem 0.75rem;
   transform: skewX(12deg);
 }
 
@@ -72,28 +73,47 @@
   text-transform: uppercase;
 }
 
+/* The link is not a box: the caster and the message take their places in the tag's grid, and the tag is one link. */
 .kb-play-tag-words {
+  display: contents;
+}
+
+.kb-play-tag-words,
+.kb-play-tag-words:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+.kb-play-tag-who {
+  grid-column: 2;
   min-width: 0;
   overflow-wrap: anywhere;
   font-weight: 600;
 }
 
-.kb-play-tag-words a,
-.kb-play-tag-words a:visited {
-  color: inherit;
-  text-decoration: none;
+/* The caster's words: a line of their own, a size smaller (the Main board's smallest, which is the label's). */
+.kb-play-tag-message {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
 }
 
-.kb-play-tag-words a:hover {
+.kb-play-tag-words:hover .kb-play-tag-who,
+.kb-play-tag-words:hover .kb-play-tag-message {
   text-decoration: underline;
 }
 
-.kb-play-tag-words a:focus-visible {
+/* The link has no box to ring, so the tag is ringed. */
+.kb-play-tag:has(.kb-play-tag-words:focus-visible) {
   outline: 2px solid var(--kb-tag-text);
   outline-offset: 2px;
 }
 
 .kb-play-tag-when {
+  grid-column: 3;
   flex: none;
   color: var(--kb-glass-text-2);
   font-size: var(--kb-glass-size-label);
@@ -102,28 +122,62 @@
 }
 
 /*
- * On a narrow post the tag no longer breaks the frame: it would cover the post's line and the start of
- * its words, so it stands in the flow above the words instead, taking the post's width (less the
- * skew's lean at both sides) with the card's name on a line of its own and its caster's words wrapping
- * under it, in reading order. The Main board's one-line tag at the post's top right is unchanged.
+ * On the Phone board's layout the tag is a step smaller, within the phone's size floor: the card's name
+ * and the time at its smallest, the caster at its body, the message at its smallest.
  */
+:where(:root[data-kb-layout='phone']) .kb-play-tag {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-play-tag-card,
+:where(:root[data-kb-layout='phone']) .kb-play-tag-message,
+:where(:root[data-kb-layout='phone']) .kb-play-tag-when {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+/* On a narrow post the tag takes the post's width (less the skew's lean at both sides). */
 @media (max-width: 40em) {
   .kb-play-tags {
-    margin: 0.4rem 0.9rem 0.6rem;
     justify-content: stretch;
   }
 
   .kb-play-tag {
     flex: 1 1 100%;
-    flex-wrap: wrap;
-    gap: 0.15rem 0.75rem;
   }
+}
 
-  .kb-play-tag-card {
-    flex: 1 0 100%;
-  }
+/*
+ * The strip under a post where a card's words and controls stand (EffectStrip, Effects.tsx): one piece
+ * of glass attached to the post, outside its 2003 chrome, on the `effect` smoke with the card's
+ * alignment's border and glow (the owner's notes on #80). It is flat, the post's whole width, and
+ * draws only where an effect puts something in it.
+ */
+.kb-effect-strip {
+  --kb-tag: var(--kb-glass-sweet);
+  --kb-tag-text: var(--kb-glass-neon-text);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--kb-glass-ground);
+  border-top: 1px solid var(--kb-tag);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-tag) 60%, transparent);
+  color: var(--kb-glass-text);
+  font-size: var(--kb-glass-size-label);
+  line-height: 1.3;
+}
 
-  .kb-play-tag-words {
-    flex: 1 1 0;
-  }
+.kb-effect-strip[data-kb-alignment="salty"] {
+  --kb-tag: var(--kb-glass-salty);
+  --kb-tag-text: var(--kb-glass-salty-text);
+}
+
+.kb-effect-strip-in {
+  position: relative;
+  z-index: 1;
+  padding: 0.4rem 3% 0.5rem;
+}
+
+/* On the Phone board's layout the strip's words are a step smaller, at the phone's smallest size. */
+:where(:root[data-kb-layout='phone']) .kb-effect-strip {
+  font-size: var(--kb-glass-size-phone-small);
 }

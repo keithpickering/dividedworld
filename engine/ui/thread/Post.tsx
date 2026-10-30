@@ -39,7 +39,7 @@ interface Props {
 /** A post's name for a reader and a screen reader: the character's, The System's, or "A character" where it cannot be shown. */
 const nameOf = (act: Act, person: PostbitPerson | undefined) => (act.character === null ? SYSTEM : person?.character.name ?? 'A character');
 
-function Body({ act, name, person, editing, onDone }: { readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
+function Body({ act, name, person, editing, onDone, slot }: { readonly slot: React.RefObject<HTMLElement | null>; readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
   const { summary, tallies, mine, changed, plays } = useThread();
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
@@ -60,7 +60,7 @@ function Body({ act, name, person, editing, onDone }: { readonly act: Act; reado
           {origin && <Origin summary={summary} />}
           {editing
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
-            : <PostEffects plays={plays} post={act} place="thread"><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
+            : <PostEffects plays={plays} post={act} place="thread" slot={slot}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
@@ -108,6 +108,8 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   }, [observer]);
   const name = nameOf(act, person);
   const [editing, setEditing] = useState(false);
+  /* Where a card's words and controls stand, under the post's chrome (cards/Effects.tsx). A ref and not state, so the post's words are not drawn again when it mounts. */
+  const slot = useRef<HTMLDivElement>(null);
   const editButton = useRef<HTMLButtonElement>(null);
   /* After an edit is saved or cancelled, focus goes back to the Edit button. */
   const wasEditing = useRef(false);
@@ -139,10 +141,11 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       </header>
       <div className="kb-act-main">
         {act.kind === 'post' && <PlayTags plays={plays} post={act.id} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} />}
-        <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} />
+        <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} />
         <SpunInto act={act.id} />
         <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} />
       </div>
+      {act.kind === 'post' && <div className="kb-act-slot" ref={slot} />}
     </article>
   );
 });

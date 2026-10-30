@@ -13,8 +13,9 @@
  *
  * Left out until the part that builds them (the glass build plan, Part 3, the cards):
  *  - the splat itself on #41, which is pixels (the board's is a drawing in the same ink, the build's a
- *    seeded one: e2e/whoops.spec.ts reads it). "Hold to scrub" on #41 is compared, and #41 carries its
- *    tag (cards Task 3) and its hint line as the board draws them (cards Task 5).
+ *    seeded one: e2e/whoops.spec.ts reads it). "Hold to scrub" on #41 is found, and #41 carries its tag
+ *    (cards Task 3, two lines and clear of the post's line: the owner's notes on #80) and its scrub
+ *    sentence in a glass strip under the post (cards Task 5, the same notes).
  * Left out because the fixture cannot hold it: the "3 new posts" bar, which is the thread's answer
  * to posts that arrive while the reader is higher up, and a seeded page has nothing arriving.
  * Not compared: the post counts and the avatars (the fixture's numbers and the board's placeholders),
@@ -97,13 +98,12 @@ const manifest: BoardManifest = {
      */
     { id: 'post-42-play', role: 'link', name: 'Play Whoops! here', buildRole: 'button', within: 'post-42', box: 'none' },
     /*
-     * Whoops!'s keyboard path, a piece of glass in the hint line under the splat; the board calls it
-     * "Scrub with the keyboard". Found by its name and kind: where it lies follows #41's frame (above)
-     * down the page and the build's content column across it (its author column is narrower than the
-     * board's), and its type is the glass's, in the card's tag's family, not the 2003 button's. Tried by position
-     * (#76): it is 53px left of the board's (x 613 against 667) and 10px lower (y 367 against 356),
-     * 170 by 32 where the board's is 148 by 17. The board's is the 2003 inline button set in a
-     * sentence, the build's is the glass button, larger, in the hint line.
+     * Whoops!'s keyboard path. The board draws #41's scrub sentence, "Scrub with the keyboard" in the 2003 button, inside the
+     * post's 2003 body; the build draws the sentence, "Hold to scrub" and the author's tools as one glass strip under the
+     * post, outside its chrome, by the owner's word (#80's notes: "a description of a postcard effect is pure glass, only the
+     * effect itself should be integrated with the game world's copy and styling", and game state "should not be in the 2003
+     * chrome"; the cards plan's Task 5 amendment, the glass plan's section 7 amendment of 2026-10-30). That region differs
+     * by that answer, so the button is found by its name and kind within the post and compared by neither box nor type.
      */
     { id: 'post-41-scrub', role: 'button', name: 'Scrub with the keyboard', buildName: 'Hold to scrub', within: 'post-41', box: 'none', type: false },
 

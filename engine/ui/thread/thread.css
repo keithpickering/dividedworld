@@ -55,8 +55,9 @@
   grid-template-columns: var(--kb-postbit-column) minmax(0, 1fr);
   grid-template-areas:
     "bit meta"
-    "bit main";
-  grid-template-rows: auto 1fr;
+    "bit main"
+    "slot slot";
+  grid-template-rows: auto 1fr auto;
   border-bottom: 1px solid var(--kb-rule);
   scroll-margin-top: 0.5em;
 }
@@ -89,6 +90,16 @@
   border-right: 1px solid var(--kb-rule);
 }
 
+/* Under the post's chrome, the whole width of it: where a card's words and controls stand (cards/Effects.tsx), drawn only when it holds some. */
+.kb-act-slot {
+  grid-area: slot;
+  min-width: 0;
+}
+
+.kb-act-slot:empty {
+  display: none;
+}
+
 .kb-act-main {
   grid-area: main;
   padding: 0.5em 1%;
@@ -100,7 +111,8 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     "meta"
-    "main";
+    "main"
+    "slot";
   grid-template-rows: none;
 }
 
@@ -114,7 +126,8 @@
   grid-template-areas:
     "bit"
     "meta"
-    "main";
+    "main"
+    "slot";
   grid-template-rows: none;
 }
 
@@ -135,7 +148,8 @@
     grid-template-areas:
       "bit"
       "meta"
-      "main";
+      "main"
+      "slot";
     grid-template-rows: none;
   }
 

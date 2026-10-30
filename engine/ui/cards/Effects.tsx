@@ -10,12 +10,19 @@
  * names a play (the ORIGIN box, later the log) gives it too. A card the instance gives no `CardUi`
  * is shown as its tag alone.
  *
+ * An effect's words and controls are not the post's (the owner's notes on #80: "game state data should not be in
+ * the 2003 chrome"). An effect is given a `slot`, a place under the post's chrome, and fills it with an
+ * `EffectStrip`, one piece of glass attached to the post; the post's own body holds the effect and nothing a
+ * player presses. The thread's post draws the slot itself (thread/Post.tsx), under its words; where a post is
+ * drawn without one (the ORIGIN box) `PostEffects` draws its own right after the effect.
+ *
  * An effect (`CardUi.Effect`) wraps the post's words wherever they are drawn (the thread, and the
  * ORIGIN box of a thread spun from the post). Each played card's wraps the cards played before it,
  * in play order, so the latest is outermost. A post with no plays, or whose plays' cards draw no
  * effect, is drawn untouched.
  */
-import { useCallback, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -29,7 +36,12 @@ import './cards.css';
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 
 /** Wraps a post's words in the effect of each card played on it, in play order. */
-export function PostEffects({ plays, post, place, children }: { readonly plays: Plays; readonly post: Act; readonly place: EffectPlace; readonly children: ReactNode }) {
+export function PostEffects({ plays, post, place, slot, children }: { readonly plays: Plays; readonly post: Act; readonly place: EffectPlace; readonly slot?: RefObject<HTMLElement | null>; readonly children: ReactNode }) {
+  const [own, setOwn] = useState<HTMLElement | null>(null);
+  const hosted = slot !== undefined;
+  /* The slot the thread's post draws is read once it is mounted, here, so only the effect is drawn again and not the post's words. */
+  const [placed, setPlaced] = useState<HTMLElement | null>(null);
+  useEffect(() => { if (slot) setPlaced(slot.current); }, [slot]);
   const { api, ui } = useKayfa();
   const { actingCharacters } = usePlayer();
   const here = usePlays(plays, post.id);
@@ -58,14 +70,34 @@ export function PostEffects({ plays, post, place, children }: { readonly plays: 
     const Effect = card.Effect;
     wrapped = (
       <Effect
-        key={key} post={post} plays={mine} states={here.states} released={here.released} place={place} save={save} release={release}
+        key={key} post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} save={save} release={release}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
         {wrapped}
       </Effect>
     );
   }
-  return <>{wrapped}</>;
+  return <>{wrapped}{!hosted && <div className="kb-act-slot" ref={setOwn} />}</>;
+}
+
+/**
+ * One piece of glass an effect draws into its `slot`: the card's words about its effect and the controls a
+ * player needs, on the `effect` smoke in the card's alignment's tokens, under the post and outside its 2003
+ * chrome. Nothing is drawn until the slot is there. What it holds is the card's: the engine fixes only where
+ * it stands and that it is glass.
+ */
+export function EffectStrip({ slot, card, children }: { readonly slot: HTMLElement | null; readonly card: string; readonly children: ReactNode }) {
+  const { instance } = useKayfa();
+  const calm = useSurfaceStyle('effect');
+  if (!slot) return null;
+  const alignment = instance.cards.find((c) => c.key === card)?.alignment;
+  return createPortal(
+    <div className="kb-glass kb-effect-strip" data-kb-card={card} data-kb-alignment={alignment} style={calm}>
+      <Smoke surface="effect" />
+      <div className="kb-effect-strip-in kb-calm">{children}</div>
+    </div>,
+    slot,
+  );
 }
 
 /** One play's tag: the card, who played it with their words, and when. */
@@ -74,18 +106,30 @@ export function PlayTag({ play, caster, to, tint }: { readonly play: CardPlay; r
   const rules = instance.cards.find((c) => c.key === play.card);
   const card = rules?.name ?? play.card;
   const calm = useSurfaceStyle('effect');
-  const said = play.message ? `: “${play.message}”` : '';
-  /* One sentence to read; the drawn pieces (the card's name over its caster's words) are for the eye, so a screen reader hears it once. */
-  const sentence = `${caster} played ${card} on this post${said}`;
-  const words = <><span className="kb-visually-hidden">{sentence}</span><span aria-hidden="true">{caster}{said}</span></>;
+  const said = play.message ? `“${play.message}”` : '';
+  /* One sentence to read; the drawn pieces (the card's name, its caster, and the caster's words on a line of their own) are for the eye, so a screen reader hears it once. */
+  const sentence = `${caster} played ${card} on this post${said ? `: ${said}` : ''}`;
+  /*
+   * The link's box is `display: contents` (cards.css), so the caster and the message are grid items of the tag itself and the
+   * message can take the line under the first, while the whole tag is still one link to the post.
+   */
+  const words = (
+    <>
+      <span className="kb-visually-hidden">{sentence}</span>
+      <span className="kb-play-tag-who" aria-hidden="true">{caster}</span>
+      {said && <span className="kb-play-tag-message" aria-hidden="true">{said}</span>}
+    </>
+  );
   /* A card that chooses its tag's ink gives the glass that ink for its border and glow, as the Main board draws the tag over #41; the smoke and the glass's own text stay. */
   const style = tint ? { ...calm, '--kb-tag': tint } as CSSProperties : calm;
   return (
     <li className="kb-glass kb-play-tag" data-kb-card={play.card} data-kb-alignment={rules?.alignment} data-kb-tinted={tint ? 'true' : undefined} data-kb-play={play.id} style={style}>
       <Smoke surface="effect" />
-      <span className="kb-play-tag-card kb-calm" aria-hidden="true">{card}</span>
-      <span className="kb-play-tag-words kb-calm">{to ? <Link to={to}>{words}</Link> : words}</span>
-      <time className="kb-play-tag-when kb-calm" dateTime={play.playedAt}>{when(play.playedAt)}</time>
+      <div className="kb-play-tag-in kb-calm">
+        <span className="kb-play-tag-card" aria-hidden="true">{card}</span>
+        {to ? <Link className="kb-play-tag-words" to={to}>{words}</Link> : <span className="kb-play-tag-words">{words}</span>}
+        <time className="kb-play-tag-when" dateTime={play.playedAt}>{when(play.playedAt)}</time>
+      </div>
     </li>
   );
 }

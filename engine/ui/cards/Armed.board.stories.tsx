@@ -7,9 +7,8 @@
  *
  * Two states. `Armed`: the hand's sheet is put away, because it covers the posts to pick; each post
  * the card can land on carries "Play Whoops! here". `HandReopened`: the hand is opened again, and the
- * armed card is shown pressed, which is how a phone, with no Esc, puts it back. Nothing is decided
- * here beyond what the build does: whether the HUD should say a card is armed once the sheet is
- * away is for the owner (the story shows what the HUD says now).
+ * armed card is shown pressed. Armed, the HUD's hand button reads "Armed · Whoops!" and one press puts
+ * the card back, which is how a phone, with no Esc, does (the owner's answer on #80).
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect } from 'react';

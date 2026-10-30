@@ -66,6 +66,14 @@ export interface EffectProps {
   readonly reader: EffectReader;
   readonly place: EffectPlace;
   /**
+   * Where an effect's own words and controls go: a place the engine draws under the post, outside its 2003
+   * chrome, or null until it is there. A card's explanation of its effect and every control a player
+   * needs are glass and never part of the post's words (the owner's notes on #80, so an effect can
+   * cover a post freely without hiding a control), and are drawn into it with `EffectStrip`
+   * (engine/ui/cards/Effects.tsx). The effect itself, around `children`, is the only thing the post holds.
+   */
+  readonly slot: HTMLElement | null;
+  /**
    * Save a play's state, as the post's author (the server refuses anyone else, and so does this,
    * without asking); the screen shows what is saved at once and every other reader hears of it.
    * Bounded and checked by the card's rules (`CardRules.validateState`), whose refusal comes back in its words.

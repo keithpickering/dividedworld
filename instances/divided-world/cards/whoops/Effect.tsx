@@ -35,6 +35,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
+import { EffectStrip } from '../../../../engine/ui/cards/Effects.tsx';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { Smoke, useSurfaceStyle } from '../../../../engine/ui/glass/Smoke.tsx';
 import { readLines } from './lines.ts';
@@ -115,7 +116,7 @@ interface View {
   readonly fading: boolean;
 }
 
-export function Effect({ post, plays, states, reader, save, children }: EffectProps) {
+export function Effect({ post, plays, states, reader, save, slot, children }: EffectProps) {
   const { settings } = useKayfa();
   const calm = useSurfaceStyle('effect');
   const help = useId();
@@ -627,33 +628,36 @@ export function Effect({ post, plays, states, reader, save, children }: EffectPr
           {read.map((line, i) => <span key={i}>{line.text} </span>)}
         </div>
       )}
-      {anyLive && (
-        <div className="kb-whoops-bar" data-kb-scrub>
-          <p className="kb-whoops-hint kb-small">
-            {note}
-            <button
-              type="button" className="kb-glass kb-whoops-scrub" style={calm} aria-describedby={help}
-              onPointerDown={(e) => { stop(e); startSweep(); }} onPointerUp={stopSweep} onPointerLeave={stopSweep} onPointerCancel={stopSweep} onBlur={stopSweep}
-              onContextMenu={stop}
-              onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); startSweep(); } else if (e.key === ' ' || e.key === 'Enter') e.preventDefault(); }}
-              onKeyUp={(e) => { if (e.key === ' ' || e.key === 'Enter') stopSweep(); }}
-            >
-              <Smoke surface="effect" />
-              <span className="kb-whoops-scrub-label kb-calm">Hold to scrub</span>
-            </button>
-          </p>
-          <span id={help} className="kb-visually-hidden">Hold Space or Enter on this button to scrub the ink away line by line, at the pace of a hand. Let go to stop. It never clears the ink all at once.</span>
-          {reader.author && (
-            <span className="kb-whoops-tools kb-small" role="group" aria-label="Your tool">
-              <span>Yours to wash for everyone, or write back in its ink:</span>
-              <button type="button" className="kb-link-button kb-small" aria-pressed={tool === 'wash'} onClick={() => setTool('wash')}>Wash</button>
-              <button type="button" className="kb-link-button kb-small" aria-pressed={tool === 'ink'} onClick={() => setTool('ink')}>Write in ink</button>
-            </span>
-          )}
-        </div>
+      {/* The words and the controls are glass in the strip under the post, never in the post's 2003 body (the owner's notes on #80). */}
+      {(anyLive || report) && (
+        <EffectStrip slot={slot} card="whoops">
+          {anyLive && <div className="kb-whoops-bar" data-kb-scrub>
+            <p className="kb-whoops-hint">
+              {note}
+              <button
+                type="button" className="kb-glass kb-whoops-scrub" style={calm} aria-describedby={help}
+                onPointerDown={(e) => { stop(e); startSweep(); }} onPointerUp={stopSweep} onPointerLeave={stopSweep} onPointerCancel={stopSweep} onBlur={stopSweep}
+                onContextMenu={stop}
+                onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); startSweep(); } else if (e.key === ' ' || e.key === 'Enter') e.preventDefault(); }}
+                onKeyUp={(e) => { if (e.key === ' ' || e.key === 'Enter') stopSweep(); }}
+              >
+                <Smoke surface="effect" />
+                <span className="kb-whoops-scrub-label kb-calm">Hold to scrub</span>
+              </button>
+            </p>
+            <span id={help} className="kb-visually-hidden">Hold Space or Enter on this button to scrub the ink away line by line, at the pace of a hand. Let go to stop. It never clears the ink all at once.</span>
+            {reader.author && (
+              <span className="kb-whoops-tools" role="group" aria-label="Your tool">
+                <span>Yours to wash for everyone, or write back in its ink:</span>
+                <button type="button" className="kb-whoops-tool" aria-pressed={tool === 'wash'} onClick={() => setTool('wash')}>Wash</button>
+                <button type="button" className="kb-whoops-tool" aria-pressed={tool === 'ink'} onClick={() => setTool('ink')}>Write in ink</button>
+              </span>
+            )}
+          </div>}
+          {/* Said whether or not a layer is left: a clean mark that did not get through is the author's to know of, with no ink under it. */}
+          {report && <p role="status" className="kb-whoops-status">{report}</p>}
+        </EffectStrip>
       )}
-      {/* Said whether or not a layer is left: a clean mark that did not get through is the author's to know of, with no ink under it. */}
-      {report && <p role="status" className="kb-whoops-status kb-small">{report}</p>}
     </div>
   );
 }
