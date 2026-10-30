@@ -9,6 +9,11 @@ settings save. It starts from main as it stands (migrations up to `0029_reveal_r
 web plan's Task 11, which shows the settings. A build session carries it out, tests first, each red run recorded
 (`.claude/skills/build-session/SKILL.md`).
 
+**Amended 2026-10-30, after PR #24 merged.** Main now holds migrations to `0032_reveal_index.sql` and tests to
+`0038-standings-season.sql`, so the migration is `supabase/migrations/0033_glass_preferences.sql` and the test
+`supabase/tests/0039-glass-preferences.sql`; it is Part A of `docs/plans/2026-10-30-glass-build-plan.md`, merged before
+that plan's Part 2.
+
 ## The layers
 
 All of it is engine. The three preferences are KayfaBB's, because the engine owns the two worlds and their player
