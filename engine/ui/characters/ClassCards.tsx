@@ -3,7 +3,8 @@
  * instance's plain description of how it earns and what hurts it, and its marks on the reaction
  * map (a plus where it earns, a minus where it is hurt, dotted where it earns by calling), named in
  * words. A card is a game piece, so it carries its class's glass colors, but the words are what a
- * player chooses by. On the Turn the class the character holds is drawn too, marked Now, and is no
+ * player chooses by: each radio is named by its class alone and described by its words, so a
+ * screen reader says the name first and the rest after; the marks are an image beside them. On the Turn the class the character holds is drawn too, marked Now, and is no
  * choice (the Turn board draws all four).
  *
  * A class's name is drawn in its large color only where the surface draws a class's large text
@@ -48,14 +49,16 @@ export function ClassCards({ legend, value, onChange, current, large = false }: 
       <div className="kb-class-grid">
         {instance.classes.map((c) => {
           const look = ui.classLooks?.[c.key];
+          const ids = { name: `${group}-${c.key}-name`, words: `${group}-${c.key}-words` };
+          const described = look?.description ? ids.words : undefined;
           const inside = (
             <>
               <span className="kb-class-title">
-                <b className="kb-class-name" data-kb-large={large || undefined}>{c.name}</b>
+                <b id={ids.name} className="kb-class-name" data-kb-large={large || undefined}>{c.name}</b>
                 {c.key === current && <span className="kb-class-now">Now</span>}
               </span>
               {look?.marks && <Marks marks={look.marks} />}
-              {look?.description && <span className="kb-class-description">{look.description}</span>}
+              {look?.description && <span id={ids.words} className="kb-class-description">{look.description}</span>}
             </>
           );
           if (c.key === current) {
@@ -63,7 +66,7 @@ export function ClassCards({ legend, value, onChange, current, large = false }: 
           }
           return (
             <label key={c.key} className="kb-class-card" data-kb-class={c.key} data-kb-chosen={value === c.key || undefined} style={classVars(c.key)}>
-              <input type="radio" name={group} value={c.key} checked={value === c.key} onChange={() => onChange(c.key)} />
+              <input type="radio" name={group} value={c.key} checked={value === c.key} onChange={() => onChange(c.key)} aria-labelledby={ids.name} aria-describedby={described} />
               {inside}
             </label>
           );

@@ -594,6 +594,7 @@
 
 .kb-preview-head {
   margin: 0 0 8px;
+  line-height: normal;
   font-size: var(--kb-glass-size-body);
   font-weight: 800;
   letter-spacing: 3px;
@@ -624,7 +625,7 @@
 }
 
 .kb-preview-by {
-  display: block;
+  display: inline;
   font-weight: bold;
 }
 
@@ -819,6 +820,7 @@
 
 .kb-turn-map {
   margin: 12px 0 0;
+  line-height: normal;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   letter-spacing: 1px;

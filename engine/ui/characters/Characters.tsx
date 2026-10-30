@@ -25,7 +25,7 @@ import { Link, useLocation } from '../router.tsx';
 import { ClassChip } from './ClassChip.tsx';
 import { DebutDialog } from './DebutDialog.tsx';
 import { Portrait } from './Portrait.tsx';
-import { dateAndDistance, dayAndTime, figure, spanWords } from './format.ts';
+import { dayAndTime, figure, inDays, spanWords } from './format.ts';
 import { RevealDialog } from './RevealDialog.tsx';
 import { TurnDialog } from './TurnDialog.tsx';
 import './characters.css';
@@ -196,12 +196,13 @@ export function Characters() {
     if (c.turnOpensAt) {
       return (
         <>
-          <button type="button" className="kb-roster-turn-button kb-glass-skew" data-kb-return="" disabled aria-label={`Turn ${c.name}`} aria-describedby={`turn-when-${c.id}`}>
+          {/* The date it opens is the button's; how far off it is, its description's, with the line's why. */}
+          <button type="button" className="kb-roster-turn-button kb-glass-skew" data-kb-return="" disabled aria-label={`Turn ${c.name}`} aria-describedby={`turn-soon-${c.id} turn-when-${c.id}`}>
             <span className="kb-glass-upright">Turn · opens {shortDate(c.turnOpensAt)}</span>
           </button>
+          <span id={`turn-soon-${c.id}`} className="kb-visually-hidden">Opens {inDays(c.turnOpensAt)}.</span>
           <p id={`turn-when-${c.id}`} className="kb-roster-line kb-turn-when">
-            <span>Available {dateAndDistance(c.turnOpensAt)}</span>{' '}
-            <span>A character can Turn once every {spanWords(settings.turnCooldown).replace(/^1 /u, '')}. {c.name} last Turned at the {shortDate(c.classSince)} settlement.</span>
+            A character can Turn once every {spanWords(settings.turnCooldown).replace(/^1 /u, '')}. {c.name} last Turned at the {shortDate(c.classSince)} settlement.
           </p>
         </>
       );

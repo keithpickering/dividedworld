@@ -100,9 +100,15 @@ describe('My characters', () => {
     open(w);
     await ready();
     const r = row('Mrs. Hooligan');
-    expect(within(r).getByRole('button', { name: 'Turn Mrs. Hooligan' })).toBeDisabled();
-    expect(within(r).getByText(/Available Nov 28/u)).toBeInTheDocument();
-    expect(within(r).getByText(/in \d+ days/u)).toBeInTheDocument();
+    const button = within(r).getByRole('button', { name: 'Turn Mrs. Hooligan' });
+    expect(button).toBeDisabled();
+    /*
+     * The date it opens is on the button (the Roster board's "Turn · opens Nov 28"); how far off it is,
+     * which only the line under it used to say, is the button's description, with the line's why.
+     * Before the glass the line "Available Nov 28 (in 30 days)" stood visibly under the button.
+     */
+    expect(button).toHaveAccessibleDescription(/^Opens in \d+ days\. A character can Turn once every 30 days\./u);
+    expect(within(r).queryByText(/^Available /u)).toBeNull();
   });
 
   test('a new character is waiting to debut, offers Drop now and a change of how it debuts, and is in no public list', async () => {
@@ -677,5 +683,18 @@ describe('the panel\'s pip style (the Roster board)', () => {
     await userEvent.selectOptions(select, 'default');
     await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, '', '', 'default'));
     expect(within(row('Spritey')).queryByRole('combobox', { name: 'Pip style' })).toBeNull();
+  });
+});
+
+describe('the class cards\' radios', () => {
+  test('are each named by the class alone and described by its words, its marks an image beside them', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    const heel = within(dialog).getByRole('radio', { name: 'Heel' });
+    expect(heel).toHaveAccessibleDescription('Earns heat: boos and tomatoes.');
+    expect(within(heel.closest('label')!).getByRole('img', { name: 'Earns from heat, hurt by the calm' })).toBeInTheDocument();
   });
 });

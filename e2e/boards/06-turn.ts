@@ -1,19 +1,20 @@
 /**
  * Board 06, the Turn board (docs/research/2026-10-29-two-worlds/06-turn.html): My characters at
- * 00:35 on Oct 30 with the Turn modal open on Pipewrench, Face and "announced with its old class"
- * chosen, the menu bar in view behind it, dimmed and inert. The glass plan's section 7 lists what is
- * compared.
- *
- * At the moment the fixture has made that Turn (it is what the moment is), so the build reaches the
- * board's modal as the player would, by the panel's Change, which opens the Turn with its choices
- * filled in; its heading and its confirm are then the screen's "Change Pipewrench's Turn" and
- * "Change the Turn" (web Task 9's words) for the board's TURN PIPEWRENCH and CONFIRM TURN.
+ * 00:34 on Oct 30, a minute before the Turn is made, with the Turn modal open on Pipewrench and Face
+ * chosen, the menu bar in view behind it, dimmed and inert. The glass plan's section 7 lists what
+ * is compared. The build is reached as the player reaches it: Turn Pipewrench, then Face, then the
+ * old class named.
  *
  * Departures, by decision:
- *  - How loud: the board draws three radios; the build keeps web Task 9's two (Silent, Announced)
- *    and the class reveal design's two checkboxes (name the old class, name the new class), so
- *    "Announced with old class" has no landmark.
- *  - The class cards' words are the instance's descriptions, so only Face's is compared, by type.
+ *  - How loud: the board draws three radios, the last "Announced with old class". The build keeps
+ *    web Task 9's two (Silent, Announced) and the class reveal design's two checkboxes (name the old
+ *    class, name the new class), and the board's way waits on the owner (issue #51), so the build
+ *    names the old class by its checkbox and the board's third row has no landmark here.
+ *  - The confirm keeps web Task 9's words, "Turn Pipewrench", for the board's CONFIRM TURN.
+ *  - The class cards' words are the instance's descriptions, longer than the board's, so the cards
+ *    are taller and everything under them stands lower: from the map down, a landmark whose words are
+ *    the board's is compared by its size, and the foot, held to the dialog's own foot, by its place
+ *    from the dialog's corner.
  *  - The classes' large colors are the instance's (glass.json): Heel's is the owner's lifted
  *    `#ff959f` where the board draws `#ff8a96` (the glass plan, section 6, amended 2026-10-30), and
  *    Face's and Lurker's differ from the board's too, so their names are compared by box only;
@@ -30,21 +31,25 @@ const manifest: BoardManifest = {
   board: '06-turn',
   size: { width: 1440, height: 1420 },
   build: { moment: '06-turn' },
-  press: [{ role: 'button', name: 'Change Pipewrench\'s Turn' }],
+  press: [
+    { role: 'button', name: 'Turn Pipewrench' },
+    { role: 'radio', name: 'Face' },
+    { role: 'checkbox', name: 'Name the old class. The post says what Pipewrench was.' },
+  ],
   landmarks: [
     /*
      * The menu bar behind the modal is inert on both sides, so no role finds it: that it stays in
      * view and dimmed is held by e2e/characters.spec.ts.
      */
+
     /* The modal, chamfer step 5. */
-    { id: 'dialog', role: 'dialog', name: 'Turn Pipewrench', buildName: 'Change Pipewrench\'s Turn', type: false },
-    { id: 'kicker', role: 'text', name: 'MY CHARACTERS › TURN', buildName: 'My characters › Turn', within: 'dialog', box: 'position' },
-    { id: 'title', role: 'heading', name: 'Turn Pipewrench', buildName: 'Change Pipewrench\'s Turn', within: 'dialog', box: 'position' },
-    /* The board's Close is an icon; the build's says its word, so its box only. */
-    { id: 'close', role: 'button', name: 'Close', within: 'dialog', type: false, box: 'position' },
+    { id: 'dialog', role: 'dialog', name: 'Turn Pipewrench', type: false },
+    { id: 'kicker', role: 'text', name: 'MY CHARACTERS › TURN', buildName: 'My characters › Turn', within: 'dialog' },
+    { id: 'title', role: 'heading', name: 'Turn Pipewrench', within: 'dialog' },
+    /* The board's Close is an icon; the build's word is drawn off its square, so its box only. */
+    { id: 'close', role: 'button', name: 'Close', within: 'dialog', type: false },
 
     /* The character. */
-    /* The column runs the height of the choice beside it, which the instance's descriptions make taller (below). */
     { id: 'who', role: 'complementary', name: '', within: 'dialog', type: false, box: 'position' },
     { id: 'who-name', role: 'text', name: 'Pipewrench', within: 'who' },
     { id: 'who-rank', role: 'text', name: 'Enhancement Talent', within: 'who' },
@@ -60,36 +65,41 @@ const manifest: BoardManifest = {
     { id: 'classes', role: 'group', name: 'Choose a class', buildName: 'Turn to', within: 'dialog', type: false, box: 'position' },
     { id: 'face', role: 'text', name: 'Face', within: 'classes', type: false },
     { id: 'heel', role: 'text', name: 'Heel', within: 'classes', type: false },
-    /* Drawn in Heel's large color, which is the owner's lifted one (above), so by its box. */
+    /* Drawn in Heel's large color, the owner's lifted one (above), so by its box. */
     { id: 'heel-now', role: 'text', name: 'Now', within: 'classes', type: false, box: 'position' },
     { id: 'lurker', role: 'text', name: 'Lurker', within: 'classes', type: false },
     { id: 'jabroni', role: 'text', name: 'Jabroni', within: 'classes' },
     { id: 'face-marks', role: 'img', name: 'Earns from hype, hurt by the groan', within: 'classes', type: false },
     { id: 'heel-marks', role: 'img', name: 'Earns from heat, hurt by the calm', within: 'classes', type: false },
+    /* The instance's words, not the board's: their type only. */
     {
       id: 'face-words', role: 'text',
       name: 'Earns from hype on its posts and cards, and from Sweet cards it plays on others\' posts that then draw hype.',
       buildName: 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.',
       within: 'classes', box: 'none',
     },
+
+    /* Below the cards: by size where the words are the board's (the module comment says why). */
+    { id: 'map', role: 'text', name: 'THE MAP: HEAT · HYPE on top, GROAN · CALM below, the same grid as the React picker.', within: 'dialog', box: 'size' },
     /*
-     * Below the class cards, where a thing stands follows the cards' height, which is the instance's
-     * descriptions' (longer than the board's), so from here down the type is compared and the boxes are not.
+     * How loud's two radios, placed from the group's corner. A radio's bold word is as wide as the
+     * line under it, which is the screen's words, so its size is not compared. Issue #51: the board's
+     * third radio, "Announced with old class", waits on the owner and is left out.
      */
-    { id: 'map', role: 'text', name: 'THE MAP: HEAT · HYPE on top, GROAN · CALM below, the same grid as the React picker.', within: 'dialog', box: 'none' },
-
-    /* How loud. */
+    /* The group holds a second row, the two checkboxes #51 waits on, so its own box is not compared. */
     { id: 'loud', role: 'group', name: 'How loud', within: 'dialog', type: false, box: 'none' },
-    { id: 'silent', role: 'text', name: 'SILENT', buildName: 'Silent.', within: 'loud', box: 'none' },
-    { id: 'announced', role: 'text', name: 'ANNOUNCED', buildName: 'Announced.', within: 'loud', box: 'none' },
+    { id: 'silent', role: 'text', name: 'SILENT', buildName: 'Silent.', within: 'loud', box: 'position', origin: 'loud' },
+    { id: 'announced', role: 'text', name: 'ANNOUNCED', buildName: 'Announced.', within: 'loud', box: 'position', origin: 'loud' },
+    { id: 'preview-head', role: 'text', name: 'What everyone will see', within: 'dialog', box: 'size' },
+    { id: 'preview-by', role: 'text', name: 'The System', within: 'dialog', box: 'size' },
+    { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned from Heel', within: 'dialog', box: 'none' },
 
-    /* What everyone will see. */
-    { id: 'preview-head', role: 'text', name: 'What everyone will see', within: 'dialog', box: 'none' },
-    { id: 'preview-by', role: 'text', name: 'The System', within: 'dialog', box: 'none' },
-
-    /* The foot: the confirm's words are the screen's and wider than the board's, which moves both buttons. */
-    { id: 'cancel', role: 'button', name: 'Cancel', within: 'dialog', box: 'none' },
-    { id: 'confirm', role: 'button', name: 'Confirm Turn', buildName: 'Change the Turn', within: 'dialog', box: 'none' },
+    /*
+     * The foot: Cancel by its size, and the confirm, its words the screen's, by its top and height
+     * from Cancel's corner. Where the foot stands follows the footer's sentence, which is left out (above).
+     */
+    { id: 'cancel', role: 'button', name: 'Cancel', within: 'dialog', box: 'size' },
+    { id: 'confirm', role: 'button', name: 'Confirm Turn', buildName: 'Turn Pipewrench', within: 'dialog', box: 'height', origin: 'cancel' },
   ],
 };
 
