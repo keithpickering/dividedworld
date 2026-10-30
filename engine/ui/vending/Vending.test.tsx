@@ -75,17 +75,87 @@ describe('the machine as the Vending board draws it', () => {
     expect(screen.getByRole('link', { name: 'Your hand 2 → 3' })).toBeInTheDocument();
   });
 
-  test('the machine is named by the instance, and "In the machine" lists each card with its price and its rules in plain words', async () => {
+  test('the machine is named by the instance, the price note says what a long post costs, and the sealed slots keep their line', async () => {
     open(seeded(562));
     await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb' });
     expect(screen.getByRole('group', { name: 'Shop' })).toBeInTheDocument();
-    const list = screen.getByRole('region', { name: 'In the machine' });
-    expect(within(list).getByText('A Sweet card. Holds each reader on a post.')).toBeInTheDocument();
-    expect(within(list).getByText('A Salty card. Splats a post in your ink.')).toBeInTheDocument();
-    /* A card whose play costs more on a long post says so with a plus, and the price note says how much. */
-    expect(within(list).getByText('1.00+')).toBeInTheDocument();
+    /* The list of what is in the machine is gone at every width (it grows with every card added): the info buttons carry the rules. */
+    expect(screen.queryByRole('region', { name: 'In the machine' })).toBeNull();
+    expect(screen.queryByText('A Sweet card. Holds each reader on a post.')).toBeNull();
+    expect(screen.getByText('4 slots empty')).toBeInTheDocument();
+    expect(screen.getByText('More postcards arrive in later seasons.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
     expect(screen.getByText('Playing it on a long post costs up to 2.00 more, never more than 3.00 in all.')).toBeInTheDocument();
+  });
+});
+
+describe('the info button on each card\'s slot', () => {
+  test('each stocked slot has a button named for its card, and a sealed slot has none', async () => {
+    open(seeded(562));
+    expect(await screen.findByRole('button', { name: 'About Stick Around' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'About Whoops!' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^About / })).toHaveLength(2);
+    for (const code of ['B1', 'B2', 'C1', 'C2']) {
+      const sealed = screen.getByRole('img', { name: `Empty slot ${code}, waiting for a future postcard` });
+      expect(within(sealed).queryByRole('button')).toBeNull();
+    }
+  });
+
+  test('it opens a dialog named for the card with the card\'s rules in plain words', async () => {
+    open(seeded(562));
+    fireEvent.click(await screen.findByRole('button', { name: 'About Whoops!' }));
+    const dialog = screen.getByRole('dialog', { name: 'Whoops!' });
+    expect(within(dialog).getByText('A Salty card. Splats a post in your ink.')).toBeInTheDocument();
+    expect(within(dialog).queryByText('A Sweet card. Holds each reader on a post.')).toBeNull();
+    expect(within(dialog).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  test('Close puts focus back on the info button', async () => {
+    open(seeded(562));
+    const about = await screen.findByRole('button', { name: 'About Stick Around' });
+    about.focus();
+    fireEvent.click(about);
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Stick Around' })).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    /* Given back in the microtask after the commit that closes the dialog. */
+    await waitFor(() => expect(about).toHaveFocus());
+  });
+
+  test('Esc closes the overlay alone, and focus is back on the info button', async () => {
+    open(seeded(562));
+    const about = await screen.findByRole('button', { name: 'About Whoops!' });
+    about.focus();
+    fireEvent.click(about);
+    const dialog = screen.getByRole('dialog', { name: 'Whoops!' });
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    act(() => { dialog.dispatchEvent(esc); });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    /* Given back in the microtask after the commit that closes the dialog. */
+    await waitFor(() => expect(about).toHaveFocus());
+    /* The overlay answered the key, so the page under it (the glass's Back) is told it was handled. */
+    expect(esc.defaultPrevented).toBe(true);
+  });
+
+  test('opening it selects no slot, leaves the price display as it was, and spends nothing', async () => {
+    const fake = seeded(562);
+    const buy = vi.spyOn(fake, 'buyCard');
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Whoops!' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
+    /* The pick stays the one made before, and the other slot was never selected. */
+    expect(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb, selected' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('status', { name: 'Selected: A1, Stick Around, 1.00' })).toBeInTheDocument();
+    expect(buy).not.toHaveBeenCalled();
+    expect((await fake.wallet()).balance).toBe(562);
+  });
+
+  test('with nothing selected, opening it leaves the display at "Nothing selected"', async () => {
+    open(seeded(562));
+    fireEvent.click(await screen.findByRole('button', { name: 'About Stick Around' }));
+    expect(screen.getByRole('status', { name: 'Nothing selected' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
   });
 });
 
@@ -204,6 +274,22 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     act(() => fake.signInAs(other));
     await land();
     await nothingOfA();
+  });
+
+  test('a stale answer for the first account landing after the second has picked a slot leaves the second account\'s pick alone', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const { fake, other, land } = heldAnswer();
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toBeDisabled());
+    act(() => fake.signInAs(other));
+    /* The second account's page has loaded once its wallet shows. */
+    await waitFor(() => expect(document.querySelector('.kb-vending-sum')).toHaveTextContent(/^3\.00$/), { timeout: 800 });
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb' }));
+    await land();
+    /* Only change()'s account check keeps the first account's answer from replacing what the second holds. */
+    expect(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb, selected' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('signing out and in as another account clears the first one\'s pick and its outcome too', async () => {

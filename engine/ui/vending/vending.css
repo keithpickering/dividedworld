@@ -205,6 +205,17 @@
   gap: 14px;
 }
 
+/* A stocked slot is its button and the info button beside it: siblings, since a button holds no button. */
+.kb-vending-cell {
+  position: relative;
+}
+
+.kb-vending-cell > .kb-vending-slot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+}
+
 .kb-vending-slot {
   position: relative;
   padding: 0;
@@ -407,24 +418,64 @@ button.kb-vending-slot {
 
 /* ---- the plain list ---- */
 
-.kb-vending-list-head {
-  margin: 0 0 12px;
-  font-family: var(--kb-glass-font-body);
-  line-height: normal;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 800;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  color: var(--kb-glass-text-2);
+/* The line about the empty slots, near the slots; the rules of each card are in its info button's overlay. */
+.kb-vending-list {
+  position: relative;
 }
 
-.kb-vending-items {
+.kb-vending-about {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1.5px solid var(--kb-card-color);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--kb-glass-text-hi);
+  font-family: var(--kb-glass-font-display);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.kb-vending-about:hover {
+  background: color-mix(in srgb, var(--kb-card-color) 25%, transparent);
+}
+
+.kb-vending-about-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  max-width: 28rem;
+}
+
+.kb-vending-about-price {
   margin: 0;
-  padding: 0;
-  list-style: none;
+  font-family: var(--kb-glass-font-display);
+  font-weight: 400;
+  font-size: var(--kb-glass-size-display-s);
+  line-height: 1;
+}
+
+.kb-vending-about-body[data-kb-alignment='sweet'] .kb-vending-about-price {
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-vending-about-body[data-kb-alignment='salty'] .kb-vending-about-price {
+  color: var(--kb-glass-salty-text);
+}
+
+.kb-vending-about-says {
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
 }
 
 .kb-vending-item {
@@ -461,14 +512,6 @@ button.kb-vending-slot {
   color: var(--kb-glass-ready-text);
 }
 
-.kb-vending-item[data-kb-alignment='sweet'] .kb-vending-item-price {
-  color: var(--kb-glass-neon-text);
-}
-
-.kb-vending-item[data-kb-alignment='salty'] .kb-vending-item-price {
-  color: var(--kb-glass-salty-text);
-}
-
 .kb-vending-item-says {
   margin: 8px 0 0;
   font-size: var(--kb-glass-size-body);
@@ -501,8 +544,7 @@ button.kb-vending-slot {
 }
 
 :where(:root[data-kb-layout='phone']) .kb-vending-eyebrow,
-:where(:root[data-kb-layout='phone']) .kb-vending-label,
-:where(:root[data-kb-layout='phone']) .kb-vending-list-head {
+:where(:root[data-kb-layout='phone']) .kb-vending-label {
   font-size: var(--kb-glass-size-phone-small);
 }
 
@@ -592,4 +634,25 @@ button.kb-vending-slot {
   left: 50%;
   margin-left: -46px;
   top: 0;
+}
+
+/* A finger's target on the phone's stack. */
+:where(:root[data-kb-layout='phone']) .kb-vending-about {
+  width: 44px;
+  height: 44px;
+}
+
+/*
+ * Close, on the vending smoke: bare type on this recipe is brighter than a body color's ceiling and the word is under the
+ * large size, so it stands on a panel of the ground as solid as the calm, the way a card of the glass is drawn, outlined in
+ * the glass's neon.
+ */
+.kb-vending-about-dialog .kb-glass-dialog-close {
+  clip-path: none;
+  background: color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-neon-text) 60%, transparent);
+}
+
+.kb-vending-about-dialog .kb-glass-dialog-close::after {
+  display: none;
 }

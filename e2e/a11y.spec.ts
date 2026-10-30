@@ -227,6 +227,16 @@ for (const scheme of ['light', 'dark'] as const) {
         expect(await pageViolations(page)).toEqual([]);
       });
 
+      test('the Vending Machine\'s card info has none', async ({ page }) => {
+        await page.goto('/vending');
+        await page.getByRole('button', { name: 'About Whoops!' }).click();
+        await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'About Whoops!' })).toBeFocused();
+      });
+
       test('signed out: sign-in and register have none', async ({ page }) => {
         /* The demo world starts signed in and starts over on a load, so sign out in the app and go on from there. */
         await page.goto('/settings?section=account');

@@ -11,12 +11,14 @@
  * buy: 5.62 and a hand of 2. The board's "4.62 → 3.62" and "3 → 4" are the Log board's timeline
  * shifted a purchase (section 3, the fourth departure), so the build reads 5.62 → 4.62 and 2 → 3.
  *
+ * Not built: the board's "In the machine" list (its heading, the two cards' names, prices and descriptions). The owner's
+ * answer on #75 (docs/plans/2026-10-29-screens-cards-plan.md, Task 2) took it out at every width, since it grows with every
+ * card added; each stocked slot carries an info button ("About Whoops!") that opens the card's rules in an overlay. The
+ * info buttons are the build's own and no board draws them, so they are not compared.
+ *
  * Not compared: the machine's drawing, which is the instance's art (its body, its marquee glass, the
  * slot codes, Push, Aura in, the tray and its words are marked `data-kb-art`, hidden from a screen
- * reader and read from no role); the cards' faces inside the slots; and the "In the machine"
- * descriptions, which are each card's `describe` (the instance's words, longer than the board's
- * sentences), so that list's later rows sit where its first row's length puts them, and only the
- * first is compared by place.
+ * reader and read from no role); the cards' faces inside the slots.
  */
 import type { BoardManifest } from '../board-match.ts';
 
@@ -67,16 +69,11 @@ const manifest: BoardManifest = {
     { id: 'buy', role: 'button', name: 'Buy Whoops! · 1.00' },
     { id: 'price-note', role: 'text', name: 'Playing it on a long post costs up to 2.00 more, never more than 3.00 in all.' },
 
-    /* The plain list: its heading, the first card's name and price, and the sealed slots' line. The later rows' place follows
-       the first row's description, which is each card's `describe` and longer than the board's sentence (see the top), so
-       those rows are compared by size and not by place. */
-    { id: 'list', role: 'region', name: 'In the machine', box: 'position' },
-    { id: 'list-head', role: 'text', name: 'In the machine', within: 'list', nth: 0 },
-    { id: 'list-stick', role: 'text', name: 'Stick Around', within: 'list' },
-    { id: 'list-stick-price', role: 'text', name: '1.00', within: 'list' },
-    { id: 'list-whoops-price', role: 'text', name: '1.00+', within: 'list', box: 'size' },
-    { id: 'list-empty', role: 'text', name: '4 slots empty', within: 'list', box: 'size' },
-    { id: 'list-empty-says', role: 'text', name: 'More postcards arrive in later seasons.', within: 'list', box: 'size' },
+    /* The line about the empty slots, near them. The board's "In the machine" list is not built: the owner's answer on #75 took it
+       out at every width (it grows with every card added), and each card's slot carries an info button instead. The sealed
+       slots' line stays, so it is compared by size: it stands where the build puts it, in the third column's place. */
+    { id: 'list-empty', role: 'text', name: '4 slots empty', box: 'size' },
+    { id: 'list-empty-says', role: 'text', name: 'More postcards arrive in later seasons.', box: 'size' },
   ],
 };
 

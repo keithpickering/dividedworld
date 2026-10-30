@@ -1,10 +1,16 @@
 /**
  * The Vending Machine, as the Vending board draws it (docs/research/2026-10-29-two-worlds/07-vending.html;
  * the cards plan's Task 2): a glass page under the menu bar, with the wallet and the hand on its
- * left, the drawn machine in the middle and the plain list of what is in it on its right. Each slot
+ * left, the drawn machine in the middle and the line about the empty slots on its right. Each slot
  * is a button that selects a card ("Buy Stick Around, 1.00 orb"; the selected one adds ", selected"),
  * the price display says what is picked, and the buy button spends it. Slots with no card yet are
  * sealed and wait for a future postcard.
+ *
+ * There is no list of what is in the machine: it would grow with every card added (the owner's
+ * answer on #75, the cards plan's Task 2). Each stocked slot carries an info button beside its
+ * own ("About Whoops!") that opens an Overlay with that card's rules in plain words. It is a
+ * sibling of the slot's button, never inside it, so opening it selects nothing and spends nothing;
+ * a sealed slot has none.
  *
  * Buying spends solid orbs only: the wallet, never the ghost estimate. A purchase the wallet cannot
  * pay is refused here before the server is asked, and the server refuses it again if the wallet was
@@ -35,6 +41,7 @@ import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { backHref, boardPlace } from '../glass/back.ts';
+import { Overlay } from '../glass/Overlay.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { usePlayer } from '../player.tsx';
@@ -90,10 +97,11 @@ interface Kept {
 /** Nothing held yet for `account`. */
 const emptyFor = (account: Id | null): Kept => ({ for: account, pickedKey: null, busy: false, outcome: null, drainFrom: null, drop: null });
 
-function Machine({ faces, picked, onPick, onBuy, busy, drop, onLanded, shopName }: {
+function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, shopName }: {
   readonly faces: readonly CardFace[];
   readonly picked: CardFace | null;
   readonly onPick: (key: string) => void;
+  readonly onAbout: (key: string, button: HTMLElement) => void;
   readonly onBuy: () => void;
   readonly busy: boolean;
   readonly drop: Drop | null;
@@ -125,22 +133,32 @@ function Machine({ faces, picked, onPick, onBuy, busy, drop, onLanded, shopName 
             }
             const selected = picked?.key === face.key;
             return (
-              <button
-                key={face.key}
-                type="button"
-                className="kb-vending-slot"
-                aria-label={`Buy ${face.name}, ${orbs(face.price)} ${orbWord(face.price)}${selected ? ', selected' : ''}`}
-                aria-pressed={selected}
-                data-kb-alignment={face.alignment}
-                style={{ '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink } as CSSProperties}
-                onClick={() => onPick(face.key)}
-              >
-                <Postcard face={face} size="slot" />
-                <svg className="kb-vending-coil" aria-hidden="true" focusable="false" width="120" height="22" viewBox="0 0 120 22" data-kb-art>
-                  <path d="M4 11 q8 -10 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0" fill="none" strokeWidth="2.5" />
-                </svg>
-                <span className="kb-vending-slot-code" aria-hidden="true" data-kb-art data-code={`${code} · ${orbs(face.price)}`} />
-              </button>
+              <div key={face.key} className="kb-vending-cell">
+                <button
+                  type="button"
+                  className="kb-vending-slot"
+                  aria-label={`Buy ${face.name}, ${orbs(face.price)} ${orbWord(face.price)}${selected ? ', selected' : ''}`}
+                  aria-pressed={selected}
+                  data-kb-alignment={face.alignment}
+                  style={{ '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink } as CSSProperties}
+                  onClick={() => onPick(face.key)}
+                >
+                  <Postcard face={face} size="slot" />
+                  <svg className="kb-vending-coil" aria-hidden="true" focusable="false" width="120" height="22" viewBox="0 0 120 22" data-kb-art>
+                    <path d="M4 11 q8 -10 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0" fill="none" strokeWidth="2.5" />
+                  </svg>
+                  <span className="kb-vending-slot-code" aria-hidden="true" data-kb-art data-code={`${code} · ${orbs(face.price)}`} />
+                </button>
+                <button
+                  type="button"
+                  className="kb-vending-about"
+                  aria-label={`About ${face.name}`}
+                  style={{ '--kb-card-color': face.art.color } as CSSProperties}
+                  onClick={(e) => onAbout(face.key, e.currentTarget)}
+                >
+                  <span aria-hidden="true" data-kb-art>i</span>
+                </button>
+              </div>
             );
           })}
         </div>
@@ -195,7 +213,11 @@ export function Vending() {
   const empty = useMemo(() => emptyFor(account), [account]);
   const mine = kept.for === account ? kept : empty;
   const { pickedKey, busy, outcome, drainFrom, drop } = mine;
-  /* The account the screen is on now: an answer for another one is dropped, and a change is that account's own. */
+  /*
+   * The account the screen is on now: an answer for another one is dropped, and a change is that account's own. The render-time
+   * keying above already hides a stale answer; this keeps it from also replacing what the account signed in now has picked
+   * (a test holds A's answer past B's pick), so it is the write's own guard and not only defense in depth.
+   */
   const showing = useRef<Id | null>(null);
   showing.current = account;
   const change = (for_: Id | null, patch: (m: Kept) => Partial<Kept>) => {
@@ -204,6 +226,9 @@ export function Vending() {
   };
   /* Two presses in one tick both see `busy` false, so the guard is a ref too: the accounts with a purchase out. */
   const pressed = useRef(new Set<Id>());
+  /* The card whose rules are open, and the info button that opened them: it is where focus returns. */
+  const [about, setAbout] = useState<string | null>(null);
+  const aboutButton = useRef<HTMLElement | null>(null);
 
   const wallet = player.wallet;
   const balance = wallet?.balance ?? 0;
@@ -212,6 +237,7 @@ export function Vending() {
   /* On their way, the cards have not reached the hand: the count moves when they land. */
   const held = heldNow - (drop?.flying ?? 0);
   const picked = faces.find((f) => f.key === pickedKey) ?? null;
+  const aboutFace = faces.find((f) => f.key === about) ?? null;
   const short = picked !== null && balance < picked.price;
   const shortWords = picked ? `${picked.name} costs ${orbs(picked.price)} and your wallet holds ${orbs(balance)}. Only solid Aura can be spent; the ghost estimate cannot.` : '';
   const after = picked && !short ? balance - picked.price : null;
@@ -302,27 +328,26 @@ export function Vending() {
       <Machine
         faces={faces} picked={picked} busy={busy} drop={drop} shopName={ui.copy.shopName}
         onPick={(key) => change(account, () => ({ pickedKey: key, outcome: null }))}
+        onAbout={(key, button) => { aboutButton.current = button; setAbout(key); }}
         onBuy={() => void buy()}
         onLanded={() => change(account, () => ({ drop: null }))}
       />
 
-      <section className="kb-vending-list" aria-label="In the machine">
-        <h2 className="kb-vending-list-head kb-calm">In the machine</h2>
-        <ul className="kb-vending-items">
-          {faces.map((f) => (
-            <li key={f.key} className="kb-vending-item kb-calm" data-kb-alignment={f.alignment} style={{ '--kb-card-color': f.art.color } as CSSProperties}>
-              <div className="kb-vending-item-row"><span className="kb-vending-item-name">{f.name}</span><span className="kb-vending-item-price kb-num">{priceOf(f)}</span></div>
-              <p className="kb-vending-item-says">{f.describe}</p>
-            </li>
-          ))}
-          {faces.length < slotsFor(faces.length) && (
-            <li className="kb-vending-item kb-vending-item--sealed kb-calm">
-              <div className="kb-vending-item-row"><span className="kb-vending-item-name">{slotsFor(faces.length) - faces.length} {slotsFor(faces.length) - faces.length === 1 ? 'slot' : 'slots'} empty</span></div>
-              <p className="kb-vending-item-says">More postcards arrive in later seasons.</p>
-            </li>
-          )}
-        </ul>
-      </section>
+      {aboutFace && (
+        <Overlay title={aboutFace.name} surface="vending" className="kb-vending-about-dialog" onClose={() => setAbout(null)} returnFocusTo={() => aboutButton.current}>
+          <div className="kb-vending-about-body kb-calm" data-kb-alignment={aboutFace.alignment}>
+            <p className="kb-vending-about-price kb-num">{priceOf(aboutFace)}</p>
+            <p className="kb-vending-about-says">{aboutFace.describe}</p>
+          </div>
+        </Overlay>
+      )}
+
+      {faces.length < slotsFor(faces.length) && (
+        <div className="kb-vending-list kb-vending-item kb-vending-item--sealed kb-calm">
+          <p className="kb-vending-item-row"><span className="kb-vending-item-name">{slotsFor(faces.length) - faces.length} {slotsFor(faces.length) - faces.length === 1 ? 'slot' : 'slots'} empty</span></p>
+          <p className="kb-vending-item-says">More postcards arrive in later seasons.</p>
+        </div>
+      )}
     </div>
   );
 }

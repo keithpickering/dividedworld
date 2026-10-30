@@ -159,6 +159,14 @@ const OVERLAYS: readonly Screen[] = [
       await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
     },
   },
+  {
+    name: 'The Vending Machine\'s card info, from a slot',
+    path: '/vending',
+    then: async (page) => {
+      await page.getByRole('button', { name: 'About Whoops!' }).click();
+      await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
+    },
+  },
   { name: 'The Debut dialog, dropping now', path: '/characters/new', then: debut('Drop Waiting Wanda now', 'Drop Waiting Wanda now') },
   { name: 'The Debut dialog, choosing how', path: '/characters/new', then: debut('Change how Waiting Wanda debuts', 'How Waiting Wanda debuts') },
 ];
