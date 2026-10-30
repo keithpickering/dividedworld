@@ -112,6 +112,9 @@ begin
   reset enable_seqscan;
   if plan ~* 'seq scan' then raise exception 'a page of postbits'' amounts scans the standings: %', plan; end if;
   if plan !~* 'index' then raise exception 'a page of postbits'' amounts is not an index probe: %', plan; end if;
+  -- The probe is by character: an index read of the whole season, filtered to the page afterwards, has no seq scan
+  -- and an index too, and costs every row of the season.
+  if plan !~* 'Index Cond:[^\n]*character' then raise exception 'a page of postbits'' amounts reads the season and filters it, not a probe per character: %', plan; end if;
 end $$;
 
 -- ---- the season a screen names is the season its standings read, whatever the numbers say ----
