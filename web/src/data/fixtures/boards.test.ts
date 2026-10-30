@@ -112,7 +112,7 @@ describe('Pipewrench through the season', () => {
     '01-main': { wallet: 462, pending: 30, hand: 3, rank: 'Enhancement Talent', class: 'heel', turning: false },
     '02-phone': { wallet: 462, pending: 30, hand: 3, rank: 'Enhancement Talent', class: 'heel', turning: false },
     '05-cards': { wallet: 462, pending: 30, hand: 3, rank: 'Enhancement Talent', class: 'heel', turning: false },
-    '06-turn': { wallet: 337, pending: 35, hand: 2, rank: 'Enhancement Talent', class: 'heel', turning: true },
+    '06-turn': { wallet: 337, pending: 35, hand: 2, rank: 'Enhancement Talent', class: 'heel', turning: false },
     '09-settlement': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
     '10-roster': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
     '11-settings': { wallet: 372, pending: 0, hand: 2, rank: 'Midcarder', class: 'face', turning: false },
@@ -131,10 +131,12 @@ describe('Pipewrench through the season', () => {
     expect(me.pendingTurn !== null).toBe(want.turning);
   });
 
-  it('chooses its Turn to Face, announced with its old class, and says when it takes effect', async () => {
+  it('at the Turn board, a minute before the Turn, it is free to Turn and has none waiting, so the board shows it being chosen', async () => {
     const { fake } = await load('06-turn');
+    expect(MOMENTS['06-turn'].at).toBe(Date.parse(iso(30, 0, 34)));
     const me = must((await fake.myCharacters()).find((c) => c.name === 'Pipewrench'));
-    expect(me.pendingTurn).toEqual({ class: 'face', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: iso(30, 8, 17) });
+    expect(me).toMatchObject({ class: 'heel', turnOpensAt: null, pendingTurn: null });
+    expect(await fake.nextSettlementAt()).toBe(iso(30, 8, 17));
   });
 
   it('is on cooldown after the settlement until the month ends, and the Turn is announced with its old class', async () => {

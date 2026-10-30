@@ -82,6 +82,10 @@ boards show, and a named moment for each board. It is the boards' sample data ma
   | 11 settings | Oct 30 08:30 | the player | Settings, Accessibility |
   | 12 log | Oct 30 08:30 | the player | My log, Pipewrench's tab |
 
+  **Amended 2026-10-30, in the glass build's Task 2.2.** 06 turn is at Oct 30 00:34, a minute before the Turn,
+  as 05 cards and 07 vending sit a minute before their acts: the board shows the Turn being chosen, so the
+  build opens Turn Pipewrench and chooses Face, rather than reopening a Turn already made.
+
 - The fake backend takes the moment from `?fixture=boards&moment=<name>` in the e2e build only (`vite build --mode
   fake`). The Supabase adapter never reads either parameter, and `fake.ts` and the fixture are absent from the
   production bundle: web Task 0's build asserts that the production bundle contains neither file's marker string

@@ -87,7 +87,8 @@ export const MOMENTS = Object.freeze({
   '03-react': moment(POSTED[42] + 10 * MINUTE, 'rival', (id) => thread(id, 42)),
   // The minute before the play, which the form is open for.
   '05-cards': moment(PLAYED_AT - MINUTE, 'player', (id) => thread(id, 46)),
-  '06-turn': moment(TURNED_AT, 'player', () => '/characters'),
+  // The minute before the Turn, which the modal is open to choose.
+  '06-turn': moment(TURNED_AT - MINUTE, 'player', () => '/characters'),
   // The minute before the buy.
   '07-vending': moment(BOUGHT_AT - MINUTE, 'player', () => '/vending'),
   '08-hold': moment(STICK_AROUND_AT, 'reader', (id) => thread(id, 44)),
