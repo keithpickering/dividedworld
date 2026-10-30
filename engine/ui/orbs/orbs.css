@@ -1,6 +1,6 @@
 /*
  * The orbs, in the glass's look (the glass plan, section 7, board 01): each a glass ball on the
- * instance's orb body (--kb-glass-orb-body-from to -to), its fill a liquid in the gradient of its
+ * instance's orb body (--kb-glass-orb-body-core to -edge), its fill a liquid in the gradient of its
  * place in the row (--kb-orb-highlight, -color and -shade, which Orbs.tsx points at
  * --kb-glass-orb-<n>-*). The liquid rises from the bottom by the settled fill; the estimate's gain
  * is the same liquid, hatched, above it; a loss is a pale band over the liquid it would take; a
@@ -29,7 +29,7 @@
   border-radius: 50%;
   overflow: hidden;
   isolation: isolate;
-  background: radial-gradient(circle at 50% 35%, var(--kb-glass-orb-body-from), var(--kb-glass-orb-body-to));
+  background: radial-gradient(circle at 50% 35%, var(--kb-glass-orb-body-core), var(--kb-glass-orb-body-edge));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kb-orb-highlight) 35%, transparent);
 }
 

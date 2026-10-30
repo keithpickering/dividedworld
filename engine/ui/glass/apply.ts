@@ -15,7 +15,7 @@ export type GlassKeyName = 'standard' | 'high';
  * Every property a key sets: its tokens, each size step in px, and the calm's opacity and feather.
  * Then the instance's own colors, which are its data and not tokens (the glass plan, section 4):
  * each orb's three stops by its place in the row (`--kb-glass-orb-<n>-highlight`, `-color`,
- * `-shade`) and the orb's body (`--kb-glass-orb-body-from`, `-to`), and each class's fill, ink and
+ * `-shade`) and the orb's body (`--kb-glass-orb-body-core`, `-edge`), and each class's fill, ink and
  * large text by the class's key (`--kb-glass-class-<key>-fill`, `-ink`, `-large`). The engine
  * reads those names and never a value; an orb or a class the instance does not give is unset.
  */
@@ -30,8 +30,8 @@ export function glassVars(glass: GlassTheme, key: GlassKeyName): Record<string, 
     out[`--kb-glass-orb-${i + 1}-color`] = g.color;
     out[`--kb-glass-orb-${i + 1}-shade`] = g.shade;
   });
-  if (glass.orbs.body.from) out['--kb-glass-orb-body-from'] = glass.orbs.body.from;
-  if (glass.orbs.body.to) out['--kb-glass-orb-body-to'] = glass.orbs.body.to;
+  if (glass.orbs.body.core) out['--kb-glass-orb-body-core'] = glass.orbs.body.core;
+  if (glass.orbs.body.edge) out['--kb-glass-orb-body-edge'] = glass.orbs.body.edge;
   for (const [cls, c] of Object.entries(glass.classes)) {
     out[`--kb-glass-class-${cls}-fill`] = c.fill;
     out[`--kb-glass-class-${cls}-ink`] = c.ink;

@@ -56,7 +56,7 @@ export const testGlass = {
   sizes: {},
   fonts: [],
   classes: {},
-  orbs: { gradients: [], body: { from: '', to: '' } },
+  orbs: { gradients: [], body: { core: '', edge: '' } },
 } as unknown as Kayfa['ui']['glass'];
 
 const ui = { glass: testGlass, themes: [{ key: 'house', name: 'House', href: '/house.css', modes: 'both' }, { key: 'sepia', name: 'Sepia', href: '/sepia.css', modes: 'light' }], classLooks: { face: { color: 'currentColor', description: 'The crowd favorite: earns from cheers.' }, heel: { color: 'currentColor', description: 'Earns heat: boos and tomatoes.' } }, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, copy: { siteName: 'Test', siteTagline: 'test', shopName: 'Shop' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } } } as unknown as Kayfa['ui'];

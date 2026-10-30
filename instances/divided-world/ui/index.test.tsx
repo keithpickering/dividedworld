@@ -57,7 +57,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const keyed = /^--kb-glass-(orb|class)-/;
     const fromInstance = [
       ...instanceUi.glass.orbs.gradients.flatMap((_, i) => ['highlight', 'color', 'shade'].map((s) => `--kb-glass-orb-${i + 1}-${s}`)),
-      ...(['from', 'to'] as const).filter((e) => instanceUi.glass.orbs.body[e]).map((e) => `--kb-glass-orb-body-${e}`),
+      ...(['core', 'edge'] as const).filter((e) => instanceUi.glass.orbs.body[e]).map((e) => `--kb-glass-orb-body-${e}`),
       ...Object.keys(instanceUi.glass.classes).flatMap((c) => ['fill', 'ink', 'large'].map((s) => `--kb-glass-class-${c}-${s}`)),
     ].sort();
     for (const key of ['standard', 'high'] as const) {

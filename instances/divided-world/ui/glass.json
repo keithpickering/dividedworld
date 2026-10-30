@@ -184,6 +184,6 @@
       { "highlight": "#ffe7d6", "color": "#ff9a3d", "shade": "#7a3406" },
       { "highlight": "#ffd6da", "color": "#ff4d5e", "shade": "#750815" }
     ],
-    "body": { "from": "#1c1533", "to": "#07060c" }
+    "body": { "core": "#1c1533", "edge": "#07060c" }
   }
 }

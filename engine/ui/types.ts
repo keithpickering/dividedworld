@@ -164,7 +164,7 @@ export interface GlassTheme {
   /** Each class's glass colors, by the class's key. */
   readonly classes: Readonly<Record<string, GlassClassColor>>;
   /** The orbs: six gradients and the orb's body. */
-  readonly orbs: { readonly gradients: readonly GlassOrbStops[]; readonly body: { readonly from: string; readonly to: string } };
+  readonly orbs: { readonly gradients: readonly GlassOrbStops[]; readonly body: { readonly core: string; readonly edge: string } };
 }
 
 export interface InstanceUi {

@@ -19,7 +19,7 @@ const glass = {
     { family: 'Anton', file: '/assets/Anton-Regular.woff2', weight: 400, style: 'normal', ink: 0.99 },
     { family: 'Barlow Condensed', file: '/assets/BarlowCondensed-BoldItalic.woff2', weight: 700, style: 'italic', ink: 0.9 },
   ],
-  classes: {}, orbs: { gradients: [], body: { from: '', to: '' } },
+  classes: {}, orbs: { gradients: [], body: { core: '', edge: '' } },
 } as unknown as GlassTheme;
 
 describe('glassVars', () => {
@@ -47,7 +47,7 @@ describe('the instance\'s own colors as properties', () => {
   const colored = {
     ...glass,
     classes: { heel: { fill: '#ff3d57', ink: '#14030a', large: '#ff8a96' } },
-    orbs: { gradients: [{ highlight: '#ead6ff', color: '#b46cff', shade: '#3d1475' }, { highlight: '#d6e9ff', color: '#3d9bff', shade: '#0c3275' }], body: { from: '#1c1533', to: '#07060c' } },
+    orbs: { gradients: [{ highlight: '#ead6ff', color: '#b46cff', shade: '#3d1475' }, { highlight: '#d6e9ff', color: '#3d9bff', shade: '#0c3275' }], body: { core: '#1c1533', edge: '#07060c' } },
   } as unknown as GlassTheme;
 
   it('gives each orb its three stops, by its place in the row, and the orb\'s body', () => {
@@ -55,8 +55,8 @@ describe('the instance\'s own colors as properties', () => {
     expect(v['--kb-glass-orb-1-highlight']).toBe('#ead6ff');
     expect(v['--kb-glass-orb-1-color']).toBe('#b46cff');
     expect(v['--kb-glass-orb-2-shade']).toBe('#0c3275');
-    expect(v['--kb-glass-orb-body-from']).toBe('#1c1533');
-    expect(v['--kb-glass-orb-body-to']).toBe('#07060c');
+    expect(v['--kb-glass-orb-body-core']).toBe('#1c1533');
+    expect(v['--kb-glass-orb-body-edge']).toBe('#07060c');
   });
 
   it('gives each class its fill, its ink and its large text, by the class\'s key', () => {

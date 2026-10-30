@@ -27,7 +27,7 @@ const glass = {
     surfaces: { hud: 'deep', hand: 'calm', play: 'calm', react: 'calm', turn: 'calm', effect: 'calm', vending: 'calm', characters: 'calm', rankings: 'calm', log: 'calm', settings: 'calm', account: 'calm', settlement: 'calm' },
   },
   calm: { opacity: 0.85, feather: 32 },
-  sizes: {}, fonts: [], classes: {}, orbs: { gradients: [], body: { from: '', to: '' } },
+  sizes: {}, fonts: [], classes: {}, orbs: { gradients: [], body: { core: '', edge: '' } },
 } as unknown as GlassTheme;
 
 const world = { ui: { glass } } as unknown as Kayfa;
