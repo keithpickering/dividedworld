@@ -125,6 +125,12 @@ owner's notes give, which holds for every card: game state and its controls neve
 can cover a post freely. Whether "Play Whoops! here" in the post's action row (board 01 draws it there) goes against it
 is raised in PR #71, not moved without the owner's word.
 
+**Amended 2026-10-30, the owner on #80's shots: the play control.** The owner: "For "Play whoops here" and the associated "splatted" state data - whatever we did for the turn checkboxes to bring back the gamelike theatrics, impeccable or something else, let's do that here. It's starting to look a bit like just "let the text and buttons flow however", less focused and intentional than it could be. And yes we should try to find a way to make the play button itself glass-styled" So "Play Whoops! here" is a glass
+control: while a card is armed it stands in the post's glass plate (Task 5's amendment of this date), or as its own
+glass tile attached to each post it can land on, and leaves the 2003 action row; "Play card" stays in the row as a plain
+2003 link that opens the hand. It keeps its accessible name and its keyboard path. It is drawn first as stories, for
+the owner's word, before tests are written against its look.
+
 ### Task 4. Stick Around
 
 - `instances/divided-world/cards/stick-around/hold.ts` (pure): which Stick Around pulls (the nearest seen and unescaped,
@@ -243,6 +249,18 @@ layout's reference width is the post body's width at the board's max, not 360px:
 laid out as any other post is, and the ink fills its body edge to edge; below it the layout is scaled down as a whole,
 never up, so line breaks stay the same everywhere. This replaces the 360px reference (#76's cap at 1× stands: never
 scaled up). On a phone a splatted post's text is small until it is scrubbed; the owner chose that knowingly.
+
+**Amended 2026-10-30, the owner on #80's shots: the splat and the effect's plate.** Of the splat, the owner: "The spill still has edges that end before the black post borders, most likely an effort to avoid covering reactions etc - I think such things can just render in front of the splat, or we can slightly redesign the post component so the actual post content (coverable)is always contained within a dedicated block for these purposes (but that probably wouldn't look as nice)." The
+owner's first option: the ink runs to the post's black borders, edge to edge, and the reactions row, the action row and
+every other control in the post draw in front of it, visible and usable; the ink is not inset to avoid them, and the
+post is not split into a coverable block. The words under the ink stay covered. Of the effect's words and controls,
+the owner: "For "Play whoops here" and the associated "splatted" state data - whatever we did for the turn checkboxes to bring back the gamelike theatrics, impeccable or something else, let's do that here. It's starting to look a bit like just "let the text and buttons flow however", less focused and intentional than it could be. And yes we should try to find a way to make the play button itself glass-styled" So the strip of the amendment above becomes one deliberate game piece, given the treatment the Turn
+modal's How loud row got (#51, restyled to board 06's idiom: skewed, chamfered tiles, a lit and glowing chosen state,
+every part composed in one shape): a chamfered glass plate attached to the post, with the effect's name and state as a
+readout, and its controls (Hold to scrub, Wash, Write in ink, and the armed card's play control of Task 3's amendment of
+this date) as glass tiles in the boards' idiom. impeccable's shape and critique steps are run on it first. Every
+control keeps its accessible name and keyboard path, and Hold to scrub's cost is unchanged. Drawn first as stories
+(splatted, armed, and both), for the owner's word, before tests are written against its look.
 
 ### Task 6. The log's card lines, and the audit
 

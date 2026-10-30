@@ -310,6 +310,11 @@ line; an effect's words and controls are one glass element attached to the post,
 plan's Task 3 and 5 amendments of this date). On the Phone board's layout these are a step smaller, within the size
 floors.
 
+**Amended 2026-10-30, the owner on #80's shots.** "For "Play whoops here" and the associated "splatted" state data - whatever we did for the turn checkboxes to bring back the gamelike theatrics, impeccable or something else, let's do that here. It's starting to look a bit like just "let the text and buttons flow however", less focused and intentional than it could be. And yes we should try to find a way to make the play button itself glass-styled" An effect's words and controls over a post
+are one chamfered glass plate attached to the post, in board 06's idiom (the How loud row's, #51), and "Play Whoops!
+here" is a glass control in it while a card is armed (the cards plan's Task 3 and 5 amendments of this date); the
+splat runs to the post's borders with the post's controls drawn in front of it.
+
 ## 6. The smoke: a recipe per surface
 
 The design and web Task 1 describe one smoke of two layers. The boards draw nine recipes, each tuned to its screen.
