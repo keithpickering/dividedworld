@@ -153,6 +153,38 @@ describe('Settings, as board 11 draws it', () => {
     expect(document.documentElement.hasAttribute('data-kb-mode')).toBe(false);
   });
 
+  /** Text size changed twice before either save is answered: 100, then 125, then 150. */
+  async function twice() {
+    const w = world();
+    const calls: { patch: Partial<Preferences>; settle: (a: Answer<Preferences>) => void }[] = [];
+    w.fake.setPreferences = (patch) => new Promise((settle) => { calls.push({ patch, settle }); });
+    open(w.fake);
+    await screen.findByRole('radiogroup', { name: 'Text size' });
+    await userEvent.click(radio('Text size', '125%'));
+    await userEvent.click(radio('Text size', '150%'));
+    return calls;
+  }
+
+  test('the same choice made twice, the first save refused and the second kept: the screen keeps the second', async () => {
+    const calls = await twice();
+    calls[0]!.settle({ ok: false, error: 'text size is 100, 125, 150 or 200 percent' });
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(radio('Text size', '150%')).toBeChecked();
+    calls[1]!.settle({ ok: true, value: { ...DEFAULT_PREFERENCES, textSize: 150 } });
+    await screen.findByRole('alert');
+    expect(radio('Text size', '150%')).toBeChecked();
+    expect(document.documentElement).toHaveAttribute('data-kb-text-size', '150');
+  });
+
+  test('the same choice made twice and both saves refused: the screen goes back to what the account last held', async () => {
+    const calls = await twice();
+    calls[0]!.settle({ ok: false, error: 'text size is 100, 125, 150 or 200 percent' });
+    await waitFor(() => expect(calls).toHaveLength(2));
+    calls[1]!.settle({ ok: false, error: 'text size is 100, 125, 150 or 200 percent' });
+    await waitFor(() => expect(radio('Text size', '100%')).toBeChecked());
+    expect(document.documentElement).not.toHaveAttribute('data-kb-text-size');
+  });
+
   test('"Saved to your account." is said in a region that is on the page before anything is saved', async () => {
     open(world().fake);
     await screen.findByRole('radiogroup', { name: 'Motion' });

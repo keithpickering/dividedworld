@@ -128,14 +128,15 @@ export function SettingsScreen() {
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const account = session?.account ?? null;
-  /* The choices as the page holds them now (before the server has answered), and the saves in line. */
+  /* The choices as the page holds them now (before the server has answered), what the account last confirmed, and the saves in line. */
   const current = useRef<Preferences | null>(null);
+  const confirmed = useRef<Preferences | null>(null);
   const line = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     if (!account) return;
     let live = true;
-    void api.preferences().then((p) => { if (live) { current.current = p; setPrefs(p); } }, () => { if (live) setRefusal('Your settings could not be read right now. Reload the page to try again.'); });
+    void api.preferences().then((p) => { if (live) { current.current = p; confirmed.current = p; setPrefs(p); } }, () => { if (live) setRefusal('Your settings could not be read right now. Reload the page to try again.'); });
     void api.signInAddress().then((a) => { if (live) setAddress(a); }, () => { /* the row says it could not be read */ });
     return () => { live = false; };
   }, [api, account]);
@@ -160,11 +161,13 @@ export function SettingsScreen() {
 
   /*
    * A choice shows at once; its save waits for the ones before it (one out at a time, so the
-   * account ends with the last choice made), and a refusal puts back that choice alone.
+   * account ends with the last choice made). A refusal puts back that choice alone, to what the
+   * account last confirmed for it, and only while the screen still shows the refused value: a later
+   * choice of the same setting, still to be saved, is left on the screen for its own answer.
    */
   const change = (patch: Partial<Preferences>) => {
     const key = Object.keys(patch)[0] as keyof Preferences;
-    const was = current.current![key];
+    const asked = patch[key];
     const show = (next: Preferences) => { current.current = next; setPrefs(next); applyAppearance(document, next, ui.themes, ui.glass); };
     show({ ...current.current!, ...patch });
     setRefusal(null);
@@ -172,8 +175,8 @@ export function SettingsScreen() {
     line.current = line.current.then(async () => {
       let r: Answer<Preferences>;
       try { r = await api.setPreferences(patch); } catch { r = { ok: false, error: LOST_ANSWER }; }
-      if (r.ok) { setSaved(true); return; }
-      show({ ...current.current!, [key]: was });
+      if (r.ok) { confirmed.current = { ...confirmed.current!, [key]: r.value[key] }; setSaved(true); return; }
+      if (current.current![key] === asked) show({ ...current.current!, [key]: confirmed.current![key] });
       setRefusal(r.error);
     });
   };
