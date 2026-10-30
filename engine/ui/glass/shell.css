@@ -2,9 +2,16 @@
  * The glass's page shell, its menu bar and its overlay (the web plan's glass amendment to Task 3;
  * the glass plan, section 8). Colors and families are tokens; the cuts and skews are base.css's.
  *
- * The content column is at most 1312px wide (the boards' 1440 less two 64px gutters), centered,
- * with gutters of clamp(16px, 4.44vw, 64px). Until the glass build's Part 2 restyles each page,
- * its content keeps the board's look on a panel in the board's own colors.
+ * The content column is at most 1312px wide (the boards' 1440 less two 64px gutters), centered.
+ * Until the glass build's Part 2 restyles each page, its content keeps the board's look on a panel
+ * in the board's own colors.
+ *
+ * The page switches with the HUD, at the one width the instance's sizes work out
+ * (engine/ui/glass/board.ts), read from the root's `data-kb-board`, which useBoard sets. On the Main
+ * board's layout the menu bar and the column have the board's 64px gutters, and below 1440px both
+ * are drawn at the window's width over 1440 (`zoom: var(--kb-board-scale)`), the glass's text with
+ * them; the board's own content panel, until Part 2, is not (see its rule). On the Phone board's
+ * layout the gutters are clamp(16px, 4.44vw, 64px), and the menu bar is the phone's.
  */
 .kb-glass-page {
   position: relative;
@@ -23,6 +30,7 @@
 .kb-glass-menu {
   position: relative;
   padding: 16px clamp(16px, 4.44vw, 64px);
+  zoom: var(--kb-board-scale, 1);
 }
 
 .kb-glass-menu-row {
@@ -88,34 +96,32 @@
   color: var(--kb-glass-text-2);
 }
 
-/* Below 900px it is the phone's bar: Back on its own row, no key cap, the tabs a strip that scrolls sideways on its own. */
-@media (max-width: 899.98px) {
-  .kb-glass-menu-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
+/* Below the switch it is the phone's bar: Back on its own row, no key cap, the tabs a strip that scrolls sideways on its own. */
+:where(:root[data-kb-board='phone']) .kb-glass-menu-row {
+  flex-direction: column;
+  align-items: stretch;
+}
 
-  .kb-glass-menu-back {
-    align-self: flex-start;
-  }
+:where(:root[data-kb-board='phone']) .kb-glass-menu-back {
+  align-self: flex-start;
+}
 
-  .kb-glass-menu-list {
-    flex-wrap: nowrap;
-    min-width: 0;
-    max-width: 100%;
-    overflow-x: auto;
-    font-size: var(--kb-glass-size-phone-body);
-  }
+:where(:root[data-kb-board='phone']) .kb-glass-menu-list {
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: var(--kb-glass-size-phone-body);
+}
 
-  .kb-glass-menu-key {
-    display: none;
-  }
+:where(:root[data-kb-board='phone']) .kb-glass-menu-key {
+  display: none;
+}
 
-  .kb-glass-menu-back,
-  .kb-glass-menu-tab {
-    white-space: nowrap;
-    font-size: var(--kb-glass-size-phone-display);
-  }
+:where(:root[data-kb-board='phone']) .kb-glass-menu-back,
+:where(:root[data-kb-board='phone']) .kb-glass-menu-tab {
+  white-space: nowrap;
+  font-size: var(--kb-glass-size-phone-display);
 }
 
 /* ---- the content column ---- */
@@ -125,14 +131,29 @@
   max-width: 1312px;
   margin: 0 auto;
   padding: 0 clamp(16px, 4.44vw, 64px) 64px;
+  zoom: var(--kb-board-scale, 1);
+}
+
+/* On the Main board's layout the gutters are the board's own 64px, drawn at its scale with the rest. */
+:where(:root[data-kb-board='main']) .kb-glass-menu {
+  padding-inline: 64px;
+}
+
+:where(:root[data-kb-board='main']) .kb-glass-content {
+  padding-inline: 64px;
 }
 
 .kb-glass-content:focus {
   outline: none;
 }
 
-/* Until Part 2: the page's own content, in the board's colors and type, on the glass's cut panel. */
+/*
+ * Until Part 2: the page's own content, in the board's colors and type, on the glass's cut panel. Its
+ * type is the board's own (12px body), which no board page scales, so the panel undoes the
+ * column's scale; Part 2's glass type, drawn in the glass's sizes, takes it with the column.
+ */
 .kb-glass-content-panel {
+  zoom: calc(1 / var(--kb-board-scale, 1));
   --kb-cut: var(--kb-glass-chamfer-3);
   font-family: var(--kb-font-body);
   font-size: var(--kb-size-body);

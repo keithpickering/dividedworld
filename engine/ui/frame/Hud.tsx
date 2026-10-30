@@ -6,7 +6,9 @@
  * hand. Its top edge is a tab over the aura, cut by the shapes' HUD tab polygon from four points
  * the aura's own position sets (`--tab-a` to `--tab-d`), with the seam drawn along the same points.
  * The hand's sheet is a region of its own, beside the HUD and drawn above it (the Phone board).
- * Menu shows its key cap, ESC, for the eye; its name is Menu, and the key is aria-keyshortcuts'.
+ * Menu shows its key cap, ESC, for the eye and hides it from the accessibility tree, so the button's
+ * name is its word alone, Menu, taken from its content and not set over it; the key is
+ * aria-keyshortcuts'.
  *
  * It is the player's alone: what it shows is their own rows, and changing the character sends
  * nothing anywhere (player.tsx). Menu and Esc anywhere on the board open the glass at My characters;
@@ -21,8 +23,11 @@
  * The hand opens as a region above the bar and takes focus, so a keyboard is in it at once; its
  * Close the hand button, or Esc, closes it and returns focus to the hand.
  *
- * The swap is named "Swap mask" where the three groups fit (the Main board) and "Posting as" below
- * 1340px, where the HUD is the Phone board's.
+ * The swap is named "Swap mask" on the Main board's layout and "Posting as" on the Phone board's.
+ * Which layout it is comes from useBoard (engine/ui/glass/useBoard.ts): the Main board's from the
+ * width the instance's sizes work out (engine/ui/glass/board.ts; 1152px for Divided World), drawn
+ * at the window's scale below 1440px, and the Phone board's below that width. The glass pages
+ * switch at the same width.
  */
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import type { Character } from '../data/api.ts';
@@ -37,35 +42,20 @@ import { motionReduced } from '../appearance.ts';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import { pageEscape } from '../glass/keys.ts';
 import { GLASS_NAV } from '../glass/nav.ts';
-
-/** Where the HUD stops being the Main board's three groups and becomes the Phone board's. */
-const WIDE = '(min-width: 1340px)';
+import { useBoard } from '../glass/useBoard.ts';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
 const SLOPE = 28;
 const TAB = 24;
 const TAB_OUT = 20;
 
-function useWide(): boolean {
-  const query = () => (typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia(WIDE) : null);
-  const [wide, setWide] = useState(() => query()?.matches ?? true);
-  useEffect(() => {
-    const q = query();
-    if (!q) return;
-    const on = () => setWide(q.matches);
-    on();
-    q.addEventListener?.('change', on);
-    return () => q.removeEventListener?.('change', on);
-  }, []);
-  return wide;
-}
-
 export function Hud() {
   const { api, instance, settings } = useKayfa();
   const player = usePlayer();
   const location = useLocation();
   const navigate = useNavigate();
-  const wide = useWide();
+  const { board, scale } = useBoard();
+  const wide = board === 'main';
   const [face, setFace] = useState<Character | null>(null);
   const [next, setNext] = useState<string | null>(null);
   const [handOpen, setHandOpen] = useState(false);
@@ -112,26 +102,33 @@ export function Hud() {
   }, [balance, cap, walletSeen, markWalletSeen]);
 
   /*
-   * What sits above the HUD (the hand's sheet, the new-posts bar) needs the HUD's real height: on a
-   * narrow screen its groups stack. The tab's four points follow the
+   * What sits above the HUD (the hand's sheet, the new-posts bar) and the page's foot need the HUD's
+   * real height, as the window draws it: on the Phone board's layout its rows grow with what they
+   * hold, and on the Main board's it is scaled with the window. The tab's four points follow the
    * aura's own box, so the tab sits over the orbs at every width.
+   *
+   * The HUD is drawn at the board's scale (`zoom`, frame.css), and a box measured here is the
+   * window's, so the height is set as it stands, for what sits outside the HUD, and the tab's points
+   * are divided by the scale, since they are set on the HUD and drawn at it.
    *
    * Watching the section and the bar's three groups is enough: the HUD's height changes only with
    * the section's box, and the aura moves only when the section's width or the size of a group
    * beside it changes (a longer name in the plate, the hand's count) or it changes size itself.
-   * Each of those resizes something watched here, so no move of the tab goes unmeasured.
+   * Each of those resizes something watched here, so no move of the tab goes unmeasured. A change of
+   * scale alone resizes nothing in the HUD's own lengths, so it measures again on its own.
    */
   useEffect(() => {
     const el = section.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
     const root = document.documentElement;
     const measure = () => {
-      root.style.setProperty('--kb-hud-measured', `${Math.ceil(el.getBoundingClientRect().height)}px`);
-      const a = aura.current?.getBoundingClientRect();
       const s = el.getBoundingClientRect();
+      root.style.setProperty('--kb-hud-measured', `${Math.ceil(s.height)}px`);
+      const a = aura.current?.getBoundingClientRect();
+      const zoom = el.currentCSSZoom || 1;
       if (a && a.width > 0) {
-        const left = Math.round(a.left - s.left) - TAB_OUT;
-        const right = Math.round(a.left - s.left + a.width) + TAB_OUT;
+        const left = Math.round((a.left - s.left) / zoom) - TAB_OUT;
+        const right = Math.round((a.left - s.left + a.width) / zoom) + TAB_OUT;
         setTab((t) => (t && t[1] === left && t[2] === right ? t : [left - SLOPE, left, right, right + SLOPE]));
       }
     };
@@ -140,7 +137,7 @@ export function Hud() {
     watch.observe(el);
     for (const group of el.querySelectorAll('.kb-hud-bar > *')) watch.observe(group);
     return () => { watch.disconnect(); root.style.removeProperty('--kb-hud-measured'); };
-  }, [signedIn]);
+  }, [signedIn, board, scale]);
 
   /* The opened hand takes focus, so the keyboard is in it at once. */
   useEffect(() => { if (handOpen) drawer.current?.focus(); }, [handOpen]);
@@ -197,7 +194,7 @@ export function Hud() {
           )}
         </div>
       )}
-      <section ref={section} className="kb-hud" aria-label="Game HUD" style={tabVars} data-kb-wide={wide || undefined}>
+      <section ref={section} className="kb-hud" aria-label="Game HUD" style={tabVars}>
         <div className="kb-glass kb-hud-glass" style={hudCalm}>
           <div className="kb-hud-ground kb-glass-hud-tab" aria-hidden="true"><Smoke surface="hud" /></div>
           <svg className="kb-hud-seam" aria-hidden="true" focusable="false" preserveAspectRatio="none">
@@ -266,11 +263,10 @@ export function Hud() {
                   <button
                     type="button"
                     className="kb-hud-menu kb-glass-skew"
-                    aria-label="Menu"
                     aria-keyshortcuts="Escape"
                     onClick={() => navigate(GLASS_NAV.characters)}
                   >
-                    <kbd className="kb-hud-key kb-glass-upright">ESC</kbd>
+                    <kbd className="kb-hud-key kb-glass-upright" aria-hidden="true">ESC</kbd>
                     <span className="kb-glass-upright">Menu</span>
                   </button>
                   <button

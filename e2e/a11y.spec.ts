@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { expect, test, type Page } from '@playwright/test';
 import type { Fake } from '../engine/ui/data/fake.ts';
+import { boardSwitch, MAIN_BOARD_WIDTH } from '../engine/ui/glass/board.ts';
 import type { Demo } from '../web/src/demo.ts';
 
 /**
@@ -34,29 +36,48 @@ const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.ha
 type E2eWindow = typeof globalThis & { readonly __kbFake: Fake; readonly __kbDemo: Demo };
 
 /**
- * What the Game HUD shows that ends below its glass or the window, by class and pixels over: what it
- * holds must fit, or its last row is cut at the window's foot. Measured once the faces have loaded,
- * since the fallback's metrics are not what a player sees.
+ * What the Game HUD shows that runs past its glass or the window, by class, side and pixels over:
+ * what it holds must fit, or its last row is cut at the window's foot or a figure at its edge. Each
+ * box is held below by the glass's foot or the window's, whichever is higher, and each side by the
+ * glass's edge or the window's, whichever is nearer. Measured once the faces have loaded, since the
+ * fallback's metrics are not what a player sees. The smoke is drawn wider than the glass on purpose
+ * and clipped to it (engine/ui/glass/Smoke.tsx), and the seam runs on past the window's edge (its
+ * points end at x = 10000, engine/ui/frame/Hud.tsx), so neither is read.
  */
-async function hudCut(page: Page): Promise<(readonly [string, number])[]> {
+async function hudCut(page: Page): Promise<(readonly [string, string, number])[]> {
   return page.evaluate(async () => {
     await document.fonts.ready;
     const hud = document.querySelector('[aria-label="Game HUD"]')!;
-    const glass = hud.querySelector('.kb-hud-glass') ?? hud;
-    const floor = Math.min(glass.getBoundingClientRect().bottom, window.innerHeight);
+    const glass = (hud.querySelector('.kb-hud-glass') ?? hud).getBoundingClientRect();
+    const floor = Math.min(glass.bottom, window.innerHeight);
+    const right = Math.min(glass.right, window.innerWidth);
+    const left = Math.max(glass.left, 0);
     return [...hud.querySelectorAll('*')]
-      .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden')
-      .map((el) => [el.getAttribute('class') ?? el.tagName, Math.round(el.getBoundingClientRect().bottom - floor)] as const)
-      .filter(([, over]) => over > 0);
+      .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden' && !el.closest('.kb-smoke, .kb-hud-seam'))
+      .flatMap((el) => {
+        const box = el.getBoundingClientRect();
+        const name = el.getAttribute('class') ?? el.tagName;
+        return ([['bottom', box.bottom - floor], ['right', box.right - right], ['left', left - box.left]] as const)
+          .map(([side, over]) => [name, side, Math.round(over)] as const);
+      })
+      .filter(([, , over]) => over > 0);
   });
 }
+
+/*
+ * Where the Main board's layout becomes the Phone board's, worked out from Divided World's size
+ * tokens (engine/ui/glass/board.ts), and a window just either side of it.
+ */
+const SWITCH = boardSwitch(JSON.parse(readFileSync(new URL('../instances/divided-world/ui/glass.json', import.meta.url), 'utf8')));
+const ABOVE_SWITCH = SWITCH + 8;
+const BELOW_SWITCH = SWITCH - 8;
 
 const PAGES: readonly [string, string][] = [
   ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['standings', '/standings'], ['settings', '/settings'], ['invites', '/invites'],
 ];
 
 for (const scheme of ['light', 'dark'] as const) {
-  for (const [name, width] of [['desktop', 1000], ['phone', 360]] as const) {
+  for (const [name, width] of [['desktop', 1000], ['just above the switch', ABOVE_SWITCH], ['phone', 360]] as const) {
     test.describe(`${scheme}, ${name}`, () => {
       test.use({ colorScheme: scheme, viewport: { width, height: 800 } });
 
@@ -95,6 +116,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbDemo.me); });
         await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d past the cap$/);
         expect(await hudCut(page)).toEqual([]);
+        expect(await pageViolations(page)).toEqual([]);
       });
 
       test('a thread, a picker and a spin form have none', async ({ page }) => {
@@ -162,6 +184,78 @@ for (const scheme of ['light', 'dark'] as const) {
     });
   }
 }
+
+test.describe('between the boards\' widths', () => {
+  test(`the switch is worked out from the size tokens: 1440 × 16 / 20 = ${SWITCH}px`, () => {
+    expect(SWITCH).toBe(1152);
+  });
+
+  for (const width of [MAIN_BOARD_WIDTH, ABOVE_SWITCH]) {
+    const scale = width / MAIN_BOARD_WIDTH;
+    test(`at ${width}px the HUD is the Main board's, its three groups drawn at ${width}/1440 of their size`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/b/general');
+      await expect(ready(page, '/b/general')).toBeVisible();
+      await expect(page.getByRole('combobox', { name: 'Swap mask' })).toBeVisible();
+      const got = await page.evaluate(async () => {
+        await document.fonts.ready;
+        const width = (selector: string) => {
+          const el = document.querySelector<HTMLElement>(selector)!;
+          /* The plate is skewed; its width is the panel's own, upright. */
+          const was = el.style.transform;
+          el.style.transform = 'none';
+          const w = el.getBoundingClientRect().width;
+          el.style.transform = was;
+          return w;
+        };
+        return { board: document.documentElement.dataset.kbBoard, plate: width('.kb-hud-plate'), aura: width('.kb-hud-aura'), side: width('.kb-hud-side') };
+      });
+      expect(got.board).toBe('main');
+      expect(got.plate).toBeCloseTo(420 * scale, 0);
+      expect(got.aura).toBeCloseTo(452 * scale, 0);
+      expect(got.side).toBeCloseTo(426 * scale, 0);
+      expect(await hudCut(page)).toEqual([]);
+    });
+  }
+
+  test(`at ${BELOW_SWITCH}px the HUD is the Phone board's, at the phone's sizes`, async ({ page }) => {
+    await page.setViewportSize({ width: BELOW_SWITCH, height: 900 });
+    await page.goto('/b/general');
+    await expect(ready(page, '/b/general')).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Posting as' })).toBeVisible();
+    await expect(page.locator('.kb-hud-key')).toBeHidden();
+    const got = await page.evaluate(() => ({
+      board: document.documentElement.dataset.kbBoard,
+      scale: document.documentElement.style.getPropertyValue('--kb-board-scale'),
+      glass: document.querySelector('.kb-hud-glass')!.getBoundingClientRect().height,
+      label: getComputedStyle(document.querySelector('.kb-hud-swap')!).fontSize,
+    }));
+    expect(got).toEqual({ board: 'phone', scale: '1', glass: expect.any(Number), label: '16px' });
+    expect(got.glass).toBeGreaterThanOrEqual(124);
+  });
+
+  for (const [width, board] of [[ABOVE_SWITCH, 'main'], [BELOW_SWITCH, 'phone']] as const) {
+    test(`at ${width}px a glass page's menu bar is the ${board === 'main' ? 'Main board\'s, scaled' : 'Phone board\'s'}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/settings');
+      await expect(ready(page, '/settings')).toBeVisible();
+      const got = await page.evaluate(async () => {
+        await document.fonts.ready;
+        const back = document.querySelector('.kb-glass-menu-back')!.getBoundingClientRect();
+        const tabs = document.querySelector('.kb-glass-menu-list')!.getBoundingClientRect();
+        const key = document.querySelector('.kb-glass-menu-key')!.getClientRects().length > 0;
+        return { board: document.documentElement.dataset.kbBoard, tabsUnderBack: tabs.top >= back.bottom, key, backHeight: back.height };
+      });
+      if (board === 'main') {
+        expect(got).toMatchObject({ board, tabsUnderBack: false, key: true });
+        expect(got.backHeight).toBeCloseTo(48 * (width / MAIN_BOARD_WIDTH), 0);
+      } else {
+        expect(got).toMatchObject({ board, tabsUnderBack: true, key: false, backHeight: 48 });
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    });
+  }
+});
 
 test('the check sees low-contrast text in the browser', async ({ page }) => {
   await page.goto('/b/general');
