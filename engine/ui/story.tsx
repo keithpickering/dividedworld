@@ -16,8 +16,8 @@ export interface WorldParameters {
   /**
    * A board story's moment (`Boards/03 React`): the name of a moment of the composition root's
    * boards fixture, which the preview seeds in place of `world`, with the fake's clock at that
-   * moment and its account signed in, so the story shows the season the board match holds the app
-   * to. The engine names the moment and never the fixture's data.
+   * moment and its account signed in, and opens at the moment's route, so the story shows the
+   * season the board match holds the app to. The engine names the moment and never the fixture's data.
    */
   readonly moment?: string;
 }

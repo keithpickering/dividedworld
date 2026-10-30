@@ -29,6 +29,9 @@ describe('the story route', () => {
     const Story = boardStory('boards-03-react--board');
     render(<Story />);
     const post = await screen.findByRole('article', { name: 'Post 42 by Mrs. Hooligan' });
+    /* Opened at the moment's own route, as the app is: the post is found by the address the fixture gives, not by a title. */
+    expect(window.location.pathname).toMatch(/^\/t\/[^/]+$/u);
+    expect(window.location.hash).toBe('#post-42');
     await userEvent.click(await within(post).findByRole('button', { name: 'React' }));
     const picker = screen.getByRole('dialog', { name: 'React to Mrs. Hooligan\'s post' });
     expect(within(picker).getByRole('status')).toHaveTextContent('2 of 3 left');

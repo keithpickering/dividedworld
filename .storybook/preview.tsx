@@ -4,7 +4,7 @@
  * in-memory world on the fake backend with the app's providers around it. Stories in engine/ui/
  * never import an instance; this file hands them one. A board story asks for a moment of the boards
  * fixture instead (`parameters.moment`), which this file seeds from web/src/data/fixtures/boards.ts,
- * the composition root's, as the end-to-end build's backend does for the app.
+ * the composition root's, and opens at the moment's route, as the end-to-end build's backend does for the app.
  */
 import type { Decorator, Preview } from '@storybook/react-vite';
 import { useMemo } from 'react';
@@ -36,20 +36,20 @@ const BELOW = SWITCH - 8;
 
 const withWorld: Decorator = (Story, context) => {
   const { world, path, moment } = context.parameters as WorldParameters;
-  const api = useMemo(() => {
+  const made = useMemo(() => {
     if (moment !== undefined) {
       const named = assertMoment(moment);
       const fake = createBoardsFake(named);
-      seedBoards(fake, named);
-      return fake;
+      return { api: fake, path: seedBoards(fake, named) };
     }
     if (!world && !path) return null;
     const fake = createFake({ instance, settings: fallbackSettings });
     world?.(fake, instance);
-    return fake;
+    return { api: fake, path };
   }, [world, path, moment]);
-  if (!api) return <Story />;
-  if (path) window.history.replaceState(null, '', path);
+  if (!made) return <Story />;
+  const { api } = made;
+  if (made.path) window.history.replaceState(null, '', made.path);
   return (
     <RouterProvider>
       <KayfaProvider value={{ api, instance, ui: instanceUi, settings: fallbackSettings }}>

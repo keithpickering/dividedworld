@@ -37,6 +37,25 @@ test.describe('a phone', () => {
   });
 });
 
+/* On the Phone board's phone the picker is the sheet standing on the HUD: its bottom edge is the HUD's top edge. */
+test.describe('the Phone board\'s phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the picker\'s sheet stands on the HUD\'s top edge', async ({ page }) => {
+    await page.goto('/b/general');
+    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
+    const picker = page.getByRole('dialog', { name: /^React to / });
+    await expect(picker).toHaveAttribute('data-kb-place', 'sheet');
+    const hud = page.getByRole('region', { name: 'Game HUD' });
+    /* The sheet slides in; wait for it to settle before measuring. */
+    await expect.poll(async () => {
+      const [p, h] = [await picker.boundingBox(), await hud.boundingBox()];
+      return p && h ? Math.abs(h.y - (p.y + p.height)) : null;
+    }).toBeLessThanOrEqual(1);
+  });
+});
+
 /*
  * A 1000px window has the popover's room (Picker.tsx's POPOVER_ROOM), though it is below the switch to
  * the Phone board's HUD: the picker is a popover by its post, as the React board draws it in a 900px

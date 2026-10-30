@@ -8,7 +8,8 @@
  *
  * The rival is the viewer because the player owns Mrs. Hooligan, and a player's own posts carry no
  * React (the glass plan, section 3, item 1); the rival's own Tea is the outlined kind, and "2 of 3
- * left" is the rival's own count. The post is read the way the thread reads it (its Act, its
+ * left" is the rival's own count. The post is the one the moment's route names (the preview opens
+ * the story there: `/t/<thread>?page=3#post-42`), read the way the thread reads it (its Act, its
  * author's postbit, its tallies and the viewer's own reactions) and drawn by the thread's own
  * article, alone, at the board's place on the page.
  */
@@ -16,35 +17,29 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
 import { userEvent, within } from 'storybook/test';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id } from '../data/api.ts';
+import { useLocation } from '../router.tsx';
+import { seqOfHash } from '../thread/pages.ts';
+import type { Act } from '../data/api.ts';
 import type { PostbitPerson } from '../postbit/Postbit.tsx';
 import { ActArticle, ThreadCtx, type ThreadContext } from '../thread/Post.tsx';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine } from './mine.ts';
 import './reactions-board.css';
 
-interface OnePostProps {
-  /** The thread's title, as the fixture names it. */
-  readonly title: string;
-  /** The post's number in the thread. */
-  readonly seq: number;
-}
-
 interface Read { readonly context: ThreadContext; readonly act: Act; readonly person: PostbitPerson | undefined }
 
-/** One post of a thread, read and drawn as the thread does, on the board's page. */
-function OnePost({ title, seq }: OnePostProps) {
+/** The post the address names (`/t/<thread>#post-<seq>`), read and drawn as the thread does, on the board's page. */
+function OnePost() {
   const { api, settings } = useKayfa();
+  const loc = useLocation();
+  const thread = /^\/t\/([^/]+)$/u.exec(loc.path)?.[1] ?? null;
+  const seq = seqOfHash(loc.hash);
   const tallies = useMemo(() => createTallies(), []);
   const mine = useMemo(() => createMine(), []);
   const [read, setRead] = useState<Read | null>(null);
   useEffect(() => {
     void (async () => {
-      let thread: Id | null = null;
-      for (const board of await api.boards()) {
-        thread = (await api.threads(board.id, { offset: 0, limit: 200 })).threads.find((t) => t.title === title)?.id ?? thread;
-      }
-      if (thread === null) return;
+      if (thread === null || seq === null) return;
       const [summary, [act]] = await Promise.all([api.thread(thread), api.acts(thread, seq, seq)]);
       if (!summary || !act) return;
       const author = act.character;
@@ -60,7 +55,7 @@ function OnePost({ title, seq }: OnePostProps) {
         context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, observer: null, quote: null, changed: () => {} },
       });
     })();
-  }, [api, settings, title, seq, tallies, mine]);
+  }, [api, settings, thread, seq, tallies, mine]);
   if (!read) return <div className="kb-react-board" aria-busy="true" />;
   return (
     <div className="kb-react-board">
@@ -74,7 +69,6 @@ function OnePost({ title, seq }: OnePostProps) {
 const meta: Meta<typeof OnePost> = {
   title: 'Boards/03 React',
   component: OnePost,
-  args: { title: 'who keeps splatting my posts', seq: 42 },
   parameters: { moment: '03-react', layout: 'fullscreen' },
 };
 export default meta;
