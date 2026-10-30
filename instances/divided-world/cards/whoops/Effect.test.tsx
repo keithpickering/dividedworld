@@ -140,11 +140,11 @@ describe('the layers', () => {
     expect(root).toHaveTextContent('L00 alpha beta gamma');
   });
 
-  test('the post\'s words are laid out at the reference width and scaled as a whole to the frame, centered, at most 1.5 times', () => {
+  test('the post\'s words are laid out at the reference width and scaled as a whole to the frame, centered, never scaled up', () => {
     const wide = mount();
     const layout = wide.root.querySelector('.kb-whoops-layout') as HTMLElement;
     expect(layout.style.width).toBe('360px');
-    expect(layout.style.transform).toBe('translateX(40px) scale(1.5)');
+    expect(layout.style.transform).toBe('translateX(130px) scale(1)');
     wide.unmount();
     frameWidth = 320;
     const narrow = mount();

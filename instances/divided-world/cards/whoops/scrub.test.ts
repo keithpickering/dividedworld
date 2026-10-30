@@ -14,12 +14,12 @@ const HEIGHT = 8;
 const BOX = { minX: 0, maxX: 1, minY: 0, maxY: HEIGHT };
 const splatOf = (seed: number) => makeSplat(seed);
 
-test('the layout is 360px scaled to the frame, at most 1.5 times, and centered', () => {
+test('the layout is 360px scaled to the frame, never scaled up, and centered', () => {
   assert.deepEqual(layoutOf(360), { scale: 1, width: 360, offset: 0 });
   const wide = layoutOf(900);
-  assert.equal(wide.scale, 1.5);
-  assert.equal(wide.width, 540);
-  assert.equal(wide.offset, 180);
+  assert.equal(wide.scale, 1);
+  assert.equal(wide.width, 360);
+  assert.equal(wide.offset, 270);
   const narrow = layoutOf(320);
   assert.ok(Math.abs(narrow.scale - 320 / 360) < 1e-9);
   assert.equal(narrow.offset, 0);

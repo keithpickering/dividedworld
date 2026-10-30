@@ -67,13 +67,17 @@ const manifest: BoardManifest = {
 
     /*
      * The posts, by position and type. A card play takes no number and shows as its tag on its post
-     * (cards Task 3), so the page holds #41 to #46 and nothing else. #41 is splatted (cards Task 5), and
-     * where #42 and #43 start waits on a decision the board cannot settle: the board draws #41's splat
-     * in a 150px frame (the body at full width, three lines) and the card's design lays the body out at
-     * 360px scaled up to 1.5 times (design section 11), which at this width is a 540px column of ten
-     * lines: #41 is 97px taller than the board's, so #42 starts 104px below the board's and #43, whose
-     * own post is shorter than the board's, 13px. They are compared by type until the owner says whether
-     * the board or the layout is what holds (the report names this as a design question).
+     * (cards Task 3), so the page holds #41 to #46 and nothing else. #41 is splatted (cards Task 5): the
+     * board draws its splat in a 150px frame and the card's fixed layout is the board's 12px type in a
+     * 360px column, never scaled up (#76), so #42 and #43 start where the board's do, or as near as 1x allows.
+     *
+     * Tried in full and by position (#76). Neither holds, for two reasons the build cannot close:
+     * the board lays #41's body out across its whole 1000px-wide column (three lines in a 150px
+     * frame) where the card's column is 360px, so #41 is 26px taller than the board's and #42 starts
+     * 26px lower (y 455 against 429); and #43 starts 66px higher (598 against 664) because #42's own
+     * post is 92px shorter (143 against 235: the board's has a 160px avatar slot under the postbit,
+     * which the build has no portrait to fill, web Task 5), which is nothing of Whoops!'s. x, width
+     * and x of every landmark inside the article match, and only y and heights differ. They stay compared by type.
      */
     ...post(41, 0, 'Spritey', 4, 'Main Eventer', 'position'),
     ...post(42, 1, 'Mrs. Hooligan', 3, 'Midcarder', 'none'),
@@ -82,7 +86,10 @@ const manifest: BoardManifest = {
      * Whoops!'s keyboard path, a piece of glass in the hint line under the splat; the board calls it
      * "Scrub with the keyboard". Found by its name and kind: where it lies follows #41's frame (above)
      * down the page and the build's content column across it (its author column is narrower than the
-     * board's), and its type is the glass's, in the card's tag's family, not the 2003 button's.
+     * board's), and its type is the glass's, in the card's tag's family, not the 2003 button's. Tried by position
+     * (#76): it is 53px left of the board's (x 613 against 667) and 10px lower (y 367 against 356),
+     * 170 by 32 where the board's is 148 by 17. The board's is the 2003 inline button set in a
+     * sentence, the build's is the glass button, larger, in the hint line.
      */
     { id: 'post-41-scrub', role: 'button', name: 'Scrub with the keyboard', buildName: 'Hold to scrub', within: 'post-41', box: 'none', type: false },
 

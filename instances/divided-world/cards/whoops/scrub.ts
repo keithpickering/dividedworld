@@ -16,8 +16,8 @@ import { covers, type Splat } from './splat.ts';
 
 /** The width the post's body is laid out at, in px, whatever the screen: lines break in the same places everywhere. */
 export const REF_WIDTH = 360;
-/** How far the layout may grow on a wide screen; past it the layout is centered and the ink runs into the margins. */
-export const MAX_SCALE = 1.5;
+/** How far the layout may grow: not at all (#76). A splatted post keeps the board's 12px type in its 360px column on a wide screen, centered, the ink free to run into the margins, and is scaled down on a narrow one. */
+export const MAX_SCALE = 1;
 /** The wash's brush and the author's pen, in widths. */
 export const BRUSH = 0.045;
 export const PEN = BRUSH * 0.3;
