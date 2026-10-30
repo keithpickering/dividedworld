@@ -284,6 +284,15 @@ part raises some.
 
 Weighed: plain-code parts first, built before the thing that makes their rules; everything in one plan.
 
+## 16. The screens
+
+**Decided** with mocks after the plan was first written (`docs/research/2026-10-30-the-system/`): a move in force
+shows on the board it changed as the Director's 2003 notice, with its Act's long label in glass on its corner ("THE
+SYSTEM RENAMED THIS BOARD"), a plain way-out segment that opens the detail, and its top reactions, small; the
+Director's profile is an ordinary profile with an admin's fields, plus a moderation log of every move and how it
+ended; the admin queue is a glass page grouped by what an admin can do (waiting to land, in force, ended). Weighed: a
+glass panel set into the board, and a HUD chip; a garish staff page; one feed of every move.
+
 ## The layers
 
 The engine holds the meeting, the bank, the move catalog and its effects, the demand whitelist, the digest and its

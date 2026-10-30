@@ -211,19 +211,21 @@ functions to `0005-default-deny.sql`.
   Every reaction threshold is at least the reaction cap plus one (design, section 3). Seeded into `demand_kinds`.
 - Migration `0039_moves.sql`:
   - `acts.kind` gains `move` and `move_end` (rebuild `acts_kind_check` and `acts_check1` as `0027_unmask.sql:18-26`
-    did). A `move` is the Director's Act (a staff character), with payload `{kind, params, demand, expires_at}`, posted
+    did). A `move` is the Director's Act (a staff character), with payload `{kind, params, demand, expires_at, why}`, posted
     on The System's board in its announcements thread. A `move_end` targets a `move`, has a null character (The
     System's plain record, as a tally is), and payload `{why: met | expired | reversed, by}`; extend the null-character
     check to it. One `move_end` per move (a unique partial index).
-  - `queued_moves` (`id`, `meeting`, `kind`, `params`, `demand`, `go_live_at`, `expires_at`, `structural`, `held_at`,
-    `held_by`, `landed_act`): no client grant; admins read it through Task 11's RPC. A held move never lands and is
+  - `queued_moves` (`id`, `meeting`, `kind`, `params`, `demand`, `why`, `go_live_at`, `expires_at`, `structural`,
+    `held_at`, `held_by`, `landed_act`). `why` is the Director's one-line reason, its words, at most 200 characters: no client grant; admins read it through Task 11's RPC. A held move never lands and is
     never shown to a player.
   - `demand_progress(move_act uuid)` returns `{done, of, met}`, owned by `kayfabb_digest` (Task 7), reading only
     public relations, with a case per `demand_kinds` key; an unknown key raises.
   - `boards_now`: per board, the name, premise and description of its latest landed `renameBoard` move with no
-    `move_end`, else the board's own row (its `description` stands as its first premise). Granted to anon and
-    authenticated. `web/src/data/supabase.ts`'s `boards()` and `board()` (lines 479–496) read `boards_now` instead of
+    `move_end`, else the board's own row (its `description` stands as its first premise), and that move's Act id as
+    `move_act` (null when none). Granted to anon and authenticated. `web/src/data/supabase.ts`'s `boards()` and `board()` (lines 479–496) read `boards_now` instead of
     `boards`, and `tools/check-web-reads.mjs`'s `ALLOWED_READS` gains it.
+  - `moves_log`: every landed `move` Act with its `move_end`'s `why` and time, newest first, paged by keyset, for the
+    Director's profile (Task 12). Granted to anon and authenticated, and added to `ALLOWED_READS`.
 - An ended rename means the name it replaced comes back: the view computes this, and nothing is written to `boards`.
 
 **Tests first:** `supabase/tests/0045-moves.sql` (a landed rename shows in `boards_now`; its `move_end` brings back the
@@ -291,25 +293,43 @@ never lands; a met demand ends its move with `met` and the old name returns; an 
 move and the tick never lands it; an admin reverses a landed rename and the old name returns; a held or reversed move
 appears in the next digest's `moves` list as held or reversed.
 
-### Task 12. The screens (designed with the owner before they are built)
+### Task 12. The screens
 
-The design session did not mock these, so each is designed with the owner in its world's look first, as the design
-session skill asks, and the confirmed mock goes into this plan as an amendment before the task is built:
+Designed with the owner on 2026-10-30, after the plan was first written; the mocks are in
+`docs/research/2026-10-30-the-system/`, and each item names the owner's choice. The tests are written from the mock.
 
-- **The board's name** reads `boards_now` on `IndexScreen` (`engine/ui/index/Index.tsx:61-64`) and `BoardScreen`
-  (`engine/ui/board/Board.tsx:108-110`), in the board world. This part needs no mock: it is the existing name and
-  description, from a different read.
-- **A move in force, in plain words** (the glass): what the move did, its demand and progress (`demand_progress`), and
-  when it expires, shown where the state shows, on the renamed board. This is the way out on the screen.
-- **The Director's profile** (the board world): `ProfileScreen` (`engine/ui/profile/Profile.tsx:40`) for a staff
-  character shows Interests, Favorite Members, mood and signature from `staff_profile_now`, and no standing, class or
-  record.
-- **The admin queue** (the glass, plain): a route `/admin/queue` for admins, listing `admin_queue()` with Hold and
-  Reverse.
-- **The Director's Acts** on The System's board render as posts by a character, with its title.
+- **The board's name** (the board world): `IndexScreen` (`engine/ui/index/Index.tsx:61-64`) and `BoardScreen`
+  (`engine/ui/board/Board.tsx:108-110`) read `boards_now`'s name and description. No new look.
+- **A move in force** (`mock-s1-move-notice.html`, C; the owner: "it's consistent with the similar labels for posts
+  affected by postcards"). On the board the move changed, under its description:
+  - the Director's `move` Act drawn as a 2003 notice ("ANNOUNCEMENT from The Director: …"), its text the move's stock
+    line or, from Part 2, its micro-event line, with **its top three reactions, small**, from `reaction_tallies`;
+  - on the notice's corner, the Act's label in glass, as a card's Act label breaks a post's frame: the long label
+    ("THE SYSTEM RENAMED THIS BOARD"; the owner: "Since this is an Act I think we do need to use the longer label")
+    and a plain segment, "WAY OUT: 7 OF 12 POSTERS ›", from `demand_progress` and the demand kind's template;
+  - the segment opens a glass overlay with the plain detail: what was done and when, the demand in words, a progress
+    bar, the expiry date, and that an admin can reverse it. Focus is held while it is open and returned when it closes.
+  - A component `MoveNotice` in `engine/ui/board/`; the label's words come from the move kind's plain template, never
+    from the Director.
+- **The Director's profile** (`mock-s2-director-profile.html`, C). `ProfileScreen` (`engine/ui/profile/Profile.tsx:40`)
+  for a staff character: name, an ADMINISTRATOR badge, its title, and a table of Interests, Favorite Members, Current
+  Mood and Posts from `staff_profile_now`, with its signature; beside it a **Moderation log** from `moves_log`, each row
+  a date, what was done (with links to the boards) and how it ended in short plain words ("in force", "undone: 12
+  posted", "ran out Oct 31", "reversed by an admin"), newest first, with Older ›. No standing, class or season record.
+- **The admin queue** (`mock-s3-admin-queue.html`, B). A glass page at `/admin/queue`, reached from an ADMIN tab in the
+  pause menu shown only when `api.isAdmin()` (`engine/ui/data/api.ts:363`) is true. Three groups: **Waiting to land**
+  (countdown and time, the full proposal with its new subject, demand and old-voice description, the Director's `why`
+  quoted as its words, and HOLD); **In force** (since and until, the demand with its progress bar, and REVERSE);
+  **Ended** (folded, the last 30 days, with how each ended). Plain text throughout; the glass quotes the Director and
+  never speaks as it.
+- **The Director's Acts on The System's board** render as posts by a character with the ADMINISTRATOR badge and its
+  title, and a `move` Act's post carries the same glass label as the board's notice. No new mock.
 
-**Tests first:** each screen's component test, written from its confirmed mock, red against main; a test that the
-board screen shows the move's plain notice whenever `boards_now` shows a rename.
+**Tests first** (component tests, red against main): the board screen shows `MoveNotice` whenever `boards_now` has a
+`move_act`, with the long label, the way-out segment's count and at most three reactions; the overlay opens from the
+keyboard and returns focus; a staff profile shows the moderation log and no standing; the ADMIN tab is absent for a
+player; the queue's groups render from a fixture `admin_queue()` with HOLD only on waiting moves and REVERSE only on
+moves in force.
 
 ### Task 13. Turning it on
 
