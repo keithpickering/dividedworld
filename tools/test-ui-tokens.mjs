@@ -94,6 +94,11 @@ check('a permalink fragment is not a color', fires('engine/ui/x.tsx', `const hre
 check('a class name string is clean', fires('engine/ui/x.tsx', `const c = 'kb-orb kb-orb--red white';`).length === 0);
 check('a font weight and size in the shorthand are clean', fires('engine/ui/base.css', `.a { font: italic bold 11px/1.2 var(--kb-font-body); }`).length === 0);
 check('tokens.css may hold the values', fires('engine/ui/tokens.css', `:root { --kb-fg: #000; --kb-font-body: Verdana, sans-serif; }`).length === 0);
+check('the glass tokens.css may hold the values', fires('engine/ui/glass/tokens.css', `:root { --kb-glass-neon: #9ef4ff; --kb-glass-font-display: Anton, sans-serif; }`).length === 0);
+check('a glass component holding #ff2bd6 fires', fires('engine/ui/glass/Smoke.tsx', `export const S = () => <rect fill="#ff2bd6" />;`).length === 1);
+check('the glass base.css holding #ff2bd6 fires', fires('engine/ui/glass/base.css', `.a { color: #ff2bd6; }`).length === 1);
+check('the glass calm.css reading a token is clean', fires('engine/ui/glass/calm.css', `.a::before { background: var(--kb-glass-ground); }`).length === 0);
+check('a tokens.css anywhere else under engine/ui/ is held to it', fires('engine/ui/glass/sub/tokens.css', `:root { --kb-x: #fff; }`).length === 1);
 check('a file outside engine/ui is not held to it (an instance holds the values)', fires('instances/divided-world/ui/theme.css', `:root { --kb-fg: #000; }`).length === 0);
 check('a test file is not held to it (it may assert a computed color)', fires('engine/ui/x.test.tsx', `expect(c).toBe('#000');`).length === 0);
 

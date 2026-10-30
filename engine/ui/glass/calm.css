@@ -1,0 +1,39 @@
+/*
+ * The calm: a backing of the ground, laid over the smoke under a block of text, so the words stand
+ * on a quieter pixel than the smoke's worst. It is drawn on the text's own element (`kb-calm`), as
+ * a `::before` sized by the block and feathered at its edge with a mask, so it follows its text
+ * when the text reflows. (The boards draw their calms as masks on the smoke; the build draws them
+ * on the words.) tools/check-glass-contrast.mjs reads a calmed pixel as the smoke thinned to what
+ * the calm leaves, and holds every `body` token to 4.5:1 on it.
+ *
+ * A browser with no mask-image gets a hard-edged panel of the same backing: the edge is not
+ * feathered, and the words are as legible.
+ */
+.kb-calm {
+  position: relative;
+  isolation: isolate;
+}
+
+.kb-calm::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: calc(var(--kb-glass-calm-feather) * -1);
+  pointer-events: none;
+  background: color-mix(in srgb, var(--kb-glass-ground) calc(var(--kb-glass-calm-opacity) * 100%), transparent);
+  /* Alpha is all a mask reads: the edge ramps over the feather on each axis, and the axes intersect. */
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
+    linear-gradient(to bottom, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent),
+    linear-gradient(to bottom, transparent, currentColor var(--kb-glass-calm-feather), currentColor calc(100% - var(--kb-glass-calm-feather)), transparent);
+  mask-composite: intersect;
+}
+
+@supports not (mask-image: linear-gradient(currentColor, currentColor)) {
+  .kb-calm::before {
+    inset: 0;
+  }
+}

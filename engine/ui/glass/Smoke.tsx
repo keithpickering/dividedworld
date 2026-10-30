@@ -1,0 +1,95 @@
+/**
+ * The glass's smoke: procedural fractal noise behind a glass surface, as the boards draw it
+ * (docs/plans/2026-10-30-glass-to-the-boards-plan.md, section 6). The surface picks a recipe from
+ * the instance's glass (`GlassTheme.smoke.surfaces`), each layer of which is a `<rect>` filtered
+ * by feTurbulence, a color matrix that turns the noise into the layer's cloud in its constant
+ * color, and a blur. The layers are drawn over an opaque ground (`--kb-glass-ground`), so a page
+ * is legible before the smoke draws and when it never does.
+ *
+ * Under the `low` preference each layer is drawn at a third of its opacity; under `off` no smoke
+ * element is drawn and the ground remains. A recipe with a `drift` is a strip wider than its
+ * frame that slides back and forth (base.css holds the keyframes), still under reduced motion
+ * with the smoke drawn. A recipe's `narrow` layers are drawn too, and base.css shows one set or
+ * the other at 600px. The filters work in sRGB: the boards were drawn there, and SVG's default
+ * linearRGB brightens the noise, which tools/check-glass-contrast.mjs's numbers do not allow for.
+ *
+ * It says nothing to a screen reader. Where it is not drawn the page loses decoration only.
+ */
+import { useId, type CSSProperties } from 'react';
+import { motionReduced } from '../appearance.ts';
+import { useKayfa } from '../context.tsx';
+import type { GlassSurface, SmokeLayer } from '../types.ts';
+
+/** The player's smoke preference (Settings, Accessibility). */
+export type SmokeLevel = 'full' | 'low' | 'off';
+
+export interface SmokeProps {
+  readonly surface: GlassSurface;
+  readonly level?: SmokeLevel;
+}
+
+/** The low preference draws a third of each layer's opacity. */
+const LOW = 1 / 3;
+
+/** A hex color's channels as the 0 to 1 numbers a color matrix takes. */
+function channels(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  const n = (i: number) => parseInt(h.slice(i, i + 2), 16) / 255;
+  return [n(0), n(2), n(4)];
+}
+
+/** The matrix: every channel set to the layer's color, the alpha row the layer's own. */
+function matrix(layer: SmokeLayer): string {
+  const [r, g, b] = channels(layer.color);
+  return [0, 0, 0, 0, r, 0, 0, 0, 0, g, 0, 0, 0, 0, b, ...layer.alpha].join(' ');
+}
+
+function Layers({ layers, scale, ids, name }: { readonly layers: readonly SmokeLayer[]; readonly scale: number; readonly ids: string; readonly name: string }) {
+  return (
+    <svg className="kb-smoke-svg" data-kb-smoke-set={name} width="100%" height="100%" preserveAspectRatio="none" focusable="false">
+      <defs>
+        {layers.map((l, i) => (
+          <filter key={i} id={`${ids}-${name}-${i}`} x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
+            <feTurbulence type="fractalNoise" baseFrequency={l.frequency.join(' ')} numOctaves={l.octaves} seed={l.seed} />
+            <feColorMatrix type="matrix" values={matrix(l)} />
+            <feGaussianBlur stdDeviation={l.blur} />
+          </filter>
+        ))}
+      </defs>
+      {layers.map((l, i) => (
+        <rect key={i} width="100%" height="100%" filter={`url(#${ids}-${name}-${i})`} opacity={l.opacity * scale} />
+      ))}
+    </svg>
+  );
+}
+
+export function Smoke({ surface, level = 'full' }: SmokeProps) {
+  const { ui } = useKayfa();
+  const ids = useId().replace(/:/g, '');
+  const { recipes, surfaces } = ui.glass.smoke;
+  const recipe = recipes[surfaces[surface]];
+  const scale = level === 'low' ? LOW : 1;
+  const drift = recipe && level !== 'off' && recipe.drift && !motionReduced() ? recipe.drift : null;
+  const strip: CSSProperties | undefined = drift
+    ? ({ width: `${drift.width}px`, '--kb-smoke-seconds': `${drift.seconds}s`, '--kb-smoke-travel': `${drift.travel}px` } as CSSProperties)
+    : undefined;
+  return (
+    <div className="kb-smoke" data-kb-surface={surface} aria-hidden="true">
+      <div className="kb-smoke-ground" data-kb-ground="" style={{ background: 'var(--kb-glass-ground)' }} />
+      {recipe && level !== 'off' ? (
+        <div className="kb-smoke-layers" data-kb-smoke={surfaces[surface]}>
+          <div className="kb-smoke-strip" data-kb-drift={drift ? '' : undefined} style={strip}>
+            <div className="kb-smoke-wide" data-kb-smoke-wide="">
+              <Layers layers={recipe.layers} scale={scale} ids={ids} name="wide" />
+            </div>
+            {recipe.narrow ? (
+              <div className="kb-smoke-narrow" data-kb-smoke-narrow="">
+                <Layers layers={recipe.narrow} scale={scale} ids={ids} name="narrow" />
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
