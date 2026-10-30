@@ -37,6 +37,10 @@ const fires = (text, file = DATA) => readFaults({ [file]: text });
 }
 check('.from(\'class_history\') fires', fires(`await client.from('class_history').select('class_key');`).length === 1);
 check('.from(\'characters\').select(\'owner\') fires', fires(`await client.from('characters').select('owner');`).length === 1);
+/* The standings table holds every season; reading it means choosing one, and the rule for which is written once on the
+   server (standings_season(), read through current_standings). A read of the table is a second copy of that rule. */
+check('.from(\'standings\') fires, since it would choose a season of its own', fires(`client.from('standings').select('character,amount').eq('season', s);`).length === 1);
+check('.from(\'current_standings\') is clean', fires(`client.from('current_standings').select('character,standing').in('character', ids);`).length === 0);
 
 /* ---- every private table, and every way to name one ---- */
 for (const t of ['characters', 'class_history', 'reactions', 'ledger', 'wallet_events', 'wallets', 'pending_turns', 'effect_state_writes', 'settings', 'invites', 'thread_reads', 'acts', 'accounts', 'card_ledger', 'estimates']) {
@@ -123,8 +127,8 @@ check('a count through a cast and parentheses fires', fires(`(client.from('threa
 check('a select with other options (head alone) is clean', fires(`client.from('thread_list').select('id', { head: true });`).length === 0);
 check('a select with no options is clean', fires(`client.from('thread_list').select('*').eq('board', b).range(0, 9);`).length === 0);
 {
-  const allowed = [{ table: 'standings', count: 'estimated', why: 'a pager that only needs the order of magnitude' }];
-  const read = (kind, table = 'standings') => `client.from('${table}').select('*', { count: '${kind}' });`;
+  const allowed = [{ table: 'season_size', count: 'estimated', why: 'a pager that only needs the order of magnitude' }];
+  const read = (kind, table = 'season_size') => `client.from('${table}').select('*', { count: '${kind}' });`;
   check('an allowlisted count (the table and the kind) is clean', readFaults({ [DATA]: read('estimated') }, allowed).length === 0);
   check('the same table with another kind of count fires', readFaults({ [DATA]: read('exact') }, allowed).length === 1);
   check('the same kind on another table fires', readFaults({ [DATA]: read('estimated', 'thread_list') }, allowed).length === 1);

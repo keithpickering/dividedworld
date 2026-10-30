@@ -588,10 +588,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const out: Record<Id, number> = Object.fromEntries(ids.map((id) => [id, 0]));
       const wanted = ids.filter(idOk);
       if (wanted.length === 0) return out;
-      /* The season the standings read (season_standings, standings_page): the open one, else the latest. A few rows of seasons, then a probe of the standings' primary key per character. */
-      const season = (await list(() => client.from('seasons').select('id').order('ends_at', { ascending: false, nullsFirst: true }).order('starts_at', { ascending: false }).limit(1)))[0];
-      if (!season) return out;
-      for (const r of await list(() => client.from('standings').select('character,amount').eq('season', season['id']).in('character', [...wanted]))) out[r['character']] = num(r['amount']);
+      /* Through current_standings, which reads the season standings_season() names on the server (the rule the
+         profile's place and the standings page read too, written once in 0030_screens_reads.sql): a probe of the
+         standings' primary key per character. A character with no row there stands at 0. */
+      for (const r of await list(() => client.from('current_standings').select('character,standing').in('character', [...wanted]))) out[r['character']] = num(r['standing']);
       return out;
     },
     async standingPlace(id): Promise<StandingPlace | null> {

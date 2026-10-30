@@ -206,7 +206,7 @@ create function threads_count_board() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   update board_thread_counts set threads = threads + 1
-   where board = new.board and shard = coalesce((select c.shard from board_thread_counts c where c.board = new.board order by c.shard for update skip locked limit 1), 0);
+   where board = new.board and shard = coalesce((select c.shard from board_thread_counts c where c.board = new.board order by c.shard limit 1), 0);
   return new;
 end $$;
 create trigger threads_count_board after insert on threads for each row execute function threads_count_board();
@@ -315,6 +315,9 @@ end $$;
 create trigger characters_rename_standings after update of name on characters for each row when (new.name is distinct from old.name) execute function characters_rename_standings();
 
 -- The season the standings read: the open one, else the one that started last (season_standings's choice).
+-- The one place the rule is written: every reader below calls it (a profile's place, the standings page, a
+-- page of postbits through current_standings, a debut's row), so they cannot come to read different seasons.
+-- season_standings (0021) keeps its own copy, as the definition the SQL tests compare these against.
 create function standings_season() returns bigint
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce((select id from seasons where ends_at is null), (select id from seasons order by starts_at desc limit 1))
@@ -373,20 +376,21 @@ create index standings_season_amount on standings (season, amount desc, name);
 
 -- One debuted character's standing, its place and the number of characters, as season_standings would
 -- say them: {standing, place, of}, or null for a character that has not debuted or does not exist (one
--- answer for both, so it proves nothing about a waiting character). The season is the one season_standings
--- reads. A character with no standings row stands at 0, as there. Public: a standing and a place are what
--- the standings list shows, and nothing here is computed from who plays a character.
+-- answer for both, so it proves nothing about a waiting character). The season is standings_season()'s, the
+-- one season_standings reads. A character with no row in it stands at 0, as there; since the roster, every
+-- debuted character has a row from its debut, so that is only a fallback. Public: a standing and a place are
+-- what the standings list shows, and nothing here is computed from who plays a character.
 --   standing >= 0: the characters ahead are the rows above it (a character with no row stands at 0 and
 --     is never above a standing of 0 or more); one range of the index.
---   standing < 0: every character with no row (standing 0) is ahead of it, and they are not rows, so the
---     characters ahead are all of them but the rows at or below its standing: one range of the index, of
---     the debts only, and the counter.
--- A standings row is a character's that has acted, and only a debuted character can act, so a row is
--- always a debuted character's. Ties share a place: "ahead" is strictly higher.
+--   standing < 0: every character above its standing is ahead of it, counted as all of them but the rows at
+--     or below its standing: one range of the index, of the debts only, and the counter. It stays right
+--     for a character with no row, though since the roster there is none.
+-- A standings row is a debuted character's: the roster writes one at its debut (above), and a settlement adds
+-- only to a character that acted, which only a debuted one can. Ties share a place: "ahead" is strictly higher.
 create function standing_place(of_character uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
-  open_season bigint := coalesce((select id from seasons where ends_at is null), (select id from seasons order by starts_at desc limit 1));
+  open_season bigint := standings_season();
   size integer := (select coalesce(sum(d.characters), 0) from debuted_count d);
   mine integer;
   ahead bigint;
@@ -446,6 +450,15 @@ language sql stable security definer set search_path = public, pg_temp as $$
   order by p.n
 $$;
 
+-- Each character's standing in the season the standings read, for a page of postbits ("Aura: 140" under
+-- every avatar): read with a filter on character, which is a probe of the standings' primary key
+-- (season, character) per character, so a page of twenty postbits costs twenty probes however large the
+-- season. The season is standings_season()'s, so a postbit shows the standing the profile and the standings
+-- screen show; nothing here chooses one of its own. A view runs as its owner, so standings_season() stays
+-- uncallable by the API roles. Public, as standings_page is: a character and its standing, never a player.
+create view current_standings as
+  select s.character, s.amount as standing from standings s where s.season = standings_season();
+
 -- ------------------------------------------------------------- a character's post count ----
 
 -- How many posts, spins and cards a character has made, for a page of postbits ("Posts: 1,204" under
@@ -499,8 +512,8 @@ create or replace view characters_public as
 
 -- --------------------------------------------------------------------------- grants ----
 
-revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_settings, thread_list, character_post_counts, board_thread_counts, board_counts, debuted_count, season_size from anon, authenticated;
-grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list, character_post_counts, board_counts, season_size to authenticated;
+revoke all on my_characters, my_wallet, my_ledger, my_wallet_events, screen_settings, thread_list, character_post_counts, board_thread_counts, board_counts, debuted_count, season_size, current_standings from anon, authenticated;
+grant select on my_characters, my_wallet, my_ledger, my_wallet_events, thread_list, character_post_counts, board_counts, season_size, current_standings to authenticated;
 create policy read_all on character_post_counts for select to authenticated using (true);
 grant select on screen_settings to anon, authenticated;
 revoke execute on function backfill_thread_counters(), backfill_character_post_counts(), acts_count_character(),

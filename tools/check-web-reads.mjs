@@ -59,8 +59,12 @@ const DATA_LAYER = /^web\/src\/data\//;
 export const ALLOWED_READS = Object.freeze([
   // Public: what anyone could have watched.
   'boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds',
-  'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings',
+  'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements',
   'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',
+  // A character's standing in the season the standings read, through standings_season() on the server. The
+  // standings table itself is not here: a read of it must choose a season, and the rule for which is written
+  // once, in SQL (supabase/migrations/0030_screens_reads.sql), not again in the app.
+  'current_standings',
   // The player's own.
   'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading',
   'account_preferences', 'effect_releases',

@@ -79,7 +79,7 @@ const ACT: Act = { id: A, character: B, kind: 'post', thread: T, targetActId: nu
 const THREAD_ROW = { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00', last_at: '2026-10-01T10:00:00+00:00', last_seq: 2, first_act: A, first_character: B, last_act: A, last_character: B, replies: 3, replies_this_week: 4, origin_thread: null, origin_title: null, origin_seq: null };
 
 /** Everything a read can name, answered with an empty list or a plain value. */
-const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'standings', 'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
+const ALLOWED_TABLES = new Set(['boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'seasons', 'settlements', 'current_standings', 'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts', 'my_characters', 'my_wallet', 'my_ledger', 'my_wallet_events', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'account_preferences', 'effect_releases']);
 const ALLOWED_RPCS = new Set(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page']);
 
 import { beforeEach } from 'vitest';
@@ -203,25 +203,23 @@ describe('reads and their rows', () => {
     expect(await harness(() => rows([])).api.characterStats([])).toEqual({});
   });
 
-  it('reads a page of postbits\' standings from the standings table for the open season, 0 for a character with no row, never through the ranking', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/seasons') ? rows([{ id: 7 }]) : rows([{ character: B, amount: 300 }])));
+  it('reads a page of postbits\' standings through current_standings, which picks the season on the server, 0 for a character with no row, never through the ranking', async () => {
+    const h = harness(() => rows([{ character: B, standing: 300 }]));
     expect(await h.api.standingAmounts([B, A])).toEqual({ [B]: 300, [A]: 0 });
-    const [season] = h.to('seasons');
-    expect(season?.url.searchParams.get('select')).toBe('id');
-    expect(season?.url.searchParams.get('limit')).toBe('1');
-    expect(season?.url.searchParams.get('order')).toBe('ends_at.desc.nullsfirst,starts_at.desc');
-    const [req] = h.to('standings');
-    expect(req?.url.searchParams.get('select')).toBe('character,amount');
-    expect(req?.url.searchParams.get('season')).toBe('eq.7');
+    /* One request: the season is standings_season()'s on the server, so the adapter neither reads seasons nor filters by one. */
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['current_standings']);
+    const [req] = h.to('current_standings');
+    expect(req?.url.searchParams.get('select')).toBe('character,standing');
     expect(req?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
+    expect(req?.url.searchParams.has('season')).toBe(false);
+    expect(h.to('standings')).toEqual([]);
     expect(h.to('season_standings')).toEqual([]);
     const none = harness(() => rows([]));
     expect(await none.api.standingAmounts([])).toEqual({});
     expect(none.rest()).toEqual([]);
-    /* No season yet: nothing is settled, so every standing is 0 and standings is not asked. */
+    /* No season yet: the view has no rows, so every standing is 0. */
     const unseasoned = harness(() => rows([]));
     expect(await unseasoned.api.standingAmounts([B])).toEqual({ [B]: 0 });
-    expect(unseasoned.to('standings')).toEqual([]);
   });
 
   it('reads a profile\'s place with one function call, which counts index ranges and not the season', async () => {
