@@ -7,7 +7,7 @@
  * (tools/check-glass-contrast.mjs holds that), so swapping the key re-colors the glass and
  * moves nothing. `applyGlass` marks the key on the root (`data-kb-glass-key`) for the stylesheet.
  */
-import type { GlassTheme } from '../types.ts';
+import type { GlassSurface, GlassTheme } from '../types.ts';
 
 export type GlassKeyName = 'standard' | 'high';
 
@@ -38,6 +38,17 @@ export function glassVars(glass: GlassTheme, key: GlassKeyName): Record<string, 
     out[`--kb-glass-class-${cls}-large`] = c.large;
   }
   return out;
+}
+
+/**
+ * What a surface sets on its own element: the calm's opacity, where its recipe has a calm of its
+ * own (the glass plan, section 6: "the calm's opacity for this surface, default the theme's"). Every
+ * calm on the surface's text reads it there; a surface whose recipe has none inherits the theme's
+ * from the root. tools/check-glass-contrast.mjs reads the surface's text at this same number.
+ */
+export function surfaceCalm(glass: GlassTheme, surface: GlassSurface): Record<string, string> | undefined {
+  const calm = glass.smoke.recipes[glass.smoke.surfaces[surface]]?.calm;
+  return calm === undefined ? undefined : { '--kb-glass-calm-opacity': String(calm) };
 }
 
 /** Sets the glass's properties on `root` and marks the key. */

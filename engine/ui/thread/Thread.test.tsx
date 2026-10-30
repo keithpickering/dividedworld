@@ -8,6 +8,7 @@ import { pageOf, pageRange, threadHref } from './pages.ts';
 import { createTallies } from './tallies.ts';
 import { GAP_FILL_MS, READ_DEBOUNCE_MS, ThreadScreen } from './Thread.tsx';
 import { ACT_CACHE_SIZE, actLoader } from './locate.tsx';
+import { returnState } from '../glass/back.ts';
 
 /* The HUD's estimate is asked for through the player; this test file watches that call. */
 const landed = vi.hoisted(() => vi.fn());
@@ -614,6 +615,83 @@ describe('live updates', () => {
 });
 
 /* ---------------------------------------------------------------------------- announcer ---- */
+/* ------------------------------------------------------------------- back from the glass ---- */
+/* A find waits five seconds (web/test-setup.ts), so a test is given longer than that to say what it did not find. */
+describe('back from the glass, to a thread that grew meanwhile', { timeout: 15_000 }, () => {
+  /** The thread opened as Back opens it: at the post that was in view, with what it showed and knew of when the reader left. */
+  const returning = (w: { fake: Fake; thread: Id }, where: string, shown: number, known = shown) =>
+    renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}${where}`, state: returnState({ shown, known }) });
+  const scrolledTo = () => (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.contexts.at(-1);
+
+  test('the posts that came while the reader was away wait behind the bar, and the reader is at their post', async () => {
+    const w = world(5);
+    w.fake.seed.post(w.thread, w.spritey, 'came while away');
+    w.fake.seed.post(w.thread, w.spritey, 'and another');
+    returning(w, '?page=1#post-3', 5);
+    const at = await screen.findByRole('article', { name: /^Post 3 /u });
+    const bar = await screen.findByRole('button', { name: '2 new posts' });
+    expect(document.getElementById('post-6')).toBeNull();
+    expect(scrolledTo()).toBe(at);
+    expect(at).toHaveFocus();
+    await userEvent.click(bar);
+    await screen.findByRole('article', { name: /^Post 7 /u });
+    expect(screen.queryByRole('button', { name: /new posts?$/u })).toBeNull();
+  });
+
+  test('reading on to the bottom brings them in, as it does a live post', async () => {
+    const w = world(5);
+    w.fake.seed.post(w.thread, w.spritey, 'came while away');
+    returning(w, '?page=1#post-3', 5);
+    await screen.findByRole('button', { name: '1 new post' });
+    see(sentinel(), true);
+    await screen.findByRole('article', { name: /^Post 6 /u });
+    expect(screen.queryByRole('button', { name: /new post/u })).toBeNull();
+  });
+
+  test('on a page the thread grew past, the bar says which pages and leads to the first post that came', async () => {
+    const w = world(25);
+    for (let i = 26; i <= 45; i++) w.fake.seed.post(w.thread, w.spritey, `came ${i}`);
+    returning(w, '?page=2#post-22', 25);
+    await screen.findByRole('article', { name: /^Post 22 /u });
+    const bar = await screen.findByRole('link', { name: '20 new posts on pages 2 to 3' });
+    expect(bar).toHaveAttribute('href', `/t/${w.thread}?page=2#post-26`);
+    expect(document.getElementById('post-26')).toBeNull();
+    await userEvent.click(bar);
+    await waitFor(() => expect(scrolledTo()).toBe(post(26)));
+  });
+
+  test('on an earlier page, the bar counts only the posts that came, not the pages the reader had not reached', async () => {
+    const w = world(45);
+    w.fake.seed.post(w.thread, w.spritey, 'came 46');
+    returning(w, '?page=1#post-5', 20, 45);
+    await screen.findByRole('article', { name: /^Post 5 /u });
+    expect(await screen.findByRole('link', { name: '1 new post on page 3' })).toHaveAttribute('href', `/t/${w.thread}?page=3#post-46`);
+  });
+
+  test('a post edited, and a card played on one, while the reader was away show as they are now', async () => {
+    const w = world(5);
+    const [fourth] = await w.fake.acts(w.thread, 4, 4);
+    w.fake.clock.advance(10 * 60_000);
+    const edited = await w.fake.edit(fourth!.id, w.pipe, 'post 4, edited while away');
+    if (!edited.ok) throw new Error(edited.error);
+    w.fake.seed.card(w.spritey, fourth!.id, 'whoops');
+    returning(w, '?page=1#post-3', 5);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    expect(post(4)).toHaveTextContent('post 4, edited while away');
+    expect(post(4)).toHaveTextContent('Last edited');
+    /* The card is an Act of its own that came after the reader left: it waits behind the bar. */
+    await userEvent.click(await screen.findByRole('button', { name: '1 new post' }));
+    await waitFor(() => expect(post(6)).toHaveTextContent('Whoops!'));
+  });
+
+  test('a thread opened with no return is the page as it is, and holds nothing back', async () => {
+    const w = world(7);
+    open(w, '#post-3', '?page=1');
+    await screen.findByRole('article', { name: /^Post 7 /u });
+    expect(screen.queryByRole('button', { name: /new posts?$/u })).toBeNull();
+  });
+});
+
 describe('the announcer', () => {
   test('says each new post once, however many times it arrives, and no reaction or edit', async () => {
     const w = world(5);

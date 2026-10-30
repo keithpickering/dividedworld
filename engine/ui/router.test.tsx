@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { Link, RouterProvider, useLocation, useNavigate } from './router.tsx';
+import { Link, RouterProvider, useLocation, useNavigate, type Location } from './router.tsx';
 
 function Where() {
   const l = useLocation();
@@ -63,5 +63,23 @@ describe('the router', () => {
     expect(screen.getByTestId('popped').textContent).toBe('false');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
     expect(screen.getByTestId('popped').textContent).toBe('true');
+  });
+
+  test('every move is told to onMove, from what was shown to what will be, while the page moved from is still drawn', () => {
+    const seen: string[] = [];
+    const where = (l: Location | null) => (l ? `${l.path}${l.query.size ? `?${l.query}` : ''}${l.popped ? ' (popped)' : ''}` : 'nothing');
+    const onMove = (from: Location | null, to: Location) => seen.push(`${where(from)} -> ${where(to)} [drawn ${screen.queryByTestId('path')?.textContent ?? 'nothing'}]`);
+    window.history.replaceState(null, '', '/t/abc');
+    render(<RouterProvider onMove={onMove}><Where /></RouterProvider>);
+    act(() => screen.getByText('go').click());
+    act(() => {
+      window.history.replaceState(null, '', '/settings');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(seen).toEqual([
+      'nothing -> /t/abc [drawn /t/abc]',
+      '/t/abc -> /b/general?page=2 [drawn /t/abc]',
+      '/b/general?page=2 -> /settings (popped) [drawn /b/general?page=2]',
+    ]);
   });
 });

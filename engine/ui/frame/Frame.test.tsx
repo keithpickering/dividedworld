@@ -6,7 +6,7 @@ import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { PlayerProvider } from '../player.tsx';
 import { RouterProvider } from '../router.tsx';
 import { testGlass } from '../test-world.tsx';
-import { boardPlace, forgetBoard } from '../glass/back.ts';
+import { boardPlace, forgetBoard, keepBoardPlace } from '../glass/back.ts';
 import { Frame } from './Frame.tsx';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
@@ -16,6 +16,10 @@ const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
 const pub = (id: string, name: string): Character => ({
   id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01',
 });
+
+/* The glass routes as the app names them (web/src/App.tsx): the router's moves into them keep the board's place. */
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/invites', '/settings', '/sign-in', '/register']);
+const isGlass = (path: string) => GLASS.has(path);
 
 function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>) {
   const api = {
@@ -42,7 +46,7 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
     settings: { walletCap: 600 },
   } as unknown as Kayfa;
   const view = render(
-    <RouterProvider>
+    <RouterProvider onMove={keepBoardPlace(isGlass)}>
       <KayfaProvider value={kayfa}>
         <PlayerProvider api={api}>
           <Frame>{page}</Frame>
@@ -147,19 +151,21 @@ describe('the HUD: the glass, docked at the bottom', () => {
     expect(here()).toBe('/characters');
     expect(boardPlace()).toMatchObject({ href: '/b/general?page=2' });
   });
-  test('the avatar opens My characters and the orbs open My log (the standings stand in), each keeping the board\'s place', async () => {
+  test('the avatar opens My characters, keeping the board\'s place, and the orbs open My log, where the standings stand in', async () => {
     window.history.replaceState(null, '', '/t/abc');
     setup();
     const h = await hud();
     await userEvent.click(await within(h).findByRole('link', { name: 'My characters' }));
     expect(here()).toBe('/characters');
     expect(boardPlace()).toMatchObject({ href: '/t/abc' });
-    forgetBoard();
+    /* The browser's back out of the glass forgets the place, as every move out does. */
     window.history.replaceState(null, '', '/t/abc');
     act(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+    expect(boardPlace()).toBeNull();
     await userEvent.click(await within(h).findByRole('link', { name: /^My log: Wallet 2\.40/ }));
     expect(here()).toBe('/standings');
-    expect(boardPlace()).toMatchObject({ href: '/t/abc' });
+    /* The standings are a board page until My log is a glass page of its own (the glass build, Part 2): no place is kept for a Back it has not got. */
+    expect(boardPlace()).toBeNull();
   });
   test('Esc anywhere on the board opens the menu, but not while typing', async () => {
     window.history.replaceState(null, '', '/b/general');

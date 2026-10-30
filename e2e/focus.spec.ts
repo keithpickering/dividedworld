@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+import type { Fake } from '../engine/ui/data/fake.ts';
+import type { Demo } from '../web/src/demo.ts';
 import { controlsWithoutFocusIndicator, focusedIndicator } from './focus.ts';
 
 /* These specs inject axe and poison styles into the page; the site's policy (e2e/csp.spec.ts holds it) would block them. */
@@ -103,3 +105,126 @@ for (const how of ['Back', 'Esc'] as const) {
     await expect.poll(() => post.evaluate((el) => { const r = el.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; })).toBe(true);
   });
 }
+
+/*
+ * Every way into the glass keeps the board's place, not only the HUD's Menu (keepBoardPlace,
+ * engine/ui/glass/back.ts): the reply box's "Make a character", for an account with none, is a
+ * plain link, and Back from where it leads still lands at the post that was in view. And the
+ * place is the board the glass was last entered from: a crumb out of the glass forgets the one
+ * before, so a link in from another thread never lands back on the first.
+ */
+type E2eWindow = typeof globalThis & { readonly __kbFake: Fake; readonly __kbDemo: Demo };
+
+/** Signs in a new account with no characters, so the reply box offers "Make a character". */
+async function signInWithNoCharacters(page: Page): Promise<void> {
+  await page.waitForFunction(() => '__kbFake' in globalThis);
+  await page.evaluate(() => {
+    const w = globalThis as E2eWindow;
+    w.__kbFake.signInAs(w.__kbFake.seed.account('e2e-no-characters'));
+  });
+}
+
+/** Reads down to a post: it is the one at the top of the view. */
+async function readTo(page: Page, seq: number) {
+  const post = page.locator(`#post-${seq}`);
+  await post.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await expect.poll(() => post.evaluate((el) => Math.round(el.getBoundingClientRect().top))).toBeLessThan(40);
+  return post;
+}
+
+const inView = (post: Locator) => post.evaluate((el) => { const r = el.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; });
+
+/**
+ * Follows the reply box's "Make a character" as a reader does, with it in view (the page scrolls to
+ * it), and says which posts were in view as it was followed: Back should land at one of them.
+ */
+async function makeACharacter(page: Page): Promise<string[]> {
+  const link = page.getByRole('main').getByRole('link', { name: 'Make a character' });
+  await link.scrollIntoViewIfNeeded();
+  const seen = await page.evaluate(() => [...document.querySelectorAll('article[id^="post-"]')]
+    .filter((el) => { const r = el.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; })
+    .map((el) => el.id));
+  expect(seen.length).toBeGreaterThan(0);
+  await link.click();
+  return seen;
+}
+
+/** Back lands at a post that was in view when the reader left, with focus on it and it in view. */
+async function backAtOneOf(page: Page, seen: readonly string[]): Promise<void> {
+  await expect(page.locator('article:focus')).toHaveCount(1);
+  const focused = await page.evaluate(() => document.activeElement?.id ?? '');
+  expect(seen).toContain(focused);
+  await expect.poll(() => inView(page.locator(`#${focused}`))).toBe(true);
+}
+
+test('Back from "Make a character" in the reply box returns to the same post in the thread', async ({ page }) => {
+  await page.goto('/b/general');
+  await signInWithNoCharacters(page);
+  await page.getByRole('link', { name: 'The long one', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
+  const thread = new URL(page.url()).pathname;
+  const seen = await makeACharacter(page);
+  await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe('/characters/new');
+  await page.getByRole('link', { name: 'Back to the board' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(thread);
+  await backAtOneOf(page, seen);
+});
+
+test('Back lands on the thread the glass was last entered from, not one left by a crumb before', async ({ page }) => {
+  await page.goto('/b/general');
+  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Who keeps reacting with tea?' })).toBeVisible();
+  await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+  await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
+  /* Out of the glass by the page's own crumb, not by Back. */
+  await page.locator('.kb-crumb').getByRole('link', { name: 'Index', exact: true }).click();
+  await page.getByRole('main').getByRole('link', { name: 'General', exact: true }).click();
+  await page.getByRole('link', { name: 'The long one', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
+  const thread = new URL(page.url()).pathname;
+  await signInWithNoCharacters(page);
+  const seen = await makeACharacter(page);
+  await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
+  await page.getByRole('link', { name: 'Back to the board' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(thread);
+  await backAtOneOf(page, seen);
+});
+
+/*
+ * A thread that grew while the reader was in the glass: Back reopens it at the post the reader was
+ * at, the post that came waits behind the thread's "new posts" bar, and a post edited meanwhile
+ * shows as it is now. The other player's post and the edit are made on the fake while the reader
+ * is in the glass, as another player and another tab would.
+ */
+test('Back to a thread that grew while the reader was in the glass holds the new post behind the bar', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await page.goto('/b/general');
+  await page.getByRole('link', { name: 'The long one', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Pages, top' }).getByRole('link', { name: 'Page 9' }).click();
+  await expect(page.locator('#post-170')).toBeAttached();
+  const post = await readTo(page, 162);
+  await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+  await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
+  await page.evaluate(async () => {
+    const { __kbFake: fake, __kbDemo: demo } = globalThis as E2eWindow;
+    fake.seed.post(demo.longThread, demo.characters.spritey, 'Post 171, written while you were away.');
+    /* Post 164 is Pipewrench's, the reader's own: edited from another tab. */
+    const [own] = await fake.acts(demo.longThread, 164, 164);
+    const edited = await fake.edit(own!.id, demo.characters.pipewrench, 'Post 164, edited while you were away.');
+    if (!edited.ok) throw new Error(edited.error);
+  });
+  await page.getByRole('link', { name: 'Back to the board' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
+  await expect(post).toBeFocused();
+  await expect.poll(() => inView(post)).toBe(true);
+  await expect(page.locator('#post-164')).toContainText('Post 164, edited while you were away.');
+  await expect(page.locator('#post-171')).toHaveCount(0);
+  const bar = page.getByRole('button', { name: '1 new post', exact: true });
+  await expect(bar).toBeVisible();
+  await bar.click();
+  await expect(page.locator('#post-171')).toContainText('Post 171, written while you were away.');
+});

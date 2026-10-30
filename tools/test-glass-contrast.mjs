@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SURFACES, ceilingsFile, ceilingsStale, contrastRatio, glassCeilings, glassFaults, luminance, recipeWorsts, treeGlass } from './check-glass-contrast.mjs';
+import { SURFACES, calmOf, ceilingsFile, ceilingsStale, contrastRatio, glassCeilings, glassFaults, luminance, recipeWorsts, treeGlass } from './check-glass-contrast.mjs';
 
 let pass = 0;
 const failures = [];
@@ -252,7 +252,18 @@ check('a class with no fill fires', poisoned((g) => { delete g.classes.face.fill
   thicker.smoke.recipes.page.calm = 0.99;
   check('a recipe\'s own thicker calm lowers its calmed worst below the theme\'s', recipeWorsts(thicker).page.calmed.luminance < recipeWorsts(real).page.calmed.luminance);
   check('and leaves the other recipes at the theme\'s calm', recipeWorsts(thicker).hud.calmed.luminance === recipeWorsts(real).hud.calmed.luminance);
+  check('the calm a recipe is read at is the one the screen draws on its surface (calmOf, engine/ui/glass/calm.test.tsx)', calmOf(thicker, thicker.smoke.recipes.page) === 0.99 && calmOf(real, real.smoke.recipes.page) === real.calm.opacity);
 }
+/*
+ * A recipe's own calm is drawn on its surface as the calm's opacity, so it is held to what the
+ * theme's is: one above 1 would read its calmed worst as the bare ground (every body token passes
+ * over any smoke) while the screen draws a backing no thicker than a full one; 0 or less, or a
+ * calm that is not a number, has no backing the screen can draw.
+ */
+check('a recipe calm above 1 fires, though it would read every calmed pixel as the ground', poisoned((g) => { g.smoke.recipes.react.calm = 1.5; }, 'recipe react', 'own calm').length === 1);
+check('a recipe calm of 0 fires', poisoned((g) => { g.smoke.recipes.react.calm = 0; }, 'recipe react', 'own calm').length === 1);
+check('a negative recipe calm fires', poisoned((g) => { g.smoke.recipes.react.calm = -0.2; }, 'recipe react', 'own calm').length === 1);
+check('a recipe calm that is not a number fires', poisoned((g) => { g.smoke.recipes.react.calm = '0.9'; }, 'recipe react', 'own calm').length === 1);
 
 /* The narrow layers' calmed worst, in the ceilings and in the class check. */
 {

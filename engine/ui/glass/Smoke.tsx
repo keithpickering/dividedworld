@@ -14,10 +14,15 @@
  * linearRGB brightens the noise, which tools/check-glass-contrast.mjs's numbers do not allow for.
  *
  * It says nothing to a screen reader. Where it is not drawn the page loses decoration only.
+ *
+ * A recipe may carry its own calm (the calm's opacity for its surface, default the theme's): the
+ * element that holds a surface's smoke and its text takes useSurfaceStyle's style, so every calm
+ * on that text is drawn at the number tools/check-glass-contrast.mjs reads it at.
  */
 import { useId, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { GlassSurface, SmokeLayer } from '../types.ts';
+import { surfaceCalm } from './apply.ts';
 
 /** The player's smoke preference (Settings, Accessibility). */
 export type SmokeLevel = 'full' | 'low' | 'off';
@@ -91,4 +96,14 @@ export function Smoke({ surface, level = 'full' }: SmokeProps) {
       ) : null}
     </div>
   );
+}
+
+/**
+ * The style a surface's own element carries, beside its smoke: the calm its recipe asks for, so
+ * the text on it stands in the calm the contrast guard reads it at (surfaceCalm, apply.ts). The
+ * element is the one that holds both the smoke and the surface's text.
+ */
+export function useSurfaceStyle(surface: GlassSurface): CSSProperties | undefined {
+  const { ui } = useKayfa();
+  return surfaceCalm(ui.glass, surface) as CSSProperties | undefined;
 }

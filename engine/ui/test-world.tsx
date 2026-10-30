@@ -67,6 +67,10 @@ export interface WorldOptions {
   readonly settings?: Partial<ScreenSettings>;
   /** A different instance for the screen and its backend (a test of a bigger vocabulary); pass the same to `buildWorld`. */
   readonly instance?: Instance;
+  /** What the address's history entry carries, as a navigation with state leaves it (Back's return to a thread). */
+  readonly state?: unknown;
+  /** A different glass than `testGlass` (a recipe with its own calm). */
+  readonly glass?: Kayfa['ui']['glass'];
 }
 
 /** The backend alone, for a test that must do something asynchronous (a spin) before it renders. */
@@ -76,8 +80,8 @@ export function buildWorld(settingsOverride?: Partial<ScreenSettings>, instance:
 
 /** Render a screen on a backend made by `buildWorld`. */
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
-  window.history.replaceState(null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
+  window.history.replaceState(options.state ?? null, '', options.path ?? '/');
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass ? { ...ui, glass: options.glass } : ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
   return {
     fake,
     ...render(

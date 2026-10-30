@@ -9,14 +9,14 @@
  * Menu shows its key cap, ESC, for the eye; its name is Menu, and the key is aria-keyshortcuts'.
  *
  * It is the player's alone: what it shows is their own rows, and changing the character sends
- * nothing anywhere (player.tsx). Menu and Esc anywhere on the board open the glass at My characters,
- * keeping the board's place for Back (engine/ui/glass/back.ts); an Esc another control handled, or
- * one typed in a text field, is that control's, and a held Esc's repeats and the Esc that ends an
- * IME composition open nothing (engine/ui/glass/keys.ts). While the hand is open, Esc closes the
- * hand. Every way from here into the glass keeps the place: the avatar, the orbs and Menu, and
- * Make a character and Sign in. A modified or middle click on the avatar or the orbs opens its page
- * as the browser would and leaves this one alone. Menu navigates rather than opening a menu, so it
- * claims no popup.
+ * nothing anywhere (player.tsx). Menu and Esc anywhere on the board open the glass at My characters;
+ * an Esc another control handled, or one typed in a text field, is that control's, and a held Esc's
+ * repeats and the Esc that ends an IME composition open nothing (engine/ui/glass/keys.ts). While the
+ * hand is open, Esc closes the hand. No control here keeps the board's place for Back: the router's
+ * move from a board route into the glass does (keepBoardPlace, engine/ui/glass/back.ts), so every
+ * way into the glass keeps it, these and any link elsewhere on the page alike. A modified or middle
+ * click on the avatar or the orbs opens its page as the browser would and leaves this one alone.
+ * Menu navigates rather than opening a menu, so it claims no popup.
  *
  * The hand opens as a region above the bar and takes focus, so a keyboard is in it at once; its
  * Close the hand button, or Esc, closes it and returns focus to the hand.
@@ -24,7 +24,7 @@
  * The swap is named "Swap mask" where the three groups fit (the Main board) and "Posting as" below
  * 1340px, where the HUD is the Phone board's.
  */
-import { useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
@@ -34,9 +34,8 @@ import { Link, useLocation, useNavigate } from '../router.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { motionReduced } from '../appearance.ts';
-import { Smoke } from '../glass/Smoke.tsx';
-import { rememberBoard } from '../glass/back.ts';
-import { pageEscape, plainClick } from '../glass/keys.ts';
+import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
+import { pageEscape } from '../glass/keys.ts';
 import { GLASS_NAV } from '../glass/nav.ts';
 
 /** Where the HUD stops being the Main board's three groups and becomes the Phone board's. */
@@ -77,6 +76,9 @@ export function Hud() {
   const aura = useRef<HTMLDivElement>(null);
   const drawerId = useId();
   const selectId = useId();
+  /* Each of the two surfaces here draws its own recipe's calm under its text (useSurfaceStyle, engine/ui/glass/Smoke.tsx). */
+  const hudCalm = useSurfaceStyle('hud');
+  const handCalm = useSurfaceStyle('hand');
   const hud = player.hudCharacter;
   const signedIn = player.session.signedIn;
 
@@ -140,11 +142,6 @@ export function Hud() {
     return () => { watch.disconnect(); root.style.removeProperty('--kb-hud-measured'); };
   }, [signedIn]);
 
-  const here = `${location.path}${location.query.size ? `?${location.query}` : ''}`;
-  const toGlass = (to: string) => { rememberBoard(here); navigate(to); };
-  /** A link into the glass the router follows itself: it keeps the place on a plain click. */
-  const keepPlace = (e: MouseEvent) => { if (plainClick(e)) rememberBoard(here); };
-
   /* The opened hand takes focus, so the keyboard is in it at once. */
   useEffect(() => { if (handOpen) drawer.current?.focus(); }, [handOpen]);
 
@@ -161,12 +158,11 @@ export function Hud() {
       }
       if (!pageEscape(e)) return;
       e.preventDefault();
-      rememberBoard(here);
       navigate(GLASS_NAV.characters);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [signedIn, handOpen, here, navigate]);
+  }, [signedIn, handOpen, navigate]);
 
   const held = player.cards.reduce((n, c) => n + c.held, 0);
   const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
@@ -178,7 +174,7 @@ export function Hud() {
   return (
     <>
       {signedIn && (
-        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen}>
+        <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen} style={handCalm}>
           <Smoke surface="hand" />
           <div className="kb-hand-bar">
             <button
@@ -202,7 +198,7 @@ export function Hud() {
         </div>
       )}
       <section ref={section} className="kb-hud" aria-label="Game HUD" style={tabVars} data-kb-wide={wide || undefined}>
-        <div className="kb-glass kb-hud-glass">
+        <div className="kb-glass kb-hud-glass" style={hudCalm}>
           <div className="kb-hud-ground kb-glass-hud-tab" aria-hidden="true"><Smoke surface="hud" /></div>
           <svg className="kb-hud-seam" aria-hidden="true" focusable="false" preserveAspectRatio="none">
             <polyline className="kb-glass-seam-glow" points={seam} />
@@ -212,16 +208,15 @@ export function Hud() {
             <div className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast' : ''}`}>
               <div className="kb-hud-plate-in">
                 {!signedIn ? (
-                  <Link to={signInHref(location.path, location.query.size ? `?${location.query}` : '')} className="kb-hud-sign-in kb-glass-cut-button" onClick={keepPlace}>Sign in</Link>
+                  <Link to={signInHref(location.path, location.query.size ? `?${location.query}` : '')} className="kb-hud-sign-in kb-glass-cut-button">Sign in</Link>
                 ) : !player.loaded ? null : !hud ? (
-                  <Link to="/characters/new" className="kb-hud-make kb-glass-cut-button" onClick={keepPlace}>Make a character</Link>
+                  <Link to="/characters/new" className="kb-hud-make kb-glass-cut-button">Make a character</Link>
                 ) : (
                   <>
                     <Link
                       to={GLASS_NAV.characters}
                       className="kb-hud-avatar"
                       aria-label="My characters"
-                      onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); toGlass(GLASS_NAV.characters); }}
                     >
                       {face?.avatarSquare ? <img src={face.avatarSquare} alt="" /> : <span className="kb-hud-avatar-none" aria-hidden="true">{hud.name.slice(0, 1)}</span>}
                     </Link>
@@ -254,7 +249,6 @@ export function Hud() {
                   <Link
                     to={GLASS_NAV.log}
                     className="kb-hud-orbs"
-                    onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); toGlass(GLASS_NAV.log); }}
                   >
                     <span className="kb-visually-hidden">My log: </span>
                     <Orbs settled={player.wallet.balance} pending={player.pending} cap={player.wallet.cap ?? settings.walletCap} cascadeFrom={player.walletSeen} />
@@ -274,7 +268,7 @@ export function Hud() {
                     className="kb-hud-menu kb-glass-skew"
                     aria-label="Menu"
                     aria-keyshortcuts="Escape"
-                    onClick={() => toGlass(GLASS_NAV.characters)}
+                    onClick={() => navigate(GLASS_NAV.characters)}
                   >
                     <kbd className="kb-hud-key kb-glass-upright">ESC</kbd>
                     <span className="kb-glass-upright">Menu</span>

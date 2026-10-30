@@ -10,7 +10,7 @@ import { useId, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
-import { Smoke } from './Smoke.tsx';
+import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
 export interface OverlayProps {
@@ -26,9 +26,10 @@ export interface OverlayProps {
 export function Overlay({ title, onClose, children, surface, returnFocusTo }: OverlayProps) {
   const id = useId();
   const { overlay, box, closeButton } = useModalLayer({ onClose, returnFocusTo });
+  const calm = useSurfaceStyle(surface);
   return createPortal(
     <div ref={overlay} className="kb-glass kb-glass-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={box} className="kb-glass-dialog kb-glass-cut-dialog" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1}>
+      <div ref={box} className="kb-glass-dialog kb-glass-cut-dialog" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1} style={calm}>
         <Smoke surface={surface} />
         <div className="kb-glass-dialog-bar">
           <h2 id={id} className="kb-glass-dialog-head kb-glass-display">{title}</h2>

@@ -44,6 +44,12 @@ const manifest: BoardManifest = {
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav', box: 'position' },
     { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', box: 'position' },
 
+    /*
+     * The breadcrumb over the thread's head, by its type: the board's words lead from the instance
+     * through the board, and the build's crumb is Index and the title (Thread.tsx).
+     */
+    { id: 'crumb', role: 'text', name: 'Divided World » General » who keeps splatting my posts', buildName: 'Index › who keeps splatting my posts', box: 'none' },
+
     /* The thread's head: its type only (section 7). */
     { id: 'title', role: 'heading', name: 'who keeps splatting my posts', box: 'none' },
     { id: 'page-1', role: 'link', name: '1', buildName: 'Page 1', box: 'none' },

@@ -6,7 +6,7 @@
  * about (a profile's): an address is shared, bookmarked and sent as a Referer, and a character in
  * it would say which masks one browser plays (the web plan, "What could vary with a private fact").
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode } from 'react';
 
 export interface Location {
   readonly path: string;
@@ -30,14 +30,32 @@ const RouterContext = createContext<Router | null>(null);
 
 const read = (w: Window, popped = false): Location => ({ path: w.location.pathname, query: new URLSearchParams(w.location.search), hash: w.location.hash.replace(/^#/, ''), popped, state: w.history.state });
 
+/**
+ * Told of every move, from the location shown to the one about to be: `from` is null for the
+ * document's first. It is called before the screens change, so the page moved from is still drawn
+ * and can be measured (the glass's Back keeps the board's place this way, engine/ui/glass/back.ts).
+ * A popstate is told as it arrives, before the browser restores the scroll of the entry it reached.
+ */
+export type OnMove = (from: Location | null, to: Location) => void;
+
 /** The router over the window's own history. */
-export function RouterProvider({ children, window: w = globalThis.window }: { readonly children: ReactNode; readonly window?: Window }) {
+export function RouterProvider({ children, window: w = globalThis.window, onMove }: { readonly children: ReactNode; readonly window?: Window; readonly onMove?: OnMove }) {
   const [location, setLocation] = useState(() => read(w));
+  /* What is shown, for the next move's `from`, and the latest onMove, so a new one does not re-subscribe. */
+  const shown = useRef(location);
+  const moved = useRef(onMove);
+  moved.current = onMove;
+  const show = useCallback((to: Location) => {
+    moved.current?.(shown.current, to);
+    shown.current = to;
+    setLocation(to);
+  }, []);
+  useEffect(() => { moved.current?.(null, shown.current); }, []);
   useEffect(() => {
-    const onPop = () => setLocation(read(w, true));
+    const onPop = () => show(read(w, true));
     w.addEventListener('popstate', onPop);
     return () => w.removeEventListener('popstate', onPop);
-  }, [w]);
+  }, [w, show]);
   const navigate = useCallback((to: string, options?: { readonly replace?: boolean; readonly state?: unknown }) => {
     // An in-app navigation never leaves the site: an address that resolves elsewhere (a stray `next`,
     // a link built from text) is the index. A <Link> to another site is left to the browser instead.
@@ -46,8 +64,9 @@ export function RouterProvider({ children, window: w = globalThis.window }: { re
     const same = url.pathname + url.search + url.hash === w.location.pathname + w.location.search + w.location.hash;
     if (options?.replace || same) w.history.replaceState(options?.state ?? null, '', url.pathname + url.search + url.hash);
     else w.history.pushState(options?.state ?? null, '', url.pathname + url.search + url.hash);
-    setLocation(read(w));
-  }, [w]);
+    /* The address has moved and the page has not: pushState scrolls nothing and draws nothing. */
+    show(read(w));
+  }, [w, show]);
   const value = useMemo(() => ({ location, navigate }), [location, navigate]);
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }

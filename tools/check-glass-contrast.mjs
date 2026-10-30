@@ -20,7 +20,11 @@
  * the ground laid over the smoke at the calm's opacity under a text block (engine/ui/glass/calm.css),
  * so the smoke shows through at what is left. The calm's feather sits outside the text's box
  * (calm.css insets the backing by the feather on every side), so the text is in the full-strength
- * region and the calmed worst applies to every pixel under it. A recipe's `narrow` layers (below 600px) are held
+ * region and the calmed worst applies to every pixel under it. A recipe's own `calm` (the glass plan,
+ * section 6: "the calm's opacity for this surface, default the theme's") is read in the theme's
+ * place, and the screen draws that same number on each surface that uses the recipe (surfaceCalm,
+ * engine/ui/glass/apply.ts; engine/ui/glass/calm.test.tsx holds the two equal), so it is held, as
+ * the theme's is, to a number in (0, 1]. A recipe's `narrow` layers (below 600px) are held
  * separately, the same way. The numbers this reproduces are the audit's (the glass plan, section 6:
  * the hud recipe 0.216, page 0.230, characters 0.196, turn 0.116, effect 0.103, react 0.087, cards
  * 0.193, vending 0.230, settlement 0.274), and test-glass-contrast.mjs pins them.
@@ -160,7 +164,7 @@ function groundOf(glass) {
 }
 
 /** A recipe's calm opacity: its own, else the theme's. */
-const calmOf = (glass, recipe) => recipe.calm ?? glass.calm?.opacity ?? 0;
+export const calmOf = (glass, recipe) => recipe.calm ?? glass.calm?.opacity ?? 0;
 
 /**
  * The worst pixel of each recipe: `{ full, calmed }` and, for a recipe with `narrow` layers,
@@ -211,6 +215,10 @@ export function glassFaults(glass) {
 
   /* Each recipe's layers are what the model reads. */
   for (const [name, recipe] of Object.entries(recipes)) {
+    /* A recipe's own calm is drawn on its surface as the calm's opacity (surfaceCalm, engine/ui/glass/apply.ts), so it is held as the theme's is. */
+    if (recipe.calm !== undefined && !(typeof recipe.calm === 'number' && recipe.calm > 0 && recipe.calm <= 1)) {
+      fault(`recipe ${name}`, `its own calm ${JSON.stringify(recipe.calm)} needs to be a number above 0 and at most 1: the screen draws it as the calm's opacity on the surface`);
+    }
     for (const [which, layers] of [['layers', recipe.layers], ['narrow layers', recipe.narrow]]) {
       if (layers === undefined && which === 'narrow layers') continue;
       if (!Array.isArray(layers) || layers.length === 0) { fault(`recipe ${name}`, `has no ${which}`); continue; }

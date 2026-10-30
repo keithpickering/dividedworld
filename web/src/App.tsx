@@ -16,6 +16,7 @@ import { NewCharacter } from '../../engine/ui/characters/NewCharacter.tsx';
 import { ProfileScreen } from '../../engine/ui/profile/Profile.tsx';
 import { RecordScreen } from '../../engine/ui/profile/Record.tsx';
 import { Frame } from '../../engine/ui/frame/Frame.tsx';
+import { keepBoardPlace } from '../../engine/ui/glass/back.ts';
 import { applyGlass, installGlassFonts, type GlassSurface } from '../../engine/ui/glass/index.ts';
 import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
@@ -64,6 +65,11 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/register': 'account',
 };
 
+const isGlass = (path: string): boolean => Object.hasOwn(GLASS, path);
+
+/** Every move into the glass keeps the board's place for Back, and every move out forgets it (engine/ui/glass/back.ts). */
+const keepPlace = keepBoardPlace(isGlass);
+
 /** The account's theme and motion, once it is known; the device decides until then. */
 function Appearance({ api }: { readonly api: KayfaApi }) {
   const { session } = usePlayer();
@@ -85,7 +91,7 @@ function Appearance({ api }: { readonly api: KayfaApi }) {
  */
 function Shell() {
   const { path } = useLocation();
-  const surface = GLASS[path];
+  const surface = isGlass(path) ? GLASS[path] : undefined;
   const content = (
     <AccountGate>
       <Routes routes={ROUTES} />
@@ -112,7 +118,7 @@ export function App({ api }: { readonly api: KayfaApi }) {
   if (failed) return <main className="kb-page"><p className="kb-notice" data-kb-tone="refusal">The board could not be reached. Reload the page to try again.</p></main>;
   if (!settings) return <main className="kb-page" aria-busy="true" />;
   return (
-    <RouterProvider>
+    <RouterProvider onMove={keepPlace}>
       <KayfaProvider value={{ api, instance, ui: instanceUi, settings }}>
         <PlayerProvider api={api}>
           <Appearance api={api} />

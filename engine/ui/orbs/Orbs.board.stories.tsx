@@ -11,7 +11,7 @@
  * them say what they show. The words are the board's.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { Smoke } from '../glass/Smoke.tsx';
+import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import { GLASS_NAV } from '../glass/nav.ts';
 import { Orb, Orbs } from './Orbs.tsx';
 import type { OrbFill } from './fill.ts';
@@ -52,8 +52,9 @@ interface OrbsBoardProps {
 }
 
 function OrbsBoard({ when }: OrbsBoardProps) {
+  const calm = useSurfaceStyle('log');
   return (
-    <div className="kb-glass kb-orbs-board">
+    <div className="kb-glass kb-orbs-board" style={calm}>
       <Smoke surface="log" />
       <header className="kb-orbs-board-head">
         <p className="kb-orbs-board-eyebrow">The wallet · live</p>

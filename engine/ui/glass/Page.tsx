@@ -12,12 +12,13 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { useLocation } from '../router.tsx';
 import type { GlassSurface } from '../types.ts';
 import { MenuBar } from './MenuBar.tsx';
-import { Smoke } from './Smoke.tsx';
+import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
 export function Page({ surface, children }: { readonly surface: GlassSurface; readonly children: ReactNode }) {
   const { path, hash, popped } = useLocation();
   const main = useRef<HTMLElement>(null);
+  const calm = useSurfaceStyle(surface);
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
@@ -26,7 +27,7 @@ export function Page({ surface, children }: { readonly surface: GlassSurface; re
     main.current?.focus({ preventScroll: true });
   }, [path]);
   return (
-    <div className="kb-glass kb-glass-page" data-kb-surface={surface}>
+    <div className="kb-glass kb-glass-page" data-kb-surface={surface} style={calm}>
       <Smoke surface={surface} />
       <MenuBar />
       <main ref={main} className="kb-glass-content" tabIndex={-1}>

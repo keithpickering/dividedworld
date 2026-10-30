@@ -71,7 +71,7 @@ describe('createBackend and the demo', () => {
   it('loads the demo module only for the fake, never when it gives Supabase', async () => {
     vi.resetModules();
     const loaded: string[] = [];
-    vi.doMock('../demo.ts', () => { loaded.push('demo'); return { seedDemo: () => ({}), recordAvatarUploads: () => undefined }; });
+    vi.doMock('../demo.ts', () => { loaded.push('demo'); return { seedDemo: () => ({}), recordAvatarUploads: () => undefined, exposeFake: () => undefined }; });
     vi.stubEnv('PROD', true);
     vi.stubEnv('MODE', 'production');
     vi.stubEnv('VITE_SUPABASE_URL', URL_);
@@ -83,6 +83,25 @@ describe('createBackend and the demo', () => {
     await fresh();
     expect(loaded).toEqual(['demo']);
     vi.doUnmock('../demo.ts');
+  });
+
+  /* The end-to-end flows play another player's part on the fake (e2e/focus.spec.ts); no other build leaves it reachable. */
+  it('leaves the fake and its demo world on globalThis in the end-to-end build only', async () => {
+    const reachable = () => '__kbFake' in globalThis || '__kbDemo' in globalThis;
+    const clear = () => { delete (globalThis as { __kbFake?: unknown }).__kbFake; delete (globalThis as { __kbDemo?: unknown }).__kbDemo; };
+    clear();
+    vi.stubEnv('PROD', false);
+    vi.stubEnv('MODE', 'development');
+    vi.stubEnv('VITE_SUPABASE_URL', '');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+    await createBackend();
+    expect(reachable()).toBe(false);
+    vi.stubEnv('PROD', true);
+    vi.stubEnv('MODE', 'e2e');
+    const api = await createBackend();
+    expect((globalThis as { __kbFake?: unknown }).__kbFake).toBe(api);
+    expect((globalThis as { __kbDemo?: { longThread?: string } }).__kbDemo?.longThread).toEqual(expect.any(String));
+    clear();
   });
 });
 

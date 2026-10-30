@@ -9,8 +9,17 @@
  * when the run reaches the thread's tail (`tailLoaded`); on an earlier page it waits for the reader
  * to get there. An Act is keyed by id: the same id again is the same Act, and an edited post comes
  * again under its own id with what it shows now.
+ *
+ * A return from the glass (Back, engine/ui/glass/back.ts) is read like any page, with what the
+ * thread showed and knew of when the reader left: the Acts the read holds after the last one shown
+ * are held as live Acts are, so a thread that grew meanwhile shows its bar rather than moving the
+ * reader, and every Act is drawn as it is now. Where the page read is not the tail, `newFrom` is
+ * the first Act that came since (the first held, or the first the thread had not known of), so the
+ * bar counts what came and leads to it, not to pages the reader had simply not reached; reading on
+ * past it, or opening a page that holds it, lets it go.
  */
 import type { Act, Id, ThreadSummary } from '../data/api.ts';
+import type { ThreadReturn } from '../glass/back.ts';
 
 export interface Feed {
   /** The first read has landed; before it, live Acts are only collected. */
@@ -30,10 +39,13 @@ export interface Feed {
   readonly slid: ReadonlySet<Id>;
   /** The highest seq known, live Acts included: how many pages the thread has. */
   readonly knownLast: number;
+  /** After a return from the glass, the first seq that came while the reader was away and is not yet shown; none otherwise. */
+  readonly newFrom: number | null;
 }
 
 export type FeedAction =
-  | { readonly type: 'loaded'; readonly summary: ThreadSummary; readonly firstPage: number; readonly lastPage: number; readonly acts: readonly Act[]; readonly tailLoaded: boolean }
+  /** `back`: what the thread showed and knew of when the reader left it for the glass, on the read Back opens. */
+  | { readonly type: 'loaded'; readonly summary: ThreadSummary; readonly firstPage: number; readonly lastPage: number; readonly acts: readonly Act[]; readonly tailLoaded: boolean; readonly back?: ThreadReturn | null }
   | { readonly type: 'more'; readonly page: number; readonly acts: readonly Act[]; readonly tailLoaded: boolean }
   | { readonly type: 'live'; readonly act: Act }
   | { readonly type: 'fill'; readonly acts: readonly Act[] }
@@ -41,7 +53,7 @@ export type FeedAction =
 
 export const emptyFeed: Feed = {
   ready: false, summary: null, firstPage: 1, lastPage: 1, baseEnd: 0, serverLast: 0, tailLoaded: false,
-  shown: new Map(), held: new Map(), slid: new Set(), knownLast: 0,
+  shown: new Map(), held: new Map(), slid: new Set(), knownLast: 0, newFrom: null,
 };
 
 const maxSeq = (acts: Iterable<Act>, from = 0) => { let m = from; for (const a of acts) if (a.seq !== null && a.seq > m) m = a.seq; return m; };
@@ -68,23 +80,35 @@ function pruned(held: ReadonlyMap<Id, Act>, shown: ReadonlyMap<Id, Act>, baseEnd
 export function feedReducer(f: Feed, a: FeedAction): Feed {
   switch (a.type) {
     case 'loaded': {
-      const shown = new Map(a.acts.map((x) => [x.id, x]));
       const baseEnd = maxSeq(a.acts);
-      const held = pruned(f.held, shown, baseEnd);
       const serverLast = Math.max(a.summary.lastSeq, baseEnd);
+      /* A return splits the read at the last post shown, unless that would leave the page empty. */
+      const back = a.back && a.acts.some((x) => x.seq !== null && x.seq <= a.back!.shown) ? a.back : null;
+      const read = new Map(a.acts.map((x) => [x.id, x]));
+      const shown = back ? new Map(a.acts.filter((x) => x.seq === null || x.seq <= back.shown).map((x) => [x.id, x])) : read;
+      const held = pruned(f.held, read, baseEnd);
+      for (const x of a.acts) if (!shown.has(x.id)) held.set(x.id, x);
+      const knownLast = maxSeq(held.values(), serverLast);
+      let newFrom: number | null = null;
+      if (back) newFrom = held.size > 0 ? back.shown + 1 : serverLast > back.known ? back.known + 1 : null;
+      else if (f.newFrom !== null) newFrom = f.newFrom > baseEnd ? f.newFrom : knownLast > baseEnd ? baseEnd + 1 : null;
       return {
         ready: true, summary: a.summary, firstPage: a.firstPage, lastPage: a.lastPage, baseEnd, serverLast,
-        tailLoaded: a.tailLoaded || baseEnd >= serverLast, shown, held, slid: new Set(), knownLast: maxSeq(held.values(), serverLast),
+        tailLoaded: a.tailLoaded || baseEnd >= serverLast, shown, held, slid: new Set(), knownLast, newFrom,
       };
     }
     case 'more': {
       const shown = new Map(f.shown);
-      for (const x of a.acts) shown.set(x.id, x);
       const baseEnd = maxSeq(a.acts, f.baseEnd);
+      /* Held Acts the run now passes (a return's, behind its bar) come in, in order, before the page read. */
+      for (const x of f.held.values()) if (x.seq !== null && x.seq <= baseEnd) shown.set(x.id, x);
+      for (const x of a.acts) shown.set(x.id, x);
       const serverLast = Math.max(f.serverLast, baseEnd);
+      const knownLast = Math.max(f.knownLast, serverLast);
+      const newFrom = f.newFrom === null ? null : f.newFrom > baseEnd ? f.newFrom : knownLast > baseEnd ? baseEnd + 1 : null;
       return {
         ...f, lastPage: a.page, baseEnd, serverLast, tailLoaded: a.tailLoaded || baseEnd >= serverLast, shown,
-        held: pruned(f.held, shown, baseEnd), knownLast: Math.max(f.knownLast, serverLast),
+        held: pruned(f.held, shown, baseEnd), knownLast, newFrom,
       };
     }
     case 'live': {
@@ -120,7 +144,20 @@ export function feedReducer(f: Feed, a: FeedAction): Feed {
         if (a.slide) slid.add(x.id);
         end = x.seq!;
       }
-      return shown.size === f.shown.size ? f : { ...f, shown, held, slid };
+      if (shown.size === f.shown.size) return f;
+      const newFrom = f.newFrom !== null && f.newFrom > end ? f.newFrom : null;
+      return { ...f, shown, held, slid, newFrom };
     }
   }
+}
+
+/**
+ * The posts the bar stands for: on a page short of the tail, after a return, every post since the
+ * first that came while the reader was away (some on pages not read yet); otherwise the posts held.
+ */
+export function waitingPosts(f: Feed): { readonly count: number; readonly first: number; readonly last: number } | null {
+  if (!f.tailLoaded && f.newFrom !== null && f.knownLast >= f.newFrom) return { count: f.knownLast - f.newFrom + 1, first: f.newFrom, last: f.knownLast };
+  const held = ordered(f.held);
+  if (held.length === 0) return null;
+  return { count: held.length, first: held[0]!.seq!, last: held.at(-1)!.seq! };
 }

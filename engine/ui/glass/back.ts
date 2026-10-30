@@ -4,16 +4,35 @@
  * already opens at the post a `#post-N` fragment names and focuses it (engine/ui/thread/Thread.tsx),
  * so Back is that route with the post as its fragment; a page with no posts gets its scroll back.
  *
+ * The rule is held in one place, the router's moves, not by each link into the glass: every move
+ * from a board route to a glass route keeps the board's place, measured while the board is still
+ * drawn, and every move from the glass to a board forgets it, whether by Back, a crumb, a menu tab
+ * that leads to a board or the browser's back (keepBoardPlace). So no way in can forget to keep
+ * the place, and no way out can leave a stale one behind for a later Back. Which routes are glass
+ * pages is the app's to say: the engine is given the predicate, never an instance's list.
+ *
+ * On a thread the place also keeps the last seq the thread showed and the last it knew of, and
+ * Back carries both in the history entry it makes (returnState): a thread that grew while the
+ * reader was in the glass holds what came behind its "new posts" bar, as it holds a live post,
+ * rather than moving the reader (the feed's return, engine/ui/thread/feed.ts).
+ *
  * The place is this tab's own: a module value, and a copy in sessionStorage so that a reloaded
  * glass page still knows it. It is never sent anywhere. The copy is read only when this document
  * was reached by a reload or the browser's back or forward: a glass page opened afresh by its
  * address, in a tab that once kept a place, has not come from that board, so its Back goes to the
- * index rather than to a board from before. Back forgets the place it used. A stored place that is
- * not a path on this app (another origin, a scheme), or whose post is not a post id, is ignored, so
- * a planted value cannot send Back elsewhere or carry markup into an address.
+ * index rather than to a board from before, and a document opened on a board forgets it. Back
+ * forgets the place it used. A stored place that is not a path on this app (another origin, a
+ * scheme), whose post is not a post id, or whose thread is not two seqs, is ignored, so a planted
+ * value cannot send Back elsewhere or carry markup into an address.
  */
 import { useCallback } from 'react';
-import { useNavigate } from '../router.tsx';
+import { useNavigate, type Location } from '../router.tsx';
+
+/** What a thread showed and knew of when the reader left it: the last seq on screen, and the last the thread had heard of. */
+export interface ThreadReturn {
+  readonly shown: number;
+  readonly known: number;
+}
 
 export interface BoardPlace {
   /** The board's route: a path and its query, without a fragment. */
@@ -21,6 +40,8 @@ export interface BoardPlace {
   /** The id of the post in view (`post-N`), or none on a page with no posts. */
   readonly post: string | null;
   readonly scrollY: number;
+  /** On a thread, what it showed and knew of; none on any other page. */
+  readonly thread: ThreadReturn | null;
 }
 
 const KEY = 'kb-glass-back';
@@ -45,20 +66,47 @@ export function postInView(doc: Document = document): string | null {
   return post.id;
 }
 
-/** Keeps the board's route (its fragment dropped) and the post in view, as the glass is entered. */
+const isSeq = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+const isReturn = (v: unknown): v is ThreadReturn => {
+  if (typeof v !== 'object' || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return isSeq(r.shown) && isSeq(r.known);
+};
+
+/**
+ * What the thread on the page showed and knew of: the highest seq among its posts on screen, and
+ * the last seq it has heard of (`data-kb-known`, which counts the posts held behind its bar). None
+ * on a page that is not a thread, or a thread with no post drawn.
+ */
+export function threadInView(doc: Document = document): ThreadReturn | null {
+  const thread = doc.querySelector<HTMLElement>('[data-kb-thread]');
+  if (!thread) return null;
+  const seqs = [...thread.querySelectorAll<HTMLElement>('article[data-kb-seq]')].map((el) => Number(el.dataset.kbSeq)).filter(isSeq);
+  const known = Number(thread.dataset.kbKnown);
+  if (seqs.length === 0 || !isSeq(known)) return null;
+  const shown = Math.max(...seqs);
+  return { shown, known: Math.max(known, shown) };
+}
+
+/** Keeps the board's route (its fragment dropped), the post in view and a thread's seqs, as the glass is entered. */
 export function rememberBoard(href: string, doc: Document = document): void {
   const route = href.split('#')[0] ?? '';
-  kept = { href: route, post: postInView(doc), scrollY: doc.defaultView?.scrollY ?? 0 };
+  kept = { href: route, post: postInView(doc), scrollY: doc.defaultView?.scrollY ?? 0, thread: threadInView(doc) };
   try { sessionStorage.setItem(KEY, JSON.stringify(kept)); } catch { /* storage refused: the module copy still serves this load */ }
 }
 
-const isPlace = (v: unknown): v is BoardPlace => {
-  if (typeof v !== 'object' || v === null) return false;
+/** A stored place, or none when it is not one; a place kept before threads kept theirs has no thread. */
+function placeOf(v: unknown): BoardPlace | null {
+  if (typeof v !== 'object' || v === null) return null;
   const p = v as Record<string, unknown>;
-  return typeof p.href === 'string' && p.href.startsWith('/') && !p.href.startsWith('//')
+  const thread = p.thread ?? null;
+  const ok = typeof p.href === 'string' && p.href.startsWith('/') && !p.href.startsWith('//')
     && (p.post === null || (typeof p.post === 'string' && /^post-\d+$/.test(p.post)))
-    && typeof p.scrollY === 'number';
-};
+    && typeof p.scrollY === 'number'
+    && (thread === null || isReturn(thread));
+  if (!ok) return null;
+  return { href: p.href as string, post: p.post as string | null, scrollY: p.scrollY as number, thread: isReturn(thread) ? { shown: thread.shown, known: thread.known } : null };
+}
 
 /** Whether this document was reached by a reload or the browser's back or forward, not afresh. */
 function returnedTo(): boolean {
@@ -76,8 +124,7 @@ export function boardPlace(): BoardPlace | null {
   if (!returnedTo()) return null;
   try {
     const raw = sessionStorage.getItem(KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : null;
-    return isPlace(parsed) ? parsed : null;
+    return placeOf(raw ? JSON.parse(raw) : null);
   } catch {
     return null;
   }
@@ -89,7 +136,7 @@ export function forgetBoard(): void {
 }
 
 /** Where Back goes: the route with the post as its fragment, the route alone, or the index. */
-export function backHref(place: BoardPlace | null): string {
+export function backHref(place: Pick<BoardPlace, 'href' | 'post'> | null): string {
   if (!place) return '/';
   return place.post ? `${place.href}#${place.post}` : place.href;
 }
@@ -131,16 +178,47 @@ export function restoreScroll(win: Window, y: number): () => void {
   return stop;
 }
 
+/** The history state Back gives a thread: what it showed and knew of when the reader left. */
+export function returnState(r: ThreadReturn): unknown {
+  return { kbThreadReturn: { shown: r.shown, known: r.known } };
+}
+
+/** What a history entry's state says the thread showed and knew of, or none when it says nothing well-formed. */
+export function returnOf(state: unknown): ThreadReturn | null {
+  if (typeof state !== 'object' || state === null) return null;
+  const r = (state as Record<string, unknown>).kbThreadReturn;
+  return isReturn(r) ? { shown: r.shown, known: r.known } : null;
+}
+
 /**
- * Back to the board: to the kept route and post, forgetting the place as it goes. On a page with
- * no posts the scroll comes back once the page has drawn (restoreScroll).
+ * The rule, for the router's moves (RouterProvider's `onMove`): a move from a board route into the
+ * glass keeps the board's place, measured from the page being left, which is still drawn when the
+ * router calls this; a move from the glass to a board forgets it; a move within either leaves it.
+ * A document opened on a board route forgets a place left in the tab, and one opened on a glass
+ * page leaves it to boardPlace, which reads it only after a reload or a back or forward.
+ */
+export function keepBoardPlace(isGlass: (path: string) => boolean, doc: Document = document): (from: Location | null, to: Location) => void {
+  return (from, to) => {
+    const into = isGlass(to.path);
+    if (from === null) { if (!into) forgetBoard(); return; }
+    const out = isGlass(from.path);
+    if (!out && into) rememberBoard(`${from.path}${from.query.size ? `?${from.query}` : ''}`, doc);
+    else if (out && !into) forgetBoard();
+  };
+}
+
+/**
+ * Back to the board: to the kept route and post, forgetting the place as it goes (the router's
+ * move out of the glass forgets it too). A thread is given what it showed and knew of, so it holds
+ * what came meanwhile behind its bar. On a page with no posts the scroll comes back once the page
+ * has drawn (restoreScroll).
  */
 export function useBackToBoard(): () => void {
   const navigate = useNavigate();
   return useCallback(() => {
     const place = boardPlace();
     forgetBoard();
-    navigate(backHref(place));
+    navigate(backHref(place), place?.thread ? { state: returnState(place.thread) } : undefined);
     if (place && !place.post && place.scrollY > 0) restoreScroll(window, place.scrollY);
   }, [navigate]);
 }

@@ -11,7 +11,8 @@
  * account and moves the address to the moment's route (web/src/data/fixtures/boards.ts). A story
  * (`?fixture=boards&story=<id>`) is the story route's, which main.tsx takes before it asks for a
  * backend, so one that reaches here is refused. Nothing else reads those parameters: the Supabase
- * branch returns before it looks at the address.
+ * branch returns before it looks at the address. The end-to-end build also leaves the demo's fake
+ * where a test can reach it (exposeFake, web/src/demo.ts), to play another player's part.
  */
 import type { KayfaApi } from '../../../engine/ui/data/api.ts';
 import { createSupabaseApi } from './supabase.ts';
@@ -40,13 +41,16 @@ export async function createBackend(): Promise<KayfaApi> {
     recordAvatarUploads(fake);
     return fake;
   }
-  const [{ createFake }, { instance }, { seedDemo, recordAvatarUploads }] = await Promise.all([
+  const [{ createFake }, { instance }, { seedDemo, recordAvatarUploads, exposeFake }] = await Promise.all([
     import('../../../engine/ui/data/fake.ts'),
     import('../../../instances/divided-world/index.ts'),
     import('../demo.ts'),
   ]);
   const fake = createFake({ instance, settings: fallbackSettings });
-  seedDemo(fake);
-  if (e2e) recordAvatarUploads(fake);
+  const demo = seedDemo(fake);
+  if (e2e) {
+    recordAvatarUploads(fake);
+    exposeFake(fake, demo);
+  }
   return fake;
 }
