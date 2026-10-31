@@ -117,6 +117,8 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 10 from ledger;
       -- The first settlement made with its shares kept (0037): every one here.
       insert into ledger_shares_kept (from_settlement) values (1);
+      -- A model call in the ledger (0041): the instance's own bookkeeping, carried across with the rest.
+      perform record_model_call('{"duty": "meeting", "staff": "director", "provider": "anthropic", "model": "claude-opus-5-5", "service_tier": "standard", "input_tokens": 1200, "output_tokens": 300, "cost_microdollars": 10800, "outcome": "rejected", "predicate": "atMost(6)", "trims": [{"path": "moves", "predicate": "atMost(6)", "before": 7, "after": 6}], "retries": 1}');
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
     end $$;

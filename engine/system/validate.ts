@@ -9,7 +9,8 @@
  * cannot be repaired without inventing content: a missing required field, a wrong type, a value
  * outside its enum, a list far over its bound (cutting twelve to six keeps the first six of a
  * thing the model never meant to be cut), a list under its minimum. Every rejection names the
- * predicate that failed, so the ledger says which bound cost a paid answer.
+ * predicate that failed, so the ledger says which bound cost a paid answer, and carries the trims
+ * made before it.
  *
  * `cutCompletion` is the same for a raw completion: cut at the first stop sequence or newline,
  * cap the length, and reject only empty output.
@@ -35,7 +36,7 @@ export type Rule =
 
 export type Repaired =
   | { readonly ok: true; readonly value: unknown; readonly trims: readonly Trim[] }
-  | { readonly ok: false; readonly path: string; readonly predicate: string };
+  | { readonly ok: false; readonly path: string; readonly predicate: string; readonly trims: readonly Trim[] };
 
 /** How far over its bound a list may be and still be trimmed; past it the model did not mean the bound. */
 export const TRIM_LIST_BY = 2;
@@ -45,7 +46,7 @@ type Step = { ok: true; value: unknown } | { ok: false; path: string; predicate:
 export function repair(value: unknown, rule: Rule): Repaired {
   const trims: Trim[] = [];
   const out = walk(value, rule, '', trims);
-  return out.ok ? { ok: true, value: out.value, trims } : { ok: false, path: out.path, predicate: out.predicate };
+  return out.ok ? { ok: true, value: out.value, trims } : { ok: false, path: out.path, predicate: out.predicate, trims };
 }
 
 function walk(value: unknown, rule: Rule, path: string, trims: Trim[]): Step {

@@ -1,5 +1,5 @@
 /**
- * The one way an Edge Function calls a model: `models(env)` builds the `Models` the meeting and
+ * The one way an Edge Function calls a model: `models(env, record)` builds the `Models` the meeting and
  * the tick take (engine/system/model.ts). Every call goes through it; it picks the adapter, retries
  * a transport failure, parses and repairs the answer, and prices the call from the usage block.
  *
@@ -8,17 +8,24 @@
  * most three times; a 4xx other than 429 is a fact about the request and is thrown at once. The
  * number of retries rides on the result.
  *
+ * Every call, whatever its end, writes one ledger row (ledger.ts) in a `finally`: used (`ok`), an
+ * answer that could not be used (`rejected`, with the predicate and the trims made before it), or
+ * anything else (`failed`). A call whose ledger write fails throws: an unrecorded call is the
+ * silent failure the ledger exists to prevent. If the call had failed too, its own error is the
+ * thrown one's `cause`.
+ *
  * Secrets come through `env`, an accessor passed in, and are never printed or put in an error.
  * A tier's model is an environment value for now (SYSTEM_MODEL_STRONG, SYSTEM_MODEL_LIGHT); the
  * instance setting that replaces it arrives with the system's settings.
  */
-import type { ChatRequest, CompletionRequest, ModelResult, Models, Tier, Usage } from '../../../../engine/system/model.ts';
+import type { CallContext, ChatRequest, CompletionRequest, ModelResult, Models, Tier, Usage } from '../../../../engine/system/model.ts';
 import { cutCompletion, repair } from '../../../../engine/system/validate.ts';
 import type { Trim } from '../../../../engine/system/validate.ts';
 import { anthropicChat } from './anthropic.ts';
 import { complete as completeOverHttp } from './completions.ts';
 import { PRICES, price } from './prices.ts';
 import type { PriceTable } from './prices.ts';
+import type { ModelCallRow, RecordModelCall } from './ledger.ts';
 import { TransportFailure } from './transport.ts';
 import type { Wire } from './transport.ts';
 
@@ -38,70 +45,123 @@ const DEFAULT_MODELS: Record<Tier, string> = { strong: 'claude-opus-5-5', light:
 /** At most this many retries after the first attempt. */
 export const MAX_RETRIES = 3;
 
-/** An answer that could not be used: the provider refused, or it was not JSON, or a bound could not be repaired. */
+/** An answer that could not be used: the provider refused, it was not JSON, or a bound could not be repaired. */
 export class AnswerRejected extends Error {
   readonly predicate: string;
-  readonly usage: Usage;
-  readonly model: string;
-  readonly retries: number;
-  readonly costMicrodollars: number;
-  constructor(message: string, predicate: string, call: { usage: Usage; model: string; retries: number; costMicrodollars: number }) {
+  constructor(message: string, predicate: string) {
     super(message);
     this.predicate = predicate;
-    this.usage = call.usage;
-    this.model = call.model;
-    this.retries = call.retries;
-    this.costMicrodollars = call.costMicrodollars;
   }
 }
 
-export function models(env: Env, options: ModelOptions = {}): Models {
+/** The ledger could not be written; the call it was for is not trusted. */
+export class LedgerWriteFailed extends Error {}
+
+/** What a call has learned so far, which is what its row says if it ends there. */
+interface Call {
+  provider: string;
+  model: string;
+  usage: Usage;
+  retries: number;
+  costMicrodollars: number;
+  trims: readonly Trim[];
+  outcome: ModelCallRow['outcome'];
+  predicate: string | null;
+}
+
+export function models(env: Env, record: RecordModelCall, options: ModelOptions = {}): Models {
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const wire: Wire = { fetch: options.fetch ?? globalThis.fetch, timeoutMs: options.timeoutMs ?? 60_000, now: options.now ?? Date.now };
   const tables = (provider: string): PriceTable | undefined => options.prices?.[provider] ?? (PRICES as Record<string, PriceTable>)[provider];
 
-  /** One request, retried on a transport failure. */
-  async function withRetries<T>(attempt: () => Promise<T>): Promise<{ result: T; retries: number }> {
-    for (let retries = 0; ; retries++) {
+  /** One request, retried on a transport failure; the retries spent are on the call even if it fails. */
+  async function withRetries<T>(call: Call, attempt: () => Promise<T>): Promise<T> {
+    for (;;) {
       try {
-        return { result: await attempt(), retries };
+        return await attempt();
       } catch (e) {
-        if (!(e instanceof TransportFailure) || retries >= MAX_RETRIES) throw e;
-        await sleep(250 * 2 ** retries);
+        if (!(e instanceof TransportFailure) || call.retries >= MAX_RETRIES) throw e;
+        await sleep(250 * 2 ** call.retries);
+        call.retries++;
       }
     }
   }
 
-  return {
-    async chat(request: ChatRequest): Promise<ModelResult<unknown>> {
-      const key = env('ANTHROPIC_API_KEY');
-      if (!key) throw new Error('ANTHROPIC_API_KEY is not set');
-      const model = env(request.tier === 'strong' ? 'SYSTEM_MODEL_STRONG' : 'SYSTEM_MODEL_LIGHT') ?? DEFAULT_MODELS[request.tier];
-      const { result: raw, retries } = await withRetries(() => anthropicChat(request, model, key, wire));
-      const costMicrodollars = price('anthropic', raw.model, raw.usage, tables('anthropic'));
-      const call = { usage: raw.usage, model: raw.model, retries, costMicrodollars };
-      if (raw.stopReason === 'refusal') throw new AnswerRejected('the model refused', 'refusal', call);
-      let parsed: unknown;
-      try { parsed = JSON.parse(raw.text); } catch { throw new AnswerRejected(raw.stopReason === 'max_tokens' ? 'the answer was cut off by its token cap' : 'the answer is not JSON', 'validJson', call); }
-      let trims: readonly Trim[] = [];
-      if (request.rules) {
-        const fixed = repair(parsed, request.rules);
-        if (!fixed.ok) throw new AnswerRejected(`the answer failed ${fixed.predicate} at ${fixed.path || 'the top'}`, fixed.predicate, call);
-        parsed = fixed.value;
-        trims = fixed.trims;
+  /** Runs one call and writes its row, whatever its end. */
+  async function ledgered<T>(request: CallContext & { duty: string }, first: { provider: string; model: string }, run: (call: Call) => Promise<T>): Promise<T> {
+    const call: Call = { ...first, usage: {}, retries: 0, costMicrodollars: 0, trims: [], outcome: 'failed', predicate: null };
+    let failure: unknown;
+    let threw = false;
+    try {
+      const result = await run(call);
+      call.outcome = 'ok';
+      return result;
+    } catch (e) {
+      threw = true;
+      failure = e;
+      if (e instanceof AnswerRejected) { call.outcome = 'rejected'; call.predicate = e.predicate; }
+      throw e;
+    } finally {
+      const u = call.usage;
+      try {
+        await record({
+          duty: request.duty, staff: request.staff ?? null, provider: call.provider, model: call.model, serviceTier: u.serviceTier ?? null,
+          inputTokens: u.inputTokens ?? null, outputTokens: u.outputTokens ?? null, cacheReadTokens: u.cacheReadTokens ?? null,
+          cacheWrite5mTokens: u.cacheWrite5mTokens ?? null, cacheWrite1hTokens: u.cacheWrite1hTokens ?? null, gpuSeconds: u.gpuSeconds ?? null,
+          costMicrodollars: call.costMicrodollars, outcome: call.outcome, predicate: call.predicate, trims: call.trims, retries: call.retries, meeting: request.meeting ?? null,
+        });
+      } catch (e) {
+        throw new LedgerWriteFailed(`the model call could not be recorded in the ledger: ${e instanceof Error ? e.message : String(e)}`, threw ? { cause: failure } : { cause: e });
       }
-      return { value: parsed, usage: raw.usage, provider: 'anthropic', model: raw.model, trims, retries, costMicrodollars };
+    }
+  }
+
+  /** Prices a call from its usage block, or marks it unpriced and throws naming the model. */
+  function priced(call: Call, provider: string): void {
+    try {
+      call.costMicrodollars = price(provider, call.model, call.usage, tables(provider));
+    } catch (e) {
+      call.predicate = 'unpriced';
+      throw e;
+    }
+  }
+
+  return {
+    chat(request: ChatRequest): Promise<ModelResult<unknown>> {
+      const model = env(request.tier === 'strong' ? 'SYSTEM_MODEL_STRONG' : 'SYSTEM_MODEL_LIGHT') ?? DEFAULT_MODELS[request.tier];
+      return ledgered(request, { provider: 'anthropic', model }, async (call) => {
+        const key = env('ANTHROPIC_API_KEY');
+        if (!key) throw new Error('ANTHROPIC_API_KEY is not set');
+        const raw = await withRetries(call, () => anthropicChat(request, model, key, wire));
+        call.model = raw.model;
+        call.usage = raw.usage;
+        priced(call, 'anthropic');
+        if (raw.stopReason === 'refusal') throw new AnswerRejected('the model refused', 'refusal');
+        let parsed: unknown;
+        try { parsed = JSON.parse(raw.text); } catch { throw new AnswerRejected(raw.stopReason === 'max_tokens' ? 'the answer was cut off by its token cap' : 'the answer is not JSON', 'validJson'); }
+        if (request.rules) {
+          const fixed = repair(parsed, request.rules);
+          call.trims = fixed.trims;
+          if (!fixed.ok) throw new AnswerRejected(`the answer failed ${fixed.predicate} at ${fixed.path || 'the top'}`, fixed.predicate);
+          parsed = fixed.value;
+        }
+        return { value: parsed, usage: raw.usage, provider: 'anthropic', model: raw.model, trims: call.trims, retries: call.retries, costMicrodollars: call.costMicrodollars };
+      });
     },
 
-    async complete(request: CompletionRequest): Promise<ModelResult<string>> {
-      const url = env('SYSTEM_COMPLETIONS_URL');
-      if (!url) throw new Error('SYSTEM_COMPLETIONS_URL is not set');
-      const { result: raw, retries } = await withRetries(() => completeOverHttp(request, url, env('SYSTEM_COMPLETIONS_KEY') || undefined, env('SYSTEM_COMPLETIONS_MODEL') ?? 'default', wire));
-      const costMicrodollars = price('completions', raw.model, raw.usage, tables('completions'));
-      const call = { usage: raw.usage, model: raw.model, retries, costMicrodollars };
-      const cut = cutCompletion(raw.text, request.stop, request.maxChars ?? request.maxTokens * 6);
-      if (!cut.ok) throw new AnswerRejected('the completion is empty', cut.predicate, call);
-      return { value: cut.text, usage: raw.usage, provider: 'completions', model: raw.model, trims: cut.trims, retries, costMicrodollars };
+    complete(request: CompletionRequest): Promise<ModelResult<string>> {
+      return ledgered(request, { provider: 'completions', model: 'self-hosted' }, async (call) => {
+        const url = env('SYSTEM_COMPLETIONS_URL');
+        if (!url) throw new Error('SYSTEM_COMPLETIONS_URL is not set');
+        const raw = await withRetries(call, () => completeOverHttp(request, url, env('SYSTEM_COMPLETIONS_KEY') || undefined, env('SYSTEM_COMPLETIONS_MODEL') ?? 'default', wire));
+        call.model = raw.model;
+        call.usage = raw.usage;
+        priced(call, 'completions');
+        const cut = cutCompletion(raw.text, request.stop, request.maxChars ?? request.maxTokens * 6);
+        if (!cut.ok) throw new AnswerRejected('the completion is empty', cut.predicate);
+        call.trims = cut.trims;
+        return { value: cut.text, usage: raw.usage, provider: 'completions', model: raw.model, trims: cut.trims, retries: call.retries, costMicrodollars: call.costMicrodollars };
+      });
     },
   };
 }

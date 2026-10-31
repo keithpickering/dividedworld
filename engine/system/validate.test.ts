@@ -26,7 +26,7 @@ test('a list two over is trimmed too; twelve is rejected naming atMost(6), never
   const eight = repair({ ...good, moves: Array.from({ length: 8 }, (_, i) => String(i)) }, rules);
   assert.equal(eight.ok, true);
   const twelve = repair({ ...good, moves: Array.from({ length: 12 }, (_, i) => String(i)) }, rules);
-  assert.deepEqual(twelve, { ok: false, path: 'moves', predicate: 'atMost(6)' });
+  assert.deepEqual(twelve, { ok: false, path: 'moves', predicate: 'atMost(6)', trims: [] });
 });
 
 test('a string over its length is cut, and the cut is recorded with the path', () => {
@@ -39,13 +39,18 @@ test('a string over its length is cut, and the cut is recorded with the path', (
 
 test('a missing required field is rejected, never filled', () => {
   const r = repair({ moves: [] }, rules);
-  assert.deepEqual(r, { ok: false, path: 'verdict', predicate: 'required' });
+  assert.deepEqual(r, { ok: false, path: 'verdict', predicate: 'required', trims: [] });
 });
 
 test('a wrong type and a value outside an enum are rejected naming the predicate', () => {
-  assert.deepEqual(repair({ ...good, moves: 'nope' }, rules), { ok: false, path: 'moves', predicate: 'isList' });
-  assert.deepEqual(repair({ ...good, verdict: 'maybe' }, rules), { ok: false, path: 'verdict', predicate: 'oneOf(upheld, overturned)' });
-  assert.deepEqual(repair('text', rules), { ok: false, path: '', predicate: 'isObject' });
+  assert.deepEqual(repair({ ...good, moves: 'nope' }, rules), { ok: false, path: 'moves', predicate: 'isList', trims: [] });
+  assert.deepEqual(repair({ ...good, verdict: 'maybe' }, rules), { ok: false, path: 'verdict', predicate: 'oneOf(upheld, overturned)', trims: [] });
+  assert.deepEqual(repair('text', rules), { ok: false, path: '', predicate: 'isObject', trims: [] });
+});
+
+test('a rejection keeps the trims made before it, so the ledger row can say both', () => {
+  const r = repair({ moves: ['1', '2', '3', '4', '5', '6', '7'] }, rules);
+  assert.deepEqual(r, { ok: false, path: 'verdict', predicate: 'required', trims: [{ path: 'moves', predicate: 'atMost(6)', before: 7, after: 6 }] });
 });
 
 test('an optional field may be absent; the input is never changed in place', () => {
@@ -57,7 +62,7 @@ test('an optional field may be absent; the input is never changed in place', () 
 
 test('a list under its minimum is rejected, not padded', () => {
   const r = repair({ moves: [] }, { type: 'object', fields: { moves: { type: 'list', min: 1, of: { type: 'string' } } } });
-  assert.deepEqual(r, { ok: false, path: 'moves', predicate: 'atLeast(1)' });
+  assert.deepEqual(r, { ok: false, path: 'moves', predicate: 'atLeast(1)', trims: [] });
 });
 
 test('a completion is cut at the first stop sequence, and at a newline', () => {
