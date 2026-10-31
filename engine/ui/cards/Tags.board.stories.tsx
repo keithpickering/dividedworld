@@ -5,9 +5,9 @@
  * and its `Phone` twin at 390 by 844.
  *
  * #41 carries the fixture's one play. The others are handed to the fake through its seed before the thread is read, so
- * the page bills them as a page read does: the fixture's play has drawn the most (the instance's first two reactions,
- * six and two), the next (a card other than #41's, by #45's author) has drawn two of the third, and the newest (another
- * of #41's card, by #44's author) none. The story names no instance: the casters
+ * the page bills them as a page read does. The fixture's play has drawn the most: six of the instance's first reaction
+ * and two of its second. The next is a card other than #41's, played by #45's author, and has drawn two of the third
+ * reaction. The newest is another of #41's card, played by #44's author, and has drawn none. The story names no instance: the casters
  * are the authors of the posts around #41, the cards are the instance's own in its order, and the reactions its own.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -36,7 +36,7 @@ function useSeeded(thread: string | null, count: Count): boolean {
       const by = (seq: number) => acts.find((a) => a.seq === seq)?.character ?? null;
       const target = acts.find((a) => a.seq === 41);
       const [first] = target ? await api.cardsOn(target.id, 1) : [];
-      if (!target || !first) return;
+      if (!target || !first) throw new Error('the boards fixture has no #41, or no play on it');
       /* The other plays alternate between a card that is not #41's and #41's own, so the newest is another of the fixture's card. */
       const other = instance.cards.map((c) => c.key).find((k) => k !== first.payload.card) ?? String(first.payload.card);
       const card = (i: number) => (i % 2 === 0 ? other : String(first.payload.card));
@@ -55,13 +55,14 @@ function useSeeded(thread: string | null, count: Count): boolean {
       const casters = [by(45), by(44), by(43), by(42), by(45)];
       for (let i = 0; i < count - 1; i++) {
         const caster = casters[i];
-        if (!caster) continue;
+        if (!caster) throw new Error('the boards fixture has no author for a post around #41');
         fake.clock.advance(MINUTE);
         const played = fake.seed.card(caster, target.id, card(i), { layer: 2 + i, message: i === 0 ? 'stay a while' : '' });
         if (i === 0) react(played, kinds[2], 2);
       }
       if (live) setReady(true);
-    })();
+      /* A seed the fake refuses leaves the story loading (aria-busy), and says why, rather than showing fewer plays than its name. */
+    })().catch((e: unknown) => { console.error('the plays-on-a-post story could not be seeded', e); });
     return () => { live = false; };
   }, [api, instance, thread, count]);
   return ready;
@@ -71,6 +72,7 @@ function useSeeded(thread: string | null, count: Count): boolean {
 function Open({ which }: { readonly which: Opened }) {
   useEffect(() => {
     if (which === 'none') return;
+    let then: ReturnType<typeof setTimeout> | null = null;
     const timer = setInterval(() => {
       const list = document.querySelector('#post-41 [aria-label="Cards played on this post"]');
       const button = list?.querySelector<HTMLButtonElement>(which === 'tag' ? '.kb-play-tag' : '.kb-play-chip, .kb-play-more');
@@ -79,10 +81,10 @@ function Open({ which }: { readonly which: Opened }) {
       /* At the phone's width the chips are folded: "+N more" opens them first. */
       if (button.classList.contains('kb-play-more')) {
         button.click();
-        setTimeout(() => list?.querySelector<HTMLButtonElement>('.kb-play-chip')?.click(), 50);
+        then = setTimeout(() => list?.querySelector<HTMLButtonElement>('.kb-play-chip')?.click(), 50);
       } else button.click();
     }, 100);
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); if (then !== null) clearTimeout(then); };
   }, [which]);
   return null;
 }

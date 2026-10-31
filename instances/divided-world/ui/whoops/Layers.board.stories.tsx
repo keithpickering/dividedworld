@@ -28,6 +28,7 @@ type Washed = 'none' | 'partly' | 'bottom-clean';
 /* Strokes across the top band of the layout, a brush apart: enough to wash part of a splat, never all of it. */
 const PARTLY = Array.from({ length: 14 }, (_, i) => ({ tool: 'wash' as const, width: BRUSH, points: [[0, 0.1 + i * BRUSH * 0.7], [1, 0.1 + i * BRUSH * 0.7]] }));
 
+/** Hand #41 its layers and their washes, then say it is ready to be read. */
 function useSeeded(thread: string | null, layers: Layers, washed: Washed): boolean {
   const { api } = useKayfa();
   const [ready, setReady] = useState(layers === 1 && washed === 'none');
@@ -42,7 +43,7 @@ function useSeeded(thread: string | null, layers: Layers, washed: Washed): boole
       const [bottom] = target ? await api.cardsOn(target.id, 1) : [];
       const spritey = target?.character ?? null;
       const gloomba = by(45);
-      if (!target || !bottom || !spritey || !gloomba) return;
+      if (!target || !bottom || !spritey || !gloomba) throw new Error('the boards fixture has no #41 with its play, or no #45');
       let top = bottom.id;
       if (layers === 3) {
         fake.clock.advance(MINUTE);
@@ -52,10 +53,12 @@ function useSeeded(thread: string | null, layers: Layers, washed: Washed): boole
         fake.clock.advance(MINUTE);
         top = fake.seed.card(spritey, target.id, 'whoops', { layer: layers, config: { color: YELLOW, seed: 303 }, message: 'two can play' });
       }
-      if (washed === 'partly') await api.saveEffect(top, spritey, { strokes: PARTLY });
-      if (washed === 'bottom-clean') await api.saveEffect(bottom.id, spritey, { strokes: [], clean: true });
+      const saved = washed === 'partly' ? await api.saveEffect(top, spritey, { strokes: PARTLY })
+        : washed === 'bottom-clean' ? await api.saveEffect(bottom.id, spritey, { strokes: [], clean: true }) : null;
+      if (saved && !saved.ok) throw new Error(`the wash was refused: ${saved.error}`);
       if (live) setReady(true);
-    })();
+      /* A seed or a wash refused leaves the story loading (aria-busy), and says why, rather than drawing a state its name does not. */
+    })().catch((e: unknown) => { console.error('the Whoops! layers story could not be seeded', e); });
     return () => { live = false; };
   }, [api, thread, layers, washed]);
   return ready;
@@ -65,7 +68,7 @@ function useSeeded(thread: string | null, layers: Layers, washed: Washed): boole
 function Look() {
   useEffect(() => {
     const timer = setInterval(() => {
-      const el = document.querySelector('#post-41 .kb-effect-strip') ?? null;
+      const el = document.querySelector('#post-41 .kb-effect-strip');
       if (!el) return;
       clearInterval(timer);
       el.scrollIntoView?.({ block: 'center' });
