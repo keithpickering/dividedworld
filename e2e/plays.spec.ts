@@ -158,6 +158,37 @@ test.describe('the ghost mark and the edge', () => {
  * (`data-kb-lens="under"`, kept in the window); that it then covers the post's own words is the plan's gap, reported with Task 8. On a
  * phone it is a sheet, which the first describe above measures inside the window.
  */
+/*
+ * The Lens's type is the glass's at its smallest step, so the post's own 12px words are never out-shouted (the design's section 2): it is
+ * 340px wide, its body is the label step (20px, 18px of ink in the glass's face), its names the display face's smallest step, and a kit
+ * tile is a 36px target, not a slab. Each row carries its play's ink as a left bar, and its note stands above its caster.
+ */
+test.describe('the Lens\'s size and rows at 1920', () => {
+  test.use({ viewport: { width: 1920, height: 1080 } });
+
+  test('is 340px wide in the label step, with 36px tiles, ink bars on its rows and each note above its caster', async ({ page }) => {
+    await page.goto('/?fixture=boards&story=boards-01-lens--lens-author-whoops-who');
+    const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+    await expect(lens).toBeVisible();
+    expect((await lens.boundingBox())!.width).toBeCloseTo(340, 0);
+    expect(await lens.evaluate((el) => getComputedStyle(el).fontSize)).toBe('20px');
+    for (const h of await lens.locator('.kb-kit-tile').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))) expect(h).toBeLessThanOrEqual(40);
+    const rows = lens.locator('.kb-lens-row');
+    await expect(rows).toHaveCount(3);
+    const bars = await rows.evaluateAll((els) => els.map((el) => getComputedStyle(el).borderLeftColor));
+    expect(new Set(bars).size, 'each layer\'s ink is its own bar').toBe(3);
+    for (const y of await rows.evaluateAll((els) => els.map((el) => [el.querySelector('.kb-lens-note')!.getBoundingClientRect().top, el.querySelector('.kb-lens-by')!.getBoundingClientRect().top]))) expect(y[0]).toBeLessThan(y[1]!);
+  });
+
+  test('the first-time callout stands aside while the Lens is open on its post', async ({ page }) => {
+    await page.goto('/?fixture=boards&story=boards-01-lens--lens-whoops');
+    await expect(page.getByRole('dialog', { name: 'Cards on this post' })).toBeVisible();
+    await expect(page.locator('#post-41 [role="note"]')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#post-41 [role="note"]')).toHaveCount(1);
+  });
+});
+
 for (const [name, story] of [['Whoops!', 'boards-01-lens--lens-whoops-who'], ['Stick Around', 'boards-01-lens--lens-stick-around-who'], ['the author\'s Whoops!', 'boards-01-lens--lens-author-whoops-who']] as const) {
   test.describe(`the Lens on ${name}, Who unfolded, at 1920`, () => {
     test.use({ viewport: { width: 1920, height: 1080 } });

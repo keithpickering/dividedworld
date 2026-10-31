@@ -10,14 +10,15 @@
   --kb-lens-ink-text: var(--kb-glass-neon-text);
   --kb-cut: var(--kb-glass-chamfer-3);
   --kb-border: 1px;
-  width: 420px;
+  width: 340px;
   max-width: 100%;
-  padding: 10px 16px 14px;
+  padding: 8px 14px 12px;
   background: var(--kb-lens-ink);
   color: var(--kb-glass-text);
   font-family: var(--kb-glass-font-body);
-  font-size: var(--kb-glass-size-body);
-  line-height: 1.3;
+  /* The glass's smallest step (label, 20px: 18px of ink in its face, the floor): a Lens never out-shouts the post's own 12px words. */
+  font-size: var(--kb-glass-size-label);
+  line-height: 1.25;
 }
 
 .kb-glass-dialog.kb-lens[data-kb-alignment="salty"] {
@@ -50,9 +51,9 @@
 
 .kb-lens-tab {
   flex: none;
-  min-height: 44px;
+  min-height: 40px;
   margin: 0;
-  padding: 0 12px;
+  padding: 0 10px;
   border: 0;
   border-bottom: 3px solid transparent;
   background: transparent;
@@ -76,13 +77,13 @@
 .kb-lens-close {
   --kb-cut: var(--kb-glass-chamfer-1);
   flex: none;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 12px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
   border: 0;
   color: var(--kb-glass-text-hi);
   font: inherit;
-  font-size: var(--kb-glass-size-lead);
+  font-size: var(--kb-glass-size-label);
   cursor: pointer;
 }
 
@@ -92,7 +93,7 @@
 }
 
 .kb-lens-section {
-  margin-top: 0.7rem;
+  margin-top: 0.5rem;
 }
 
 .kb-lens-state p {
@@ -119,7 +120,7 @@
   align-items: baseline;
   gap: 0.5rem;
   width: 100%;
-  min-height: 44px;
+  min-height: 40px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -141,9 +142,12 @@
   list-style: none;
 }
 
+/* Each play's ink is the bar at its row's left edge (the marks' ink; with none, the card's). */
 .kb-lens-row {
-  padding: 0.6rem 0;
+  --kb-play-ink: var(--kb-lens-ink);
+  padding: 0.5rem 0 0.5rem 10px;
   border-top: 1px solid color-mix(in srgb, var(--kb-lens-ink) 55%, transparent);
+  border-left: 8px solid var(--kb-play-ink);
 }
 
 .kb-lens-by {
@@ -153,7 +157,7 @@
 
 .kb-lens-who {
   color: var(--kb-lens-ink-text);
-  font-size: var(--kb-glass-size-lead);
+  font-size: var(--kb-glass-size-display-xs);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -161,28 +165,32 @@
 .kb-lens-message {
   margin: 0 0 0.6rem;
   color: var(--kb-glass-text-hi);
-  font-size: 1.15em;
   overflow-wrap: anywhere;
 }
 
 .kb-lens-note,
 .kb-lens-more,
 .kb-lens-yours {
-  margin: 0 0 0.6rem;
+  margin: 0 0 0.4rem;
   color: var(--kb-glass-text);
   font-weight: 700;
+}
+
+/* A play's note stands above its caster, as the mockup's `.play .note` does. */
+.kb-lens-note {
+  letter-spacing: 0.06em;
 }
 
 .kb-lens-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-top: 0.8rem;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
 }
 
 .kb-lens-action {
   min-height: 44px;
-  padding: 0.2rem 0.9rem;
+  padding: 0.2rem 0.8rem;
   border: 0;
   color: var(--kb-glass-neon-text);
   font: inherit;
@@ -222,4 +230,10 @@
   .kb-lens-tab[aria-selected="true"] {
     border-bottom-color: Highlight;
   }
+}
+
+/* The kit's tiles in the Lens are the mockup's small buttons: the label step's type at a 36px target, not the 44px slab. */
+.kb-lens .kb-kit-tile {
+  min-height: 36px;
+  padding: 0.1rem 0.8rem;
 }

@@ -140,6 +140,34 @@ describe('the first-time callout', () => {
     await waitFor(() => expect(tips()).toHaveLength(1));
   });
 
+  test('while a Lens is open on its post the callout is hidden, and it comes back when the Lens closes, unless met', async () => {
+    const w = world();
+    w.play('k1', w.second); w.play('k2', w.second);
+    open(w, hinted);
+    await waitFor(() => expect(tips()).toHaveLength(1));
+    const marks = [screen.getByRole('button', { name: /^Card 1, 1 play/u }), screen.getByRole('button', { name: /^Card 2, 1 play/u })];
+    const described = () => marks.filter((m) => m.hasAttribute('aria-describedby'));
+    expect(described()).toHaveLength(1);
+    /* The Lens opens from the kind that holds no callout: the other kind's callout is hidden all the same, since it is the post's Lens. */
+    await userEvent.click(marks.find((m) => !described().includes(m))!);
+    expect(screen.getByRole('dialog', { name: 'Cards on this post' })).toBeInTheDocument();
+    expect(tips()).toHaveLength(0);
+    expect(described()).toHaveLength(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(tips()).toHaveLength(1));
+    expect(described()).toHaveLength(1);
+    /* Met, a kind does not come back with the Lens: the next kind's callout stands in its place. */
+    const was = described()[0]!;
+    await userEvent.click(screen.getByRole('button', { name: 'Got it' }));
+    await waitFor(() => expect(described()).toHaveLength(1));
+    expect(described()[0]).not.toBe(was);
+    await userEvent.click(was);
+    expect(tips()).toHaveLength(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(tips()).toHaveLength(1));
+    expect(described()[0]).not.toBe(was);
+  });
+
   test('"Got it" gives focus back to the mark', async () => {
     const w = world();
     w.play('k1', w.second);

@@ -69,10 +69,12 @@ interface MarkProps {
   /** Whether to compare the plays' reactions with the post's: not where the post's tally is not read (the ORIGIN box of a card play). */
   readonly compare: boolean;
   readonly expanded: boolean;
+  /** A Lens is open on this post (on any of its kinds): the callout stands aside while it is, and returns when it closes, unless met. */
+  readonly lensOpen: boolean;
   readonly onOpen: Open;
 }
 
-const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, onOpen }: MarkProps) {
+const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen }: MarkProps) {
   const { instance, ui } = useKayfa();
   const rules = instance.cards.find((c) => c.key === kind);
   const cardUi = ui.cards.find((c) => c.key === kind);
@@ -91,7 +93,8 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
     ...(progress === null ? {} : { '--kb-mark-progress': progress }),
   } as CSSProperties;
   const button = useRef<HTMLButtonElement>(null);
-  const callout = useCallout(kind, cardUi?.hint, button);
+  const chosen = useCallout(kind, cardUi?.hint, button);
+  const callout = lensOpen ? null : chosen;
   return (
     <>
     <button
@@ -194,7 +197,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, co
   return (
     <span className="kb-marks" ref={strip}>
       {shown.map((kind) => (
-        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} onOpen={press} />
+        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} />
       ))}
       {hidden.length > 0 && <More hidden={hidden.length} first={hidden[0]!} expanded={open !== null && hidden.includes(open)} onOpen={press} />}
       {ghost && !hosted && <GhostMark act={ghost} />}

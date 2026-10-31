@@ -260,6 +260,20 @@ describe('what the Lens says and offers', () => {
     expect(within(row).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
   });
 
+  test('a row carries its play\'s ink as a bar, and its note stands above its caster', async () => {
+    width(false);
+    const w = world();
+    const first = w.play('k1', w.spritey, w.second, 1);
+    open(w, cards.map((c) => (c.key === 'k1' ? { ...c, tag: () => '#ff9f43' } : c)));
+    await userEvent.click(await markOf(2, 'Card 1'));
+    await userEvent.click(whoButton());
+    const row = lens().querySelector<HTMLElement>(`[data-kb-play="${first}"]`)!;
+    expect(row.style.getPropertyValue('--kb-play-ink')).toBe('#ff9f43');
+    const note = row.querySelector('.kb-lens-note')!;
+    const by = row.querySelector('.kb-lens-by')!;
+    expect(note.compareDocumentPosition(by) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   test('a play with more public reactions than its post says so, in words that are not the settlement\'s', async () => {
     width(false);
     const w = world();

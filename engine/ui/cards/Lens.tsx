@@ -166,6 +166,8 @@ function Spun({ play }: { readonly play: Id }) {
 interface RowProps {
   readonly play: CardPlay;
   readonly caster: string;
+  /** The play's ink (`CardUi.tag`), drawn as the bar at the row's left edge where the card chooses one. */
+  readonly ink?: string | undefined;
   readonly card: string;
   readonly view: CardView;
   readonly tallies: Tallies;
@@ -183,7 +185,7 @@ interface RowProps {
  * nothing here says a play "outdraws" anything, or that anyone won. The reader's own play says "Your play" in place of React
  * (decided on the reader's screen from their own characters, as the post's reactions decide it).
  */
-function PlayRow({ play, caster, card, view, tallies, mine, compare, to, onSpin }: RowProps) {
+function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, onSpin }: RowProps) {
   const { characters } = usePlayer();
   const name = playName(caster, card);
   const note = view.notes[play.id];
@@ -192,10 +194,10 @@ function PlayRow({ play, caster, card, view, tallies, mine, compare, to, onSpin 
   /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
   const hosted = useLensHost() !== document.body;
   return (
-    <li className="kb-lens-row" data-kb-play={play.id}>
+    <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
+      {note && <p className="kb-lens-note kb-calm">{note}</p>}
       <p className="kb-lens-by kb-calm"><span className="kb-lens-who kb-glass-display">{caster}</span> · played <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
-      {note && <p className="kb-lens-note kb-calm">{note}</p>}
       {more && <p className="kb-lens-more">More reactions than the post</p>}
       {yours && <p className="kb-lens-yours">Your play</p>}
       <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} look="glass" />
@@ -213,7 +215,9 @@ function PlayRow({ play, caster, card, view, tallies, mine, compare, to, onSpin 
 const NAMES_SHOWN = 3;
 
 /** Whether Who is unfolded is the Lens's, so it stays as it is when the tab changes and starts folded with the next Lens. */
-function Who({ plays, nameOf, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster'> & {
+function Who({ plays, nameOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster' | 'ink'> & {
+  /** The ink of each play, as the marks draw it. */
+  readonly inkOfPlay: (play: CardPlay) => string | undefined;
   readonly plays: readonly CardPlay[]; readonly nameOf: (character: Id | null) => string; readonly unfolded: boolean; readonly onToggle: () => void;
 }) {
   const id = useId();
@@ -227,7 +231,7 @@ function Who({ plays, nameOf, card, unfolded, onToggle, ...row }: Omit<RowProps,
         {playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}
       </button>
       <ul id={id} className="kb-lens-rows" hidden={!unfolded}>
-        {unfolded && plays.map((p) => <PlayRow key={p.id} {...row} card={card} play={p} caster={nameOf(p.caster)} />)}
+        {unfolded && plays.map((p) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} />)}
       </ul>
     </div>
   );
@@ -369,7 +373,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         <Who
-          plays={rowPlays} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to}
+          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder))} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />
       </div>
