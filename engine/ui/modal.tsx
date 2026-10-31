@@ -100,8 +100,14 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
       open.current = false;
       stack.splice(stack.indexOf(entry), 1);
       settle();
-      /* After the commit that closes it: the control that opened it may be replaced by that same commit. */
+      /*
+       * After the commit that closes it: the control that opened it may be replaced by that same commit. Only where focus
+       * fell to the page, as it does when what held it leaves with the dialog: a control the same commit opened and
+       * focused (a play's panel closes as the spin form it asked for opens) keeps it.
+       */
       queueMicrotask(() => {
+        const now = document.activeElement;
+        if (now && now !== document.body && now.isConnected) return;
         if (opener?.isConnected && opener !== document.body) opener.focus();
         else latest.current.returnFocusTo?.()?.focus();
       });

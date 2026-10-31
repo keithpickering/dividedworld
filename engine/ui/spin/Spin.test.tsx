@@ -325,6 +325,36 @@ describe('the ORIGIN box', () => {
     expect([...box.querySelectorAll('[data-kb-play]')].map((el) => el.getAttribute('data-kb-play'))).toEqual([late, early]);
   });
 
+  test('a play\'s panel in the box leads back to the post it landed on, and spins from the play in a form under the box', async () => {
+    const w = threadWorld(3);
+    const play = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    const spin = vi.spyOn(w.fake, 'spin');
+    openSpun(w, spun);
+    const box = await origin();
+    const tag = await within(box).findByRole('button', { name: 'Whoops! by Spritey, no reactions. Opens the play.' });
+    await userEvent.click(tag);
+    const panel = screen.getByRole('dialog', { name: 'Whoops! by Spritey' });
+    expect(within(panel).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
+    await userEvent.click(within(panel).getByRole('button', { name: 'Spin thread' }));
+    const form = screen.getByRole('form', { name: 'Spin a thread from Spritey\'s Whoops!' });
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'About the oops');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(spin).toHaveBeenCalledWith(play, w.pipe, 'About the oops', ''));
+  });
+
+  test('a spin of a card Act draws the play as its quiet tag, whose panel goes to the post the play landed on', async () => {
+    const w = threadWorld(3);
+    const card = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const fromCard = await spinFrom(w, card, 'About that card');
+    openSpun(w, fromCard);
+    const box = await origin();
+    await userEvent.click(await within(box).findByRole('button', { name: 'Whoops! by Spritey, no reactions. Opens the play.' }));
+    const panel = screen.getByRole('dialog', { name: 'Whoops! by Spritey' });
+    expect(panel.querySelector('blockquote')).toHaveTextContent('“oops”');
+    await waitFor(() => expect(within(panel).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`));
+  });
+
   test('lists at most twenty card plays and says where the rest are', async () => {
     const w = threadWorld(3);
     for (let i = 0; i < 22; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });

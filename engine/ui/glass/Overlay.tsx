@@ -24,7 +24,7 @@
  * Close and Esc put them and cannot reach it until they do. A bar scrolled out of the window is not
  * made room for. Nested overlays share one dimming: the bar is lit again when the last one closes.
  */
-import { useId, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
+import { useId, useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
@@ -62,6 +62,10 @@ export interface OverlayProps {
   readonly className?: string;
   /** A line over the title that says where the overlay is ("My characters › Turn"); not part of its name. */
   readonly kicker?: ReactNode;
+  /** The dialog's own style over its smoke's (a play's panel sets its card's ink, `--kb-tag`). */
+  readonly style?: CSSProperties;
+  /** The dialog's own data attributes, by their names after `data-` (a play's panel says its card, its alignment and whether it is a sheet). */
+  readonly data?: Readonly<Record<string, string | undefined>>;
 }
 
 /* The overlays open now, so the menu bar is dimmed while any is and lit when the last one closes. */
@@ -114,7 +118,7 @@ function place(box: HTMLElement, anchor: HTMLElement, sheetBelow: number): Place
   return p.side;
 }
 
-export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', anchor, sheetBelow = 0, onPlace, className, kicker }: OverlayProps) {
+export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', anchor, sheetBelow = 0, onPlace, className, kicker, style, data }: OverlayProps) {
   const id = useId();
   const { overlay, box, closeButton } = useModalLayer({ onClose, returnFocusTo });
   const calm = useSurfaceStyle(surface);
@@ -181,7 +185,8 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
       <div
         ref={box} className={`kb-glass-dialog kb-glass-cut-dialog${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true"
         aria-labelledby={label === undefined ? id : undefined} aria-label={label} aria-describedby={describedBy} tabIndex={-1}
-        style={{ ...calm, ...(anchor ? { position: 'absolute' } : {}) }}
+        style={{ ...calm, ...style, ...(anchor ? { position: 'absolute' } : {}) }}
+        {...Object.fromEntries(Object.entries(data ?? {}).map(([k, v]) => [`data-${k}`, v]))}
       >
         <Smoke surface={surface} />
         <div className="kb-glass-dialog-bar">

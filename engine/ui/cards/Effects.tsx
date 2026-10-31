@@ -29,6 +29,7 @@ import { usePlayer } from '../player.tsx';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import type { Mine } from '../reactions/mine.ts';
 import { useTally, type Tallies } from '../thread/tallies.ts';
+import { PlayPanel } from './Panel.tsx';
 import { usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, EffectPlace, EffectProps } from './types.ts';
 import './cards.css';
@@ -61,6 +62,7 @@ export function PostEffects({ plays, post, place, slot, children }: { readonly p
     if (released.ok) plays.setReleased([play]);
     return released;
   }, [api, plays]);
+  const note = useCallback<EffectProps['note']>((play, line) => plays.setNote(play, line), [plays]);
 
   if (here.plays.length === 0) return <>{children}</>;
   /* The cards in the order each was first played: the first is innermost. */
@@ -73,7 +75,7 @@ export function PostEffects({ plays, post, place, slot, children }: { readonly p
     const Effect = card.Effect;
     wrapped = (
       <Effect
-        key={key} post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} save={save} release={release}
+        key={key} post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} save={save} release={release} note={note}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
         {wrapped}
@@ -146,17 +148,27 @@ export function EffectStrip({ slot, card, readout, children }: { readonly slot: 
   );
 }
 
-/** The thread's narrow width (thread.css's 40em, where a post is stacked): the tags fold their chips into "+N more" there. */
+/** The thread's narrow width (thread.css's 40em, where a post is stacked): the tags fold their chips into "+N more" there, and a play's panel is a sheet. */
 const NARROW = '(max-width: 40em)';
-const narrowNow = () => typeof globalThis.matchMedia === 'function' && globalThis.matchMedia(NARROW).matches;
+/* One query for the page, however many posts ask it, with one listener behind every post's subscription; asked again only if the window's `matchMedia` is another. */
+let narrowQuery: { readonly from: typeof globalThis.matchMedia; readonly list: MediaQueryList } | null = null;
+const narrowWatchers = new Set<() => void>();
+const queryOf = (): MediaQueryList | null => {
+  const from = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia : null;
+  if (!from) return null;
+  if (narrowQuery?.from !== from) {
+    const list = from(NARROW);
+    list.addEventListener?.('change', () => { for (const w of [...narrowWatchers]) w(); });
+    narrowQuery = { from, list };
+  }
+  return narrowQuery.list;
+};
 const watchNarrow = (changed: () => void) => {
-  if (typeof globalThis.matchMedia !== 'function') return () => {};
-  const query = globalThis.matchMedia(NARROW);
-  query.addEventListener?.('change', changed);
-  return () => query.removeEventListener?.('change', changed);
+  narrowWatchers.add(changed);
+  return () => { narrowWatchers.delete(changed); };
 };
 /** Whether the window is at the thread's narrow width; a screen with no `matchMedia` is wide. */
-export const useNarrow = (): boolean => useSyncExternalStore(watchNarrow, narrowNow, () => false);
+export const useNarrow = (): boolean => useSyncExternalStore(watchNarrow, () => queryOf()?.matches ?? false, () => false);
 
 /** Chips a desktop shows after the tag before "+N more". */
 export const CHIPS_SHOWN = 3;
@@ -247,23 +259,26 @@ function PlayChip({ play, caster, tint, tallies, onOpen, expanded }: {
  * moves while it is read. Each tag and chip opens its play; nothing at all is drawn where there are no plays. `to` is
  * the post's own address, which the play's panel leads back to as "Go to post"; `nameOf` says the caster's name.
  */
-export function PlayTags({ plays, post, to, nameOf, tallies, mine }: {
+export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
   readonly plays: Plays; readonly post: Id; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
   readonly tallies: Tallies; readonly mine: Mine;
+  /** Spin a thread from a play: the panel has closed, and the post opens its spin form for it, giving focus back to `opener` when the form closes. */
+  readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
 }) {
   const { ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useNarrow();
   const [more, setMore] = useState(false);
   const [open, setOpen] = useState<{ readonly play: Id; readonly opener: HTMLButtonElement } | null>(null);
-  /* A read of the page closes what was opened on it. */
-  const read = here.read;
-  useEffect(() => { setMore(false); }, [read]);
+  /* A read of the page closes what was opened on it, before it is drawn again. */
+  const [seen, setSeen] = useState(here.read);
+  if (seen !== here.read) { setSeen(here.read); setMore(false); setOpen(null); }
   if (here.billed.length === 0) return null;
   const [lead, ...rest] = here.billed;
   const shown = more ? rest : rest.slice(0, narrow ? 0 : CHIPS_SHOWN);
   const hidden = rest.length - (narrow ? 0 : Math.min(rest.length, CHIPS_SHOWN));
   const opener = (play: Id) => (el: HTMLButtonElement) => setOpen((was) => (was?.play === play ? null : { play, opener: el }));
+  const opened = open ? here.plays.find((p) => p.id === open.play) ?? null : null;
   return (
     <ul className="kb-play-tags" aria-label="Cards played on this post">
       <li className="kb-play-tags-lead">
@@ -279,8 +294,15 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine }: {
           <button
             type="button" className="kb-play-more" aria-expanded={more} onClick={() => setMore(!more)}
             aria-label={more ? 'Show fewer cards played on this post' : `Show ${hidden} more ${hidden === 1 ? 'card' : 'cards'} played on this post`}
-          >{more ? 'Fewer' : `+${hidden} more`}</button>
+          ><span className="kb-play-chip-in">{more ? 'Fewer' : `+${hidden} more`}</span></button>
         </li>
+      )}
+      {open && opened && (
+        <PlayPanel
+          play={opened} caster={nameOf(opened.caster)} tint={inkOf(ui, opened, here.plays)} plays={plays} tallies={tallies} mine={mine} to={to}
+          sheet={narrow} opener={open.opener} onClose={() => setOpen(null)}
+          onSpin={(play, name) => { const from = open.opener; setOpen(null); onSpin(play, name, from); }}
+        />
       )}
     </ul>
   );

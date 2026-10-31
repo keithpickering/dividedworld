@@ -261,3 +261,25 @@
 .kb-picker[data-kb-place='sheet'] .kb-glass-dialog-close {
   min-height: 48px;
 }
+
+/*
+ * The reactions in a play's panel (engine/ui/cards/Panel.tsx): the same chips, picker, refusals and "your own"
+ * outline, drawn on the glass, in its tokens rather than the 2003 chrome's.
+ */
+.kb-reactions[data-kb-look="glass"] .kb-chip {
+  border-color: var(--kb-glass-text-2);
+  background: var(--kb-glass-ground);
+  color: var(--kb-glass-text);
+}
+
+.kb-reactions[data-kb-look="glass"] .kb-chip[data-kb-own] {
+  outline-color: var(--kb-glass-text-hi);
+}
+
+.kb-reactions[data-kb-look="glass"] .kb-react-button {
+  border: 1px dashed var(--kb-glass-text-2);
+  background: var(--kb-glass-ground);
+  color: var(--kb-glass-text);
+  font: inherit;
+  font-weight: 700;
+}

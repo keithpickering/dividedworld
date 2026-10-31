@@ -125,12 +125,14 @@
   font-weight: 700;
 }
 
-.kb-play-chip-in,
-.kb-play-more {
-  display: inline-block;
+.kb-play-chip {
+  max-width: 100%;
 }
 
+/* The words stand upright on the skewed glass, as the tag's do, and a long name wraps inside the chip. */
 .kb-play-chip-in {
+  display: inline-block;
+  overflow-wrap: anywhere;
   transform: skewX(12deg);
 }
 
