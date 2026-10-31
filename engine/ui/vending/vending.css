@@ -334,6 +334,12 @@ button.kb-vending-slot {
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%);
 }
 
+/* Cut by its clip-path, so its ring is drawn inside it (glass/base.css says why). */
+.kb-glass .kb-vending-buy:focus-visible {
+  outline-color: var(--kb-glass-ink-salty);
+  outline-offset: -7px;
+}
+
 .kb-vending-buy:disabled {
   cursor: default;
   background: var(--kb-glass-field);

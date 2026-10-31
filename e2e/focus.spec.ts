@@ -344,3 +344,55 @@ test('the check sees a focus outline the HUD\'s clip cuts', async ({ page }) => 
   await page.addStyleTag({ content: '.kb-hud-bar { clip-path: inset(0 0 14px 0) !important; }' });
   expect(await hudOutlinesCut(page)).toEqual(expect.arrayContaining([expect.stringMatching(/Menu: its focus outline is cut by \.kb-hud-bar$/u)]));
 });
+
+/*
+ * A ring the computed style says is there can still be cut away: an outline is drawn outside the border box, and a control
+ * cut by clip-path (the glass's chamfered buttons) clips everything outside its polygon. So these read the pixels: the
+ * control focused by the keyboard must look different from the same control unfocused (impeccable's audit of the cards, P1-1).
+ */
+async function ringShows(page: Page, control: Locator): Promise<boolean> {
+  await control.scrollIntoViewIfNeeded();
+  const box = (await control.boundingBox())!;
+  const clip = { x: box.x - 8, y: box.y - 8, width: box.width + 16, height: box.height + 16 };
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const before = await page.screenshot({ clip, animations: 'disabled' });
+  await control.focus();
+  await page.keyboard.press('Shift');
+  const after = await page.screenshot({ clip, animations: 'disabled' });
+  return !before.equals(after);
+}
+
+test('the Vending Machine\'s Buy, a chamfered button, shows its focus ring inside its cut', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?fixture=boards&moment=07-vending');
+  /* The board's state: Whoops! picked by its slot, then the machine's own Buy, the chamfered one. */
+  await page.getByRole('button', { name: 'Buy Whoops!, 1.00 orb' }).click({ timeout: 10_000 });
+  const buy = page.locator('.kb-vending-buy');
+  await expect(buy).toBeEnabled();
+  expect(await ringShows(page, buy)).toBe(true);
+});
+
+test('Stick Around\'s Break free, a chamfered button, shows its focus ring inside its cut', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?fixture=boards&moment=08-hold');
+  await expect(page.getByRole('dialog', { name: 'Stick Around' })).toBeVisible({ timeout: 10_000 });
+  expect(await ringShows(page, page.getByRole('button', { name: /^Break free/u }))).toBe(true);
+});
+
+/* The hand on a phone holds every card in reach at the narrowest width the brief names (320), with four faces in it. */
+for (const width of [320, 390]) {
+  test(`the hand on a phone ${width} wide keeps every card in reach, four faces included`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 700 });
+    await page.goto('/?fixture=boards&moment=02-phone');
+    const hand = page.getByRole('region', { name: 'Your hand' });
+    if (!(await hand.isVisible())) await page.getByRole('button', { name: /^Hand, \d+ postcards?$/u }).click();
+    await expect(hand).toBeVisible();
+    /* A fourth face, as a hand of two kinds, two of each, draws. */
+    await page.locator('.kb-hand-cards > li').first().evaluate((li) => li.parentElement!.append(li.cloneNode(true)));
+    const cut = await page.locator('.kb-hand-cards > li').evaluateAll((items) => items.map((li) => {
+      const r = li.getBoundingClientRect();
+      return r.left < 0 || r.right > window.innerWidth ? `${r.left.toFixed(0)}..${r.right.toFixed(0)}` : null;
+    }).filter(Boolean));
+    expect(cut, 'cards cut off at the screen\'s edge').toEqual([]);
+  });
+}

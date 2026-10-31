@@ -727,6 +727,8 @@
 :where(:root[data-kb-layout='phone']) .kb-hand-cards {
   position: relative;
   display: flex;
+  /* Every card stays in reach: a hand wider than the phone wraps onto another row, never off the screen's edge (impeccable's audit of the cards, P1-2). */
+  flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
   list-style: none;

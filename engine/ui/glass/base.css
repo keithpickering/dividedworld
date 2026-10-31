@@ -167,3 +167,13 @@
   outline: 3px solid var(--kb-glass-text-hi);
   outline-offset: 3px;
 }
+
+/*
+ * A control cut by clip-path clips everything outside its polygon, an outline offset outward with it: its ring is drawn
+ * inside, clear of its border (impeccable's audit of the cards, P1-1; e2e/focus.spec.ts reads the pixels).
+ */
+.kb-glass .kb-glass-cut-button:focus-visible,
+.kb-glass .kb-glass-cut-panel:focus-visible,
+.kb-glass .kb-glass-cut-dialog:focus-visible {
+  outline-offset: -7px;
+}
