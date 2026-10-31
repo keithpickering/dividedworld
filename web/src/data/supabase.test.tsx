@@ -1204,6 +1204,26 @@ describe('reads by many ids', () => {
     expect((await h.api.classReveals(ids)).map((r) => r.act)).toEqual([id(899), id(900), id(901)]);
   });
 
+  it('classReveals orders times written with and without fractions of a second as the server does, never as a locale would', async () => {
+    /* PostgREST trims a timestamp's trailing zeros, so a whole second has no fraction; a locale's collation can sort "00.5+" before "00+". */
+    const table = [
+      { act: id(901), character: ids[5], class: 'heel', at: '2026-10-01T10:00:00.5+00:00', via: 'reveal', thread: T },
+      { act: id(902), character: ids[300], class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'reveal', thread: T },
+      { act: id(900), character: ids[6], class: 'heel', at: '2026-10-01T10:00:00.25+00:00', via: 'reveal', thread: T },
+    ];
+    const h = harness(asOneQuery(table, 'character', (a, b) => Date.parse(String(a['at'])) - Date.parse(String(b['at']))));
+    expect((await h.api.classReveals(ids)).map((r) => r.act)).toEqual([id(902), id(900), id(901)]);
+  });
+
+  it('reads each id once when the list names it twice, and characters still answers in the order asked', async () => {
+    const h = byIdHarness();
+    await h.api.tallies([...ids, ...ids]);
+    expect(h.to('reaction_tallies').length).toBe(5);
+    expect(h.to('reaction_tallies').flatMap(askedIn).length).toBe(450);
+    const asked = [ids[7] as string, ids[3] as string, ids[7] as string];
+    expect((await h.api.characters(asked)).map((c) => c.id)).toEqual(asked);
+  });
+
   it('reads 150 settlements\' shares, one holding more than a page of rows, whole and in the log\'s order', async () => {
     const settlements = Array.from({ length: 150 }, (_, n) => n + 1);
     const share = (s: number, k: number) => ({ settlement: s, character: B, reason: 'heel.drewHeat', act: id(k), quadrant: null, amount: 1 });

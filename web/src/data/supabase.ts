@@ -774,7 +774,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         const ids = [...new Set(ledger.map((l) => l.settlement))];
         /* Paged within each chunk of settlements, then merged in the read's own order. A settlement's rows all come from
            one chunk, already in the server's order (its collation for the text keys), so the merge is a stable sort
-           by settlement alone, newest first, which keeps that order inside each settlement. */
+           by settlement alone, newest first, which keeps that order inside each settlement. The log files each share
+           under its line (engine/ui/data/log-page.ts), so no screen sees the order across settlements; the sort keeps
+           the read's promise of each source newest first, as one query answered it. */
         const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', part)
           .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
           .range(start, end)));
