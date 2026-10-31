@@ -330,7 +330,8 @@ describe('scrubbing', () => {
     drag(first.frame, [[x, y], [x + 0.06, y]]);
     act(() => { vi.advanceTimersByTime(2000); });
     expect(first.save).not.toHaveBeenCalled();
-    expect(first.root.ownerDocument.body).toHaveTextContent('This layer has no room for more strokes to save');
+    /* True words (#86): what is washed past the bound is this screen's, but washing on to the share still clears it for everyone. */
+    expect(first.root.ownerDocument.body).toHaveTextContent('This layer has no room for more strokes to save. What you wash from here shows on your screen only, but washing it clean still clears it for everyone.');
     scrubTo(first.frame, first.root, 0, ink, 0.5);
     /* Time runs on with each answer let in, so a save that would follow the first has its chance. */
     for (let k = 0; k < 6; k++) await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
@@ -718,6 +719,31 @@ describe('saving, one at a time', () => {
     await settle(SAVE_AFTER_MS * 4);
     expect(net.calls).toHaveLength(2);
     expect((net.calls.at(-1)!.state as { strokes: unknown[] }).strokes).toHaveLength(3);
+  });
+});
+
+/* #86: the author leaves the post while a save is on its way; the strokes made since are sent once it answers, never dropped. */
+describe('leaving the post mid-save', () => {
+  test('the strokes made while a save was on its way are sent after it answers, though the post has gone', async () => {
+    authorClock();
+    const net = gated();
+    const [a, b] = rows();
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { frame, unmount } = mount({ author: true, save: net.save });
+    drag(frame, a!);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(1);
+    drag(frame, b!);
+    unmount();
+    await act(async () => { net.calls[0]!.answer({ ok: true, value: { play: net.calls[0]!.play, savedAt: SAVED_AT } }); });
+    await settle(SAVE_AFTER_MS * 4);
+    expect(net.calls).toHaveLength(2);
+    expect((net.calls[1]!.state as { strokes: unknown[] }).strokes).toHaveLength(2);
+    await act(async () => { net.calls[1]!.answer({ ok: true, value: { play: net.calls[1]!.play, savedAt: SAVED_AT } }); });
+    await settle(SAVE_AFTER_MS * 4);
+    expect(net.calls, 'and nothing is sent twice').toHaveLength(2);
+    /* Nothing writes to the component's state once it is gone. */
+    expect(errors).not.toHaveBeenCalled();
   });
 });
 

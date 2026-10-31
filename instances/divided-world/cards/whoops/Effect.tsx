@@ -152,6 +152,11 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   const lastSent = useRef(new Map<string, string>());
   /** How many saves in a row have not got through, by play. */
   const failures = useRef(new Map<string, number>());
+  /** The state each play's last save from this screen was answered for, and when the server saved it. */
+  const acked = useRef(new Map<string, { readonly state: unknown; readonly savedAt: string }>());
+  /** The post has left the screen: a save still on its way goes on, and nothing writes to this component's state. */
+  const gone = useRef(false);
+  const say = useCallback((words: string) => { if (!gone.current) setReport(words); }, []);
   /** What the ink grids were built from, so a state that changes nothing in them does not build them again. */
   const builtFrom = useRef<{ splats: readonly Splat[]; height: number; payload: unknown; states: Map<string, string> } | null>(null);
   const cleanedAt = useRef(new Map<string, number>());
@@ -207,7 +212,16 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
 
   /* ----------------------------------------------------------------- the model ---- */
 
-  const savedFor = useCallback((id: string) => savedOf(now.current.states[id]?.state), []);
+  /**
+   * The saved version of a play's state: the newer of what the thread holds and what this screen's own last save was answered with. A
+   * save answered after the post has gone is heard by nobody here, and the strokes made since are saved on top of it, not of the
+   * version before it (#86).
+   */
+  const savedFor = useCallback((id: string) => {
+    const held = now.current.states[id];
+    const own = acked.current.get(id);
+    return savedOf(own && (!held || Date.parse(own.savedAt) > Date.parse(held.savedAt)) ? own.state : held?.state);
+  }, []);
   const cleanOf = useCallback((i: number) => {
     const id = now.current.layers[i]!.play.id;
     return savedFor(id).clean || localClean.current.has(id);
@@ -383,7 +397,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
       const room = fits(all);
       /* A layer with no room for more strokes can still be marked clean: the saved strokes go again with the mark, so a post the author washed clean is never left splatted for everyone. */
       if (!room && !cleanNow) {
-        setReport('This layer has no room for more strokes to save. What you wash from here shows on your screen only.');
+        say('This layer has no room for more strokes to save. What you wash from here shows on your screen only, but washing it clean still clears it for everyone.');
         continue;
       }
       const strokes = room ? all : [...savedFor(id).strokes];
@@ -398,7 +412,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
       }
       sending.current.delete(id);
       if (!answer.ok) {
-        setReport(answer.error);
+        say(answer.error);
         /* A refusal is the card's answer and would be the same again. A save that got no answer is sent again, a little later each time, and given up on after a few: the strokes stay, and the author's next one sends them. */
         const failed = (failures.current.get(id) ?? 0) + 1;
         failures.current.set(id, failed);
@@ -406,14 +420,17 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
         continue;
       }
       failures.current.delete(id);
-      setReport('');
+      const savedAt = (answer.value as { readonly savedAt?: unknown } | null)?.savedAt;
+      if (typeof savedAt === 'string') acked.current.set(id, { state, savedAt });
+      say('');
       /* What was sent is now the saved version; strokes made while it was on its way are still to send. */
       mine.current.set(id, (mine.current.get(id) ?? []).slice(kept.length));
       if (cleanNow) wantClean.current.delete(id);
-      if (dirty.current.has(id) || (mine.current.get(id) ?? []).length > 0 || wantClean.current.has(id)) queueSave(id);
+      /* Once the post has gone there is nothing left to wait on: what was made meanwhile goes at once. */
+      if (dirty.current.has(id) || (mine.current.get(id) ?? []).length > 0 || wantClean.current.has(id)) queueSave(id, gone.current ? 0 : SAVE_AFTER_MS);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedFor]);
+  }, [savedFor, say]);
 
   const queueSave = useCallback((id: string, after = SAVE_AFTER_MS) => {
     dirty.current.add(id);
@@ -421,8 +438,14 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
     saveTimer.current = setTimeout(() => { void flush(); }, after);
   }, [flush]);
 
-  /* A post left with strokes unsaved saves them as it goes. */
-  useEffect(() => () => { if (dirty.current.size > 0) void flush(); }, [flush]);
+  /*
+   * A post left with strokes unsaved saves them as it goes. A play whose save is still on its way is not dropped: its strokes stay
+   * marked, and the save on its way sends them once it is answered (`flush` above), from its own promise, which leaving does not cancel.
+   */
+  useEffect(() => () => {
+    gone.current = true;
+    if (dirty.current.size > 0) void flush();
+  }, [flush]);
 
   /** A layer washed to the instance's share is clean: for this screen, and for everyone when the author did it. */
   const checkClean = useCallback(() => {
