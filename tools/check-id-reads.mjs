@@ -20,10 +20,14 @@
  * - anything else fires, with its file, line and column: a column the guard cannot read (a variable), a list spread or
  *   built in place, a list passed through a variable or a helper first, or a chunk's parameter shadowed.
  *
- * Out of scope, named so a reader knows: a list built from a chunk and then renamed through a destructuring or an
- * object field fires (it is not read through), which is the safe side; a `.in` reached through a variable holding the
- * method (`const f = q.in`) is not a call of `.in` and is not read, and check-web-reads.mjs holds that each `.from()`
- * is read at once with `.select()`, so a query is never stored to be filtered later.
+ * `.in` taken as a value rather than called at once (`q.in.call(…)`, `.apply`, `const f = q['in']`, `const { in: f }
+ * = q`) fires too, since the guard cannot follow where it is called; so does a chunk's parameter assigned another
+ * list in its callback. A list built from a chunk and renamed through a destructuring or an object field fires (it
+ * is not read through), which is the safe side.
+ *
+ * Out of scope, named so a reader knows: a method reached by a computed key (`q[k](…)`) is not read, since the guard
+ * cannot know `k` names `in`; check-web-reads.mjs holds each `.from()` read at once with `.select()`, so a query is
+ * never handed to code that could filter it that way.
  *
  * The detection is exported and pure so tools/test-id-reads.mjs drives every branch red.
  */
@@ -75,12 +79,18 @@ function isChunkCallback(fn) {
   return calls(unwrap(callee.expression), 'chunks');
 }
 
-/** True when `name` is declared (a variable, a parameter, a function) anywhere inside `scope` but outside `fn`'s own parameter list. */
-function declaredWithin(scope, name, skip) {
+const ASSIGNS = new Set([ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken, ts.SyntaxKind.BarBarEqualsToken, ts.SyntaxKind.QuestionQuestionEqualsToken, ts.SyntaxKind.AmpersandAmpersandEqualsToken]);
+
+/** True when `name` is declared (a variable, a parameter, a function) or assigned anywhere inside `scope`. */
+function declaredWithin(scope, name) {
   let found = false;
   const visit = (n) => {
-    if (found || n === skip) return;
+    if (found) return;
     if ((ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n) || ts.isFunctionDeclaration(n)) && n.name && ts.isIdentifier(n.name) && n.name.text === name) {
+      found = true;
+      return;
+    }
+    if (ts.isBinaryExpression(n) && ASSIGNS.has(n.operatorToken.kind) && ts.isIdentifier(unwrap(n.left)) && unwrap(n.left).text === name) {
       found = true;
       return;
     }
@@ -98,13 +108,13 @@ function isChunk(list) {
     if (!isFunction(n)) continue;
     const at = n.parameters.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === id.text);
     if (at === -1) {
-      /* A function between the read and the binder that declares the name inside it shadows it. */
-      if (declaredWithin(n.body ?? n, id.text, null)) return false;
+      /* A function between the read and the binder that declares or assigns the name inside it shadows it. */
+      if (declaredWithin(n.body ?? n, id.text)) return false;
       continue;
     }
     if (at !== 0 || !isChunkCallback(n)) return false;
-    /* The callback's own body must not declare the name again over its parameter. */
-    return !(n.body && declaredWithin(n.body, id.text, null));
+    /* The callback's own body must not declare the name again over its parameter, or assign it another list. */
+    return !(n.body && declaredWithin(n.body, id.text));
   }
   return false;
 }
@@ -112,15 +122,26 @@ function isChunk(list) {
 /** Every `.in()` call in one file, with whether it is clean. */
 function inCalls(file, text) {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-  const bounded = new Set(BOUNDED_IN.map((b) => b.column));
+  const bounded = new Set(/** @type {readonly string[]} */ (BOUNDED_IN.map((b) => b.column)));
   const out = [];
+  const at = (node) => source.getLineAndCharacterOfPosition(node.getStart(source));
   const visit = (node) => {
+    /* `.in` taken as a value (`q.in.call(…)`, `const f = q['in']`, `const { in: f } = q`) is a read the guard cannot follow, so it fires. */
+    const member = (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) && memberName(node) === 'in';
+    let callee = node;
+    while (member && (ts.isParenthesizedExpression(callee.parent) || ts.isAsExpression(callee.parent) || ts.isNonNullExpression(callee.parent) || ts.isSatisfiesExpression(callee.parent) || ts.isTypeAssertionExpression(callee.parent))) callee = callee.parent;
+    const taken = (member && !(ts.isCallExpression(callee.parent) && callee.parent.expression === callee))
+      || (ts.isBindingElement(node) && node.propertyName !== undefined && (ts.isIdentifier(node.propertyName) || ts.isStringLiteral(node.propertyName)) && node.propertyName.text === 'in');
+    if (taken) {
+      const p = at(node);
+      out.push({ file, line: p.line + 1, column: p.character + 1, clean: false });
+    }
     if (ts.isCallExpression(node) && memberName(unwrap(node.expression)) === 'in') {
       const [column, list] = node.arguments;
       const col = column && (ts.isStringLiteral(column) || ts.isNoSubstitutionTemplateLiteral(column)) ? column.text : null;
       const clean = col !== null && (bounded.has(col) || (list !== undefined && isChunk(list)));
-      const at = source.getLineAndCharacterOfPosition(node.getStart(source));
-      out.push({ file, line: at.line + 1, column: at.character + 1, clean });
+      const p = at(node);
+      out.push({ file, line: p.line + 1, column: p.character + 1, clean });
     }
     ts.forEachChild(node, visit);
   };

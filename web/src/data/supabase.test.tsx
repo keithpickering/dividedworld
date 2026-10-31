@@ -1186,10 +1186,10 @@ describe('reads by many ids', () => {
     expect(h.to('acts_public').length).toBe(3);
   });
 
-  it.each([1, 7])('spunFromMany over 250 posts with limit %i answers the earliest threads across every chunk, in order, as one query would', async (limit) => {
+  it.each([0, 1, 7])('spunFromMany over 250 posts with limit %i answers the earliest threads across every chunk, in order, as one query would', async (limit) => {
     const h = harness(asOneQuery(threadRows, 'origin_act_id', byTimeThenId));
     const got = await h.api.spunFromMany(posts, limit);
-    expect(got.map((t) => t.id)).toEqual([...threadRows].sort(byTimeThenId).slice(0, limit).map((r) => r.id));
+    expect(got.map((t) => t.id)).toEqual([...threadRows].sort(byTimeThenId).slice(0, Math.max(1, limit)).map((r) => r.id));
   });
 
   it('classReveals orders rows with equal times across two chunks by their Act', async () => {

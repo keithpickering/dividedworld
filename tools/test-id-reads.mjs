@@ -62,6 +62,12 @@ check('`.in` reached as `client[\'in\']` fires', faults(`chunks(ids).map((part) 
 check('`.in` with no list fires', faults(`await client.from('x').select('*').in('id');`).length === 1);
 check('a byChunks whose function takes another name for the list, given `ids`, fires', faults(`byChunks(ids, (part) => client.from('x').select('*').in('id', ids));`).length === 1);
 
+check('`.in` taken as a value and called with `.call` fires', faults(`chunks(ids).map((part) => q.in.call(q, 'id', ids));`).length === 1);
+check('`.in` taken as a value and called with `.apply` fires', faults(`q.in.apply(q, ['id', ids]);`).length === 1);
+check('`.in` taken off a query by destructuring fires', faults(`const { in: f } = q; f('id', ids);`).length === 1);
+check('`.in` stored in a variable fires', faults(`const f = q['in']; f('id', ids);`).length === 1);
+check('a chunk parameter reassigned in its callback fires', faults(`chunks(ids).map((part) => { part = ids; return q.in('id', part); });`).length === 1);
+
 /* ---- chunked and bounded shapes are clean ---- */
 check('`chunks(ids).map((part) => …in(\'id\', part))` is clean', faults(`await Promise.all(chunks(ids).map((part) => client.from('x').select('*').in('id', part)));`).length === 0);
 check('`.flatMap` on chunks is clean', faults(`chunks(ids).flatMap((part) => client.from('x').select('*').in('id', part));`).length === 0);
