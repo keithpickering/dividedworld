@@ -9,7 +9,7 @@ is `docs/plans/2026-10-31-marks-and-the-lens-plan.md`.
 
 ## 0. Where it starts
 
-- **#97 merges first** (the owner chose this). Its billing (`engine/ui/cards/billing.ts`), its batched reads of the
+- **#97 merges first** (the owner chose this; it merged the same day, `309390b`). Its billing (`engine/ui/cards/billing.ts`), its batched reads of the
   plays' tallies, own reactions and spins (`prepare` in `engine/ui/thread/Thread.tsx`), its play panel's content (React,
   Spin thread, Go to post) and Whoops!'s per-layer readout and ink names stand as built. This design replaces its
   screens: the tag stack (`PlayTags`, `PlayTag`), the panel as a modal overlay (`engine/ui/cards/Panel.tsx`), the notes
@@ -223,9 +223,14 @@ No new state is put on a player, a character or a post. The log is unchanged.
 
 - **#101.** The first question (the phone's top tag wrapping to two lines) is moot, since a phone draws marks and no
   tags. The second (ink names) is answered in section 6. The owner agreed #101 closes when this merges.
+- **#105.** An ORIGIN box made inert by unstacking its own plays. The stack and its inert lift are removed, and the
+  Lens makes nothing inert (section 2). The plan tests the ORIGIN box's case through the Lens.
 - **#100.** The label-in-name finding, the panel's missing glow, the memoization and the notes blanking for a frame are
-  answered in sections 1, 2, 9 and 3. The spun count appearing a frame late and the spin draft lost when the form changes
-  origin are on the Lens's path, so the plan fixes both.
+  answered in sections 1, 2, 9 and 3. The spun count appearing a frame late (and its re-read after `SPUN_TTL_MS`) and
+  the spin draft lost when the form changes origin are on the Lens's path, so the plan fixes them. The test that held
+  without its code, the stale words, and the backdrop press all go with the stack's files.
+- **#104** (the page's unchunked id reads) is a different concern, the data layer, and has a plan of its own,
+  `docs/plans/2026-10-31-chunked-id-reads-plan.md` (the owner chose this).
 
 ## Open
 

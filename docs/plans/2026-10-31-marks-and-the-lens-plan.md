@@ -1,12 +1,13 @@
 # Marks and the Lens: plan
 
 Record, written 2026-10-31. The plan for `docs/plans/2026-10-31-marks-and-the-lens-design.md`, built by one build session
-in one PR. The PR says `Closes #101`. It names #100's findings it answers, and the issue is checked off item by item
-rather than closed, unless every item is answered.
+in one PR. The PR says `Closes #101` and `Closes #105`. It names #100's findings it answers, and the issue is checked off
+item by item rather than closed, unless every item is answered.
 
-**Before Task 1.** #97 is merged (design, section 0). The build starts from `main` with #97 in it. If #97 is not
-merged, the session stops and says so rather than building on its branch. File and function names below are #97's
-where #97 made them.
+**Before Task 1.** #97 merged on 2026-10-31 (`309390b`), so the build starts from `main`. File and function names below
+are #97's where #97 made them. #104 (the page's unchunked tallies and own-reactions reads) is a separate plan,
+`docs/plans/2026-10-31-chunked-id-reads-plan.md`. This plan neither waits on it nor touches `web/src/data/supabase.ts`
+beyond Task 7's two RPCs.
 
 Every task is test first: the test named, its red run recorded, then the code. No `check-*.mjs` is added, so there is no
 poison to plant. The engine/instance boundary check runs in the build as always, and nothing in `engine/` names Divided
@@ -97,6 +98,9 @@ becomes `GhostMark`, drawn by the strip); tests in a new `engine/ui/cards/marks.
   `usePlateHere`, `EffectStrip`, `PlayTags`, `PlayTag`, the stack and its CSS, and the `kb-act-slot`.
 - Remove what #97's `cards.css` and `panel.css` drew for the stack, the tags and the plate. Keep only what the Lens
   reuses.
+- `engine/ui/cards/tags.test.tsx` goes with the tags. This removes #100's test that held without its code, and the
+  stack's inert lift that #105 found making an ORIGIN box unreachable. Rewrite `Effects.tsx`'s header for marks, and
+  drop `panel.test.tsx`'s stale "chip" words with the file (#100's stale words).
 
 Tests first:
 - `kindsOf` orders kinds by billing.
@@ -164,7 +168,11 @@ Tests first:
 - Spin thread opens the form named for the play.
 - A draft typed for the post survives a switch to a play and back.
 - The spun count is present on the first render when cached.
-- The Float is `aria-modal="false"` and leaves the page interactive.
+- The Float is `aria-modal="false"` and leaves the page interactive: no element on the page is `inert` while it is
+  open. Assert this on a post that stays on screen, never by counting across a document whose posts have gone (#100's
+  test that held without its code).
+- In an ORIGIN box (a spun thread whose origin post carries plays of two kinds), a mark opens the Lens, every tab and
+  every Who row can be reached by keyboard and by pointer, and a row's React works (#105's case, as the Lens draws it).
 - The sheet shows under 40em (`data-kb-lens="sheet"`) and the side panel on a desktop (`data-kb-lens="side"` or
   `"under"`).
 
