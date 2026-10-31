@@ -21,7 +21,7 @@ begin
   -- A first call naming only the smoke keeps the other five at their defaults.
   perform tests.become(ann);
   said := set_preferences(smoke => 'off');
-  if said is distinct from '{"theme": "system", "postbit": "side", "motion": "system", "smoke": "off", "contrast": "standard", "text_size": 100}'::jsonb then
+  if said is distinct from '{"theme": "system", "postbit": "side", "motion": "system", "smoke": "off", "contrast": "standard", "text_size": 100, "cards_met": []}'::jsonb then
     raise exception 'a first call naming the smoke alone keeps the rest at their defaults: %', said;
   end if;
   if (select (smoke, contrast, text_size) from account_preferences) is distinct from ('off'::text, 'standard'::text, 100::smallint) then
@@ -33,7 +33,7 @@ begin
   -- Each of the three set away from its default, and the others kept.
   said := set_preferences(contrast => 'high');
   said := set_preferences(smoke => 'low', text_size => 125);
-  if said is distinct from '{"theme": "system", "postbit": "side", "motion": "system", "smoke": "low", "contrast": "high", "text_size": 125}'::jsonb then
+  if said is distinct from '{"theme": "system", "postbit": "side", "motion": "system", "smoke": "low", "contrast": "high", "text_size": 125, "cards_met": []}'::jsonb then
     raise exception 'each of the three is set and the rest kept: %', said;
   end if;
   -- Each refusal by its words.
@@ -46,7 +46,7 @@ begin
   -- three at their defaults.
   perform tests.become(bob);
   said := set_preferences('dark', 'stacked', 'reduce');
-  if said is distinct from '{"theme": "dark", "postbit": "stacked", "motion": "reduce", "smoke": "full", "contrast": "standard", "text_size": 100}'::jsonb then
+  if said is distinct from '{"theme": "dark", "postbit": "stacked", "motion": "reduce", "smoke": "full", "contrast": "standard", "text_size": 100, "cards_met": []}'::jsonb then
     raise exception 'the three-argument call still works and leaves the glass at its defaults: %', said;
   end if;
   -- A second account reads no row of the first's.
@@ -57,7 +57,7 @@ begin
   -- A first call naming all six writes each as named.
   perform tests.become(cy);
   said := set_preferences('dark', 'stacked', 'full', 'low', 'high', 150);
-  if said is distinct from '{"theme": "dark", "postbit": "stacked", "motion": "full", "smoke": "low", "contrast": "high", "text_size": 150}'::jsonb then
+  if said is distinct from '{"theme": "dark", "postbit": "stacked", "motion": "full", "smoke": "low", "contrast": "high", "text_size": 150, "cards_met": []}'::jsonb then
     raise exception 'a first call naming all six writes each: %', said;
   end if;
   perform tests.unbecome();

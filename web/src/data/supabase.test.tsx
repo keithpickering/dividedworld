@@ -439,12 +439,12 @@ describe('reads and their rows', () => {
 
   it('reads the glass\'s three preferences from their columns and sends them to set_preferences by its parameter names', async () => {
     const h = harness((r) => {
-      if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', text_size: 200 });
+      if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', text_size: 200, cards_met: ['whoops'] });
       return rows([{ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150 }]);
     });
     expect(await h.api.preferences()).toEqual({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, cardsMet: [] });
     expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,postbit,motion,smoke,contrast,text_size,cards_met');
-    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: [] } });
+    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: ['whoops'] } });
     expect(h.to('rpc/set_preferences')[0]?.body).toEqual({ theme: null, postbit: null, motion: null, smoke: 'off', contrast: 'high', text_size: 200 });
   });
 

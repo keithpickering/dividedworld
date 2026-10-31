@@ -31,7 +31,8 @@ begin
   said := meet_card('stick-around');
   if said -> 'cards_met' is distinct from '["whoops", "stick-around"]'::jsonb then raise exception 'a second kind is kept beside the first: %', said; end if;
   -- set_preferences leaves the set alone, and still answers without it.
-  perform set_preferences(smoke => 'low');
+  said := set_preferences(smoke => 'low');
+  if said -> 'cards_met' is distinct from '["whoops", "stick-around"]'::jsonb then raise exception 'set_preferences answers the whole row, the cards met too: %', said; end if;
   if (select cards_met from account_preferences) is distinct from array['whoops', 'stick-around'] then raise exception 'set_preferences changed the cards met'; end if;
 
   -- A malformed key is refused by its words, as a refusal.
