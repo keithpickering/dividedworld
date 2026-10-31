@@ -313,34 +313,3 @@
 :where(:root[data-kb-layout='phone']) .kb-play-go {
   font-size: var(--kb-glass-size-phone-display);
 }
-
-/* ---- "Play Whoops! here", on a post the armed card can land on ---- */
-
-/*
- * As the Main board draws it: the post's own bold 11px line, with a square in the card's color
- * before the words. It is a button, so it takes the glass's focus outline like every control.
- */
-.kb-play-here {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-weight: bold;
-  color: inherit;
-  cursor: pointer;
-}
-
-.kb-play-here-swatch {
-  width: 8px;
-  height: 8px;
-  border: 1px solid currentColor;
-  background: var(--kb-card-color);
-}
-
-.kb-play-here:focus-visible {
-  outline: 3px solid var(--kb-glass-text-hi);
-  outline-offset: 3px;
-}

@@ -1,11 +1,11 @@
 /*
  * Whoops!'s effect on a post: the fixed layout the ink lies over, the canvas, the suds, and the glass
- * reaching in with the Hold to scrub button (the tag is cards.css's, tinted by the top layer's ink).
+ * reaching in with its plate's readout and tiles (the tag and the plate are cards.css's, the tag tinted by the top layer's ink).
  * The post itself stays the board's 2003 post; its words are laid out at a reference width and scaled
  * as a whole (Effect.tsx), so this sheet sets no size on them.
  *
  * The ink and the suds are the card's art: their colors are written by the splat, not here. The
- * button's are the glass's tokens and sizes, on the `effect` smoke.
+ * plate's are the glass's tokens and sizes, on the `effect` smoke.
  */
 .kb-whoops {
   position: relative;
@@ -73,86 +73,50 @@
   pointer-events: none;
 }
 
-/* The words and controls are the glass strip's (EffectStrip, engine/ui/cards/Effects.tsx), under the post. */
-.kb-whoops-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 1rem;
+/*
+ * The words and controls are the glass plate's (EffectStrip, engine/ui/cards/Effects.tsx; its tiles are cards.css's),
+ * under the post. What is Whoops!'s: the meter in the plate's readout, the hint, and the order the controls stand in.
+ */
+.kb-whoops-meter {
+  display: inline-flex;
+  gap: 5px;
+  margin-left: auto;
+}
+
+/* One skewed bar for each layer, filled by the share of its ink washed on this screen (Effect.tsx sets --kb-washed, 0 to 1). */
+.kb-whoops-meter > span {
+  width: 2rem;
+  height: 0.6rem;
+  box-sizing: border-box;
+  transform: skewX(var(--kb-glass-skew));
+  border: 1px solid color-mix(in srgb, var(--kb-tag) 70%, transparent);
+  background: linear-gradient(to right, var(--kb-tag) calc(var(--kb-washed) * 100%), transparent calc(var(--kb-washed) * 100%));
 }
 
 .kb-whoops-hint {
-  margin: 0;
-  color: var(--kb-glass-text-2);
+  order: 0;
 }
 
-/* The keyboard path: a skewed piece of glass, as the card's tag is, in the card's alignment. */
 .kb-whoops-scrub {
-  position: relative;
-  isolation: isolate;
-  display: inline-flex;
-  align-items: center;
-  overflow: hidden;
-  margin-left: 0.25rem;
-  padding: 0.15rem 0.9rem 0.2rem;
-  transform: skewX(-12deg);
-  border: 1px solid var(--kb-glass-salty);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--kb-glass-salty) 60%, transparent);
-  color: var(--kb-glass-text);
-  cursor: pointer;
-  touch-action: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-}
-
-.kb-whoops-scrub-label {
-  position: relative;
-  z-index: 1;
-  transform: skewX(12deg);
-  font-size: var(--kb-glass-size-label);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  order: 2;
 }
 
 .kb-whoops-tools {
-  display: inline-flex;
+  order: 3;
+  flex: 1 1 18rem;
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem 0.75rem;
+}
+
+.kb-whoops-tools-label {
+  flex: 1 1 100%;
   color: var(--kb-glass-text-2);
-}
-
-/* The author's tools are glass controls, not the post's links: the chosen one is bold and underlined. */
-.kb-whoops-tool {
-  min-height: 24px;
-  padding: 0 0.25rem;
-  background: none;
-  border: 0;
-  font: inherit;
-  color: var(--kb-glass-neon-text);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.kb-whoops-tool[aria-pressed="true"] {
-  font-weight: 800;
-  text-decoration-thickness: 2px;
-}
-
-.kb-whoops-tool:focus-visible {
-  outline: 2px solid var(--kb-glass-text-hi);
-  outline-offset: 2px;
 }
 
 .kb-whoops-status {
-  margin: 0.25rem 0 0;
-  color: var(--kb-glass-text-2);
-}
-
-/* On the Phone board's layout the strip's controls are a step smaller, at the phone's smallest size. */
-:where(:root[data-kb-layout='phone']) .kb-whoops-scrub-label {
-  font-size: var(--kb-glass-size-phone-small);
+  order: 4;
 }
 
 /* ---- the play form's ink: the card's swatches, any color, and a preview ---- */
@@ -250,21 +214,22 @@
  * swatch has a Highlight border inside its ink, which stays the ink: the choice is the color.
  */
 @media (forced-colors: active) {
-  .kb-whoops-scrub {
+  /* Each is a plate tile, whose own forced-colors rule is a class less, so these name both. */
+  .kb-plate-tile.kb-whoops-scrub {
     outline: 2px solid ButtonText;
     outline-offset: 1px;
   }
 
-  .kb-whoops-scrub:focus-visible {
+  .kb-plate-tile.kb-whoops-scrub:focus-visible {
     outline-color: Highlight;
   }
 
-  .kb-whoops-tool {
+  .kb-plate-tile.kb-whoops-tool {
     outline: 1px solid ButtonText;
     outline-offset: 2px;
   }
 
-  .kb-whoops-tool[aria-pressed="true"] {
+  .kb-plate-tile.kb-whoops-tool[aria-pressed="true"] {
     outline: 3px solid Highlight;
   }
 

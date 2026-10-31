@@ -103,11 +103,13 @@ const manifest: BoardManifest = {
     ...post(42, 1, 'Mrs. Hooligan', 3, 'Midcarder', 'none'),
     ...post(43, 2, 'Pipewrench', 2, 'Enhancement Talent', 'none'),
     /*
-     * The armed card's button on #42, in the post's row of actions. The board draws a link and the build
-     * a real button (cards Task 3); its place follows #42 down the page, so it is found by its name and
-     * kind and compared by its type.
+     * The armed card's button on #42. The board draws it as a link in the post's row of actions; the build draws a real
+     * button (cards Task 3) and, by the owner's word on #80's shots ("we should try to find a way to make the play button
+     * itself glass-styled"), a glass tile attached under the post, outside the 2003 row, which keeps "Play card" only
+     * (the cards plan's Task 3 amendment of 2026-10-30). So it differs from the board in kind and in place, and is found
+     * by its name within the post and compared by neither its box nor its type.
      */
-    { id: 'post-42-play', role: 'link', name: 'Play Whoops! here', buildRole: 'button', within: 'post-42', box: 'none' },
+    { id: 'post-42-play', role: 'link', name: 'Play Whoops! here', buildRole: 'button', within: 'post-42', box: 'none', type: false },
     /*
      * Whoops!'s keyboard path. The board draws #41's scrub sentence, "Scrub with the keyboard" in the 2003 button, inside the
      * post's 2003 body; the build draws the sentence, "Hold to scrub" and the author's tools as one glass strip under the

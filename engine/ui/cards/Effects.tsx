@@ -12,7 +12,7 @@
  *
  * An effect's words and controls are not the post's (the owner's notes on #80: "game state data should not be in
  * the 2003 chrome"). An effect is given a `slot`, a place under the post's chrome, and fills it with an
- * `EffectStrip`, one piece of glass attached to the post; the post's own body holds the effect and nothing a
+ * `EffectStrip`, one chamfered glass plate attached to the post; the post's own body holds the effect and nothing a
  * player presses. The thread's post draws the slot itself (thread/Post.tsx), under its words; where a post is
  * drawn without one (the ORIGIN box) `PostEffects` draws its own right after the effect.
  *
@@ -21,7 +21,7 @@
  * in play order, so the latest is outermost. A post with no plays, or whose plays' cards draw no
  * effect, is drawn untouched.
  */
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
@@ -81,20 +81,55 @@ export function PostEffects({ plays, post, place, slot, children }: { readonly p
 }
 
 /**
- * One piece of glass an effect draws into its `slot`: the card's words about its effect and the controls a
- * player needs, on the `effect` smoke in the card's alignment's tokens, under the post and outside its 2003
- * chrome. Nothing is drawn until the slot is there. What it holds is the card's: the engine fixes only where
- * it stands and that it is glass.
+ * Where a post's armed card is played from, when its effect has drawn a plate: the plate's own place for it. The post
+ * (thread/Post.tsx) wraps itself in a `PlateProvider`; a plate puts its host in here, and the post's play control
+ * (PlayActions.tsx `PlayHere`) stands in the plate when there is one, and as a tile of its own under the post when
+ * there is not. It is state in a provider of its own so that a plate appearing draws the control again and not the
+ * post's words.
  */
-export function EffectStrip({ slot, card, children }: { readonly slot: HTMLElement | null; readonly card: string; readonly children: ReactNode }) {
+interface PlateHost { readonly here: HTMLElement | null; readonly setHere: (el: HTMLElement | null) => void }
+const PlateContext = createContext<PlateHost | null>(null);
+
+export function PlateProvider({ children }: { readonly children: ReactNode }) {
+  const [here, setHere] = useState<HTMLElement | null>(null);
+  const host = useMemo(() => ({ here, setHere }), [here]);
+  return <PlateContext.Provider value={host}>{children}</PlateContext.Provider>;
+}
+
+/** The plate's place for the play control, if the post has drawn a plate. */
+export const usePlateHere = (): HTMLElement | null => useContext(PlateContext)?.here ?? null;
+
+/**
+ * One deliberate piece of glass an effect draws into its `slot`: a chamfered plate attached to the post, outside its
+ * 2003 chrome, on the `effect` smoke in the card's alignment's border and glow (the owner on #80's shots: "less
+ * focused and intentional than it could be"; board 06's How loud row is the idiom, and section 5's chamfer is the
+ * shape). Its head is a readout, the card's name and `readout`, the state the card has to say; the rest is the
+ * card's words and its controls, which it draws as `kb-plate-tile`s (cards.css), and the post's play control stands
+ * among them while a card is armed. Nothing is drawn until the slot is there. What it holds is the card's: the
+ * engine fixes only where it stands and the shape it is.
+ */
+export function EffectStrip({ slot, card, readout, children }: { readonly slot: HTMLElement | null; readonly card: string; readonly readout?: ReactNode; readonly children: ReactNode }) {
   const { instance } = useKayfa();
   const calm = useSurfaceStyle('effect');
+  const host = useContext(PlateContext);
+  const setHere = host?.setHere;
+  /* The plate's place for the play control is the post's while the plate is drawn, and no longer. */
+  const place = useCallback((el: HTMLElement | null) => { setHere?.(el); }, [setHere]);
   if (!slot) return null;
-  const alignment = instance.cards.find((c) => c.key === card)?.alignment;
+  const rules = instance.cards.find((c) => c.key === card);
   return createPortal(
-    <div className="kb-glass kb-effect-strip" data-kb-card={card} data-kb-alignment={alignment} style={calm}>
-      <Smoke surface="effect" />
-      <div className="kb-effect-strip-in kb-calm">{children}</div>
+    <div className="kb-glass kb-effect-strip" data-kb-card={card} data-kb-alignment={rules?.alignment} style={calm}>
+      <div className="kb-effect-plate kb-glass-cut-dialog">
+        <Smoke surface="effect" />
+        <div className="kb-effect-plate-in kb-calm">
+          <p className="kb-plate-head">
+            <span className="kb-plate-name kb-glass-display">{rules?.name ?? card}</span>
+            {readout}
+          </p>
+          {children}
+          <div className="kb-plate-here" ref={place} />
+        </div>
+      </div>
     </div>,
     slot,
   );

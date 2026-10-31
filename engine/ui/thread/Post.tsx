@@ -10,8 +10,8 @@
  */
 import { memo, useEffect, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
-import { PlayTags, PostEffects } from '../cards/Effects.tsx';
-import { PlayActions } from '../cards/PlayActions.tsx';
+import { PlateProvider, PlayTags, PostEffects } from '../cards/Effects.tsx';
+import { PlayActions, PlayHere } from '../cards/PlayActions.tsx';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -119,33 +119,36 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   }, [editing]);
   const plain = act.kind === 'unmask';
   return (
-    <article
-      ref={ref}
-      id={`post-${seq}`}
-      tabIndex={-1}
-      className="kb-act"
-      aria-labelledby={`post-${seq}-title`}
-      data-kb-seq={seq}
-      data-kb-kind={act.kind}
-      data-kb-postbit={layout}
-      data-kb-arrived={slid ? 'slide' : undefined}
-    >
-      <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
-      {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
-      {!plain && (person
-        ? <Postbit person={person} layout={layout} />
-        : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
-      <header className="kb-act-meta">
-        <time dateTime={act.createdAt}>{when(act.createdAt)}</time>
-        <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
-      </header>
-      <div className="kb-act-main">
-        {act.kind === 'post' && <PlayTags plays={plays} post={act.id} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} />}
-        <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} />
-        <SpunInto act={act.id} />
-        <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} />
-      </div>
-      {act.kind === 'post' && <div className="kb-act-slot" ref={slot} />}
-    </article>
+    <PlateProvider>
+      <article
+        ref={ref}
+        id={`post-${seq}`}
+        tabIndex={-1}
+        className="kb-act"
+        aria-labelledby={`post-${seq}-title`}
+        data-kb-seq={seq}
+        data-kb-kind={act.kind}
+        data-kb-postbit={layout}
+        data-kb-arrived={slid ? 'slide' : undefined}
+      >
+        <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
+        {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
+        {!plain && (person
+          ? <Postbit person={person} layout={layout} />
+          : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
+        <header className="kb-act-meta">
+          <time dateTime={act.createdAt}>{when(act.createdAt)}</time>
+          <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
+        </header>
+        <div className="kb-act-main">
+          {act.kind === 'post' && <PlayTags plays={plays} post={act.id} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} />}
+          <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} />
+          <SpunInto act={act.id} />
+          <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} />
+        </div>
+        {act.kind === 'post' && <div className="kb-act-slot" ref={slot} />}
+        {act.kind === 'post' && <PlayHere act={act} slot={slot} />}
+      </article>
+    </PlateProvider>
   );
 });

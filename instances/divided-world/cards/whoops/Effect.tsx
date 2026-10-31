@@ -34,13 +34,12 @@
  * while any line is covered) and the lines clear of it are read out from a hidden copy, each once it is
  * uncovered. A post with no ink left is plain again.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { EffectStrip } from '../../../../engine/ui/cards/Effects.tsx';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
-import { Smoke, useSurfaceStyle } from '../../../../engine/ui/glass/Smoke.tsx';
 import { readLines } from './lines.ts';
 import { MAX_DPR, paint, type Geometry, type PaintLayer } from './paint.ts';
 import {
@@ -121,7 +120,6 @@ interface View {
 
 export function Effect({ post, plays, states, reader, save, slot, place, children }: EffectProps) {
   const { settings } = useKayfa();
-  const calm = useSurfaceStyle('effect');
   const help = useId();
   const layers = useMemo<readonly Layer[]>(() => plays.map((play) => ({ play, color: inkOf(play), seed: seedOf(play) })), [plays]);
   const [size, setSize] = useState({ frame: 0, height: 0, above: 0, cell: 0 });
@@ -605,7 +603,20 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   const hidden = anyLive && covers;
   const read = view && hidden ? view.lines.filter((_, i) => !view.covered[i]) : null;
   /* The hint is the board's sentence for everyone; the author's own tools and what they save follow the button. */
-  const note = anyLive ? 'This post is splatted. Drag across the ink to scrub it on your screen, or ' : '';
+  const note = 'This post is splatted. Drag across the ink to scrub it on your screen.';
+  /* The plate's readout: how many layers hold ink, and how much of them is washed on this screen, as the model says (geometry, never a pixel read). */
+  const inked = view ? view.clean.flatMap((c, i) => (c ? [] : [view.washed[i] ?? 0])) : layers.map(() => 0);
+  const share = inked.length === 0 ? 0 : Math.round((100 * inked.reduce((sum, w) => sum + w, 0)) / inked.length);
+  const readout = (
+    <>
+      <span className="kb-plate-state">
+        {inked.length === 0 ? 'Washed clean' : `${inked.length} ${inked.length === 1 ? 'layer' : 'layers'} · ${share}% washed`}
+      </span>
+      <span className="kb-whoops-meter" aria-hidden="true">
+        {layers.map((l, i) => <span key={l.play.id} style={{ '--kb-washed': view ? (view.clean[i] ? 1 : Math.min(1, view.washed[i] ?? 0)) : 0 } as CSSProperties} />)}
+      </span>
+    </>
+  );
   const stop = (e: { preventDefault(): void }) => e.preventDefault();
 
   return (
@@ -640,34 +651,31 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
           {read.map((line, i) => <span key={i}>{line.text} </span>)}
         </div>
       )}
-      {/* The words and the controls are glass in the strip under the post, never in the post's 2003 body (the owner's notes on #80). */}
+      {/* The words and the controls are glass in the plate under the post, never in the post's 2003 body (the owner's notes on #80), drawn as one game piece (the owner on #80's shots): a readout, then tiles. */}
       {(anyLive || report) && (
-        <EffectStrip slot={slot} card="whoops">
-          {anyLive && <div className="kb-whoops-bar" data-kb-scrub>
-            <p className="kb-whoops-hint">
-              {note}
-              <button
-                type="button" className="kb-glass kb-whoops-scrub" style={calm} aria-describedby={help}
-                onPointerDown={(e) => { stop(e); startSweep(); }} onPointerUp={stopSweep} onPointerLeave={stopSweep} onPointerCancel={stopSweep} onBlur={stopSweep}
-                onContextMenu={stop}
-                onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); startSweep(); } else if (e.key === ' ' || e.key === 'Enter') e.preventDefault(); }}
-                onKeyUp={(e) => { if (e.key === ' ' || e.key === 'Enter') stopSweep(); }}
-              >
-                <Smoke surface="effect" />
-                <span className="kb-whoops-scrub-label kb-calm">Hold to scrub</span>
-              </button>
-            </p>
-            <span id={help} className="kb-visually-hidden">Hold Space or Enter on this button to scrub the ink away line by line, at the pace of a hand. Let go to stop. It never clears the ink all at once.</span>
-            {reader.author && (
-              <span className="kb-whoops-tools" role="group" aria-label="Your tool">
-                <span>Yours to wash for everyone, or write back in its ink:</span>
-                <button type="button" className="kb-whoops-tool" aria-pressed={tool === 'wash'} onClick={() => setTool('wash')}>Wash</button>
-                <button type="button" className="kb-whoops-tool" aria-pressed={tool === 'ink'} onClick={() => setTool('ink')}>Write in ink</button>
-              </span>
-            )}
-          </div>}
+        <EffectStrip slot={slot} card="whoops" readout={readout}>
+          {anyLive && <p className="kb-plate-line kb-whoops-hint">{note}</p>}
+          {anyLive && (
+            <button
+              type="button" className="kb-plate-tile kb-whoops-scrub" data-kb-lit aria-describedby={help}
+              onPointerDown={(e) => { stop(e); startSweep(); }} onPointerUp={stopSweep} onPointerLeave={stopSweep} onPointerCancel={stopSweep} onBlur={stopSweep}
+              onContextMenu={stop}
+              onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); startSweep(); } else if (e.key === ' ' || e.key === 'Enter') e.preventDefault(); }}
+              onKeyUp={(e) => { if (e.key === ' ' || e.key === 'Enter') stopSweep(); }}
+            >
+              <span className="kb-plate-tile-label">Hold to scrub</span>
+            </button>
+          )}
+          {anyLive && <span id={help} className="kb-visually-hidden">Hold Space or Enter on this button to scrub the ink away line by line, at the pace of a hand. Let go to stop. It never clears the ink all at once.</span>}
+          {anyLive && reader.author && (
+            <span className="kb-whoops-tools" role="group" aria-label="Your tool">
+              <span className="kb-whoops-tools-label">Yours to wash for everyone, or write back in its ink:</span>
+              <button type="button" className="kb-plate-tile kb-whoops-tool" aria-pressed={tool === 'wash'} onClick={() => setTool('wash')}><span className="kb-plate-tile-label">Wash</span></button>
+              <button type="button" className="kb-plate-tile kb-whoops-tool" aria-pressed={tool === 'ink'} onClick={() => setTool('ink')}><span className="kb-plate-tile-label">Write in ink</span></button>
+            </span>
+          )}
           {/* Said whether or not a layer is left: a clean mark that did not get through is the author's to know of, with no ink under it. */}
-          {report && <p role="status" className="kb-whoops-status">{report}</p>}
+          {report && <p role="status" className="kb-plate-line kb-whoops-status">{report}</p>}
         </EffectStrip>
       )}
     </div>

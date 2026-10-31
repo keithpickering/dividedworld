@@ -334,7 +334,7 @@ describe('the words and controls are glass, outside the post (the owner\'s notes
     expect(strip).not.toBeNull();
     expect(slot.querySelectorAll('.kb-effect-strip')).toHaveLength(1);
     expect(strip).toHaveClass('kb-glass');
-    expect(strip).toHaveTextContent('This post is splatted. Drag across the ink to scrub it on your screen, or');
+    expect(strip).toHaveTextContent('This post is splatted. Drag across the ink to scrub it on your screen.');
     for (const name of ['Hold to scrub', 'Wash', 'Write in ink']) {
       const button = screen.getByRole('button', { name });
       expect(strip).toContainElement(button);
