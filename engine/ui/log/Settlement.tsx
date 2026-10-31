@@ -20,7 +20,7 @@
  * (`kb-settled-seen:<account>`), sent nowhere (the design, Open: the last settlement seen is kept on
  * the device). It is set as the summary shows, so it does not show again after either way out.
  */
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
@@ -186,6 +186,9 @@ export function SettlementScreen() {
   return <Summary data={state.data} tab={picked ?? hudCharacter?.id ?? null} onTab={setPicked} />;
 }
 
+/** The accounts this load has looked for an unseen settlement for, by backend: a load is one backend, made once (web/src/main.tsx). */
+const looked = new WeakMap<object, Set<Id>>();
+
 /**
  * Opens the summary on the first load after a settlement this device has not seen for the account. `active` is the app's word that
  * the load may be met by it (a board page); it looks once per load and account.
@@ -194,11 +197,15 @@ export function SettlementOnLoad({ active }: { readonly active: boolean }) {
   const { api } = useKayfa();
   const { session, sessionKnown } = usePlayer();
   const navigate = useNavigate();
-  const looked = useRef<string | null>(null);
   useEffect(() => {
     const account = session.account;
-    if (!active || !sessionKnown || !account || looked.current === account) return undefined;
-    looked.current = account;
+    if (!sessionKnown || !account) return undefined;
+    /* Once per load and account, whatever page the load met: a load of a glass page is not met by it later, on a move to the board. */
+    const seenThisLoad = looked.get(api) ?? new Set<Id>();
+    looked.set(api, seenThisLoad);
+    if (seenThisLoad.has(account)) return undefined;
+    seenThisLoad.add(account);
+    if (!active) return undefined;
     let live = true;
     void (async () => {
       const last = await api.lastSettledAt();

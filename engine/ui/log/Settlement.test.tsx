@@ -121,6 +121,23 @@ describe('the settlement\'s summary', () => {
     expect(screen.getByRole('link', { name: 'Back to the board' })).toHaveAttribute('href', '/');
   });
 
+  test('names no one who reacted, and no class but the player\'s own: it never asks for anyone else\'s', async () => {
+    const { fake, me, pipe, hoo } = world();
+    const rival = fake.seed.account('rival');
+    const glo = fake.seed.character(rival, 'Gloomba', 'face');
+    const posts = (await fake.log()).settlements[0]!.lines[0]!.shares.map((s) => s.act);
+    fake.seed.react(rival, glo, posts[0]!, 'tomato');
+    const reveals = vi.spyOn(fake, 'classReveals');
+    const turns = vi.spyOn(fake, 'turnsAnnounced');
+    openSummary(fake, me, pipe);
+    await screen.findByRole('heading', { level: 1, name: 'While you were away' });
+    const text = document.body.textContent ?? '';
+    expect(text).not.toContain('Gloomba');
+    expect(text).not.toMatch(/tomato|reacted by/iu);
+    expect(reveals).not.toHaveBeenCalled();
+    for (const [ids] of turns.mock.calls) expect([...ids].sort()).toEqual([pipe, hoo].sort());
+  });
+
   test('Esc goes back to the board, as Back does', async () => {
     const { fake, me, pipe } = world();
     window.history.replaceState(null, '', '/');

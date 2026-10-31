@@ -27,7 +27,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     art: { color: '#2ee6ff', ink: '#03141a', image: stickAroundFace, tagline: 'Hold a reader on a post.' },
     summary: 'Holds a reader on the post until they check your sentence, or break free.',
     describe: (settings: Settings) =>
-      `A Sweet card. Once the post settles in view, whoever reads it is pulled to it and the post fills their screen: they read it there, and get out by ticking the caster's sentence to certify they read it, or by scrolling hard past either end of it (or pressing Break free, or Esc) to fill a bar that drains whenever they stop, which frees them for that visit. The post's author and the caster are never held. It costs ${orbs(settings.economy['stickAround.price'] ?? 0)} to buy, and nothing more to play.`,
+      `A Sweet card. Once the post settles in view, whoever reads it is pulled to it and the post fills their screen: they read it there, and get out by checking the caster's sentence to certify they read it, or by scrolling hard past either end of it (or pressing Break free, or Esc) to fill a bar that drains whenever they stop, which frees them for that visit. The post's author and the caster are never held. It costs ${orbs(settings.economy['stickAround.price'] ?? 0)} to buy, and nothing more to play.`,
   },
   {
     key: 'whoops',
@@ -55,5 +55,9 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       const e = settings.economy;
       return `A Salty card. It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone. Up to three can stack on one post, each in its own ink. It costs ${orbs(e['whoops.price'] ?? 0)} to buy, and playing it on a long post costs ${orbs(e['whoops.perLength'] ?? 0)} more for every ${e['whoops.lengthStep'] ?? 0} characters, ${orbs(e['whoops.mostInAll'] ?? 0)} at most in all.`;
     },
+    /* The author's save that washes a layer clean (the rules' `clean`, instances/divided-world/cards/whoops.ts) is the one the log names. */
+    logSave: (state: unknown) => (typeof state === 'object' && state !== null && (state as { clean?: unknown }).clean === true
+      ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' }
+      : undefined),
   },
 ] satisfies CardUi[]);

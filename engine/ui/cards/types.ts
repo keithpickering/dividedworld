@@ -144,4 +144,10 @@ export interface CardUi {
   /** What the card does in one sentence with no numbers in it, for the face of a large card (the hand's sheet); `describe`'s words when none is given. */
   readonly summary?: string;
   readonly art: CardArt;
+  /**
+   * What the player's log says of a state the post's author saved on a play of this card on one of the player's posts, where the
+   * save is worth a line of its own (Whoops!'s layer washed clean): the line's What, and a plain sentence of what it did. A card
+   * gives none, or answers undefined, for a save that is not (a stroke washed away). Out of character and true.
+   */
+  readonly logSave?: (state: unknown) => { readonly what: string; readonly said: string } | undefined;
 }

@@ -248,13 +248,18 @@ test('the first load of a board page after a settlement opens its summary, a gla
   expect(window.location.pathname).toBe('/');
 });
 
-test('a load of a glass page after a settlement is not taken over by the summary', async () => {
+test('a load of a glass page after a settlement is not taken over by the summary, nor is a move to the board after it', async () => {
   window.history.pushState(null, '', '/settings');
   const fake = await settledWorld();
   render(<App api={fake} />);
   await screen.findByRole('radiogroup', { name: 'Smoke' });
   await new Promise((r) => setTimeout(r, 30));
   expect(window.location.pathname).toBe('/settings');
+  /* Back to the board, in the same load: the summary is the first load's, and this load's was a glass page. */
+  await userEvent.click(screen.getByRole('link', { name: 'Back to the board' }));
+  await screen.findByRole('region', { name: 'Game HUD' });
+  await new Promise((r) => setTimeout(r, 30));
+  expect(window.location.pathname).toBe('/');
 });
 
 for (const path of ['/sign-in', '/register']) {

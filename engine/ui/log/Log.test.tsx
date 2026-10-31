@@ -97,6 +97,16 @@ describe('My log', () => {
     expect(within(bodyRows()[1]!).getByRole('link', { name: 'Season 1: Who Turned' })).toHaveAttribute('href', expect.stringMatching(/^\/t\//u));
   });
 
+  test('Show posts names the breakdown it controls, closed as well as open', async () => {
+    const { fake, me, pipe } = world();
+    open(fake, me, pipe);
+    const button = await screen.findByRole('button', { name: 'Show posts' });
+    const id = button.getAttribute('aria-controls');
+    expect(id).toBeTruthy();
+    expect(document.getElementById(id!)).not.toBeNull();
+    expect(document.getElementById(id!)).not.toBeVisible();
+  });
+
   test('says a settlement\'s reasons as the board does, what it paid first and the largest first, whatever order they were read in', async () => {
     const fake = buildWorld();
     const me = fake.seed.account('me');
@@ -172,14 +182,19 @@ describe('My log', () => {
     expect(screen.queryByRole('table')).toBeNull();
   });
 
-  test('names no one who reacted, and no class but the player\'s own', async () => {
-    const { fake, me, pipe } = world();
+  test('names no one who reacted, and no class but the player\'s own: it never asks for anyone else\'s', async () => {
+    const { fake, me, pipe, hoo } = world();
+    const reveals = vi.spyOn(fake, 'classReveals');
+    const turns = vi.spyOn(fake, 'turnsAnnounced');
     open(fake, me, pipe);
     await screen.findByRole('table');
     fireEvent.click(tab('All'));
     const text = document.body.textContent ?? '';
     expect(text).not.toContain('Gloomba');
     expect(text).not.toMatch(/tomato|reacted by/iu);
+    /* A class it names is the player's own: no reveal is read, and the announced Turns asked about are the player's characters' alone. */
+    expect(reveals).not.toHaveBeenCalled();
+    for (const [ids] of turns.mock.calls) expect([...ids].sort()).toEqual([pipe, hoo].sort());
   });
 
   test('reads an older page from the last one\'s cursor, and adds its lines below', async () => {
@@ -216,3 +231,100 @@ describe('My log', () => {
     expect(document.body.textContent).not.toContain('Pipewrench');
   });
 });
+
+describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
+  /** The player plays Pipewrench and Mrs. Hooligan; the rival plays Gloomba; each has a post in one thread. */
+  function cardWorld() {
+    const fake = buildWorld();
+    const { seed } = fake;
+    const me = seed.account('me');
+    const rival = seed.account('rival');
+    const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
+    const hoo = seed.character(me, 'Mrs. Hooligan', 'face', { at: at(3) });
+    const glo = seed.character(rival, 'Gloomba', 'heel', { at: at(4) });
+    const { thread, act: g1 } = seed.thread('general', glo, 'a thread', 'Gloomba opens.', { at: at(28, 9) });
+    const p2 = seed.post(thread, pipe, 'Pipewrench speaks.', { at: at(28, 10) });
+    const h3 = seed.post(thread, hoo, 'Mrs. Hooligan speaks.', { at: at(28, 11) });
+    seed.wallet(me, 300);
+    fake.signInAs(me);
+    return { fake, me, rival, pipe, hoo, glo, g1, p2, h3 };
+  }
+  /* Whoops!'s look, as an instance gives the log a save worth a line (CardUi.logSave). */
+  const cards = [{ key: 'whoops', describe: () => '', art: { color: '#000', ink: '#fff', image: '' }, logSave: (state: unknown) => ((state as { clean?: boolean }).clean ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' } : undefined) }];
+  const show = (fake: Fake, me: string, hud: string) => { localStorage.clear(); localStorage.setItem(hudKey(me), hud); return renderIn(fake, <LogScreen />, { path: '/log', cards: cards as never }); };
+  const rowsOf = async () => { await screen.findByRole('table'); return bodyRows().map(cells); };
+
+  test('a card bought: from the machine, at its price, in every tab, with the wallet after', async () => {
+    const { fake, me, pipe, hoo } = cardWorld();
+    fake.seed.buy(me, 'whoops', { at: at(28, 12) });
+    show(fake, me, pipe);
+    expect(await rowsOf()).toEqual([['Oct 28 · 12:00', 'You bought Whoops!', 'From the Shop, for 1.00.', '−1.00', '2.00']]);
+    fireEvent.click(tab('Mrs. Hooligan'));
+    expect(bodyRows().map(cells)[0]![1]).toBe('You bought Whoops!');
+    void hoo;
+  });
+
+  test('a card played: as which character, on whose post, and what the post added past the card, paid for at the machine', async () => {
+    const { fake, me, pipe, g1 } = cardWorld();
+    fake.seed.card(pipe, g1, 'whoops', { at: at(28, 13), paid: 25 });
+    show(fake, me, pipe);
+    const [row] = await rowsOf();
+    expect(row).toEqual(['Oct 28 · 13:00', 'You played Whoops!', 'As Pipewrench, on Gloomba\'s post #1. The card was paid for at the machine; this post added 0.25.', '−0.25', '2.75']);
+    expect(within(bodyRows()[0]!).getByRole('link', { name: 'Gloomba\'s post #1' })).toHaveAttribute('href', expect.stringMatching(/#post-1$/u));
+  });
+
+  test('a play that cost nothing past the card says so, and leaves the wallet it cannot see unsaid', async () => {
+    const { fake, me, pipe, g1 } = cardWorld();
+    fake.seed.card(pipe, g1, 'whoops', { at: at(28, 13), paid: 0 });
+    show(fake, me, pipe);
+    expect((await rowsOf())[0]!.slice(2)).toEqual(['As Pipewrench, on Gloomba\'s post #1. The card was paid for at the machine; this play cost nothing more.', '0.00', '—']);
+  });
+
+  test('a play on one of the player\'s own characters\' posts says so, and is in both characters\' tabs', async () => {
+    const { fake, me, pipe, hoo, h3 } = cardWorld();
+    fake.seed.card(pipe, h3, 'whoops', { at: at(28, 13), paid: 0 });
+    show(fake, me, pipe);
+    expect((await rowsOf())[0]![2]).toBe('As Pipewrench, on Mrs. Hooligan\'s post #3, a post of one of your own characters. The card was paid for at the machine; this play cost nothing more.');
+    fireEvent.click(tab('Mrs. Hooligan'));
+    expect(bodyRows().map(cells)[0]![1]).toBe('You played Whoops!');
+    void hoo;
+  });
+
+  test('a play on the player\'s post by someone else: who played what, with the caster\'s message, in the post\'s character\'s tab', async () => {
+    const { fake, me, pipe, hoo, glo, p2 } = cardWorld();
+    fake.seed.card(glo, p2, 'whoops', { at: at(28, 14), message: 'you dropped your ink' });
+    show(fake, me, pipe);
+    expect((await rowsOf())[0]).toEqual(['Oct 28 · 14:00', 'A card on your post', 'Gloomba played Whoops! on your post #2, with the message “you dropped your ink”.', '0.00', '—']);
+    fireEvent.click(tab('Mrs. Hooligan'));
+    expect(screen.queryByRole('table')?.textContent ?? '').not.toContain('Gloomba played');
+    void hoo;
+  });
+
+  test('a layer washed clean on the player\'s post: the card\'s own words for the save, when it is worth a line', async () => {
+    const { fake, me, pipe, glo, p2 } = cardWorld();
+    const play = fake.seed.card(glo, p2, 'whoops', { at: at(28, 14) });
+    must(await fake.saveEffect(play, pipe, { strokes: [], clean: false }));
+    const first = show(fake, me, pipe);
+    expect((await rowsOf()).map((r) => r[1])).toEqual(['A card on your post']);
+    first.unmount();
+    must(await fake.saveEffect(play, pipe, { strokes: [], clean: true }));
+    show(fake, me, pipe);
+    const rows = await rowsOf();
+    expect(rows.map((r) => r[1])).toContain('Washed clean');
+    expect(rows.find((r) => r[1] === 'Washed clean')![2]).toBe('Gloomba\'s Whoops! on your post #2. The layer is washed clean, for every reader.');
+  });
+
+  test('a release from Stick Around is reading, and the log does not track it', async () => {
+    const { fake, me, pipe, glo, p2 } = cardWorld();
+    fake.signInAs(me);
+    const play = fake.seed.card(glo, p2, 'whoops', { at: at(28, 14) });
+    must(await fake.releaseEffect(play));
+    show(fake, me, pipe);
+    expect((await rowsOf()).map((r) => r[1])).toEqual(['A card on your post']);
+  });
+});
+
+function must<T>(a: { ok: true; value: T } | { ok: false; error: string }): T {
+  if (!a.ok) throw new Error(a.error);
+  return a.value;
+}

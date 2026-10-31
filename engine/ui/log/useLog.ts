@@ -51,7 +51,10 @@ async function around(api: KayfaApi, log: Log): Promise<LogData> {
   const threads = [...new Set(turns.map((t) => acts.get(t.act)?.thread).filter((t): t is Id => t !== undefined))];
   const titles = new Map<Id, string>();
   for (const t of await Promise.all(threads.map((id) => api.thread(id)))) if (t) titles.set(t.id, t.title);
-  return { log, mine, estimate, standings, season, turns, acts, names, titles };
+  /* What each save on the player's posts holds, so the card can say whether it is worth a line (CardUi.logSave). */
+  const plays = [...new Set(log.saves.map((s) => s.play))];
+  const states = new Map<Id, unknown>(Object.entries(plays.length === 0 ? {} : await api.effectStates(plays)).map(([play, saved]) => [play, saved.state]));
+  return { log, mine, estimate, standings, season, turns, acts, names, titles, states };
 }
 
 /** The player's log, read when `on` (signed in), with `older()` to read the next page below it. */

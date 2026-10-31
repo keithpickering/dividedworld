@@ -199,6 +199,10 @@
 
 /* ---- a settlement's breakdown ---- */
 
+.kb-log-table tr.kb-log-breakdown[hidden] {
+  display: none;
+}
+
 .kb-log-table tr.kb-log-breakdown > td {
   padding: 0 0 20px;
 }

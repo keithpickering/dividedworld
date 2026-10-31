@@ -23,7 +23,7 @@ import type { InstanceUi } from '../types.ts';
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
 
-export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank';
+export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'played' | 'onMine' | 'saved';
 
 /** One row of the log. */
 export interface LogRow {
@@ -37,7 +37,7 @@ export interface LogRow {
   readonly aura: number;
   /** The wallet after this line, or null where the log cannot say (an estimate; a settlement that moved no wallet). */
   readonly wallet: number | null;
-  /** Whose lines these are: a row is in each of these characters' tabs, and in All. */
+  /** Whose lines these are: a row is in each of these characters' tabs, and in All; none for the account's own (a purchase), in every tab. */
   readonly characters: readonly Id[];
   /** A settlement's row: the settlement, for its breakdown. */
   readonly settlement?: LogSettlement;
@@ -59,11 +59,13 @@ export interface LogData {
   readonly names: ReadonlyMap<Id, string>;
   /** Titles of the threads the lines name (The System's Turn announcements). */
   readonly titles: ReadonlyMap<Id, string>;
+  /** The state each play's effect was last saved with, for the saves the log reads (`effectStates`, public). */
+  readonly states: ReadonlyMap<Id, unknown>;
 }
 
 export interface Words {
   readonly instance: Instance;
-  readonly ui: Pick<InstanceUi, 'reasonWords' | 'quadrantLabels'>;
+  readonly ui: Pick<InstanceUi, 'reasonWords' | 'quadrantLabels' | 'cards' | 'copy'>;
   readonly postsPerPage: number;
 }
 
@@ -215,7 +217,7 @@ function scoredWords(lines: readonly LogLine[], words: Words): string {
 export function logRows(data: LogData, words: Words, cap: number, tab: Id | null): readonly LogRow[] {
   const { instance } = words;
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? '';
-  const inTab = (ids: readonly Id[]) => tab === null || ids.includes(tab);
+  const inTab = (ids: readonly Id[]) => tab === null || ids.length === 0 || ids.includes(tab);
   const settlementWallet = new Map<number, WalletEvent>();
   for (const e of data.log.wallet) if (e.kind === 'settlement' && e.settlement !== null) settlementWallet.set(e.settlement, e);
   const ranks = rankChanges(data, instance);
@@ -273,9 +275,72 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
     }
   }
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3 };
+  rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
+
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
+}
+
+/**
+ * The card lines (the cards plan's Task 6): a card bought, a card played and on whose post (one of the player's own characters' posts
+ * said so), a play another player landed on the player's post, and a save of its effect the card says is worth a line (a layer washed
+ * clean). A card is paid for once, at the machine (#78), so a play's price is what its post added. A Stick Around certified is
+ * reading, which the log does not track.
+ */
+function cardRows(data: LogData, words: Words): LogRow[] {
+  const { instance, ui } = words;
+  const cardName = (key: unknown) => instance.cards.find((c) => c.key === key)?.name ?? String(key);
+  const mine = (id: Id | null | undefined) => id !== null && id !== undefined && data.mine.some((c) => c.id === id);
+  const nameOf = (id: Id | null | undefined) => (id ? data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? 'A character' : 'A character');
+  const at = (iso: string) => micros(iso);
+  const rows: LogRow[] = [];
+  data.log.cards.forEach((e, i) => {
+    if (e.kind === 'bought') {
+      const spent = data.log.wallet.find((w) => w.kind === 'purchase' && at(w.at) === at(e.at) && w.change === -e.price);
+      rows.push({
+        key: `bought:${i}`, kind: 'bought', at: e.at, what: `You bought ${cardName(e.card)}`, details: [`From the ${ui.copy.shopName}, for ${plain(e.price)}.`],
+        aura: -e.price, wallet: spent?.balanceAfter ?? null, characters: [],
+      });
+      return;
+    }
+    const play = e.act ? data.acts.get(e.act) : undefined;
+    const post = play?.targetActId ? data.acts.get(play.targetActId) : undefined;
+    const caster = play?.character ?? null;
+    const link = post ? actLink(post, data, words, caster ?? undefined) : null;
+    const ownOther = mine(post?.character) && post?.character !== caster;
+    const paid = data.log.wallet.find((w) => w.kind === 'play' && w.ref === e.act);
+    rows.push({
+      key: `played:${e.act ?? i}`, kind: 'played', at: e.at, what: `You played ${cardName(e.card)}`,
+      details: [
+        `As ${nameOf(caster)}, on `, link ?? 'a post', `${ownOther ? ', a post of one of your own characters' : ''}. `,
+        `The card was paid for at the machine; ${e.price > 0 ? `this post added ${plain(e.price)}.` : 'this play cost nothing more.'}`,
+      ],
+      aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
+    });
+  });
+  for (const p of data.log.playsOnMine) {
+    const play = data.acts.get(p.play);
+    const post = data.acts.get(p.post);
+    const message = typeof play?.payload.message === 'string' && play.payload.message !== '' ? play.payload.message : null;
+    rows.push({
+      key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: 'A card on your post',
+      details: [`${nameOf(play?.character)} played ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `${message ? `, with the message “${message}”` : ''}.`],
+      aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
+    });
+  }
+  for (const s of data.log.saves) {
+    const play = data.acts.get(s.play);
+    const post = data.acts.get(s.post);
+    const said = ui.cards.find((c) => c.key === play?.payload.card)?.logSave?.(data.states.get(s.play));
+    if (!said) continue;
+    rows.push({
+      key: `saved:${s.play}`, kind: 'saved', at: s.savedAt, what: said.what,
+      details: [`${nameOf(play?.character)}'s ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `. ${said.said}`],
+      aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
+    });
+  }
+  return rows;
 }
 
 /** The open window's estimate, a row per line: each reaction's own amount at its own time, before the shared vote and halving. */
@@ -302,11 +367,14 @@ function estimateWords(l: EstimateLine, data: LogData, words: Words, tab: Id | n
   return [`${who}${words.ui.reasonWords(l.reason)}.${after}`];
 }
 
-/** The Acts the log's lines name: every share's, every estimate line's and every announcement's; then the posts the card plays among them landed on. */
+/** The Acts the log's lines name: every share's, every estimate line's, every announcement's and every card line's; then the posts the card plays among them landed on. */
 export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly TurnAnnounced[]): Id[] {
   const ids = new Set<Id>();
   for (const s of log.settlements) for (const l of s.lines) for (const sh of l.shares) ids.add(sh.act);
   for (const l of estimate?.lines ?? []) if (l.act) ids.add(l.act);
   for (const t of turns) ids.add(t.act);
+  for (const c of log.cards) if (c.act) ids.add(c.act);
+  for (const p of log.playsOnMine) { ids.add(p.play); ids.add(p.post); }
+  for (const s of log.saves) { ids.add(s.play); ids.add(s.post); }
   return [...ids];
 }

@@ -52,7 +52,7 @@ export function tabsOf(data: LogData) {
 }
 
 /** One settlement's breakdown: each reason with its exact total and its shares, the player's whose tab it is (all of them on All). */
-function Breakdown({ settlement, data, words, tab, id, onClose }: { readonly settlement: LogSettlement; readonly data: LogData; readonly words: Words; readonly tab: Id | null; readonly id: string; readonly onClose: () => void }) {
+function Breakdown({ settlement, data, words, tab, id, open, onClose }: { readonly settlement: LogSettlement; readonly data: LogData; readonly words: Words; readonly tab: Id | null; readonly id: string; readonly open: boolean; readonly onClose: () => void }) {
   const lines = inOrder(settlement.lines.filter((l) => tab === null || l.character === tab));
   const nameOf = (c: Id) => data.mine.find((m) => m.id === c)?.name ?? '';
   const onKey = (e: ReactKeyboardEvent) => {
@@ -61,18 +61,18 @@ function Breakdown({ settlement, data, words, tab, id, onClose }: { readonly set
     onClose();
   };
   return (
-    <tr id={id} className="kb-log-breakdown" onKeyDown={onKey}>
+    <tr id={id} className="kb-log-breakdown" onKeyDown={onKey} hidden={!open}>
       <td colSpan={5}>
         <div className="kb-log-breakdown-body">
           {lines.map((l) => (
             <section key={`${l.character}:${l.reason}`} className="kb-log-reason" aria-label={`${tab === null ? `${nameOf(l.character)}, ` : ''}${reasonName(words.ui.reasonWords(l.reason))}`}>
-              <h3 className="kb-log-reason-head">
+              <h2 className="kb-log-reason-head">
                 <span>
                   {tab === null && <span className="kb-log-reason-who">{nameOf(l.character)} · </span>}
                   <span data-kb-reason="">{words.ui.reasonWords(l.reason)}</span>
                 </span>
                 <span className="kb-log-num" data-kb-amount="" data-kb-sign={Math.sign(l.amount)}>{signed(l.amount)}</span>
-              </h3>
+              </h2>
               {l.shares.length === 0
                 ? <p className="kb-log-reason-none">{NO_SHARES}</p>
                 : (
@@ -118,7 +118,7 @@ function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; 
                 type="button"
                 className="kb-log-posts kb-glass-skew"
                 aria-expanded={open}
-                aria-controls={open ? breakdown : undefined}
+                aria-controls={breakdown}
                 onClick={() => onToggle(s.id)}
                 onKeyDown={(e) => { if (e.key === 'Escape' && open && !e.repeat) { e.preventDefault(); close(); } }}
               >
@@ -130,7 +130,8 @@ function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; 
         <td className="kb-log-num" data-kb-label="Aura" data-kb-sign={Math.sign(row.aura)}>{row.kind === 'estimate' ? `up to ${signed(row.aura)}` : signed(row.aura)}</td>
         <td className="kb-log-num" data-kb-label="Wallet">{row.wallet === null ? '—' : plain(row.wallet)}</td>
       </tr>
-      {s && open && <Breakdown settlement={s} data={data} words={words} tab={tab} id={breakdown} onClose={close} />}
+      {/* Drawn closed as well as open, hidden, so the control always names the row it opens. */}
+      {s?.sharesKept && <Breakdown settlement={s} data={data} words={words} tab={tab} id={breakdown} open={open} onClose={close} />}
     </>
   );
 }
