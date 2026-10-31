@@ -55,6 +55,10 @@ export const defaults: Settings = deepFreeze<Settings>({
     'heel.saltyOutdraws': 20,
     'face.cardOutdraws': -20,
     'jabroni.saltyLanded': 20,
+    /** Evergreen: what a calm-positive vote on an old post of the Technician's pays, on top of Respected. */
+    'technician.evergreen': 5,
+    /** How many whole days old a Technician's post is when a calm-positive vote on it first pays Evergreen. */
+    'technician.evergreenDays': 3,
     'stickAround.price': 100,
     /** 1.00 to buy, plus 0.25 per 500 characters of the target when played, at most 3.00 in all. */
     'whoops.price': 100,

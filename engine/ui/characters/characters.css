@@ -432,11 +432,124 @@
   color: var(--kb-glass-text-2);
 }
 
+/*
+ * The class cards are one row, a carousel (docs/plans/2026-10-30-technician-design.md, section 3):
+ * cards at the board's 216px, as many as the row's width holds, scrolled on the inline axis and
+ * snapped to a card's start. A fade is drawn over a card that only peeks in at an edge, as wide as
+ * its peek (ClassCards.tsx measures it), so a card shown whole is never faded. The scrollbar is not
+ * drawn, as the board draws none: the arrows, a swipe and the arrow keys move the row. Nothing out
+ * of view is hidden from anyone: no card is given visibility, display or inert here.
+ */
+.kb-class-cards {
+  --kb-class-card-width: 216px;
+  /* The phone's peek, which its card leaves of the row. */
+  --kb-class-peek: 64px;
+}
+
+/*
+ * The row and its count and arrows. The row's block padding holds the chosen card's glow, which the
+ * scroll would clip; the rail gives that room back above and below, so the cards stand the board's
+ * 10px under the legend. (The margins are the rail's, not the row's, so none collapses through it.)
+ */
+.kb-class-rail {
+  position: relative;
+  margin-block: calc(10px - 30px) -30px;
+}
+
 .kb-class-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
   gap: 14px;
-  margin-top: 10px;
+  padding-block: 30px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.kb-class-grid > .kb-class-card {
+  flex: none;
+  width: var(--kb-class-card-width);
+  scroll-snap-align: start;
+}
+
+.kb-class-grid[data-kb-peek-after] {
+  mask-image: linear-gradient(90deg, currentColor calc(100% - var(--kb-class-peek-after)), transparent);
+}
+
+.kb-class-grid[data-kb-peek-before] {
+  mask-image: linear-gradient(90deg, transparent, currentColor var(--kb-class-peek-before));
+}
+
+.kb-class-grid[data-kb-peek-before][data-kb-peek-after] {
+  mask-image: linear-gradient(90deg, transparent, currentColor var(--kb-class-peek-before), currentColor calc(100% - var(--kb-class-peek-after)), transparent);
+}
+
+/*
+ * The count and the arrows, on the legend's line at its right, as the Turn board draws them:
+ * centered on the legend's line, which ends the rail's 10px above the row and is about 1.2 times
+ * the legend's size tall, so they follow the player's text size.
+ */
+.kb-class-nav {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% - 30px + 10px + var(--kb-glass-size-body) * 0.6 - var(--kb-glass-size-display-s) * 22 / 26);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/*
+ * Past 100% text the arrows grow past the legend's line and would reach the words above it, so
+ * while they are drawn the legend is padded to their height and they stand on its line exactly.
+ */
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-class-cards[data-kb-overflow] > legend {
+  padding-block: max(0px, (var(--kb-glass-size-display-s) * 44 / 26 - var(--kb-glass-size-body) * 1.2) / 2);
+}
+
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-class-cards[data-kb-overflow] .kb-class-nav {
+  bottom: calc(100% - 30px + 10px + max(var(--kb-glass-size-body) * 0.6, var(--kb-glass-size-display-s) * 22 / 26) - var(--kb-glass-size-display-s) * 22 / 26);
+}
+
+.kb-class-count {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: normal;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-pale);
+}
+
+.kb-class-arrow {
+  /* The board's 44px square at 100% text, grown with the glyph it holds. */
+  width: calc(var(--kb-glass-size-display-s) * 44 / 26);
+  height: calc(var(--kb-glass-size-display-s) * 44 / 26);
+  padding: 0;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-display-s);
+  font-weight: 800;
+  line-height: 1;
+  /* On an opaque ground, a panel of its own: the glass's type stands on solid ground or in a calm (e2e/glass-text.ts). */
+  color: var(--kb-glass-pale);
+  background: var(--kb-glass-ground);
+  border: 1px solid currentColor;
+  cursor: pointer;
+}
+
+/*
+ * At its end an arrow is dimmed, as the board draws it at 35%, but in the glass's quieter text
+ * token and not by opacity, since glass type is opaque (e2e/glass-text.ts); its frame dims and
+ * turns dashed, so its state is not told by color alone.
+ */
+.kb-class-arrow:disabled {
+  color: var(--kb-glass-text-2);
+  border: 1px dashed color-mix(in srgb, var(--kb-glass-text-2) 45%, transparent);
+  cursor: default;
+}
+
+@media (forced-colors: active) {
+  .kb-class-arrow:disabled {
+    color: GrayText;
+  }
 }
 
 .kb-class-card {
@@ -474,10 +587,6 @@
   accent-color: var(--kb-class-fill);
 }
 
-.kb-class-title > .kb-class-name:only-child {
-  flex: 1;
-}
-
 .kb-class-title {
   display: flex;
   flex-wrap: wrap;
@@ -504,11 +613,25 @@
   content: none;
 }
 
+/*
+ * A class's name is set at the card's 40px and steps down to fit the card's width less the radio's
+ * corner (20px of the content box), never under 70% of it (28px at 100% text). It is a container
+ * query on the card, by the name's length in characters (`--kb-class-name-length`, set by
+ * ClassCards.tsx) at 0.476em a capital of the display face, rounded down to a whole px: "TECHNICIAN"
+ * at the 216px card is the Turn board's 34px, and the shorter names stay 40px. A browser without
+ * round() keeps the plain 40px before it.
+ */
+.kb-class-card {
+  container-type: inline-size;
+}
+
 .kb-class-name {
   font-family: var(--kb-glass-font-display);
   font-size: var(--kb-glass-size-display-m);
+  font-size: clamp(calc(var(--kb-glass-size-display-m) * 0.7), round(down, calc((100cqi - 20px) / (var(--kb-class-name-length, 1) * 0.476)), 1px), var(--kb-glass-size-display-m));
   font-weight: 400;
-  line-height: 1;
+  /* The board's 40px line, whatever size the name steps down to. */
+  line-height: var(--kb-glass-size-display-m);
   text-transform: uppercase;
   color: var(--kb-glass-text);
 }
@@ -998,6 +1121,15 @@
   margin-right: auto;
 }
 
+/*
+ * On the Main board's layout the foot's line stands bare on the modal's smoke, as the Turn board
+ * draws it; on the phone, body text stands in its calm (#54), since the smoke's brighter patches
+ * can scroll behind it there.
+ */
+:where(:root:not([data-kb-layout='phone'])) .kb-turn-effect.kb-calm::before {
+  content: none;
+}
+
 .kb-turn-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1195,8 +1327,9 @@
   font-size: var(--kb-glass-size-display-m);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-class-grid {
-  grid-template-columns: minmax(0, 1fr);
+/* The phone's row: one card whole and the next peeking under the fade. */
+:where(:root[data-kb-layout='phone']) .kb-class-cards {
+  --kb-class-card-width: calc(100% - var(--kb-class-peek));
 }
 
 :where(:root[data-kb-layout='phone']) .kb-class-card {

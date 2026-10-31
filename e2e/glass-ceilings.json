@@ -218,11 +218,14 @@
           "heel": {
             "large": 0.1175
           },
-          "lurker": {
-            "large": 0.2335
-          },
           "jabroni": {
             "large": 0.2235
+          },
+          "technician": {
+            "large": 0.2335
+          },
+          "lurker": {
+            "large": 0.1409
           }
         }
       },
@@ -284,11 +287,14 @@
           "heel": {
             "large": 0.1175
           },
-          "lurker": {
-            "large": 0.2335
-          },
           "jabroni": {
             "large": 0.2235
+          },
+          "technician": {
+            "large": 0.2335
+          },
+          "lurker": {
+            "large": 0.1409
           }
         }
       },
@@ -707,11 +713,14 @@
           "heel": {
             "large": 0.1175
           },
-          "lurker": {
-            "large": 0.2335
-          },
           "jabroni": {
             "large": 0.2235
+          },
+          "technician": {
+            "large": 0.2335
+          },
+          "lurker": {
+            "large": 0.1409
           }
         }
       }

@@ -281,11 +281,11 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   g.smoke.recipes.hud.narrow[0].color = '#ffffff';
   g.smoke.recipes.hud.narrow[0].opacity = 1;
   const f = named(glassFaults(g, only('hud', 'calmed')), 'class ', 'surface hud');
-  check('a class\'s large text on only the narrow layers\' calmed worst fires on a calmed surface, naming them', f.length === 4 && f.every((x) => x.why.includes('narrow calmed worst') && x.why.includes('recipe hud')), text(f).slice(0, 500));
+  check('a class\'s large text on only the narrow layers\' calmed worst fires on a calmed surface, naming them', f.length === Object.keys(g.classes).length && f.every((x) => x.why.includes('narrow calmed worst') && x.why.includes('recipe hud')), text(f).slice(0, 500));
   const n = fresh();
   for (const l of n.smoke.recipes.hud.layers) l.color = '#000000';
   const nf = named(glassFaults(n, only('hud', 'full')), 'class ', 'surface hud');
-  check('a class\'s large text on only the narrow layers\' full worst fires on a full surface, naming them', nf.length === 4 && nf.every((x) => x.why.includes('narrow full worst')), text(nf).slice(0, 500));
+  check('a class\'s large text on only the narrow layers\' full worst fires on a full surface, naming them', nf.length === Object.keys(n.classes).length && nf.every((x) => x.why.includes('narrow full worst')), text(nf).slice(0, 500));
 }
 
 /*

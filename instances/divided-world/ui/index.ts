@@ -46,6 +46,9 @@ const REASONS: Readonly<Record<string, string>> = {
   'lurker.spunAThread': 'Spun a thread: a thread it spun from another\'s Act drew three other repliers',
   'lurker.cardDrew': 'Its card drew: reactions to a card it played',
   'lurker.postedTooMuch': 'Posted too much: a post past three in one day',
+  'technician.respected': 'Respected: calm, positive reactions to its posts and cards',
+  'technician.evergreen': 'Evergreen: calm, positive reactions that came or went on an older post of its own',
+  'technician.draggedIn': 'Dragged in: excited, negative reactions to its posts and cards',
 };
 
 export const instanceUi: InstanceUi = Object.freeze({
@@ -62,14 +65,16 @@ export const instanceUi: InstanceUi = Object.freeze({
     excitedNegative: 'heel',
     excitedPositive: 'face',
     boredNegative: 'jabroni',
-    calmPositive: 'lurker',
+    calmPositive: 'technician',
   }),
   // Placeholder looks; each class's look on the reveal's bar is the owner's to give. The marks are the Turn board's.
+  // Written in the classes' order (classes/index.ts).
   classLooks: Object.freeze<Record<string, ClassLook>>({
     face: { color: '#2e86de', description: 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } },
     heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on. Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
-    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: 'Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards. Hurt by posting more than three times a day.', marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
     jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts. Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
+    technician: { color: '#1e8449', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: 'The respected regular. Earns from calm, positive reactions to its posts and cards, and more when an old post of its own still draws them. Hurt by heat: excited, negative reactions.', marks: { label: 'Earns from the calm, hurt by heat', earns: ['calmPositive'], hurts: ['excitedNegative'] } },
+    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: 'Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards. Hurt by posting more than three times a day.', marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
   }),
   reasonWords: (reason: string) => REASONS[reason] ?? `Settled under "${reason}"`,
   copy: Object.freeze({

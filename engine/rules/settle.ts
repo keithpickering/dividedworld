@@ -267,7 +267,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   for (const v of windowVotes) {
     const target = actOf(v.act);
     const list = received.get(target.character) ?? [];
-    list.push({ act: v.act, actKind: target.kind, quadrant: v.quadrant, at: v.at, votes: v.votes });
+    list.push({ act: v.act, actKind: target.kind, quadrant: v.quadrant, at: v.at, actAt: target.at, votes: v.votes });
     received.set(target.character, list);
   }
   const given = new Map<string, GivenReaction[]>();

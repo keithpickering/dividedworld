@@ -84,6 +84,38 @@ describe('the modal', () => {
     expect(screen.getByRole('button', { name: 'Stop B' })).toHaveFocus();
   });
 
+  test('counts a radio group as one stop, at its checked radio, as the browser\'s Tab does: a dialog opened on a choice made focuses that choice', async () => {
+    function Chosen() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>Open it</button>
+          {open && (
+            <Modal title="Change the Turn" onClose={() => setOpen(false)}>
+              <fieldset>
+                <legend>Turn to</legend>
+                <label><input type="radio" name="to" value="face" /> Face</label>
+                <label><input type="radio" name="to" value="lurker" defaultChecked /> Lurker</label>
+              </fieldset>
+              <fieldset>
+                <legend>How loud</legend>
+                <label><input type="radio" name="loud" value="silent" /> Silent</label>
+                <label><input type="radio" name="loud" value="announced" /> Announced</label>
+              </fieldset>
+              <button type="button">Last</button>
+            </Modal>
+          )}
+        </>
+      );
+    }
+    render(<Chosen />);
+    await userEvent.click(opener());
+    expect(screen.getByRole('radio', { name: 'Lurker' })).toHaveFocus();
+    // Shift+Tab from the first stop wraps to the last; a group with nothing checked keeps its radios as they were.
+    await userEvent.tab({ shift: true });
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+  });
+
   test('pulls focus back in if it somehow lands outside', async () => {
     render(<Host />);
     await userEvent.click(opener());

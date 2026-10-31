@@ -28,7 +28,7 @@
  *    Heat, Hype and Calm are in the large text of the class the instance gives each quadrant
  *    (InstanceUi.quadrantClasses, glass.json's classes), which the board drew a shade apart (Heat
  *    #ff8a96, where the owner lifted Heel's large text to #ff959f; Hype #9fdcff and Calm #8af7c9,
- *    where Face's and Lurker's are #8fd6ff and #7dffc8). Groan's is the same on both, so its label's
+ *    where Face's and the Technician's are #8fd6ff and #7dffc8). Groan's is the same on both, so its label's
  *    type is compared, and every group's box is.
  *
  * Not compared: the post under the picker, which is the 2003 board's (its chips and its React are

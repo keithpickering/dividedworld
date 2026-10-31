@@ -55,6 +55,13 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(Object.keys(g.smoke.surfaces)).toHaveLength(13);
     for (const [surface, recipe] of Object.entries(g.smoke.surfaces)) expect(g.smoke.recipes[recipe], surface).toBeDefined();
   });
+  test('every class has marks, and their label is not empty', () => {
+    for (const c of instance.classes) expect(instanceUi.classLooks[c.key]?.marks?.label.trim().length, c.key).toBeGreaterThan(0);
+  });
+  test('Calm wears the Technician, and the Lurker wears no quadrant', () => {
+    expect(instanceUi.quadrantClasses?.calmPositive).toBe('technician');
+    expect(Object.values(instanceUi.quadrantClasses ?? {})).not.toContain('lurker');
+  });
   test('every class has a glass color', () => {
     for (const c of instance.classes) expect(instanceUi.glass.classes[c.key], c.key).toBeDefined();
   });
@@ -110,7 +117,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('every reason a class pays reads as a sentence of its own', () => {
     const reasons = ['face.cheered', 'face.liftedAPost', 'face.boredTheRoom', 'face.stoleThunder', 'heel.drewHeat', 'heel.stoleThunder', 'heel.shrugged',
-      'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch'];
+      'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch',
+      'technician.respected', 'technician.evergreen', 'technician.draggedIn'];
     for (const r of reasons) expect(instanceUi.reasonWords(r), r).not.toMatch(/^Settled under/);
   });
   test('the Main board\'s layout becomes the Phone board\'s at 1152px: 1440 times the smallest phone size (16) over the smallest Main board size (20)', () => {

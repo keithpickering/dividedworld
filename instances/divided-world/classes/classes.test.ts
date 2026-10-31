@@ -9,6 +9,7 @@ import { face } from './face.ts';
 import { heel } from './heel.ts';
 import { lurker } from './lurker.ts';
 import { jabroni } from './jabroni.ts';
+import { technician } from './technician.ts';
 import { classes } from './index.ts';
 import { instance } from '../index.ts';
 import { defaults as settings } from '../settings.ts';
@@ -22,15 +23,15 @@ const none: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0,
 const input = (over: Partial<ClassInput>): ClassInput => ({
   character: 'c', from: 0, to: 100, posts: [], received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], threadsSpun: [], ...over,
 });
-const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1'): ReceivedReaction => ({ act, actKind, quadrant, at: 10, votes });
+const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1', actAt = 0): ReceivedReaction => ({ act, actKind, quadrant, at: 10, actAt, votes });
 const card = (over: Partial<PlayedCard>): PlayedCard => ({
   act: 'k1', card: 'whoops', alignment: 'salty', at: 5, target: 'p9', onOthers: true, votes: 0, targetVotes: 0, targetAfter: none, ...over,
 });
 const total = (rules: ClassRules, i: ClassInput, reason?: string) =>
   rules.earn(i, settings).filter((e) => !reason || e.reason === reason).reduce((s, e) => s + e.amount, 0);
 
-test('the instance holds the four classes and is whole', () => {
-  assert.deepEqual(classes.map((c) => c.key), ['face', 'heel', 'lurker', 'jabroni']);
+test('the instance holds its classes, in the order every screen draws them, and is whole', () => {
+  assert.deepEqual(classes.map((c) => c.key), ['face', 'heel', 'jabroni', 'technician', 'lurker']);
   assert.deepEqual(instanceProblems(instance), []);
 });
 
@@ -141,6 +142,55 @@ test('Jabroni\'s weakness: excited-positive reactions (being taken sincerely) on
 });
 test('Jabroni is unmoved by the quadrants it does not read', () => {
   assert.equal(total(jabroni, input({ received: [got('excitedNegative'), got('calmPositive')] })), 0);
+});
+
+/* ---- Technician ---- */
+const DAY = 86_400_000;
+/** A calm vote landing at 10 on an Act posted `age` milliseconds before it. */
+const calmAged = (age: number, votes = 1, actKind: 'post' | 'card' = 'post') => got('calmPositive', votes, actKind, 'a1', 10 - age);
+test('Technician earns from calm-positive reactions on its own posts and cards (Respected)', () => {
+  assert.equal(total(technician, input({ received: [got('calmPositive'), got('calmPositive', 0.5, 'card', 'k1')] }), 'technician.respected'), 15);
+});
+test('Technician\'s weakness: excited-negative reactions (heat) on its posts and cards (Dragged in)', () => {
+  assert.equal(total(technician, input({ received: [got('excitedNegative'), got('excitedNegative', 0.5, 'card', 'k1')] }), 'technician.draggedIn'), -15);
+});
+test('Technician is unmoved by hype and the groan', () => {
+  assert.equal(total(technician, input({ received: [got('excitedPositive'), got('boredNegative'), got('excitedPositive', 1, 'card', 'k1')] })), 0);
+});
+test('Evergreen pays on a post reacted to 3 days old to the millisecond, and not one millisecond before', () => {
+  assert.equal(total(technician, input({ received: [calmAged(3 * DAY)] }), 'technician.evergreen'), 5);
+  assert.equal(total(technician, input({ received: [calmAged(3 * DAY - 1)] }), 'technician.evergreen'), 0);
+  assert.equal(total(technician, input({ received: [calmAged(3 * DAY)] })), 15, 'on top of Respected');
+});
+test('Evergreen never pays on a card, however old', () => {
+  assert.equal(total(technician, input({ received: [calmAged(400 * DAY, 1, 'card')] }), 'technician.evergreen'), 0);
+});
+test('Evergreen pays only calm-positive votes', () => {
+  assert.equal(total(technician, input({ received: [{ ...calmAged(9 * DAY), quadrant: 'excitedPositive' }] }), 'technician.evergreen'), 0);
+});
+test('a calm vote withdrawn from an old post takes the bonus back; from a young post, nothing', () => {
+  assert.equal(total(technician, input({ received: [calmAged(5 * DAY, -0.5)] }), 'technician.evergreen'), -2.5);
+  assert.equal(total(technician, input({ received: [calmAged(DAY, -0.5)] }), 'technician.evergreen'), 0);
+});
+test('Evergreen names the Act, the quadrant and the reaction\'s time, for the log and the estimate', () => {
+  const e = technician.earn(input({ received: [calmAged(4 * DAY)] }), settings).find((x) => x.reason === 'technician.evergreen');
+  assert.deepEqual(e, { reason: 'technician.evergreen', amount: 5, act: 'a1', quadrant: 'calmPositive', at: 10 });
+});
+test('an override of the Technician\'s numbers changes the age and the amount', () => {
+  const sooner = withOverrides(settings, { economy: { 'technician.evergreenDays': 1 } });
+  assert.equal(total(technician, input({ received: [calmAged(2 * DAY)] }), 'technician.evergreen'), 0);
+  assert.equal(technician.earn(input({ received: [calmAged(2 * DAY)] }), sooner).find((x) => x.reason === 'technician.evergreen')?.amount, 5);
+  const richer = withOverrides(settings, { economy: { 'technician.evergreen': 12 } });
+  assert.equal(technician.earn(input({ received: [calmAged(3 * DAY)] }), richer).find((x) => x.reason === 'technician.evergreen')?.amount, 12);
+});
+test('an instance missing the Technician\'s age, or holding it at 0 or 2.5, is refused', () => {
+  const { 'technician.evergreenDays': _, ...without } = settings.economy;
+  assert.match(instanceProblems({ ...instance, settings: { ...settings, economy: without } }).join('\n'), /technician\.evergreenDays/);
+  for (const days of [0, 2.5]) {
+    assert.match(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'technician.evergreenDays': days } }) }).join('\n'), /technician\.evergreenDays/, String(days));
+  }
+  const { 'technician.evergreen': __, ...noBonus } = settings.economy;
+  assert.match(instanceProblems({ ...instance, settings: { ...settings, economy: noBonus } }).join('\n'), /technician\.evergreen\b/);
 });
 
 /* ---- through the settlement ---- */
@@ -289,6 +339,55 @@ test('each class names what it paid in its own words, with the Act and the quadr
   assert.deepEqual(shape(heel), [['heel.drewHeat', 'p2', 'excitedNegative'], ['heel.stoleThunder', 'k1', null], ['heel.shrugged', 'p3', 'calmPositive']]);
   assert.deepEqual(shape(lurker), [['lurker.calledIt', 'x1', 'excitedPositive'], ['lurker.spunAThread', 's1', null], ['lurker.cardDrew', 'k1', 'boredNegative'], ['lurker.postedTooMuch', 'p4', null]]);
   assert.deepEqual(shape(jabroni), [['jabroni.drewTheGroan', 'k1', 'boredNegative'], ['jabroni.soldTheL', 'k1', null], ['jabroni.takenSincerely', 'p1', 'excitedPositive']]);
+  const aged = input({ received: [got('calmPositive', 1, 'post', 'p3', 10 - 3 * 86_400_000), got('excitedNegative', 1, 'card', 'k1')] });
+  assert.deepEqual(technician.earn(aged, settings).map((e) => [e.reason, e.act, e.quadrant ?? null]), [
+    ['technician.respected', 'p3', 'calmPositive'], ['technician.evergreen', 'p3', 'calmPositive'], ['technician.draggedIn', 'k1', 'excitedNegative'],
+  ]);
+});
+
+test('a calm vote on a Technician\'s 4-day-old post pays 15 hundredths under its two reasons; on a Heel\'s post it charges', () => {
+  const W = { id: 'w', from: 10 * DAY, to: 11 * DAY };
+  const r = settle({
+    window: W,
+    characters: [
+      { id: 'te', player: 'pt', classes: [{ class: 'technician', from: -1 }] },
+      { id: 'he', player: 'ph', classes: [{ class: 'heel', from: -1 }] },
+      { id: 'fa', player: 'pf', classes: [{ class: 'face', from: -1 }] },
+    ],
+    acts: [
+      { id: 'old', character: 'te', kind: 'post', at: 6 * DAY, thread: 't' },
+      { id: 'hp', character: 'he', kind: 'post', at: 6 * DAY + 1, thread: 'u' },
+    ],
+    reactions: [
+      { act: 'old', player: 'pf', character: 'fa', kind: 'relieved', at: 10 * DAY + H },
+      { act: 'hp', player: 'pf', character: 'fa', kind: 'relieved', at: 10 * DAY + H },
+    ],
+  }, world);
+  const of = (c: string, reason: string) => r.entries.filter((e) => e.character === c && e.reason === reason).reduce((t, e) => t + e.amount, 0);
+  assert.equal(of('te', 'technician.respected'), 10);
+  assert.equal(of('te', 'technician.evergreen'), 5);
+  assert.equal(sum(r, 'te'), 15);
+  assert.ok(sum(r, 'he') < 0, 'the Heel is charged for the same vote: the foil holds both ways');
+});
+
+test('the estimate shows the Technician\'s evergreen line whole at the reaction\'s own time', () => {
+  const at = 10 * DAY + 3 * H;
+  const lines = estimateForOwner({
+    window: { id: 'w', from: 10 * DAY, to: 11 * DAY },
+    characters: [
+      { id: 'te', player: 'pt', classes: [{ class: 'technician', from: -1 }] },
+      ...['o1', 'o2', 'o3'].map((id) => ({ id, player: `p-${id}`, classes: [{ class: 'face', from: -1 }] })),
+    ],
+    acts: [{ id: 'old', character: 'te', kind: 'post', at: 5 * DAY, thread: 't' }],
+    reactions: [
+      { act: 'old', player: 'p-o1', character: 'o1', kind: 'relieved', at },
+      { act: 'old', player: 'p-o2', character: 'o2', kind: 'relieved', at: at + H },
+      { act: 'old', player: 'p-o3', character: 'o3', kind: 'relieved', at: at + 2 * H },
+    ],
+  }, world, 'pt').lines;
+  assert.deepEqual(lines.filter((l) => l.reason === 'technician.evergreen').map((l) => [l.act, l.quadrant, l.at, l.amount]), [
+    ['old', 'calmPositive', at, 5], ['old', 'calmPositive', at + H, 5], ['old', 'calmPositive', at + 2 * H, 5],
+  ]);
 });
 
 test('a Lurker is never paid for a reaction with no rank', () => {

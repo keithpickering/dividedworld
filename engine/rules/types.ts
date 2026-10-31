@@ -193,6 +193,8 @@ export interface ReceivedReaction {
   readonly actKind: ActKind;
   readonly quadrant: Quadrant;
   readonly at: number;
+  /** When the reacted Act was posted: public, as every post and card shows its time. */
+  readonly actAt: number;
   /**
    * What this window pays of the reacting player's one vote on the Act, in this quadrant, times
    * its halving: the difference from what earlier windows paid, so a vote that moved from this

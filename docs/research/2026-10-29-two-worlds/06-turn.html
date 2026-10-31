@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=1440">
 <title>Turn a character: the two worlds board</title>
-<!-- A board of the two-worlds design session, 1440 by 1420, in the pause-menu version the owner approved on
+<!-- The 06 turn board as the Technician design session redrew it with the owner on 2026-10-30
+     (docs/plans/2026-10-30-technician-design.md, section 3): Choose a class as a carousel of five, Lurker last and
+     violet. The build replaces docs/research/2026-10-29-two-worlds/06-turn.html with this file (plan, Task 5).
+     The first board's comment follows.
+     A board of the two-worlds design session, 1440 by 1420, in the pause-menu version the owner approved on
      2026-10-30. A reference for the look, not code to copy; docs/plans/2026-10-29-two-worlds-design.md says what
      was decided. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -86,61 +90,15 @@ button:focus-visible,input:focus-visible{outline:3px solid #ffffff;outline-offse
 
     <!-- the choice -->
     <div style="display: flex; flex-direction: column; gap: 22px; min-width: 0">
-      <fieldset style="border: 0; margin: 0; padding: 0">
+      <fieldset style="position: relative; border: 0; margin: 0; padding: 0; min-width: 0">
         <legend style="padding: 0; font: 800 21px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #e4def7">CHOOSE A CLASS</legend>
-        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 10px">
-
-          <label style="position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(61,184,255,.12); border: 2px solid #3db8ff; box-shadow: 0 0 30px rgba(61,184,255,.55); cursor: pointer">
-            <input type="radio" name="cls" checked style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #3db8ff; margin: 0">
-            <span style="font: 40px/1 Anton, Impact, sans-serif; color: #9fdcff; text-shadow: 0 0 16px rgba(61,184,255,.8)">FACE</span>
-            <span role="img" aria-label="Earns from hype, hurt by the groan" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px">
-              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
-              <span style="height: 28px; background: #3db8ff; color: #03141a; font: 800 20px/28px 'Barlow Condensed'; text-align: center">+</span>
-              <span style="height: 28px; border: 1.5px dashed #ff8a96; box-sizing: border-box; color: #ff8a96; font: 800 20px/24px 'Barlow Condensed'; text-align: center">−</span>
-              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
-            </span>
-            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns from hype on its posts and cards, and from Sweet cards it plays on others' posts that then draw hype.</span>
-            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by the groan, and by a card of its own that outdraws the post it landed on.</span>
-          </label>
-
-          <label style="position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(10,6,20,.7); border: 1px solid rgba(255,61,87,.55); cursor: pointer">
-            <input type="radio" name="cls" style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #ff3d57; margin: 0">
-            <span style="display: flex; gap: 10px; align-items: baseline"><span style="font: 40px/1 Anton, Impact, sans-serif; color: #ff8a96">HEEL</span><span style="font: 800 20px 'Barlow Condensed'; letter-spacing: 2px; border: 1px solid #ff8a96; color: #ff8a96; padding: 0 6px">NOW</span></span>
-            <span role="img" aria-label="Earns from heat, hurt by the calm" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px">
-              <span style="height: 28px; background: #ff3d57; color: #14030a; font: 800 20px/28px 'Barlow Condensed'; text-align: center">+</span>
-              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
-              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
-              <span style="height: 28px; border: 1.5px dashed #ff8a96; box-sizing: border-box; color: #ff8a96; font: 800 20px/24px 'Barlow Condensed'; text-align: center">−</span>
-            </span>
-            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns from heat, and from a Salty card on someone else's post that outdraws it.</span>
-            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by the calm: the polite shrug.</span>
-          </label>
-
-          <label style="position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(10,6,20,.7); border: 1px solid rgba(46,240,160,.5); cursor: pointer">
-            <input type="radio" name="cls" style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #2ef0a0; margin: 0">
-            <span style="font: 40px/1 Anton, Impact, sans-serif; color: #8af7c9">LURKER</span>
-            <span role="img" aria-label="Earns by calling where any post ends up" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px">
-              <span style="height: 28px; border: 1.5px dotted #2ef0a0; box-sizing: border-box"></span>
-              <span style="height: 28px; border: 1.5px dotted #2ef0a0; box-sizing: border-box"></span>
-              <span style="height: 28px; border: 1.5px dotted #2ef0a0; box-sizing: border-box"></span>
-              <span style="height: 28px; border: 1.5px dotted #2ef0a0; box-sizing: border-box"></span>
-            </span>
-            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns by reacting early the way a post ends up, by spinning threads that draw replies, and from reactions to its cards.</span>
-            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by posting more than 3 times in a day.</span>
-          </label>
-
-          <label style="position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(10,6,20,.7); border: 1px solid rgba(255,217,61,.5); cursor: pointer">
-            <input type="radio" name="cls" style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #ffd93d; margin: 0">
-            <span style="font: 40px/1 Anton, Impact, sans-serif; color: #ffe27a">JABRONI</span>
-            <span role="img" aria-label="Earns from the groan, hurt by hype" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px">
-              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
-              <span style="height: 28px; border: 1.5px dashed #ff8a96; box-sizing: border-box; color: #ff8a96; font: 800 20px/24px 'Barlow Condensed'; text-align: center">−</span>
-              <span style="height: 28px; background: #ffd93d; color: #1a1403; font: 800 20px/28px 'Barlow Condensed'; text-align: center">+</span>
-              <span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span>
-            </span>
-            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns from the groan, and from Salty cards landing on its posts. Selling the L.</span>
-            <span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by being taken sincerely: hype.</span>
-          </label>
+        <div style="position: absolute; right: 0; top: -40px; display: flex; gap: 10px; align-items: center"><span style="font: 800 20px 'Barlow Condensed'; letter-spacing: 2px; color: #c9f8ff">1–4 OF 5</span><button type="button" aria-label="Earlier classes" style="width: 44px; height: 44px; border: 1px solid #c9f8ff; background: rgba(7,5,13,.8); color: #c9f8ff; font: 800 28px/1 'Barlow Condensed'; cursor: pointer; opacity: .35">‹</button><button type="button" aria-label="More classes" style="width: 44px; height: 44px; border: 1px solid #c9f8ff; background: rgba(7,5,13,.8); color: #c9f8ff; font: 800 28px/1 'Barlow Condensed'; cursor: pointer">›</button></div>
+        <div style="display: flex; gap: 14px; margin-top: 10px; overflow: hidden; align-items: stretch; -webkit-mask-image: linear-gradient(90deg, #000 90%, transparent)">
+          <label style="width: 216px; flex: none; position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(61,184,255,.12); border: 2px solid #3db8ff; box-shadow: 0 0 30px rgba(61,184,255,.55); cursor: pointer"><input type="radio" name="cls" checked style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #3db8ff; margin: 0"><span style="display: flex; gap: 10px; align-items: baseline"><span style="font: 40px/1 Anton, Impact, sans-serif; color: #9fdcff; text-shadow: 0 0 16px rgba(61,184,255,.8)">FACE</span></span><span role="img" aria-label="Earns from hype, hurt by the groan" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px"><span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span><span style="height: 28px; background: #3db8ff; color: #03141a; font: 800 20px/28px 'Barlow Condensed'; text-align: center">+</span><span style="height: 28px; border: 1.5px dashed #ff8a96; box-sizing: border-box; color: #ff8a96; font: 800 20px/24px 'Barlow Condensed'; text-align: center">−</span><span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span></span><span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns from hype on its posts and cards, and from Sweet cards it plays on others' posts that then draw hype.</span><span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by the groan, and by a card of its own that outdraws the post it landed on.</span></label>
+          <label style="width: 216px; flex: none; position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(10,6,20,.7); border: 1px solid rgba(255,61,87,.55); cursor: pointer"><input type="radio" name="cls" style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #ff3d57; margin: 0"><span style="display: flex; gap: 10px; align-items: baseline"><span style="font: 40px/1 Anton, Impact, sans-serif; color: #ff959f">HEEL</span><span style="font: 800 20px 'Barlow Condensed'; letter-spacing: 2px; border: 1px solid #ff8a96; color: #ff8a96; padding: 0 6px">NOW</span></span><span role="img" aria-label="Earns from heat, hurt by the calm" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px"><span style="height: 28px; background: #ff3d57; color: #14030a; font: 800 20px/28px 'Barlow Condensed'; text-align: center">+</span><span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span><span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span><span style="height: 28px; border: 1.5px dashed #ff8a96; box-sizing: border-box; color: #ff8a96; font: 800 20px/24px 'Barlow Condensed'; text-align: center">−</span></span><span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns from heat, and from a Salty card on someone else's post that outdraws it.</span><span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by the calm: the polite shrug.</span></label>
+          <label style="width: 216px; flex: none; position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(10,6,20,.7); border: 1px solid rgba(255,217,61,.55); cursor: pointer"><input type="radio" name="cls" style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #ffd93d; margin: 0"><span style="display: flex; gap: 10px; align-items: baseline"><span style="font: 40px/1 Anton, Impact, sans-serif; color: #ffe27a">JABRONI</span></span><span role="img" aria-label="Earns from the groan, hurt by hype" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px"><span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span><span style="height: 28px; border: 1.5px dashed #ff8a96; box-sizing: border-box; color: #ff8a96; font: 800 20px/24px 'Barlow Condensed'; text-align: center">−</span><span style="height: 28px; background: #ffd93d; color: #1a1403; font: 800 20px/28px 'Barlow Condensed'; text-align: center">+</span><span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span></span><span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns from the groan, and from Salty cards landing on its posts. Selling the L.</span><span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by being taken sincerely: hype.</span></label>
+          <label style="width: 216px; flex: none; position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(10,6,20,.7); border: 1px solid rgba(46,240,160,.55); cursor: pointer"><input type="radio" name="cls" style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #2ef0a0; margin: 0"><span style="display: flex; gap: 10px; align-items: baseline"><span style="font: 34px/40px Anton, Impact, sans-serif; color: #7dffc8">TECHNICIAN</span></span><span role="img" aria-label="Earns from the calm, hurt by heat" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px"><span style="height: 28px; border: 1.5px dashed #ff8a96; box-sizing: border-box; color: #ff8a96; font: 800 20px/24px 'Barlow Condensed'; text-align: center">−</span><span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span><span style="height: 28px; border: 1px solid rgba(255,255,255,.3)"></span><span style="height: 28px; background: #2ef0a0; color: #03141a; font: 800 20px/28px 'Barlow Condensed'; text-align: center">+</span></span><span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns from the calm, the nod, on its posts and cards, and more when a post 3 days old still draws it.</span><span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by heat: being dragged into a flame war.</span></label>
+          <label style="width: 216px; flex: none; position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 300px; padding: 18px 16px; box-sizing: border-box; background: rgba(10,6,20,.7); border: 1px solid rgba(185,122,255,.55); cursor: pointer"><input type="radio" name="cls" style="position: absolute; right: 14px; top: 14px; width: 22px; height: 22px; accent-color: #b97aff; margin: 0"><span style="display: flex; gap: 10px; align-items: baseline"><span style="font: 40px/1 Anton, Impact, sans-serif; color: #d4b0ff">LURKER</span></span><span role="img" aria-label="Earns by calling where any post ends up" style="display: grid; grid-template-columns: repeat(2, 28px); gap: 4px"><span style="height: 28px; border: 1.5px dotted #b97aff; box-sizing: border-box"></span><span style="height: 28px; border: 1.5px dotted #b97aff; box-sizing: border-box"></span><span style="height: 28px; border: 1.5px dotted #b97aff; box-sizing: border-box"></span><span style="height: 28px; border: 1.5px dotted #b97aff; box-sizing: border-box"></span></span><span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #e4def7">Earns by reacting early the way a post ends up, by spinning threads that draw replies, and from reactions to its cards.</span><span style="font: 600 21px/1.5 'Barlow Condensed', sans-serif; color: #ffb3bb">Hurt by posting more than 3 times in a day.</span></label>
         </div>
         <p style="margin: 12px 0 0; font: 600 21px 'Barlow Condensed', sans-serif; letter-spacing: 1px; color: #e4def7">THE MAP: HEAT · HYPE on top, GROAN · CALM below, the same grid as the React picker.</p>
       </fieldset>
