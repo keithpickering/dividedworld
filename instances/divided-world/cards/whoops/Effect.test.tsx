@@ -107,7 +107,7 @@ function mount(o: Options = {}) {
   slots.push(slot);
   const props: EffectProps = {
     slot, post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
-    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), note: o.note ?? (() => {}), nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
+    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show: () => {}, met: () => {}, marks: null, note: o.note ?? (() => {}), nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};

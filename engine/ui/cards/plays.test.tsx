@@ -6,7 +6,8 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
-import { createPlays, effectCards, holdsEffects, inPlayOrder, playOf } from './plays.ts';
+import { createPlays, defaultView, effectCards, holdsEffects, inPlayOrder, playOf } from './plays.ts';
+import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
 const OTHER = '11111111-0000-4000-8000-000000000002';
@@ -179,5 +180,78 @@ describe('notes, in the store', () => {
     expect(plays.get(POST)).toBe(before);
     plays.setNote(a.id, 'Washed clean');
     expect(here).toHaveBeenCalledTimes(1);
+  });
+});
+
+const view = (over: Partial<CardView> = {}): CardView => ({ progress: null, state: '18% washed', yours: false, controls: [], notes: {}, ...over });
+
+describe('views, in the store', () => {
+  test('a card\'s view on a post is kept by the post and card, and cleared with null', () => {
+    const plays = createPlays();
+    expect(plays.view(POST, 'whoops')).toBeNull();
+    plays.setView(POST, 'whoops', view());
+    expect(plays.view(POST, 'whoops')).toEqual(view());
+    expect(plays.view(POST, 'stick-around')).toBeNull();
+    plays.setView(POST, 'whoops', null);
+    expect(plays.view(POST, 'whoops')).toBeNull();
+  });
+
+  test('a view set for one card wakes that post\'s listener and no other post\'s, and leaves the post\'s snapshot as it was', () => {
+    const plays = createPlays();
+    plays.add([card(), card({ targetActId: OTHER })]);
+    const here = vi.fn();
+    const there = vi.fn();
+    plays.subscribe(POST, here);
+    plays.subscribe(OTHER, there);
+    const before = plays.get(POST);
+    plays.setView(POST, 'whoops', view());
+    expect(here).toHaveBeenCalledTimes(1);
+    expect(there).not.toHaveBeenCalled();
+    expect(plays.get(POST)).toBe(before);
+  });
+
+  test('an equal view wakes nothing: its notes by entry, its controls control by control', () => {
+    const plays = createPlays();
+    const run = () => {};
+    plays.setView(POST, 'whoops', view({ notes: { a: 'x' }, controls: [{ kind: 'press', label: 'Go', run }] }));
+    const here = vi.fn();
+    plays.subscribe(POST, here);
+    plays.setView(POST, 'whoops', view({ notes: { a: 'x' }, controls: [{ kind: 'press', label: 'Go', run }] }));
+    plays.setView(POST, 'whoops', null);
+    expect(here).toHaveBeenCalledTimes(1);
+    plays.setView(POST, 'whoops', null);
+    expect(here).toHaveBeenCalledTimes(1);
+    plays.setView(POST, 'whoops', view({ notes: { a: 'x' } }));
+    plays.setView(POST, 'whoops', view({ notes: { a: 'y' } }));
+    expect(here).toHaveBeenCalledTimes(3);
+  });
+
+  test('changing one card\'s view leaves another card\'s view, and its notes, on the same post untouched, with no frame in which it is absent', () => {
+    const plays = createPlays();
+    const stick = view({ state: 'Held', notes: { p1: 'Layer 1 of 1' } });
+    plays.setView(POST, 'stick-around', stick);
+    plays.setView(POST, 'whoops', view());
+    const seen: (CardView | null)[] = [];
+    plays.subscribe(POST, () => seen.push(plays.view(POST, 'stick-around')));
+    plays.setView(POST, 'whoops', view({ state: '40% washed' }));
+    plays.setView(POST, 'whoops', null);
+    expect(seen).toHaveLength(2);
+    expect(seen.every((v) => v === stick)).toBe(true);
+    expect(plays.view(POST, 'stick-around')).toBe(stick);
+  });
+});
+
+describe('the default view', () => {
+  const rules = { name: 'Whoops!' };
+  const settings = {} as never;
+  test('says the card\'s summary, with no edge, notch or controls', () => {
+    expect(defaultView(rules, { summary: 'Splats ink on a post.', describe: () => 'Splats ink. Costs 2.' }, settings)).toEqual({ progress: null, state: 'Splats ink on a post.', yours: false, controls: [], notes: {} });
+  });
+  test('says the first sentence of what the card describes when it gives no summary', () => {
+    expect(defaultView(rules, { describe: () => 'Splats ink on a post. It costs 2 and washes off.' }, settings).state).toBe('Splats ink on a post.');
+    expect(defaultView(rules, { describe: () => 'No full stop here' }, settings).state).toBe('No full stop here');
+  });
+  test('falls back to the card\'s name where there is nothing to say it with', () => {
+    expect(defaultView(rules, undefined).state).toBe('Whoops!');
   });
 });

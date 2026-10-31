@@ -21,7 +21,7 @@
  * in play order, so the latest is outermost. A post with no plays, or whose plays' cards draw no
  * effect, is drawn untouched.
  */
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ComponentType, type ReactNode, type RefObject } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
@@ -31,7 +31,7 @@ import type { Mine } from '../reactions/mine.ts';
 import { useTally, type Tallies } from '../thread/tallies.ts';
 import { PlayPanel } from './Panel.tsx';
 import { usePlays, type Plays } from './plays.ts';
-import type { CardPlay, CardUi, EffectPlace, EffectProps } from './types.ts';
+import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
 import './cards.css';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
@@ -78,15 +78,31 @@ export function PostEffects({ plays, post, place, slot, nameOf, children }: {
     const mine = here.plays.filter((p) => p.card === key);
     const Effect = card.Effect;
     wrapped = (
-      <Effect
-        key={key} post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} save={save} release={release} note={note} nameOf={nameOf}
+      <BoundEffect
+        key={key} Effect={Effect} store={plays}
+        post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} save={save} release={release} note={note} nameOf={nameOf}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
         {wrapped}
-      </Effect>
+      </BoundEffect>
     );
   }
   return <>{wrapped}{!hosted && <div className="kb-act-slot" ref={setOwn} />}</>;
+}
+
+/**
+ * One card's effect on one post, given a `show` bound to that post and card, and clearing the card's view when the effect
+ * is gone (unmounted: the plays that drew it left, or the post did), so a mark never keeps saying what a dead effect last
+ * said. `show` is stable for the pair, so an effect may list it in its dependencies.
+ */
+function BoundEffect({ Effect, store, ...props }: Omit<EffectProps, 'show' | 'met' | 'marks'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays }) {
+  const post = props.post.id;
+  const card = props.plays[0]!.card;
+  const show = useCallback((view: CardView | null) => store.setView(post, card, view), [store, post, card]);
+  useEffect(() => () => store.setView(post, card, null), [store, post, card]);
+  /* Wired in Task 7 (met) and Task 5 (marks). */
+  const met = useCallback(() => {}, []);
+  return <Effect {...props} show={show} met={met} marks={null} />;
 }
 
 /**
