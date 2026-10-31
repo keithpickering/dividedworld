@@ -102,7 +102,7 @@ export const TwoLayers: Story = { args: { layers: 2, washed: 'none' } };
 export const ThreeLayers: Story = { args: { layers: 3, washed: 'none' } };
 /** The top layer partly washed: the readout gives its own share, not a sum. */
 export const ThreeLayersPartlyWashed: Story = { args: { layers: 3, washed: 'partly' } };
-/** The bottom layer washed clean: its segment is faded, and "3 layers" is now two. */
+/** The bottom layer washed clean: its segment is faded, and the count stays three, as each panel counts them ("Layer 1 of 3"). */
 export const ThreeLayersOneClean: Story = { args: { layers: 3, washed: 'bottom-clean' } };
 export const OneLayerPhone: Story = { args: { layers: 1, washed: 'none' }, ...phone };
 export const TwoLayersPhone: Story = { args: { layers: 2, washed: 'none' }, ...phone };

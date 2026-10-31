@@ -155,15 +155,15 @@ export function EffectStrip({ slot, card, readout, children }: { readonly slot: 
 /** The thread's narrow width (thread.css's 40em, where a post is stacked): the tags fold their chips into "+N more" there, and a play's panel is a sheet. */
 const NARROW = '(max-width: 40em)';
 /* One query for the page, however many posts ask it, with one listener behind every post's subscription; asked again only if the window's `matchMedia` is another. */
-let narrowQuery: { readonly from: typeof globalThis.matchMedia; readonly list: MediaQueryList } | null = null;
+let narrowQuery: { readonly source: typeof globalThis.matchMedia; readonly list: MediaQueryList } | null = null;
 const narrowWatchers = new Set<() => void>();
 const queryOf = (): MediaQueryList | null => {
-  const from = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia : null;
-  if (!from) return null;
-  if (narrowQuery?.from !== from) {
-    const list = from(NARROW);
+  const source = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia : null;
+  if (!source) return null;
+  if (narrowQuery?.source !== source) {
+    const list = source(NARROW);
     list.addEventListener?.('change', () => { for (const w of [...narrowWatchers]) w(); });
-    narrowQuery = { from, list };
+    narrowQuery = { source, list };
   }
   return narrowQuery.list;
 };
