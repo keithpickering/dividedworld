@@ -24,7 +24,7 @@
  * Close and Esc put them and cannot reach it until they do. A bar scrolled out of the window is not
  * made room for. Nested overlays share one dimming: the bar is lit again when the last one closes.
  */
-import { useId, useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { useCallback, useId, useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
@@ -52,6 +52,11 @@ export interface OverlayProps {
    * call `onClose`, which then decides what they mean.
    */
   readonly closeAt?: 'bar' | 'foot' | 'none';
+  /**
+   * Gives an element that stands beside the dialog's box in the overlay, inside the layer's focus scope and outside the box's chamfer:
+   * where a takeover hosts the Lens (cards/Lens.tsx `LensHost`), which the clip would cut. Told with null when it is gone.
+   */
+  readonly onBeside?: (el: HTMLElement | null) => void;
   /** The part of the page the overlay opens by, as a popover; with none it stands in the middle of the window. */
   readonly anchor?: RefObject<HTMLElement | null>;
   /** With an anchor: the window's width, in px, below which the overlay is a sheet above the HUD rather than a popover. */
@@ -112,10 +117,13 @@ function place(box: HTMLElement, anchor: HTMLElement, sheetBelow: number): Place
   return p.side;
 }
 
-export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', anchor, sheetBelow = 0, onPlace, className, kicker, style, data }: OverlayProps) {
+export function Overlay({ title, onClose, children, surface, returnFocusTo, label, describedBy, aside, closeAt = 'bar', onBeside, anchor, sheetBelow = 0, onPlace, className, kicker, style, data }: OverlayProps) {
   const id = useId();
-  const { overlay, box, closeButton } = useModalLayer({ onClose, returnFocusTo });
+  const { overlay, box, closeButton, beside } = useModalLayer({ onClose, returnFocusTo });
   const calm = useSurfaceStyle(surface);
+  const besideTold = useRef(onBeside);
+  besideTold.current = onBeside;
+  const besideRef = useCallback((el: HTMLDivElement | null) => { beside.current = el; besideTold.current?.(el); }, [beside]);
 
   useLayoutEffect(() => {
     const self = {};
@@ -196,6 +204,7 @@ export function Overlay({ title, onClose, children, surface, returnFocusTo, labe
         <div className="kb-glass-dialog-body">{children}</div>
         {closeAt === 'foot' && <div className="kb-glass-dialog-foot">{close}</div>}
       </div>
+      {onBeside && <div ref={besideRef} className="kb-glass-overlay-beside" />}
     </div>,
     document.body,
   );

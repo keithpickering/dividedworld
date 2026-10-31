@@ -86,6 +86,12 @@ export interface ModalLayer {
   readonly overlay: RefObject<HTMLDivElement | null>;
   readonly box: RefObject<HTMLDivElement | null>;
   readonly closeButton: RefObject<HTMLButtonElement | null>;
+  /**
+   * An element beside the dialog's box, in the same overlay, that is part of the layer's scope: focus in it is not pulled back into
+   * the box and Tab in it is not wrapped. A takeover hosts the Lens there (glass/Overlay.tsx `onBeside`), outside the box's
+   * chamfer, which would clip it.
+   */
+  readonly beside: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -103,6 +109,7 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
   /* Cleared first thing when the dialog closes, so giving focus back is not mistaken for focus escaping. */
   const open = useRef(true);
   const overlay = useRef<HTMLDivElement>(null);
+  const beside = useRef<HTMLElement>(null);
   const [entry] = useState<Entry>(() => ({ seq: ++sequence, overlay: null }));
 
   useLayoutEffect(() => {
@@ -147,6 +154,8 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
       if (stops.length === 0) { e.preventDefault(); return; }
       const [head, tail] = [stops[0]!, stops[stops.length - 1]!];
       const at = document.activeElement;
+      /* Inside what stands beside the box (the Lens), Tab is that element's own. */
+      if (at instanceof Node && beside.current?.contains(at)) return;
       if (!dialog.contains(at)) { e.preventDefault(); head.focus(); }
       else if (e.shiftKey && at === head) { e.preventDefault(); tail.focus(); }
       else if (!e.shiftKey && at === tail) { e.preventDefault(); head.focus(); }
@@ -154,7 +163,7 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
     /* Focus that lands outside (a script, a click through) is brought back in. */
     const onFocus = (e: FocusEvent) => {
       const dialog = box.current;
-      if (open.current && isTop(entry) && dialog && e.target instanceof Node && !dialog.contains(e.target)) (tabbables(dialog)[0] ?? dialog).focus();
+      if (open.current && isTop(entry) && dialog && e.target instanceof Node && !dialog.contains(e.target) && !beside.current?.contains(e.target)) (tabbables(dialog)[0] ?? dialog).focus();
     };
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('focusin', onFocus);
@@ -164,7 +173,7 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
     };
   }, []);
 
-  return { overlay, box, closeButton };
+  return { overlay, box, closeButton, beside };
 }
 
 export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {

@@ -732,7 +732,7 @@ describe('the takeover', () => {
     await openView(probed(), withProbe);
     const mark = markIn(view()!, /^Whoops!, 1 play/u);
     fireEvent.click(mark);
-    expect(view()).toContainElement(lensDialog());
+    expect(view()!.closest('.kb-glass-overlay')).toContainElement(lensDialog());
     expect(lensDialog()).toHaveTextContent('0 strokes');
     expect(view()).toContainElement(markIn(view()!, /^stick-around, 1 play/u));
     /* The thread's own strip is under the inert page; the Lens is not. */
@@ -769,6 +769,50 @@ describe('the takeover', () => {
     await wait(40);
     expect(level()).toBeGreaterThan(0);
     expect(view()).not.toBeNull();
+  });
+});
+
+/*
+ * The post's words are drawn by a portal into an element that is moved into the view, so a synthetic event from inside them follows
+ * the fiber tree (the thread's) and never reaches the view; the view listens natively, where the DOM move is followed.
+ */
+describe('input over the post\'s words in the view', () => {
+  test('a wheel, a drag and PageDown on the words count as they do on the scroller: pushed past the post\'s end they fill the bar', async () => {
+    await openView(probed(), withProbe);
+    const words = () => within(view()!).getByTestId('probe').querySelector('output')!;
+    for (const [name, each] of [
+      ['wheel', () => { fireEvent.wheel(words(), { deltaY: 60 }); }],
+      ['PageDown', () => { fireEvent.keyDown(words(), { key: 'PageDown' }); }],
+      ['touch', (() => { let y = 400; return () => { if (y === 400) fireEvent.touchStart(words(), { touches: [{ clientY: y }] }); y -= 40; fireEvent.touchMove(words(), { touches: [{ clientY: y }] }); }; })()],
+    ] as const) {
+      await wait(1500);
+      expect(level(), `${name}: drained`).toBe(0);
+      atEnd('bottom');
+      await frames(6, each);
+      expect(level(), name).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('a Lens hosted in the hold', () => {
+  test('draws no Spin thread (its form would open behind the inert page) and says when spinning is possible', async () => {
+    await openView(probed(), withProbe);
+    fireEvent.click(markIn(view()!, /^Whoops!, 1 play/u));
+    fireEvent.click(within(lensDialog()).getByRole('button', { name: /^1 play · / }));
+    expect(within(lensDialog()).queryByRole('button', { name: 'Spin thread' })).toBeNull();
+    expect(lensDialog()).toHaveTextContent('Spin a thread from this play once you are free of the hold.');
+  });
+
+  test('stands outside the dialog\'s clipped box, inside the overlay that is the top layer, and is reached by Tab without the view pulling focus away', async () => {
+    await openView(probed(), withProbe);
+    fireEvent.click(markIn(view()!, /^Whoops!, 1 play/u));
+    const lens = lensDialog();
+    expect(view()!.contains(lens)).toBe(false);
+    expect(lens.closest('.kb-glass-overlay')).toBe(view()!.closest('.kb-glass-overlay'));
+    expect(lens.closest('[inert]')).toBeNull();
+    const tab = within(lens).getByRole('tab', { selected: true });
+    tab.focus();
+    expect(tab).toHaveFocus();
   });
 });
 

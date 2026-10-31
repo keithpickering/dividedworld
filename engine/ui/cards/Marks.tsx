@@ -28,7 +28,7 @@ import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useNarrow } from './Effects.tsx';
 import { Callout, useCallout } from './Callout.tsx';
-import { Lens, useLensFor, useLensStore, useResolvedView } from './Lens.tsx';
+import { Lens, useLensFor, useLensHost, useLensStore, useResolvedView } from './Lens.tsx';
 import { GhostMark } from './PlayActions.tsx';
 import { MARKS_NARROW, MARKS_WIDE, kindsOf, markName, moreName, sumOf } from './marks.ts';
 import { inPlayOrder, usePlays, type Plays } from './plays.ts';
@@ -162,6 +162,8 @@ export interface MarkStripProps {
 export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, compare = true }: MarkStripProps) {
   const here = usePlays(plays, post);
   const narrow = useNarrow();
+  /* A strip a takeover hosts (Stick Around's view) offers no ghost mark: its play form would open under the view. */
+  const hosted = useLensHost() !== document.body;
   const postTotal = usePostTotal(tallies, post, compare);
   /*
    * The strip is out of the page's flow, so the row it hangs on cannot know its width: it measures itself and tells its
@@ -195,7 +197,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, co
         <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} onOpen={press} />
       ))}
       {hidden.length > 0 && <More hidden={hidden.length} first={hidden[0]!} expanded={open !== null && hidden.includes(open)} onOpen={press} />}
-      {ghost && <GhostMark act={ghost} />}
+      {ghost && !hosted && <GhostMark act={ghost} />}
     </span>
   );
 }

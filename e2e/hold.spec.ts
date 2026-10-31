@@ -239,3 +239,49 @@ test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing ac
   await expect.poll(inked).toBeLessThan(whole * 0.97);
   expect(Math.abs((await inked()) - scrubbed) / whole).toBeLessThan(0.1);
 });
+
+/* Input over the post's words in the view counts like input over the scroller: the words are a portal moved into the view, in a real browser too. */
+test('a wheel over the post\'s text, pushed past its end, fills the bar and frees the reader', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 980 });
+  await intoView(page);
+  await scroller(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  const text = view(page).locator('.kb-hold-post-body').first();
+  const at = (await text.boundingBox())!;
+  /* The post's last lines, which are in the window with the scroller at its end. */
+  await page.mouse.move(at.x + at.width / 2, at.y + at.height - 20);
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('.kb-hold-post-body') !== null, [at.x + at.width / 2, at.y + at.height - 20])).toBe(true);
+  await page.waitForTimeout(100);
+  /* Each wheel call takes a round trip, so each is a hard push: the pace of a trackpad's flick. */
+  for (let i = 0; i < 100 && (await view(page).isVisible()); i += 1) await page.mouse.wheel(0, 400);
+  await expect(view(page)).toBeHidden();
+});
+
+/* The Lens a mark opens inside the hold stands in the overlay, outside the dialog box whose chamfer would clip it. */
+test('a mark in the hold opens the Lens unclipped, beside the dialog\'s box', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 980 });
+  await page.goto(MOMENT);
+  await ready(page);
+  await expect(view(page)).toBeVisible({ timeout: 10_000 });
+  await view(page).getByRole('button', { name: /^Stick Around, 1 play/u }).click();
+  const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+  await expect(lens).toBeVisible();
+  const read = await lens.evaluate((el) => {
+    const clipped: string[] = [];
+    for (let n: Element | null = el; n; n = n.parentElement) if (getComputedStyle(n).clipPath !== 'none') clipped.push(n.className);
+    const r = el.getBoundingClientRect();
+    return { clipped, inBox: el.parentElement!.closest('.kb-glass-dialog') !== null, inert: el.closest('[inert]') !== null, r: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } };
+  });
+  /* The Lens's own chamfer clips its box (the dialog inside the wrapper); no ancestor of its wrapper does. */
+  expect(read.inBox, 'the Lens is not inside the dialog box').toBe(false);
+  expect(read.inert).toBe(false);
+  expect(read.r.left).toBeGreaterThanOrEqual(0);
+  expect(read.r.top).toBeGreaterThanOrEqual(0);
+  expect(read.r.right).toBeLessThanOrEqual(1440);
+  expect(read.r.bottom).toBeLessThanOrEqual(980);
+  const wrapperClips = await lens.evaluate((el) => { const out: string[] = []; for (let n = el.parentElement; n; n = n.parentElement) if (getComputedStyle(n).clipPath !== 'none') out.push(n.className); return out; });
+  expect(wrapperClips).toEqual([]);
+  /* Esc closes the Lens, and the view stays up. */
+  await page.keyboard.press('Escape');
+  await expect(lens).toBeHidden();
+  await expect(view(page)).toBeVisible();
+});

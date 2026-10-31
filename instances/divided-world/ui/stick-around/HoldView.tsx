@@ -15,12 +15,12 @@
  * auto-repeat counts no more than as many presses would. An Esc that closed it would be a free way out.
  *
  * The view is a takeover's (marks-and-the-lens design, section 4): the post's head carries the post's marks (`marks`), and a mark
- * opens the Lens inside this dialog (`LensHost` names the element it renders in), where focus is held and the page behind is inert.
- * Scrolling and keys typed in the Lens are the Lens's own and push nothing past the post, and Esc in it closes the Lens (the float
+ * opens the Lens in the overlay beside this dialog's box (`LensHost` names the element; the box's chamfer would clip it inside), where
+ * focus is held (the layer counts it) and the page behind is inert. Scrolling and keys typed in the Lens are the Lens's own and push nothing past the post, and Esc in it closes the Lens (the float
  * answers the key first, glass/Float.tsx), so the next Esc is a press of Break free again. The post's words are not drawn here: they
  * are moved into `words` by the effect (Effect.tsx), so nothing in them is drawn again.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode, type RefObject, type TouchEvent, type WheelEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from 'react';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { LensHost } from '../../../../engine/ui/cards/Lens.tsx';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
@@ -70,9 +70,8 @@ export function HoldView({ post, play, stage, release, onBreakFree, marks, words
   const [refused, setRefused] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  /* The Lens's place in the dialog, and whether an event came from inside it. */
+  /* Where the Lens renders: beside the dialog's box, in the overlay (Overlay's `onBeside`). */
   const [lensHost, setLensHost] = useState<HTMLElement | null>(null);
-  const inLens = (e: { target: EventTarget | null }) => lensHost !== null && e.target instanceof Node && lensHost.contains(e.target);
   const touchY = useRef<number | null>(null);
   /* What the reader has done since the last frame, and where the bar has got to: read by the frame loop, written by events. */
   const input = useRef({ pushed: 0, lastPush: 1, presses: [] as number[], lastCounted: -Infinity });
@@ -132,34 +131,53 @@ export function HoldView({ post, play, stage, release, onBreakFree, marks, words
     }
   }, []);
 
-  const onWheel = (e: WheelEvent) => {
-    if (inLens(e)) return;
-    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (scroller.current?.clientHeight ?? 1) : 1;
-    asked(e.deltaY * unit, false);
-  };
-  const onTouchStart = (e: TouchEvent) => { if (inLens(e)) return; touchY.current = e.touches[0]?.clientY ?? null; };
-  const onTouchMove = (e: TouchEvent) => {
-    if (inLens(e) || touchY.current === null) return;
-    const y = e.touches[0]?.clientY;
-    if (y === undefined || touchY.current === null) return;
-    asked(touchY.current - y, false);
-    touchY.current = y;
-  };
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.altKey || e.ctrlKey || e.metaKey || inLens(e)) return;
-    const room = scroller.current?.clientHeight ?? 0;
-    const onControl = e.target instanceof HTMLButtonElement || e.target instanceof HTMLInputElement;
-    let delta = 0;
-    if (e.key === 'ArrowDown') delta = ARROW;
-    else if (e.key === 'ArrowUp') delta = -ARROW;
-    else if (e.key === 'PageDown') delta = room * PAGE;
-    else if (e.key === 'PageUp') delta = -room * PAGE;
-    else if (e.key === ' ' && !onControl) delta = e.shiftKey ? -room * PAGE : room * PAGE;
-    if (delta === 0) return;
-    /* A focused control would scroll nothing, so the key is answered here, as the focused post would have answered it. */
-    e.preventDefault();
-    asked(delta, true);
-  };
+  /*
+   * Wheel, touch and the scrolling keys are heard natively on the view's inner element, not through React: the post's words are drawn
+   * by a portal that belongs to the thread's tree and sits in this element's DOM, and DOM bubbling follows where the words are, so
+   * input over the text counts like input over the scroller whichever tree they were drawn from. The Lens stands outside this element
+   * (beside the dialog's box), so what is typed or scrolled in it is never counted here.
+   */
+  const inner = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = inner.current;
+    if (!el) return;
+    const onWheel = (e: globalThis.WheelEvent) => {
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (scroller.current?.clientHeight ?? 1) : 1;
+      asked(e.deltaY * unit, false);
+    };
+    const onTouchStart = (e: globalThis.TouchEvent) => { touchY.current = e.touches[0]?.clientY ?? null; };
+    const onTouchMove = (e: globalThis.TouchEvent) => {
+      const y = e.touches[0]?.clientY;
+      if (y === undefined || touchY.current === null) return;
+      asked(touchY.current - y, false);
+      touchY.current = y;
+    };
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const room = scroller.current?.clientHeight ?? 0;
+      const onControl = e.target instanceof HTMLButtonElement || e.target instanceof HTMLInputElement;
+      let delta = 0;
+      if (e.key === 'ArrowDown') delta = ARROW;
+      else if (e.key === 'ArrowUp') delta = -ARROW;
+      else if (e.key === 'PageDown') delta = room * PAGE;
+      else if (e.key === 'PageUp') delta = -room * PAGE;
+      else if (e.key === ' ' && !onControl) delta = e.shiftKey ? -room * PAGE : room * PAGE;
+      if (delta === 0) return;
+      /* A focused control would scroll nothing, so the key is answered here, as the focused post would have answered it. */
+      e.preventDefault();
+      asked(delta, true);
+    };
+    el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
+    el.addEventListener('keydown', onKeyDown);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('keydown', onKeyDown);
+    };
+  }, [asked]);
 
   const press = (e: { timeStamp: number }) => { input.current.presses.push(e.timeStamp); };
 
@@ -211,11 +229,11 @@ export function HoldView({ post, play, stage, release, onBreakFree, marks, words
   const why = `${id}-why`;
   return (
     <Overlay
-      title="Stick Around" label="Stick Around" className="kb-hold-view" surface="effect" closeAt="none" onClose={onClose}
+      title="Stick Around" label="Stick Around" className="kb-hold-view" onBeside={setLensHost} surface="effect" closeAt="none" onClose={onClose}
       aside={<p className="kb-hold-tag"><span className="kb-calm">{names.caster}{play.message ? `: “${play.message}”` : ''}</span></p>}
     >
       <LensHost host={lensHost}>
-      <div className="kb-hold-inner" onWheel={onWheel} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onKeyDown={onKeyDown}>
+      <div ref={inner} className="kb-hold-inner">
         <div ref={scroller} className="kb-hold-scroll" tabIndex={0} role="region" aria-label="The held post, and how to be released from it">
           <article className="kb-hold-post" aria-label={heading}>
             <header className="kb-hold-post-line">
@@ -250,7 +268,6 @@ export function HoldView({ post, play, stage, release, onBreakFree, marks, words
           <p id={why} className="kb-visually-hidden">Press it again and again to fill the bar, as fast scrolling does. The bar drains whenever you stop.</p>
         </div>
         <p className="kb-hold-ways" role="status">{said ?? ''}</p>
-        <div ref={setLensHost} className="kb-hold-lens-host" />
       </div>
       </LensHost>
     </Overlay>

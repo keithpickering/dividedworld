@@ -192,6 +192,8 @@ function PlayRow({ play, caster, card, view, store, tallies, mine, compare, to, 
   const note = view.notes[play.id] ?? deprecated;
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
+  /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
+  const hosted = useLensHost() !== document.body;
   return (
     <li className="kb-lens-row" data-kb-play={play.id}>
       <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · played <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
@@ -201,7 +203,9 @@ function PlayRow({ play, caster, card, view, store, tallies, mine, compare, to, 
       {yours && <p className="kb-lens-yours">Your play</p>}
       <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} look="glass" />
       <div className="kb-lens-actions">
-        <button type="button" className="kb-glass-cut-button kb-lens-action" onClick={() => onSpin(play, name)}>Spin thread</button>
+        {hosted
+          ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
+          : <button type="button" className="kb-glass-cut-button kb-lens-action" onClick={() => onSpin(play, name)}>Spin thread</button>}
         {to && <Link className="kb-glass-cut-button kb-lens-action" to={to}>Go to post</Link>}
       </div>
       <Spun play={play.id} />

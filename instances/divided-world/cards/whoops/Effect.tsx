@@ -212,19 +212,34 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
     const f = frameRef.current;
     const l = layoutRef.current;
     if (!f || !l) return;
-    /* In the thread the ink reaches the post body's borders (the owner's word), so the body, the cell this sits in, is measured too: how far down it the frame starts and how tall it is. */
-    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
-    const measure = () => setSize((prev) => {
-      const next = { frame: f.clientWidth, height: l.offsetHeight, above: cell ? f.getBoundingClientRect().top - cell.getBoundingClientRect().top : 0, cell: cell ? cell.clientHeight : 0 };
-      return prev.frame === next.frame && prev.height === next.height && prev.above === next.above && prev.cell === next.cell ? prev : next;
-    });
+    /*
+     * In the thread the ink reaches the post body's borders (the owner's word), so the body, the cell this sits in, is measured too: how
+     * far down it the frame starts and how tall it is. The cell is found at each measure and not once: under a takeover (Stick Around)
+     * the words are mounted in an element that is moved into the post afterwards, and moved again into its view, so the cell is not
+     * there when this first runs and changes when the words move. The observer follows whichever cell there is.
+     */
+    let watched: HTMLElement | null = null;
+    let watch: ResizeObserver | null = null;
+    const measure = () => {
+      const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+      if (watch && cell !== watched) {
+        if (watched) watch.unobserve(watched);
+        if (cell) watch.observe(cell);
+        watched = cell;
+      }
+      setSize((prev) => {
+        const next = { frame: f.clientWidth, height: l.offsetHeight, above: cell ? f.getBoundingClientRect().top - cell.getBoundingClientRect().top : 0, cell: cell ? cell.clientHeight : 0 };
+        return prev.frame === next.frame && prev.height === next.height && prev.above === next.above && prev.cell === next.cell ? prev : next;
+      });
+    };
+    if (typeof ResizeObserver === 'function') {
+      watch = new ResizeObserver(measure);
+      watch.observe(f);
+      watch.observe(l);
+    }
     measure();
-    if (typeof ResizeObserver !== 'function') return;
-    const watch = new ResizeObserver(measure);
-    watch.observe(f);
-    watch.observe(l);
-    if (cell) watch.observe(cell);
-    return () => watch.disconnect();
+    if (!watch) return;
+    return () => watch?.disconnect();
   }, []);
 
   /* Only a post near the viewport is drawn: past a screen above or below, the canvas is dropped. */

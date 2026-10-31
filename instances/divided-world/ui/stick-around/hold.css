@@ -144,11 +144,6 @@ article:has(> .kb-act-main .kb-hold)::after {
   color: var(--kb-muted);
 }
 
-/* Where the Lens opens (LensHost): inside the dialog, so focus is held in it and the page behind, inert, does not hold it. The Lens is fixed to the window (glass/shell.css), so this takes no box. */
-.kb-hold-lens-host {
-  display: contents;
-}
-
 .kb-hold-post-line b {
   color: var(--kb-fg);
 }

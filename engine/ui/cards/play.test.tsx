@@ -14,6 +14,7 @@ import { landsOnPost, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { LOST_ANSWER } from '../data/api.ts';
 import { plainRefusal } from './faces.ts';
+import { LensHost } from './Lens.tsx';
 import { Frame } from '../frame/Frame.tsx';
 import { hudKey, usePlayer } from '../player.tsx';
 import { usePlay } from './play.tsx';
@@ -157,6 +158,17 @@ describe('where the ghost mark stands', () => {
     expect(buttons).toHaveLength(2);
     expect(buttons[0]).toHaveAccessibleName(/^Stick Around, 1 play, /u);
     expect(buttons[1]).toHaveAccessibleName('Play Whoops! on post 2');
+  });
+
+  test('a strip a takeover hosts (Stick Around\'s view) has no ghost mark: the play form would open under the view', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    renderIn(w.fake, <Frame><LensHost host={document.createElement('div')}><ThreadScreen thread={w.thread} /></LensHost></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
+    await screen.findByRole('article', { name: /^Post 4 /u });
+    await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
+    await arm(user);
+    expect(here(2)).toBeNull();
+    expect(document.querySelector('.kb-ghost-mark')).toBeNull();
   });
 
   test('it opens the play form on its post', async () => {

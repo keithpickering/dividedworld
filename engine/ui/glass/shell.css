@@ -314,3 +314,8 @@
     filter: none;
   }
 }
+
+/* What stands beside the dialog's box in the overlay (the Lens a takeover hosts): it takes no box, and what it holds is fixed to the window. */
+.kb-glass-overlay-beside {
+  display: contents;
+}

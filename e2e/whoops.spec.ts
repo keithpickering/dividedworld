@@ -118,6 +118,21 @@ test('with a held Stick Around around the ink, the marks, the reactions and the 
 });
 
 /*
+ * Stick Around moves the post's words into the post after they are mounted (the takeover draws them once and moves their element), so
+ * Whoops! finds the post body it bleeds over each time it measures. In the thread, with a hold around the ink, the ink still reaches
+ * the post body's borders.
+ */
+test('with a held Stick Around around the ink, the ink still reaches the post body\'s borders', async ({ page }) => {
+  await page.goto('/?fixture=boards&story=boards-08-hold--whoops-under-hold');
+  await expect(page.locator('.kb-whoops-ink')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const body = document.querySelector('.kb-act-main')!.getBoundingClientRect();
+    const ink = document.querySelector('.kb-whoops-ink')!.getBoundingClientRect();
+    return [ink.left - body.left, ink.right - body.right, ink.top - body.top].map((d) => Math.round(Math.abs(d)));
+  })).toEqual([0, 0, 0]);
+});
+
+/*
  * The scrub button, the author's tool choice (both the kit's tiles in the Lens) and the chosen ink swatch are drawn with a border, a
  * glow and underlining, which forced colors (Windows High Contrast) drop or recolor: each is also
  * marked by an outline or a border in a system color there. The swatch is the play form's, which a
