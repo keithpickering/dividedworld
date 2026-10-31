@@ -1,0 +1,411 @@
+/*
+ * The settlement's summary on the glass (Settlement.tsx), as the Settlement board draws it
+ * (docs/research/2026-10-29-two-worlds/09-settlement.html): no menu bar; the settled time in the
+ * estimate's amber and the tabs on one line, the heading at 112px under them; the wallet's column on
+ * the left (the orbs, the figure the wallet went from, the new one at 96px in the gold, the change),
+ * then the reasons as a ruled list; the rank's card in the gold, chamfered, and the Turn's card in the
+ * new class's color on the right; Open my log outlined and Back to the board in the gold at the foot.
+ *
+ * The surface's recipe is `calmAll` (the glass plan, section 6), so every text node, the heading and
+ * the large figures too, stands in a calm (calm.css) or on a card's panel. Sizes are the board's px
+ * or the glass's size tokens, never under the label (20px) on the Main board's layout
+ * (engine/ui/glass/board.test.tsx reads this file). On the Phone board's layout the two columns stack
+ * and the type takes the phone's sizes.
+ */
+.kb-settled {
+  padding-top: 36px;
+}
+
+.kb-settled-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 32px;
+}
+
+.kb-settled-when {
+  margin: 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--kb-glass-estimate);
+}
+
+.kb-settled-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kb-settled-tab,
+.kb-settled-log,
+.kb-settled-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 18px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 50%, transparent);
+  background: transparent;
+  color: var(--kb-glass-text);
+  font: 800 var(--kb-glass-size-body) / 1 var(--kb-glass-font-body);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.kb-settled-tab[aria-pressed='true'] {
+  border-color: var(--kb-glass-neon);
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+}
+
+.kb-settled-tab:focus-visible,
+.kb-settled-log:focus-visible,
+.kb-settled-back:focus-visible,
+.kb-settled a:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-settled-title {
+  margin: 10px 0 0;
+  font-size: 7rem;
+  line-height: 0.95;
+  letter-spacing: 2px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 40px color-mix(in srgb, var(--kb-glass-ready) 35%, transparent);
+}
+
+.kb-settled a:not(.kb-settled-log, .kb-settled-back) {
+  color: var(--kb-glass-pale);
+  text-underline-offset: 4px;
+}
+
+.kb-settled-body {
+  display: grid;
+  grid-template-columns: minmax(0, 640px) minmax(0, 616px);
+  justify-content: space-between;
+  gap: 40px;
+  margin-top: 26px;
+}
+
+/* ---- the wallet and the reasons ---- */
+
+.kb-settled-orbs {
+  --kb-orb-size: 74px;
+  --kb-orb-gap: 18px;
+}
+
+.kb-settled-move {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 18px;
+  margin: 18px 0 0;
+}
+
+.kb-settled-was {
+  font-size: 1.875rem;
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-settled-now {
+  font-size: var(--kb-glass-size-display-xl);
+  line-height: 1;
+  color: var(--kb-glass-ready);
+  text-shadow: 0 0 34px color-mix(in srgb, var(--kb-glass-ready) 55%, transparent);
+}
+
+.kb-settled-change {
+  font-size: var(--kb-glass-size-title);
+  font-weight: 800;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-settled-change[data-kb-sign='-1'] {
+  color: var(--kb-glass-loss);
+}
+
+.kb-settled-why {
+  margin: 34px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-settled-why-head {
+  margin: 0 0 10px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-settled-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
+}
+
+.kb-settled-line {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 12px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
+}
+
+.kb-settled-line > [data-kb-reason] {
+  flex: 1;
+  max-width: 680px;
+}
+
+.kb-settled-amount {
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-settled-amount[data-kb-sign='-1'] {
+  color: var(--kb-glass-over);
+}
+
+.kb-settled-held {
+  margin: 12px 0 0;
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- the rank's card and the Turn's ---- */
+
+.kb-settled-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.kb-settled-rank {
+  padding: 26px 32px;
+  background: var(--kb-glass-panel);
+  border: 1px solid var(--kb-glass-ready);
+  box-shadow: 0 0 50px color-mix(in srgb, var(--kb-glass-ready) 35%, transparent), inset 0 0 50px color-mix(in srgb, var(--kb-glass-ready) 8%, transparent);
+  clip-path: polygon(0 0, calc(100% - var(--kb-glass-chamfer-5)) 0, 100% var(--kb-glass-chamfer-5), 100% 100%, var(--kb-glass-chamfer-5) 100%, 0 calc(100% - var(--kb-glass-chamfer-5)));
+}
+
+.kb-settled-card-label {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--kb-glass-ready-text);
+}
+
+.kb-settled-rank-was {
+  margin-top: 6px;
+  font-size: var(--kb-glass-size-display-s);
+  font-weight: 600;
+  text-decoration: line-through;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-settled-rank-now {
+  font-size: 5rem;
+  line-height: 1;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--kb-glass-ready-text);
+  text-shadow: 0 0 10px var(--kb-glass-ready), 0 0 34px color-mix(in srgb, var(--kb-glass-ready) 70%, transparent);
+}
+
+.kb-settled-pips {
+  display: flex;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.kb-settled-pip {
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  transform: rotate(45deg);
+  border: 1.5px solid var(--kb-glass-text-2);
+}
+
+.kb-settled-pip[data-kb-pip='full'] {
+  border: 0;
+  background: var(--kb-glass-ready);
+  box-shadow: 0 0 12px var(--kb-glass-ready);
+}
+
+.kb-settled-pip[data-kb-pip='new'] {
+  border: 0;
+  background: var(--kb-glass-ready-text);
+  box-shadow: 0 0 24px var(--kb-glass-text-hi), 0 0 40px var(--kb-glass-ready);
+}
+
+.kb-settled-card-words {
+  max-width: 680px;
+  margin: 18px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-settled-turn {
+  padding: 20px 28px;
+  background: var(--kb-glass-panel);
+  border: 1px solid var(--kb-settled-class);
+  box-shadow: 0 0 34px color-mix(in srgb, var(--kb-settled-class) 35%, transparent);
+}
+
+.kb-settled-turn .kb-settled-card-words {
+  margin-top: 10px;
+}
+
+.kb-settled-turn-classes {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  text-transform: uppercase;
+}
+
+.kb-settled-turn-was {
+  font-size: 2.75rem;
+  line-height: 1;
+  text-decoration: line-through;
+  color: var(--kb-glass-text-2);
+}
+
+/* The arrow from the old class to the new: a drawn stroke, the new class's color. */
+.kb-settled-turn-arrow {
+  width: 40px;
+  height: 2.5px;
+  position: relative;
+  background: var(--kb-settled-class);
+}
+
+.kb-settled-turn-arrow::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border-top: 2.5px solid var(--kb-settled-class);
+  border-right: 2.5px solid var(--kb-settled-class);
+  transform: rotate(45deg);
+}
+
+.kb-settled-turn-now {
+  font-size: var(--kb-glass-size-display-l);
+  line-height: 1;
+  color: var(--kb-glass-text-hi);
+  text-shadow: 0 0 22px var(--kb-settled-class);
+}
+
+/* ---- the ways out ---- */
+
+.kb-settled-ways {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 40px;
+}
+
+.kb-settled-log {
+  min-height: 60px;
+  padding: 0 26px;
+  border-color: color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
+  letter-spacing: 2px;
+}
+
+.kb-settled-back {
+  min-height: 60px;
+  padding: 0 36px;
+  border: 0;
+  background: var(--kb-glass-ready);
+  color: var(--kb-glass-ink-ready);
+  font: 1.625rem / 1 var(--kb-glass-font-display);
+  letter-spacing: 0;
+  box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-ready) 60%, transparent);
+}
+
+/* ---- the Phone board's layout ---- */
+
+:where(:root[data-kb-layout='phone']) .kb-settled {
+  padding-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-title {
+  font-size: var(--kb-glass-size-display-l);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-orbs {
+  --kb-orb-size: 44px;
+  --kb-orb-gap: 10px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-body {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-when,
+:where(:root[data-kb-layout='phone']) .kb-settled-why-head,
+:where(:root[data-kb-layout='phone']) .kb-settled-card-label {
+  font-size: var(--kb-glass-size-phone-small);
+  letter-spacing: 2px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-tab,
+:where(:root[data-kb-layout='phone']) .kb-settled-log {
+  min-height: 48px;
+  padding: 0 12px;
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-back {
+  min-height: 48px;
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-why,
+:where(:root[data-kb-layout='phone']) .kb-settled-card-words {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-now {
+  font-size: var(--kb-glass-size-display-l);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-was,
+:where(:root[data-kb-layout='phone']) .kb-settled-change,
+:where(:root[data-kb-layout='phone']) .kb-settled-amount {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-rank-now {
+  font-size: var(--kb-glass-size-display-m);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-turn-now,
+:where(:root[data-kb-layout='phone']) .kb-settled-turn-was {
+  font-size: var(--kb-glass-size-display-m);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-settled-rank-was {
+  font-size: var(--kb-glass-size-phone-display);
+}

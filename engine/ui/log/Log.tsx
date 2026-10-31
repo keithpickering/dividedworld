@@ -44,10 +44,11 @@ export function Said({ parts }: { readonly parts: readonly Segment[] }) {
   return <>{parts.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <Link key={i} to={p.href}>{p.text}</Link>))}</>;
 }
 
-/** The characters a log has tabs for: the player's own that have debuted or have a line, by name. */
+/** The characters a log has tabs for: the player's own that have debuted or have a line, in the order they debuted, as the boards and the roster list them. */
 export function tabsOf(data: LogData) {
   const lined = new Set(data.log.settlements.flatMap((s) => s.lines.map((l) => l.character)));
-  return data.mine.filter((c) => c.debutedAt !== null || lined.has(c.id)).sort((a, b) => a.name.localeCompare(b.name));
+  const since = (c: { readonly debutedAt: string | null }) => (c.debutedAt === null ? Infinity : Date.parse(c.debutedAt));
+  return data.mine.filter((c) => c.debutedAt !== null || lined.has(c.id)).sort((a, b) => since(a) - since(b) || a.name.localeCompare(b.name));
 }
 
 /** One settlement's breakdown: each reason with its exact total and its shares, the player's whose tab it is (all of them on All). */
@@ -66,8 +67,10 @@ function Breakdown({ settlement, data, words, tab, id, onClose }: { readonly set
           {lines.map((l) => (
             <section key={`${l.character}:${l.reason}`} className="kb-log-reason" aria-label={`${tab === null ? `${nameOf(l.character)}, ` : ''}${reasonName(words.ui.reasonWords(l.reason))}`}>
               <h3 className="kb-log-reason-head">
-                {tab === null && <span className="kb-log-reason-who">{nameOf(l.character)} · </span>}
-                <span data-kb-reason="">{words.ui.reasonWords(l.reason)}</span>
+                <span>
+                  {tab === null && <span className="kb-log-reason-who">{nameOf(l.character)} · </span>}
+                  <span data-kb-reason="">{words.ui.reasonWords(l.reason)}</span>
+                </span>
                 <span className="kb-log-num" data-kb-amount="" data-kb-sign={Math.sign(l.amount)}>{signed(l.amount)}</span>
               </h3>
               {l.shares.length === 0
@@ -109,8 +112,7 @@ function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; 
         <td className="kb-log-details" data-kb-label="Details">
           <Said parts={row.details} />
           {s?.sharesKept && (
-            <>
-              {' '}
+            <div className="kb-log-posts-row">
               <button
                 ref={button}
                 type="button"
@@ -122,7 +124,7 @@ function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; 
               >
                 <span className="kb-glass-upright">{open ? 'Hide posts' : 'Show posts'}</span>
               </button>
-            </>
+            </div>
           )}
         </td>
         <td className="kb-log-num" data-kb-label="Aura" data-kb-sign={Math.sign(row.aura)}>{row.kind === 'estimate' ? `up to ${signed(row.aura)}` : signed(row.aura)}</td>

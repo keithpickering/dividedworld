@@ -67,7 +67,8 @@ describe('My log', () => {
     open(fake, me, pipe);
     expect(await screen.findByRole('heading', { level: 1, name: 'My log' })).toBeInTheDocument();
     const tabs = within(screen.getByRole('navigation', { name: 'Whose log' })).getAllByRole('button').map((b) => b.textContent);
-    expect(tabs).toEqual(['All', 'Mrs. Hooligan', 'Pipewrench']);
+    /* In the order the characters debuted, as the boards and the roster list them. */
+    expect(tabs).toEqual(['All', 'Pipewrench', 'Mrs. Hooligan']);
     expect(tab('Pipewrench')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText(/^Everything on this page is true\./u)).toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'Pipewrench\'s log, newest first' })).toBeInTheDocument();
@@ -117,8 +118,8 @@ describe('My log', () => {
     expect(first).toHaveAttribute('data-kb-estimate');
     const [when, what, details, aura, wallet] = cells(first!);
     expect([when, what, aura, wallet]).toEqual(['Oct 29 · 11:05', 'Estimate', 'up to +0.10', '—']);
-    expect(details).toBe('A Hype reaction on post #3. It counts at the next settlement, before the shared vote and halving. Who reacted is never shown.');
-    expect(within(first!).getByRole('link', { name: 'post #3' })).toHaveAttribute('href', expect.stringMatching(/#post-3$/u));
+    expect(details).toBe('A Hype reaction on your post #3. It counts at the next settlement, before the shared vote and halving. Who reacted is never shown.');
+    expect(within(first!).getByRole('link', { name: 'your post #3' })).toHaveAttribute('href', expect.stringMatching(/#post-3$/u));
   });
 
   test('All holds every character\'s lines, each settlement once, its Aura the sum of the player\'s', async () => {

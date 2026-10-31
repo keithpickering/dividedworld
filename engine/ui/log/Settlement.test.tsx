@@ -63,7 +63,7 @@ describe('the settlement\'s summary', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'While you were away' })).toBeInTheDocument();
     expect(screen.getByText('Settled Oct 29 · 08:17 UTC')).toBeInTheDocument();
     const tabs = within(screen.getByRole('navigation', { name: 'Your characters' })).getAllByRole('button');
-    expect(tabs.map((t) => [t.textContent, t.getAttribute('aria-pressed')])).toEqual([['Mrs. Hooligan', 'false'], ['Pipewrench', 'true']]);
+    expect(tabs.map((t) => [t.textContent, t.getAttribute('aria-pressed')])).toEqual([['Pipewrench', 'true'], ['Mrs. Hooligan', 'false']]);
     const wallet = screen.getByRole('region', { name: 'Wallet' });
     expect(within(wallet).getByRole('img', { name: 'Wallet now 6.00 of 6.00' })).toBeInTheDocument();
     expect(within(wallet).getByText('2.90 →')).toBeInTheDocument();

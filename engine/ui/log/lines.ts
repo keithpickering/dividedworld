@@ -124,9 +124,10 @@ export function actLink(act: Act | undefined, data: Pick<LogData, 'acts' | 'name
   return { text: postWords(act, data, own), href: threadHref(act.thread, pageOf(act.seq, words.postsPerPage), act.seq) };
 }
 
-/** "post #43", or "Gloomba's post #46" where the post is not the character's own whose line it is. */
+/** "your post #43" for the post of the character whose line it is, as the Settlement board says it; "Gloomba's post #46" otherwise. */
 function postWords(post: Act, data: Pick<LogData, 'names' | 'mine'>, own?: string): string {
-  if (post.character === null || post.character === own) return `post #${post.seq}`;
+  if (post.character !== null && post.character === own) return `your post #${post.seq}`;
+  if (post.character === null) return `post #${post.seq}`;
   const mine = data.mine.find((c) => c.id === post.character);
   const name = mine?.name ?? data.names.get(post.character);
   return name ? `${name}'s post #${post.seq}` : `post #${post.seq}`;
