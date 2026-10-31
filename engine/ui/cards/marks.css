@@ -208,3 +208,52 @@
     box-shadow: none;
   }
 }
+
+/*
+ * The first-time callout (Callout.tsx): a bubble hung under the page's first mark of a card kind not met yet. Absolute inside
+ * the strip, like the strip inside its row, so it adds 0px to the post; above the marks and the post's body, under the Lens.
+ */
+.kb-callout {
+  --kb-cut: var(--kb-glass-chamfer-1);
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 4;
+  box-sizing: border-box;
+  width: min(17rem, calc(100vw - 2rem));
+  padding: 0.55rem 1rem 0.65rem;
+  border: 1.5px solid var(--kb-glass-sweet);
+  background: var(--kb-glass-ground);
+  color: var(--kb-glass-text);
+  font-size: var(--kb-glass-size-label);
+  line-height: 1.35;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--kb-glass-sweet) 55%, transparent));
+}
+
+.kb-callout p {
+  margin: 0;
+}
+
+.kb-callout-name {
+  font-size: var(--kb-glass-size-body);
+}
+
+.kb-callout-hint {
+  margin-block: 0.2rem 0.5rem;
+}
+
+.kb-callout-got {
+  margin: 0;
+  padding: 0.25rem 0.9rem;
+  border: 2px solid var(--kb-glass-sweet);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.kb-callout-got:focus-visible {
+  outline: 2px solid var(--kb-glass-text);
+  outline-offset: 2px;
+}

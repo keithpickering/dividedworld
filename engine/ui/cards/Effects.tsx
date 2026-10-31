@@ -27,6 +27,7 @@ import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
+import { useMeet } from './Callout.tsx';
 import { usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
 import './cards.css';
@@ -103,8 +104,7 @@ function BoundEffect({ Effect, store, marks, ...props }: Omit<EffectProps, 'show
   const card = props.plays[0]!.card;
   const show = useCallback((view: CardView | null) => store.setView(post, card, view), [store, post, card]);
   useEffect(() => () => store.setView(post, card, null), [store, post, card]);
-  /* Wired in Task 7. */
-  const met = useCallback(() => {}, []);
+  const met = useMeet(card);
   return <Effect {...props} show={show} met={met} marks={marks} />;
 }
 

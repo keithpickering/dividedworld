@@ -27,6 +27,7 @@ import type { Act, Id } from '../data/api.ts';
 import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useNarrow } from './Effects.tsx';
+import { Callout, useCallout } from './Callout.tsx';
 import { Lens, useLensFor, useLensStore, useResolvedView } from './Lens.tsx';
 import { GhostMark } from './PlayActions.tsx';
 import { MARKS_NARROW, MARKS_WIDE, kindsOf, markName, moreName, sumOf } from './marks.ts';
@@ -89,10 +90,13 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
     ...(ink ? { '--kb-mark-ink': ink } : {}),
     ...(progress === null ? {} : { '--kb-mark-progress': progress }),
   } as CSSProperties;
+  const button = useRef<HTMLButtonElement>(null);
+  const callout = useCallout(kind, cardUi?.hint, button);
   return (
+    <>
     <button
-      type="button" className="kb-mark" data-kb-card={kind} data-kb-plays={plays.length} data-kb-alignment={rules?.alignment} data-kb-edge={progress === null ? undefined : 'true'}
-      aria-label={markName({ card: name, plays: plays.length, state: view.state, more, yours: view.yours })} aria-haspopup="dialog" aria-expanded={expanded}
+      ref={button} type="button" className="kb-mark" data-kb-card={kind} data-kb-plays={plays.length} data-kb-alignment={rules?.alignment} data-kb-edge={progress === null ? undefined : 'true'}
+      aria-label={markName({ card: name, plays: plays.length, state: view.state, more, yours: view.yours })} aria-haspopup="dialog" aria-expanded={expanded} aria-describedby={callout ?? undefined}
       style={style} onClick={(e) => onOpen(kind, e.currentTarget)}
     >
       <span className="kb-mark-in" aria-hidden="true">
@@ -103,6 +107,8 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
       {view.yours && <span className="kb-mark-notch" data-kb-notch="" aria-hidden="true" />}
       {more && <span className="kb-mark-sign" data-kb-more="" aria-hidden="true" />}
     </button>
+    {callout && cardUi?.hint && <Callout id={callout} kind={kind} name={name} hint={cardUi.hint} />}
+    </>
   );
 });
 
