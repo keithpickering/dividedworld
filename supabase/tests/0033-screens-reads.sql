@@ -148,7 +148,7 @@ begin
   -- The columns are exactly these.
   if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_wallet') is distinct from array['balance', 'cap']
      or (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_ledger')
-        is distinct from array['settlement', 'starts_at', 'ends_at', 'character', 'reason', 'amount']
+        is distinct from array['settlement', 'starts_at', 'ends_at', 'character', 'reason', 'amount', 'shares_kept']
      or (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_wallet_events')
         is distinct from array['settlement', 'kind', 'change', 'overflow', 'floored', 'balance_after', 'ref', 'at'] then
     raise exception 'a wallet view shows more or less than it should';

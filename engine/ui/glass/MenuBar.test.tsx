@@ -1,7 +1,7 @@
 /**
  * The menu bar on every glass page (the web plan's glass amendment to Task 3, and the glass plan's
  * section 8): Back to the board with its Esc key, then the pages, the current one marked; signed
- * out, Back alone. My log stands in for the standings until Part 4 builds it.
+ * out, Back alone.
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -60,9 +60,14 @@ describe('the menu bar', () => {
     expect(await within(bar()).findByRole('link', { name: 'Rankings' })).toHaveAttribute('aria-current', 'page');
     expect(within(bar()).getByRole('link', { name: 'Settings' })).not.toHaveAttribute('aria-current');
   });
-  test('My log stands in for the standings until its page is built', async () => {
-    renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
-    expect(await within(bar()).findByRole('link', { name: 'My log' })).toHaveAttribute('href', '/standings');
+  test('My log goes to the log, and is the current page there', async () => {
+    const { unmount } = renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
+    const log = await within(bar()).findByRole('link', { name: 'My log' });
+    expect(log).toHaveAttribute('href', '/log');
+    expect(log).not.toHaveAttribute('aria-current');
+    unmount();
+    renderInWorld(<MenuBar />, { path: '/log', seed: signedIn });
+    expect(await within(bar()).findByRole('link', { name: 'My log' })).toHaveAttribute('aria-current', 'page');
   });
   test('signed out, the bar holds Back to the board alone: its pages need an account', async () => {
     renderInWorld(<MenuBar />, { path: '/sign-in' });

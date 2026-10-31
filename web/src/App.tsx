@@ -23,6 +23,8 @@ import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
 import { Vending } from '../../engine/ui/vending/Vending.tsx';
 import { RankingsScreen } from '../../engine/ui/rankings/Rankings.tsx';
+import { LogScreen } from '../../engine/ui/log/Log.tsx';
+import { SettlementOnLoad, SettlementScreen } from '../../engine/ui/log/Settlement.tsx';
 import { StandingsScreen } from '../../engine/ui/standings/Standings.tsx';
 import { RouterProvider, useLocation, useNavigate } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
@@ -39,6 +41,8 @@ const ROUTES: readonly Route[] = [
   { path: '/standings', render: () => <StandingsScreen /> },
   { path: '/rankings', render: () => <RankingsScreen /> },
   { path: '/vending', render: () => <Vending /> },
+  { path: '/log', render: () => <LogScreen /> },
+  { path: '/log/settlement', render: () => <SettlementScreen /> },
   { path: '/c/:id', render: ({ id }) => <ProfileScreen id={id!} /> },
   { path: '/c/:id/record', render: ({ id }) => <RecordScreen id={id!} /> },
   { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
@@ -64,7 +68,12 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/register': 'account',
   '/rankings': 'rankings',
   '/vending': 'vending',
+  '/log': 'log',
+  '/log/settlement': 'settlement',
 };
+
+/** The glass pages drawn with no menu bar: the settlement's summary, a screen of results whose ways out are its own. */
+const NO_MENU: ReadonlySet<string> = new Set(['/log/settlement']);
 
 const isGlass = (path: string): boolean => Object.hasOwn(GLASS, path);
 
@@ -124,9 +133,11 @@ function Shell() {
   const content = (
     <AccountGate>
       <Routes key={mountedFor.n} routes={ROUTES} />
+      {/* The first load of a board page after a settlement the device has not seen opens its summary (engine/ui/log/Settlement.tsx). */}
+      <SettlementOnLoad active={!surface} />
     </AccountGate>
   );
-  return surface ? <GlassPage surface={surface}>{content}</GlassPage> : <Frame>{content}</Frame>;
+  return surface ? <GlassPage surface={surface} menu={!NO_MENU.has(path)}>{content}</GlassPage> : <Frame>{content}</Frame>;
 }
 
 /** The instance's glass on the page: its standard key's tokens and colors on the root, and its fonts. */

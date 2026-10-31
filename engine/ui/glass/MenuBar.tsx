@@ -11,7 +11,7 @@
  * was typed into a text field, where Esc belongs to the field, or it is a held key's repeat or the
  * end of an IME composition (keys.ts). A modified or middle click on Back opens the board as the
  * browser would and leaves this page and its kept place alone. Where the bar's pages live is
- * GLASS_NAV's (nav.ts): My log stands in on the standings until its page exists.
+ * GLASS_NAV's (nav.ts).
  *
  * On the Main board's layout the bar is the boards': 84px, its tabs skewed with their words set
  * upright, Back outlined in white with its ESC key cap before its words, the current tab lit. While
@@ -36,7 +36,7 @@ const TABS: readonly Tab[] = [
   { label: 'Vending Machine', to: GLASS_NAV.vending, current: (p) => p === GLASS_NAV.vending },
   { label: 'My characters', to: GLASS_NAV.characters, current: (p) => p === '/characters' || p.startsWith('/characters/') },
   { label: 'Rankings', to: GLASS_NAV.rankings, current: (p) => p === GLASS_NAV.rankings },
-  { label: 'My log', to: GLASS_NAV.log, current: () => false },
+  { label: 'My log', to: GLASS_NAV.log, current: (p) => p === GLASS_NAV.log },
   { label: 'Settings', to: GLASS_NAV.settings, current: (p) => p === '/settings' || p === '/invites' },
 ];
 

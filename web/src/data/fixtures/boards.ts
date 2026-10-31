@@ -23,8 +23,12 @@
  *    no gap whenever it falls, and `engine/ui/cards/` draws each as the tag on its post.
  *  - The marker the production bundle is checked for is the fake's (`FAKE_BACKEND_MARKER`); the
  *    fixture carries no marker of its own.
- *  - The Whoops! on #41 is a card Act by Mrs. Hooligan with no spend in Pipewrench's wallet, which the
- *    timeline does not show (the player owns both); the plan seeds it that way.
+ *  - The Whoops! on #41 is Mrs. Hooligan's play of a card the player bought on Oct 20, before the timeline begins;
+ *    #41 is short, so the play costs nothing and moves no wallet (the timeline shows none), and the log
+ *    reads it from the card ledger alone, in Mrs. Hooligan's lines and Spritey's, not Pipewrench's.
+ *  - The settlement at Oct 29 08:17 (scoring the window from Oct 28; the log says "for Oct 28") was made before the shares were kept (supabase/migrations/0034_ledger_shares.sql),
+ *    so it has its lines and none, as the log shares plan's Task 4 asks; the wallet before it is seeded
+ *    as it stood, with no history behind it.
  *  - Stick Around's release sentence is the play's own setting (its `config`), seeded on #44's play.
  */
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
@@ -130,6 +134,13 @@ const LONG_POST = (() => {
   return (body + end).padEnd(LONG_POST_LENGTH, '.').slice(0, LONG_POST_LENGTH);
 })();
 
+/** #41, Spritey's: short, so a Whoops! on it costs nothing past the card (`surchargeOn`). */
+const POST_41 = [
+  'Third time this week. I wrote four whole paragraphs about the level editor update and somebody dumped a bucket of ink on it before anyone got past the first sentence.',
+  'I\'m not mad. I\'m documenting. Whoever you are, I can see the color you picked, and I will remember it.',
+  'Posting the full changelog again below in case it gets splatted a fourth time. Scroll down if you can still read.',
+].join('\n\n');
+
 const FILLER = [
   'Anyone else seeing this?',
   'I was here for the first one and I am still here.',
@@ -146,17 +157,21 @@ const FILLER = [
  * at 20:10, less the long post's surcharge at the 21:52 play (the card was paid for at the machine, #78), plus what the Oct 30 settlement scored.
  */
 const economy = instance.settings.economy;
-const WHOOPS = economy['whoops.price']!;
 /** The ink of the board's Whoops!: magenta, the Cards board's first swatch, and the seed the server chose for the play. */
 const WHOOPS_INK = { color: '#ff2bd6', seed: 20261029 };
-const LONG_POST_COST = economy['whoops.perLength']! * Math.floor(LONG_POST_LENGTH / economy['whoops.lengthStep']!);
 const WALLET_START = 562;
-const WALLET_BOUGHT = WALLET_START - WHOOPS;
-/* A card is paid for once, at the machine (#78): playing it costs only what the long post adds. */
-const WALLET_PLAYED = WALLET_BOUGHT - LONG_POST_COST;
+/** What the settlement at Oct 29 08:17 scored (for Oct 28; the board's "for Oct 29" is the next one, Oct 30 08:17) for the player's three characters, made before shares were kept: it brings the wallet to WALLET_START. */
+const SCORED_OCT_28 = [['pipewrench', 'heel.drewHeat', 25], ['hooligan', 'face.cheered', 15], ['spritey', 'jabroni.drewTheGroan', 10]] as const;
+/** What a Whoops! play costs on a post of this text: the card is paid for once, at the machine (#78), so only what a long post adds. */
+const surchargeOn = (body: string) => economy['whoops.perLength']! * Math.floor([...body].length / economy['whoops.lengthStep']!);
+const LONG_POST_COST = surchargeOn(LONG_POST);
 /** The settlement's scoring as a Heel: drew heat, stole thunder (the play on #46), a polite shrug. */
 const SCORED = [['heel.drewHeat', 20], ['heel.stoleThunder', 20], ['heel.shrugged', -5]] as const;
-const WALLET_SETTLED = WALLET_PLAYED + SCORED.reduce((sum, [, amount]) => sum + amount, 0);
+/**
+ * The post each of those was shared on, and the quadrant (engine/rules/settle.ts's shareEntries, which the settlement writes):
+ * the heat on Pipewrench's #43, the thunder on the play's own Act on #46 (a card's lift is weighed on the card), and the shrug on #43.
+ */
+const SHARED_ON = { 'heel.drewHeat': ['post-43', 'excitedNegative'], 'heel.stoleThunder': ['play-46', 'excitedNegative'], 'heel.shrugged': ['post-43', 'calmPositive'] } as const;
 /** Before the play on #46 the estimate is all heat. */
 const ESTIMATE_BEFORE_PLAY = 30;
 
@@ -198,17 +213,19 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   const steps: Step[] = [];
   const when = (at: number, run: (at: number) => void) => steps.push({ at, run });
   /* A card play takes no number in its thread, so it is written where it happened, between the posts. */
-  const play = (at: number, character: string, target: number, card: string, message: string, config?: Readonly<Record<string, unknown>>) =>
-    when(at, (when_) => { seed.card(character, posts[target]!, card, { message, at: when_, ...(card === 'whoops' ? { layer: 1, config: WHOOPS_INK } : config === undefined ? {} : { config }) }); });
+  /* Each play's Act, by the post it landed on, once it is made: the Oct 30 settlement shares stolen thunder on Pipewrench's. */
+  const plays: Record<number, string> = {};
+  const play = (at: number, character: string, target: number, card: string, message: string, o: { config?: Readonly<Record<string, unknown>>; paid?: number } = {}) =>
+    when(at, (when_) => {
+      plays[target] = seed.card(character, posts[target]!, card, {
+        message, at: when_, ...(card === 'whoops' ? { layer: 1, config: WHOOPS_INK } : o.config === undefined ? {} : { config: o.config }), ...(o.paid === undefined ? {} : { paid: o.paid }),
+      });
+    });
   const post = (n: keyof typeof POSTED, character: string, body: string, quote?: number) =>
     when(POSTED[n], (at) => { posts[n] = seed.post(opener.thread, character, body, { at, ...(quote === undefined ? {} : { quote: posts[quote]! }) }); });
 
-  post(41, spritey, [
-    'Third time this week. I wrote four whole paragraphs about the level editor update and somebody dumped a bucket of ink on it before anyone got past the first sentence.',
-    'I\'m not mad. I\'m documenting. Whoever you are, I can see the color you picked, and I will remember it.',
-    'Posting the full changelog again below in case it gets splatted a fourth time. Scroll down if you can still read.',
-  ].join('\n\n'));
-  play(WHOOPS_ON_41_AT, hooligan, 41, 'whoops', 'you dropped your ink');
+  post(41, spritey, POST_41);
+  play(WHOOPS_ON_41_AT, hooligan, 41, 'whoops', 'you dropped your ink', { paid: surchargeOn(POST_41) });
   post(42, hooligan, [
     'Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I\'m not.',
     'Also you double-posted the changelog in the other thread so honestly it\'s a public service.',
@@ -220,10 +237,10 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
     'Undo goes back 200 steps instead of 20.\nThe tile picker remembers your last three tilesets.\nWater no longer flows uphill when the level is resized.\nCustom music loops at the point you set, not at the start of the file.\nFixed the crash when an enemy was placed inside another enemy.\nFixed a second, different crash when that happened in water.',
     'Every one of these was requested in this forum. You\'re welcome. Please read it this time.',
   ].join('\n\n'));
-  play(STICK_AROUND_AT, gloomba, 44, 'stick-around', 'required reading', { sentence: 'I have read every word of Spritey\'s changelog and I feel changed.' });
+  play(STICK_AROUND_AT, gloomba, 44, 'stick-around', 'required reading', { config: { sentence: 'I have read every word of Spritey\'s changelog and I feel changed.' } });
   post(45, gloomba, 'I read the whole changelog and I have a question about the water. Mostly I have a question about who keeps splatting these.');
   post(46, gloomba, LONG_POST);
-  play(PLAYED_AT, pipewrench, 46, 'whoops', 'you dropped your ink');
+  play(PLAYED_AT, pipewrench, 46, 'whoops', 'you dropped your ink', { paid: LONG_POST_COST });
 
   /* ---- reactions: the Main board's chips, the rival's own Tea on #42, then #43's four ---- */
   const [r1, r2, r3, r4] = fans as [string, string, string, string];
@@ -248,19 +265,27 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
 
   /* ---- Pipewrench's timeline: wallets, hands, what is pending, the Turn and the settlements ---- */
   const heat = (amount: number) => ({ character: pipewrench, reason: 'heel.drewHeat', amount });
+  const named = { pipewrench, hooligan, spritey } as const;
+  /*
+   * The Whoops! Mrs. Hooligan plays on #41, bought on Oct 20 so the card ledger holds the card it plays; then the wallet as it stood
+   * before the Oct 29 settlement, seeded with no history behind it.
+   */
+  seed.wallet(player, economy['whoops.price']!);
+  seed.buy(player, 'whoops', { at: utc(20, 19, 0) });
+  seed.wallet(player, WALLET_START - SCORED_OCT_28.reduce((sum, [, , amount]) => sum + amount, 0));
   when(SETTLE_1, (at) => {
     seed.settle({
-      at, debut: false, turns: false,
-      wallet: { [player]: WALLET_START, [rival]: 300, [reader]: 120 },
+      at, debut: false, turns: false, sharesKept: false,
+      ledger: SCORED_OCT_28.map(([who, reason, amount]) => ({ character: named[who], reason, amount })),
+      wallet: { [rival]: 300, [reader]: 120 },
       standings: { [spritey]: 650, [hooligan]: 420, [pipewrench]: 295, [gloomba]: 180, [thwompson]: 40 },
     });
     seed.nextSettlementAt(SETTLE_2);
     seed.cards(player, { whoops: 1, 'stick-around': 1 });
     seed.estimate(player, { entries: [heat(ESTIMATE_BEFORE_PLAY)] });
   });
-  when(BOUGHT_AT, () => { seed.wallet(player, WALLET_BOUGHT); seed.cards(player, { whoops: 2, 'stick-around': 1 }); });
+  when(BOUGHT_AT, (at) => { seed.buy(player, 'whoops', { at }); });
   when(PLAYED_AT, () => {
-    seed.wallet(player, WALLET_PLAYED);
     seed.cards(player, { whoops: 1, 'stick-around': 1 });
     seed.estimate(player, { entries: SCORED.map(([reason, amount]) => ({ character: pipewrench, reason, amount })) });
   });
@@ -277,7 +302,11 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   when(THWOMPSON_TURNS_AT, () => seed.turn(thwompson, 'heel', { loudness: 'announced', showFrom: false, showTo: false }));
 
   when(SETTLE_2, (at) => {
-    seed.settle({ at, debut: false, turns: true, wallet: { [player]: WALLET_SETTLED }, standings: { [pipewrench]: 330 } });
+    const shareOn = { 'post-43': posts[43]!, 'play-46': plays[46]! };
+    seed.settle({
+      at, debut: false, turns: true,
+      ledger: SCORED.map(([reason, amount]) => ({ character: pipewrench, reason, amount, shares: [{ act: shareOn[SHARED_ON[reason][0]], quadrant: SHARED_ON[reason][1], amount }] })),
+    });
     seed.announceTurn(pipewrench, turns.thread, { was: 'heel', at });
     seed.announceTurn(thwompson, turns.thread, { at });
     seed.nextSettlementAt(SETTLE_3);

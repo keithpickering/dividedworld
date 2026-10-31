@@ -21,10 +21,15 @@ import './shell.css';
 
 export interface PageProps {
   readonly surface: GlassSurface;
+  /**
+   * False for a page that is a screen of results with no menu bar (the settlement's summary, the glass plan's section 9, choice 8),
+   * whose own ways out are on it and which answers Esc itself.
+   */
+  readonly menu?: boolean;
   readonly children: ReactNode;
 }
 
-export function Page({ surface, children }: PageProps) {
+export function Page({ surface, menu = true, children }: PageProps) {
   const { path, hash, popped } = useLocation();
   const main = useRef<HTMLElement>(null);
   const calm = useSurfaceStyle(surface);
@@ -40,7 +45,7 @@ export function Page({ surface, children }: PageProps) {
   return (
     <div className="kb-glass kb-glass-page" data-kb-surface={surface} style={calm}>
       <Smoke surface={surface} />
-      <MenuBar />
+      {menu && <MenuBar />}
       <main ref={main} className="kb-glass-content" tabIndex={-1}>
         {children}
       </main>

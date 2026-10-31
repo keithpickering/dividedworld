@@ -1084,3 +1084,180 @@ describe('the season a screen names', () => {
     expect((await fake.season())?.number).toBe(open?.number);
   });
 });
+
+describe('the player\'s own log: the ledger with its shares, the wallet\'s events and the cards', () => {
+  /* One salty card at 1.00 that costs 0.50 more on a long post, as the Vending Machine's tests above price it. */
+  const splat = {
+    key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', stack: 2,
+    playPrice: (_s: Settings, t: { length: number }) => (t.length > 20 ? 50 : 0),
+    canApply: () => ({ ok: true as const, value: undefined }),
+    validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
+  };
+  const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
+  const empty = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], before: null };
+
+  function logWorld() {
+    const fake = createFake({ instance: shop });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const anaHeel = fake.seed.character(ana, 'Ana Heel', 'heel');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    const mine = fake.seed.post(thread, anaFace, 'Mine, and long enough to cost more.');
+    fake.signInAs(ana);
+    return { fake, ana, bo, anaFace, anaHeel, boFace, thread, opener, mine };
+  }
+
+  test('an account that has done nothing has an empty log, with nothing older', async () => {
+    const { fake } = logWorld();
+    expect(await fake.log()).toEqual(empty);
+    fake.signInAs(null);
+    expect(await fake.log()).toEqual(empty);
+  });
+
+  test('a settlement\'s lines read with their shares, its window, and the wallet\'s credit with what the cap held back', async () => {
+    const { fake, ana, anaFace, anaHeel, mine, opener } = logWorld();
+    fake.seed.wallet(ana, 580);
+    const at = fake.clock.now();
+    fake.seed.settle({
+      at,
+      ledger: [
+        { character: anaFace, reason: 'face.cheered', amount: 30, shares: [{ act: mine, quadrant: 'excitedPositive', amount: 10 }, { act: opener, quadrant: 'excitedPositive', amount: 20 }] },
+        { character: anaHeel, reason: 'heel.shrugged', amount: -5 },
+      ],
+    });
+    const log = await fake.log();
+    expect(log.settlements).toEqual([{
+      id: 1, startsAt: new Date(at - DAY).toISOString(), endsAt: new Date(at).toISOString(), sharesKept: true,
+      lines: [
+        { character: anaFace, reason: 'face.cheered', amount: 30, shares: [{ act: opener, quadrant: 'excitedPositive', amount: 20 }, { act: mine, quadrant: 'excitedPositive', amount: 10 }] },
+        { character: anaHeel, reason: 'heel.shrugged', amount: -5, shares: [] },
+      ],
+    }]);
+    /* 580 + 25 is past the cap of 600: the wallet holds 600, and the event says 5 was held back. */
+    /* Dated as the job applies it, a moment after the window it settles ends (wallet_move's now()). */
+    expect(log.wallet).toEqual([{ settlement: 1, kind: 'settlement', change: 20, overflow: 5, floored: 0, balanceAfter: 600, ref: null, at: new Date(at + 1000).toISOString() }]);
+    expect((await fake.wallet()).balance).toBe(600);
+    expect(await fake.standingAmounts([anaFace, anaHeel])).toEqual({ [anaFace]: 30, [anaHeel]: -5 });
+  });
+
+  test('a debit the floor holds back says so, and a second settlement\'s window starts where the first ended', async () => {
+    const { fake, ana, anaHeel } = logWorld();
+    fake.seed.wallet(ana, 3);
+    const first = fake.clock.now();
+    fake.seed.settle({ at: first, ledger: [{ character: anaHeel, reason: 'heel.shrugged', amount: -5 }] });
+    fake.clock.advance(DAY);
+    fake.seed.settle({ at: first + DAY, ledger: [{ character: anaHeel, reason: 'heel.drewHeat', amount: 4 }] });
+    const log = await fake.log();
+    expect(log.settlements.map((s) => [s.id, s.startsAt, s.endsAt])).toEqual([[2, new Date(first).toISOString(), new Date(first + DAY).toISOString()], [1, new Date(first - DAY).toISOString(), new Date(first).toISOString()]]);
+    expect(log.wallet.map((e) => [e.settlement, e.change, e.floored, e.balanceAfter])).toEqual([[2, 4, 0, 4], [1, -3, 2, 0]]);
+  });
+
+  test('a settlement made before the shares were kept says so and carries none; seeding it shares is a mistake', async () => {
+    const { fake, anaFace, mine } = logWorld();
+    fake.seed.settle({ sharesKept: false, ledger: [{ character: anaFace, reason: 'face.cheered', amount: 10 }] });
+    expect((await fake.log()).settlements.map((s) => [s.sharesKept, s.lines[0]!.shares])).toEqual([[false, []]]);
+    expect(() => fake.seed.settle({ at: fake.clock.now() + DAY, sharesKept: false, ledger: [{ character: anaFace, reason: 'face.cheered', amount: 10, shares: [{ act: mine, amount: 10 }] }] })).toThrow(/before its shares were kept/);
+  });
+
+  test('a line\'s shares add up to it, as apply_settlement refuses them otherwise', () => {
+    const { fake, anaFace, mine } = logWorld();
+    expect(() => fake.seed.settle({ ledger: [{ character: anaFace, reason: 'face.cheered', amount: 10, shares: [{ act: mine, amount: 7 }] }] })).toThrow('an entry\'s shares add up to it');
+  });
+
+  test('a purchase and a play read in the card ledger, and each spend in the wallet\'s events; a play that costs nothing has no wallet event', async () => {
+    const { fake, ana, anaFace, opener, mine } = logWorld();
+    fake.seed.wallet(ana, 500);
+    const bought = fake.clock.now();
+    must(await fake.buyCard('splat'));
+    fake.clock.advance(MINUTE);
+    const long = must(await fake.playCard('splat', anaFace, mine, {}, 'Long one.'));
+    fake.clock.advance(MINUTE);
+    must(await fake.buyCard('splat'));
+    fake.clock.advance(MINUTE);
+    const short = must(await fake.playCard('splat', anaFace, opener, {}, ''));
+    const log = await fake.log();
+    const t = (n: number) => new Date(bought + n * MINUTE).toISOString();
+    expect(log.cards).toEqual([
+      { card: 'splat', kind: 'played', act: short.id, price: 0, at: t(3) },
+      { card: 'splat', kind: 'bought', act: null, price: 100, at: t(2) },
+      { card: 'splat', kind: 'played', act: long.id, price: 50, at: t(1) },
+      { card: 'splat', kind: 'bought', act: null, price: 100, at: t(0) },
+    ]);
+    expect(log.wallet).toEqual([
+      { settlement: null, kind: 'purchase', change: -100, overflow: 0, floored: 0, balanceAfter: 250, ref: null, at: t(2) },
+      { settlement: null, kind: 'play', change: -50, overflow: 0, floored: 0, balanceAfter: 350, ref: long.id, at: t(1) },
+      { settlement: null, kind: 'purchase', change: -100, overflow: 0, floored: 0, balanceAfter: 400, ref: null, at: t(0) },
+    ]);
+  });
+
+  test('the seed buys and pays for a play as the server would, dated when it says', async () => {
+    const { fake, ana, anaFace, mine } = logWorld();
+    fake.seed.wallet(ana, 500);
+    const at = fake.clock.now() - 10 * MINUTE;
+    fake.seed.buy(ana, 'splat', { at });
+    const play = fake.seed.card(anaFace, mine, 'splat', { at: at + MINUTE, paid: 50 });
+    const log = await fake.log();
+    expect(log.cards.map((c) => [c.kind, c.act, c.price, c.at])).toEqual([['played', play, 50, new Date(at + MINUTE).toISOString()], ['bought', null, 100, new Date(at).toISOString()]]);
+    expect(log.wallet.map((e) => [e.kind, e.change, e.balanceAfter, e.ref])).toEqual([['play', -50, 350, play], ['purchase', -100, 400, null]]);
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 1 }]);
+  });
+
+  test('another player\'s play on the player\'s post reads, with the author\'s saves of its effect; a play through the player\'s own character does not', async () => {
+    const { fake, ana, bo, anaFace, anaHeel, boFace, mine } = logWorld();
+    const theirs = fake.seed.card(boFace, mine, 'splat', { message: 'Hi.' });
+    const at = new Date(fake.clock.now()).toISOString();
+    fake.seed.card(anaHeel, mine, 'splat');
+    fake.signInAs(bo);
+    expect((await fake.log()).playsOnMine).toEqual([]);
+    fake.signInAs(ana);
+    expect((await fake.log()).playsOnMine).toEqual([{ play: theirs, post: mine, at }]);
+    expect((await fake.log()).saves).toEqual([]);
+    fake.clock.advance(MINUTE);
+    must(await fake.saveEffect(theirs, anaFace, { clean: true }));
+    expect((await fake.log()).saves).toEqual([{ play: theirs, post: mine, savedAt: new Date(fake.clock.now()).toISOString() }]);
+  });
+
+  test('pages a log longer than a page from each cursor, with every row once and nothing lost, to its start', async () => {
+    const { fake, ana } = logWorld();
+    fake.seed.wallet(ana, 600);
+    const start = fake.clock.now() - 500 * MINUTE;
+    /* Two purchases at each of 250 minutes, the last pair at one instant with the page's edge between them. */
+    for (let i = 0; i < 250; i++) {
+      fake.seed.wallet(ana, 600);
+      fake.seed.buy(ana, 'splat', { at: start + i * MINUTE });
+      fake.seed.buy(ana, 'splat', { at: start + i * MINUTE });
+    }
+    const seen: string[] = [];
+    let before: string | null = null;
+    let pages = 0;
+    do {
+      const page = await fake.log(before);
+      seen.push(...page.cards.map((c) => c.at));
+      before = page.before;
+      pages++;
+    } while (before !== null && pages < 10);
+    expect(pages).toBeGreaterThan(2);
+    expect(before).toBeNull();
+    expect(seen.length).toBe(500);
+    expect(seen).toEqual([...seen].sort().reverse());
+    expect(new Set(seen).size).toBe(250);
+  });
+
+  test('one player\'s log holds nothing of another\'s', async () => {
+    const { fake, ana, bo, anaFace, boFace } = logWorld();
+    fake.seed.wallet(bo, 500);
+    fake.seed.settle({ ledger: [{ character: boFace, reason: 'face.cheered', amount: 10 }, { character: anaFace, reason: 'face.cheered', amount: 20 }] });
+    fake.signInAs(bo);
+    must(await fake.buyCard('splat'));
+    const bos = await fake.log();
+    expect(bos.settlements.flatMap((s) => s.lines.map((l) => l.character))).toEqual([boFace]);
+    fake.signInAs(ana);
+    const anas = await fake.log();
+    expect(anas.settlements.flatMap((s) => s.lines.map((l) => l.character))).toEqual([anaFace]);
+    expect(anas.cards).toEqual([]);
+    expect(anas.wallet.map((e) => e.kind)).toEqual(['settlement']);
+    void ana;
+  });
+});

@@ -929,3 +929,109 @@ describe('live', () => {
 });
 
 export type { KayfaApi };
+
+describe('the log', () => {
+  const S1 = '2026-10-30T08:17:00+00:00';
+  const LEDGER = [
+    { settlement: 9, starts_at: '2026-10-29T08:17:00+00:00', ends_at: S1, character: B, reason: 'heel.drewHeat', amount: 20, shares_kept: true },
+    { settlement: 9, starts_at: '2026-10-29T08:17:00+00:00', ends_at: S1, character: B, reason: 'heel.shrugged', amount: -5, shares_kept: true },
+  ];
+  const SHARES = [
+    { settlement: 9, character: B, reason: 'heel.drewHeat', act: A, quadrant: 'excitedNegative', amount: 20 },
+  ];
+  function logHarness(shares: unknown[] = SHARES) {
+    return harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_ledger') return rows(LEDGER);
+      if (name === 'my_ledger_shares') {
+        const offset = Number(r.url.searchParams.get('offset') ?? 0);
+        return rows(shares.slice(offset, offset + Number(r.url.searchParams.get('limit'))));
+      }
+      if (name === 'my_wallet_events') return rows([{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }]);
+      if (name === 'my_card_ledger') return rows([{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }]);
+      if (name === 'my_posts_played_on') {
+        return r.url.searchParams.get('select') === 'play,post,saved_at'
+          ? rows([{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }])
+          : rows([{ play: C, post: A, at: '2026-10-29T21:16:00+00:00' }]);
+      }
+      return undefined;
+    });
+  }
+
+  it('reads the player\'s own views, each newest first and a page long, and the shares of the settlements it read', async () => {
+    const h = logHarness();
+    const log = await h.api.log();
+    expect(log).toEqual({
+      settlements: [{
+        id: 9, startsAt: '2026-10-29T08:17:00+00:00', endsAt: S1, sharesKept: true,
+        lines: [
+          { character: B, reason: 'heel.drewHeat', amount: 20, shares: [{ act: A, quadrant: 'excitedNegative', amount: 20 }] },
+          { character: B, reason: 'heel.shrugged', amount: -5, shares: [] },
+        ],
+      }],
+      wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
+      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }],
+      playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00' }],
+      saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
+      before: null,
+    });
+    const [ledger] = h.to('my_ledger');
+    expect(ledger?.url.searchParams.get('order')).toBe('ends_at.desc,character.asc,reason.asc');
+    expect(ledger?.url.searchParams.get('limit')).toBe('200');
+    expect(ledger?.url.searchParams.get('ends_at')).toBeNull();
+    const [shares] = h.to('my_ledger_shares');
+    expect(shares?.url.searchParams.get('settlement')).toBe('in.(9)');
+    for (const [name, column] of [['my_wallet_events', 'at'], ['my_card_ledger', 'at']] as const) {
+      const [req] = h.to(name);
+      expect(req?.url.searchParams.get('order')).toBe(`${column}.desc`);
+      expect(req?.url.searchParams.get('limit')).toBe('200');
+    }
+    const [plays, saves] = h.to('my_posts_played_on');
+    expect(plays?.url.searchParams.get('order')).toBe('at.desc');
+    expect(saves?.url.searchParams.get('order')).toBe('saved_at.desc');
+    expect(saves?.url.searchParams.get('saved_at')).toBe('not.is.null');
+    expect(h.rest().every((r) => r.method === 'GET' && (r.headers.get('prefer') ?? '').indexOf('count') === -1)).toBe(true);
+  });
+
+  it('reads an older page at or before its cursor, in every view', async () => {
+    const h = logHarness();
+    const before = '2026-10-29T08:17:00.000400+00:00';
+    await h.api.log(before);
+    expect(h.to('my_ledger')[0]?.url.searchParams.get('ends_at')).toBe(`lte.${before}`);
+    expect(h.to('my_wallet_events')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    expect(h.to('my_card_ledger')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    const [plays, saves] = h.to('my_posts_played_on');
+    expect(plays?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);
+  });
+
+  it('reads the shares whole, a page of rows at a time, however many a settlement has', async () => {
+    /* 1,020 shares: a full page of a thousand, then the twenty past it, each on its line. */
+    const act = (prefix: string, i: number) => `${prefix.slice(0, -4)}${String(i).padStart(4, '0')}`;
+    const heat = Array.from({ length: 1019 }, (_, i) => ({ settlement: 9, character: B, reason: 'heel.drewHeat', act: act(A, i), quadrant: null, amount: 1 }));
+    const shrug = [{ settlement: 9, character: B, reason: 'heel.shrugged', act: act(C, 0), quadrant: null, amount: -5 }];
+    const h = logHarness([...heat, ...shrug]);
+    const log = await h.api.log();
+    expect(h.to('my_ledger_shares').map((r) => r.url.searchParams.get('offset') ?? '0')).toEqual(['0', '1000']);
+    expect(log.settlements[0]?.lines.map((l) => l.shares.length)).toEqual([1019, 1]);
+  });
+});
+
+describe('reads by many ids', () => {
+  const id = (n: number) => `${A.slice(0, -4)}${String(n).padStart(4, '0')}`;
+  it('reads Acts and effect states by id in chunks, so no request carries an address too long for a proxy, and every id is read once', async () => {
+    const h = harness((r) => {
+      const asked = (r.url.searchParams.get('id') ?? r.url.searchParams.get('play') ?? '').replace(/^in\.\(|\)$/gu, '').split(',').filter(Boolean);
+      return r.url.pathname.endsWith('/acts_public') ? rows(asked.map((a) => ({ ...ACT_ROW, id: a }))) : rows(asked.map((a) => ({ play: a, state: {}, saved_at: '2026-10-30T00:00:00Z' })));
+    });
+    const ids = Array.from({ length: 450 }, (_, n) => id(n));
+    expect((await h.api.actsById(ids)).length).toBe(450);
+    expect(Object.keys(await h.api.effectStates(ids)).length).toBe(450);
+    for (const name of ['acts_public', 'effect_state']) {
+      const reqs = h.to(name);
+      expect(reqs.length).toBe(5);
+      for (const r of reqs) expect(r.url.toString().length).toBeLessThan(8000);
+    }
+  });
+});
+

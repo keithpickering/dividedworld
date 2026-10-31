@@ -5,6 +5,7 @@ import { createFake } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 import { App } from './App.tsx';
+import { startLoad } from '../../engine/ui/log/Settlement.tsx';
 import { seedDemo } from './demo.ts';
 import { fallbackSettings } from './data/settings.ts';
 
@@ -171,6 +172,7 @@ const OWN: readonly [string, () => HTMLElement][] = [
   ['/characters/edit', () => screen.getByRole('heading', { level: 1, name: /^Edit / })],
   ['/settings', () => screen.getByRole('radiogroup', { name: 'Smoke' })],
   ['/rankings', () => screen.getByRole('heading', { level: 1, name: 'Rankings' })],
+  ['/log', () => screen.getByRole('heading', { level: 1, name: 'My log' })],
 ];
 
 for (const [path, own] of OWN) {
@@ -209,6 +211,58 @@ test('/rankings is drawn on the glass with no board panel, and its menu bar tab 
   expect(screen.getByRole('main').querySelector('.kb-glass-content-panel')).toBeNull();
   expect(screen.getByRole('main').closest('[data-kb-surface]')).toHaveAttribute('data-kb-surface', 'rankings');
   expect(within(bar).getByRole('link', { name: 'Rankings' })).toHaveAttribute('aria-current', 'page');
+});
+
+test('/log stands on the log\'s smoke, and its menu bar tab is the current page', async () => {
+  window.history.pushState(null, '', '/log');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedDemo(fake);
+  render(<App api={fake} />);
+  const bar = await screen.findByRole('navigation', { name: 'Menu' });
+  await screen.findByRole('heading', { level: 1, name: 'My log' });
+  expect(screen.getByRole('main').closest('[data-kb-surface]')).toHaveAttribute('data-kb-surface', 'log');
+  expect(within(bar).getByRole('link', { name: 'My log' })).toHaveAttribute('aria-current', 'page');
+});
+
+/** A demo world with a settlement of the player's own just made, as a board load after it meets it. */
+async function settledWorld() {
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedDemo(fake);
+  const [mine] = await fake.myCharacters();
+  fake.seed.settle({ at: fake.clock.now(), debut: false, turns: false, ledger: [{ character: mine!.id, reason: 'heel.drewHeat', amount: 20 }] });
+  return fake;
+}
+
+test('the first load of a board page after a settlement opens its summary, a glass page with no menu bar, once', async () => {
+  const fake = await settledWorld();
+  const view = render(<App api={fake} />);
+  expect(await screen.findByRole('heading', { level: 1, name: 'While you were away' })).toBeInTheDocument();
+  expect(window.location.pathname).toBe('/log/settlement');
+  expect(screen.getByRole('main').closest('[data-kb-surface]')).toHaveAttribute('data-kb-surface', 'settlement');
+  expect(screen.queryByRole('navigation', { name: 'Menu' })).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Game HUD' })).toBeNull();
+  view.unmount();
+  /* A new page load, on the same backend's data: only the device's mark keeps it from opening again. */
+  startLoad();
+  window.history.pushState(null, '', '/');
+  render(<App api={fake} />);
+  await screen.findByRole('region', { name: 'Game HUD' });
+  await new Promise((r) => setTimeout(r, 30));
+  expect(window.location.pathname).toBe('/');
+});
+
+test('a load of a glass page after a settlement is not taken over by the summary, nor is a move to the board after it', async () => {
+  window.history.pushState(null, '', '/settings');
+  const fake = await settledWorld();
+  render(<App api={fake} />);
+  await screen.findByRole('radiogroup', { name: 'Smoke' });
+  await new Promise((r) => setTimeout(r, 30));
+  expect(window.location.pathname).toBe('/settings');
+  /* Back to the board, in the same load: the summary is the first load's, and this load's was a glass page. */
+  await userEvent.click(screen.getByRole('link', { name: 'Back to the board' }));
+  await screen.findByRole('region', { name: 'Game HUD' });
+  await new Promise((r) => setTimeout(r, 30));
+  expect(window.location.pathname).toBe('/');
 });
 
 for (const path of ['/sign-in', '/register']) {

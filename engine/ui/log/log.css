@@ -1,0 +1,427 @@
+/*
+ * My log on the glass (Log.tsx), as the Log board draws it (docs/research/2026-10-29-two-worlds/12-log.html):
+ * the heading at the Settings board's 112px with the tabs at its foot on the right, the lead under it at
+ * most 680px wide, and the table: the column heads in the neon text at the label size over a pale rule,
+ * each row at the body size over a faint one, When in the semibold body, What in the heavy 22px, numbers
+ * right-aligned in tabular figures, a gain in the neon text and a loss in the loss color. The text stands in
+ * calms (calm.css), as the board's table stands in its own.
+ *
+ * The open window's estimate lines are in italics. Show posts is a skewed control in the row's details, and
+ * its breakdown is a row under the settlement's, on a panel, each reason a line of the heavy body with its
+ * total, its shares beneath as the post, the quadrant's label and the share.
+ *
+ * Sizes are the boards' px or the glass's size tokens, never under the label (20px) on the Main board's
+ * layout (engine/ui/glass/board.test.tsx reads this file). On the Phone board's layout each row is stacked:
+ * When and What on one line, the details under them, then Aura and Wallet, each labeled, at the phone's
+ * sizes.
+ */
+.kb-log {
+  padding-top: 32px;
+}
+
+.kb-log-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 32px;
+}
+
+.kb-log-title {
+  margin: 0;
+  font-size: 7rem;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+.kb-log-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.kb-log-tab,
+.kb-log-posts {
+  display: inline-flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 20px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
+  background: transparent;
+  color: var(--kb-glass-text-2);
+  font: 800 var(--kb-glass-size-body) / 1 var(--kb-glass-font-body);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.kb-log-tab[aria-pressed='true'] {
+  border-color: var(--kb-glass-neon);
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+}
+
+.kb-log-tab:focus-visible,
+.kb-log-posts:focus-visible,
+.kb-log a:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-log-lead,
+.kb-log-empty {
+  max-width: 680px;
+  margin: 18px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-log-board {
+  margin-top: 46px;
+}
+
+.kb-log a {
+  color: var(--kb-glass-pale);
+  text-underline-offset: 4px;
+}
+
+/* ---- the table ---- */
+
+.kb-log-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* Focus comes to the table from Show older lines' last page, and shows as every glass control's does. */
+.kb-log-table:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+/* A column's width is its cell's whole box, padding in, as the board's colgroup sets them. */
+.kb-log-table th,
+.kb-log-table td {
+  box-sizing: border-box;
+}
+
+.kb-log-table thead th {
+  padding: 0 16px 12px 0;
+  text-align: left;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: normal;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
+}
+
+.kb-log-table tbody > tr > td {
+  vertical-align: top;
+  padding: 12px 16px 12px 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+.kb-log-table .kb-log-when {
+  width: 170px;
+  white-space: nowrap;
+}
+
+.kb-log-table td.kb-log-when {
+  font-weight: 600;
+}
+
+.kb-log-table .kb-log-what {
+  width: 250px;
+}
+
+.kb-log-table td.kb-log-what {
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+}
+
+.kb-log-table .kb-log-num {
+  width: 110px;
+  padding-right: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.kb-log-table thead th:last-child,
+.kb-log-table tbody > tr > td:last-child {
+  width: 120px;
+  padding-left: 16px;
+}
+
+.kb-log-table td.kb-log-num {
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-log .kb-log-num[data-kb-sign='1'] { color: var(--kb-glass-neon-text); }
+.kb-log .kb-log-num[data-kb-sign='-1'] { color: var(--kb-glass-loss); }
+
+/* The open window's estimate: in italics, as the web plan's Task 8 says, until the settlement makes it a line of its own. */
+.kb-log-table tr[data-kb-estimate] > td {
+  font-style: italic;
+}
+
+.kb-log-posts-row {
+  margin: 8px 0 0;
+}
+
+.kb-log-posts {
+  min-height: 52px;
+  padding: 0 16px;
+  font-size: var(--kb-glass-size-label);
+}
+
+.kb-log-posts[aria-expanded='true'] {
+  border-color: var(--kb-glass-neon);
+  color: var(--kb-glass-neon-text);
+  box-shadow: inset 0 -3px 0 var(--kb-glass-neon);
+}
+
+.kb-log-posts:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/* ---- a settlement's breakdown ---- */
+
+.kb-log-table tr.kb-log-breakdown[hidden] {
+  display: none;
+}
+
+.kb-log-table tr.kb-log-breakdown > td {
+  padding: 0 0 20px;
+}
+
+.kb-log-breakdown-body {
+  margin-left: 186px;
+  padding: 20px 24px;
+  background: var(--kb-glass-panel);
+  border-left: 1px solid color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+}
+
+.kb-log-reason + .kb-log-reason {
+  margin-top: 18px;
+}
+
+.kb-log-reason-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px;
+  gap: 16px;
+  align-items: baseline;
+  margin: 0;
+  font-family: var(--kb-glass-font-body);
+  letter-spacing: normal;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--kb-glass-text);
+}
+
+.kb-log-reason-head > .kb-log-num {
+  text-align: right;
+}
+
+.kb-log-reason-head .kb-log-num,
+.kb-log-share .kb-log-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.kb-log-reason-who {
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-log-shares {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-log-share {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 90px;
+  gap: 16px;
+  align-items: baseline;
+  padding: 6px 0 6px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.kb-log-share > .kb-log-num {
+  text-align: right;
+  font-weight: 700;
+}
+
+.kb-log-share-quadrant {
+  color: var(--kb-glass-neon-text);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-size: var(--kb-glass-size-label);
+}
+
+.kb-log-reason-none,
+.kb-log-shares-are {
+  margin: 6px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-log-shares-are {
+  margin-top: 18px;
+}
+
+.kb-log-older {
+  margin: 20px 0 0;
+  font-size: var(--kb-glass-size-body);
+}
+
+.kb-log-older-failed {
+  color: var(--kb-glass-over);
+}
+
+.kb-log-foot {
+  max-width: 680px;
+  margin: 20px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- the Phone board's layout: each row stacked, each part labeled ---- */
+
+:where(:root[data-kb-layout='phone']) .kb-log {
+  padding-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-title {
+  font-size: var(--kb-glass-size-display-l);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-tab,
+:where(:root[data-kb-layout='phone']) .kb-log-posts {
+  min-height: 48px;
+  padding: 0 12px;
+  font-size: var(--kb-glass-size-phone-small);
+  letter-spacing: 1px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-lead,
+:where(:root[data-kb-layout='phone']) .kb-log-empty,
+:where(:root[data-kb-layout='phone']) .kb-log-foot {
+  margin-top: 16px;
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-board {
+  margin-top: 24px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr:not(.kb-log-breakdown) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    'when what'
+    'details details'
+    'aura wallet';
+  gap: 4px 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td {
+  display: block;
+  width: auto;
+  padding: 0;
+  border: 0;
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td.kb-log-what,
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td.kb-log-num {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td:nth-child(1) { grid-area: when; }
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td:nth-child(2) { grid-area: what; }
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td:nth-child(3) { grid-area: details; }
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td:nth-child(4) { grid-area: aura; text-align: left; }
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td:nth-child(5) { grid-area: wallet; text-align: right; padding-left: 0; width: auto; }
+
+/* Aura and Wallet say what they are, since no column head is drawn over them. */
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr > td.kb-log-num::before {
+  content: attr(data-kb-label) ' ';
+  font-size: var(--kb-glass-size-phone-small);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-breakdown-body {
+  margin-left: 0;
+  padding: 12px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-reason-head,
+:where(:root[data-kb-layout='phone']) .kb-log-share,
+:where(:root[data-kb-layout='phone']) .kb-log-reason-none,
+:where(:root[data-kb-layout='phone']) .kb-log-shares-are {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-share {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'post amount' 'quadrant quadrant';
+  padding-left: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-share-post { grid-area: post; }
+:where(:root[data-kb-layout='phone']) .kb-log-share > .kb-log-num { grid-area: amount; }
+:where(:root[data-kb-layout='phone']) .kb-log-share-quadrant { grid-area: quadrant; font-size: var(--kb-glass-size-phone-small); }
+
+/* The breakdown's row and cell are blocks too, so the breakdown takes the row's whole width under its settlement. */
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr.kb-log-breakdown,
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr.kb-log-breakdown > td {
+  display: block;
+  width: auto;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-reason-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+}

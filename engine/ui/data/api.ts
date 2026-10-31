@@ -320,6 +320,92 @@ export interface Bought {
   readonly held: number;
 }
 
+/* ------------------------------------------------------------------ the log ---- */
+
+/**
+ * One post's share of a settled ledger line: the line's exact amount split across the posts the live
+ * estimate valued for it (engine/rules/settle.ts's shareEntries, written by the settlement; the log
+ * shares design). The quadrant is null where the estimate's line named none.
+ */
+export interface LogShare {
+  readonly act: Id;
+  readonly quadrant: Quadrant | null;
+  readonly amount: number;
+}
+
+/** One reason's settled amount for one of the player's characters in one window (`my_ledger`), with its shares (`my_ledger_shares`). */
+export interface LogLine {
+  readonly character: Id;
+  readonly reason: string;
+  readonly amount: number;
+  /** Empty where the estimate valued no post for the reason, or the settlement was made before shares were kept. */
+  readonly shares: readonly LogShare[];
+}
+
+/** A settlement the player has lines in, with every line of the player's in it. */
+export interface LogSettlement {
+  readonly id: number;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  /** False for a settlement made before its shares were kept, which has none and never will. */
+  readonly sharesKept: boolean;
+  readonly lines: readonly LogLine[];
+}
+
+/** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play. */
+export interface WalletEvent {
+  readonly settlement: number | null;
+  readonly kind: 'settlement' | 'purchase' | 'play';
+  readonly change: number;
+  /** What the cap held back of a settlement's credit. */
+  readonly overflow: number;
+  /** What the floor held back of a settlement's debit. */
+  readonly floored: number;
+  readonly balanceAfter: number;
+  /** A play's Act; null for a settlement and a purchase. */
+  readonly ref: Id | null;
+  readonly at: string;
+}
+
+/** A card the player bought or played (`my_card_ledger`), with its price: a play that cost nothing is here and has no wallet event. */
+export interface CardEvent {
+  readonly card: string;
+  readonly kind: 'bought' | 'played';
+  /** The play's Act; null for a purchase. */
+  readonly act: Id | null;
+  readonly price: number;
+  readonly at: string;
+}
+
+/** A play another player landed on one of the player's own posts (`my_posts_played_on`). */
+export interface PlayOnMine {
+  readonly play: Id;
+  readonly post: Id;
+  readonly at: string;
+}
+
+/** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
+export interface EffectSaved {
+  readonly play: Id;
+  readonly post: Id;
+  readonly savedAt: string;
+}
+
+/**
+ * A page of the player's own log, newest first: everything at or before the page's cursor and after
+ * `before`, which is where the next page starts (null at the log's start). Each source is read a page
+ * at a time, so a long-played account reads a page and never its history.
+ */
+export interface Log {
+  readonly settlements: readonly LogSettlement[];
+  readonly wallet: readonly WalletEvent[];
+  readonly cards: readonly CardEvent[];
+  readonly playsOnMine: readonly PlayOnMine[];
+  readonly saves: readonly EffectSaved[];
+  /** The next page's cursor: pass it to `log` for what is older. Null when nothing older is left. */
+  readonly before: string | null;
+}
+
 /* ------------------------------------------------------------------ actions ---- */
 
 export type DebutTiming = 'now' | 'tally';
@@ -476,6 +562,8 @@ export interface KayfaApi {
   preferences(): Promise<Preferences>;
   setPreferences(p: Partial<Preferences>): Promise<Answer<Preferences>>;
   estimate(): Promise<Estimate>;
+  /** A page of the player's own log (`Log`): the newest with no cursor, then each older page from the last one's `before`. */
+  log(before?: string | null): Promise<Log>;
   invites(): Promise<readonly MyInvite[]>;
   createInvite(): Promise<Answer<{ readonly invite: number; readonly code: string }>>;
   reissueInvite(invite: number): Promise<Answer<{ readonly invite: number; readonly code: string }>>;

@@ -30,10 +30,11 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { cutLog, LOG_ROWS, type LedgerRow, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import type {
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
   EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
-  Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet,
+  Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -57,6 +58,9 @@ const NOT_READ = 'that could not be read right now; try again';
 /** PostgREST answers at most this many rows to one request unless told fewer; every list read here asks for fewer, ordered. */
 const ROW_CAP = 1000;
 const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
+/** The most ids one read by id names, so its address stays short whoever asks (a page of the log can name a thousand Acts). */
+const ID_CHUNK = 100;
+const chunks = <T,>(xs: readonly T[]): T[][] => Array.from({ length: Math.ceil(xs.length / ID_CHUNK) }, (_, i) => xs.slice(i * ID_CHUNK, (i + 1) * ID_CHUNK));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /* ------------------------------------------------------------------- row mappers ---- */
@@ -519,8 +523,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async actsById(ids) {
       const wanted = [...new Set(ids)].filter(idOk);
       if (wanted.length === 0) return [];
-      const rows = await list(() => client.from('acts_public').select('*').in('id', wanted));
-      return rows.map(toAct);
+      const rows = await Promise.all(chunks(wanted).map((part) => list(() => client.from('acts_public').select('*').in('id', part))));
+      return rows.flat().map(toAct);
     },
     async history(post) {
       if (!idOk(post)) return [];
@@ -553,7 +557,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const wanted = [...new Set(plays)].filter(idOk);
       const out: Record<Id, EffectState> = {};
       if (wanted.length === 0) return out;
-      for (const r of await list(() => client.from('effect_state').select('play,state,saved_at').in('play', wanted))) out[r['play']] = { state: r['state'], savedAt: r['saved_at'] };
+      const rows = await Promise.all(chunks(wanted).map((part) => list(() => client.from('effect_state').select('play,state,saved_at').in('play', part))));
+      for (const r of rows.flat()) out[r['play']] = { state: r['state'], savedAt: r['saved_at'] };
       return out;
     },
     async myReleases(plays) {
@@ -694,6 +699,48 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         smoke: p.smoke ?? null, contrast: p.contrast ?? null, text_size: p.textSize ?? null,
       }));
       return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    /*
+     * A page of the player's own log: each of its own views read newest first, at or before the cursor and a page long, then the
+     * shares of the settlements read, whole (a page of rows at a time), and the page cut where the first full source ends
+     * (engine/ui/data/log-page.ts). Every view answers from the caller's own rows alone.
+     */
+    async log(before) {
+      /* At or before the cursor; typed loosely, since supabase-js's builder types are too deep to pass through a generic. */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const upTo = (q: any, column: string): any => (before ? q.lte(column, before) : q);
+      const [ledgerRows, walletRows, cardRows, playRows, saveRows] = await Promise.all([
+        list(() => upTo(client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept'), 'ends_at')
+          .order('ends_at', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).limit(LOG_ROWS)),
+        list(() => upTo(client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at').order('at', { ascending: false }).limit(LOG_ROWS)),
+        list(() => upTo(client.from('my_card_ledger').select('card,kind,act,price,at'), 'at').order('at', { ascending: false }).limit(LOG_ROWS)),
+        list(() => upTo(client.from('my_posts_played_on').select('play,post,at'), 'at').order('at', { ascending: false }).limit(LOG_ROWS)),
+        list(() => upTo(client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at').order('saved_at', { ascending: false }).limit(LOG_ROWS)),
+      ]);
+      const ledger = ledgerRows.map((r): LedgerRow => ({
+        settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
+        character: r['character'], reason: r['reason'], amount: num(r['amount']),
+      }));
+      const ids = [...new Set(ledger.map((l) => l.settlement))];
+      const shares: ShareRow[] = [];
+      for (let offset = 0; ids.length > 0; offset += ROW_CAP) {
+        const page = await list(() => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', ids)
+          .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
+          .range(offset, offset + ROW_CAP - 1));
+        for (const r of page) shares.push({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) });
+        if (page.length < ROW_CAP) break;
+      }
+      return cutLog({
+        ledger,
+        shares,
+        wallet: walletRows.map((r): WalletEvent => ({
+          settlement: typeof r['settlement'] === 'number' ? r['settlement'] : null, kind: r['kind'], change: num(r['change']), overflow: num(r['overflow']),
+          floored: num(r['floored']), balanceAfter: num(r['balance_after']), ref: r['ref'] ?? null, at: r['at'],
+        })),
+        cards: cardRows.map((r): CardEvent => ({ card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'] })),
+        playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'] })),
+        saves: saveRows.map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
+      });
     },
     estimate() {
       if (lastEstimate && Date.now() < lastEstimate.until) return Promise.resolve(lastEstimate.answer);

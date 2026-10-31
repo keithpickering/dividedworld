@@ -31,10 +31,7 @@ const MANIFESTS = path.join(here, 'boards');
 const REPORT = path.join(here, 'report', 'boards');
 
 /** The boards not built yet, each with the part of docs/plans/2026-10-30-glass-build-plan.md that builds it. */
-const PENDING: Readonly<Record<string, string>> = {
-  '09-settlement': 'Part 4',
-  '12-log': 'Part 4',
-};
+const PENDING: Readonly<Record<string, string>> = {};
 
 const folder = fs.readdirSync(BOARDS);
 const manifestIds = fs.existsSync(MANIFESTS) ? fs.readdirSync(MANIFESTS).filter((f) => f.endsWith('.ts')).map((f) => f.slice(0, -3)) : [];

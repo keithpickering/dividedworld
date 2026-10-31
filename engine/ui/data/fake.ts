@@ -23,10 +23,11 @@ import { decide } from '../../rules/actions.ts';
 import { basePrice, casterMessage, decidePlay, type CardTarget } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
+import { cutLog, LOG_ROWS, micros, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
-  Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
-  DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
-  ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet,
+  Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
+  DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
+  ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
 /** The code `verifyCode` accepts for any address. */
@@ -56,16 +57,26 @@ export interface Seed {
   react(account: Id, character: Id, act: Id, kind: string): void;
   /**
    * A settlement: debuts the waiting characters, applies the waiting Turns (class history starts
-   * then, so the cooldown does), sets the wallets (by account) and standings (by character) given,
-   * and dates `lastSettledAt`. Each part can be left out.
+   * then, so the cooldown does), writes its ledger lines with their shares, credits each account's
+   * wallet with its lines' sum as apply_settlement does (held to the cap and the floor, with a wallet
+   * event saying what either cut off) and adds each character's to its standing, sets the wallets (by
+   * account) and standings (by character) given outright, and dates `lastSettledAt`. Each part can be
+   * left out. Its window runs from the last settlement's end, or one settlement's length before `at`.
+   * `sharesKept: false` is a settlement made before shares were kept (0034), which carries none. A
+   * line's shares add up to it, and an account's wallet is credited by its lines or set, never both.
    */
-  settle(options: { at?: number; wallet?: Readonly<Record<Id, number>>; standings?: Readonly<Record<Id, number>>; debut?: boolean; turns?: boolean }): void;
+  settle(options: {
+    at?: number; wallet?: Readonly<Record<Id, number>>; standings?: Readonly<Record<Id, number>>; debut?: boolean; turns?: boolean;
+    ledger?: readonly SeedLine[]; sharesKept?: boolean;
+  }): void;
   season(season: Partial<Season>): void;
   nextSettlementAt(at: number | null): void;
   views(thread: Id, count: number): void;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
-  /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). */
+  /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
   wallet(account: Id, balance: number): void;
+  /** A purchase from the Vending Machine by an account, dated `at`: `buyCard` as that player, refused as it is, with its wallet event and card ledger row. */
+  buy(account: Id, card: string, options?: { at?: number }): void;
   /** A character's Turn asked by its player, waiting for the next settlement; refused in the server's words like any other. */
   turn(character: Id, to: string, options?: { loudness?: 'silent' | 'announced'; showFrom?: boolean; showTo?: boolean }): void;
   /** What the account's next estimate holds; its times are the ask's. */
@@ -75,8 +86,12 @@ export interface Seed {
   /** A tally Act in a thread of The System's board that announces a Turn of a character. */
   announceTurn(character: Id, thread: Id, options?: { was?: string; since?: string; at?: number }): Id;
   avatar(character: Id, urls: { square?: string; portrait?: string }): void;
-  /** A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action). */
-  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number }): Id;
+  /**
+   * A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action).
+   * With `paid`, its player's card ledger records the play at that price and the wallet pays it, as `play_card` does (a wallet event
+   * where it is more than 0); without, the play is an Act alone, held and paid for nowhere.
+   */
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number }): Id;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
   /**
@@ -84,6 +99,14 @@ export interface Seed {
    * uncertain refusal. `went` says whether the server did it before the answer was lost.
    */
   loseNextAnswer(went: boolean): void;
+}
+
+/** A settled ledger line a seed writes: one reason's amount for one character, and its shares, which add up to it. */
+export interface SeedLine {
+  readonly character: Id;
+  readonly reason: string;
+  readonly amount: number;
+  readonly shares?: readonly { readonly act: Id; readonly quadrant?: LogShare['quadrant']; readonly amount: number }[];
 }
 
 interface SeedAct {
@@ -417,6 +440,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const releases = new Map<string, number>();
   const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
 
+  /* The player's log: the settlements' ledger with its shares, every wallet event and the card ledger, each by account (0003, 0006, 0034). */
+  interface SettlementRec { readonly id: number; readonly startsAt: number; readonly endsAt: number; readonly sharesKept: boolean; readonly lines: readonly (LedgerLine & { readonly account: Id })[] }
+  interface LedgerLine { readonly character: Id; readonly reason: string; readonly amount: number; readonly shares: readonly LogShare[] }
+  const settlements: SettlementRec[] = [];
+  const walletEvents: { readonly account: Id; readonly order: number; readonly event: WalletEvent; readonly ms: number }[] = [];
+  const cardLedger: { readonly account: Id; readonly order: number; readonly event: CardEvent; readonly ms: number }[] = [];
+  let logOrder = 0;
+  const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
+  const recordCard = (account: Id, at: number, e: Omit<CardEvent, 'at'>) => { cardLedger.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
+
   function saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Answer<{ play: Id; savedAt: string }> {
     const bad = request({ action: 'saveEffect', character, play, state });
     if (bad) return bad;
@@ -445,11 +478,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * What a wallet debit refuses, in the words of `wallet_spend` (0006_cards.sql): the amounts are hundredths, as the server says them.
    * Returns the balance left, or the refusal.
    */
-  function spend(account: AccountRec, amount: number): number | Refusal {
-    if (account.wallet < amount) return refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`);
+  function spend(account: AccountRec, amount: number, what: 'purchase' | 'play', ref: Id | null): number | Refusal {
+    const short = covers(account, amount);
+    if (short) return short;
+    /* As wallet_spend: a price of nothing moves nothing, and writes no event. */
+    if (amount === 0) return account.wallet;
     account.wallet -= amount;
+    recordWallet(account.id, stamp ?? now(), { settlement: null, kind: what, change: -amount, overflow: 0, floored: 0, balanceAfter: account.wallet, ref });
     return account.wallet;
   }
+  /** `wallet_spend`'s refusal of a price the wallet does not hold, or nothing. */
+  const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`) : null);
 
   /** `buy_card` (0006_cards.sql): the card's base price from the settled wallet, and one more of it in the hand. */
   function buyCard(card: string): Answer<Bought> {
@@ -457,9 +496,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (bad) return bad;
     const account = me()!;
     const price = basePrice(instance.cards.find((c) => c.key === card)!, settings);
-    const left = spend(account, price);
+    const left = spend(account, price, 'purchase', null);
     if (typeof left !== 'number') return left;
     account.cards[card] = (account.cards[card] ?? 0) + 1;
+    recordCard(account.id, stamp ?? now(), { card, kind: 'bought', act: null, price });
     return ok({ card, balance: left, held: account.cards[card]! });
   }
 
@@ -481,11 +521,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(c)) return c;
     const account = me()!;
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
-    const left = spend(account, decided.value.price);
-    if (typeof left !== 'number') return left;
+    const short = covers(account, decided.value.price);
+    if (short) return short;
     account.cards[card]! -= 1;
     const layer = effects.filter((e) => e.card === card).length + 1;
     const written = write({ character, kind: 'card', thread: on.thread, target, payload: { card, layer, message: decided.value.message, config: decided.value.config } });
+    /* After the Act, so the wallet's record names what the Aura went on (play_card). */
+    spend(account, decided.value.price, 'play', written.id);
+    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
     return ok(publicAct(written));
   }
@@ -706,6 +749,30 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }
       return out;
     },
+    log(before) {
+      const account = me()?.id;
+      const until = before === undefined || before === null ? Infinity : micros(before);
+      const upTo = (ms: number) => account !== undefined && ms * 1000 <= until;
+      const newest = <T extends { readonly ms: number; readonly order: number }>(rows: T[]) => rows.sort((a, b) => b.ms - a.ms || b.order - a.order).slice(0, LOG_ROWS);
+      const ledger: LedgerRow[] = [...settlements].sort((a, b) => b.endsAt - a.endsAt).filter((x) => upTo(x.endsAt))
+        .flatMap((x) => x.lines.filter((l) => l.account === account).map((l) => ({ settlement: x.id, startsAt: iso(x.startsAt), endsAt: iso(x.endsAt), sharesKept: x.sharesKept, character: l.character, reason: l.reason, amount: l.amount })))
+        .slice(0, LOG_ROWS);
+      const read = new Set(ledger.map((l) => l.settlement));
+      const shares: ShareRow[] = settlements.filter((x) => read.has(x.id))
+        .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, ...sh }))));
+      /* my_posts_played_on: the plays on the player's posts made through another player's characters. */
+      const onMine = [...acts.values()].filter((a) => a.kind === 'card' && a.target !== null && a.character !== null
+        && characters.get(acts.get(a.target)?.character ?? '')?.owner === account && characters.get(a.character)?.owner !== account);
+      return cutLog({
+        ledger,
+        shares,
+        wallet: newest(walletEvents.filter((e) => e.account === account && upTo(e.ms))).map((e) => e.event),
+        cards: newest(cardLedger.filter((e) => e.account === account && upTo(e.ms))).map((e) => e.event),
+        playsOnMine: newest(onMine.filter((a) => upTo(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at) })),
+        saves: newest(onMine.filter((a) => effects.has(a.id) && upTo(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
+          .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
+      });
+    },
     myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
     releaseEffect,
     saveEffect,
@@ -923,6 +990,51 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     a.wallet = Math.min(balance, settings.walletCap);
   };
 
+  /**
+   * How long after its window ends a settlement is applied, for the wallet event it writes (wallet_move dates it at now(), when the
+   * job runs): a second, so a settlement's lines and its wallet event are not one instant, as on the server, and a screen that
+   * assumed they share a page would be caught here too. A moment seeded within that second of a settlement would read its event
+   * as dated after the moment's own clock; no moment of the boards fixture is.
+   */
+  const APPLIED_AFTER = 1000;
+  /**
+   * A settlement's ledger, as apply_settlement writes it (0003, 0034): its lines and their shares, each account credited with its
+   * lines' sum through wallet_move (held to the cap and the floor, the event saying what each cut off), each character's standing moved.
+   * A seed that breaks what the server refuses throws in the server's words.
+   */
+  function settleLedger(at: number, lines: readonly SeedLine[], sharesKept: boolean, setOutright: Readonly<Record<Id, number>>) {
+    const last = settlements[settlements.length - 1];
+    const startsAt = last ? last.endsAt : at - span(settings.settlementLength);
+    if (at <= startsAt) throw new Error('a window ends after it starts');
+    const written = lines.map((l) => {
+      const c = characters.get(l.character);
+      if (!c) throw new Error(`no such character ${l.character}`);
+      if (!Number.isInteger(l.amount) || l.amount === 0) throw new Error(`a ledger line is whole hundredths, never 0, not ${l.amount}`);
+      const shares = (l.shares ?? []).map((sh) => ({ act: sh.act, quadrant: sh.quadrant ?? null, amount: sh.amount }));
+      if (!sharesKept && shares.length > 0) throw new Error('a settlement made before its shares were kept carries none');
+      if (shares.some((sh) => !acts.has(sh.act))) throw new Error('a share names an Act that does not exist');
+      if (shares.some((sh) => !Number.isInteger(sh.amount) || sh.amount === 0)) throw new Error('a share\'s amount is whole hundredths, never 0');
+      if (shares.length > 0 && shares.reduce((sum, sh) => sum + sh.amount, 0) !== l.amount) throw new Error('an entry\'s shares add up to it');
+      return { account: c.owner, character: l.character, reason: l.reason, amount: l.amount, shares };
+    });
+    const id = settlements.length + 1;
+    settlements.push({ id, startsAt, endsAt: at, sharesKept, lines: written });
+    const credits = new Map<Id, number>();
+    for (const l of written) {
+      credits.set(l.account, (credits.get(l.account) ?? 0) + l.amount);
+      standingOf.set(l.character, (standingOf.get(l.character) ?? 0) + l.amount);
+    }
+    for (const [account, delta] of credits) {
+      if (Object.hasOwn(setOutright, account)) throw new Error('an account\'s wallet is credited by its lines or set outright, not both');
+      if (delta === 0) continue;
+      const a = seeded(account);
+      const raw = a.wallet + delta;
+      const after = Math.min(settings.walletCap, Math.max(0, raw));
+      recordWallet(account, at + APPLIED_AFTER, { settlement: id, kind: 'settlement', change: after - a.wallet, overflow: Math.max(0, raw - settings.walletCap), floored: Math.max(0, -raw), balanceAfter: after, ref: null });
+      a.wallet = after;
+    }
+  }
+
   const seed: Seed = {
     account(name, o) {
       const email = (o?.email ?? `${name.toLowerCase()}@example.test`).toLowerCase();
@@ -968,6 +1080,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           c.pending = null;
         }
       }
+      if (o.ledger !== undefined) settleLedger(at, o.ledger, o.sharesKept ?? true, o.wallet ?? {});
       for (const [account, balance] of Object.entries(o.wallet ?? {})) setWallet(account, balance);
       for (const [character, amount] of Object.entries(o.standings ?? {})) standingOf.set(character, amount);
       lastSettled = at;
@@ -983,6 +1096,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     views(thread, count) { views.set(thread, count); },
     cards(account, held) { seeded(account).cards = { ...held }; },
     wallet(account, balance) { setWallet(account, balance); },
+    buy(account, card, o) { accepted(asAt(account, o?.at, () => buyCard(card))); },
     turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
     estimate(account, e) {
       const a = accounts.get(account)!;
@@ -1011,7 +1125,19 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o?.message !== undefined) payload.message = o.message;
       if (o?.layer !== undefined) payload.layer = o.layer;
       if (o?.config !== undefined) payload.config = o.config;
+      /* A paid play is refused before its Act is written, as play_card refuses before it writes; the hand is the seed's to set (`cards`). */
+      if (o?.paid !== undefined) {
+        if (!Number.isInteger(o.paid) || o.paid < 0) throw new Error(`a price is a whole amount, at least zero, not ${o.paid}`);
+        const short = covers(seeded(ownerOf(character)), o.paid);
+        if (short) accepted(short);
+      }
       const written = asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload }));
+      if (o?.paid !== undefined) {
+        const account = seeded(ownerOf(character));
+        stamp = written.at;
+        try { spend(account, o.paid, 'play', written.id); } finally { stamp = null; }
+        recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: o.paid });
+      }
       if (o?.live) sendAct(written);
       return written.id;
     },
