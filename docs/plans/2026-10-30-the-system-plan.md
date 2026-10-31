@@ -8,6 +8,10 @@ move end to end, the Director renaming a board. Parts 2–5 each get a plan of t
 `supabase/tests/0040-ledger-shares.sql`, e2e tests up to `supabase/tests/e2e/0010-reveal-across-0029.ts`. Each new file
 takes the next free number when it is written, and a number that moved is reported under `Plan gaps` in the PR.
 
+**Amended 2026-10-31, before any of it was built,** by `docs/plans/2026-10-31-seasonal-boss-design.md`: the Director
+is now the role, played each season by a Boss from the instance's roster. Tasks 4, 5, 6, 9 and 12 change in place;
+Task 12b (succession and the handover) is new. Where a task below says "the Director", it means the season's Boss.
+
 **The System ships switched off.** A setting `systemEnabled` (false by default) gates the meeting and the landing of
 moves. Tasks 1–11 build and test everything with it off on a deployed instance and on in tests. Task 12's screens are
 what make a landed move's way out visible, so the setting is turned on for Divided World only in Task 13, after them
@@ -110,7 +114,11 @@ predicate; a ledger write that fails makes the call throw). Add `model_calls` an
     in `0019_profiles.sql`) creates each staff member in the seed's `system.staff` once, debuted at seed time, with its
     name and the `character_profiles` row its seed gives; a reseed changes nothing an admin wrote, as boards already
     behave.
-- `engine/rules/types.ts`: `StaffSeed {key, name, title, signature}`; `Instance.system` (Task 5) carries the list.
+- `engine/rules/types.ts`: `StaffSeed {key, name, title, signature}`; `Instance.system` (Task 5) carries the list,
+  which is the roster of Bosses (and, from the Mod Bots session, their henchmen). Every roster Boss is seeded as a
+  staff character, debuted, so a returning Boss is the same character with the same Acts and profile.
+- `seasons` gains `boss text references characters (staff)`, nullable only for a season opened before this migration;
+  `current_boss()` returns the open season's Boss's staff key.
 
 **Tests first** (`supabase/tests/0042-staff.sql`): a staff character has a null owner and a staff key; no player can
 post, spin, play a card or edit as it; `write_staff_act` posts as it; a reaction to its Act appears in
@@ -121,19 +129,28 @@ passes. The poison: a staff character with an owner (the check refuses it) and a
 
 ### Task 5. The instance's System content
 
-- `engine/rules/types.ts`: `SystemContent` with `staff: StaffSeed[]`, `duties: Record<Duty, string>` (staff key per
-  duty), `persona` (the meeting's system prompt frame), `stockLines` (keyed lines for every standing order, used when a
+- `engine/rules/types.ts`: `SystemContent` with `bosses: BossPersona[]` (each a `StaffSeed` plus its
+  `persona` prompt, `startingHobby`, `temperament`, optional `inheritsMemoryOf` for a reinvention, and optional
+  `phases` overriding its own phase numbers), `firstBoss` (the key of the first season's Boss), `duties: Record<Duty,
+  'boss' | string>` (`boss` means the season's Boss; a staff key is reserved for the Mod Bots session), `stockLines` (keyed lines for every standing order, used when a
   micro-event call is out of budget or fails), `feeds` (outside feed URLs), `realWorld` (the starting list of subjects
   never amplified), `wheelhouse` (starting entries), `oldVoice` (the completion prompt frame for a board description),
   and `nameStyle(name): string[]` (problems with a name The System proposes; empty when it is in style).
-- `engine/rules/instance.ts`: `instanceProblems` checks `system`: every duty assigned to a staff key that exists, every
+- `engine/system/phases.ts`: `phaseAt(season, now, settings, boss)` returns `honeymoon | reign | meltdown` and that
+  phase's numbers, with a Boss's overrides clamped into the engine's caps (`PHASE_CAPS`), each clamp recorded.
+- `engine/rules/instance.ts`: `instanceProblems` checks `system`: every duty assigned to `boss` or to a staff key that
+  exists, `firstBoss` in the roster, a Boss's phase overrides inside `PHASE_CAPS`, every
   standing order's stock line present, `nameStyle` a function.
-- `Settings` gains, with validators in `SETTINGS`: `systemEnabled` (false), `meetingCron` (daily), `weeklyMoves` (5),
-  `bankCap` (10), `structuralHoldHours` (24), `microEventDailyCalls`, `digestThreads`, `digestExcerpts`,
+- `Settings` gains, with validators in `SETTINGS`: `systemEnabled` (false), `meetingCron` (daily), `phases` (honeymoon
+  `days` 14, `weeklyMoves` 2, `bankCap` 4; reign `weeklyMoves` 5, `bankCap` 10; meltdown `days` 21, `weeklyMoves` 8,
+  `bankCap` 14; each phase also `moveExpiryMostDays`, and from Part 2 its bands and whether a permaban is allowed),
+  `inheritanceGraceDays` (3), `rosterRecentExcluded` (2), `structuralHoldHours` (24), `microEventDailyCalls`, `digestThreads`, `digestExcerpts`,
   `digestExcerptChars`, `boardNameMaxLength` (60), `moveExpiryMostDays`, `moveExpiryLeastHours`, and `modelTiers`
   (`strong`, `light`, the model id for each; the meeting defaults to the strong tier). The defaults are starting
   points in the design's sense; the build session sets the model ids from the `claude-api` skill.
-- `instances/divided-world/system/`: `persona.ts` (robo-McMahon, written from the design's premise: petty for years,
+- `instances/divided-world/system/`: `bosses/` (the first roster, written with the owner before the build ships it:
+  each Boss a file with its persona, built on the shared premise in `persona.ts`); `persona.ts` (robo-McMahon, written
+  from the design's premise: petty for years,
   prefers controversy, stokes kayfabe and deflates a real argument by making it absurd, never takes a side in one, its
   hobbies drawn from characters it thinks are cool and from outside material in the wheelhouse); `lines.ts`;
   `feeds.ts`; `real-world.ts`; `name-style.ts` (PPP: three words sharing a first letter, or a name ending in a word
@@ -144,7 +161,8 @@ passes. The poison: a staff character with an owner (the check refuses it) and a
   the settings as before.
 
 **Tests first:** `engine/rules/instance.test.ts` (an instance with a duty assigned to a missing staff key has a
-problem; a missing stock line has a problem); `instances/divided-world/system/name-style.test.ts` (the cases above);
+problem; a missing stock line has a problem); `instances/divided-world/system/name-style.test.ts` (the cases above); `engine/system/phases.test.ts` (day 1 is honeymoon, the
+middle is reign, the last 21 days are meltdown; a Boss's override past a cap is clamped and recorded);
 `instances/divided-world/settings.test.ts` (the new settings validate). Engine boundary: `npm run build` still passes
 `check-engine-boundary`, since the engine names only `SystemContent`.
 
@@ -161,11 +179,12 @@ problem; a missing stock line has a problem); `instances/divided-world/system/na
   - `staff_profiles` (`id`, `staff`, `meeting`, `at`, `interests`, `favorites uuid[]`, `mood`, `signature`): the
     in-character profile, a version per meeting, public through a view `staff_profile_now` (latest per staff), granted
     to anon and authenticated. It may bluff; the hidden memory never reaches a client.
-  - `move_bank` (one row: `balance numeric`, `as_of`): the bank accrues `weeklyMoves` per week continuously up to
-    `bankCap`, and a meeting spends from it. `bank_now()` computes the accrued balance without writing.
+  - `move_bank` (`staff` primary key, `balance numeric`, `as_of`): each Boss's bank accrues its phase's
+    `weeklyMoves` per week continuously up to its phase's `bankCap`, and its meetings spend from it. A Boss arriving
+    at a handover starts at zero. `bank_now(staff)` computes the accrued balance without writing.
 - `engine/system/memory.ts`: `Memory`, and `repairMemory` built on Task 1's `repair` (an opinion score out of range is
-  clamped and recorded; an opinion naming a character not in the digest is dropped and recorded, since the meeting may
-  only hold opinions of characters it read in public play).
+  clamped and recorded; an opinion naming anything but a debuted, public character is dropped and recorded; a returning
+  Boss keeps opinions of characters it read in an earlier season, since those were read from public play too).
 
 **Tests first:** `supabase/tests/0043-director.sql` (no client reads `staff_memory`, `meetings` or `move_bank`;
 `staff_profile_now` is readable by anon; `bank_now()` caps at `bankCap` after a long idle stretch and accrues
@@ -241,11 +260,15 @@ a demand kind seeded with no SQL case makes the per-row test raise.
   clock) and `supabase/functions/meet/index.ts` (the HTTP edge, `fromTheService()` as `settle/index.ts`).
   `runMeeting`:
   1. If `systemEnabled` is false, writes a `meetings` row with outcome `off` and returns.
-  2. Reads `system_digest` for the window since the last meeting, the latest `staff_memory`, `bank_now()`, and the
+  2. Finds the season's Boss (`current_boss()`) and its phase (`phaseAt`). Reads `system_digest` for the window since
+     the last meeting, that Boss's latest `staff_memory` (none for a new Boss, or the memory of the Boss it
+     `inheritsMemoryOf`), `bank_now(boss)`, any inheritance review due (Task 12b), and the
      outside feeds (each fetched by plain code with a short timeout, item titles only, capped; a feed that fails is
      skipped and noted).
-  3. Calls `chat` on the meeting's tier with the instance's persona and a structured schema: the new memory, the new
-     profile, and `moves: [{kind, params, demand, go_live_at, expires_in_hours, why}]`.
+  3. Calls `chat` on the meeting's tier with the shared premise, the Boss's persona and its phase, and a structured
+     schema: the new memory, the new profile, `moves: [{kind, params, demand, go_live_at, expires_in_hours, why}]`,
+     and, when due, `inherited: [{move_act, keep | end}]` and `successor: {boss, why}` (only in the meltdown's last
+     week).
   4. Repairs the answer (Task 1): moves past the bank are trimmed from the end and recorded; a move whose kind or
      demand kind is not in the catalog is dropped and recorded; a `renameBoard` whose name fails `nameStyle` or
      `boardNameMaxLength` is dropped and recorded, never rewritten; go-live times are clamped into the next day and
@@ -311,7 +334,8 @@ Designed with the owner on 2026-10-30, after the plan was first written; the moc
     bar, the expiry date, and that an admin can reverse it. Focus is held while it is open and returned when it closes.
   - A component `MoveNotice` in `engine/ui/board/`; the label's words come from the move kind's plain template, never
     from the Director.
-- **The Director's profile** (`mock-s2-director-profile.html`, C). `ProfileScreen` (`engine/ui/profile/Profile.tsx:40`)
+- **A Boss's profile** (`mock-s2-director-profile.html`, C), for every Boss past and present; the moderation log is
+  that Boss's own moves. `ProfileScreen` (`engine/ui/profile/Profile.tsx:40`)
   for a staff character: name, an ADMINISTRATOR badge, its title, and a table of Interests, Favorite Members, Current
   Mood and Posts from `staff_profile_now`, with its signature; beside it a **Moderation log** from `moves_log`, each row
   a date, what was done (with links to the boards) and how it ended in short plain words ("in force", "undone: 12
@@ -331,6 +355,31 @@ keyboard and returns focus; a staff profile shows the moderation log and no stan
 player; the queue's groups render from a fixture `admin_queue()` with HOLD only on waiting moves and REVERSE only on
 moves in force.
 
+### Task 12b. Succession and the handover
+
+- `engine/system/moves.ts` gains `nameSuccessor` (structural; params `boss`, a key in the roster, never the outgoing
+  Boss): it waits in the admin queue like any structural move, where an admin may hold it or replace its `boss` with
+  another roster key (`replace_successor(id, boss)`, `only_admins`). It has no demand and no expiry; it is spent at the
+  handover.
+- At a season's rollover (`reveal_season`'s roll-over in `0029_reveal_rolls_over.sql`, read in its current form), the
+  new season's `boss` is the landed, unheld nomination's, or else the next in the roster by rotation, skipping the
+  last `rosterRecentExcluded` Bosses. The outgoing Boss's farewell and the new Boss's arrival are posted on The
+  System's board as `write_staff_act` posts with stock lines (the finale's design replaces the farewell).
+- **The inheritance review:** at the new Boss's first meeting, the digest lists every landed move of an earlier Boss
+  still in force that shapes the board (in Part 1, renames). The meeting's `inherited` answer keeps a move (a
+  `move_keep` Act by the new Boss targeting it: the move is then its own, expiry unchanged) or ends it (`move_end` with
+  `why: superseded`), at no cost to the bank. The tick ends any inherited move still unaddressed
+  `inheritanceGraceDays` after the handover, with `why: superseded`. Add `move_keep` to `acts.kind` with
+  `0039_moves.sql`'s rebuild, and `superseded` to `move_end`'s reasons; `moves_log` shows both.
+- Bans are not reviewed (Part 2 holds them to this).
+
+**Tests first:** `supabase/tests/0048-succession.sql` (a held nomination leaves the rotation to choose; a replaced one
+names the admin's Boss; rotation skips the recent Bosses and the outgoing one; a kept move survives the grace period
+and a forgotten one ends with `superseded`; reviewing costs no bank); `supabase/functions/meet/core.test.ts` gains: a
+`successor` answer before the meltdown's last week is dropped and recorded; a new Boss's first meeting reads no memory
+unless it `inheritsMemoryOf` another; `supabase/tests/e2e/0013-handover.ts` (a season rolls over, the nominated Boss
+arrives, the old rename is kept by its review and its next rename is the new Boss's).
+
 ### Task 13. Turning it on
 
 - Divided World's `settings.ts` sets `systemEnabled` to true only once Task 12 is merged; the playtest profile keeps it
@@ -344,6 +393,8 @@ moves in force.
 | --- | --- |
 | A board renamed by The System | Its demand met by players' posts or reactions, shown in plain words on the board; its expiry, at most `moveExpiryMostDays`; an admin's reversal |
 | A queued move | It lands at its time or is held by an admin; a player never sees it |
+| An inherited move after a handover | The new Boss's review keeps or ends it; unaddressed, it ends `inheritanceGraceDays` after the handover |
+| A held nomination | The roster's rotation names the next Boss at the handover |
 | A meeting that failed | The next scheduled meeting; its record kept |
 | The System switched off | An admin's setting; nothing is stranded, since no move lands while it is off and landed moves still end by the tick |
 
@@ -359,6 +410,11 @@ moves in force.
 - **The profile** may bluff, but it is written only from the meeting, which read only the digest.
 
 ## Review focus
+
+- A Boss returning seasons later: its memory's opinions name characters that may since have retired; the repair keeps
+  them only while the character is public, and the digest never re-reads a private fact to refresh them.
+- The handover inside the season's roll-over: a failure of the succession must not stop the reveal or the new season
+  from opening; the rotation is the fallback in the same transaction.
 
 - `characters.owner` becoming nullable: every existing function that reads `owner` (writers, the cap, the reveal,
   exports) must still behave for a staff character; grep, don't assume.
