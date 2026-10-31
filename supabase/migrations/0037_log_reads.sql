@@ -49,8 +49,9 @@ create view my_card_ledger as
 -- The plays on the caller's posts made through another player's characters, with when each was made
 -- and when its effect was last saved, or null. A play through one of the caller's own characters is
 -- the caller's card ledger's, and is left out here. Never the account, the owner, who saved or what
--- the state holds. The read is the caller's posts' plays: one probe of acts_target (0001) per post the
--- caller has written, then the plays in time order.
+-- the state holds. The read is the caller's posts' plays: one probe per post the caller has written of
+-- an index that leads with the target (acts_card_layers, 0016, is the one the planner takes), then the
+-- plays in time order. Its cost grows with the caller's own posts, never with the instance's.
 create view my_posts_played_on as
   select k.id as play, k.target_act_id as post, k.created_at as at, e.saved_at
   from acts k

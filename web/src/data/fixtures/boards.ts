@@ -23,7 +23,7 @@
  *    no gap whenever it falls, and `engine/ui/cards/` draws each as the tag on its post.
  *  - The marker the production bundle is checked for is the fake's (`FAKE_BACKEND_MARKER`); the
  *    fixture carries no marker of its own.
- *  - The Whoops! on #41 is Mrs. Hooligan's play of a card the player bought before the timeline begins;
+ *  - The Whoops! on #41 is Mrs. Hooligan's play of a card the player bought on Oct 20, before the timeline begins;
  *    #41 is short, so the play costs nothing and moves no wallet (the timeline shows none), and the log
  *    reads it from the card ledger alone, in Mrs. Hooligan's lines and Spritey's, not Pipewrench's.
  *  - The settlement at Oct 29 08:17 (scoring the window from Oct 28; the log says "for Oct 28") was made before the shares were kept (supabase/migrations/0034_ledger_shares.sql),
@@ -266,6 +266,12 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   /* ---- Pipewrench's timeline: wallets, hands, what is pending, the Turn and the settlements ---- */
   const heat = (amount: number) => ({ character: pipewrench, reason: 'heel.drewHeat', amount });
   const named = { pipewrench, hooligan, spritey } as const;
+  /*
+   * The Whoops! Mrs. Hooligan plays on #41, bought on Oct 20 so the card ledger holds the card it plays; then the wallet as it stood
+   * before the Oct 29 settlement, seeded with no history behind it.
+   */
+  seed.wallet(player, economy['whoops.price']!);
+  seed.buy(player, 'whoops', { at: utc(20, 19, 0) });
   seed.wallet(player, WALLET_START - SCORED_OCT_28.reduce((sum, [, , amount]) => sum + amount, 0));
   when(SETTLE_1, (at) => {
     seed.settle({

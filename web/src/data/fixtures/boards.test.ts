@@ -355,11 +355,11 @@ describe('the log (the log shares plan, Task 4)', () => {
       id: 2, startsAt: iso(29, 8, 17), endsAt: iso(30, 8, 17), sharesKept: true,
       lines: [
         { character: me.id, reason: 'heel.drewHeat', amount: 20, shares: [{ act: p43.id, quadrant: 'excitedNegative', amount: 20 }] },
-        { character: me.id, reason: 'heel.stoleThunder', amount: 20, shares: [{ act: play.id, quadrant: 'excitedNegative', amount: 20 }] },
         { character: me.id, reason: 'heel.shrugged', amount: -5, shares: [{ act: p43.id, quadrant: 'calmPositive', amount: -5 }] },
+        { character: me.id, reason: 'heel.stoleThunder', amount: 20, shares: [{ act: play.id, quadrant: 'excitedNegative', amount: 20 }] },
       ],
     });
-    expect(log.wallet.find((e) => e.settlement === 2)).toEqual({ settlement: 2, kind: 'settlement', change: 35, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: iso(30, 8, 17) });
+    expect(log.wallet.find((e) => e.settlement === 2)).toEqual({ settlement: 2, kind: 'settlement', change: 35, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: new Date(Date.parse(iso(30, 8, 17)) + 1000).toISOString() });
     /* The one before was made before shares were kept, and has lines of the player's three characters. */
     expect(before).toMatchObject({ id: 1, endsAt: iso(29, 8, 17), sharesKept: false });
     expect(before!.lines.length).toBe(3);
@@ -373,19 +373,21 @@ describe('the log (the log shares plan, Task 4)', () => {
     const me = must((await fake.myCharacters()).find((c) => c.name === 'Pipewrench'));
     const play = must((await fake.cardsOn((await postNumbered(fake, thread, 46)).id, 5)).find((a) => a.character === me.id));
     const log = await fake.log();
+    /* The card Mrs. Hooligan plays on #41 was bought on Oct 20, so the ledger never holds a play of a card not bought. */
+    expect(log.cards.filter((c) => c.kind === 'bought').length).toBeGreaterThanOrEqual(log.cards.filter((c) => c.kind === 'played').length);
     expect(log.cards.filter((c) => c.at >= iso(29, 20, 0))).toEqual([
       { card: 'whoops', kind: 'played', act: play.id, price: 25, at: iso(29, 21, 52) },
       { card: 'whoops', kind: 'played', act: expect.any(String), price: 0, at: iso(29, 21, 16) },
       { card: 'whoops', kind: 'bought', act: null, price: 100, at: iso(29, 20, 10) },
     ]);
-    expect(log.wallet.filter((e) => e.settlement === null)).toEqual([
+    expect(log.wallet.filter((e) => e.settlement === null && e.at >= iso(29, 20, 0))).toEqual([
       { settlement: null, kind: 'play', change: -25, overflow: 0, floored: 0, balanceAfter: 437, ref: play.id, at: iso(29, 21, 52) },
       { settlement: null, kind: 'purchase', change: -100, overflow: 0, floored: 0, balanceAfter: 462, ref: null, at: iso(29, 20, 10) },
     ]);
   });
 
-  it('at 07-vending, a minute before the buy, the log holds no purchase yet', async () => {
+  it('at 07-vending, a minute before the buy, the log holds no purchase that day yet', async () => {
     const { fake } = await load('07-vending');
-    expect((await fake.log()).cards.filter((c) => c.kind === 'bought')).toEqual([]);
+    expect((await fake.log()).cards.filter((c) => c.kind === 'bought').map((c) => c.at)).toEqual([iso(20, 19, 0)]);
   });
 });

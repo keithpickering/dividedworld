@@ -26,7 +26,7 @@ test('a full source ends the page at its oldest time; every source keeps only wh
   const read: LogRead = {
     ...none,
     cards: [bought('2026-10-30T10:00:00Z'), bought('2026-10-30T09:00:00Z')],
-    wallet: [spent('2026-10-30T09:30:00Z'), spent('2026-10-30T09:00:00Z'), spent('2026-10-30T08:00:00Z')].slice(0, 2),
+    wallet: [spent('2026-10-30T09:30:00Z'), spent('2026-10-30T09:00:00Z')],
     ledger: [line(3, '2026-10-30T08:17:00Z', 'p', 'heel.drewHeat', 20)],
   };
   const log = cutLog(read, 2);
@@ -67,6 +67,17 @@ test('each line carries its shares, largest first, and a line the estimate value
     { character: 'p', reason: 'heel.drewHeat', amount: 20, shares: [{ act: 'a2', quadrant: 'excitedNegative', amount: 12 }, { act: 'a1', quadrant: 'excitedNegative', amount: 8 }] },
     { character: 'p', reason: 'heel.shrugged', amount: -5, shares: [] },
   ]);
+});
+
+test('shares of one size are ordered by their Act, and lines by character and then reason, so both backends hand the same order', () => {
+  const ledger = [line(7, '2026-10-30T08:17:00Z', 'q', 'heel.shrugged', -5), line(7, '2026-10-30T08:17:00Z', 'p', 'heel.stoleThunder', 4), line(7, '2026-10-30T08:17:00Z', 'p', 'heel.drewHeat', 4)];
+  const shares: ShareRow[] = [
+    { settlement: 7, character: 'p', reason: 'heel.drewHeat', act: 'b', quadrant: 'excitedNegative', amount: 2 },
+    { settlement: 7, character: 'p', reason: 'heel.drewHeat', act: 'a', quadrant: 'excitedNegative', amount: 2 },
+  ];
+  const [s] = cutLog({ ...none, ledger, shares }).settlements;
+  assert.deepEqual(s!.lines.map((l) => [l.character, l.reason]), [['p', 'heel.drewHeat'], ['p', 'heel.stoleThunder'], ['q', 'heel.shrugged']]);
+  assert.deepEqual(s!.lines[0]!.shares.map((sh) => sh.act), ['a', 'b']);
 });
 
 test('settlements read newest first, whatever order the rows came in', () => {

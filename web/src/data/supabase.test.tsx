@@ -1006,13 +1006,13 @@ describe('the log', () => {
   });
 
   it('reads the shares whole, a page of rows at a time, however many a settlement has', async () => {
-    const many = Array.from({ length: 1500 }, (_, i) => ({ settlement: 9, character: B, reason: 'heel.drewHeat', act: `${A.slice(0, -4)}${String(i).padStart(4, '0')}`, quadrant: null, amount: i < 20 ? 1 : 0 }))
-      .filter((r) => r.amount !== 0)
-      .concat(Array.from({ length: 1480 }, (_, i) => ({ settlement: 9, character: B, reason: 'heel.shrugged', act: `${B.slice(0, -4)}${String(i).padStart(4, '0')}`, quadrant: null, amount: i === 0 ? -5 : 0 })).filter((r) => r.amount !== 0));
-    const padded = [...many, ...Array.from({ length: 1000 }, (_, i) => ({ settlement: 9, character: C, reason: 'face.cheered', act: `${C.slice(0, -4)}${String(i).padStart(4, '0')}`, quadrant: null, amount: 1 }))];
-    const h = logHarness(padded);
+    /* 1,020 shares: a full page of a thousand, then the twenty past it, each on its line. */
+    const act = (prefix: string, i: number) => `${prefix.slice(0, -4)}${String(i).padStart(4, '0')}`;
+    const heat = Array.from({ length: 1019 }, (_, i) => ({ settlement: 9, character: B, reason: 'heel.drewHeat', act: act(A, i), quadrant: null, amount: 1 }));
+    const shrug = [{ settlement: 9, character: B, reason: 'heel.shrugged', act: act(C, 0), quadrant: null, amount: -5 }];
+    const h = logHarness([...heat, ...shrug]);
     const log = await h.api.log();
     expect(h.to('my_ledger_shares').map((r) => r.url.searchParams.get('offset') ?? '0')).toEqual(['0', '1000']);
-    expect(log.settlements[0]?.lines.map((l) => l.shares.length)).toEqual([20, 1]);
+    expect(log.settlements[0]?.lines.map((l) => l.shares.length)).toEqual([1019, 1]);
   });
 });

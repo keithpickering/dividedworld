@@ -25,9 +25,9 @@ import { sameName } from '../../rules/names.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
 import { cutLog, LOG_ROWS, micros, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
-  Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
-  DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, CardEvent, LogShare, MyCharacter, WalletEvent, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
-  ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet,
+  Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
+  DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
+  ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
 /** The code `verifyCode` accepts for any address. */
@@ -995,6 +995,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * lines' sum through wallet_move (held to the cap and the floor, the event saying what each cut off), each character's standing moved.
    * A seed that breaks what the server refuses throws in the server's words.
    */
+  /**
+   * How long after its window ends a settlement is applied, for the wallet event it writes (wallet_move dates it at now(), when the
+   * job runs): a second, so a settlement's lines and its wallet event are not one instant, as on the server, and a screen that
+   * assumed they share a page would be caught here too.
+   */
+  const APPLIED_AFTER = 1000;
   function settleLedger(at: number, lines: readonly SeedLine[], sharesKept: boolean, setOutright: Readonly<Record<Id, number>>) {
     const last = settlements[settlements.length - 1];
     const startsAt = last ? last.endsAt : at - span(settings.settlementLength);
@@ -1023,7 +1029,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const a = seeded(account);
       const raw = a.wallet + delta;
       const after = Math.min(settings.walletCap, Math.max(0, raw));
-      recordWallet(account, at, { settlement: id, kind: 'settlement', change: after - a.wallet, overflow: Math.max(0, raw - settings.walletCap), floored: Math.max(0, -raw), balanceAfter: after, ref: null });
+      recordWallet(account, at + APPLIED_AFTER, { settlement: id, kind: 'settlement', change: after - a.wallet, overflow: Math.max(0, raw - settings.walletCap), floored: Math.max(0, -raw), balanceAfter: after, ref: null });
       a.wallet = after;
     }
   }
@@ -1118,12 +1124,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o?.message !== undefined) payload.message = o.message;
       if (o?.layer !== undefined) payload.layer = o.layer;
       if (o?.config !== undefined) payload.config = o.config;
+      /* A paid play is refused before its Act is written, as play_card refuses before it writes; the hand is the seed's to set (`cards`). */
+      if (o?.paid !== undefined) {
+        if (!Number.isInteger(o.paid) || o.paid < 0) throw new Error(`a price is a whole amount, at least zero, not ${o.paid}`);
+        const short = covers(seeded(ownerOf(character)), o.paid);
+        if (short) accepted(short);
+      }
       const written = asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload }));
       if (o?.paid !== undefined) {
         const account = seeded(ownerOf(character));
-        if (!Number.isInteger(o.paid) || o.paid < 0) throw new Error(`a price is a whole amount, at least zero, not ${o.paid}`);
-        const short = covers(account, o.paid);
-        if (short) accepted(short);
         stamp = written.at;
         try { spend(account, o.paid, 'play', written.id); } finally { stamp = null; }
         recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: o.paid });

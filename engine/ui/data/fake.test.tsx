@@ -1136,7 +1136,8 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
       ],
     }]);
     /* 580 + 25 is past the cap of 600: the wallet holds 600, and the event says 5 was held back. */
-    expect(log.wallet).toEqual([{ settlement: 1, kind: 'settlement', change: 20, overflow: 5, floored: 0, balanceAfter: 600, ref: null, at: new Date(at).toISOString() }]);
+    /* Dated as the job applies it, a moment after the window it settles ends (wallet_move's now()). */
+    expect(log.wallet).toEqual([{ settlement: 1, kind: 'settlement', change: 20, overflow: 5, floored: 0, balanceAfter: 600, ref: null, at: new Date(at + 1000).toISOString() }]);
     expect((await fake.wallet()).balance).toBe(600);
     expect(await fake.standingAmounts([anaFace, anaHeel])).toEqual({ [anaFace]: 30, [anaHeel]: -5 });
   });
@@ -1216,6 +1217,32 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     fake.clock.advance(MINUTE);
     must(await fake.saveEffect(theirs, anaFace, { clean: true }));
     expect((await fake.log()).saves).toEqual([{ play: theirs, post: mine, savedAt: new Date(fake.clock.now()).toISOString() }]);
+  });
+
+  test('pages a log longer than a page from each cursor, with every row once and nothing lost, to its start', async () => {
+    const { fake, ana } = logWorld();
+    fake.seed.wallet(ana, 600);
+    const start = fake.clock.now() - 500 * MINUTE;
+    /* Two purchases at each of 250 minutes, the last pair at one instant with the page's edge between them. */
+    for (let i = 0; i < 250; i++) {
+      fake.seed.wallet(ana, 600);
+      fake.seed.buy(ana, 'splat', { at: start + i * MINUTE });
+      fake.seed.buy(ana, 'splat', { at: start + i * MINUTE });
+    }
+    const seen: string[] = [];
+    let before: string | null = null;
+    let pages = 0;
+    do {
+      const page = await fake.log(before);
+      seen.push(...page.cards.map((c) => c.at));
+      before = page.before;
+      pages++;
+    } while (before !== null && pages < 10);
+    expect(pages).toBeGreaterThan(2);
+    expect(before).toBeNull();
+    expect(seen.length).toBe(500);
+    expect(seen).toEqual([...seen].sort().reverse());
+    expect(new Set(seen).size).toBe(250);
   });
 
   test('one player\'s log holds nothing of another\'s', async () => {
