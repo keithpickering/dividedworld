@@ -299,10 +299,18 @@ export interface Preferences {
   readonly contrast: 'standard' | 'high';
   /** The text's size for the board and the glass together, in percent; past 150 the glass is one column. */
   readonly textSize: 100 | 125 | 150 | 200;
+  /**
+   * The card kinds (their keys) this account has met: a kind's first mark on a page shows its callout until the kind is in this
+   * set. Changed only by `meetCard` and `forgetCardsMet`, never by `setPreferences`; at most 64, read by its own account alone.
+   */
+  readonly cardsMet: readonly string[];
 }
 
+/** What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `forgetCardsMet`). */
+export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet'>>;
+
 /** What an account's preferences are before it has set any (account_preferences' defaults). */
-export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100 };
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [] };
 
 export interface MyInvite {
   readonly id: number;
@@ -565,7 +573,14 @@ export interface KayfaApi {
    */
   markRead(thread: Id, seq: number, through: Id | null): Promise<boolean>;
   preferences(): Promise<Preferences>;
-  setPreferences(p: Partial<Preferences>): Promise<Answer<Preferences>>;
+  setPreferences(p: PreferencesPatch): Promise<Answer<Preferences>>;
+  /**
+   * Records that the account has met the card kind `card` (its key): added once, however often it is called, and answered with
+   * the preferences, the same for any key the server accepts. Refused for a key that is not a card's key or a 65th kind.
+   */
+  meetCard(card: string): Promise<Answer<Preferences>>;
+  /** Empties the set of cards met, so every first-time callout shows again ("Show card tips again" in Settings). */
+  forgetCardsMet(): Promise<Answer<Preferences>>;
   estimate(): Promise<Estimate>;
   /** A page of the player's own log (`Log`): the newest with no cursor, then each older page from the last one's `before`. */
   log(before?: string | null): Promise<Log>;

@@ -1,7 +1,7 @@
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { DEFAULT_PREFERENCES, type Answer, type Preferences } from '../data/api.ts';
+import { DEFAULT_PREFERENCES, type Answer, type Preferences, type PreferencesPatch } from '../data/api.ts';
 import { Smoke } from '../glass/Smoke.tsx';
 import { applyAppearance } from '../appearance.ts';
 import { buildWorld, renderIn, testGlass } from '../test-world.tsx';
@@ -136,7 +136,7 @@ describe('Settings, as board 11 draws it', () => {
 
   test('saves go one at a time, and a refusal puts back only its own choice', async () => {
     const w = world();
-    const calls: { patch: Partial<Preferences>; settle: (a: Answer<Preferences>) => void }[] = [];
+    const calls: { patch: PreferencesPatch; settle: (a: Answer<Preferences>) => void }[] = [];
     w.fake.setPreferences = (patch) => new Promise((settle) => { calls.push({ patch, settle }); });
     open(w.fake);
     await screen.findByRole('radiogroup', { name: 'The board' });
@@ -154,10 +154,38 @@ describe('Settings, as board 11 draws it', () => {
     expect(document.documentElement.hasAttribute('data-kb-mode')).toBe(false);
   });
 
+  test('"Show card tips again" is disabled while no card has been met, then clears the set the account holds', async () => {
+    const w = world();
+    open(w.fake);
+    const button = await screen.findByRole('button', { name: 'Show card tips again' });
+    expect(screen.getByRole('heading', { level: 3, name: 'Card tips' })).toBeInTheDocument();
+    expect(button).toBeDisabled();
+    cleanup();
+    await w.fake.meetCard('whoops');
+    await w.fake.meetCard('stick-around');
+    open(w.fake);
+    const enabled = await screen.findByRole('button', { name: 'Show card tips again' });
+    expect(enabled).toBeEnabled();
+    await userEvent.click(enabled);
+    await waitFor(async () => expect((await w.fake.preferences()).cardsMet).toEqual([]));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show card tips again' })).toBeDisabled());
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved to your account.');
+  });
+
+  test('a refused "Show card tips again" is said and leaves the button ready', async () => {
+    const w = world();
+    await w.fake.meetCard('whoops');
+    w.fake.forgetCardsMet = async () => ({ ok: false, error: 'try again later' });
+    open(w.fake);
+    await userEvent.click(await screen.findByRole('button', { name: 'Show card tips again' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('try again later');
+    expect(screen.getByRole('button', { name: 'Show card tips again' })).toBeEnabled();
+  });
+
   /** Text size changed twice before either save is answered: 100, then 125, then 150. */
   async function twice() {
     const w = world();
-    const calls: { patch: Partial<Preferences>; settle: (a: Answer<Preferences>) => void }[] = [];
+    const calls: { patch: PreferencesPatch; settle: (a: Answer<Preferences>) => void }[] = [];
     w.fake.setPreferences = (patch) => new Promise((settle) => { calls.push({ patch, settle }); });
     open(w.fake);
     await screen.findByRole('radiogroup', { name: 'Text size' });

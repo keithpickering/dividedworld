@@ -4,7 +4,7 @@
  * This is the one place a Supabase client lives ("Portable by construction"), and it reads only
  * what tools/check-web-reads.mjs allows: public projections and the signed-in player's own rows.
  * Every write goes through the `act` function (it validates and sends the broadcasts) except the
- * four rpcs that have no `act` equivalent (mark_read, set_preferences, set_profile, release_effect) and the
+ * six rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, forget_cards_met, set_profile, release_effect) and the
  * avatar, which is a multipart form to the `avatar` function. Sign-in goes through the `account`
  * function only; Auth's own code endpoints are never called, and the session the `account` function
  * answers with is installed with `auth.setSession`.
@@ -74,6 +74,7 @@ function toPreferences(r: Row): Preferences {
   return {
     theme: r['theme'] ?? d.theme, postbit: r['postbit'] ?? d.postbit, motion: r['motion'] ?? d.motion,
     smoke: r['smoke'] ?? d.smoke, contrast: r['contrast'] ?? d.contrast, textSize: num(r['text_size'], d.textSize) as Preferences['textSize'],
+    cardsMet: Array.isArray(r['cards_met']) ? r['cards_met'].filter((k): k is string => typeof k === 'string') : d.cardsMet,
   };
 }
 
@@ -700,7 +701,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return (await rpcWrite(() => client.rpc('mark_read', { in_thread: thread, seq, through }))).ok;
     },
     async preferences(): Promise<Preferences> {
-      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size').limit(1)))[0];
+      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,cards_met').limit(1)))[0];
       return r ? toPreferences(r) : DEFAULT_PREFERENCES;
     },
     async setPreferences(p) {
@@ -708,6 +709,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         theme: p.theme ?? null, postbit: p.postbit ?? null, motion: p.motion ?? null,
         smoke: p.smoke ?? null, contrast: p.contrast ?? null, text_size: p.textSize ?? null,
       }));
+      return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    async meetCard(card) {
+      const a = await rpcWrite(() => client.rpc('meet_card', { card }));
+      return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    async forgetCardsMet() {
+      const a = await rpcWrite(() => client.rpc('forget_cards_met'));
       return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
     },
     /*

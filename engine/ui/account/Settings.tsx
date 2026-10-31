@@ -20,7 +20,7 @@
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
-import { LOST_ANSWER, type Answer, type Preferences } from '../data/api.ts';
+import { LOST_ANSWER, type Answer, type Preferences, type PreferencesPatch } from '../data/api.ts';
 import { applyAppearance } from '../appearance.ts';
 import { Link, useLocation, useNavigate } from '../router.tsx';
 import { Invites } from './Invites.tsx';
@@ -182,8 +182,8 @@ export function SettingsScreen() {
    * answer that comes once the player has signed out, another account has signed in or the screen
    * has gone puts nothing on the page: the app has put the next look on the root by then.
    */
-  const change = (patch: Partial<Preferences>) => {
-    const key = Object.keys(patch)[0] as keyof Preferences;
+  const change = (patch: PreferencesPatch) => {
+    const key = Object.keys(patch)[0] as keyof PreferencesPatch;
     const asked = patch[key];
     const madeFor = account;
     if (madeFor === null) return;
@@ -204,6 +204,30 @@ export function SettingsScreen() {
       if (current.current && confirmed.current && current.current[key] === asked) show({ ...current.current, [key]: confirmed.current[key] });
       setRefusal({ account: madeFor, text: LOST_ANSWER });
     });
+  };
+
+  /*
+   * "Show card tips again" empties the set of cards met. It waits its turn behind the choices before it, and the screen shows the
+   * empty set once the account has answered (the button is disabled by it, so a second press cannot pile on); a refusal is said.
+   */
+  const forgetTips = () => {
+    const madeFor = account;
+    if (madeFor === null) return;
+    setRefusal(null);
+    setSaved(null);
+    line.current = line.current.then(async () => {
+      let r: Answer<Preferences>;
+      try { r = await api.forgetCardsMet(); } catch { r = { ok: false, error: LOST_ANSWER }; }
+      if (showing.current !== madeFor) return;
+      if (r.ok) {
+        current.current = { ...current.current!, cardsMet: r.value.cardsMet };
+        confirmed.current = { ...confirmed.current!, cardsMet: r.value.cardsMet };
+        setRead({ account: madeFor, prefs: current.current });
+        setSaved(madeFor);
+        return;
+      }
+      setRefusal({ account: madeFor, text: r.error });
+    }).catch(() => { if (showing.current === madeFor) setRefusal({ account: madeFor, text: LOST_ANSWER }); });
   };
 
   const signOut = async () => {
@@ -260,6 +284,9 @@ export function SettingsScreen() {
           sentence="The 2003 board stays 2003 whichever you choose. Only its colors swap." />
         <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
           sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />
+        <Row label="Card tips" sentence="The first time one of a card's marks shows on a page, a small note says what the card does. Each shows once. This brings them all back.">
+          <p><button type="button" className="kb-acct-button kb-glass-skew" disabled={prefs.cardsMet.length === 0} onClick={forgetTips}><b className="kb-glass-upright">Show card tips again</b></button></p>
+        </Row>
         {said}
         <p className="kb-acct-foot">Changes save as you make them.</p>
       </section>

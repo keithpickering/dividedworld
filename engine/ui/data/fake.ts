@@ -899,6 +899,23 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       account.prefs = { ...account.prefs, ...p };
       return ok(account.prefs);
     },
+    meetCard(card) {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (!/^[a-z][a-z0-9-]{0,39}$/.test(card)) return refuse('a card is named in lowercase words joined by hyphens');
+      const met = account.prefs.cardsMet;
+      if (!met.includes(card)) {
+        if (met.length >= 64) return refuse('at most 64 cards are kept as met');
+        account.prefs = { ...account.prefs, cardsMet: [...met, card] };
+      }
+      return ok(account.prefs);
+    },
+    forgetCardsMet() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      account.prefs = { ...account.prefs, cardsMet: [] };
+      return ok(account.prefs);
+    },
     estimate() {
       const account = me();
       if (!account) throw new Error('sign in to see your estimate');
