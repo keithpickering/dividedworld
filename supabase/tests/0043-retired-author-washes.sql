@@ -56,7 +56,8 @@ begin
   why := pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', ann, spare, the_play, '{"strokes": []}'));
   if why is distinct from '55000 that character is retired; an admin can restore it' then raise exception 'a retired non-author: %', why; end if;
 
-  -- A waiting one is refused, as today.
+  -- A waiting one is refused, as today. (A waiting character has written no post, so 0038's debuted test never meets an author
+  -- that is waiting; it states the plan's condition and holds should a post ever be written before a debut.)
   why := pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', ann, waiting, the_play, '{"strokes": []}'));
   if why is distinct from '55000 that character debuts at the next settlement' then raise exception 'a waiting character: %', why; end if;
 
@@ -75,7 +76,7 @@ begin
   perform tests.unbecome();
 
   -- No Act is written: a save is effect_state's row.
-  if (select count(*) from acts) <> acts_before then raise exception 'a save wrote an Act'; end if;
+  if (select count(*) from acts) is distinct from acts_before then raise exception 'a save wrote an Act'; end if;
 
   -- Another reader loads the layer as the author washed it.
   perform tests.become(bob);

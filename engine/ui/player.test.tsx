@@ -35,6 +35,7 @@ function Probe() {
       <span data-testid="hud">{p.hudCharacter?.id ?? 'none'}</span>
       <span data-testid="pending">{p.pending}</span>
       <span data-testid="acting">{p.actingCharacters.map((c) => c.id).join(',')}</span>
+      <span data-testid="writing">{p.writingCharacters.map((c) => c.id).join(',')}</span>
       <button onClick={() => p.setHudCharacter('b')}>swap</button>
       <button onClick={() => p.reactionLanded()}>landed</button>
       <span data-testid="wallet">{p.wallet?.balance ?? 'none'}</span>
@@ -93,6 +94,8 @@ describe('the player behind the HUD', () => {
     const { unmount } = render(<PlayerProvider api={api}><Probe /></PlayerProvider>);
     await waitFor(() => expect(screen.getByTestId('hud').textContent).toBe('a'));
     expect(screen.getByTestId('acting').textContent).toBe('a,b');
+    /* The masks whose own posts the player answers for: every debuted one, the retired among them, never one still waiting (#85). */
+    expect(screen.getByTestId('writing').textContent).toBe('a,b,r');
     act(() => screen.getByText('swap').click());
     expect(screen.getByTestId('hud').textContent).toBe('b');
     unmount();
