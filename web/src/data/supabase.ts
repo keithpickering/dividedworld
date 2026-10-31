@@ -725,18 +725,18 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
          */
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         type Q = any;
-        const rows = (view: string, columns: string, column: string, page: (q: Q) => Q, whole: readonly string[], narrow: (q: Q) => Q = (q) => q): Promise<Row[]> => {
-          const from = (): Q => narrow(client.from(view).select(columns));
+        /* Each view is named where it is read, so the reads guard (tools/check-web-reads.mjs) reads which view each is. */
+        const rows = (from: () => Q, column: string, page: (q: Q) => Q, whole: readonly string[]): Promise<Row[]> => {
           if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
           return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
         };
         const [ledgerRows, walletRows, cardRows, playRows, saveRows] = await Promise.all([
-          rows('my_ledger', 'settlement,starts_at,ends_at,character,reason,amount,shares_kept', 'ends_at',
+          rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept'), 'ends_at',
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
-          rows('my_wallet_events', 'settlement,kind,change,overflow,floored,balance_after,ref,at', 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
-          rows('my_card_ledger', 'card,kind,act,price,at', 'at', (q) => q, ['card', 'kind', 'act', 'price']),
-          rows('my_posts_played_on', 'play,post,at', 'at', (q) => q, ['play']),
-          rows('my_posts_played_on', 'play,post,saved_at', 'saved_at', (q) => q, ['play'], (q) => q.not('saved_at', 'is', null)),
+          rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
+          rows(() => client.from('my_card_ledger').select('card,kind,act,price,at'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
+          rows(() => client.from('my_posts_played_on').select('play,post,at'), 'at', (q) => q, ['play']),
+          rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
         ]);
         const ledger = ledgerRows.map((r): LedgerRow => ({
           settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
