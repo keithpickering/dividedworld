@@ -43,13 +43,20 @@ export const seenKey = (account: Id) => `kb-settled-seen:${account}`;
 const readSeen = (account: Id): string | null => { try { return globalThis.localStorage?.getItem(seenKey(account)) ?? null; } catch { return null; } };
 const markSeen = (account: Id, endsAt: string) => { try { globalThis.localStorage?.setItem(seenKey(account), endsAt); } catch { /* a device that keeps nothing shows it again: no harm */ } };
 
-/** The summary of the newest settlement in `data`, for one character's tab. */
+/** The character whose tab the summary shows: the one picked, else the first with a line in the newest settlement, else the first. */
+function shownTab(data: LogData, tab: Id | null) {
+  const s = data.log.settlements[0]!;
+  const tabs = tabsOf(data);
+  return tabs.find((c) => c.id === tab) ?? tabs.find((c) => s.lines.some((l) => l.character === c.id)) ?? tabs[0];
+}
+
+/** The summary of the newest settlement in `data`, for one character's tab: the ready state's content, inside the page's ways out. */
 export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly tab: Id | null; readonly onTab: (tab: Id) => void }) {
   const { instance, ui, settings } = useKayfa();
   const words: Words = { instance, ui, postsPerPage: settings.postsPerPage };
   const s = data.log.settlements[0]!;
   const tabs = tabsOf(data);
-  const current = tabs.find((c) => c.id === tab) ?? tabs.find((c) => s.lines.some((l) => l.character === c.id)) ?? tabs[0];
+  const current = shownTab(data, tab);
   const lines = inOrder(s.lines.filter((l) => l.character === current?.id));
   const event = data.log.wallet.find((e) => e.kind === 'settlement' && e.settlement === s.id);
   const cls = scoredAs(lines, instance);
@@ -57,13 +64,11 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
   const turn = (turnsTaken(data, instance).get(s.id) ?? []).find((t) => t.character === current?.id);
   const held = heldBack(event, settings.walletCap);
   const className = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
-  const back = useBackToBoard();
   const why = `Why, in plain words${cls ? ` · scored as ${/^[aeiou]/iu.test(className(cls)) ? 'an' : 'a'} ${className(cls)}` : ''}`;
   const turnAct = turn?.announced ? data.acts.get(turn.announced.act) : undefined;
   const turnTitle = turnAct ? data.titles.get(turnAct.thread) : undefined;
-  const opening: LogOpening = { open: s.id, character: current?.id };
   return (
-    <div className="kb-settled">
+    <>
       <header className="kb-settled-head">
         <div className="kb-settled-top">
           <p className="kb-settled-when kb-calm">Settled {utcWhen(s.endsAt)} UTC</p>
@@ -143,18 +148,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
         </div>
       </div>
 
-      <div className="kb-settled-ways kb-calm">
-        <Link to="/log" state={opening} className="kb-settled-log kb-glass-skew"><span className="kb-glass-upright">Open my log</span></Link>
-        <Link
-          to={backHref(boardPlace())}
-          className="kb-settled-back kb-glass-skew"
-          aria-keyshortcuts="Escape"
-          onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
-        >
-          <span className="kb-glass-upright">Back to the board</span>
-        </Link>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -183,11 +177,38 @@ export function SettlementScreen() {
     if (newest && session.account) markSeen(session.account, newest.endsAt);
   }, [newest, session.account]);
 
-  if (signedIn === false) return <div className="kb-settled"><div className="kb-calm"><SignInPrompt /></div></div>;
-  if (signedIn === null || state.status === 'loading') return <div className="kb-settled" aria-busy="true" />;
-  if (state.status === 'failed') return <div className="kb-settled"><p className="kb-calm">The settlement could not be loaded. Reload the page to try again.</p></div>;
-  if (!newest) return <div className="kb-settled"><p className="kb-calm">Nothing has settled for you yet.</p></div>;
-  return <Summary data={state.data} tab={picked ?? hudCharacter?.id ?? null} onTab={setPicked} />;
+  /*
+   * The page owns its ways out, so every state draws Back to the board: with no menu bar here, and no Esc on a touch screen, a
+   * state without it would be a dead end (#90). Open my log joins it once there is a settlement to open.
+   */
+  const tab = picked ?? hudCharacter?.id ?? null;
+  const ready = state.status === 'ready' && newest ? state.data : undefined;
+  const opening: LogOpening | undefined = ready && newest ? { open: newest.id, character: shownTab(ready, tab)?.id } : undefined;
+  const content = signedIn === false
+    ? <div className="kb-calm"><SignInPrompt /></div>
+    : signedIn === null || state.status === 'loading'
+      ? <div className="kb-settled-wait" aria-busy="true" />
+      : state.status === 'failed'
+        ? <p className="kb-calm">The settlement could not be loaded. Reload the page to try again.</p>
+        : ready
+          ? <Summary data={ready} tab={tab} onTab={setPicked} />
+          : <p className="kb-calm">Nothing has settled for you yet.</p>;
+  return (
+    <div className="kb-settled">
+      {content}
+      <div className="kb-settled-ways kb-calm">
+        {opening && <Link to="/log" state={opening} className="kb-settled-log kb-glass-skew"><span className="kb-glass-upright">Open my log</span></Link>}
+        <Link
+          to={backHref(boardPlace())}
+          className="kb-settled-back kb-glass-skew"
+          aria-keyshortcuts="Escape"
+          onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
+        >
+          <span className="kb-glass-upright">Back to the board</span>
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 /** The accounts this load has looked for an unseen settlement for, by backend: a load is one backend, made once (web/src/main.tsx). */

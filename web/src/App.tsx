@@ -73,7 +73,7 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
 };
 
 /** The glass pages drawn with no menu bar: the settlement's summary, a screen of results whose ways out are its own. */
-const NO_MENU: ReadonlySet<string> = new Set(['/log/settlement']);
+export const NO_MENU: ReadonlySet<string> = new Set(['/log/settlement']);
 
 const isGlass = (path: string): boolean => Object.hasOwn(GLASS, path);
 

@@ -1,15 +1,16 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { createFake } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
-import { App } from './App.tsx';
+import { App, NO_MENU } from './App.tsx';
 import { startLoad } from '../../engine/ui/log/Settlement.tsx';
 import { seedDemo } from './demo.ts';
 import { fallbackSettings } from './data/settings.ts';
 
 beforeEach(() => { localStorage.clear(); window.history.pushState(null, '', '/'); });
+afterEach(() => { vi.restoreAllMocks(); });
 
 test('the app runs on the demo world: the frame, the HUD with its character and orbs', async () => {
   const fake = createFake({ instance, settings: fallbackSettings });
@@ -317,3 +318,29 @@ test('the account\'s glass preferences are applied as the app loads them: smoke,
   await waitFor(() => expect(root).toHaveAttribute('data-kb-glass-key', 'standard'));
   expect(root).not.toHaveAttribute('data-kb-text-size');
 });
+
+/*
+ * A page drawn with no menu bar has no bar's Back, and a touch screen has no Esc: every state of every such page carries
+ * Back to the board itself (#90). The set is read from the app, so a page added to it is held here too.
+ */
+const STATES: readonly [string, (fake: ReturnType<typeof createFake>) => void][] = [
+  ['loading', (fake) => { seedDemo(fake); vi.spyOn(fake, 'log').mockReturnValue(new Promise(() => {})); }],
+  ['failed', (fake) => { seedDemo(fake); vi.spyOn(fake, 'log').mockRejectedValue(new Error('down')); }],
+  ['empty', (fake) => { const me = fake.seed.account('me'); fake.seed.character(me, 'Pipewrench', 'heel'); fake.signInAs(me); }],
+  ['signed out', () => {}],
+];
+
+for (const path of NO_MENU) {
+  for (const [state, make] of STATES) {
+    test(`${path}, ${state}, has Back to the board`, async () => {
+      window.history.pushState(null, '', path);
+      const fake = createFake({ instance, settings: fallbackSettings });
+      make(fake);
+      render(<App api={fake} />);
+      await screen.findByRole('main');
+      const back = await screen.findByRole('link', { name: 'Back to the board' });
+      expect(back).toHaveAttribute('href', '/');
+      expect(screen.queryByRole('navigation', { name: 'Menu' })).toBeNull();
+    }, 15_000);
+  }
+}

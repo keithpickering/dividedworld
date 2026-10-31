@@ -150,6 +150,64 @@ describe('the settlement\'s summary', () => {
   });
 });
 
+/*
+ * The page is drawn with no menu bar (web/src/App.tsx's NO_MENU), and a touch screen has no Esc: every state of it carries
+ * Back to the board, the ready state's own link, so none is a dead end (#90).
+ */
+describe('every state of the summary\'s page has Back to the board', () => {
+  const backIn = async () => {
+    const link = await screen.findByRole('link', { name: 'Back to the board' });
+    expect(link).toHaveAttribute('href', '/');
+    return link;
+  };
+
+  test('loading', async () => {
+    const { fake, me, pipe } = world();
+    vi.spyOn(fake, 'log').mockReturnValue(new Promise(() => {}));
+    openSummary(fake, me, pipe);
+    await backIn();
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+  }, 10_000);
+
+  test('failed', async () => {
+    const { fake, me, pipe } = world();
+    vi.spyOn(fake, 'log').mockRejectedValue(new Error('down'));
+    openSummary(fake, me, pipe);
+    expect(await screen.findByText('The settlement could not be loaded. Reload the page to try again.')).toBeInTheDocument();
+    await backIn();
+  }, 10_000);
+
+  test('empty', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    fake.signInAs(me);
+    openSummary(fake, me, pipe);
+    expect(await screen.findByText('Nothing has settled for you yet.')).toBeInTheDocument();
+    await backIn();
+  }, 10_000);
+
+  test('signed out', async () => {
+    const { fake, me, pipe } = world();
+    fake.signInAs(null);
+    openSummary(fake, me, pipe);
+    expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+    await backIn();
+  }, 10_000);
+
+  test('Esc goes back from a state that is not ready', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    fake.signInAs(me);
+    openSummary(fake, me, pipe);
+    await screen.findByText('Nothing has settled for you yet.');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(where.path).toBe('/'));
+  }, 10_000);
+});
+
 describe('the summary on the first load after a settlement', () => {
   function load(fake: Fake, path = '/') {
     return renderIn(fake, <><SettlementOnLoad active /><Where /></>, { path });
