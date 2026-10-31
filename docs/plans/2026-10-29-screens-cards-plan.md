@@ -262,6 +262,11 @@ this date) as glass tiles in the boards' idiom. impeccable's shape and critique 
 control keeps its accessible name and keyboard path, and Hold to scrub's cost is unchanged. Drawn first as stories
 (splatted, armed, and both), for the owner's word, before tests are written against its look.
 
+**Amended 2026-10-31, the owner's word on #80's round 2.** The owner: "This is almost right but I think the Play Here
+button is inheriting the Verdana". The plate, the tiles and the six choices #80's round 2 lists stand as drawn; the play
+tile, standalone and in the plate, is set in the glass's own tile face and size, as the plate's other tiles are, and no
+glass control in or under a 2003 post takes the board's face. The look's tests follow from the approved stories.
+
 ### Task 6. The log's card lines, and the audit
 
 - The log names, plainly: a card bought, a card played and on whose post (one of the player's own characters' posts
