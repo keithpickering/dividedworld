@@ -416,5 +416,9 @@ describe('what the machine says to a screen reader', () => {
     await screen.findByText('More postcards arrive in later seasons.');
     expect(document.querySelector('[class*="kb-vending-list"], [class*="kb-vending-item"]')).toBeNull();
     expect(readFileSync('engine/ui/vending/vending.css', 'utf8')).not.toMatch(/kb-vending-(list|item)/u);
+    /* The line about the empty slots is its own, and wears nothing of an empty slot's drawing. */
+    const line = screen.getByText('More postcards arrive in later seasons.').parentElement!;
+    expect(line).toHaveClass('kb-vending-empty-line');
+    expect(line).not.toHaveClass('kb-vending-sealed');
   });
 });

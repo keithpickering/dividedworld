@@ -342,9 +342,9 @@ export function Vending() {
       )}
 
       {faces.length < slotsFor(faces.length) && (
-        <div className="kb-vending-sealed kb-calm">
-          <p className="kb-vending-sealed-row">{slotsFor(faces.length) - faces.length} {slotsFor(faces.length) - faces.length === 1 ? 'slot' : 'slots'} empty</p>
-          <p className="kb-vending-sealed-says">More postcards arrive in later seasons.</p>
+        <div className="kb-vending-empty-line kb-calm">
+          <p className="kb-vending-empty-line-row">{slotsFor(faces.length) - faces.length} {slotsFor(faces.length) - faces.length === 1 ? 'slot' : 'slots'} empty</p>
+          <p className="kb-vending-empty-line-says">More postcards arrive in later seasons.</p>
         </div>
       )}
     </div>

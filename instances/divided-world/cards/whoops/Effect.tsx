@@ -127,9 +127,12 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   const [built, setBuilt] = useState(false);
   const [tool, setTool] = useState<'wash' | 'ink'>('wash');
   const [report, setReport] = useState('');
-  /** The lines a scrub has just uncovered, said as news; the lines readable before it are not said again. */
-  const [uncovered, setUncovered] = useState('');
-  const readBefore = useRef<ReadonlySet<number> | null>(null);
+  /**
+   * The lines a scrub has just uncovered, said as news; the lines readable before it are not said again. `n` counts what was said, so
+   * the same words said again are a change a screen reader hears (a trailing no-break space on every other one).
+   */
+  const [uncovered, setUncovered] = useState({ words: '', n: 0 });
+  const readBefore = useRef<ReadonlySet<string> | null>(null);
   const [view, setView] = useState<View | null>(null);
   /** How many layers' ink grids are held: none for a post that has left the viewport. */
   const [held, setHeld] = useState(0);
@@ -637,17 +640,25 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   /* Until the ink is built the post is treated as covered: nothing is read before the model says what is. */
   const hidden = anyLive && covers;
   const read = view && hidden ? view.lines.filter((_, i) => !view.covered[i]) : null;
-  /* What each change of the view uncovered: a line covered before and readable now. The first view only sets what was readable. */
-  const readNow = view ? view.lines.map((_, i) => i).filter((i) => !view.covered[i]) : null;
-  const readKey = readNow === null ? null : readNow.join(' ');
+  /*
+   * What each change of the view uncovered: a line covered before and readable now, known by its words (and which of the same words
+   * it is), so a relayout that renumbers the lines says nothing. The first view only sets what was readable, and a post washed clean
+   * says nothing: its own words are read then, once.
+   */
+  const lineKeys = view ? (() => {
+    const seen = new Map<string, number>();
+    return view.lines.map((l) => { const k = seen.get(l.text) ?? 0; seen.set(l.text, k + 1); return `${k}\u0000${l.text}`; });
+  })() : null;
+  const readNow = view && lineKeys ? lineKeys.filter((_, i) => !view.covered[i]) : null;
+  const readKey = readNow === null ? null : `${anyLive ? 'live' : 'plain'}\u0001${readNow.join('\u0001')}`;
   useEffect(() => {
     if (!view || !readNow) return;
     const before = readBefore.current;
     readBefore.current = new Set(readNow);
-    if (!before) return;
-    const fresh = readNow.filter((i) => !before.has(i)).map((i) => view.lines[i]!.text);
-    if (fresh.length > 0) setUncovered(fresh.join(' '));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!before || !anyLive) return;
+    const fresh = readNow.filter((k) => !before.has(k)).map((k) => k.slice(k.indexOf('\u0000') + 1));
+    if (fresh.length > 0) setUncovered((was) => ({ words: fresh.join(' '), n: was.n + 1 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- readKey is what the view's lines and cover say, and nothing else is read
   }, [readKey]);
   /* The hint is the board's sentence for everyone; the author's own tools and what they save follow the button. */
   const note = 'This post is splatted. Drag across the ink to scrub it on your screen.';
@@ -702,7 +713,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
         * What a screen reader is told, in regions on the page from the start and empty until they speak (WCAG 4.1.3; #89 P2-1): the
         * lines a scrub has just uncovered, and the save's report. The readout above is for reading, never said as news.
         */}
-      <p className="kb-visually-hidden" aria-live="polite" data-kb-uncovered>{uncovered}</p>
+      <p className="kb-visually-hidden" aria-live="polite" data-kb-uncovered>{uncovered.words}{uncovered.words && uncovered.n % 2 === 0 ? '\u00a0' : ''}</p>
       <p className="kb-visually-hidden" role="status" data-kb-report>{report}</p>
       {/* The words and the controls are glass in the plate under the post, never in the post's 2003 body (the owner's notes on #80), drawn as one game piece (the owner on #80's shots): a readout, then tiles. */}
       {(anyLive || report) && (

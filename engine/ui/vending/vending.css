@@ -116,6 +116,10 @@
   margin: 0;
 }
 
+.kb-vending-outcome:empty::before {
+  display: none;
+}
+
 .kb-vending-outcome[data-kb-tone='refusal'] {
   color: var(--kb-glass-loss);
 }
@@ -429,7 +433,7 @@ button.kb-vending-slot {
 /* ---- the sealed slots' line ---- */
 
 /* The line about the empty slots, near the slots, as the board draws it; the rules of each card are in its info button's overlay. */
-.kb-vending-sealed {
+.kb-vending-empty-line {
   --kb-card-color: var(--kb-glass-ready);
   position: relative;
   padding: 14px 16px;
@@ -491,7 +495,7 @@ button.kb-vending-slot {
 }
 
 /* The ring, drawn over the line's calm (a ring on its own box would sit under the calm's backing). */
-.kb-vending-sealed::after {
+.kb-vending-empty-line::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -500,7 +504,7 @@ button.kb-vending-slot {
 }
 
 /* One block, as the board draws it (no price shares its row). */
-.kb-vending-sealed-row {
+.kb-vending-empty-line-row {
   margin: 0;
   font-family: var(--kb-glass-font-display);
   font-weight: 400;
@@ -510,7 +514,7 @@ button.kb-vending-slot {
   color: var(--kb-glass-ready-text);
 }
 
-.kb-vending-sealed-says {
+.kb-vending-empty-line-says {
   margin: 8px 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 500;
@@ -549,7 +553,7 @@ button.kb-vending-slot {
 :where(:root[data-kb-layout='phone']) .kb-vending-sum,
 :where(:root[data-kb-layout='phone']) .kb-vending-fine,
 :where(:root[data-kb-layout='phone']) .kb-vending-price-note,
-:where(:root[data-kb-layout='phone']) .kb-vending-sealed-says,
+:where(:root[data-kb-layout='phone']) .kb-vending-empty-line-says,
 :where(:root[data-kb-layout='phone']) .kb-vending-signin {
   font-size: var(--kb-glass-size-phone-body);
 }
@@ -564,7 +568,7 @@ button.kb-vending-slot {
 }
 
 :where(:root[data-kb-layout='phone']) .kb-vending-hand-word,
-:where(:root[data-kb-layout='phone']) .kb-vending-sealed-row {
+:where(:root[data-kb-layout='phone']) .kb-vending-empty-line-row {
   font-size: var(--kb-glass-size-phone-display);
 }
 

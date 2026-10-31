@@ -59,8 +59,12 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const id = useId();
   const [config, setConfig] = useState<Readonly<Record<string, unknown>> | undefined>(undefined);
   const [message, setMessage] = useState('');
-  /** What the counter last said aloud: only on crossing into its last stretch, or on reaching the limit (#89 P2-2). */
-  const [countSaid, setCountSaid] = useState('');
+  /**
+   * What the counter last said aloud: only on crossing into its last stretch, or on reaching the limit (#89 P2-2). `n` counts what was
+   * said, so the same words said again are a change a screen reader hears (a trailing no-break space on every other one).
+   */
+  const [countSaid, setCountSaid] = useState({ words: '', n: 0 });
+  const sayCount = (words: string) => setCountSaid((was) => ({ words, n: words === '' ? was.n : was.n + 1 }));
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
@@ -118,10 +122,11 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     const now = Math.min(typed.length, MESSAGE_MOST);
     setMessage(typed.slice(0, MESSAGE_MOST).join(''));
     /* Said politely and seldom: never on every key, only as the message nears its limit, reaches it, or loses what ran past it. */
-    if (typed.length > MESSAGE_MOST) setCountSaid(`${MESSAGE_MOST} of ${MESSAGE_MOST} characters: the message is full, and the rest was not kept.`);
-    else if (now === MESSAGE_MOST && was < MESSAGE_MOST) setCountSaid(`${MESSAGE_MOST} of ${MESSAGE_MOST} characters: the message is full.`);
-    else if (now >= MESSAGE_NEAR && was < MESSAGE_NEAR) setCountSaid(`${MESSAGE_MOST - now} characters left.`);
-    else if (now < MESSAGE_NEAR) setCountSaid('');
+    if (typed.length > MESSAGE_MOST) sayCount(`${MESSAGE_MOST} of ${MESSAGE_MOST} characters: the message is full, and the rest was not kept.`);
+    else if (now === MESSAGE_MOST && was < MESSAGE_MOST) sayCount(`${MESSAGE_MOST} of ${MESSAGE_MOST} characters: the message is full.`);
+    else if (now >= MESSAGE_NEAR && was < MESSAGE_NEAR) sayCount(`${MESSAGE_MOST - now} characters left.`);
+    /* Words that stopped being true are taken back silently: below the stretch, or under the limit after saying it was reached. */
+    else if (now < MESSAGE_NEAR || (now < MESSAGE_MOST && was === MESSAGE_MOST)) sayCount('');
     if (again) { setAgain(false); setRefusal(null); }
   };
   const settle = (words: string | null) => (words === null ? null : plainRefusal(words));
@@ -203,7 +208,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
               <span id={hint}>Shown on the card's Act. Plain text.</span>
               {/* In the face's own figures, as the board draws it: tabular ones are wider, and the board match refuses the difference. */}
               <span>{`${[...message].length} / ${MESSAGE_MOST}`}</span>
-              <span className="kb-visually-hidden" aria-live="polite" data-kb-count-said>{countSaid}</span>
+              <span className="kb-visually-hidden" aria-live="polite" data-kb-count-said>{countSaid.words}{countSaid.words && countSaid.n % 2 === 0 ? '\u00a0' : ''}</span>
             </div>
           </div>
           <div className="kb-play-sum">

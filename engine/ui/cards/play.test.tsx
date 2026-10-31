@@ -338,7 +338,36 @@ describe('the play form', () => {
     expect([...(message as HTMLTextAreaElement).value]).toHaveLength(200);
     expect(said).toHaveTextContent('200 of 200 characters: the message is full, and the rest was not kept.');
     expect(form.querySelector('[data-kb-count-said]')).toBe(said);
+    /* Said again on a second paste past the limit: the region changes, so a screen reader hears it again. */
+    const first = said!.textContent;
+    await user.paste('y');
+    expect(said).toHaveTextContent('200 of 200 characters: the message is full, and the rest was not kept.');
+    expect(said!.textContent).not.toBe(first);
   });
+
+  test('the counter speaks on entering its last 20 characters and on reaching the limit, takes back what stops being true, and says it again on a new crossing', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const form = await playHere(user, 1);
+    const message = within(form).getByRole('textbox', { name: 'Your message' });
+    const said = form.querySelector<HTMLElement>('[data-kb-count-said]')!;
+    await user.click(message);
+    await user.paste('x'.repeat(179));
+    expect(said).toBeEmptyDOMElement();
+    await user.type(message, 'x');
+    expect(said).toHaveTextContent('20 characters left.');
+    await user.type(message, 'x'.repeat(20));
+    expect(said).toHaveTextContent('200 of 200 characters: the message is full.');
+    await user.type(message, '{Backspace}');
+    expect(said).toBeEmptyDOMElement();
+    await user.type(message, 'x');
+    expect(said).toHaveTextContent('200 of 200 characters: the message is full.');
+    await user.type(message, '{Backspace}'.repeat(30));
+    expect(said).toBeEmptyDOMElement();
+    await user.type(message, 'x'.repeat(10));
+    expect(said).toHaveTextContent('20 characters left.');
+  }, 20_000);
 
   test('the price shown is the price the server charges', async () => {
     const user = userEvent.setup();

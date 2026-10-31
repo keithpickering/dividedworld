@@ -435,6 +435,18 @@ describe('the keyboard path', () => {
     expect(states(root)).toEqual(['clean']);
   }, 30_000);
 
+  test('a line it uncovers is said, in the polite region on the page from the start', () => {
+    clock();
+    const { root } = mount({ layers: 1 });
+    const region = root.querySelector<HTMLElement>('[data-kb-uncovered]')!;
+    expect(region).toBeEmptyDOMElement();
+    const button = screen.getByRole('button', { name: 'Hold to scrub' });
+    hold(button);
+    for (let k = 0; k < 60 && region.textContent === ''; k++) frames(500);
+    release(button);
+    expect(region.textContent).toMatch(/L\d\d alpha beta gamma/u);
+  }, 30_000);
+
   test('it scrubs the top layer, and the layer under it once the top one is gone', () => {
     clock();
     const { root } = mount({ layers: 2 });
