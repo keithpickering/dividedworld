@@ -6,6 +6,7 @@
  * or anyone's class but the player's own.
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { hudKey } from '../player.tsx';
@@ -424,3 +425,87 @@ function must<T>(a: { ok: true; value: T } | { ok: false; error: string }): T {
   if (!a.ok) throw new Error(a.error);
   return a.value;
 }
+
+/*
+ * The breakdown as "12 Log, open" draws it (#88; the owner: "Looks good"): opened and closed from the keyboard with focus kept on
+ * Show posts, each reason's shares adding up on screen to the reason's exact total, and the two sentences that say what a share is.
+ */
+describe('the breakdown', () => {
+  /** The world, with a settlement on Oct 30 whose drew heat is split across three posts and whose shrug is scored over the window. */
+  function split() {
+    const w = world();
+    const { seed } = w.fake;
+    const p4 = seed.post(w.thread, w.pipe, 'Pipewrench again.', { at: at(29, 14) });
+    const p5 = seed.post(w.thread, w.pipe, 'And again.', { at: at(29, 15) });
+    seed.settle({
+      at: at(30, 8, 17), debut: false, turns: false,
+      ledger: [
+        { character: w.pipe, reason: 'heel.drewHeat', amount: 287, shares: [
+          { act: w.p2, quadrant: 'excitedNegative', amount: 143 }, { act: p4, quadrant: 'excitedNegative', amount: 96 }, { act: p5, quadrant: 'calmNegative', amount: 48 },
+        ] },
+        { character: w.pipe, reason: 'heel.shrugged', amount: -7 },
+      ],
+    });
+    return w;
+  }
+  /** Hundredths, as a share or a total is drawn: "+1.43", "−0.07". */
+  const hundredths = (drawn: string) => Math.round(Number(drawn.replace('−', '-').replace('+', '')) * 100);
+
+  test('Tab reaches Show posts, Enter opens it and Esc closes it with focus kept; Esc inside the breakdown closes it with focus back on the control', async () => {
+    const { fake, me, pipe } = split();
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    const button = within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' });
+    const user = userEvent.setup();
+    for (let k = 0; k < 40 && document.activeElement !== button; k++) await user.tab();
+    expect(button).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    const breakdown = document.getElementById(button.getAttribute('aria-controls')!)!;
+    expect(breakdown).toBeVisible();
+    expect(button).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(breakdown).not.toBeVisible();
+    expect(button).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(breakdown).toBeVisible();
+    await user.tab();
+    expect(breakdown).toContainElement(document.activeElement as HTMLElement);
+    await user.keyboard('{Escape}');
+    expect(breakdown).not.toBeVisible();
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(button).toHaveFocus();
+  });
+
+  test('each reason\'s shares, as drawn, add up to its total as drawn', async () => {
+    const { fake, me, pipe } = split();
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    fireEvent.click(within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' }));
+    const reasons = document.querySelectorAll<HTMLElement>('.kb-log-breakdown:not([hidden]) .kb-log-reason');
+    expect(reasons).toHaveLength(2);
+    let shared = 0;
+    for (const reason of reasons) {
+      const total = hundredths(reason.querySelector('[data-kb-amount]')!.textContent!);
+      const shares = [...reason.querySelectorAll('.kb-log-share .kb-log-num')].map((n) => hundredths(n.textContent!));
+      if (shares.length === 0) continue;
+      shared++;
+      expect(shares.reduce((a, b) => a + b, 0)).toBe(total);
+    }
+    expect(shared).toBe(1);
+    expect([...reasons].map((r) => r.getAttribute('aria-label'))).toEqual(['Drew heat', 'Shrugged off']);
+  });
+
+  test('it says what a share is, and that a reason with no post was scored over the whole window', async () => {
+    const { fake, me, pipe } = split();
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    fireEvent.click(within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' }));
+    const breakdown = document.querySelector<HTMLElement>('.kb-log-breakdown:not([hidden])')!;
+    expect(within(breakdown).getByText('Each reason\'s total is exact. It is split across your posts by how the live estimate valued their reactions.')).toBeInTheDocument();
+    const shrug = within(breakdown).getByRole('region', { name: 'Shrugged off' });
+    expect(within(shrug).getByText('Scored over the whole window, not post by post.')).toBeInTheDocument();
+    expect(within(within(breakdown).getByRole('region', { name: 'Drew heat' })).queryByText('Scored over the whole window, not post by post.')).toBeNull();
+  });
+});
