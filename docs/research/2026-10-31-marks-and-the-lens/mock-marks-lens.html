@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marks and the Lens</title>
+<!-- A mockup for the glass on a post with cards played on it, after the critique of PR #97 (2026-10-31): wordless
+     marks on the post, one Lens opened on request with the same three rows for every card, and Stick Around's hold
+     carrying the post with its marks. A reference for the look and the behavior, not code to copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,800&display=swap" rel="stylesheet">
+<style>
+/* Layout: a dark glass page holding two live screens (desktop, phone); each screen is a white 2003 board with the
+   glass floating over it, and never in its flow. Single dark look by choice: the glass is a game screen. */
+:root{
+  color-scheme:dark;
+  --page:#100b18; --ground:#0b0712; --glass:#140d20; --glass-2:#1d1430; --rule:#3a2c57;
+  --neon:#f1ecff; --muted:#cfc6e8; --dim:#9c92bd;
+  --cyan:#19e3ff; --cyan-t:#9ef4ff; --gold:#ffd93d; --salty:#ff3d7f; --salty-t:#ff6b9d;
+  --paper:#ffffff; --type:#000000; --board-dim:#555555;
+  --display:'Anton','Oswald',Impact,sans-serif;
+  --ui:'Barlow Condensed','Roboto Condensed','Arial Narrow',sans-serif;
+  --board:Verdana,Geneva,'DejaVu Sans',sans-serif;
+  --board-head:'Courier New',Courier,monospace;
+  --skew:-12deg;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--neon);font:600 18px/1.35 var(--ui);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
+::selection{background:var(--cyan);color:var(--ground)}
+h1{font:400 clamp(30px,5vw,44px)/1.05 var(--display);letter-spacing:.5px;margin:0 0 10px;text-wrap:balance}
+h2{font:400 24px/1.1 var(--display);letter-spacing:.5px;margin:0 0 4px}
+.lede{max-width:68ch;margin:0 0 18px;color:var(--muted);font-weight:500;font-size:19px}
+.lede b{color:var(--neon)}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin:0 0 26px}
+.controls .lbl{font:800 15px var(--ui);letter-spacing:2px;text-transform:uppercase;color:var(--dim)}
+.seg{display:inline-flex;gap:6px}
+.sk{display:inline-flex;align-items:center;justify-content:center;gap:6px;transform:skewX(var(--skew));background:var(--glass);
+  border:1px solid var(--rule);color:var(--neon);font:800 16px/1 var(--ui);letter-spacing:1.5px;text-transform:uppercase;
+  padding:9px 14px;cursor:pointer;min-height:40px}
+.sk>span{display:inline-block;transform:skewX(calc(var(--skew) * -1))}
+.sk:hover{border-color:var(--cyan)}
+.sk[aria-pressed="true"]{border-color:var(--cyan);background:#0e2a33;color:var(--cyan-t)}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+.stage{margin:0 0 34px}
+.stage-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:0 0 10px}
+.stage-head p{margin:0;color:var(--muted);font-weight:500;max-width:70ch}
+.fit{width:100%;overflow:hidden}
+.fit-inner{transform-origin:0 0}
+.pair{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.try{flex:1 1 300px;min-width:0;max-width:62ch}
+.try h3{font:800 16px var(--ui);letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin:0 0 8px}
+.try ol{margin:0;padding-left:1.3em;display:grid;gap:8px;color:var(--muted);font-weight:500}
+.try li b{color:var(--neon)}
+.rules{margin-top:22px;display:grid;gap:10px}
+.rules p{margin:0;color:var(--muted);font-weight:500}
+.rules p b{color:var(--neon)}
+
+/* ---------- a screen ---------- */
+.screen{position:relative;overflow:hidden;background:var(--paper);border:1px solid #000;isolation:isolate}
+.screen.desk{width:1180px;height:780px}
+.screen.phone{width:375px;height:760px}
+.scroller{position:absolute;inset:0 0 var(--hud-h) 0;overflow:auto;overscroll-behavior:contain;scrollbar-color:#999 #eee}
+.desk{--hud-h:84px}.phone{--hud-h:104px}
+.content{position:relative;min-height:100%}
+
+/* the 2003 board */
+.board{font:12px/1.45 var(--board);color:var(--type);background:var(--paper)}
+.desk .board{width:760px;margin-left:28px;padding:18px 0 40px}
+.phone .board{padding:10px 8px 30px}
+.board a{color:var(--type)}
+.site{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid #000;padding-bottom:8px}
+.site b{font:700 18px var(--board-head);letter-spacing:2px}
+.site span{font-size:11px;color:var(--board-dim)}
+.crumb{font-size:11px;margin:8px 0 4px}
+.thread-title{font:700 16px var(--board-head);margin:6px 0 10px}
+.posts{border:1px solid #000}
+.post{display:flex;border-top:1px solid #000}
+.post:first-child{border-top:0}
+.phone .post{flex-direction:column}
+.who{width:160px;flex:none;padding:8px 10px;border-right:1px solid #000}
+.phone .who{width:auto;border-right:0;border-bottom:1px solid #000;display:flex;gap:10px;align-items:center;padding:6px 8px}
+.who .nm{font-weight:700;text-decoration:underline}
+.who .rk{margin:2px 0}
+.pips{letter-spacing:1px}
+.av{width:38px;height:38px;border:1px solid #000;display:grid;place-items:center;font:700 14px var(--board-head);margin:6px 0}
+.phone .av{width:30px;height:30px;margin:0}
+.who .st{color:var(--board-dim);font-size:11px}
+.pmain{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;background:var(--paper)}
+.meta{display:flex;justify-content:space-between;padding:3px 8px;border-bottom:1px solid #000;font-size:10px;color:var(--board-dim)}
+.meta a{color:var(--board-dim)}
+.pbody{position:relative;padding:14px 10px 12px;min-height:150px}
+.pbody p{margin:0 0 10px}
+.pfoot{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:4px 8px;border-top:1px solid #000;font-size:11px}
+.pfoot .r{border:1px solid #000;padding:0 5px}
+.pfoot .acts{margin-left:auto;display:flex;gap:8px}
+.phone .pfoot .acts{margin-left:0;width:100%}
+
+/* the field: ink over the words, scrubbed by hand */
+.inks{position:absolute;inset:0;pointer-events:none}
+.inks canvas{position:absolute;inset:0;width:100%;height:100%;transition:opacity .5s ease-out}
+.scrubpad{position:absolute;inset:0;touch-action:none;
+  cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Crect x='4' y='8' width='24' height='16' rx='3' fill='%23ffd93d' stroke='%23000' stroke-width='2'/%3E%3Ccircle cx='11' cy='14' r='1.6'/%3E%3Ccircle cx='19' cy='18' r='1.6'/%3E%3Ccircle cx='22' cy='12' r='1.3'/%3E%3C/svg%3E") 16 16,crosshair}
+.scrubpad[hidden]{display:none}
+
+/* ---------- marks: always on, no words ---------- */
+.marks{position:absolute;top:0;right:44px;transform:translateY(-50%);display:flex;gap:8px;z-index:4}
+.phone .marks{right:40px}
+.mark{position:relative;display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 10px 0 8px;
+  transform:skewX(var(--skew));background:var(--ground);border:1px solid var(--ink);color:var(--neon);cursor:pointer;
+  box-shadow:0 3px 8px rgba(11,7,18,.45);transition:transform .14s ease-out,box-shadow .14s ease-out}
+.mark>.mk-in{display:inline-flex;align-items:center;gap:5px;transform:skewX(calc(var(--skew) * -1))}
+.mark svg{width:22px;height:22px;display:block}
+.mark .n{font:400 20px/1 var(--display);letter-spacing:.5px}
+.mark .edge{position:absolute;left:-1px;right:-1px;bottom:-1px;height:4px;background:color-mix(in srgb,var(--ink) 22%,var(--ground))}
+.mark .edge i{position:absolute;inset:0 auto 0 0;width:var(--p,0%);background:var(--ink);transition:width .25s ease-out}
+.mark .notch{position:absolute;top:-1px;right:-1px;width:12px;height:12px;background:var(--gold);clip-path:polygon(0 0,100% 0,100% 100%)}
+.mark:hover,.mark[aria-expanded="true"]{transform:skewX(var(--skew)) translateY(-2px);box-shadow:0 6px 14px rgba(11,7,18,.55)}
+.mark.done{opacity:.72}
+
+/* the first meeting: a one-time callout hung off the mark */
+.callout{position:absolute;z-index:5;right:24px;top:24px;max-width:224px;background:var(--ground);color:var(--neon);
+  border:1px solid var(--ink,var(--salty));padding:6px 11px 7px;font:600 17px/1.2 var(--ui);
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%);box-shadow:0 6px 18px rgba(11,7,18,.5);
+  animation:pop .22s ease-out}
+.callout b{font:400 18px var(--display);letter-spacing:.5px;color:var(--salty-t);margin-right:6px}
+.callout button{all:unset;cursor:pointer;color:var(--dim);font:800 14px var(--ui);letter-spacing:1.5px;text-transform:uppercase;display:block;margin-top:4px}
+.callout button:focus-visible{outline:2px solid var(--cyan)}
+@keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+
+/* ---------- the Lens ---------- */
+.lens{position:absolute;z-index:30;width:340px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--rule) transparent;background:var(--ground);color:var(--neon);border:1px solid var(--lens-ink,var(--cyan));
+  font:600 20px/1.3 var(--ui);box-shadow:0 14px 34px rgba(11,7,18,.6);
+  clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px));
+  transform-origin:var(--ox,90%) 0;animation:lensIn .2s cubic-bezier(.16,1,.3,1)}
+.lens[hidden]{display:none}
+@keyframes lensIn{from{opacity:0;transform:scale(.94) translateY(-6px)}to{opacity:1;transform:none}}
+.phone .lens{left:0!important;right:0;bottom:0;top:auto!important;width:auto;max-height:66%;overflow:auto;
+  clip-path:polygon(0 16px,16px 0,calc(100% - 16px) 0,100% 16px,100% 100%,0 100%);border-width:1px 0 0;
+  font-size:18px;transform-origin:50% 100%;animation:sheetIn .24s cubic-bezier(.16,1,.3,1)}
+@keyframes sheetIn{from{transform:translateY(40%);opacity:0}to{transform:none;opacity:1}}
+.tabs{display:flex;align-items:stretch;gap:8px;padding:12px 12px 0 14px;border-bottom:1px solid var(--rule)}
+.tab{all:unset;position:relative;display:inline-flex;align-items:center;gap:6px;padding:4px 8px 9px;cursor:pointer;color:var(--dim)}
+.tab svg{width:22px;height:22px}
+.tab .n{font:400 18px var(--display)}
+.tab .t{font:800 15px var(--ui);letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap}
+.tab[aria-selected="false"] .t{display:none}
+.tab[aria-selected="true"]{color:var(--neon)}
+.tab[aria-selected="true"]::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:3px;background:var(--ink)}
+.tab:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}
+.x{all:unset;margin-left:auto;align-self:center;width:34px;height:34px;display:grid;place-items:center;cursor:pointer;color:var(--muted)}
+.x svg{width:16px;height:16px}
+.x:hover{color:var(--neon)}
+.x:focus-visible{outline:2px solid var(--cyan)}
+.panel{padding:12px 16px 16px 16px;display:grid;gap:12px}
+.st h3{margin:0;font:400 26px/1 var(--display);letter-spacing:.5px;color:var(--title)}
+.phone .st h3{font-size:22px}
+.st .line{margin:0;font:800 19px/1.25 var(--ui);letter-spacing:1px;text-transform:uppercase}
+.phone .st .line{font-size:16px}
+.meter{display:flex;gap:5px;margin-top:8px}
+.meter span{flex:1;height:8px;transform:skewX(var(--skew));border:1px solid var(--c);background:color-mix(in srgb,var(--c) 18%,transparent);position:relative;overflow:hidden}
+.meter span i{position:absolute;inset:0 auto 0 0;width:var(--w,0%);background:var(--c);opacity:.35}
+.meter span.top{background:var(--c)}
+.meter span.top i{background:var(--ground);opacity:.55}
+.meter span.clean{opacity:.3}
+.st .ends{margin:8px 0 0;color:var(--muted);font-weight:500;font-size:18px}
+.phone .st .ends{font-size:17px}
+.act{display:flex;flex-wrap:wrap;gap:10px}
+.btn{display:inline-flex;align-items:center;gap:8px;transform:skewX(var(--skew));background:var(--glass-2);border:1px solid var(--c,var(--cyan));
+  color:var(--neon);font:800 17px/1 var(--ui);letter-spacing:1.5px;text-transform:uppercase;padding:11px 16px;cursor:pointer;min-height:44px;user-select:none;-webkit-user-select:none;touch-action:none}
+.btn>span{display:inline-block;transform:skewX(calc(var(--skew) * -1))}
+.btn.gold{--c:var(--gold);color:var(--gold)}
+.btn.small{font-size:15px;padding:7px 11px;min-height:36px}
+.btn:hover{background:#261a3d}
+.btn.holding{background:color-mix(in srgb,var(--c) 30%,var(--glass-2))}
+.btn[disabled]{opacity:.4;cursor:default}
+.who-acc{border-top:1px solid var(--rule);padding-top:10px}
+.who-acc summary{list-style:none;cursor:pointer;display:flex;gap:8px;align-items:baseline;font:800 15px/1.3 var(--ui);letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}
+.who-acc summary::-webkit-details-marker{display:none}
+.who-acc summary::before{content:"";flex:none;width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);margin-right:2px;transition:transform .15s ease-out;position:relative;top:-1px}
+.who-acc[open] summary::before{transform:rotate(45deg)}
+.who-acc summary span{flex:1;min-width:0}
+.who-acc summary b{color:var(--neon);font-weight:800;white-space:nowrap}
+.plays{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:12px}
+.play{display:grid;grid-template-columns:10px 1fr;gap:4px 10px}
+.play .sw{grid-row:1/span 4;background:var(--c);transform:skewX(var(--skew));width:8px}
+.play .note{font:800 14px var(--ui);letter-spacing:1.5px;text-transform:uppercase;color:var(--c2,var(--muted))}
+.play .caster{font:400 20px/1.1 var(--display);letter-spacing:.5px;text-transform:uppercase;overflow-wrap:anywhere}
+.phone .play .caster{font-size:18px}
+.play .caster small{font:600 16px var(--ui);letter-spacing:0;text-transform:none;color:var(--dim);margin-left:6px}
+.play q{color:var(--neon);font-weight:500}
+.play .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:2px}
+.rx{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--rule);padding:2px 8px;font-size:17px}
+.mine{font:800 14px var(--ui);letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
+.lens-say{margin:0;min-height:0;color:var(--cyan-t);font-weight:600;font-size:17px}
+.lens-say:empty{display:none}
+
+/* ---------- the takeover: Stick Around holds the post ---------- */
+.hold{position:absolute;inset:0;z-index:20;color:var(--neon);background:
+  radial-gradient(60% 50% at 20% 30%,rgba(46,230,255,.12),transparent 70%),
+  radial-gradient(50% 60% at 80% 70%,rgba(140,60,255,.16),transparent 70%),var(--ground);
+  border:1px solid var(--cyan);display:flex;flex-direction:column;gap:14px;padding:18px 22px;animation:holdIn .3s ease-out;overflow:auto}
+.hold[hidden]{display:none}
+@keyframes holdIn{from{opacity:0}to{opacity:1}}
+.hold-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
+.hold-head h2{font:400 34px/1 var(--display);margin:0}
+.hold-tag{transform:skewX(var(--skew));border:1px solid var(--cyan);background:#0e2230;padding:6px 14px;font:700 19px/1.2 var(--ui);max-width:100%}
+.hold-tag>span{display:inline-block;transform:skewX(calc(var(--skew) * -1))}
+.hold-slot{align-self:center;border:2px solid var(--paper);outline:1px solid var(--cyan);outline-offset:3px;max-width:100%;margin-top:14px}
+.hold-slot .pmain{border:0}
+.cert{display:flex;gap:14px;align-items:center;background:#0e2230;border:1px solid var(--cyan);padding:12px 16px;align-self:center;width:min(760px,100%)}
+.cert input{width:24px;height:24px;accent-color:var(--cyan);flex:none}
+.cert label{font:600 20px/1.25 var(--ui)}
+.cert small{display:block;font:800 14px var(--ui);letter-spacing:2px;color:var(--cyan-t)}
+.brk{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch;align-self:center;width:min(760px,100%);margin-top:auto}
+.brk .bar{flex:1 1 240px;border:1px solid var(--gold);background:#231c10;padding:10px 14px}
+.brk .bar b{font:800 16px var(--ui);letter-spacing:2px;color:var(--gold)}
+.brk .bar .track{height:8px;border:1px solid #5a4a1c;margin:6px 0;position:relative}
+.brk .bar .track i{position:absolute;inset:0 auto 0 0;width:var(--p,0%);background:var(--gold)}
+.brk .bar p{margin:0;font-weight:500;font-size:17px;color:var(--muted)}
+.phone .hold{padding:12px 10px;gap:10px}
+.phone .hold-head h2{font-size:28px}
+.phone .hold-tag{font-size:17px}
+.phone .cert label{font-size:18px}
+
+/* ---------- the HUD (context only) ---------- */
+.hud{position:absolute;left:0;right:0;bottom:0;height:var(--hud-h);z-index:10;background:var(--ground);border-top:1px solid var(--cyan-t);
+  box-shadow:0 -1px 0 rgba(25,227,255,.35);display:flex;align-items:center;gap:22px;padding:0 22px;color:var(--neon)}
+.hud .me{display:flex;align-items:center;gap:12px;min-width:0}
+.hud .me .pic{width:46px;height:46px;border:1px solid var(--cyan);display:grid;place-items:center;font:400 22px var(--display)}
+.hud .me b{font:400 26px/1 var(--display);text-transform:uppercase;white-space:nowrap}
+.hud .orbs{display:flex;gap:10px}
+.hud .orbs i{width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff8,transparent 40%),var(--o)}
+.hud .aura{font:400 30px/1 var(--display)}
+.hud .aura small{font:700 16px var(--ui);color:var(--muted)}
+.hud .end{margin-left:auto;display:flex;gap:10px}
+.phone .hud{flex-wrap:wrap;gap:8px 12px;padding:10px 12px;align-content:center}
+.phone .hud .me .pic{width:34px;height:34px;font-size:18px}
+.phone .hud .me b{font-size:20px}
+.phone .hud .orbs{order:3;gap:6px}
+.phone .hud .orbs i{width:24px;height:24px}
+.phone .hud .aura{order:4;font-size:22px;margin-left:auto}
+.phone .hud .end .sk{font-size:14px;padding:7px 10px;min-height:34px}
+.say{position:absolute;left:50%;bottom:calc(var(--hud-h) + 12px);transform:translateX(-50%);z-index:40;background:var(--ground);border:1px solid var(--cyan);
+  padding:8px 14px;font:600 18px var(--ui);max-width:90%;color:var(--neon)}
+.say[hidden]{display:none}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0s!important;transition-duration:0s!important}
+}
+</style>
+</head>
+<body>
+
+<h1>Marks and the Lens</h1>
+<p class="lede">Spritey's post #41 carries four plays: three <b>Whoops!</b> layers and one <b>Stick Around</b> by a character with a very long name. Nothing glass is in the page's flow. Each card kind is a <b>mark</b> on the post (its art, a count, and an edge that fills as it ends). Press a mark for the <b>Lens</b>, where every card answers the same three rows: what it is doing and how it ends, what you can do, and who did it.</p>
+
+<div class="controls" role="group" aria-label="Mockup controls">
+  <span class="lbl" id="viewas">View as</span>
+  <span class="seg" role="group" aria-labelledby="viewas">
+    <button class="sk" type="button" data-viewer="Pipewrench" aria-pressed="true"><span>Pipewrench, a reader</span></button>
+    <button class="sk" type="button" data-viewer="Spritey" aria-pressed="false"><span>Spritey, the author</span></button>
+  </span>
+  <button class="sk" type="button" id="arrive"><span>Arrive held by Stick Around</span></button>
+  <button class="sk" type="button" id="reset"><span>Reset both screens</span></button>
+</div>
+
+<section class="stage" aria-labelledby="h-desk">
+  <div class="stage-head"><h2 id="h-desk">Desktop</h2><p>1180 wide. The Lens prefers the margin beside the board, so it never covers the ink you are scrubbing.</p></div>
+  <div class="fit" data-w="1180" data-h="780"><div class="fit-inner"><div class="screen desk" id="s-desk"></div></div></div>
+</section>
+
+<section class="stage" aria-labelledby="h-phone">
+  <div class="stage-head"><h2 id="h-phone">Phone</h2><p>375 wide. The Lens is a short sheet; the post is scrolled into view above it.</p></div>
+  <div class="pair">
+    <div class="fit" data-w="375" data-h="760" style="width:375px;max-width:100%"><div class="fit-inner"><div class="screen phone" id="s-phone"></div></div></div>
+    <div class="try">
+      <h3>What to try</h3>
+      <ol>
+        <li><b>Drag across the ink.</b> It scrubs the top layer on your screen. The Whoops! mark's edge fills as you go, and the first-time callout goes away after your first stroke.</li>
+        <li><b>Press a mark.</b> The Lens opens on that card's tab. The other card is a tab beside it. Who did it waits, folded, under the controls.</li>
+        <li><b>Hold to scrub</b> works the top layer at the same pace as your hand, with the Lens open and the post in view.</li>
+        <li><b>View as Spritey.</b> The Whoops! mark gets a gold notch, and the Lens adds Wash and Write in ink.</li>
+        <li><b>Arrive held.</b> Stick Around takes the screen with the post inside it, ink and marks included. Open Whoops! from inside the hold, or break free.</li>
+      </ol>
+      <div class="rules">
+        <p><b>No sentence lives on the post.</b> A mark is art, a numeral and an edge, so a long caster or card name cannot break it, and the glass's 18px floor is kept without the glass outshouting a 12px post.</p>
+        <p><b>Every card fills the same three rows.</b> State (what it does and how it ends), Act (up to two controls from a fixed kit: hold, toggle, reveal, choose, go, author), and Who (folded). A card never draws its own plate.</p>
+        <p><b>Marks live on the post, wherever the post is drawn,</b> on the board or inside a takeover. More than four kinds on a post fold into "+N".</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+(()=>{
+const ICON={
+ whoops:'<svg viewBox="0 0 108 104" aria-hidden="true"><path fill="#ff3d7f" d="M50 8 C58 8 60 22 68 20 C78 17 80 6 88 12 C95 18 84 28 88 36 C92 44 104 44 100 54 C96 63 84 58 80 66 C76 75 88 86 78 92 C68 98 64 84 56 86 C48 88 46 100 36 96 C26 92 34 80 26 74 C18 68 4 74 4 62 C4 52 18 54 20 46 C22 38 10 30 18 22 C26 14 34 26 40 20 C46 14 42 8 50 8 Z"/><ellipse cx="42" cy="34" rx="14" ry="5" fill="#fff" opacity=".45"/></svg>',
+ stick:'<svg viewBox="0 0 120 110" aria-hidden="true"><circle cx="60" cy="58" r="46" fill="none" stroke="#2ee6ff" stroke-width="5" opacity=".45"/><circle cx="60" cy="58" r="30" fill="none" stroke="#2ee6ff" stroke-width="6" opacity=".75"/><circle cx="60" cy="40" r="13" fill="#2ee6ff"/><rect x="55" y="48" width="10" height="14" fill="#2ee6ff"/><path d="M60 62 L60 86" stroke="#e6fdff" stroke-width="7" stroke-linecap="round"/></svg>'
+};
+const X='<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2 14 14M14 2 2 14" stroke="currentColor" stroke-width="2.4"/></svg>';
+const CARD={whoops:{name:'Whoops!',title:'#ff6b9d'},stick:{name:'Stick Around',title:'#9ef4ff',ink:'#2ee6ff'}};
+// plays in play order; Whoops! layers bottom to top: Hooligan, Pipewrench, Gloomba
+const PLAYS=[
+ {id:'h',card:'whoops',caster:'Mrs. Hooligan',when:'9:15 PM',msg:'you dropped your ink',ink:'#ff2bd6',inkName:'magenta',rx:[['🔥',6],['❤️',2]]},
+ {id:'p',card:'stick',caster:'Professor Hootenanny McGillicuddy III',when:'9:22 PM',msg:'required reading',ink:'#2ee6ff',rx:[['🙌',2]]},
+ {id:'w',card:'whoops',caster:'Pipewrench',when:'9:31 PM',msg:'for the archive',ink:'#ff9a2e',inkName:'orange',rx:[['☕',1]]},
+ {id:'g',card:'whoops',caster:'Gloomba',when:'9:40 PM',msg:'fine, I’ll do it myself',ink:'#ffd93d',inkName:'yellow',rx:[]},
+];
+const KINDS=['whoops','stick']; // billing: the kind of the most drawn play first
+let viewer='Pipewrench';
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const POST_TEXT=`<p>Third time this week. I wrote four whole paragraphs about the level editor update and somebody dumped a bucket of ink on it before anyone got past the first sentence.</p><p>I'm not mad. I'm documenting. Whoever you are, I can see the color you picked, and I will remember it.</p><p>Posting the full changelog again below in case it gets splatted a fourth time.</p>`;
+
+function postHTML(n,name,rank,pips,letter,stats,when,body,foot,id){
+ return `<div class="post"${id?` id="${id}"`:''}><div class="who"><div><div class="nm">${name}</div><div class="rk">${rank}</div><div class="pips">${pips}</div></div><div class="av">${letter}</div><div class="st">${stats}</div></div>
+ <div class="pmain"><div class="meta"><span>${when}</span><a href="#">#${n}</a></div><div class="pbody">${body}</div><div class="pfoot">${foot}<span class="acts"><a href="#">Quote</a><a href="#">Spin thread</a><a href="#">Edit</a><a href="#">History</a></span></div></div></div>`;
+}
+function screenHTML(){
+ return `<div class="scroller"><div class="content"><div class="board">
+  <div class="site"><b>DIVIDED WORLD</b><span>dw.gripe</span></div>
+  <div class="crumb"><a href="#">Index</a> › <a href="#">General</a> › who keeps splatting my posts</div>
+  <div class="thread-title">who keeps splatting my posts</div>
+  <div class="posts">
+   ${postHTML(40,'Mrs. Hooligan','Midcarder','■■■□□□','M','Posts: 11','Oct 29, 2026, 9:02 PM','<p>Nobody has splatted anything. Nobody would. Ink is expensive and I have taste.</p>','<span class="r">😳 3</span><span class="r">☕ 1</span>')}
+   ${postHTML(41,'Spritey','Main Eventer','■■■■□□','S','Posts: 13','Oct 29, 2026, 9:14 PM',POST_TEXT+'<div class="inks"></div><div class="scrubpad" aria-hidden="true"></div>','<span class="r">🔥 4</span><span class="r">☕ 1</span><span class="r">😳 2</span>','p41')}
+   ${postHTML(42,'Pipewrench','Enhancement Talent','■■□□□□','P','Posts: 10','Oct 29, 2026, 9:31 PM','<p>Can confirm Mrs. Hooligan has never once been seen in the same thread as a bucket of ink. Suspicious in its own way, if you think about it.</p>','<span class="r">🤝 2</span>')}
+  </div></div></div></div>
+  <div class="hud"><div class="me"><div class="pic" data-hud-letter>P</div><b data-hud-name>Pipewrench</b></div>
+   <div class="orbs" aria-hidden="true"><i style="--o:#8b5cf6"></i><i style="--o:#3b82f6"></i><i style="--o:#10b981"></i><i style="--o:#eab308"></i><i style="--o:#1f1730"></i><i style="--o:#1f1730"></i></div>
+   <div class="aura">4.62 <small>/ 6.00</small></div>
+   <div class="end"><button class="sk" type="button" tabindex="-1"><span>Menu</span></button><button class="sk" type="button" tabindex="-1" style="border-color:var(--salty);color:var(--salty-t)"><span>Hand 3</span></button></div></div>
+  <div class="lens" role="dialog" aria-modal="false" aria-label="Cards played on this post" hidden></div>
+  <div class="hold" role="dialog" aria-modal="true" aria-label="Stick Around holds you on this post" hidden></div>
+  <p class="say" role="status" hidden></p>`;
+}
+
+/* ---------- ink ---------- */
+function rng(seed){return()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}}
+function splat(ctx,cx,cy,rx,ry,seed,color){
+ const r=rng(seed),n=14,pts=[];
+ for(let i=0;i<n;i++){const a=i/n*Math.PI*2,k=.68+r()*.5;pts.push([cx+Math.cos(a)*rx*k,cy+Math.sin(a)*ry*k])}
+ const mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+ ctx.fillStyle=color;ctx.beginPath();let m=mid(pts[n-1],pts[0]);ctx.moveTo(m[0],m[1]);
+ for(let i=0;i<n;i++){const p=pts[i],q=mid(p,pts[(i+1)%n]);ctx.quadraticCurveTo(p[0],p[1],q[0],q[1])}
+ ctx.fill();
+ for(let i=0;i<9;i++){const a=r()*Math.PI*2,d=1.05+r()*.45,s=(.04+r()*.07)*ry;ctx.beginPath();ctx.arc(cx+Math.cos(a)*rx*d,cy+Math.sin(a)*ry*d,s,0,7);ctx.fill()}
+}
+const SPOTS={desk:{h:[.3,.5,.36,.7,11],w:[.66,.42,.3,.62,23],g:[.5,.55,.42,.72,37]},
+             phone:{h:[.3,.45,.45,.5,11],w:[.7,.5,.4,.45,23],g:[.5,.55,.55,.55,37]}};
+
+function Screen(root,kind){
+ const S={root,kind,lensOpen:false,tab:'whoops',whoOpen:false,opener:null,hinted:false,held:false,released:true,certified:false,brk:0,layers:[]};
+ root.innerHTML=screenHTML();
+ const $=q=>root.querySelector(q);
+ const scroller=$('.scroller'),lens=$('.lens'),hold=$('.hold'),say=$('.say');
+ const post=$('#p41'),pmain=post.querySelector('.pmain'),pbody=pmain.querySelector('.pbody'),inks=pbody.querySelector('.inks'),pad=pbody.querySelector('.scrubpad');
+ let sayT;
+ function tell(t){say.textContent=t;say.hidden=false;clearTimeout(sayT);sayT=setTimeout(()=>say.hidden=true,2600)}
+
+ // the ink layers
+ function paint(){
+  inks.innerHTML='';S.layers=[];
+  const W=pbody.clientWidth,H=pbody.clientHeight,d=2;
+  PLAYS.filter(p=>p.card==='whoops').forEach(p=>{
+   const cv=document.createElement('canvas');cv.width=W*d;cv.height=H*d;inks.appendChild(cv);
+   const ctx=cv.getContext('2d',{willReadFrequently:true});const s=SPOTS[kind][p.id];
+   splat(ctx,s[0]*cv.width,s[1]*cv.height,s[2]*cv.width,s[3]*cv.height,s[4],p.ink);
+   const L={play:p,cv,ctx,total:1,washed:0,clean:false};L.total=count(L);S.layers.push(L);
+  });
+  // the top layer starts part washed, as if this reader had scrubbed a little before
+  const top=S.layers[S.layers.length-1],r=rng(5);
+  for(let i=0;i<70;i++)stamp(top,(.18+r()*.3)*top.cv.width,(.3+r()*.5)*top.cv.height,30*d);
+  measure(top);
+ }
+ function count(L){const d=L.ctx.getImageData(0,0,L.cv.width,L.cv.height).data;let n=0;for(let i=3;i<d.length;i+=64)if(d[i]>40)n++;return n||1}
+ function stamp(L,x,y,rad){const c=L.ctx;c.save();c.globalCompositeOperation='destination-out';const g=c.createRadialGradient(x,y,0,x,y,rad);g.addColorStop(0,'rgba(0,0,0,.55)');g.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=g;c.beginPath();c.arc(x,y,rad,0,7);c.fill();c.restore()}
+ function measure(L){
+  if(L.clean)return;
+  const left=count(L)/L.total;L.washed=Math.min(1,1-left);
+  if(L.washed>=.965){L.clean=true;L.washed=1;L.cv.style.opacity=0}
+ }
+ const topLayer=()=>[...S.layers].reverse().find(l=>!l.clean);
+ const pct=L=>L.clean?100:Math.min(99,Math.floor(L.washed*100));
+ let pending=false;
+ function scrubAt(cx,cy){
+  const L=topLayer();if(!L)return;
+  const r=L.cv.getBoundingClientRect();
+  stamp(L,(cx-r.left)/r.width*L.cv.width,(cy-r.top)/r.height*L.cv.height,26*L.cv.width/pbody.clientWidth);
+  if(!pending){pending=true;requestAnimationFrame(()=>{pending=false;measure(L);sync()})}
+ }
+ let last=null;
+ pad.addEventListener('pointerdown',e=>{pad.setPointerCapture(e.pointerId);last=[e.clientX,e.clientY];scrubAt(...last);dropHint()});
+ pad.addEventListener('pointermove',e=>{if(!last)return;const [x0,y0]=last,dx=e.clientX-x0,dy=e.clientY-y0,steps=Math.max(1,Math.hypot(dx,dy)/6|0);
+  for(let i=1;i<=steps;i++)scrubAt(x0+dx*i/steps,y0+dy*i/steps);last=[e.clientX,e.clientY]});
+ const up=()=>last=null;pad.addEventListener('pointerup',up);pad.addEventListener('pointercancel',up);
+
+ // the marks
+ const marks=document.createElement('div');marks.className='marks';marks.setAttribute('role','group');marks.setAttribute('aria-label','Cards played on this post');pbody.appendChild(marks);
+ function markState(k){
+  if(k==='whoops'){const L=topLayer(),n=S.layers.length;
+   if(!L)return{ink:S.layers[n-1].play.ink,p:100,label:`Whoops!, ${n} plays, washed clean on your screen`,done:true};
+   const i=S.layers.indexOf(L);return{ink:L.play.ink,p:pct(L),label:`Whoops!, ${n} plays, top layer ${pct(L)}% washed`,done:false,layer:i}}
+  const p=S.held?Math.round(S.brk*100):100;
+  return{ink:CARD.stick.ink,p,label:S.held?`Stick Around, holding you, ${p}% to breaking free`:(S.certified?'Stick Around, you checked the box':'Stick Around, you broke free this visit'),done:!S.held};
+ }
+ function drawMarks(){
+  marks.innerHTML=KINDS.map(k=>{const st=markState(k),n=PLAYS.filter(p=>p.card===k).length,author=k==='whoops'&&viewer==='Spritey'&&!st.done;
+   return `<button class="mark${st.done?' done':''}" type="button" data-kind="${k}" style="--ink:${st.ink};--p:${st.p}%" aria-expanded="${S.lensOpen&&S.tab===k}" aria-label="${esc(st.label)}${author?', yours to wash':''}. Opens the cards on this post.">
+    <span class="mk-in">${ICON[k]}${n>1?`<span class="n">×${n}</span>`:''}</span><span class="edge" aria-hidden="true"><i></i></span>${author?'<span class="notch" aria-hidden="true"></span>':''}</button>`}).join('');
+  marks.querySelectorAll('.mark').forEach(b=>b.onclick=()=>{if(S.lensOpen&&S.tab===b.dataset.kind)closeLens();else openLens(b.dataset.kind,b)});
+ }
+ function updateMarks(){
+  KINDS.forEach(k=>{const b=marks.querySelector(`[data-kind="${k}"]`);if(!b)return;const st=markState(k);
+   b.style.setProperty('--ink',st.ink);b.style.setProperty('--p',st.p+'%');b.classList.toggle('done',st.done);
+   const author=k==='whoops'&&viewer==='Spritey'&&!st.done;b.setAttribute('aria-label',`${st.label}${author?', yours to wash':''}. Opens the cards on this post.`);
+   const has=b.querySelector('.notch');if(author&&!has)b.insertAdjacentHTML('beforeend','<span class="notch" aria-hidden="true"></span>');if(!author&&has)has.remove()});
+ }
+
+ // the first meeting
+ let hint=null,hintT;
+ function showHint(){
+  if(S.hinted)return;hint=document.createElement('div');hint.className='callout';hint.style.setProperty('--ink','#ff3d7f');
+  hint.innerHTML=`<b>Whoops!</b>Drag across the ink to scrub it off your screen.<button type="button">Got it</button>`;
+  pbody.appendChild(hint);hint.querySelector('button').onclick=dropHint;hintT=setTimeout(dropHint,9000);
+ }
+ function dropHint(){S.hinted=true;clearTimeout(hintT);if(hint){hint.remove();hint=null}}
+
+ // the Lens
+ function stateRows(k){
+  if(k==='whoops'){
+   const L=topLayer(),n=S.layers.length;
+   const line=L?`${n} layers · top: ${L.play.caster}'s ${L.play.inkName}, ${pct(L)}% washed`:'Washed clean on your screen';
+   const segs=[...S.layers].reverse().map(l=>`<span class="${l===L?'top':''}${l.clean?' clean':''}" style="--c:${l.play.ink};--w:${l===L?pct(l):0}%"><i></i></span>`).join('');
+   return `<div class="st"><p class="line" data-live="line">${esc(line)}</p><div class="meter" data-live="meter" aria-hidden="true">${segs}</div>
+    <p class="ends">Ends on your screen when you scrub every layer off. The author can wash it for everyone.</p></div>`;
+  }
+  const line=S.held?`Holding you · ${Math.round(S.brk*100)}% to free`:(S.certified?'You checked the box':'You broke free this visit');
+  const ends=S.held?'Check the box to be released, or keep pulling away to break free for this visit.':(S.certified?'It will not hold you again.':'It holds you again next visit, until you check the box.');
+  return `<div class="st"><p class="line" data-live="line">${esc(line)}</p><p class="ends" data-live="ends">${esc(ends)}</p></div>`;
+ }
+ function actRow(k){
+  if(k==='whoops'){
+   const L=topLayer();if(!L)return '';
+   let h=`<button class="btn" type="button" data-hold style="--c:${L.play.ink}"><span>Hold to scrub</span></button>`;
+   if(viewer==='Spritey')h+=`<button class="btn gold" type="button" data-wash><span>Wash</span></button><button class="btn gold" type="button" data-write><span>Write in ink</span></button>`;
+   return `<div class="act">${h}</div>`;
+  }
+  return '';
+ }
+ function noteFor(p){
+  if(p.card!=='whoops')return S.held?'Holding you now':(S.certified?'Checked':'Broke free this visit');
+  const i=S.layers.findIndex(l=>l.play===p),L=S.layers[i],n=S.layers.length,top=topLayer()===L;
+  return L.clean?`Layer ${i+1} of ${n} · washed clean`:`Layer ${i+1} of ${n}${top?' · on top':''} · ${pct(L)}% washed`;
+ }
+ function whoRows(k){
+  const ps=PLAYS.filter(p=>p.card===k);const order=k==='whoops'?[...ps].reverse():ps;
+  const names=order.map(p=>p.caster).join(', ');
+  const rows=order.map(p=>{const mine=p.caster===viewer;
+   return `<li class="play" style="--c:${p.ink}"><span class="sw" aria-hidden="true"></span>
+    <span class="note" data-note="${p.id}">${esc(noteFor(p))}</span>
+    <span class="caster">${esc(p.caster)}<small>${p.when}</small></span>
+    <q>${esc(p.msg)}</q>
+    <span class="row">${p.rx.map(([g,n])=>`<span class="rx">${g} ${n}</span>`).join('')||'<span class="mine">No reactions yet</span>'}
+     ${mine?'<span class="mine">Your play</span>':`<button class="btn small" type="button" data-react="${p.id}"><span>React</span></button>`}
+     <button class="btn small" type="button" data-spin="${p.id}"><span>Spin</span></button></span></li>`}).join('');
+  return `<details class="who-acc"${S.whoOpen?' open':''}><summary><span><b>${ps.length} ${ps.length>1?'plays':'play'}</b> · ${esc(names)}</span></summary><ul class="plays">${rows}</ul></details>`;
+ }
+ function renderLens(){
+  const k=S.tab;const ink=k==='whoops'?(topLayer()||S.layers[S.layers.length-1]).play.ink:CARD.stick.ink;
+  lens.style.setProperty('--lens-ink',ink);
+  lens.innerHTML=`<div class="tabs" role="tablist" aria-label="Cards on this post">${KINDS.map(t=>{const n=PLAYS.filter(p=>p.card===t).length,st=markState(t);
+    return `<button class="tab" role="tab" type="button" id="${kind}-tab-${t}" aria-controls="${kind}-panel" aria-selected="${t===k}" aria-label="${CARD[t].name}${n>1?`, ${n} plays`:''}" tabindex="${t===k?0:-1}" data-tab="${t}" style="--ink:${st.ink}">${ICON[t]}${n>1?`<span class="n">×${n}</span>`:''}<span class="t">${CARD[t].name}</span></button>`}).join('')}
+    <button class="x" type="button" aria-label="Close" data-close>${X}</button></div>
+   <div class="panel" role="tabpanel" id="${kind}-panel" aria-labelledby="${kind}-tab-${k}">${stateRows(k)}${actRow(k)}${whoRows(k)}<p class="lens-say" role="status"></p></div>`;
+  wireLens();
+ }
+ function lensSay(t){const p=lens.querySelector('.lens-say');if(p)p.textContent=t}
+ function wireLens(){
+  lens.querySelectorAll('[data-tab]').forEach(t=>{t.onclick=()=>{S.tab=t.dataset.tab;renderLens();place();lens.querySelector(`[data-tab="${S.tab}"]`).focus();drawMarks()};
+   t.onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){const i=KINDS.indexOf(S.tab),j=(i+(e.key==='ArrowRight'?1:-1)+KINDS.length)%KINDS.length;S.tab=KINDS[j];renderLens();place();lens.querySelector(`[data-tab="${S.tab}"]`).focus();drawMarks();e.preventDefault()}}});
+  lens.querySelector('[data-close]').onclick=closeLens;
+  const det=lens.querySelector('details');det.ontoggle=()=>{S.whoOpen=det.open;place()};
+  const h=lens.querySelector('[data-hold]');if(h)wireHold(h);
+  const w=lens.querySelector('[data-wash]');if(w)w.onclick=()=>{const L=topLayer();if(!L)return;L.clean=true;L.washed=1;L.cv.style.opacity=0;dropHint();sync(true);lensSay(`Washed ${L.play.caster}'s ${L.play.inkName} for everyone.`)};
+  const wr=lens.querySelector('[data-write]');if(wr)wr.onclick=()=>lensSay('Write in ink opens the ink editor (not drawn in this mockup).');
+  lens.querySelectorAll('[data-react]').forEach(b=>b.onclick=()=>{const p=PLAYS.find(x=>x.id===b.dataset.react);lensSay(`Opens the React picker for ${p.caster}'s ${CARD[p.card].name}, the same picker a post has.`)});
+  lens.querySelectorAll('[data-spin]').forEach(b=>b.onclick=()=>{const p=PLAYS.find(x=>x.id===b.dataset.spin);lensSay(`Closes the Lens and opens a spin form from ${p.caster}'s ${CARD[p.card].name}.`)});
+ }
+ let holdT=null;
+ function wireHold(b){
+  const start=e=>{if(e)e.preventDefault();if(holdT)return;b.classList.add('holding');dropHint();const r=rng(Date.now()%9973);
+   holdT=setInterval(()=>{const L=topLayer();if(!L){stop();return}const rect=L.cv.getBoundingClientRect();
+    for(let i=0;i<3;i++)scrubAt(rect.left+(.1+r()*.8)*rect.width,rect.top+(.1+r()*.8)*rect.height)},70)};
+  const stop=()=>{clearInterval(holdT);holdT=null;b.classList.remove('holding')};
+  b.addEventListener('pointerdown',start);['pointerup','pointerleave','pointercancel'].forEach(t=>b.addEventListener(t,stop));
+  b.addEventListener('keydown',e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat)start(e)});b.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter')stop()});
+  b.addEventListener('blur',stop);
+ }
+ function offsetIn(el,anc){let x=0,y=0;while(el&&el!==anc){x+=el.offsetLeft;y+=el.offsetTop;el=el.offsetParent}return{x,y}}
+ function place(){
+  if(!S.lensOpen||kind==='phone')return;
+  const m=marks,mo=offsetIn(m,root);
+  const top=mo.y-(S.held?hold.scrollTop:scroller.scrollTop)+m.offsetHeight+10;
+  // beside the post where there is room for it, else over the side with more room, never over the middle of the post
+  const pl=offsetIn(pmain,root).x,pr=pl+pmain.offsetWidth,lw=lens.offsetWidth,roomR=root.clientWidth-pr,roomL=pl;
+  const side=roomR>=lw+24||roomL>=lw+24;
+  let left=roomR>=lw+24?pr+20:roomL>=lw+24?pl-lw-20:(roomR>=roomL?root.clientWidth-lw-12:12);
+  const floor=root.clientHeight-(S.held?12:root.querySelector('.hud').offsetHeight+12);
+  lens.style.maxHeight='';const t=Math.max(10,Math.min(top,floor-lens.offsetHeight));
+  lens.style.left=left+'px';lens.style.top=t+'px';lens.style.maxHeight=(floor-t)+'px';
+  lens.style.setProperty('--ox',side?'0%':'90%');
+ }
+ function openLens(k,opener){
+  S.tab=k;S.lensOpen=true;S.opener=opener;lens.hidden=false;renderLens();drawMarks();
+  if(kind==='phone'&&!S.held){scroller.scrollTo({top:Math.max(0,offsetIn(pmain,scroller.firstElementChild).y-6),behavior:reduce?'auto':'smooth'})}
+  place();lens.querySelector(`[data-tab="${k}"]`).focus();
+ }
+ function closeLens(){
+  if(!S.lensOpen)return;S.lensOpen=false;lens.hidden=true;clearInterval(holdT);holdT=null;drawMarks();
+  const back=marks.querySelector(`[data-kind="${S.tab}"]`);if(back)back.focus();
+ }
+ function sync(rerender){
+  updateMarks();
+  if(!S.lensOpen)return;
+  if(rerender||(S.tab==='whoops'&&!topLayer()&&lens.querySelector('[data-hold]'))){const f=document.activeElement&&lens.contains(document.activeElement);renderLens();place();if(f)lens.querySelector(`[data-tab="${S.tab}"]`).focus();return}
+  const fresh=document.createElement('div');fresh.innerHTML=stateRows(S.tab);
+  const line=lens.querySelector('[data-live="line"]');if(line)line.textContent=fresh.querySelector('[data-live="line"]').textContent;
+  const ends=lens.querySelector('[data-live="ends"]');if(ends)ends.textContent=fresh.querySelector('[data-live="ends"]').textContent;
+  const meter=lens.querySelector('[data-live="meter"]');if(meter)meter.innerHTML=fresh.querySelector('[data-live="meter"]').innerHTML;
+  PLAYS.forEach(p=>{const n=lens.querySelector(`[data-note="${p.id}"]`);if(n)n.textContent=noteFor(p)});
+  const L=topLayer(),hb=lens.querySelector('[data-hold]');if(L&&hb)hb.style.setProperty('--c',L.play.ink);
+  const t=lens.querySelector('[data-tab="whoops"]');if(t&&L)t.style.setProperty('--ink',L.play.ink);
+  if(S.tab==='whoops'&&L)lens.style.setProperty('--lens-ink',L.play.ink);
+ }
+ root.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.lensOpen){closeLens();e.stopPropagation()}});
+ root.addEventListener('pointerdown',e=>{if(!S.lensOpen)return;if(lens.contains(e.target)||marks.contains(e.target)||pad.contains(e.target))return;closeLens()});
+ scroller.addEventListener('scroll',()=>place());hold.addEventListener('scroll',()=>place());
+
+ // the takeover
+ let ph=null,brkT=null;
+ function arrive(){
+  if(S.held)return;closeLens();S.held=true;S.brk=0;S.certified=false;
+  const w=pmain.offsetWidth;
+  ph=document.createElement('div');ph.style.height=pmain.offsetHeight+'px';ph.style.flex='1';pmain.before(ph);
+  hold.innerHTML=`<div class="hold-head"><h2>Stick Around</h2><div class="hold-tag"><span>${esc(PLAYS[1].caster)}: “${esc(PLAYS[1].msg)}”</span></div></div>
+   <div class="hold-slot" style="width:${w}px"></div>
+   <div class="cert"><input type="checkbox" id="${kind}-cert"><label for="${kind}-cert"><small>CHECK TO BE RELEASED</small>I have read every word of Spritey's post and I feel changed.</label></div>
+   <div class="brk"><div class="bar"><b>BREAK FREE</b><div class="track"><i></i></div><p>Keep pulling away to break free for this visit. Next visit, it holds you again until you check.</p></div>
+   <button class="btn gold" type="button" data-brk><span>Pull away</span></button></div>`;
+  hold.querySelector('.hold-slot').appendChild(pmain);hold.hidden=false;
+  hold.querySelector('input').onchange=e=>{if(e.target.checked){S.certified=true;release()}};
+  const b=hold.querySelector('[data-brk]'),track=hold.querySelector('.track i');
+  const go=e=>{if(e)e.preventDefault();if(brkT)return;b.classList.add('holding');brkT=setInterval(()=>{S.brk=Math.min(1,S.brk+.03);track.style.width=S.brk*100+'%';sync();if(S.brk>=1)release()},60)};
+  const stop=()=>{clearInterval(brkT);brkT=null;b.classList.remove('holding')};
+  b.addEventListener('pointerdown',go);['pointerup','pointerleave','pointercancel'].forEach(t=>b.addEventListener(t,stop));
+  b.addEventListener('keydown',e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat)go(e)});b.addEventListener('keyup',stop);
+  drawMarks();const h2=hold.querySelector('h2');h2.tabIndex=-1;setTimeout(()=>h2.focus(),0);
+ }
+ function release(){
+  clearInterval(brkT);brkT=null;closeLens();S.held=false;S.released=true;ph.replaceWith(pmain);hold.hidden=true;hold.innerHTML='';drawMarks();
+  tell(S.certified?'Released. Stick Around will not hold you on this post again.':'You broke free for this visit.');
+  marks.querySelector('[data-kind="stick"]').focus();
+ }
+ S.arrive=arrive;
+ S.setViewer=()=>{root.querySelector('[data-hud-name]').textContent=viewer;root.querySelector('[data-hud-letter]').textContent=viewer[0];drawMarks();if(S.lensOpen){renderLens();place()}};
+
+ requestAnimationFrame(()=>{paint();drawMarks();S.setViewer();showHint()});
+ return S;
+}
+
+/* fit each fixed-size screen into the page width */
+function fit(){document.querySelectorAll('.fit').forEach(f=>{const w=+f.dataset.w,h=+f.dataset.h,s=Math.min(1,f.clientWidth/w);
+ const inner=f.firstElementChild;inner.style.transform=s<1?`scale(${s})`:'';f.style.height=h*s+'px'})}
+addEventListener('resize',fit);fit();
+
+let screens=[];
+function fresh(id){const o=document.getElementById(id),n=o.cloneNode(false);o.replaceWith(n);return n}
+function boot(){screens=[Screen(fresh('s-desk'),'desk'),Screen(fresh('s-phone'),'phone')]}
+boot();
+document.querySelectorAll('[data-viewer]').forEach(b=>b.onclick=()=>{viewer=b.dataset.viewer;
+ document.querySelectorAll('[data-viewer]').forEach(x=>x.setAttribute('aria-pressed',x===b));screens.forEach(s=>s.setViewer())});
+document.getElementById('arrive').onclick=()=>screens.forEach(s=>s.arrive());
+document.getElementById('reset').onclick=()=>{boot();fit()};
+})();
+</script>
+</body>
+</html>
