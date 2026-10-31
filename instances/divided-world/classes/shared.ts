@@ -1,5 +1,5 @@
 /**
- * What the four classes share: paying or charging a whole vote's worth per vote on one
+ * What the classes share: paying or charging a whole vote's worth per vote on one
  * quadrant of the reactions a character's own posts and cards received.
  */
 import type { ClassInput, Earning, Quadrant, Settings } from '../../../engine/rules/types.ts';

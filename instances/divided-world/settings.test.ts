@@ -36,6 +36,7 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
     'heel.saltyOutdraws': 20,
     'face.cardOutdraws': -20,
     'jabroni.saltyLanded': 20,
+    'technician.evergreen': 5, 'technician.evergreenDays': 3,
     'stickAround.price': 100,
     'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostInAll': 300,
   });
