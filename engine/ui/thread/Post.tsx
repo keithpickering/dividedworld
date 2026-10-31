@@ -41,7 +41,7 @@ interface Props {
 const nameOf = (act: Act, person: PostbitPerson | undefined) => (act.character === null ? SYSTEM : person?.character.name ?? 'A character');
 
 function Body({ act, name, person, editing, onDone, slot }: { readonly slot: React.RefObject<HTMLElement | null>; readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
-  const { summary, tallies, mine, changed, plays } = useThread();
+  const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
     case 'tally':
@@ -61,7 +61,7 @@ function Body({ act, name, person, editing, onDone, slot }: { readonly slot: Rea
           {origin && <Origin summary={summary} />}
           {editing
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
-            : <PostEffects plays={plays} post={act} place="thread" slot={slot}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
+            : <PostEffects plays={plays} post={act} place="thread" slot={slot} nameOf={casterName}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}

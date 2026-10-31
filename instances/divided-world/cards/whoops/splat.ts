@@ -138,7 +138,7 @@ const NAMED: Readonly<Record<string, string>> = {
   salmon: '#fa8072', turquoise: '#40e0d0', tan: '#d2b48c', khaki: '#f0e68c', beige: '#f5f5dc',
 };
 
-function rgbOf(ink: string): [number, number, number] {
+export function rgbOf(ink: string): [number, number, number] {
   const v = ink.trim().toLowerCase();
   let hex = NAMED[v] ?? v;
   if (/^#[0-9a-f]{3}$/.test(hex)) hex = `#${[1, 2, 3].map((i) => hex[i]!.repeat(2)).join('')}`;

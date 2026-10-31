@@ -12,16 +12,11 @@ import { useEffect, useId } from 'react';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
 import { luminance, makeSplat, shading } from './splat.ts';
 import './whoops.css';
+import { SWATCHES } from './names.ts';
 
 /** The Cards board's six inks, in its order. */
-export const SWATCHES = [
-  { name: 'Magenta', color: '#ff2bd6' },
-  { name: 'Cyan', color: '#19e3ff' },
-  { name: 'Yellow', color: '#ffd93d' },
-  { name: 'Green', color: '#2ef0a0' },
-  { name: 'Orange', color: '#ff9a3d' },
-  { name: 'Violet', color: '#b46cff' },
-] as const;
+/* The swatches are the names' (names.ts), so the readout calls an ink what the form called it. */
+export { SWATCHES };
 
 export const DEFAULT_INK = SWATCHES[0].color;
 

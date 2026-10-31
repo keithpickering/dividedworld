@@ -76,9 +76,11 @@ afterEach(() => {
 const POST = { id: 'post-1', character: 'someone', kind: 'post', thread: 't', payload: {}, currentPayload: {}, targetActId: null, seq: 41, createdAt: '2026-10-29T21:14:00.000Z', editedAt: null, shownEditedAt: null } as unknown as Act;
 
 function playOf(n: number, color: string, seed: number): CardPlay {
-  return { id: `play-${n}`, card: 'whoops', layer: n, caster: 'caster', message: '', config: { color, seed }, playedAt: `2026-10-29T21:0${n}:00.000Z`, post: POST.id };
+  return { id: `play-${n}`, card: 'whoops', layer: n, caster: `caster-${n}`, message: '', config: { color, seed }, playedAt: `2026-10-29T21:0${n}:00.000Z`, post: POST.id };
 }
 const SEEDS = [21, 22, 23];
+/** Who played each layer, by its caster: Mrs. Hooligan the first (magenta), Gloomba the second (cyan), Spritey the third (yellow). */
+const CASTERS: Readonly<Record<string, string>> = { 'caster-1': 'Mrs. Hooligan', 'caster-2': 'Gloomba', 'caster-3': 'Spritey' };
 const COLORS = ['#ff2bd6', '#19e3ff', '#ffd93d'];
 const plays = (n: number) => Array.from({ length: n }, (_, i) => playOf(i + 1, COLORS[i]!, SEEDS[i]!));
 const splatFor = (i: number) => makeSplat(SEEDS[i]!);
@@ -91,6 +93,7 @@ interface Options {
   readonly author?: boolean;
   readonly save?: EffectProps['save'];
   readonly note?: EffectProps['note'];
+  readonly nameOf?: EffectProps['nameOf'];
   /** The instance's share washed that counts as clean; null is an instance whose settings carry none. */
   readonly clean?: number | null;
 }
@@ -104,7 +107,7 @@ function mount(o: Options = {}) {
   slots.push(slot);
   const props: EffectProps = {
     slot, post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
-    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), note: o.note ?? (() => {}), children: <p>{textOf(layoutLines)}</p>,
+    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), note: o.note ?? (() => {}), nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};
@@ -372,17 +375,59 @@ describe('the words and controls are glass, outside the post (the owner\'s notes
     expect(root.textContent).not.toMatch(/splatted|Yours to wash/u);
     expect(root.querySelector('button')).toBeNull();
   });
-  test('the plate\'s readout names the card and counts the layers and the share washed, with one bar of the meter for each layer', () => {
+  test('the plate\'s readout names the card, counts the layers and names the top one, its caster\'s ink and its own share washed', () => {
     const { slot } = mount({ layers: 3 });
     const strip = slot.querySelector('.kb-effect-strip') as HTMLElement;
     expect(strip.querySelector('.kb-plate-name')).toHaveTextContent('Whoops!');
-    expect(strip.querySelector('.kb-plate-state')).toHaveTextContent(/^3 layers · 0% washed$/u);
-    expect(strip.querySelectorAll('.kb-whoops-meter > *')).toHaveLength(3);
+    expect(strip.querySelector('.kb-plate-state')).toHaveTextContent(/^3 layers · top: Spritey's yellow, 0% washed$/u);
   });
-  test('one layer reads in the singular, with one bar', () => {
-    const { slot } = mount({ layers: 1 });
-    expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(/^1 layer · 0% washed$/u);
-    expect(slot.querySelectorAll('.kb-whoops-meter > *')).toHaveLength(1);
+  test('two layers and one read the same way, one in the singular', () => {
+    expect(mount({ layers: 2 }).slot.querySelector('.kb-plate-state')).toHaveTextContent(/^2 layers · top: Gloomba's cyan, 0% washed$/u);
+    expect(mount({ layers: 1 }).slot.querySelector('.kb-plate-state')).toHaveTextContent(/^1 layer · top: Mrs\. Hooligan's magenta, 0% washed$/u);
+  });
+  test('the meter is one segment for each layer, in its ink, the top layer first and marked, a clean one faded', () => {
+    const { slot } = mount({ layers: 3, states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    const segments = [...slot.querySelectorAll<HTMLElement>('.kb-whoops-meter > *')];
+    expect(segments.map((el) => el.style.getPropertyValue('--kb-ink'))).toEqual(['#ffd93d', '#19e3ff', '#ff2bd6']);
+    expect(segments.map((el) => el.dataset.kbTop)).toEqual(['true', undefined, undefined]);
+    expect(segments.map((el) => el.dataset.kbClean)).toEqual([undefined, undefined, 'true']);
+  });
+  test('when the top layer is washed clean the readout names the next, and its caster; when every layer is, the plate is gone and each layer\'s note reads Washed clean', async () => {
+    const note = vi.fn<EffectProps['note']>();
+    const { slot, hear } = mount({ layers: 2, note });
+    expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(/^2 layers · top: Gloomba's cyan, 0% washed$/u);
+    hear({ 'play-2': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } });
+    expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(/^1 layer · top: Mrs\. Hooligan's magenta, 0% washed$/u);
+    expect(slot.querySelector('[data-kb-top="true"]')?.getAttribute('style')).toContain('#ff2bd6');
+    hear({
+      'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' },
+      'play-2': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' },
+    });
+    /* A post washed clean draws no plate (its words stand alone); what is left to say is each play's panel's. */
+    expect(slot.querySelector('.kb-effect-strip')).toBeNull();
+    const last = (play: string) => note.mock.calls.filter(([p]) => p === play).at(-1)?.[1];
+    await vi.waitFor(() => expect([last('play-1'), last('play-2')]).toEqual(['Washed clean', 'Washed clean']));
+  });
+  test('the top layer\'s own share washed is the readout\'s, not a sum across the layers', () => {
+    const { slot, frame, root } = mount({ layers: 2 });
+    const ink = new LayerInk(splatFor(1), []);
+    scrubTo(frame, root, 1, ink, 0.4);
+    const share = Math.round(100 * washed(root)[1]!);
+    expect(share).toBeGreaterThan(0);
+    expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(new RegExp(`^2 layers · top: Gloomba's cyan, ${share}% washed$`, 'u'));
+  });
+  test('each layer says its line to the play\'s panel, as the shares change, and takes it back when the effect is gone', async () => {
+    const note = vi.fn<EffectProps['note']>();
+    const { hear, unmount } = mount({ layers: 3, note });
+    const last = (play: string) => note.mock.calls.filter(([p]) => p === play).at(-1)?.[1];
+    await vi.waitFor(() => expect(last('play-3')).toBe('Layer 3 of 3, on top · 0% washed'));
+    expect(last('play-2')).toBe('Layer 2 of 3 · 0% washed');
+    expect(last('play-1')).toBe('Layer 1 of 3 · 0% washed');
+    hear({ 'play-3': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } });
+    await vi.waitFor(() => expect(last('play-3')).toBe('Washed clean'));
+    expect(last('play-2')).toBe('Layer 2 of 3, on top · 0% washed');
+    unmount();
+    for (const play of ['play-1', 'play-2', 'play-3']) expect(last(play)).toBeNull();
   });
   test('the tiles are buttons with their names, and the author\'s two tools are toggles of which one is pressed', () => {
     const { slot } = mount({ author: true });

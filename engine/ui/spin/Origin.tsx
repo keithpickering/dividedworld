@@ -170,7 +170,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
             <PlayTags plays={plays} post={originId} to={backHref} nameOf={nameOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />
-            <PostEffects plays={plays} post={act} place="origin" slot={slot}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
+            <PostEffects plays={plays} post={act} place="origin" slot={slot} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small">{history.button}</p>}
             {history.panel}

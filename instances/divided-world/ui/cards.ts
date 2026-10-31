@@ -3,7 +3,7 @@
  * card's face, and its rules in plain words for the Vending Machine and the hand. A card's rules
  * themselves are `instances/divided-world/cards/`, whose settings these read, so a number said
  * here is the one the instance runs on. Stick Around's hold is drawn (ui/stick-around/Effect.tsx),
- * and Whoops!'s ink: its effect, its ink form, and the tag of its top layer, which takes the layer's ink for its border and glow.
+ * and Whoops!'s ink: its effect, its ink form, and each play's tag, which takes its own ink for its border and glow.
  *
  * The faces' colors are the Cards board's: Sweet is the cyan, Salty the pink, each with the dark
  * ink the board sets on it (docs/research/2026-10-29-two-worlds/05-cards.html).
@@ -40,10 +40,13 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       const e = settings.economy;
       return `Long post, +${orbs(e['whoops.perLength'] ?? 0)} per ${e['whoops.lengthStep'] ?? 0} characters`;
     },
-    /* The top layer's tag takes the color it splatted for its border and glow; the layers under keep their alignment's. */
-    tag: (play, plays) => {
+    /*
+     * Each play's tag and chip takes the color it splatted for its border and glow (the plays-on-a-post design, section 5):
+     * the tag on top is the most drawn play, not always the top ink. An ink the card cannot read keeps the alignment's.
+     */
+    tag: (play) => {
       const ink = play.config.color;
-      if (play !== plays[plays.length - 1] || typeof ink !== 'string') return undefined;
+      if (typeof ink !== 'string') return undefined;
       try {
         luminance(ink);
       } catch {

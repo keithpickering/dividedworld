@@ -48,6 +48,7 @@ import {
 } from './scrub.ts';
 import { luminance, makeSplat, type Splat } from './splat.ts';
 import './whoops.css';
+import { inkName } from './names.ts';
 
 /** A burst of strokes is saved once it has been quiet this long. */
 export const SAVE_AFTER_MS = 800;
@@ -118,7 +119,7 @@ interface View {
   readonly fading: boolean;
 }
 
-export function Effect({ post, plays, states, reader, save, slot, place, children }: EffectProps) {
+export function Effect({ post, plays, states, reader, save, slot, place, note, nameOf, children }: EffectProps) {
   const { settings } = useKayfa();
   const help = useId();
   const layers = useMemo<readonly Layer[]>(() => plays.map((play) => ({ play, color: inkOf(play), seed: seedOf(play) })), [plays]);
@@ -661,20 +662,54 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
     // eslint-disable-next-line react-hooks/exhaustive-deps -- readKey is what the view's lines and cover say, and nothing else is read
   }, [readKey]);
   /* The hint is the board's sentence for everyone; the author's own tools and what they save follow the button. */
-  const note = 'This post is splatted. Drag across the ink to scrub it on your screen.';
-  /* The plate's readout: how many layers hold ink, and how much of them is washed on this screen, as the model says (geometry, never a pixel read). */
-  const inked = view ? view.clean.flatMap((c, i) => (c ? [] : [view.washed[i] ?? 0])) : layers.map(() => 0);
-  const share = inked.length === 0 ? 0 : Math.round((100 * inked.reduce((sum, w) => sum + w, 0)) / inked.length);
+  const hint = 'This post is splatted. Drag across the ink to scrub it on your screen.';
+  /*
+   * The plate's readout (the plays-on-a-post design, section 5): how many layers hold ink, and the top one, which is the layer
+   * the next stroke washes, named by its caster and its ink in words (names.ts, never a hex code), with its own share washed
+   * on this screen, as the model says (geometry, never a pixel read). The meter is a segment for each layer in its ink, the
+   * top first and lit, a clean one faded.
+   */
+  const cleanAt = (i: number) => (view ? view.clean[i] === true : false);
+  const washedAt = (i: number) => (view ? (view.clean[i] ? 1 : Math.min(1, view.washed[i] ?? 0)) : 0);
+  const percent = (i: number) => Math.round(100 * washedAt(i));
+  const liveCount = layers.filter((_, i) => !cleanAt(i)).length;
+  const top = layers.reduce((at, _, i) => (cleanAt(i) ? at : i), -1);
+  const upper = top >= 0 ? layers[top]! : null;
   const readout = (
     <>
       <span className="kb-plate-state">
-        {inked.length === 0 ? 'Washed clean' : `${inked.length} ${inked.length === 1 ? 'layer' : 'layers'} · ${share}% washed`}
+        {upper === null
+          ? 'Washed clean'
+          : `${liveCount} ${liveCount === 1 ? 'layer' : 'layers'} · top: ${nameOf(upper.play.caster)}'s ${inkName(upper.color)}, ${percent(top)}% washed`}
       </span>
       <span className="kb-whoops-meter" aria-hidden="true">
-        {layers.map((l, i) => <span key={l.play.id} style={{ '--kb-washed': view ? (view.clean[i] ? 1 : Math.min(1, view.washed[i] ?? 0)) : 0 } as CSSProperties} />)}
+        {layers.map((_, i) => layers.length - 1 - i).map((i) => (
+          <span
+            key={layers[i]!.play.id} data-kb-top={i === top ? 'true' : undefined} data-kb-clean={cleanAt(i) ? 'true' : undefined}
+            style={{ '--kb-washed': washedAt(i), '--kb-ink': layers[i]!.color } as CSSProperties}
+          />
+        ))}
       </span>
     </>
   );
+  /*
+   * Each layer's line for its play's panel (`EffectProps.note`): "Layer 3 of 3, on top · 40% washed", or "Washed clean". It is
+   * said when a whole percent or the top changes, at most once a frame however fast a scrub runs, and taken back when the
+   * layers change or the effect is gone. It is this screen's view, never saved or sent.
+   */
+  const lineOf = (i: number) => (cleanAt(i) ? 'Washed clean' : `Layer ${i + 1} of ${layers.length}${i === top ? ', on top' : ''} · ${percent(i)}% washed`);
+  const notes = layers.map((l, i) => [l.play.id, lineOf(i)] as const);
+  const notesKey = notes.map(([id, line]) => `${id}\u0000${line}`).join('\u0001');
+  const noteNow = useRef({ note, notes });
+  noteNow.current = { note, notes };
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => { for (const [id, line] of noteNow.current.notes) noteNow.current.note(id, line); });
+    return () => cancelAnimationFrame(frame);
+  }, [notesKey]);
+  useEffect(() => {
+    const ids = layers.map((l) => l.play.id);
+    return () => { for (const id of ids) noteNow.current.note(id, null); };
+  }, [layers]);
   const stop = (e: { preventDefault(): void }) => e.preventDefault();
 
   return (
@@ -718,7 +753,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
       {/* The words and the controls are glass in the plate under the post, never in the post's 2003 body (the owner's notes on #80), drawn as one game piece (the owner on #80's shots): a readout, then tiles. */}
       {(anyLive || report) && (
         <EffectStrip slot={slot} card="whoops" readout={readout}>
-          {anyLive && <p className="kb-plate-line kb-whoops-hint">{note}</p>}
+          {anyLive && <p className="kb-plate-line kb-whoops-hint">{hint}</p>}
           {anyLive && (
             <button
               type="button" className="kb-plate-tile kb-whoops-scrub" data-kb-lit aria-describedby={help}

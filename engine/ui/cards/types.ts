@@ -88,6 +88,8 @@ export interface EffectProps {
    * clears what it said when it is gone.
    */
   readonly note: (play: Id, line: string | null) => void;
+  /** A character's name as the screen the post is drawn on knows it, for a card that names a play's caster ("top: Spritey's yellow"). */
+  readonly nameOf: (character: Id | null) => string;
   readonly children: ReactNode;
 }
 

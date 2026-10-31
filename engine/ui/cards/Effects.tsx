@@ -37,7 +37,11 @@ import './cards.css';
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 
 /** Wraps a post's words in the effect of each card played on it, in play order. */
-export function PostEffects({ plays, post, place, slot, children }: { readonly plays: Plays; readonly post: Act; readonly place: EffectPlace; readonly slot?: RefObject<HTMLElement | null>; readonly children: ReactNode }) {
+export function PostEffects({ plays, post, place, slot, nameOf, children }: {
+  readonly plays: Plays; readonly post: Act; readonly place: EffectPlace; readonly slot?: RefObject<HTMLElement | null>;
+  /** A character's name as the screen knows it, for an effect that names a caster. */
+  readonly nameOf: (character: Id | null) => string; readonly children: ReactNode;
+}) {
   const [own, setOwn] = useState<HTMLElement | null>(null);
   const hosted = slot !== undefined;
   /* The slot the thread's post draws is read once it is mounted, here, so only the effect is drawn again and not the post's words. */
@@ -75,7 +79,7 @@ export function PostEffects({ plays, post, place, slot, children }: { readonly p
     const Effect = card.Effect;
     wrapped = (
       <Effect
-        key={key} post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} save={save} release={release} note={note}
+        key={key} post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} save={save} release={release} note={note} nameOf={nameOf}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
         {wrapped}
