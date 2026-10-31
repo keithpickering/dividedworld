@@ -273,7 +273,12 @@ There's no way the current #000 text against that magenta ink passes contrast, a
 too." So every post, splatted or not, carries an opaque footer bar in the 2003 chrome, drawn like its header bar (the
 same ground, rule and type), holding its action row (Quote, Spin thread, Edit, History, Play card); no 2003 text lies on ink. The owner then:
 "Note: reactions are fine as is. They already each have an individual solid background+border", so the reactions
-row stays as it is, over the ink, each chip read against its own ground. The splat fills the body between the
+row stays as it is, over the ink, each chip read against its own ground. And then: "why do we have "Play card" in this row at all
+anymore? It's a game act so it should be Glass, right? I believe the flow is Hand -> Select a card -> glass-styled
+button appears on each applicable post?" So "Play card" leaves the post's action row everywhere (Task 3's "from a post"
+path is gone): the footer bar holds only the board's own actions, Quote, Spin thread, Edit and History, and a card is
+played only from the hand: the HUD's Hand, arm a card, then its glass "Play … here" tile on a post it can land on.
+Boards 01 and 02 draw "Play card" in the row; their manifests say it differs by this answer. The splat fills the body between the
 header bar and the footer bar, edge to edge; both bars draw over it and are never inked, so nothing's contrast depends
 on an ink a player picks, and a splat never moves the layout. Boards 01 and 02 draw the row without a bar: that region
 differs by this answer and their manifests say so. **Tests first:** at 390 and 1440 every footer control's text read
