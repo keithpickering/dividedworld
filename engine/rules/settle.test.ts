@@ -877,3 +877,30 @@ test('an entry whose estimate holds weight of its sign on no Act has no shares, 
   assert.equal(entries.find((e) => e.reason === 'placed.both')?.amount, 20);
   assert.deepEqual(shareEntries(input, world, entries).filter((s) => s.character === 'bob-1').map((s) => [s.reason, s.act, s.amount]), [['placed.post', 'q1', 10]]);
 });
+
+test('a reaction reaches the class of the reacted Act\'s author with the Act\'s own time: never the window\'s start or the reaction\'s', () => {
+  seen.length = 0;
+  const b = base();
+  // Bob's old post, made two windows before this one; Cat reacts to it in this window.
+  const old = FROM - 2 * (TO - FROM) + 5 * H;
+  settle({ ...b, acts: [...b.acts, post('old', 'bob-1', old)], reactions: [...b.reactions, react('old', 'cat', 'cat-1', 'tea', FROM + 7 * H)] }, instance);
+  const got = seen.filter((s) => s.character === 'bob-1').flatMap((s) => s.received).filter((r) => r.act === 'old');
+  assert.equal(got.length, 1);
+  assert.equal(got[0]!.actAt, old);
+  assert.equal(got[0]!.at, FROM + 7 * H);
+});
+
+test('a reaction on a card carries the card\'s own time', () => {
+  seen.length = 0;
+  const b = base();
+  const cardAt = FROM - 30 * H;
+  settle({
+    ...b,
+    acts: [...b.acts, { id: 'k1', character: 'bob-1', kind: 'card', at: cardAt, thread: 't1', target: 'p1', card: 'splat' }],
+    reactions: [...b.reactions, react('k1', 'cat', 'cat-1', 'fire', FROM + 12 * H)],
+  }, instance);
+  const got = seen.filter((s) => s.character === 'bob-1').flatMap((s) => s.received).filter((r) => r.act === 'k1');
+  assert.equal(got.length, 1);
+  assert.equal(got[0]!.actKind, 'card');
+  assert.equal(got[0]!.actAt, cardAt);
+});
