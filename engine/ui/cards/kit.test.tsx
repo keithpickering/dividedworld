@@ -16,10 +16,33 @@ describe('hold', () => {
     const b = screen.getByRole('button', { name: 'Hold to scrub' });
     fireEvent.pointerDown(b);
     expect(start).toHaveBeenCalledTimes(1);
+    expect(stop).not.toHaveBeenCalled();
     fireEvent.pointerUp(b);
+    expect(stop).toHaveBeenCalledTimes(1);
     fireEvent.pointerLeave(b);
+    expect(stop).toHaveBeenCalledTimes(2);
     fireEvent.pointerCancel(b);
     expect(stop).toHaveBeenCalledTimes(3);
+  });
+
+  test('Tab and other keys do not start it', () => {
+    const start = vi.fn();
+    draw([hold(start)]);
+    const b = screen.getByRole('button', { name: 'Hold to scrub' });
+    fireEvent.keyDown(b, { key: 'Tab' });
+    fireEvent.keyDown(b, { key: 'a' });
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test('unmounted mid-hold, it stops once; unmounted at rest, it does not', () => {
+    const start = vi.fn(), stop = vi.fn();
+    const held = draw([hold(start, stop)]);
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Hold to scrub' }));
+    held.unmount();
+    expect(stop).toHaveBeenCalledTimes(1);
+    const stop2 = vi.fn();
+    draw([hold(vi.fn(), stop2)]).unmount();
+    expect(stop2).not.toHaveBeenCalled();
   });
 
   test.each([' ', 'Enter'])('starts on %j keydown and stops on keyup', (key) => {
@@ -33,13 +56,14 @@ describe('hold', () => {
   });
 
   test("a key's auto-repeat calls start once", () => {
-    const start = vi.fn();
-    draw([hold(start)]);
+    const start = vi.fn(), stop = vi.fn();
+    draw([hold(start, stop)]);
     const b = screen.getByRole('button', { name: 'Hold to scrub' });
     fireEvent.keyDown(b, { key: ' ' });
     fireEvent.keyDown(b, { key: ' ', repeat: true });
     fireEvent.keyDown(b, { key: ' ', repeat: true });
     expect(start).toHaveBeenCalledTimes(1);
+    expect(stop).not.toHaveBeenCalled();
   });
 
   test('blur stops, the context menu is swallowed, and describe is its description', () => {
@@ -68,6 +92,25 @@ describe('the other controls', () => {
     expect(b).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(b);
     expect(set).toHaveBeenCalledWith(false);
+  });
+
+  test('a toggle that is off sets true', () => {
+    const set = vi.fn();
+    draw([{ kind: 'toggle', label: 'Write in ink', on: false, set }]);
+    const b = screen.getByRole('button', { name: 'Write in ink' });
+    expect(b).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(b);
+    expect(set).toHaveBeenCalledWith(true);
+  });
+
+  test("the card's ink becomes --kb-tag on the container", () => {
+    const { container } = draw([{ kind: 'press', label: 'Reveal', run: vi.fn() }]);
+    expect((container.querySelector('.kb-kit') as HTMLElement).style.getPropertyValue('--kb-tag')).toBe('var(--kb-glass-neon)');
+  });
+
+  test('no controls draw nothing', () => {
+    const { container } = draw([]);
+    expect(container.querySelector('.kb-kit')).toBeNull();
   });
 
   test('choose is a named group; pressing an option reports its value', () => {

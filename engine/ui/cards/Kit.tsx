@@ -4,12 +4,12 @@
  * of size, focus and labels, at the glass's own face and size tokens (kit.css). At most two are drawn: a card that needs
  * more has more to say than a post has room for, and says it in the Lens instead.
  *
- * `hold` is Whoops!'s "Hold to scrub" handling, moved here unchanged in behavior: it starts on pointer down or on Space or
+ * `hold` is Whoops!'s "Hold to scrub" handling, moved here with the same behavior (and one addition: it is stopped if it unmounts mid-hold, as Whoops! stops its sweep on unmount): it starts on pointer down or on Space or
  * Enter (never on the key's auto-repeat, which would start it again and again), and stops on pointer up, leave or cancel,
  * on key up and on blur, so a hold that loses its pointer or its focus can never be left running. The context menu is
  * swallowed (a long press on a touch screen would open it and cancel the hold).
  */
-import { useId, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { Link } from '../router.tsx';
 import type { KitControl } from './types.ts';
 import './kit.css';
@@ -20,17 +20,25 @@ export const KIT_MAX = 2;
 const swallow = (e: { preventDefault(): void }) => e.preventDefault();
 const isActivation = (e: KeyboardEvent) => e.key === ' ' || e.key === 'Enter';
 
-function Tile({ children, ...rest }: { readonly children: ReactNode } & Record<string, unknown>) {
+type TileProps = ButtonHTMLAttributes<HTMLButtonElement> & { readonly 'data-kb-lit'?: ''; readonly 'data-kb-hold'?: '' };
+
+function Tile({ children, ...rest }: TileProps) {
   return <button type="button" className="kb-kit-tile" {...rest}><span className="kb-kit-tile-label">{children}</span></button>;
 }
 
 function Hold({ control }: { readonly control: Extract<KitControl, { kind: 'hold' }> }) {
   const help = useId();
-  const { start, stop } = control;
+  const live = useRef(control);
+  live.current = control;
+  const holding = useRef(false);
+  const start = () => { holding.current = true; control.start(); };
+  const stop = () => { holding.current = false; control.stop(); };
+  /* Gone mid-hold (the post scrolled away, the card taken off): stopped once, as the hold would have been by a release. */
+  useEffect(() => () => { if (holding.current) live.current.stop(); }, []);
   return (
     <>
       <Tile
-        data-kb-lit="" aria-describedby={control.describe ? help : undefined}
+        data-kb-hold="" data-kb-lit="" aria-describedby={control.describe ? help : undefined}
         onPointerDown={(e: PointerEvent) => { swallow(e); start(); }} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop} onBlur={stop}
         onContextMenu={swallow}
         onKeyDown={(e: KeyboardEvent) => { if (!isActivation(e)) return; e.preventDefault(); if (!e.repeat) start(); }}
@@ -44,14 +52,15 @@ function Hold({ control }: { readonly control: Extract<KitControl, { kind: 'hold
 }
 
 function One({ control }: { readonly control: KitControl }) {
+  const labelId = useId();
   switch (control.kind) {
     case 'hold': return <Hold control={control} />;
     case 'press': return <Tile onClick={control.run}>{control.label}</Tile>;
     case 'toggle': return <Tile aria-pressed={control.on} onClick={() => control.set(!control.on)}>{control.label}</Tile>;
     case 'choose':
       return (
-        <span className="kb-kit-group" role="group" aria-label={control.label}>
-          <span className="kb-kit-group-label" aria-hidden="true">{control.label}</span>
+        <span className="kb-kit-group" role="group" aria-labelledby={labelId}>
+          <span id={labelId} className="kb-kit-group-label">{control.label}</span>
           {control.options.map((o) => <Tile key={o.value} aria-pressed={o.value === control.value} onClick={() => control.choose(o.value)}>{o.label}</Tile>)}
         </span>
       );
@@ -73,7 +82,7 @@ export function Kit({ card, controls, ink }: {
   if (drawn.length === 0) return null;
   return (
     <div className="kb-kit" style={ink ? ({ '--kb-tag': ink } as CSSProperties) : undefined}>
-      {drawn.map((c, i) => <One key={i} control={c} />)}
+      {drawn.map((c, i) => <One key={`${c.kind}:${i}`} control={c} />)}
     </div>
   );
 }

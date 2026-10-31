@@ -53,7 +53,7 @@ export type EffectPlace = 'thread' | 'origin';
  * card's controls share one floor of size, focus and labels; the card says only what each does.
  */
 export type KitControl =
-  /** Held down to act: `start` on pointer down or Space/Enter, `stop` on release, leave, cancel, key up and blur. */
+  /** Held down to act: `start` on pointer down or Space/Enter, `stop` on release, leave, cancel, key up and blur, and when the tile unmounts mid-hold. `stop` may be called without a `start` before it (a pointer leaving a tile that was never pressed), so it must be idempotent. */
   | { readonly kind: 'hold'; readonly label: string; readonly describe?: string; readonly start: () => void; readonly stop: () => void }
   | { readonly kind: 'press'; readonly label: string; readonly run: () => void }
   | { readonly kind: 'toggle'; readonly label: string; readonly on: boolean; readonly set: (on: boolean) => void }
