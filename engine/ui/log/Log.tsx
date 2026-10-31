@@ -157,6 +157,15 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
   const current = tabs.find((c) => c.id === tab) ?? null;
   const rows = logRows(data, words, settings.walletCap, current?.id ?? null);
   const settled = data.log.settlements.length > 0;
+  /* Show older lines goes once the last page is read: focus moves to the table it filled, never to the page's top. */
+  const table = useRef<HTMLTableElement>(null);
+  const reading = useRef(false);
+  const last = data.log.before === null;
+  useEffect(() => {
+    if (!last || !reading.current) return;
+    reading.current = false;
+    table.current?.focus();
+  }, [last]);
   return (
     <div className="kb-log">
       <div className="kb-log-head">
@@ -178,7 +187,7 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
         ? <p className="kb-log-empty kb-calm">Nothing has settled for you yet. Your first settlement is the first line here.</p>
         : (
           <div className="kb-log-board kb-calm">
-            <table className="kb-log-table">
+            <table ref={table} className="kb-log-table" tabIndex={-1}>
               <caption className="kb-visually-hidden">{current ? `${current.name}'s log` : 'Your log'}, newest first</caption>
               <thead>
                 <tr>
@@ -194,9 +203,10 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
               </tbody>
             </table>
             {!settled && <p className="kb-log-empty">Nothing has settled for you yet. Your first settlement is the first line here.</p>}
+            {settled && rows.length === 0 && <p className="kb-log-empty">Nothing on these pages is {current?.name ?? 'yours'}'s yet.</p>}
             {onOlder && data.log.before !== null && (
               <p className="kb-log-older">
-                <button type="button" className="kb-log-posts kb-glass-skew" onClick={onOlder} disabled={older === 'loading'}><span className="kb-glass-upright">Show older lines</span></button>
+                <button type="button" className="kb-log-posts kb-glass-skew" onClick={() => { reading.current = true; onOlder(); }} disabled={older === 'loading'}><span className="kb-glass-upright">Show older lines</span></button>
                 {older === 'failed' && <span className="kb-log-older-failed"> The older lines could not be read. Try again.</span>}
               </p>
             )}

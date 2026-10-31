@@ -58,6 +58,9 @@ const NOT_READ = 'that could not be read right now; try again';
 /** PostgREST answers at most this many rows to one request unless told fewer; every list read here asks for fewer, ordered. */
 const ROW_CAP = 1000;
 const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
+/** The most ids one read by id names, so its address stays short whoever asks (a page of the log can name a thousand Acts). */
+const ID_CHUNK = 100;
+const chunks = <T,>(xs: readonly T[]): T[][] => Array.from({ length: Math.ceil(xs.length / ID_CHUNK) }, (_, i) => xs.slice(i * ID_CHUNK, (i + 1) * ID_CHUNK));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /* ------------------------------------------------------------------- row mappers ---- */
@@ -520,8 +523,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async actsById(ids) {
       const wanted = [...new Set(ids)].filter(idOk);
       if (wanted.length === 0) return [];
-      const rows = await list(() => client.from('acts_public').select('*').in('id', wanted));
-      return rows.map(toAct);
+      const rows = await Promise.all(chunks(wanted).map((part) => list(() => client.from('acts_public').select('*').in('id', part))));
+      return rows.flat().map(toAct);
     },
     async history(post) {
       if (!idOk(post)) return [];
@@ -554,7 +557,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const wanted = [...new Set(plays)].filter(idOk);
       const out: Record<Id, EffectState> = {};
       if (wanted.length === 0) return out;
-      for (const r of await list(() => client.from('effect_state').select('play,state,saved_at').in('play', wanted))) out[r['play']] = { state: r['state'], savedAt: r['saved_at'] };
+      const rows = await Promise.all(chunks(wanted).map((part) => list(() => client.from('effect_state').select('play,state,saved_at').in('play', part))));
+      for (const r of rows.flat()) out[r['play']] = { state: r['state'], savedAt: r['saved_at'] };
       return out;
     },
     async myReleases(plays) {

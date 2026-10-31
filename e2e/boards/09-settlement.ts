@@ -70,12 +70,15 @@ const manifest: BoardManifest = {
     { id: 'rank-pips', role: 'img', name: 'Rank: 3 of 6 pips', within: 'rank', type: false },
     { id: 'rank-words', role: 'text', name: 'Season standing 2.95 → 3.30. Every post of Pipewrench\'s now shows the new rank.', within: 'rank' },
 
-    { id: 'turn', role: 'region', name: 'Turn', type: false },
+    /* The Turn's sentence names the settlement's day (below), a line longer than the board's: the card is compared by position. */
+    { id: 'turn', role: 'region', name: 'Turn', type: false, box: 'position' },
     { id: 'turn-was', role: 'text', name: 'Heel', within: 'turn' },
     { id: 'turn-now', role: 'text', name: 'Face', within: 'turn', type: false },
     {
-      id: 'turn-words', role: 'text', within: 'turn',
+      id: 'turn-words', role: 'text', within: 'turn', box: 'position',
       name: 'Pipewrench\'s Turn took effect. From today it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.',
+      /* The summary opens on a later load too, and by its address, where "today" would be false: the settlement's own day is always true. */
+      buildName: 'Pipewrench\'s Turn took effect. From the Oct 30 settlement it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.',
     },
 
     { id: 'log', role: 'link', name: 'Open my log' },

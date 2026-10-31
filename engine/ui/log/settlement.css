@@ -135,6 +135,14 @@
   color: var(--kb-glass-neon-text);
 }
 
+.kb-settled-across {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
 .kb-settled-change[data-kb-sign='-1'] {
   color: var(--kb-glass-loss);
 }

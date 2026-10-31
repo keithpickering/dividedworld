@@ -12,6 +12,11 @@
  * A Turn is read from `MyCharacter.classSince`, which is the latest Turn's alone, so only a character's
  * latest Turn is a line; a rank change is read from the standing the season holds now less the lines
  * settled after it, so it is drawn for the open season's settlements and never across a season's end.
+ * The standing and the log are two reads: a settlement applied between them would shift a rank line
+ * by that settlement until the next load (a moment in a day; the settlement's own row is true).
+ *
+ * A settlement's row says the player's characters' lines; its wallet is the account's, every
+ * character's lines together, and the summary says so beside one character's reasons.
  */
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance } from '../../rules/types.ts';
@@ -176,7 +181,6 @@ export function rankChanges(data: Pick<LogData, 'log' | 'standings' | 'season' |
     for (const s of newestFirst) {
       if (micros(s.startsAt) < seasonStart) break;
       const moved = s.lines.filter((l) => l.character === c.id).reduce((sum, l) => sum + l.amount, 0);
-      if (moved === 0) continue;
       const before = after - moved;
       const rankWas = rankIndex(instance.ranks, before);
       const rankNow = rankIndex(instance.ranks, after);
@@ -291,14 +295,23 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
  */
 function cardRows(data: LogData, words: Words): LogRow[] {
   const { instance, ui } = words;
-  const cardName = (key: unknown) => instance.cards.find((c) => c.key === key)?.name ?? String(key);
+  /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
+  const cardName = (key: unknown) => instance.cards.find((c) => c.key === key)?.name ?? 'a card';
   const mine = (id: Id | null | undefined) => id !== null && id !== undefined && data.mine.some((c) => c.id === id);
-  const nameOf = (id: Id | null | undefined) => (id ? data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? 'A character' : 'A character');
+  const nameOf = (id: Id | null | undefined, unknown: string) => (id ? data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? unknown : unknown);
   const at = (iso: string) => micros(iso);
   const rows: LogRow[] = [];
+  /* Each wallet event is one card line's: two purchases at one instant and one price take one event each, in the order both were read. */
+  const used = new Set<number>();
+  const take = (match: (w: WalletEvent) => boolean) => {
+    const i = data.log.wallet.findIndex((w, n) => !used.has(n) && match(w));
+    if (i < 0) return undefined;
+    used.add(i);
+    return data.log.wallet[i];
+  };
   data.log.cards.forEach((e, i) => {
     if (e.kind === 'bought') {
-      const spent = data.log.wallet.find((w) => w.kind === 'purchase' && at(w.at) === at(e.at) && w.change === -e.price);
+      const spent = take((w) => w.kind === 'purchase' && at(w.at) === at(e.at) && w.change === -e.price);
       rows.push({
         key: `bought:${i}`, kind: 'bought', at: e.at, what: `You bought ${cardName(e.card)}`, details: [`From the ${ui.copy.shopName}, for ${plain(e.price)}.`],
         aura: -e.price, wallet: spent?.balanceAfter ?? null, characters: [],
@@ -310,11 +323,11 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const caster = play?.character ?? null;
     const link = post ? actLink(post, data, words, caster ?? undefined) : null;
     const ownOther = mine(post?.character) && post?.character !== caster;
-    const paid = data.log.wallet.find((w) => w.kind === 'play' && w.ref === e.act);
+    const paid = take((w) => w.kind === 'play' && w.ref === e.act);
     rows.push({
       key: `played:${e.act ?? i}`, kind: 'played', at: e.at, what: `You played ${cardName(e.card)}`,
       details: [
-        `As ${nameOf(caster)}, on `, link ?? 'a post', `${ownOther ? ', a post of one of your own characters' : ''}. `,
+        `As ${nameOf(caster, 'one of your characters')}, on `, link ?? 'a post', `${ownOther ? ', a post of one of your own characters' : ''}. `,
         `The card was paid for at the machine; ${e.price > 0 ? `this post added ${plain(e.price)}.` : 'this play cost nothing more.'}`,
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
@@ -323,10 +336,10 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   for (const p of data.log.playsOnMine) {
     const play = data.acts.get(p.play);
     const post = data.acts.get(p.post);
-    const message = typeof play?.payload.message === 'string' && play.payload.message !== '' ? play.payload.message : null;
+    const message = typeof play?.payload.message === 'string' && play.payload.message.trim() !== '' ? play.payload.message.trim() : null;
     rows.push({
       key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: 'A card on your post',
-      details: [`${nameOf(play?.character)} played ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `${message ? `, with the message “${message}”` : ''}.`],
+      details: [`${nameOf(play?.character, 'Someone')} played ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `${message ? `, with the message “${message}”` : ''}.`],
       aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
     });
   }
@@ -337,7 +350,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     if (!said) continue;
     rows.push({
       key: `saved:${s.play}`, kind: 'saved', at: s.savedAt, what: said.what,
-      details: [`${nameOf(play?.character)}'s ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `. ${said.said}`],
+      details: [`${nameOf(play?.character, 'Someone')}'s ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `. ${said.said}`],
       aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
     });
   }

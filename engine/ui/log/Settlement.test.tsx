@@ -69,6 +69,8 @@ describe('the settlement\'s summary', () => {
     expect(within(wallet).getByText('2.90 →')).toBeInTheDocument();
     expect(within(wallet).getByText('6.00')).toBeInTheDocument();
     expect(within(wallet).getByText('+3.10')).toBeInTheDocument();
+    /* The wallet is every character's together, beside one character's reasons: it says so. */
+    expect(within(wallet).getByText('all your characters')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Why, in plain words · scored as a Heel' })).toBeInTheDocument();
     const lines = within(screen.getByRole('list', { name: 'Why, in plain words · scored as a Heel' })).getAllByRole('listitem').map((li) => li.textContent);
     expect(lines).toEqual([
@@ -90,7 +92,7 @@ describe('the settlement\'s summary', () => {
     const turn = screen.getByRole('region', { name: 'Turn' });
     expect(within(turn).getByText('Heel')).toBeInTheDocument();
     expect(within(turn).getByText('Face')).toBeInTheDocument();
-    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From today it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.');
+    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.');
   });
 
   test('each line is the log\'s line for the same reason: the same name and the same amount', async () => {
@@ -183,6 +185,24 @@ describe('the summary on the first load after a settlement', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(where.path).toBe('/characters');
     expect(localStorage.getItem(seenKey(later.me))).toBeNull();
+  });
+
+  test('opened by its address, the summary marks its settlement seen, so a load after does not open it again', async () => {
+    const { fake, me, pipe } = world();
+    openSummary(fake, me, pipe);
+    await screen.findByRole('heading', { level: 1, name: 'While you were away' });
+    await waitFor(() => expect(localStorage.getItem(seenKey(me))).toBe(new Date(at(29, 8, 17)).toISOString()));
+  });
+
+  test('a newest settlement that held nothing of the player\'s does not open an older one that did', async () => {
+    const { fake, me } = world();
+    const other = fake.seed.account('other');
+    const glo = fake.seed.character(other, 'Gloomba', 'heel');
+    fake.seed.settle({ at: at(30, 8, 17), debut: false, turns: false, ledger: [{ character: glo, reason: 'heel.drewHeat', amount: 10 }] });
+    localStorage.clear();
+    load(fake);
+    await waitFor(() => expect(localStorage.getItem(seenKey(me))).toBe(new Date(at(30, 8, 17)).toISOString()));
+    expect(where.path).toBe('/');
   });
 
   test('a settlement that held nothing of the player\'s is marked seen without opening', async () => {

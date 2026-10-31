@@ -1016,3 +1016,22 @@ describe('the log', () => {
     expect(log.settlements[0]?.lines.map((l) => l.shares.length)).toEqual([1019, 1]);
   });
 });
+
+describe('reads by many ids', () => {
+  const id = (n: number) => `${A.slice(0, -4)}${String(n).padStart(4, '0')}`;
+  it('reads Acts and effect states by id in chunks, so no request carries an address too long for a proxy, and every id is read once', async () => {
+    const h = harness((r) => {
+      const asked = (r.url.searchParams.get('id') ?? r.url.searchParams.get('play') ?? '').replace(/^in\.\(|\)$/gu, '').split(',').filter(Boolean);
+      return r.url.pathname.endsWith('/acts_public') ? rows(asked.map((a) => ({ ...ACT_ROW, id: a }))) : rows(asked.map((a) => ({ play: a, state: {}, saved_at: '2026-10-30T00:00:00Z' })));
+    });
+    const ids = Array.from({ length: 450 }, (_, n) => id(n));
+    expect((await h.api.actsById(ids)).length).toBe(450);
+    expect(Object.keys(await h.api.effectStates(ids)).length).toBe(450);
+    for (const name of ['acts_public', 'effect_state']) {
+      const reqs = h.to(name);
+      expect(reqs.length).toBe(5);
+      for (const r of reqs) expect(r.url.toString().length).toBeLessThan(8000);
+    }
+  });
+});
+

@@ -16,7 +16,8 @@
  * (a board page, not a glass page the player went to), it asks when the last settlement was
  * (`lastSettledAt`, public) and, if this device has not marked it seen for this account, reads the log;
  * a settlement that holds a line of the player's opens the summary, and one that holds nothing of
- * theirs is marked seen without opening (a Turn alone, with no line, is the log's and the roster's). The mark is this device's alone
+ * theirs is marked seen without opening. (A Turn that took effect in a window none of the player's characters scored in is on
+ * the roster alone: the log's settlements are the ones the player has lines in, my_ledger's.) The mark is this device's alone
  * (`kb-settled-seen:<account>`), sent nowhere (the design, Open: the last settlement seen is kept on
  * the device). It is set as the summary shows, so it does not show again after either way out.
  */
@@ -30,7 +31,8 @@ import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link, useNavigate } from '../router.tsx';
-import { heldBack, inOrder, plain, rankChanges, scoredAs, signed, turnsTaken, utcWhen, type LogData, type Words } from './lines.ts';
+import { pageOf, threadHref } from '../thread/pages.ts';
+import { heldBack, inOrder, plain, rankChanges, scoredAs, signed, turnsTaken, utcDay, utcWhen, type LogData, type Words } from './lines.ts';
 import { tabsOf, type LogOpening } from './Log.tsx';
 import { useLog } from './useLog.ts';
 import './settlement.css';
@@ -88,6 +90,8 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
                   <span className="kb-settled-was">{plain(event.balanceAfter - event.change)} →</span>
                   <span className="kb-settled-now kb-glass-display">{plain(event.balanceAfter)}</span>
                   <span className="kb-settled-change" data-kb-sign={Math.sign(event.change)}>{signed(event.change)}</span>
+                  {/* The wallet is the account's, every character's lines together; the reasons below are this tab's character's. */}
+                  <span className="kb-settled-across">all your characters</span>
                 </p>
               </>
             )
@@ -129,9 +133,9 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
                 <span className="kb-settled-turn-now kb-glass-display">{className(turn.classNow)}</span>
               </div>
               <p className="kb-settled-card-words">
-                {current?.name}'s Turn took effect. From today it scores as {/^[aeiou]/iu.test(className(turn.classNow)) ? 'an' : 'a'} {className(turn.classNow)}.{' '}
+                {current?.name}'s Turn took effect. From the {utcDay(s.endsAt)} settlement it scores as {/^[aeiou]/iu.test(className(turn.classNow)) ? 'an' : 'a'} {className(turn.classNow)}.{' '}
                 {turn.announced
-                  ? <>The System announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <Link to={`/t/${turnAct.thread}`}>{turnTitle}</Link> : 'its board'}.</>
+                  ? <>The System announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <Link to={turnAct.seq !== null ? threadHref(turnAct.thread, pageOf(turnAct.seq, settings.postsPerPage), turnAct.seq) : threadHref(turnAct.thread, 1)}>{turnTitle}</Link> : 'its board'}.</>
                   : 'It was a silent Turn: no one else was told.'}
               </p>
             </section>

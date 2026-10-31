@@ -213,6 +213,63 @@ describe('My log', () => {
     expect(screen.queryByRole('button', { name: 'Show older lines' })).toBeNull();
   });
 
+  test('an older page reads only what is new to it: the player\'s own state once, and no Act a page before named', async () => {
+    const { fake, me, pipe } = world();
+    const real = fake.log.bind(fake);
+    const first = await real();
+    vi.spyOn(fake, 'log').mockImplementation(async (before) => (before
+      ? { ...first, settlements: first.settlements.slice(1), wallet: [], before: null }
+      : { ...first, settlements: first.settlements.slice(0, 1), before: first.settlements[0]!.endsAt }));
+    const mine = vi.spyOn(fake, 'myCharacters');
+    const acts = vi.spyOn(fake, 'actsById');
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    const asked = new Set(acts.mock.calls.flatMap(([ids]) => [...ids]));
+    const mineCalls = mine.mock.calls.length;
+    acts.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Show older lines' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Show older lines' })).toBeNull());
+    expect(mine.mock.calls.length).toBe(mineCalls);
+    for (const [ids] of acts.mock.calls) for (const id of ids) expect(asked.has(id)).toBe(false);
+    /* Show older lines is gone, so focus is on the table it filled, not lost to the page. */
+    await waitFor(() => expect(screen.getByRole('table')).toHaveFocus());
+  });
+
+  test('an older page that cannot be read says so and keeps what is shown; a failed estimate leaves the rest of the log', async () => {
+    const { fake, me, pipe } = world();
+    const real = fake.log.bind(fake);
+    const first = await real();
+    vi.spyOn(fake, 'log').mockImplementation(async (before) => {
+      if (before) throw new Error('lost');
+      return { ...first, before: first.settlements[0]!.endsAt };
+    });
+    vi.spyOn(fake, 'estimate').mockRejectedValue(new Error('lost'));
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    expect(bodyRows().map(cells)[0]![1]).toBe('Settlement');
+    fireEvent.click(screen.getByRole('button', { name: 'Show older lines' }));
+    expect(await screen.findByText(/The older lines could not be read\. Try again\./u)).toBeInTheDocument();
+    expect(bodyRows().length).toBeGreaterThan(0);
+  });
+
+  test('a read that only names something (a character, a thread) failing leaves the log, in plain words', async () => {
+    const { fake, me, pipe } = world();
+    vi.spyOn(fake, 'thread').mockRejectedValue(new Error('lost'));
+    vi.spyOn(fake, 'characters').mockRejectedValue(new Error('lost'));
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    expect(bodyRows().map(cells)[1]![2]).toBe('Pipewrench is a Face now. Announced with its old class in The System\'s board.');
+  });
+
+  test('a tab with nothing on the pages read says so, rather than an empty table', async () => {
+    const { fake, me, pipe } = world();
+    fake.seed.character(me, 'Spritey', 'face', { at: at(5) });
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    fireEvent.click(tab('Spritey'));
+    expect(screen.getByText('Nothing on these pages is Spritey\'s yet.')).toBeInTheDocument();
+  });
+
   test('signed out, asks the player to sign in and reads nothing', async () => {
     const { fake, me, pipe } = world();
     fake.signInAs(null);
@@ -222,11 +279,19 @@ describe('My log', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  test('another account signing in reads its own log, never the last one\'s', async () => {
+  test('another account signing in reads its own log, never the last one\'s, not for a moment', async () => {
     const { fake, me, rival, pipe } = world();
     open(fake, me, pipe);
     await screen.findByRole('table');
+    /* The next account's log is slow to come: nothing of the last one's is drawn meanwhile. */
+    const real = fake.log.bind(fake);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    vi.spyOn(fake, 'log').mockImplementation(async (b) => { await gate; return real(b); });
     act(() => fake.signInAs(rival));
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    expect(document.body.textContent).not.toContain('Pipewrench');
+    release();
     await waitFor(() => expect(screen.getByText('Nothing has settled for you yet. Your first settlement is the first line here.')).toBeInTheDocument());
     expect(document.body.textContent).not.toContain('Pipewrench');
   });
@@ -312,6 +377,37 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     const rows = await rowsOf();
     expect(rows.map((r) => r[1])).toContain('Washed clean');
     expect(rows.find((r) => r[1] === 'Washed clean')![2]).toBe('Gloomba\'s Whoops! on your post #2. The layer is washed clean, for every reader.');
+  });
+
+  test('each purchase and play shows its own wallet after it, two at one instant and at one price included', async () => {
+    const { fake, me, pipe, g1, p2 } = cardWorld();
+    fake.seed.wallet(me, 500);
+    fake.seed.buy(me, 'whoops', { at: at(28, 12) });
+    fake.seed.buy(me, 'whoops', { at: at(28, 12) });
+    fake.seed.card(pipe, g1, 'whoops', { at: at(28, 13), paid: 25 });
+    fake.seed.card(pipe, p2, 'whoops', { at: at(28, 14), paid: 50 });
+    show(fake, me, pipe);
+    const rows = (await rowsOf()).map((r) => [r[1], r[3], r[4]]);
+    expect(rows).toEqual([
+      ['You played Whoops!', '−0.50', '2.25'],
+      ['You played Whoops!', '−0.25', '2.75'],
+      ['You bought Whoops!', '−1.00', '3.00'],
+      ['You bought Whoops!', '−1.00', '4.00'],
+    ]);
+  });
+
+  test('a play the log cannot read, or a card the instance no longer has, is said in plain words, never as a key or "undefined"', async () => {
+    const { fake, me, pipe, glo, p2, g1 } = cardWorld();
+    fake.seed.card(glo, p2, 'retired-card', { at: at(28, 14), message: '   ' });
+    const mine = fake.seed.card(pipe, g1, 'whoops', { at: at(28, 15), paid: 0 });
+    const real = fake.actsById.bind(fake);
+    vi.spyOn(fake, 'actsById').mockImplementation(async (ids) => (await real(ids)).filter((a) => a.id !== mine));
+    show(fake, me, pipe);
+    const rows = await rowsOf();
+    const text = rows.map((r) => r.join(' ')).join(' ');
+    expect(text).not.toMatch(/undefined|retired-card|null/u);
+    expect(rows.find((r) => r[1] === 'A card on your post')![2]).toBe('Gloomba played a card on your post #2.');
+    expect(rows.find((r) => r[1] === 'You played Whoops!')![2]).toBe('As one of your characters, on a post. The card was paid for at the machine; this play cost nothing more.');
   });
 
   test('a release from Stick Around is reading, and the log does not track it', async () => {

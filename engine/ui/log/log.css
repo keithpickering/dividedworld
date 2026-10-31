@@ -98,6 +98,12 @@
   border-collapse: collapse;
 }
 
+/* Focus comes to the table from Show older lines' last page, and shows as every glass control's does. */
+.kb-log-table:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
 /* A column's width is its cell's whole box, padding in, as the board's colgroup sets them. */
 .kb-log-table th,
 .kb-log-table td {
