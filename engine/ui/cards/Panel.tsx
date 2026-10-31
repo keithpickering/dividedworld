@@ -86,7 +86,7 @@ export function PlayPanel({ play, caster, tint, plays, tallies, mine, to, sheet,
       style={tint ? { '--kb-tag': tint } as CSSProperties : undefined}
       data={{ 'kb-panel': sheet ? 'sheet' : 'popover', 'kb-card': play.card, 'kb-alignment': rules?.alignment, 'kb-tinted': tint ? 'true' : undefined, 'kb-play': play.id }}
     >
-      <p className="kb-play-panel-by">{caster} · played <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
+      <p className="kb-play-panel-by"><span className="kb-play-panel-who kb-glass-display">{caster}</span> · played <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
       {play.message && <blockquote className="kb-play-panel-message">“{play.message}”</blockquote>}
       {plays && <Note plays={plays} play={play} />}
       <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} look="glass" />

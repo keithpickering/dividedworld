@@ -21,7 +21,7 @@
  * in play order, so the latest is outermost. A post with no plays, or whose plays' cards draw no
  * effect, is drawn untouched.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
@@ -174,8 +174,8 @@ const watchNarrow = (changed: () => void) => {
 /** Whether the window is at the thread's narrow width; a screen with no `matchMedia` is wide. */
 export const useNarrow = (): boolean => useSyncExternalStore(watchNarrow, () => queryOf()?.matches ?? false, () => false);
 
-/** Chips a desktop shows after the tag before "+N more". */
-export const CHIPS_SHOWN = 3;
+/** The edges of the stacked tags fanned behind the top one, at most: enough to see a stack, however many plays it holds. */
+export const STACK_EDGES = 3;
 /** Reactions a tag shows, small. */
 export const TAG_REACTIONS = 3;
 
@@ -224,7 +224,7 @@ export function PlayTag({ play, caster, tint, tallies, onOpen, expanded }: {
       <span className="kb-visually-hidden">{playSentence(card, caster, total)}</span>
       <span className="kb-play-tag-in kb-calm" aria-hidden="true">
         <span className="kb-play-tag-card">{card}</span>
-        <span className="kb-play-tag-who">{caster}</span>
+        <span className="kb-play-tag-who kb-glass-display">{caster}</span>
         {top.length > 0 && (
           <span className="kb-play-tag-reactions">
             {top.map(({ r, n }) => <span key={r.key} data-kb-reaction={r.key}>{r.emoji} {n}</span>)}
@@ -235,33 +235,16 @@ export function PlayTag({ play, caster, tint, tallies, onOpen, expanded }: {
   );
 }
 
-/** One play after the first, as a chip in its card's color (its alignment's, or the ink its card chose): a mark, its caster and the card's name. */
-function PlayChip({ play, caster, tint, tallies, onOpen, expanded }: {
-  readonly play: CardPlay; readonly caster: string; readonly tint?: string; readonly tallies: Tallies;
-  readonly onOpen: (opener: HTMLButtonElement) => void; readonly expanded: boolean;
-}) {
-  const { instance } = useKayfa();
-  const rules = instance.cards.find((c) => c.key === play.card);
-  const card = rules?.name ?? play.card;
-  const tally = useTally(tallies, play.id);
-  const total = Object.values(tally).reduce((a, b) => a + b, 0);
-  return (
-    <button
-      type="button" className="kb-play-chip" data-kb-card={play.card} data-kb-alignment={rules?.alignment} data-kb-tinted={tint ? 'true' : undefined}
-      data-kb-play={play.id} style={tint ? { '--kb-tag': tint } as CSSProperties : undefined} aria-haspopup="dialog" aria-expanded={expanded} onClick={(e) => onOpen(e.currentTarget)}
-    >
-      <span className="kb-visually-hidden">{playSentence(card, caster, total)}</span>
-      <span className="kb-play-chip-in" aria-hidden="true"><i className="kb-play-chip-mark" />{caster} · {card}</span>
-    </button>
-  );
-}
-
 /**
- * The plays on a post, quiet (design, section 3): the top-billed play as its tag, then the rest as chips in billing
- * order, up to `CHIPS_SHOWN` on a desktop and none at the thread's narrow width, then "+N more", a disclosure that shows
- * the rest in place until the page is read again. Billing is the store's, set when the page was read, so nothing here
- * moves while it is read. Each tag and chip opens its play; nothing at all is drawn where there are no plays. `to` is
- * the post's own address, which the play's panel leads back to as "Go to post"; `nameOf` says the caster's name.
+ * The plays on a post, quiet (the design's section 3, as the owner amended it on #97's shots): the top-billed play's
+ * tag, with the edges of the next few fanned behind it in their inks, for the eye alone, and a button that unstacks the
+ * rest into a list floating under it, over the post, like a dropdown: the post's height is the same stacked or not, at
+ * every width. Every play is the one tag that opens its panel, however long its caster's name or its card's. Billing is
+ * the store's, set when the page was read, so nothing moves while it is read.
+ *
+ * Its ways out: the button, Esc, a press outside it, and a read of the page, which stack it again. While a play's panel
+ * is open over it, the panel answers Esc and a press first, and the list stays as it was under it. `to` is the post's own
+ * address, which the panel leads back to as "Go to post"; `nameOf` says the caster's name.
  */
 export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
   readonly plays: Plays; readonly post: Id; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
@@ -269,46 +252,76 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
   /** Spin a thread from a play: the panel has closed, and the post opens its spin form for it, giving focus back to `opener` when the form closes. */
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
 }) {
-  const { ui } = useKayfa();
+  const { ui, instance } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useNarrow();
+  const id = useId();
   const list = useRef<HTMLUListElement>(null);
-  const [more, setMore] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const [unstacked, setUnstacked] = useState(false);
   const [open, setOpen] = useState<{ readonly play: Id; readonly opener: HTMLButtonElement } | null>(null);
-  /* A read of the page closes what was opened on it, before it is drawn again. */
+  /* A read of the page stacks it and closes what was opened on it, before it is drawn again. */
   const [seen, setSeen] = useState(here.read);
-  if (seen !== here.read) { setSeen(here.read); setMore(false); setOpen(null); }
+  if (seen !== here.read) { setSeen(here.read); setUnstacked(false); setOpen(null); }
+  /* A press outside the stack stacks it, unless a panel is open over it, which the press closes first. */
+  const panelOpen = open !== null;
+  useEffect(() => {
+    if (!unstacked || panelOpen) return;
+    const press = (e: PointerEvent) => { if (!list.current?.contains(e.target as Node)) setUnstacked(false); };
+    document.addEventListener('pointerdown', press);
+    return () => document.removeEventListener('pointerdown', press);
+  }, [unstacked, panelOpen]);
   if (here.billed.length === 0) return null;
   const [lead, ...rest] = here.billed;
-  const shown = more ? rest : rest.slice(0, narrow ? 0 : CHIPS_SHOWN);
-  const hidden = rest.length - (narrow ? 0 : Math.min(rest.length, CHIPS_SHOWN));
   const opener = (play: Id) => (el: HTMLButtonElement) => setOpen((was) => (was?.play === play ? null : { play, opener: el }));
   const opened = open ? here.plays.find((p) => p.id === open.play) ?? null : null;
-  /* A chip folded away while its panel was open gives focus to what holds it now: "+N more", or the tag. */
-  const fallback = () => list.current?.querySelector<HTMLElement>('.kb-play-more') ?? list.current?.querySelector<HTMLElement>('.kb-play-tag') ?? null;
+  const tagOf = (p: CardPlay) => (
+    <PlayTag play={p} caster={nameOf(p.caster)} tint={inkOf(ui, p, here.plays)} tallies={tallies} onOpen={opener(p.id)} expanded={open?.play === p.id} />
+  );
+  const stack = () => { setUnstacked(false); toggle.current?.focus(); };
   return (
-    <ul ref={list} className="kb-play-tags" aria-label="Cards played on this post">
+    <ul
+      ref={list} className="kb-play-tags" aria-label="Cards played on this post" data-kb-unstacked={unstacked ? 'true' : undefined}
+      onKeyDown={(e) => { if (e.key === 'Escape' && unstacked && !panelOpen) { e.stopPropagation(); stack(); } }}
+    >
       <li className="kb-play-tags-lead">
-        <PlayTag play={lead!} caster={nameOf(lead!.caster)} tint={inkOf(ui, lead!, here.plays)} tallies={tallies} onOpen={opener(lead!.id)} expanded={open?.play === lead!.id} />
-      </li>
-      {shown.map((p) => (
-        <li key={p.id}>
-          <PlayChip play={p} caster={nameOf(p.caster)} tint={inkOf(ui, p, here.plays)} tallies={tallies} onOpen={opener(p.id)} expanded={open?.play === p.id} />
-        </li>
-      ))}
-      {hidden > 0 && (
-        <li>
+        {/* The top tag, with the edges of the next few behind it, offset as a fanned deck. */}
+        <span className="kb-play-stack">
+          {rest.length > 0 && (
+            <span className="kb-play-stack-edges" aria-hidden="true">
+              {rest.slice(0, STACK_EDGES).map((p, i) => {
+                const ink = inkOf(ui, p, here.plays);
+                return (
+                  <span
+                    key={p.id} className="kb-play-stack-edge" data-kb-alignment={instance.cards.find((c) => c.key === p.card)?.alignment} data-kb-depth={i + 1}
+                    style={ink ? { '--kb-tag': ink } as CSSProperties : undefined}
+                  />
+                );
+              })}
+            </span>
+          )}
+          {tagOf(lead!)}
+        </span>
+        {rest.length > 0 && (
           <button
-            type="button" className="kb-play-more" aria-expanded={more} onClick={() => setMore(!more)}
-            aria-label={more ? 'Show fewer cards played on this post' : `Show ${hidden} more ${hidden === 1 ? 'card' : 'cards'} played on this post`}
-          ><span className="kb-play-chip-in">{more ? 'Fewer' : `+${hidden} more`}</span></button>
+            ref={toggle} type="button" className="kb-play-unstack" aria-expanded={unstacked} aria-controls={`${id}-rest`}
+            aria-label={unstacked ? 'Stack the cards played on this post' : `Unstack ${rest.length} more ${rest.length === 1 ? 'card' : 'cards'} played on this post`}
+            onClick={() => setUnstacked(!unstacked)}
+          ><span className="kb-play-unstack-in" aria-hidden="true">{unstacked ? '×' : `+${rest.length}`}</span></button>
+        )}
+      </li>
+      {rest.length > 0 && (
+        <li className="kb-play-tags-rest">
+          <ul id={`${id}-rest`} className="kb-play-unstacked" hidden={!unstacked}>
+            {rest.map((p) => <li key={p.id}>{tagOf(p)}</li>)}
+          </ul>
         </li>
       )}
       {open && opened && (
         <PlayPanel
           play={opened} caster={nameOf(opened.caster)} tint={inkOf(ui, opened, here.plays)} plays={plays} tallies={tallies} mine={mine} to={to}
-          sheet={narrow} opener={open.opener} fallback={fallback} onClose={() => setOpen(null)}
-          onSpin={(play, name) => { const from = open.opener; setOpen(null); onSpin(play, name, from); }}
+          sheet={narrow} opener={open.opener} fallback={() => toggle.current ?? list.current?.querySelector<HTMLElement>('.kb-play-tag') ?? null} onClose={() => setOpen(null)}
+          onSpin={(play, name) => { const from = open.opener; setOpen(null); setUnstacked(false); onSpin(play, name, from); }}
         />
       )}
     </ul>

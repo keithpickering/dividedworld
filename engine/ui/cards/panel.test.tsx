@@ -46,7 +46,13 @@ const open = (w: { fake: Fake; thread: Id }, cards?: readonly CardUi[]) =>
   renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}`, ...(cards ? { cards } : {}) });
 const post2 = () => screen.findByRole('article', { name: /^Post 2 /u });
 const tag = async () => within(await post2()).findByRole('button', { name: 'Whoops! by Spritey, 1 reaction. Opens the play.' });
-const chip = async () => within(await post2()).findByRole('button', { name: 'Whoops! by Pipewrench, no reactions. Opens the play.' });
+/* Pipewrench's play is stacked behind Spritey's: the stack is unstacked to reach it. */
+const chip = async () => {
+  const post = await post2();
+  const button = within(post).getByRole('button', { name: /^Unstack /u });
+  if (button.getAttribute('aria-expanded') === 'false') await userEvent.click(button);
+  return within(post).findByRole('button', { name: 'Whoops! by Pipewrench, no reactions. Opens the play.' });
+};
 const panel = (name = 'Whoops! by Spritey') => screen.getByRole('dialog', { name });
 
 describe('a play\'s panel', () => {
@@ -118,6 +124,7 @@ describe('a play\'s panel', () => {
     const w = world();
     w.fake.seed.react(w.other, w.spritey, w.mine, 'fire');
     open(w);
+    await userEvent.click(within(await post2()).getByRole('button', { name: /^Unstack /u }));
     await userEvent.click(await within(await post2()).findByRole('button', { name: 'Whoops! by Pipewrench, 1 reaction. Opens the play.' }));
     const p = panel('Whoops! by Pipewrench');
     expect(within(p).getByText('Fire, 1')).toBeInTheDocument();
@@ -184,22 +191,6 @@ describe('a play\'s panel', () => {
     open(w);
     await userEvent.click(await tag());
     expect(within(panel()).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
-  });
-
-  test('a chip folded away while its panel is open (the window narrowed) gives focus to "+N more" when the panel closes', async () => {
-    let phone = false;
-    const heard = new Set<() => void>();
-    vi.stubGlobal('matchMedia', (q: string) => ({
-      get matches() { return phone && q.includes('max-width: 40em'); }, media: q,
-      addEventListener: (_: string, l: () => void) => heard.add(l), removeEventListener: (_: string, l: () => void) => heard.delete(l),
-    }) as unknown as MediaQueryList);
-    const w = world();
-    open(w);
-    await userEvent.click(await chip());
-    await act(async () => { phone = true; for (const l of [...heard]) l(); });
-    await userEvent.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(within(await post2()).getByRole('button', { name: 'Show 1 more card played on this post' })).toHaveFocus();
   });
 
   test('is a popover on a desktop and a bottom sheet on a phone', async () => {

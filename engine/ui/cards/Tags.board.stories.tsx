@@ -1,8 +1,9 @@
 /**
  * The plays on a post, quiet, as stories for the owner (docs/plans/2026-10-31-plays-on-a-post-plan.md, Task 6; the
- * mockup they are set against is docs/research/2026-10-31-plays-on-a-post/mock-a-b.html, B): post #41 of the boards
- * fixture, with one play, three, or six, and each with its panel open. No board draws these. Open each at 1440 by 1120,
- * and its `Phone` twin at 390 by 844.
+ * mockup they are set against is docs/research/2026-10-31-plays-on-a-post/mock-a-b.html, B, as the owner amended it
+ * on #97's shots: a stack that unstacks into a floating list): post #41 of the boards fixture, with one play, three, or
+ * six, stacked, unstacked, and with a panel open. No board draws these. Open each at 1440 by 1120, and its `Phone`
+ * twin at 390 by 844.
  *
  * #41 carries the fixture's one play. The others are handed to the fake through its seed before the thread is read, so
  * the page bills them as a page read does. The fixture's play has drawn the most: six of the instance's first reaction
@@ -21,7 +22,7 @@ import { ThreadScreen } from '../thread/Thread.tsx';
 const MINUTE = 60_000;
 
 type Count = 1 | 3 | 6;
-type Opened = 'none' | 'tag' | 'chip';
+type Opened = 'none' | 'tag' | 'unstacked' | 'stacked-play';
 
 /** Hand #41 its plays and their reactions, then say it is ready to be read. */
 function useSeeded(thread: string | null, count: Count): boolean {
@@ -68,21 +69,20 @@ function useSeeded(thread: string | null, count: Count): boolean {
   return ready;
 }
 
-/** Opens #41's tag or its first chip once the thread has drawn them, as a press would. */
+/** Unstacks #41's plays, and opens its tag's panel or the first unstacked play's, once the thread has drawn them, as presses would. */
 function Open({ which }: { readonly which: Opened }) {
   useEffect(() => {
     if (which === 'none') return;
     let then: ReturnType<typeof setTimeout> | null = null;
     const timer = setInterval(() => {
       const list = document.querySelector('#post-41 [aria-label="Cards played on this post"]');
-      const button = list?.querySelector<HTMLButtonElement>(which === 'tag' ? '.kb-play-tag' : '.kb-play-chip, .kb-play-more');
-      if (!button) return;
+      const tag = list?.querySelector<HTMLButtonElement>('.kb-play-tag');
+      if (!list || !tag) return;
       clearInterval(timer);
-      /* At the phone's width the chips are folded: "+N more" opens them first. */
-      if (button.classList.contains('kb-play-more')) {
-        button.click();
-        then = setTimeout(() => list?.querySelector<HTMLButtonElement>('.kb-play-chip')?.click(), 50);
-      } else button.click();
+      if (which === 'tag') { tag.click(); return; }
+      if (which === 'unstacked') { list.querySelector<HTMLButtonElement>('.kb-play-unstack')?.click(); return; }
+      list.querySelector<HTMLButtonElement>('.kb-play-unstack')?.click();
+      then = setTimeout(() => list.querySelector<HTMLButtonElement>('.kb-play-unstacked .kb-play-tag')?.click(), 50);
     }, 100);
     return () => { clearInterval(timer); if (then !== null) clearTimeout(then); };
   }, [which]);
@@ -128,19 +128,25 @@ const phone = { parameters: { moment: '02-phone' } } as const;
 
 /** One play: the tag alone. */
 export const OnePlay: Story = { args: { count: 1, open: 'none' } };
-/** Three plays, the mockup's: the most drawn as the tag, then two chips. */
+/** Three plays, the mockup's, stacked: the most drawn as the tag, two edges behind it, and "+2". */
 export const ThreePlays: Story = { args: { count: 3, open: 'none' } };
-/** Six plays: the tag, three chips and "+2 more". */
+/** Three plays unstacked: the list floats over the post, which keeps its height. */
+export const ThreePlaysUnstacked: Story = { args: { count: 3, open: 'unstacked' } };
+/** Six plays, stacked: three edges, and "+5". */
 export const SixPlays: Story = { args: { count: 6, open: 'none' } };
+export const SixPlaysUnstacked: Story = { args: { count: 6, open: 'unstacked' } };
+/** Each with its tag's panel open, or the first unstacked play's. */
 export const OnePlayPanel: Story = { args: { count: 1, open: 'tag' } };
 export const ThreePlaysPanel: Story = { args: { count: 3, open: 'tag' } };
-export const ThreePlaysChipPanel: Story = { args: { count: 3, open: 'chip' } };
-export const SixPlaysPanel: Story = { args: { count: 6, open: 'chip' } };
-/** On the Phone board's moment, opened at 390 by 844: no chips, only "+N more", and the panel is a sheet. */
+export const ThreePlaysStackedPlayPanel: Story = { args: { count: 3, open: 'stacked-play' } };
+export const SixPlaysPanel: Story = { args: { count: 6, open: 'stacked-play' } };
+/** On the Phone board's moment, opened at 390 by 844: the same stack, and the panel is a sheet. */
 export const OnePlayPhone: Story = { args: { count: 1, open: 'none' }, ...phone };
 export const ThreePlaysPhone: Story = { args: { count: 3, open: 'none' }, ...phone };
+export const ThreePlaysUnstackedPhone: Story = { args: { count: 3, open: 'unstacked' }, ...phone };
 export const SixPlaysPhone: Story = { args: { count: 6, open: 'none' }, ...phone };
+export const SixPlaysUnstackedPhone: Story = { args: { count: 6, open: 'unstacked' }, ...phone };
 export const OnePlayPanelPhone: Story = { args: { count: 1, open: 'tag' }, ...phone };
 export const ThreePlaysPanelPhone: Story = { args: { count: 3, open: 'tag' }, ...phone };
-export const ThreePlaysChipPanelPhone: Story = { args: { count: 3, open: 'chip' }, ...phone };
-export const SixPlaysPanelPhone: Story = { args: { count: 6, open: 'chip' }, ...phone };
+export const ThreePlaysStackedPlayPanelPhone: Story = { args: { count: 3, open: 'stacked-play' }, ...phone };
+export const SixPlaysPanelPhone: Story = { args: { count: 6, open: 'stacked-play' }, ...phone };

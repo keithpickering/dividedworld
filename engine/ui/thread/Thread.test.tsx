@@ -1028,8 +1028,9 @@ describe('a card\'s effect on a post', () => {
     expect(over!.querySelector('.kb-smoke-svg')).not.toBeNull();
     expect(under!).not.toHaveAttribute('data-kb-tinted');
     expect(under!.style.getPropertyValue('--kb-tag')).toBe('');
-    /* The other is a chip, which draws its mark in its alignment's color. */
-    expect(under!).toHaveClass('kb-play-chip');
+    /* The other is stacked behind it, its own tag, in its alignment's color. */
+    expect(under!).toHaveClass('kb-play-tag');
+    expect(under!).not.toHaveAttribute('data-kb-tinted');
   });
 
   test('a play that arrives live gets its tag and its effect on a post already on screen', async () => {

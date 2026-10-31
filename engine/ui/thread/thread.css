@@ -163,6 +163,25 @@
   z-index: 2;
 }
 
+/*
+ * The plays unstacked float over the post (cards/Effects.tsx `PlayTags`, the owner on #97's shots): over the post's
+ * reactions, over the card's plate under the body (the body is lifted over the slot, a sibling drawn after it), and over
+ * the next post, which the list may run into. While stacked, nothing is lifted.
+ */
+.kb-act-main > .kb-play-tags[data-kb-unstacked] {
+  z-index: 3;
+}
+
+.kb-act:has(.kb-play-tags[data-kb-unstacked]) {
+  position: relative;
+  z-index: 3;
+}
+
+.kb-act:has(.kb-play-tags[data-kb-unstacked]) > .kb-act-main {
+  position: relative;
+  z-index: 2;
+}
+
 /* A line of the game's (an unmask): no postbit, the words across the whole width. */
 .kb-act[data-kb-kind="unmask"] {
   grid-template-columns: minmax(0, 1fr);
