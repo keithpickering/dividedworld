@@ -1,7 +1,7 @@
 /**
  * Whoops!'s inks in words. The play form offers its swatches (ConfigForm.tsx), and the plate's readout names a
  * layer's ink so it never says a hex code ("top: Spritey's yellow", the plays-on-a-post design, section 5): the
- * swatch's name when the ink is one, else the swatch nearest it in hue. An ink the player gave by name ("violet") is
+ * swatch's name when the ink is one, else the swatch nearest it by the two-stage OKLCh rule below. An ink the player gave by name ("violet") is
  * called by that name. Nothing new is saved on the play.
  *
  * The names come from one table (`NAMES`): the swatches plus black, white and gray. Each entry is classed by its own
@@ -68,6 +68,7 @@ export function inkName(color: string, names: readonly InkEntry[] = NAMES): stri
   const neutral = ink.C < GRAY_GATE;
   const pool = entries.filter((e) => (e.C < GRAY_GATE) === neutral);
   if (pool.length === 0) return 'ink';
-  const distance = (e: { L: number; h: number }) => (neutral ? Math.abs(e.L - ink.L) : Math.hypot(0.5 * (e.L - ink.L), (around(e.h, ink.h) * Math.PI) / 180 / Math.PI));
+  /* Hue is scaled so 180 degrees is 1, the unit the half lightness weight is set against (lightness spans 0 to 1). */
+  const distance = (e: { L: number; h: number }) => (neutral ? Math.abs(e.L - ink.L) : Math.hypot(0.5 * (e.L - ink.L), around(e.h, ink.h) / 180));
   return pool.reduce((best, e) => (distance(e) < distance(best) ? e : best)).name;
 }

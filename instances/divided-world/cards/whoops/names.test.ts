@@ -10,9 +10,10 @@ test('a swatch\'s ink is called by the swatch\'s name, lowercased for the senten
 
 test('an ink off the swatches is called by the swatch nearest it in OKLCh hue, lightness at half', () => {
   assert.equal(inkName('#ffe066'), 'yellow');
-  assert.equal(inkName('#0080ff'), 'violet');
+  /* The blue boundary between cyan and violet is loose by design (#0080ff and #1980e6 sit near a tie), so these inks are decisive. */
+  assert.equal(inkName('#0050ff'), 'violet');
   assert.equal(inkName('#ff0080'), 'magenta');
-  assert.equal(inkName('#1980e6'), 'cyan');
+  assert.equal(inkName('#00b0ff'), 'cyan');
   assert.equal(inkName('#00ff40'), 'green');
   assert.equal(inkName('#ff6600'), 'orange');
   assert.equal(inkName('#7700ff'), 'violet');
@@ -28,8 +29,10 @@ test('an ink with no hue is called by its lightness, and one it cannot read is c
   assert.equal(inkName('#101010'), 'black');
   assert.equal(inkName('white'), 'white');
   assert.equal(inkName('#808080'), 'gray');
-  /* Pale enough to be below the chroma gate: nearest neutral by lightness. (#97's dark pre-check is gone: #112233 has chroma .04, so it is cyan.) */
+  /* Pale enough to be below the chroma gate: nearest neutral by lightness. (#97's dark pre-check is gone: #112233 has chroma .04, above the gate, so it is cyan.) */
   assert.equal(inkName('#fff0f0'), 'white');
+  assert.equal(inkName('#fff'), 'white');
+  assert.equal(inkName('#112233'), 'cyan');
   assert.equal(inkName('not a color'), 'ink');
 });
 
@@ -69,6 +72,15 @@ test('a Brown added to the table wins the dark oranges and nothing else', () => 
 test('a Silver added to the table is neutral, so it competes with gray', () => {
   assert.equal(inkName('#a0a0a0', WITH_SILVER), 'silver');
   assert.equal(inkName('#0000ff', WITH_SILVER), 'violet');
+});
+
+test('a chromatic ink is named by its hue, never by a neutral it is near in lightness', () => {
+  assert.ok(oklch('#ffffd0').C > 0.03);
+  assert.ok(oklch('#808040').C > 0.03);
+  /* Olive sits at gray's lightness; a rule that let chromatic inks compete with the neutrals would call it gray. */
+  assert.equal(inkName('#808040', SHIPPED), 'yellow');
+  assert.equal(inkName('#ffffd0', SHIPPED), 'yellow');
+  assert.equal(inkName('#FFD93D', SHIPPED), 'yellow');
 });
 
 test('the OKLab conversion matches known values', () => {
