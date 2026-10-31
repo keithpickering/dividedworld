@@ -23,7 +23,7 @@ import { decide } from '../../rules/actions.ts';
 import { basePrice, casterMessage, decidePlay, type CardTarget } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
-import { cutLog, LOG_ROWS, micros, type LedgerRow, type ShareRow } from './log-page.ts';
+import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
   DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
@@ -198,6 +198,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
+    /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
+    cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
   };
 
   /* ----------------------------------------------------------------------- time ---- */
@@ -453,9 +455,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Answer<{ play: Id; savedAt: string }> {
     const bad = request({ action: 'saveEffect', character, play, state });
     if (bad) return bad;
-    const c = acting(character);
-    if (isRefusal(c)) return c;
     const played = playOf(play);
+    const mine = characters.get(character);
+    /* The post's own player answers for the mask that wrote it, retired or not (0038); every other case is acting()'s. */
+    const author = played !== null && acts.get(played.target!)?.character === character && mine !== undefined && mine.owner === me()?.id && mine.debutedAt !== null;
+    if (!author) {
+      const c = acting(character);
+      if (isRefusal(c)) return c;
+    }
     if (!played) return refuse('there is no such card on a post');
     if (acts.get(played.target!)?.character !== character) return refuse('only the post\'s author saves what is on it');
     const at = now();
@@ -751,27 +758,31 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     log(before) {
       const account = me()?.id;
-      const until = before === undefined || before === null ? Infinity : micros(before);
-      const upTo = (ms: number) => account !== undefined && ms * 1000 <= until;
-      const newest = <T extends { readonly ms: number; readonly order: number }>(rows: T[]) => rows.sort((a, b) => b.ms - a.ms || b.order - a.order).slice(0, LOG_ROWS);
-      const ledger: LedgerRow[] = [...settlements].sort((a, b) => b.endsAt - a.endsAt).filter((x) => upTo(x.endsAt))
-        .flatMap((x) => x.lines.filter((l) => l.account === account).map((l) => ({ settlement: x.id, startsAt: iso(x.startsAt), endsAt: iso(x.endsAt), sharesKept: x.sharesKept, character: l.character, reason: l.reason, amount: l.amount })))
-        .slice(0, LOG_ROWS);
-      const read = new Set(ledger.map((l) => l.settlement));
-      const shares: ShareRow[] = settlements.filter((x) => read.has(x.id))
-        .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, ...sh }))));
-      /* my_posts_played_on: the plays on the player's posts made through another player's characters. */
-      const onMine = [...acts.values()].filter((a) => a.kind === 'card' && a.target !== null && a.character !== null
-        && characters.get(acts.get(a.target)?.character ?? '')?.owner === account && characters.get(a.character)?.owner !== account);
-      return cutLog({
-        ledger,
-        shares,
-        wallet: newest(walletEvents.filter((e) => e.account === account && upTo(e.ms))).map((e) => e.event),
-        cards: newest(cardLedger.filter((e) => e.account === account && upTo(e.ms))).map((e) => e.event),
-        playsOnMine: newest(onMine.filter((a) => upTo(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at) })),
-        saves: newest(onMine.filter((a) => effects.has(a.id) && upTo(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
-          .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
-      });
+      /* Each source as the adapter reads its view (web/src/data/supabase.ts): newest first at or before the cursor, a page long, or all at one instant. */
+      return readLogPageNow((range) => {
+        const until = 'at' in range || range.before === null ? Infinity : micros(range.before);
+        const at = 'at' in range ? micros(range.at) : null;
+        const fits = (ms: number) => account !== undefined && (at === null ? ms * 1000 <= until : ms * 1000 === at);
+        const cap = <T,>(rows: T[]) => ('at' in range ? rows : rows.slice(0, range.limit));
+        const newest = <T extends { readonly ms: number; readonly order: number }>(rows: T[]) => cap(rows.sort((a, b) => b.ms - a.ms || b.order - a.order));
+        const ledger: LedgerRow[] = cap([...settlements].sort((a, b) => b.endsAt - a.endsAt).filter((x) => fits(x.endsAt))
+          .flatMap((x) => x.lines.filter((l) => l.account === account).map((l) => ({ settlement: x.id, startsAt: iso(x.startsAt), endsAt: iso(x.endsAt), sharesKept: x.sharesKept, character: l.character, reason: l.reason, amount: l.amount }))));
+        const read = new Set(ledger.map((l) => l.settlement));
+        const shares: ShareRow[] = settlements.filter((x) => read.has(x.id))
+          .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, ...sh }))));
+        /* my_posts_played_on: the plays on the player's posts made through another player's characters. */
+        const onMine = [...acts.values()].filter((a) => a.kind === 'card' && a.target !== null && a.character !== null
+          && characters.get(acts.get(a.target)?.character ?? '')?.owner === account && characters.get(a.character)?.owner !== account);
+        return {
+          ledger,
+          shares,
+          wallet: newest(walletEvents.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
+          cards: newest(cardLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
+          playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at) })),
+          saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
+            .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
+        };
+      }, before ?? null);
     },
     myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
     releaseEffect,

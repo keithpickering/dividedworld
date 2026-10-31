@@ -62,6 +62,11 @@ export interface ScreenSettings {
   readonly settlementLength: Span;
   /** The numbers the instance's cards give the screens, by name (`Settings.cardSettings`). */
   readonly cardSettings: Readonly<Record<string, number>>;
+  /**
+   * The economy numbers the cards' prices read, as the server prices with them now (0039_card_economy.sql): each card's price and
+   * the keys its rules read, from the economy row an admin tunes. A key it lacks is the compiled economy's (`withCardEconomy`).
+   */
+  readonly cardEconomy: Readonly<Record<string, number>>;
 }
 
 /* ------------------------------------------------------------- public reads ---- */

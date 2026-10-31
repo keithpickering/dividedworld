@@ -330,7 +330,8 @@ describe('scrubbing', () => {
     drag(first.frame, [[x, y], [x + 0.06, y]]);
     act(() => { vi.advanceTimersByTime(2000); });
     expect(first.save).not.toHaveBeenCalled();
-    expect(first.root.ownerDocument.body).toHaveTextContent('This layer has no room for more strokes to save');
+    /* True words (#86): what is washed past the bound is this screen's, but washing on to the share still clears it for everyone. */
+    expect(first.root.ownerDocument.body).toHaveTextContent('This layer has no room for more strokes to save. What you wash from here shows on your screen only, but washing it clean still clears it for everyone.');
     scrubTo(first.frame, first.root, 0, ink, 0.5);
     /* Time runs on with each answer let in, so a save that would follow the first has its chance. */
     for (let k = 0; k < 6; k++) await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
@@ -432,6 +433,18 @@ describe('the keyboard path', () => {
     expect(states(root)).toEqual(['live']);
     frames(55000);
     expect(states(root)).toEqual(['clean']);
+  }, 30_000);
+
+  test('a line it uncovers is said, in the polite region on the page from the start', () => {
+    clock();
+    const { root } = mount({ layers: 1 });
+    const region = root.querySelector<HTMLElement>('[data-kb-uncovered]')!;
+    expect(region).toBeEmptyDOMElement();
+    const button = screen.getByRole('button', { name: 'Hold to scrub' });
+    hold(button);
+    for (let k = 0; k < 60 && region.textContent === ''; k++) frames(500);
+    release(button);
+    expect(region.textContent).toMatch(/L\d\d alpha beta gamma/u);
   }, 30_000);
 
   test('it scrubs the top layer, and the layer under it once the top one is gone', () => {
@@ -721,6 +734,28 @@ describe('saving, one at a time', () => {
   });
 });
 
+/* #86: the author leaves the post while a save is on its way; the strokes made since are sent once it answers, never dropped. */
+describe('leaving the post mid-save', () => {
+  test('the strokes made while a save was on its way are sent after it answers, though the post has gone', async () => {
+    authorClock();
+    const net = gated();
+    const [a, b] = rows();
+    const { frame, unmount } = mount({ author: true, save: net.save });
+    drag(frame, a!);
+    await settle(SAVE_AFTER_MS);
+    expect(net.calls).toHaveLength(1);
+    drag(frame, b!);
+    unmount();
+    await act(async () => { net.calls[0]!.answer({ ok: true, value: { play: net.calls[0]!.play, savedAt: SAVED_AT } }); });
+    await settle(SAVE_AFTER_MS * 4);
+    expect(net.calls).toHaveLength(2);
+    expect((net.calls[1]!.state as { strokes: unknown[] }).strokes).toHaveLength(2);
+    await act(async () => { net.calls[1]!.answer({ ok: true, value: { play: net.calls[1]!.play, savedAt: SAVED_AT } }); });
+    await settle(SAVE_AFTER_MS * 4);
+    expect(net.calls, 'and nothing is sent twice').toHaveLength(2);
+  });
+});
+
 describe('a save that did not get through', () => {
   const lost = { ok: false as const, error: LOST_ANSWER, uncertain: true as const };
 
@@ -743,7 +778,7 @@ describe('a save that did not get through', () => {
     await settle(RETRY_AFTER_MS);
     expect(save).toHaveBeenCalledTimes(3);
     expect((save.mock.calls.at(-1) as unknown as [string, { clean?: boolean }])[1].clean).toBe(true);
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
     await settle(RETRY_AFTER_MS * 100);
     expect(save).toHaveBeenCalledTimes(3);
   });
@@ -944,5 +979,39 @@ describe('what a post costs a page', () => {
     expect(built.grids, 'the echo of what was just sent').toBe(before);
     hear({ 'play-1': { state: { strokes: [{ tool: 'wash', width: BRUSH, points: [[0.5, 0.5]] }] }, savedAt: SAVED_AT } });
     expect(built.grids, 'a state from somewhere else').toBe(before + 1);
+  });
+});
+
+/* #89 P2-1: what the effect says (the save's report, a line uncovered) is written into a polite region already on the page. */
+describe('what the effect says to a screen reader', () => {
+  test('the report is written into a region that was on the page, empty, before it spoke', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const full: Stroke[] = Array.from({ length: STROKES.most }, () => ({ tool: 'wash', width: BRUSH, points: [[0.01, 0.01], [0.02, 0.01]] }));
+    const { frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    const region = root.querySelector<HTMLElement>('[data-kb-report]');
+    expect(region).not.toBeNull();
+    expect(region).toHaveAttribute('role', 'status');
+    expect(region).toHaveTextContent('');
+    const [x, y] = inkSpot(new LayerInk(splatFor(0), full));
+    drag(frame, [[x, y], [x + 0.06, y]]);
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(region).toHaveTextContent('This layer has no room for more strokes to save.');
+    expect(root.querySelector('[data-kb-report]')).toBe(region);
+  });
+
+  test('a line uncovered is said in a polite region that was on the page, empty, before it; the lines readable before are not said', () => {
+    const { frame, root } = mount();
+    const region = root.querySelector<HTMLElement>('[data-kb-uncovered]');
+    expect(region).not.toBeNull();
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region).toBeEmptyDOMElement();
+    expect(root.querySelector('[data-kb-readout][aria-live]')).toBeNull();
+    const ink = new LayerInk(splatFor(0), []);
+    const line = Math.floor(ink.splat.placement.cy / ROW);
+    const name = `L${String(line).padStart(2, '0')} alpha beta gamma`;
+    drag(frame, rowAcross(ink, (line + 0.5) * ROW));
+    expect(region).toHaveTextContent(name);
+    expect(region).not.toHaveTextContent('L00 alpha beta gamma');
+    expect(root.querySelector('[data-kb-uncovered]')).toBe(region);
   });
 });

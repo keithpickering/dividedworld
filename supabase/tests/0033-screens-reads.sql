@@ -160,7 +160,9 @@ do $$
 declare
   seen jsonb;
   listed text[] := array['postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime', 'turnCooldown',
-                         'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings'];
+                         'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
+                         -- The cards' prices and what they read, never the whole economy (0039; 0044-card-economy.sql holds what it holds).
+                         'cardEconomy'];
   k text;
 begin
   perform tests.become_anon();

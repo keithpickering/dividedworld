@@ -13,8 +13,18 @@
  *
  * So a page holds whole settlements: a settlement whose lines ran past a full read is left for the
  * next page, whole. A settlement has at most a line per character and reason (the ledger's unique
- * index, 0034), a few dozen for a player, far under `LOG_ROWS`; and no source holds `LOG_ROWS` rows at
- * one instant, so every page moves the cursor back.
+ * index, 0034), a few dozen for a player, far under `LOG_ROWS`.
+ *
+ * A source that does hold `LOG_ROWS` rows at one instant would cut the page exactly where it was read from
+ * and hand back the same cursor, and Show older lines would read that page forever (#89 F4). Of the two
+ * ways the glass cleanup's plan gave, the page reads that instant again, every row there with no limit,
+ * and moves the cursor to the microsecond before it (`readLogPage`); it does not fail, since a failure
+ * would leave the older lines out of reach, a dead end of its own. Weighed at a busy instance: the views
+ * are the caller's own, so the second read holds one player's rows at one instant. A settlement writes
+ * at most a line per character and reason (with 6 characters and a class's handful of reasons, some 30)
+ * and one wallet event; an action writes a row or two. So it is tens of rows, read only on a page that
+ * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
+ * and even then it is that player's own rows at that instant, never more than their whole history.
  */
 import type { CardEvent, EffectSaved, Log, LogLine, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
 
@@ -102,4 +112,40 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     saves: read.saves.filter((e) => keep(e.savedAt)),
     before: after,
   };
+}
+
+/** What a page reads from each source: newest first at or before `before`, at most `limit` rows; or every row at exactly `at`. */
+export type LogRange = { readonly before: string | null; readonly limit: number } | { readonly at: string };
+
+/** The microsecond just before `iso`, written to the microsecond in UTC: a cursor at or before it reads nothing at `iso`. */
+export function justBefore(iso: string): string {
+  const m = micros(iso) - 1;
+  const seconds = Math.floor(m / 1_000_000);
+  return `${new Date(seconds * 1000).toISOString().slice(0, 19)}.${String(m - seconds * 1_000_000).padStart(6, '0')}+00:00`;
+}
+
+/** Whether a page moves the cursor back from the one it was read with (a first page always does). */
+function moves(page: Log, before: string | null): boolean {
+  return before === null || page.before === null || micros(page.before) < micros(before);
+}
+
+/** The page of every row at one instant, and the microsecond before it as the next cursor. */
+function atInstant(read: LogRead, at: string): Log {
+  return { ...cutLog(read, Infinity), before: justBefore(at) };
+}
+
+/**
+ * One page of the log from a backend's reads (both backends page through here). A page cut where it was read from is read
+ * again at that one instant, whole, and the next cursor is the microsecond before it, so a cursor only ever moves back and
+ * every row is read once (the header says why, and what the second read can cost).
+ */
+export async function readLogPage(read: (range: LogRange) => LogRead | Promise<LogRead>, before: string | null, limit: number = LOG_ROWS): Promise<Log> {
+  const page = cutLog(await read({ before, limit }), limit);
+  return moves(page, before) ? page : atInstant(await read({ at: before! }), before!);
+}
+
+/** `readLogPage` over reads that answer at once, as the in-memory backend's do (fake.ts). */
+export function readLogPageNow(read: (range: LogRange) => LogRead, before: string | null, limit: number = LOG_ROWS): Log {
+  const page = cutLog(read({ before, limit }), limit);
+  return moves(page, before) ? page : atInstant(read({ at: before! }), before!);
 }

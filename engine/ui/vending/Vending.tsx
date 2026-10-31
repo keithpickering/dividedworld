@@ -36,7 +36,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { motionReduced } from '../appearance.ts';
 import { Postcard } from '../cards/Postcard.tsx';
-import { facesOf, orbs, plainRefusal, priceOf, type CardFace } from '../cards/faces.ts';
+import { facesOf, orbs, plainRefusal, priceOf, withCardEconomy, type CardFace } from '../cards/faces.ts';
 import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
@@ -192,10 +192,11 @@ function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, 
 }
 
 export function Vending() {
-  const { instance, ui } = useKayfa();
+  const { instance, settings, ui } = useKayfa();
   const player = usePlayer();
   const location = useLocation();
-  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings), [instance, ui.cards]);
+  /* Priced as the server will charge (withCardEconomy): a price an admin has tuned is the one the machine shows. */
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy)), [instance, ui.cards, settings.cardEconomy]);
   /*
    * What the screen holds (the pick, the answer in words, the drain, the card in flight, the press
    * in progress) is kept with the account it was made for and read in render against the account
@@ -308,9 +309,12 @@ export function Vending() {
               {orbs(balance)}{after !== null ? <> → <b>{orbs(after)}</b></> : null}
             </p>
             {short && !outcome && <p className="kb-vending-fine kb-calm">{shortWords}</p>}
-            {outcome && (outcome.tone === 'refusal'
-              ? <p className="kb-vending-fine kb-vending-outcome kb-calm" role="alert" data-kb-tone="refusal">{outcome.text}</p>
-              : <p className="kb-vending-fine kb-vending-outcome kb-calm" aria-live="polite" data-kb-tone="done">{outcome.text}</p>)}
+            {/*
+              * Each on the page from the start and empty until it speaks, so a screen reader hears the outcome (WCAG 4.1.3; #89 P2-1): a
+              * purchase made politely, a refusal at once.
+              */}
+            <p className="kb-vending-fine kb-vending-outcome kb-calm" role="status" aria-live="polite" data-kb-tone="done">{outcome?.tone === 'refusal' ? '' : outcome?.text ?? ''}</p>
+            <p className="kb-vending-fine kb-vending-outcome kb-calm" role="alert" data-kb-tone="refusal">{outcome?.tone === 'refusal' ? outcome.text : ''}</p>
             <p className="kb-vending-fine kb-calm">The ghost estimate can't be spent. What you buy is private: nobody else sees it until you play it.</p>
           </div>
         </section>
@@ -338,9 +342,9 @@ export function Vending() {
       )}
 
       {faces.length < slotsFor(faces.length) && (
-        <div className="kb-vending-list kb-vending-item kb-vending-item--sealed kb-calm">
-          <p className="kb-vending-item-row"><span className="kb-vending-item-name">{slotsFor(faces.length) - faces.length} {slotsFor(faces.length) - faces.length === 1 ? 'slot' : 'slots'} empty</span></p>
-          <p className="kb-vending-item-says">More postcards arrive in later seasons.</p>
+        <div className="kb-vending-empty-line kb-calm">
+          <p className="kb-vending-empty-line-row">{slotsFor(faces.length) - faces.length} {slotsFor(faces.length) - faces.length === 1 ? 'slot' : 'slots'} empty</p>
+          <p className="kb-vending-empty-line-says">More postcards arrive in later seasons.</p>
         </div>
       )}
     </div>

@@ -8,6 +8,7 @@ import { describe, expect, test } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
 import type { Act, Refusal, Tally } from './api.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
+import { LOG_ROWS, micros } from './log-page.ts';
 
 const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
@@ -1243,6 +1244,36 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     expect(seen.length).toBe(500);
     expect(seen).toEqual([...seen].sort().reverse());
     expect(new Set(seen).size).toBe(250);
+  });
+
+  /* #89 F4, in the fake's own reads: more than a page of rows at one instant is read whole there, and the cursor moves past it. */
+  test('pages past an instant that holds more than a page, every row once, the cursors only moving back', async () => {
+    const { fake, ana } = logWorld();
+    const at = fake.clock.now() - 10 * MINUTE;
+    for (let i = 0; i < 3; i++) {
+      fake.seed.wallet(ana, 600);
+      fake.seed.buy(ana, 'splat', { at: at - (i + 1) * MINUTE });
+    }
+    for (let i = 0; i < LOG_ROWS + 1; i++) {
+      fake.seed.wallet(ana, 600);
+      fake.seed.buy(ana, 'splat', { at });
+    }
+    const seen: string[] = [];
+    const cursors: string[] = [];
+    let before: string | null = null;
+    let pages = 0;
+    do {
+      const page = await fake.log(before);
+      seen.push(...page.cards.map((c) => c.at));
+      if (page.before !== null && before !== null) expect(micros(page.before)).toBeLessThan(micros(before));
+      before = page.before;
+      if (before !== null) cursors.push(before);
+      pages++;
+    } while (before !== null && pages < 10);
+    expect(before).toBeNull();
+    expect(seen.length).toBe(LOG_ROWS + 4);
+    expect(seen.filter((t) => t === new Date(at).toISOString())).toHaveLength(LOG_ROWS + 1);
+    expect(new Set(cursors).size).toBe(cursors.length);
   });
 
   test('one player\'s log holds nothing of another\'s', async () => {

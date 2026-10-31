@@ -73,3 +73,25 @@ describe('two pages merged', () => {
     expect(merged.before).toBeNull();
   });
 });
+
+/* #89 F3: two of the log's sentences no test held. Each is what a player reads to tell a missing breakdown, or a Turn no one saw, from a bug. */
+describe('the log\'s plain sentences', () => {
+  const at = '2026-10-30T08:17:00.000Z';
+  const text = (row: { readonly details: readonly unknown[] }) => row.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+
+  test('a settlement made before posts were kept says so', () => {
+    const p = char('p', 'Pipewrench', 'heel');
+    const log = { ...empty, settlements: [{ ...settled(1, at, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }]), sharesKept: false }] };
+    const [row] = logRows(data({ log, mine: [p] }), words, 600, null).filter((r) => r.kind === 'settlement');
+    expect(text(row!)).toContain('This settlement was made before posts were kept with it.');
+    const kept = { ...empty, settlements: [settled(1, at, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }])] };
+    expect(text(logRows(data({ log: kept, mine: [p] }), words, 600, null).find((r) => r.kind === 'settlement')!)).not.toContain('before posts were kept');
+  });
+
+  test('a Turn no one was told of says it was silent', () => {
+    const p = char('p', 'Pipewrench', 'face', at);
+    const log = { ...empty, settlements: [settled(1, at, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }])] };
+    const turn = logRows(data({ log, mine: [p] }), words, 600, null).find((r) => r.kind === 'turn')!;
+    expect(text(turn)).toBe('Pipewrench is a Face now. A silent Turn: no one else was told.');
+  });
+});

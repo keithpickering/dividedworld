@@ -6,6 +6,7 @@
  * as the log and says nothing the log does not; the last settlement seen is kept on the device.
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { hudKey } from '../player.tsx';
@@ -123,6 +124,15 @@ describe('the settlement\'s summary', () => {
     expect(screen.getByRole('link', { name: 'Back to the board' })).toHaveAttribute('href', '/');
   });
 
+  test('Open my log follows the tab picked', async () => {
+    const { fake, me, pipe, hoo } = world();
+    openSummary(fake, me, pipe);
+    const settled = (await fake.log()).settlements[0]!;
+    fireEvent.click(await screen.findByRole('button', { name: 'Mrs. Hooligan' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Open my log' }));
+    expect(where).toEqual({ path: '/log', state: { open: settled.id, character: hoo } });
+  });
+
   test('names no one who reacted, and no class but the player\'s own: it never asks for anyone else\'s', async () => {
     const { fake, me, pipe, hoo } = world();
     const rival = fake.seed.account('rival');
@@ -148,6 +158,67 @@ describe('the settlement\'s summary', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(where.path).toBe('/'));
   });
+});
+
+/*
+ * The page is drawn with no menu bar (web/src/App.tsx's NO_MENU), and a touch screen has no Esc: every state of it carries
+ * Back to the board, the ready state's own link, so none is a dead end (#90).
+ */
+describe('every state of the summary\'s page has Back to the board', () => {
+  const backIn = async () => {
+    const link = await screen.findByRole('link', { name: 'Back to the board' });
+    expect(link).toHaveAttribute('href', '/');
+    /* Outside anything busy, so a screen reader is not told the way out is still loading; and no log to open on nothing. */
+    expect(link.closest('[aria-busy="true"]')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open my log' })).toBeNull();
+    return link;
+  };
+
+  test('loading', async () => {
+    const { fake, me, pipe } = world();
+    vi.spyOn(fake, 'log').mockReturnValue(new Promise(() => {}));
+    openSummary(fake, me, pipe);
+    await backIn();
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+  }, 10_000);
+
+  test('failed', async () => {
+    const { fake, me, pipe } = world();
+    vi.spyOn(fake, 'log').mockRejectedValue(new Error('down'));
+    openSummary(fake, me, pipe);
+    expect(await screen.findByText('The settlement could not be loaded. Reload the page to try again.')).toBeInTheDocument();
+    await backIn();
+  }, 10_000);
+
+  test('empty', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    fake.signInAs(me);
+    openSummary(fake, me, pipe);
+    expect(await screen.findByText('Nothing has settled for you yet.')).toBeInTheDocument();
+    await backIn();
+  }, 10_000);
+
+  test('signed out', async () => {
+    const { fake, me, pipe } = world();
+    fake.signInAs(null);
+    openSummary(fake, me, pipe);
+    expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+    await backIn();
+  }, 10_000);
+
+  test('Esc goes back from a state that is not ready', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    fake.signInAs(me);
+    openSummary(fake, me, pipe);
+    await screen.findByText('Nothing has settled for you yet.');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(where.path).toBe('/'));
+  }, 10_000);
 });
 
 describe('the summary on the first load after a settlement', () => {
@@ -204,6 +275,34 @@ describe('the summary on the first load after a settlement', () => {
     await waitFor(() => expect(localStorage.getItem(seenKey(me))).toBe(new Date(at(30, 8, 17)).toISOString()));
     expect(where.path).toBe('/');
   });
+
+  /* #89: a read dropped by leaving the board page is looked for again, on the next board page of the same load. */
+  for (const leave of ['leaves for a glass page', 'unmounts'] as const) {
+    test(`a first load whose read is dropped (the page ${leave}) is looked for again on the next board page`, async () => {
+      const { fake, me } = world();
+      localStorage.clear();
+      startLoad();
+      let release: () => void = () => {};
+      const real = fake.log.bind(fake);
+      const held = vi.spyOn(fake, 'log').mockImplementationOnce(async (before) => { await new Promise<void>((r) => { release = r; }); return real(before); });
+      let setActive: (on: boolean) => void = () => {};
+      function Board() {
+        const [on, set] = useState(true);
+        setActive = set;
+        return <SettlementOnLoad active={on} />;
+      }
+      const first = renderIn(fake, <><Board /><Where /></>, { path: '/' });
+      await waitFor(() => expect(held).toHaveBeenCalledTimes(1));
+      if (leave === 'unmounts') first.unmount();
+      else act(() => setActive(false));
+      await act(async () => { release(); await new Promise((r) => setTimeout(r, 20)); });
+      expect(localStorage.getItem(seenKey(me))).toBeNull();
+      expect(where.path).toBe('/');
+      if (leave === 'unmounts') load(fake);
+      else act(() => setActive(true));
+      await waitFor(() => expect(where.path).toBe('/log/settlement'));
+    }, 10_000);
+  }
 
   test('a settlement that held nothing of the player\'s is marked seen without opening', async () => {
     const fake = buildWorld();

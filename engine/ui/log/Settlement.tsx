@@ -43,13 +43,20 @@ export const seenKey = (account: Id) => `kb-settled-seen:${account}`;
 const readSeen = (account: Id): string | null => { try { return globalThis.localStorage?.getItem(seenKey(account)) ?? null; } catch { return null; } };
 const markSeen = (account: Id, endsAt: string) => { try { globalThis.localStorage?.setItem(seenKey(account), endsAt); } catch { /* a device that keeps nothing shows it again: no harm */ } };
 
-/** The summary of the newest settlement in `data`, for one character's tab. */
+/** The character whose tab the summary shows: the one picked, else the first with a line in the newest settlement, else the first. */
+function shownTab(data: LogData, tab: Id | null) {
+  const s = data.log.settlements[0]!;
+  const tabs = tabsOf(data);
+  return tabs.find((c) => c.id === tab) ?? tabs.find((c) => s.lines.some((l) => l.character === c.id)) ?? tabs[0];
+}
+
+/** The summary of the newest settlement in `data`, for one character's tab: the ready state's content, inside the page's ways out. */
 export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly tab: Id | null; readonly onTab: (tab: Id) => void }) {
   const { instance, ui, settings } = useKayfa();
   const words: Words = { instance, ui, postsPerPage: settings.postsPerPage };
   const s = data.log.settlements[0]!;
   const tabs = tabsOf(data);
-  const current = tabs.find((c) => c.id === tab) ?? tabs.find((c) => s.lines.some((l) => l.character === c.id)) ?? tabs[0];
+  const current = shownTab(data, tab);
   const lines = inOrder(s.lines.filter((l) => l.character === current?.id));
   const event = data.log.wallet.find((e) => e.kind === 'settlement' && e.settlement === s.id);
   const cls = scoredAs(lines, instance);
@@ -57,13 +64,11 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
   const turn = (turnsTaken(data, instance).get(s.id) ?? []).find((t) => t.character === current?.id);
   const held = heldBack(event, settings.walletCap);
   const className = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
-  const back = useBackToBoard();
   const why = `Why, in plain words${cls ? ` · scored as ${/^[aeiou]/iu.test(className(cls)) ? 'an' : 'a'} ${className(cls)}` : ''}`;
   const turnAct = turn?.announced ? data.acts.get(turn.announced.act) : undefined;
   const turnTitle = turnAct ? data.titles.get(turnAct.thread) : undefined;
-  const opening: LogOpening = { open: s.id, character: current?.id };
   return (
-    <div className="kb-settled">
+    <>
       <header className="kb-settled-head">
         <div className="kb-settled-top">
           <p className="kb-settled-when kb-calm">Settled {utcWhen(s.endsAt)} UTC</p>
@@ -143,18 +148,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
         </div>
       </div>
 
-      <div className="kb-settled-ways kb-calm">
-        <Link to="/log" state={opening} className="kb-settled-log kb-glass-skew"><span className="kb-glass-upright">Open my log</span></Link>
-        <Link
-          to={backHref(boardPlace())}
-          className="kb-settled-back kb-glass-skew"
-          aria-keyshortcuts="Escape"
-          onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
-        >
-          <span className="kb-glass-upright">Back to the board</span>
-        </Link>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -183,24 +177,55 @@ export function SettlementScreen() {
     if (newest && session.account) markSeen(session.account, newest.endsAt);
   }, [newest, session.account]);
 
-  if (signedIn === false) return <div className="kb-settled"><div className="kb-calm"><SignInPrompt /></div></div>;
-  if (signedIn === null || state.status === 'loading') return <div className="kb-settled" aria-busy="true" />;
-  if (state.status === 'failed') return <div className="kb-settled"><p className="kb-calm">The settlement could not be loaded. Reload the page to try again.</p></div>;
-  if (!newest) return <div className="kb-settled"><p className="kb-calm">Nothing has settled for you yet.</p></div>;
-  return <Summary data={state.data} tab={picked ?? hudCharacter?.id ?? null} onTab={setPicked} />;
+  /*
+   * The page owns its ways out, so every state draws Back to the board: with no menu bar here, and no Esc on a touch screen, a
+   * state without it would be a dead end (#90). Open my log joins it once there is a settlement to open.
+   */
+  const tab = picked ?? hudCharacter?.id ?? null;
+  const ready = state.status === 'ready' && newest ? state.data : undefined;
+  const opening: LogOpening | undefined = ready && newest ? { open: newest.id, character: shownTab(ready, tab)?.id } : undefined;
+  const content = signedIn === false
+    ? <div className="kb-calm"><SignInPrompt /></div>
+    : signedIn === null || state.status === 'loading'
+      ? <div className="kb-settled-wait" aria-busy="true" />
+      : state.status === 'failed'
+        ? <p className="kb-calm">The settlement could not be loaded. Reload the page to try again.</p>
+        : ready
+          ? <Summary data={ready} tab={tab} onTab={setPicked} />
+          : <p className="kb-calm">Nothing has settled for you yet.</p>;
+  return (
+    <div className="kb-settled">
+      {content}
+      <div className="kb-settled-ways kb-calm">
+        {opening && <Link to="/log" state={opening} className="kb-settled-log kb-glass-skew"><span className="kb-glass-upright">Open my log</span></Link>}
+        <Link
+          to={backHref(boardPlace())}
+          className="kb-settled-back kb-glass-skew"
+          aria-keyshortcuts="Escape"
+          onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
+        >
+          <span className="kb-glass-upright">Back to the board</span>
+        </Link>
+      </div>
+    </div>
+  );
 }
 
-/** The accounts this load has looked for an unseen settlement for, by backend: a load is one backend, made once (web/src/main.tsx). */
-let looked = new WeakMap<object, Set<Id>>();
+/**
+ * What this load has done, by backend: a load is one backend, made once (web/src/main.tsx). `looked` holds the accounts this load has
+ * finished looking for an unseen settlement for; `begun`, those it began a look for on a board page, finished or not.
+ */
+let loads = new WeakMap<object, { readonly looked: Set<Id>; readonly begun: Set<Id> }>();
 
 /** Forgets what this load has looked for, as a new page load starts afresh: for a test that loads twice on one backend. */
 export function startLoad(): void {
-  looked = new WeakMap();
+  loads = new WeakMap();
 }
 
 /**
  * Opens the summary on the first load after a settlement this device has not seen for the account. `active` is the app's word that
- * the load may be met by it (a board page); it looks once per load and account.
+ * the load may be met by it (a board page); it looks once per load and account, and a look dropped before it finished is made again
+ * on the next board page.
  */
 export function SettlementOnLoad({ active }: { readonly active: boolean }) {
   const { api } = useKayfa();
@@ -209,24 +234,34 @@ export function SettlementOnLoad({ active }: { readonly active: boolean }) {
   useEffect(() => {
     const account = session.account;
     if (!sessionKnown || !account) return undefined;
-    /* Once per load and account, whatever page the load met: a load of a glass page is not met by it later, on a move to the board. */
-    const seenThisLoad = looked.get(api) ?? new Set<Id>();
-    looked.set(api, seenThisLoad);
-    if (seenThisLoad.has(account)) return undefined;
-    seenThisLoad.add(account);
-    if (!active) return undefined;
+    const load = loads.get(api) ?? { looked: new Set<Id>(), begun: new Set<Id>() };
+    loads.set(api, load);
+    if (load.looked.has(account)) return undefined;
+    /*
+     * Once per load and account. A load that met a glass page first is not met by it later, on a move to the board. A look begun on a
+     * board page and dropped (the page left, or the board's word turned off, while its read was on its way) marks nothing, so the next
+     * board page of the same load asks again (#89): a dropped read is never the end of the summary.
+     */
+    if (!active) {
+      if (!load.begun.has(account)) load.looked.add(account);
+      return undefined;
+    }
+    load.begun.add(account);
     let live = true;
+    const done = () => { if (live) load.looked.add(account); };
     void (async () => {
       const last = await api.lastSettledAt();
-      if (!last) return;
+      if (!live) return;
+      if (!last) return done();
       const seen = readSeen(account);
-      if (seen !== null && micros(seen) >= micros(last)) return;
+      if (seen !== null && micros(seen) >= micros(last)) return done();
       const newest = (await api.log()).settlements[0];
       if (!live) return;
+      done();
       markSeen(account, last);
       /* The summary is of a settlement the player has lines in; one that scored nothing of theirs is only marked. */
       if (newest && micros(newest.endsAt) === micros(last)) navigate('/log/settlement');
-    })().catch(() => { /* a load the summary could not be read for opens as it would have */ });
+    })().catch(() => { done(); /* a load the summary could not be read for opens as it would have */ });
     return () => { live = false; };
   }, [active, api, navigate, session.account, sessionKnown]);
   return null;

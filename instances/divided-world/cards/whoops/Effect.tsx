@@ -127,6 +127,12 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   const [built, setBuilt] = useState(false);
   const [tool, setTool] = useState<'wash' | 'ink'>('wash');
   const [report, setReport] = useState('');
+  /**
+   * The lines a scrub has just uncovered, said as news; the lines readable before it are not said again. `n` counts what was said, so
+   * the same words said again are a change a screen reader hears (a trailing no-break space on every other one).
+   */
+  const [uncovered, setUncovered] = useState({ words: '', n: 0 });
+  const readBefore = useRef<ReadonlySet<string> | null>(null);
   const [view, setView] = useState<View | null>(null);
   /** How many layers' ink grids are held: none for a post that has left the viewport. */
   const [held, setHeld] = useState(0);
@@ -152,6 +158,11 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   const lastSent = useRef(new Map<string, string>());
   /** How many saves in a row have not got through, by play. */
   const failures = useRef(new Map<string, number>());
+  /** The state each play's last save from this screen was answered for, and when the server saved it. */
+  const acked = useRef(new Map<string, { readonly state: unknown; readonly savedAt: string }>());
+  /** The post has left the screen: a save still on its way goes on, and nothing writes to this component's state. */
+  const gone = useRef(false);
+  const say = useCallback((words: string) => { if (!gone.current) setReport(words); }, []);
   /** What the ink grids were built from, so a state that changes nothing in them does not build them again. */
   const builtFrom = useRef<{ splats: readonly Splat[]; height: number; payload: unknown; states: Map<string, string> } | null>(null);
   const cleanedAt = useRef(new Map<string, number>());
@@ -207,7 +218,16 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
 
   /* ----------------------------------------------------------------- the model ---- */
 
-  const savedFor = useCallback((id: string) => savedOf(now.current.states[id]?.state), []);
+  /**
+   * The saved version of a play's state: the newer of what the thread holds and what this screen's own last save was answered with. A
+   * save answered after the post has gone is heard by nobody here, and the strokes made since are saved on top of it, not of the
+   * version before it (#86).
+   */
+  const savedFor = useCallback((id: string) => {
+    const held = now.current.states[id];
+    const own = acked.current.get(id);
+    return savedOf(own && (!held || Date.parse(own.savedAt) > Date.parse(held.savedAt)) ? own.state : held?.state);
+  }, []);
   const cleanOf = useCallback((i: number) => {
     const id = now.current.layers[i]!.play.id;
     return savedFor(id).clean || localClean.current.has(id);
@@ -383,7 +403,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
       const room = fits(all);
       /* A layer with no room for more strokes can still be marked clean: the saved strokes go again with the mark, so a post the author washed clean is never left splatted for everyone. */
       if (!room && !cleanNow) {
-        setReport('This layer has no room for more strokes to save. What you wash from here shows on your screen only.');
+        say('This layer has no room for more strokes to save. What you wash from here shows on your screen only, but washing it clean still clears it for everyone.');
         continue;
       }
       const strokes = room ? all : [...savedFor(id).strokes];
@@ -398,7 +418,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
       }
       sending.current.delete(id);
       if (!answer.ok) {
-        setReport(answer.error);
+        say(answer.error);
         /* A refusal is the card's answer and would be the same again. A save that got no answer is sent again, a little later each time, and given up on after a few: the strokes stay, and the author's next one sends them. */
         const failed = (failures.current.get(id) ?? 0) + 1;
         failures.current.set(id, failed);
@@ -406,14 +426,17 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
         continue;
       }
       failures.current.delete(id);
-      setReport('');
+      const savedAt = (answer.value as { readonly savedAt?: unknown } | null)?.savedAt;
+      if (typeof savedAt === 'string') acked.current.set(id, { state, savedAt });
+      say('');
       /* What was sent is now the saved version; strokes made while it was on its way are still to send. */
       mine.current.set(id, (mine.current.get(id) ?? []).slice(kept.length));
       if (cleanNow) wantClean.current.delete(id);
-      if (dirty.current.has(id) || (mine.current.get(id) ?? []).length > 0 || wantClean.current.has(id)) queueSave(id);
+      /* Once the post has gone there is nothing left to wait on: what was made meanwhile goes at once. */
+      if (dirty.current.has(id) || (mine.current.get(id) ?? []).length > 0 || wantClean.current.has(id)) queueSave(id, gone.current ? 0 : SAVE_AFTER_MS);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedFor]);
+  }, [savedFor, say]);
 
   const queueSave = useCallback((id: string, after = SAVE_AFTER_MS) => {
     dirty.current.add(id);
@@ -421,8 +444,20 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
     saveTimer.current = setTimeout(() => { void flush(); }, after);
   }, [flush]);
 
-  /* A post left with strokes unsaved saves them as it goes. */
-  useEffect(() => () => { if (dirty.current.size > 0) void flush(); }, [flush]);
+  /*
+   * A post left with strokes unsaved saves them as it goes. A play whose save is still on its way is not dropped: its strokes stay
+   * marked, and the save on its way sends them once it is answered (`flush` above), from its own promise, which leaving does not cancel.
+   * Once the post has gone, a save the card refuses, or one that got no answer through every retry, is not sent again, since no next
+   * stroke will come to carry it; and a save another tab of the author's made meanwhile is not heard here, so the last of the two
+   * to land is the layer's state, as with any two screens saving one play.
+   */
+  useEffect(() => {
+    gone.current = false;
+    return () => {
+      gone.current = true;
+      if (dirty.current.size > 0) void flush();
+    };
+  }, [flush]);
 
   /** A layer washed to the instance's share is clean: for this screen, and for everyone when the author did it. */
   const checkClean = useCallback(() => {
@@ -605,6 +640,26 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   /* Until the ink is built the post is treated as covered: nothing is read before the model says what is. */
   const hidden = anyLive && covers;
   const read = view && hidden ? view.lines.filter((_, i) => !view.covered[i]) : null;
+  /*
+   * What each change of the view uncovered: a line covered before and readable now, known by its words (and which of the same words
+   * it is), so a relayout that renumbers the lines says nothing. The first view only sets what was readable, and a post washed clean
+   * says nothing: its own words are read then, once.
+   */
+  const lineKeys = view ? (() => {
+    const seen = new Map<string, number>();
+    return view.lines.map((l) => { const k = seen.get(l.text) ?? 0; seen.set(l.text, k + 1); return `${k}\u0000${l.text}`; });
+  })() : null;
+  const readNow = view && lineKeys ? lineKeys.filter((_, i) => !view.covered[i]) : null;
+  const readKey = readNow === null ? null : `${anyLive ? 'live' : 'plain'}\u0001${readNow.join('\u0001')}`;
+  useEffect(() => {
+    if (!view || !readNow) return;
+    const before = readBefore.current;
+    readBefore.current = new Set(readNow);
+    if (!before || !anyLive) return;
+    const fresh = readNow.filter((k) => !before.has(k)).map((k) => k.slice(k.indexOf('\u0000') + 1));
+    if (fresh.length > 0) setUncovered((was) => ({ words: fresh.join(' '), n: was.n + 1 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- readKey is what the view's lines and cover say, and nothing else is read
+  }, [readKey]);
   /* The hint is the board's sentence for everyone; the author's own tools and what they save follow the button. */
   const note = 'This post is splatted. Drag across the ink to scrub it on your screen.';
   /* The plate's readout: how many layers hold ink, and how much of them is washed on this screen, as the model says (geometry, never a pixel read). */
@@ -654,6 +709,12 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
           {read.map((line, i) => <span key={i}>{line.text} </span>)}
         </div>
       )}
+      {/*
+        * What a screen reader is told, in regions on the page from the start and empty until they speak (WCAG 4.1.3; #89 P2-1): the
+        * lines a scrub has just uncovered, and the save's report. The readout above is for reading, never said as news.
+        */}
+      <p className="kb-visually-hidden" aria-live="polite" data-kb-uncovered>{uncovered.words}{uncovered.words && uncovered.n % 2 === 0 ? '\u00a0' : ''}</p>
+      <p className="kb-visually-hidden" role="status" data-kb-report>{report}</p>
       {/* The words and the controls are glass in the plate under the post, never in the post's 2003 body (the owner's notes on #80), drawn as one game piece (the owner on #80's shots): a readout, then tiles. */}
       {(anyLive || report) && (
         <EffectStrip slot={slot} card="whoops" readout={readout}>
@@ -678,7 +739,8 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
             </span>
           )}
           {/* Said whether or not a layer is left: a clean mark that did not get through is the author's to know of, with no ink under it. */}
-          {report && <p role="status" className="kb-plate-line kb-whoops-status">{report}</p>}
+          {/* Drawn on the plate for the eye; a screen reader hears it from the status region above, once. */}
+          {report && <p className="kb-plate-line kb-whoops-status" aria-hidden="true">{report}</p>}
         </EffectStrip>
       )}
     </div>

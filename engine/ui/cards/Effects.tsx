@@ -43,10 +43,13 @@ export function PostEffects({ plays, post, place, slot, children }: { readonly p
   const [placed, setPlaced] = useState<HTMLElement | null>(null);
   useEffect(() => { if (slot) setPlaced(slot.current); }, [slot]);
   const { api, ui } = useKayfa();
-  const { actingCharacters } = usePlayer();
+  const { actingCharacters, writingCharacters } = usePlayer();
   const here = usePlays(plays, post.id);
-  /* The character of the reader's that wrote the post, if any: the only one a state is saved as. */
-  const author = actingCharacters.find((c) => c.id === post.character) ?? null;
+  /*
+   * The character of the reader's that wrote the post, if any: the only one a state is saved as. Retired or not, since the
+   * post's player answers for what is on it (#85); casting and releasing stay with the masks that can act.
+   */
+  const author = writingCharacters.find((c) => c.id === post.character) ?? null;
   const save = useCallback<EffectProps['save']>(async (play, state) => {
     if (!author) return { ok: false, error: NOT_AUTHOR };
     const saved = await api.saveEffect(play, author.id, state);

@@ -25,7 +25,7 @@ import type { CardUi, ConfigFormProps } from './types.ts';
 const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'stick.price': 100 };
 
 const whoopsRules: CardRules<{ color: string }> = {
-  key: 'whoops', name: 'Whoops!', alignment: 'salty', priceKey: 'whoops.price', stack: 3,
+  key: 'whoops', name: 'Whoops!', alignment: 'salty', priceKey: 'whoops.price', stack: 3, reads: ['whoops.perLength', 'whoops.lengthStep'],
   playPrice: (settings, target) => settings.economy['whoops.perLength']! * Math.floor(target.length / settings.economy['whoops.lengthStep']!),
   canApply: (target, effects) => landsOnPost(whoopsRules, target, effects),
   validateConfig: (config) => {
@@ -68,8 +68,9 @@ class Observer {
   takeRecords() { return []; }
 }
 
-function world() {
-  const fake = buildWorld({ postMaxLength: 1000 }, instance);
+/** The world; `server` is the instance the backend prices with, where an admin may have tuned the economy the screens were built with. */
+function world(server: Instance = instance) {
+  const fake = buildWorld({ postMaxLength: 1000 }, server);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
@@ -89,7 +90,8 @@ function world() {
 }
 
 async function open(w: ReturnType<typeof world>, ui: CardUi[] = cards) {
-  renderIn(w.fake, <Frame><ThreadScreen thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards: ui, settings: { postMaxLength: 1000 } });
+  /* The screens on the compiled instance, given the settings the backend reads, as the app gives them (web/src/App.tsx). */
+  renderIn(w.fake, <Frame><ThreadScreen thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards: ui, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
   await screen.findByRole('article', { name: /^Post 4 /u });
   await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
 }
@@ -319,6 +321,54 @@ describe('the play form', () => {
     expect(within(form).getByText('200 / 200')).toBeInTheDocument();
   });
 
+  /* #89 P2-2: the message's limit is said, not only drawn: the counter speaks politely as it nears the limit, never on every key. */
+  test('pasting past 200 characters leaves 200 and says the limit; a key far from it says nothing', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const form = await playHere(user, 1);
+    const message = within(form).getByRole('textbox', { name: 'Your message' });
+    const said = form.querySelector<HTMLElement>('[data-kb-count-said]');
+    expect(said).not.toBeNull();
+    expect(said).toHaveAttribute('aria-live', 'polite');
+    await user.click(message);
+    await user.type(message, 'hi');
+    expect(said).toHaveTextContent('');
+    await user.paste('x'.repeat(210));
+    expect([...(message as HTMLTextAreaElement).value]).toHaveLength(200);
+    expect(said).toHaveTextContent('200 of 200 characters: the message is full, and the rest was not kept.');
+    expect(form.querySelector('[data-kb-count-said]')).toBe(said);
+    /* Said again on a second paste past the limit: the region changes, so a screen reader hears it again. */
+    const first = said!.textContent;
+    await user.paste('y');
+    expect(said).toHaveTextContent('200 of 200 characters: the message is full, and the rest was not kept.');
+    expect(said!.textContent).not.toBe(first);
+  });
+
+  test('the counter speaks on entering its last 20 characters and on reaching the limit, takes back what stops being true, and says it again on a new crossing', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const form = await playHere(user, 1);
+    const message = within(form).getByRole('textbox', { name: 'Your message' });
+    const said = form.querySelector<HTMLElement>('[data-kb-count-said]')!;
+    await user.click(message);
+    await user.paste('x'.repeat(179));
+    expect(said).toBeEmptyDOMElement();
+    await user.type(message, 'x');
+    expect(said).toHaveTextContent('20 characters left.');
+    await user.type(message, 'x'.repeat(20));
+    expect(said).toHaveTextContent('200 of 200 characters: the message is full.');
+    await user.type(message, '{Backspace}');
+    expect(said).toBeEmptyDOMElement();
+    await user.type(message, 'x');
+    expect(said).toHaveTextContent('200 of 200 characters: the message is full.');
+    await user.type(message, '{Backspace}'.repeat(30));
+    expect(said).toBeEmptyDOMElement();
+    await user.type(message, 'x'.repeat(10));
+    expect(said).toHaveTextContent('20 characters left.');
+  }, 20_000);
+
   test('the price shown is the price the server charges', async () => {
     const user = userEvent.setup();
     const w = world();
@@ -330,6 +380,29 @@ describe('the play form', () => {
     const spent = 462 - (await w.fake.wallet()).balance;
     expect(shown).toContain((spent / 100).toFixed(2));
     expect(spent).toBe(25);
+  });
+
+  /* #86: the hand's postcards say their rules with the numbers the server prices with now, an admin's tuning included. */
+  test('a price an admin has tuned is the one a hand\'s postcard says', async () => {
+    const user = userEvent.setup();
+    const w = world({ ...instance, settings: { ...instance.settings, economy: { ...economy, 'whoops.price': 150 } } });
+    const saying = cards.map((c) => (c.key === 'whoops' ? { ...c, describe: (st: Instance['settings']) => `Splats a post for ${(st.economy['whoops.price']! / 100).toFixed(2)}.` } : c));
+    await open(w, saying);
+    await user.click(handButton());
+    expect(within(drawer()).getAllByRole('button', { name: /^Whoops!, Salty postcard/u })[0]).toHaveAccessibleDescription('Splats a post for 1.50.');
+  });
+
+  /* #86: the server prices with the economy row an admin tunes; the form shows that price, not the compiled one. */
+  test('a surcharge an admin has tuned is the one shown, and the one charged', async () => {
+    const user = userEvent.setup();
+    const tuned: Instance = { ...instance, settings: { ...instance.settings, economy: { ...economy, 'whoops.perLength': 40 } } };
+    const w = world(tuned);
+    await open(w);
+    const form = await playHere(user, 2);
+    expect(within(form).getByText('To pay now').closest('div')!.textContent).toContain('0.40');
+    await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(462 - (await w.fake.wallet()).balance).toBe(40);
   });
 
   test('on a post by another of the player\'s own characters it says so, and not on anyone else\'s', async () => {

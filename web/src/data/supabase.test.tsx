@@ -29,6 +29,7 @@ const FALLBACK: ScreenSettings = {
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
   cardSettings: { 'whoops.clean': 95 },
+  cardEconomy: {},
 };
 
 const B64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -456,6 +457,13 @@ describe('reads and their rows', () => {
     expect(await h.api.tallies([A, B])).toEqual({ [A]: { fire: 3, zzz: 1 }, [B]: {} });
     expect(await h.api.viewCounts([T])).toEqual({ [T]: 9 });
     expect(await h.api.reading([T])).toEqual({ [T]: 4 });
+  });
+
+  /* #86: the prices the server charges now reach the screens, which lay them over the compiled economy (engine/ui/cards/faces.ts). */
+  it('reads the cards\' economy the server prices with, and holds none where the view has none', async () => {
+    const h = harness(() => rows([{ settings: { cardEconomy: { 'whoops.price': 250, 'whoops.perLength': 40 } } }]));
+    expect((await h.api.settings()).cardEconomy).toEqual({ 'whoops.price': 250, 'whoops.perLength': 40 });
+    expect((await harness(() => rows([{ settings: { walletCap: 900 } }])).api.settings()).cardEconomy).toEqual({});
   });
 
   it('fills a missing settings key from the instance fallback and uses what the view holds', async () => {
@@ -1003,6 +1011,61 @@ describe('the log', () => {
     const [plays, saves] = h.to('my_posts_played_on');
     expect(plays?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);
+  });
+
+  /* #89 F2: a settlement made before its shares were kept says so, and the log says it plainly rather than "no post". */
+  it('maps a ledger row\'s shares_kept: false to a settlement whose shares were not kept', async () => {
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_ledger') return rows([{ ...LEDGER[0], shares_kept: false }]);
+      if (name === 'my_ledger_shares') return rows([]);
+      if (name.startsWith('my_')) return rows([]);
+      return undefined;
+    });
+    const log = await h.api.log();
+    expect(log.settlements.map((x) => x.sharesKept)).toEqual([false]);
+  });
+
+  /* #89 F4: a view that fills a page at the cursor's own instant is read again there, whole, and the cursor moves past it. */
+  it('reads a page that would not move again at its one instant, every row, and moves the cursor to the microsecond before', async () => {
+    const full = Array.from({ length: 200 }, (_, i) => ({ ...LEDGER[0], character: `${B.slice(0, -4)}${String(i).padStart(4, '0')}` }));
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_ledger') return rows(r.url.searchParams.get('ends_at') === `eq.${S1}` ? [...full, LEDGER[1]] : full);
+      if (name.startsWith('my_')) return rows([]);
+      return undefined;
+    });
+    const log = await h.api.log(S1);
+    expect(log.before).toBe('2026-10-30T08:16:59.999999+00:00');
+    expect(log.settlements.map((x) => [x.id, x.lines.length])).toEqual([[9, 201]]);
+    const [page, whole] = h.to('my_ledger');
+    expect(page?.url.searchParams.get('ends_at')).toBe(`lte.${S1}`);
+    expect(whole?.url.searchParams.get('ends_at')).toBe(`eq.${S1}`);
+    expect(whole?.url.searchParams.get('order')).toBe('settlement.asc,character.asc,reason.asc');
+    for (const name of ['my_wallet_events', 'my_card_ledger', 'my_posts_played_on']) {
+      expect(h.to(name).some((q) => [...q.url.searchParams.values()].includes(`eq.${S1}`))).toBe(true);
+    }
+  });
+
+  it('reads an instant whole however many rows it holds, a page of rows at a time, to an end past the last row', async () => {
+    const at = Array.from({ length: 1000 }, (_, i) => ({ settlement: null, kind: 'purchase', change: -100, overflow: 0, floored: 0, balance_after: i, ref: null, at: S1 }));
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_wallet_events') {
+        if (r.url.searchParams.get('at') !== `eq.${S1}`) return rows(at.slice(0, 200));
+        const offset = Number(r.url.searchParams.get('offset') ?? 0);
+        /* Past the last row, PostgREST answers 416, which a page of rows reads as empty. */
+        return offset >= at.length ? new Response('{}', { status: 416 }) : rows(at.slice(offset, offset + Number(r.url.searchParams.get('limit'))));
+      }
+      if (name.startsWith('my_')) return rows([]);
+      return undefined;
+    });
+    const log = await h.api.log(S1);
+    expect(log.wallet).toHaveLength(1000);
+    expect(log.before).toBe('2026-10-30T08:16:59.999999+00:00');
+    const whole = h.to('my_wallet_events').filter((q) => q.url.searchParams.get('at') === `eq.${S1}`);
+    expect(whole.map((q) => q.url.searchParams.get('offset') ?? '0')).toEqual(['0', '1000']);
+    expect(whole[0]?.url.searchParams.get('order')).toBe('settlement.asc,kind.asc,ref.asc,change.asc,overflow.asc,floored.asc,balance_after.asc');
   });
 
   it('reads the shares whole, a page of rows at a time, however many a settlement has', async () => {

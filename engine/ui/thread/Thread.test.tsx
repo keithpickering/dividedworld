@@ -856,6 +856,38 @@ describe('a card\'s effect on a post', () => {
     await waitFor(() => expect(JSON.parse(wrapped.dataset.states!)[played].state).toEqual({ saved: 'from elsewhere' }));
   });
 
+  /*
+   * #85: a splat on a post whose author was later retired. Its own player washes it through the retired mask that wrote the post
+   * (supabase/migrations/0038_retired_author_washes.sql), and another reader loads the layer as they left it. Every other
+   * refusal stands: a retired mask that did not write the post, and another player's retired mask, which reads as any mask
+   * they do not play.
+   */
+  test('the player of a retired author washes the post it wrote clean, and another reader loads the layer clean', async () => {
+    const w = world(3);
+    const spare = w.fake.seed.character(w.me, 'Spare Mask', 'face');
+    const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    w.fake.seed.retire(w.pipe);
+    w.fake.seed.retire(spare);
+    /* Whoops!'s own control marks the layer clean when the author washes to the share (whoops/Effect.test.tsx, given `reader.author`); here it is that save. */
+    const washes: CardUi = { ...fx('whoops'), Effect: ({ plays, reader, save, children }) => (
+      <div data-testid="fx-whoops" data-author={String(reader.author)}>
+        <button type="button" onClick={() => void save(plays[0]!.id, { clean: true, strokes: [] })}>wash clean</button>
+        {children}
+      </div>
+    ) };
+    openWith(w, [washes]);
+    const wrapped = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByTestId('fx-whoops');
+    await waitFor(() => expect(wrapped.dataset.author).toBe('true'));
+    await userEvent.click(within(wrapped).getByRole('button', { name: 'wash clean' }));
+    await waitFor(async () => expect((await w.fake.effectStates([played]))[played]?.state).toEqual({ clean: true, strokes: [] }));
+    expect(await w.fake.saveEffect(played, spare, {})).toEqual({ ok: false, error: 'that character is retired; an admin can restore it' });
+    w.fake.signInAs(w.other);
+    expect((await w.fake.effectStates([played]))[played]?.state).toEqual({ clean: true, strokes: [] });
+    const theirs = await w.fake.saveEffect(played, w.pipe, {});
+    expect(theirs).toEqual(await w.fake.saveEffect(played, w.fake.seed.character(w.me, 'Not Retired', 'face'), {}));
+    expect(theirs).toEqual({ ok: false, error: 'you do not play that character' });
+  }, 15_000);
+
   test('a reader who is not the post\'s author cannot save: the effect is told so in the server\'s words', async () => {
     const w = world(3);
     w.fake.seed.card(w.pipe, w.ids[2]!, 'whoops', { message: 'mine' });

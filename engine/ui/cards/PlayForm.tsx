@@ -33,7 +33,7 @@ import { Orbs } from '../orbs/Orbs.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
-import { faceOf, orbs, plainRefusal } from './faces.ts';
+import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
 import { landing, lengthOf, targetOf } from './land.ts';
 import { effectCards, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
@@ -48,12 +48,23 @@ export interface PlayFormProps {
   readonly onPlayed: () => void;
 }
 
+/** Where the message's counter starts to speak: its last stretch before the limit. */
+const MESSAGE_NEAR = MESSAGE_MOST - 20;
+
 export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
-  const { api, instance, ui } = useKayfa();
+  const { api, instance, settings: screen, ui } = useKayfa();
+  /* Priced as the server will charge (withCardEconomy): a surcharge an admin has tuned is the one shown. */
+  const priced = useMemo(() => withCardEconomy(instance.settings, screen.cardEconomy), [instance.settings, screen.cardEconomy]);
   const player = usePlayer();
   const id = useId();
   const [config, setConfig] = useState<Readonly<Record<string, unknown>> | undefined>(undefined);
   const [message, setMessage] = useState('');
+  /**
+   * What the counter last said aloud: only on crossing into its last stretch, or on reaching the limit (#89 P2-2). `n` counts what was
+   * said, so the same words said again are a change a screen reader hears (a trailing no-break space on every other one).
+   */
+  const [countSaid, setCountSaid] = useState({ words: '', n: 0 });
+  const sayCount = (words: string) => setCountSaid((was) => ({ words, n: words === '' ? was.n : was.n + 1 }));
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
@@ -80,7 +91,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
 
   const rules = instance.cards.find((c) => c.key === card);
   const cardUi = ui.cards.find((c) => c.key === card);
-  const face = useMemo(() => (rules ? faceOf(rules, cardUi, instance.settings) : null), [rules, cardUi, instance.settings]);
+  const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced) : null), [rules, cardUi, priced]);
   const hud = player.hudCharacter;
   const wallet = player.wallet;
 
@@ -91,11 +102,11 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     if (!rules) return 0;
     try {
       const checked = rules.validateConfig(config);
-      return rules.playPrice(instance.settings, targetOf(post), checked.ok ? checked.value : config ?? {});
+      return rules.playPrice(priced, targetOf(post), checked.ok ? checked.value : config ?? {});
     } catch {
       return 0;
     }
-  }, [rules, instance.settings, post, config]);
+  }, [rules, priced, post, config]);
 
   if (!rules || !face) return null;
   const length = lengthOf(post);
@@ -106,7 +117,16 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const blocked = busy || !hud || !wallet || short || !lands.ok;
 
   const change = (value: string) => {
-    setMessage([...value].slice(0, MESSAGE_MOST).join(''));
+    const typed = [...value];
+    const was = [...message].length;
+    const now = Math.min(typed.length, MESSAGE_MOST);
+    setMessage(typed.slice(0, MESSAGE_MOST).join(''));
+    /* Said politely and seldom: never on every key, only as the message nears its limit, reaches it, or loses what ran past it. */
+    if (typed.length > MESSAGE_MOST) sayCount(`${MESSAGE_MOST} of ${MESSAGE_MOST} characters: the message is full, and the rest was not kept.`);
+    else if (now === MESSAGE_MOST && was < MESSAGE_MOST) sayCount(`${MESSAGE_MOST} of ${MESSAGE_MOST} characters: the message is full.`);
+    else if (now >= MESSAGE_NEAR && was < MESSAGE_NEAR) sayCount(`${MESSAGE_MOST - now} characters left.`);
+    /* Words that stopped being true are taken back silently: below the stretch, or under the limit after saying it was reached. */
+    else if (now < MESSAGE_NEAR || (now < MESSAGE_MOST && was === MESSAGE_MOST)) sayCount('');
     if (again) { setAgain(false); setRefusal(null); }
   };
   const settle = (words: string | null) => (words === null ? null : plainRefusal(words));
@@ -162,7 +182,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   };
 
   const Config = cardUi?.ConfigForm;
-  const surcharge = cardUi?.surcharge?.(instance.settings) ?? 'This post';
+  const surcharge = cardUi?.surcharge?.(priced) ?? 'This post';
   const hint = `${id}-hint`;
 
   return (
@@ -188,6 +208,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
               <span id={hint}>Shown on the card's Act. Plain text.</span>
               {/* In the face's own figures, as the board draws it: tabular ones are wider, and the board match refuses the difference. */}
               <span>{`${[...message].length} / ${MESSAGE_MOST}`}</span>
+              <span className="kb-visually-hidden" aria-live="polite" data-kb-count-said>{countSaid.words}{countSaid.words && countSaid.n % 2 === 0 ? '\u00a0' : ''}</span>
             </div>
           </div>
           <div className="kb-play-sum">

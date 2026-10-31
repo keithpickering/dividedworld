@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardRules } from '../../rules/cards.ts';
@@ -40,6 +41,23 @@ const orbSolids = () => [...document.querySelectorAll<HTMLElement>('.kb-vending-
 
 beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
 afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.useRealTimers(); });
+
+/* #86: an admin tuned a price in the economy row; the machine sells at the server's price, not the compiled one. */
+describe('a price an admin has tuned', () => {
+  test('is the price on the face and the buy button, and the price the purchase is charged', async () => {
+    const tuned: Instance = { ...shop, settings: { ...shop.settings, economy: { ...shop.settings.economy, 'whoops.price': 250 } } };
+    const fake = buildWorld(undefined, tuned);
+    const account = fake.seed.account('ana');
+    fake.seed.character(account, 'Pipewrench', 'heel');
+    fake.seed.wallet(account, 500);
+    fake.signInAs(account);
+    /* The screens on the compiled instance, given the settings the backend reads, as the app gives them (web/src/App.tsx). */
+    renderIn(fake, <Vending />, { instance: shop, cards: faces, path: '/vending', settings: { cardEconomy: (await fake.settings()).cardEconomy } });
+    fireEvent.click(await screen.findByRole('button', { name: /^Buy Whoops!, 2\.50 orbs?$/u }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 2.50' }));
+    await waitFor(async () => expect((await fake.wallet()).balance).toBe(250));
+  });
+});
 
 describe('the machine as the Vending board draws it', () => {
   test('each slot is a button that names the card and its price, the selected one says so, and the rest are sealed', async () => {
@@ -363,5 +381,44 @@ describe('the drop and the flight, under full motion', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 400); });
     expect(document.querySelector('.kb-vending-drop')).toBeNull();
     expect(screen.getByRole('link', { name: 'Your hand 3 → 4' })).toBeInTheDocument();
+  });
+});
+
+/* #89 P2-1 and P3-2: the purchase's outcome is said into a region already on the page, and the removed list's names are gone. */
+describe('what the machine says to a screen reader', () => {
+  test('the outcome is written into a polite region that was on the page, empty, before it spoke', async () => {
+    const fake = seeded(562);
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    const region = document.querySelector<HTMLElement>('.kb-vending-outcome[role="status"]');
+    expect(region).not.toBeNull();
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region).toHaveTextContent('');
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
+    await waitFor(() => expect(region).toHaveTextContent(/is in your hand/));
+    expect(document.querySelector('.kb-vending-outcome[role="status"]')).toBe(region);
+  });
+
+  test('a refusal is said at once, in a region that was on the page, empty, before it spoke', async () => {
+    const fake = seeded(562);
+    vi.spyOn(fake, 'buyCard').mockResolvedValue({ ok: false, error: 'the Vending Machine is closed' });
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    const region = screen.getByRole('alert');
+    expect(region).toHaveTextContent('');
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
+    await waitFor(() => expect(region).toHaveTextContent('The Vending Machine is closed.'));
+    expect(screen.getByRole('alert')).toBe(region);
+  }, 10_000);
+
+  test('no element or rule names the removed list', async () => {
+    open(seeded(562));
+    await screen.findByText('More postcards arrive in later seasons.');
+    expect(document.querySelector('[class*="kb-vending-list"], [class*="kb-vending-item"]')).toBeNull();
+    expect(readFileSync('engine/ui/vending/vending.css', 'utf8')).not.toMatch(/kb-vending-(list|item)/u);
+    /* The line about the empty slots is its own, and wears nothing of an empty slot's drawing. */
+    const line = screen.getByText('More postcards arrive in later seasons.').parentElement!;
+    expect(line).toHaveClass('kb-vending-empty-line');
+    expect(line).not.toHaveClass('kb-vending-sealed');
   });
 });
