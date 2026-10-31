@@ -267,6 +267,18 @@ button is inheriting the Verdana". The plate, the tiles and the six choices #80'
 tile, standalone and in the plate, is set in the glass's own tile face and size, as the plate's other tiles are, and no
 glass control in or under a 2003 post takes the board's face. The look's tests follow from the approved stories.
 
+**Amended 2026-10-31, the owner on the post's footer bar.** The owner: "I think we will likely need to put Quote, Spin,
+Edit, etc on a solid-color bar of their own, a footer bar similar to the header bar for the date and post number.
+There's no way the current #000 text against that magenta ink passes contrast, and that ink color is totally variable
+too." So every post, splatted or not, carries an opaque footer bar in the 2003 chrome, drawn like its header bar (the
+same ground, rule and type), holding its action row (Quote, Spin thread, Edit, History, Play card) and its reactions,
+or the reactions on an opaque band of their own; no 2003 text or chip lies on ink. The splat fills the body between the
+header bar and the footer bar, edge to edge; both bars draw over it and are never inked, so nothing's contrast depends
+on an ink a player picks, and a splat never moves the layout. Boards 01 and 02 draw the row without a bar: that region
+differs by this answer and their manifests say so. **Tests first:** at 390 and 1440 every footer control's text read
+against the bar's own ground with the post splatted in the lightest and the darkest ink a player can pick; the bar's
+ground opaque; a poison, the bar made transparent, fails.
+
 ### Task 6. The log's card lines, and the audit
 
 - The log names, plainly: a card bought, a card played and on whose post (one of the player's own characters' posts
