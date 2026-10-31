@@ -1,12 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * A card's plate and its play tile over a 2003 post, in a real browser (the owner on #80's round 2: "I think the Play
- * Here button is inheriting the Verdana"). Two things are held here: that no glass control in or under a 2003 post is set
+ * A card's plate and its ghost mark over a 2003 post, in a real browser (the owner on #80's round 2: "I think the Play
+ * Here button is inheriting the Verdana"; the play control is the ghost mark since the marks-and-the-lens plan's Task 3, and
+ * the plate goes in its Task 6). Two things are held here: that no glass control in or under a 2003 post is set
  * in the 2003 board's faces (a control drawn into the post's slot sits under the board's `body`, so it takes the board's
  * font unless it names the glass's own), and the shape the approved stories (engine/ui/cards/Plate.board.stories.tsx)
  * give the plate: outside the post's body and attached at its bottom right (full width on a phone), a readout and a meter,
- * tiles that are buttons, the play tile in the plate or under the post and never in the 2003 action row.
+ * tiles that are buttons, and the ghost mark in the post's date row, never in the 2003 action row.
  */
 test.use({ reducedMotion: 'reduce' });
 
@@ -32,7 +33,7 @@ async function faces(page: Page) {
 /** Every glass control in or under a 2003 post, with the family it computes. */
 function glassFamilies(page: Page) {
   return page.evaluate(() => {
-    const pick = 'article.kb-act .kb-glass, article.kb-act .kb-glass *, article.kb-act .kb-plate-tile, article.kb-act .kb-play-tag, article.kb-act .kb-play-here';
+    const pick = 'article.kb-act .kb-glass, article.kb-act .kb-glass *, article.kb-act .kb-plate-tile, article.kb-act .kb-mark';
     return Array.from(new Set(document.querySelectorAll<HTMLElement>(pick)))
       .filter((el) => !(el instanceof SVGElement) && !(el instanceof HTMLCanvasElement) && el.closest('.kb-act-main, .kb-act-links') === null)
       .map((el) => ({ what: `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80), text: (el.textContent ?? '').trim().slice(0, 30), family: getComputedStyle(el).fontFamily }));
@@ -50,18 +51,18 @@ async function expectGlassFaces(page: Page, expectTile: string) {
   }
 }
 
-test('the play tile standing under #42 is set in the glass\'s face, not the 2003 board\'s', async ({ page }) => {
+test('the ghost mark on #42 is set in the glass\'s face, not the 2003 board\'s', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1120 });
   await page.goto(ARMED);
-  await expect(page.locator('#post-42 .kb-play-here')).toBeVisible();
-  await expectGlassFaces(page, 'kb-play-here');
+  await expect(page.locator('#post-42 .kb-ghost-mark')).toBeVisible();
+  await expectGlassFaces(page, 'kb-ghost-mark');
 });
 
-test('the play tile in #41\'s plate, the plate and its tiles are set in the glass\'s face', async ({ page }) => {
+test('the ghost mark on #41, the plate and its tiles are set in the glass\'s face', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1120 });
   await page.goto(SPLATTED_AND_ARMED);
-  await expect(page.locator('#post-41 .kb-effect-strip .kb-play-here')).toBeVisible();
-  await expectGlassFaces(page, 'kb-play-here');
+  await expect(page.locator('#post-41 .kb-ghost-mark')).toBeVisible();
+  await expectGlassFaces(page, 'kb-ghost-mark');
   await expectGlassFaces(page, 'kb-plate-tile');
 });
 
@@ -95,26 +96,21 @@ for (const [name, width, height] of [['1440', 1440, 1120], ['390', 390, 844]] as
       }
     });
 
-    test('the armed play tile is never in the 2003 action row: in the plate on #41, under #42 on its own', async ({ page }) => {
+    test('the armed card\'s ghost mark is never in the 2003 action row or body: it ends the strip in the date row of #41 and of #42', async ({ page }) => {
       await page.goto(SPLATTED_AND_ARMED);
-      await expect(page.locator('#post-41 .kb-effect-strip .kb-play-here')).toBeVisible();
-      await expect(page.locator('#post-42 .kb-play-here')).toBeVisible();
-      await expect(page.locator('article.kb-act .kb-act-links .kb-play-here, article.kb-act .kb-act-main .kb-play-here')).toHaveCount(0);
-      const own = await page.evaluate(() => {
-        const tile = document.querySelector('#post-42 .kb-play-here')!;
-        const body = document.querySelector('#post-42 .kb-act-main')!.getBoundingClientRect();
-        return { under: tile.getBoundingClientRect().top >= body.bottom - 3, slot: tile.closest('.kb-act-slot') !== null };
-      });
-      expect(own).toEqual({ under: true, slot: true });
+      await expect(page.locator('#post-41 .kb-ghost-mark')).toBeVisible();
+      await expect(page.locator('#post-42 .kb-ghost-mark')).toBeVisible();
+      await expect(page.locator('article.kb-act .kb-act-links .kb-ghost-mark, article.kb-act .kb-act-main .kb-ghost-mark, article.kb-act .kb-act-slot .kb-ghost-mark')).toHaveCount(0);
+      await expect(page.locator('#post-42 .kb-act-meta .kb-ghost-mark')).toHaveCount(1);
     });
 
-    test('no post has "Play card" in its row, armed or not: the armed card is the glass tile alone', async ({ page }) => {
+    test('no post has "Play card" in its row, armed or not: the armed card is the ghost mark alone', async ({ page }) => {
       await page.goto(SPLATTED);
       await expect(page.locator('#post-42 .kb-act-links')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Play card' })).toHaveCount(0);
-      await expect(page.locator('.kb-play-here')).toHaveCount(0);
+      await expect(page.locator('.kb-ghost-mark')).toHaveCount(0);
       await page.goto(ARMED);
-      await expect(page.locator('#post-42 .kb-play-here')).toBeVisible();
+      await expect(page.locator('#post-42 .kb-ghost-mark')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Play card' })).toHaveCount(0);
     });
   });
@@ -132,7 +128,9 @@ test('the plate on #41 reads out the card and its layers, and its controls are b
   const layers = Number(/^(\d+)/u.exec((await plate.locator('.kb-plate-state').textContent()) ?? '')![1]);
   expect(bars).toBe(layers);
   await expect(plate.getByRole('button', { name: 'Hold to scrub' })).toBeVisible();
-  await expect(plate.getByRole('button', { name: 'Play Whoops! here' })).toBeVisible();
+  /* The armed card is the post's ghost mark, in its date row, and not among the plate's controls. */
+  await expect(plate.getByRole('button', { name: /^Play Whoops!/u })).toHaveCount(0);
+  await expect(page.locator('#post-41').getByRole('button', { name: 'Play Whoops! on post 41' })).toBeVisible();
   for (const name of ['Wash', 'Write in ink']) {
     const tool = plate.getByRole('button', { name });
     if (await tool.count()) await expect(tool).toHaveAttribute('aria-pressed', /^(true|false)$/u);

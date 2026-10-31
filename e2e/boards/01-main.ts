@@ -120,7 +120,7 @@ const manifest: BoardManifest = {
      * 2026-10-30). So it differs from the board in kind and in place, and is found
      * by its name within the post and compared by neither its box nor its type.
      */
-    { id: 'post-42-play', role: 'link', name: 'Play Whoops! here', buildRole: 'button', within: 'post-42', box: 'none', type: false },
+    { id: 'post-42-play', role: 'link', name: 'Play Whoops! here', buildName: 'Play Whoops! on post 42', buildRole: 'button', within: 'post-42', box: 'none', type: false },
     /*
      * Whoops!'s keyboard path. The board draws #41's scrub sentence, "Scrub with the keyboard" in the 2003 button, inside the
      * post's 2003 body; the build draws the sentence, "Hold to scrub" and the author's tools as one glass strip under the

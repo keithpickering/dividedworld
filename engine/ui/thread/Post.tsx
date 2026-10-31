@@ -2,16 +2,16 @@
  * One Act in a thread, as an `<article id="post-<seq>">` with a permalink. A post has its
  * character's postbit; an unmask, a tally and a reveal are plainer, until the screens that draw them
  * are built (the profile and reveal tasks). The words of an Act are shown as text or as BBCode, never
- * as markup. A card play is no Act of the thread's: it takes no number and shows as a tag on its post
- * (engine/ui/cards/), whose effect wraps the post's words.
+ * as markup. A card play is no Act of the thread's: it takes no number and shows as a mark on its post's date row
+ * (engine/ui/cards/Marks.tsx), whose effect wraps the post's words.
  *
  * A post is memoized on its Act, its person and its layout, and its reactions read their own tally
  * from the tallies store, so a reaction re-renders the post it is on and nothing else.
  */
 import { memo, useEffect, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
-import { PlateProvider, PlayTags, PostEffects } from '../cards/Effects.tsx';
-import { PlayHere } from '../cards/PlayActions.tsx';
+import { PostEffects } from '../cards/Effects.tsx';
+import { PostMarks } from '../cards/Marks.tsx';
 import { holdsEffects } from '../cards/plays.ts';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act, Id } from '../data/api.ts';
@@ -131,7 +131,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   }, [observer]);
   const name = nameOf(act, person);
   const [editing, setEditing] = useState(false);
-  /* Where a card's words and controls stand, under the post's chrome (cards/Effects.tsx). A ref and not state, so the post's words are not drawn again when it mounts. */
+  /* Where a card's words and controls stand, under the post's chrome (cards/Effects.tsx `EffectStrip`). Going in Task 6 of the marks-and-the-lens plan, when Whoops! moves from its plate to the Lens. A ref and not state, so the post's words are not drawn again when it mounts. */
   const slot = useRef<HTMLDivElement>(null);
   const editButton = useRef<HTMLButtonElement>(null);
   /* After an edit is saved or cancelled, focus goes back to the Edit button. */
@@ -143,36 +143,33 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const plain = act.kind === 'unmask';
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   return (
-    <PlateProvider>
-      <article
-        ref={ref}
-        id={`post-${seq}`}
-        tabIndex={-1}
-        className="kb-act"
-        aria-labelledby={`post-${seq}-title`}
-        data-kb-seq={seq}
-        data-kb-kind={act.kind}
-        data-kb-postbit={layout}
-        data-kb-arrived={slid ? 'slide' : undefined}
-      >
-        <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
-        {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
-        {!plain && (person
-          ? <Postbit person={person} layout={layout} />
-          : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
-        <header className="kb-act-meta">
-          <time dateTime={act.createdAt}>{when(act.createdAt)}</time>
-          <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
-        </header>
-        <div className="kb-act-main">
-          {act.kind === 'post' && <PlayTags plays={plays} post={act.id} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />}
-          <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} />
-          <SpunInto act={act.id} />
-        </div>
-        <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} />
-        {holdsEffects(act.kind) && <div className="kb-act-slot" ref={slot} />}
-        {act.kind === 'post' && <PlayHere act={act} slot={slot} />}
-      </article>
-    </PlateProvider>
+    <article
+      ref={ref}
+      id={`post-${seq}`}
+      tabIndex={-1}
+      className="kb-act"
+      aria-labelledby={`post-${seq}-title`}
+      data-kb-seq={seq}
+      data-kb-kind={act.kind}
+      data-kb-postbit={layout}
+      data-kb-arrived={slid ? 'slide' : undefined}
+    >
+      <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
+      {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
+      {!plain && (person
+        ? <Postbit person={person} layout={layout} />
+        : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
+      <header className="kb-act-meta">
+        <time dateTime={act.createdAt}>{when(act.createdAt)}</time>
+        {act.kind === 'post' && <PostMarks post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />}
+        <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
+      </header>
+      <div className="kb-act-main">
+        <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} />
+        <SpunInto act={act.id} />
+      </div>
+      <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} />
+      {holdsEffects(act.kind) && <div className="kb-act-slot" ref={slot} />}
+    </article>
   );
 });

@@ -1,5 +1,5 @@
 /**
- * A play's panel (docs/plans/2026-10-31-plays-on-a-post-design.md, section 3): opened from its tag or chip, a dialog
+ * A play's panel (docs/plans/2026-10-31-plays-on-a-post-design.md, section 3): opened from its card's mark (until the Lens, Task 4 of the marks-and-the-lens plan, replaces it: the mark opens the kind's first billed play), a dialog
  * holding the card, who played it and when, the message, the card's note, the play's reactions with React, Spin
  * thread, the threads spun from it, and Go to post; a popover on a desktop and a bottom sheet on a phone.
  */
@@ -25,7 +25,8 @@ function width(phone: boolean) {
   }) as unknown as MediaQueryList);
 }
 
-function world() {
+/** `first` is the play that has drawn the most, so it is billed first and the one its mark opens. */
+function world(first: 'theirs' | 'mine' = 'theirs') {
   const fake = buildWorld();
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
@@ -38,29 +39,22 @@ function world() {
   const theirs = fake.seed.card(spritey, second, 'whoops', { message: 'you dropped your ink' });
   fake.clock.advance(60_000);
   const mine = fake.seed.card(pipe, second, 'whoops', { layer: 2 });
-  /* Spritey's play has drawn the most, so it is the tag; Pipewrench's is a chip. */
-  fake.seed.react(me, pipe, theirs, 'fire');
+  if (first === 'theirs') fake.seed.react(me, pipe, theirs, 'fire'); else fake.seed.react(other, spritey, mine, 'fire');
   return { fake, me, other, pipe, spritey, thread, second, theirs, mine };
 }
 const open = (w: { fake: Fake; thread: Id }, cards?: readonly CardUi[]) =>
   renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}`, ...(cards ? { cards } : {}) });
 const post2 = () => screen.findByRole('article', { name: /^Post 2 /u });
-const tag = async () => within(await post2()).findByRole('button', { name: 'Whoops! by Spritey, 1 reaction. Opens the play.' });
-/* Pipewrench's play is stacked behind Spritey's: the stack is unstacked to reach it. */
-const chip = async () => {
-  const post = await post2();
-  const button = within(post).getByRole('button', { name: /^Unstack /u });
-  if (button.getAttribute('aria-expanded') === 'false') await userEvent.click(button);
-  return within(post).findByRole('button', { name: 'Whoops! by Pipewrench, no reactions. Opens the play.' });
-};
+/* Both plays are Whoops!, so the post has one mark; it opens the kind's first billed play. */
+const mark = async () => within(await post2()).findByRole('button', { name: /^Whoops!, 2 plays.*Opens the cards on this post\./u });
 const panel = (name = 'Whoops! by Spritey') => screen.getByRole('dialog', { name });
 
 describe('a play\'s panel', () => {
-  test('opens from its tag, with the card, who played it and when, the message quoted, and the play\'s reactions', async () => {
+  test('opens from its mark, with the card, who played it and when, the message quoted, and the play\'s reactions', async () => {
     width(false);
     const w = world();
     open(w);
-    const opener = await tag();
+    const opener = await mark();
     expect(opener).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(opener);
     const p = panel();
@@ -73,11 +67,11 @@ describe('a play\'s panel', () => {
     expect(p.contains(document.activeElement)).toBe(true);
   });
 
-  test('opens from a chip, and a play with no message has no quote', async () => {
+  test('a play with no message has no quote', async () => {
     width(false);
-    const w = world();
+    const w = world('mine');
     open(w);
-    await userEvent.click(await chip());
+    await userEvent.click(await mark());
     const p = panel('Whoops! by Pipewrench');
     expect(p.querySelector('blockquote')).toBeNull();
   });
@@ -86,17 +80,16 @@ describe('a play\'s panel', () => {
     width(false);
     const w = world();
     open(w);
-    const opener = await tag();
+    const opener = await mark();
     await userEvent.click(opener);
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(opener).toHaveFocus();
 
-    const other = await chip();
-    await userEvent.click(other);
-    await userEvent.click(within(panel('Whoops! by Pipewrench')).getByRole('button', { name: 'Close' }));
+    await userEvent.click(opener);
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(other).toHaveFocus();
+    expect(opener).toHaveFocus();
 
     await userEvent.click(opener);
     const backdrop = panel().closest('.kb-glass-overlay')!;
@@ -110,22 +103,20 @@ describe('a play\'s panel', () => {
     const w = world();
     const react = vi.spyOn(w.fake, 'react');
     open(w);
-    await userEvent.click(await tag());
+    await userEvent.click(await mark());
     await userEvent.click(within(panel()).getByRole('button', { name: 'React' }));
     const picker = screen.getByRole('dialog', { name: 'React to Spritey\'s Whoops!' });
     await userEvent.click(within(picker).getByRole('button', { name: 'Tea, Calm' }));
     await waitFor(() => expect(react).toHaveBeenCalledWith(w.theirs, w.pipe, 'tea'));
-    /* The tag counts it in place. */
-    await waitFor(async () => expect(await within(await post2()).findByRole('button', { name: 'Whoops! by Spritey, 2 reactions. Opens the play.' })).toBeInTheDocument());
+    /* The panel counts it in place. */
+    await waitFor(() => expect(within(panel()).getByText(/^Tea, 1/u)).toBeInTheDocument());
   });
 
   test('a play by one of the reader\'s own characters shows its reactions and no React', async () => {
     width(false);
-    const w = world();
-    w.fake.seed.react(w.other, w.spritey, w.mine, 'fire');
+    const w = world('mine');
     open(w);
-    await userEvent.click(within(await post2()).getByRole('button', { name: /^Unstack /u }));
-    await userEvent.click(await within(await post2()).findByRole('button', { name: 'Whoops! by Pipewrench, 1 reaction. Opens the play.' }));
+    await userEvent.click(await mark());
     const p = panel('Whoops! by Pipewrench');
     expect(within(p).getByText('Fire, 1')).toBeInTheDocument();
     expect(within(p).queryByRole('button', { name: 'React' })).toBeNull();
@@ -136,7 +127,7 @@ describe('a play\'s panel', () => {
     const w = world();
     const spin = vi.spyOn(w.fake, 'spin');
     open(w);
-    const opener = await tag();
+    const opener = await mark();
     await userEvent.click(opener);
     await userEvent.click(within(panel()).getByRole('button', { name: 'Spin thread' }));
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -160,28 +151,34 @@ describe('a play\'s panel', () => {
     const w = world();
     await w.fake.spin(w.theirs, w.pipe, 'All about the ink', '');
     open(w);
-    await userEvent.click(await tag());
+    await userEvent.click(await mark());
     const p = panel();
     expect(await within(p).findByText('1 thread spun from this play')).toBeInTheDocument();
     expect(within(p).getByRole('link', { name: 'All about the ink' })).toHaveAttribute('href', expect.stringMatching(/^\/t\//u));
   });
 
-  test('shows the card\'s note about the play when it has one, and none when it has not', async () => {
+  const noted: CardUi = {
+    key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'whoops',
+    Effect: function Noted({ plays, note, children }) {
+      useEffect(() => { note(plays[0]!.id, 'Layer 1 of 2 · 0% washed'); }, [plays, note]);
+      return <>{children}</>;
+    },
+  };
+
+  test('shows the card\'s note about the play when it has one', async () => {
     width(false);
     const w = world();
-    const noted: CardUi = {
-      key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'whoops',
-      Effect: function Noted({ plays, note, children }) {
-        useEffect(() => { note(plays[0]!.id, 'Layer 1 of 2 · 0% washed'); }, [plays, note]);
-        return <>{children}</>;
-      },
-    };
     open(w, [noted]);
-    /* The first by play order is Spritey's, layer 1: it has the note, and Pipewrench's has none. */
-    await userEvent.click(await tag());
+    /* The first by play order is Spritey's, layer 1: it has the note. */
+    await userEvent.click(await mark());
     expect(within(panel()).getByText('Layer 1 of 2 · 0% washed')).toBeInTheDocument();
-    await userEvent.keyboard('{Escape}');
-    await userEvent.click(await chip());
+  });
+
+  test('shows no note for a play the card said none about', async () => {
+    width(false);
+    const w = world('mine');
+    open(w, [noted]);
+    await userEvent.click(await mark());
     expect(within(panel('Whoops! by Pipewrench')).queryByText(/washed/u)).toBeNull();
   });
 
@@ -189,7 +186,7 @@ describe('a play\'s panel', () => {
     width(false);
     const w = world();
     open(w);
-    await userEvent.click(await tag());
+    await userEvent.click(await mark());
     expect(within(panel()).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
   });
 
@@ -197,13 +194,13 @@ describe('a play\'s panel', () => {
     width(false);
     const w = world();
     const view = open(w);
-    await userEvent.click(await tag());
+    await userEvent.click(await mark());
     expect(panel()).toHaveAttribute('data-kb-panel', 'popover');
     await userEvent.keyboard('{Escape}');
     view.unmount();
     width(true);
     open(w);
-    await userEvent.click(await tag());
+    await userEvent.click(await mark());
     await act(async () => {});
     expect(panel()).toHaveAttribute('data-kb-panel', 'sheet');
   });

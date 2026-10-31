@@ -106,6 +106,8 @@ async function spinFrom(w: ReturnType<typeof threadWorld>, origin: string, title
 }
 const openSpun = (w: ReturnType<typeof threadWorld>, thread: string) =>
   renderIn(w.fake, <ThreadScreen thread={thread} />, { path: `/t/${thread}` });
+/** The marks in the ORIGIN box, in the order they are drawn: each card and how many plays of it. */
+const marks = (box: HTMLElement) => [...box.querySelectorAll('.kb-mark[data-kb-card]')].map((el) => `${el.getAttribute('data-kb-card')}:${el.getAttribute('data-kb-plays')}`);
 const origin = () => screen.findByRole('group', { name: 'Origin' });
 
 describe('the ORIGIN box', () => {
@@ -148,7 +150,7 @@ describe('the ORIGIN box', () => {
     expect(box).not.toHaveTextContent('post 2,');
   });
 
-  test('lists the card plays on the Act as tags, and one that is played later joins them', async () => {
+  test('shows the card plays on the Act as a mark, and one that is played later joins it', async () => {
     const w = threadWorld(3);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
     const spun = await spinFrom(w, w.ids[1]!);
@@ -157,15 +159,15 @@ describe('the ORIGIN box', () => {
     w.fake.subscribeThread = (t, l) => { if (t === w.thread) listeners.push(l); return real(t, l); };
     openSpun(w, spun);
     const box = await origin();
-    expect(await within(box).findByRole('button', { name: 'Whoops! by Spritey, no reactions. Opens the play.' })).toBeInTheDocument();
+    expect(await within(box).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
     const [original] = await w.fake.acts(w.thread, 2, 2);
     const played: Act = { ...original!, id: '99999999-0000-4000-8000-000000000001', kind: 'card', character: w.spritey, targetActId: w.ids[1]!, seq: null, payload: { card: 'whoops', layer: 2, message: 'again' }, currentPayload: { card: 'whoops', layer: 2, message: 'again' } };
     await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
     await act(async () => { for (const l of listeners) l.onAct?.(played); });
-    await waitFor(() => expect(box.querySelector(`[data-kb-play="${played.id}"]`)).not.toBeNull());
+    await waitFor(() => expect(box.querySelector('.kb-mark')).toHaveAttribute('data-kb-plays', '2'));
     /* A card played on some other Act is no effect of this one. */
     await act(async () => { for (const l of listeners) l.onAct?.({ ...played, id: '99999999-0000-4000-8000-000000000002', targetActId: w.ids[0]!, payload: { card: 'whoops', message: 'elsewhere' } }); });
-    expect(box.querySelector('[data-kb-play="99999999-0000-4000-8000-000000000002"]')).toBeNull();
+    expect(box.querySelector('.kb-mark')).toHaveAttribute('data-kb-plays', '2');
   });
 
   test('draws the origin\'s card effects around its words, as the thread does', async () => {
@@ -217,13 +219,13 @@ describe('the ORIGIN box', () => {
     expect(first.querySelector(':scope > .kb-act-slot')).not.toBeNull();
   });
 
-  test('a card with no CardUi draws the origin\'s words untouched, with its tag', async () => {
+  test('a card with no CardUi draws the origin\'s words untouched, with its mark', async () => {
     const w = threadWorld(3);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
     const spun = await spinFrom(w, w.ids[1]!);
     openSpun(w, spun);
     const box = await origin();
-    expect(await within(box).findByRole('button', { name: 'Whoops! by Spritey, no reactions. Opens the play.' })).toBeInTheDocument();
+    expect(await within(box).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
     expect(box).toHaveTextContent('post 2');
   });
 
@@ -234,7 +236,7 @@ describe('the ORIGIN box', () => {
     const fromCard = await spinFrom(w, card, 'About that card');
     const fromSystem = await spinFrom(w, said.act, 'About the tally');
     openSpun(w, fromCard);
-    expect(await within(await origin()).findByRole('button', { name: 'Whoops! by Spritey, no reactions. Opens the play.' })).toBeInTheDocument();
+    expect(await within(await origin()).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
     document.body.innerHTML = '';
     openSpun(w, fromSystem);
     expect(await within(await origin()).findByText('Settled in your favor.')).toBeInTheDocument();
@@ -297,9 +299,9 @@ describe('the ORIGIN box', () => {
     const own = vi.spyOn(w.fake, 'myReactions');
     openSpun(w, spun);
     const box = await origin();
-    await waitFor(() => expect(box.querySelectorAll('[data-kb-play]')).toHaveLength(3));
-    /* The middle play has drawn a reaction, so it is billed first, then the newest. */
-    expect([...box.querySelectorAll('[data-kb-play]')].map((el) => el.getAttribute('data-kb-play'))).toEqual([middle, late, early]);
+    await waitFor(() => expect(box.querySelectorAll('.kb-mark')).toHaveLength(2));
+    /* The middle play has drawn a reaction, so it is billed first, then the newest: the card of the middle play leads, with the early one behind it, and the newest card is second. */
+    expect(marks(box)).toEqual(['whoops:2', 'stick-around:1']);
     const forPlays = (spy: typeof tallies | typeof own) => spy.mock.calls.filter(([ids]) => ids.includes(early));
     expect(forPlays(tallies)).toHaveLength(1);
     expect(forPlays(tallies)[0]![0]).toContain(late);
@@ -307,22 +309,23 @@ describe('the ORIGIN box', () => {
     expect(forPlays(own)[0]![0]).toContain(late);
   });
 
-  test('a reaction to a play on the origin counts on its tag here, live, and moves no tag', async () => {
+  test('a reaction to a play on the origin counts on its mark here, live, and moves no mark', async () => {
     const w = threadWorld(3);
     const early = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'early' });
     w.fake.clock.advance(60_000);
-    const late = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'late', layer: 2 });
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'late' });
     const spun = await spinFrom(w, w.ids[1]!);
     const listeners: ThreadListener[] = [];
     const real = w.fake.subscribeThread.bind(w.fake);
     w.fake.subscribeThread = (t, l) => { if (t === w.thread) listeners.push(l); return real(t, l); };
     openSpun(w, spun);
     const box = await origin();
-    await waitFor(() => expect(box.querySelectorAll('[data-kb-play]')).toHaveLength(2));
-    expect([...box.querySelectorAll('[data-kb-play]')].map((el) => el.getAttribute('data-kb-play'))).toEqual([late, early]);
+    await waitFor(() => expect(box.querySelectorAll('.kb-mark')).toHaveLength(2));
+    expect(marks(box)).toEqual(['stick-around:1', 'whoops:1']);
+    /* The play has drawn more than the Act it landed on, so its card's mark says so; no mark moves. */
     await act(async () => { for (const l of listeners) l.onTally?.(early, { fire: 3 }); });
-    await waitFor(() => expect(box.querySelector(`[data-kb-play="${early}"]`)).toHaveAccessibleName('Whoops! by Spritey, 3 reactions. Opens the play.'));
-    expect([...box.querySelectorAll('[data-kb-play]')].map((el) => el.getAttribute('data-kb-play'))).toEqual([late, early]);
+    await waitFor(() => expect(box.querySelector('[data-kb-card="whoops"]')).toHaveAccessibleName(/One has more reactions than the post\.$/u));
+    expect(marks(box)).toEqual(['stick-around:1', 'whoops:1']);
   });
 
   test('a play\'s panel in the box leads back to the post it landed on, and spins from the play in a form under the box', async () => {
@@ -332,8 +335,8 @@ describe('the ORIGIN box', () => {
     const spin = vi.spyOn(w.fake, 'spin');
     openSpun(w, spun);
     const box = await origin();
-    const tag = await within(box).findByRole('button', { name: 'Whoops! by Spritey, no reactions. Opens the play.' });
-    await userEvent.click(tag);
+    const mark = await within(box).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' });
+    await userEvent.click(mark);
     const panel = screen.getByRole('dialog', { name: 'Whoops! by Spritey' });
     expect(within(panel).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
     await userEvent.click(within(panel).getByRole('button', { name: 'Spin thread' }));
@@ -343,13 +346,13 @@ describe('the ORIGIN box', () => {
     await waitFor(() => expect(spin).toHaveBeenCalledWith(play, w.pipe, 'About the oops', ''));
   });
 
-  test('a spin of a card Act draws the play as its quiet tag, whose panel goes to the post the play landed on', async () => {
+  test('a spin of a card Act draws the play as the box\'s one mark, whose panel goes to the post the play landed on', async () => {
     const w = threadWorld(3);
     const card = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
     const fromCard = await spinFrom(w, card, 'About that card');
     openSpun(w, fromCard);
     const box = await origin();
-    await userEvent.click(await within(box).findByRole('button', { name: 'Whoops! by Spritey, no reactions. Opens the play.' }));
+    await userEvent.click(await within(box).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' }));
     const panel = screen.getByRole('dialog', { name: 'Whoops! by Spritey' });
     expect(panel.querySelector('blockquote')).toHaveTextContent('“oops”');
     await waitFor(() => expect(within(panel).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`));
@@ -364,7 +367,8 @@ describe('the ORIGIN box', () => {
     const box = await origin();
     await waitFor(() => expect(box).toHaveTextContent('More than 20 cards were played'));
     expect(asked).toHaveBeenCalledWith(w.ids[1], 21);
-    expect(box.querySelectorAll('[data-kb-play]').length).toBeLessThanOrEqual(20);
+    await waitFor(() => expect(box.querySelector('.kb-mark')).not.toBeNull());
+    expect(Number(box.querySelector('.kb-mark')!.getAttribute('data-kb-plays'))).toBeLessThanOrEqual(20);
   });
 });
 

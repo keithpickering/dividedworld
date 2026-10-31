@@ -120,11 +120,11 @@
   border-right: 1px solid var(--kb-rule);
 }
 
-/* Under the post's chrome, the whole width of it: where a card's plate and the armed card's play tile stand (cards/Effects.tsx, PlayActions.tsx), drawn only when it holds some. */
+/* Under the post's chrome, the whole width of it: where a card's plate stands (cards/Effects.tsx `EffectStrip`; going in Task 6 of the marks-and-the-lens plan), drawn only when it holds some. */
 .kb-act-slot {
   grid-area: slot;
   min-width: 0;
-  /* The plate and the play tile stand at the post's right, the tag's side, a plate's width at most and a tile's own (cards.css). */
+  /* The plate stands at the post's right, a plate's width at most (cards.css). */
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -146,7 +146,7 @@
   /*
    * A card's effect may paint over the post's words, out to the borders of this body (Whoops!'s ink, instances/divided-world/
    * cards/whoops/whoops.css). The effect marks the layer it paints with `data-kb-effect-ink`, wherever another card's effect has
-   * wrapped it, and the controls of the post are lifted over that layer by name, so a tag, a reaction or a link is
+   * wrapped it, and the controls of the post are lifted over that layer by name, so a reaction or a link is
    * never covered, whatever lies under it. No wrapper is a stacking context of its own, so the ink is in this one.
    */
   isolation: isolate;
@@ -156,29 +156,8 @@
   z-index: 1;
 }
 
-.kb-act-main > .kb-play-tags,
 .kb-act-main > .kb-reactions,
 .kb-act-main > .kb-spun {
-  position: relative;
-  z-index: 2;
-}
-
-/*
- * The plays unstacked float over the post (cards/Effects.tsx `PlayTags`, the owner on #97's shots): over the post's
- * reactions, over the card's plate under the body (the body is lifted over the slot, a sibling drawn after it), and over
- * the next post, which the list may run into. PlayTags marks its post `data-kb-lifted` while unstacked, beside the
- * controls it puts out of reach, and lifts nothing else.
- */
-.kb-act-main > .kb-play-tags[data-kb-unstacked] {
-  z-index: 3;
-}
-
-.kb-act[data-kb-lifted] {
-  position: relative;
-  z-index: 3;
-}
-
-.kb-act[data-kb-lifted] > .kb-act-main {
   position: relative;
   z-index: 2;
 }

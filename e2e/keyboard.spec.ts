@@ -82,14 +82,14 @@ test('plays a card by keyboard: the HUD\'s Hand, a card armed, the glass tile on
   const card = hand.getByRole('button', { name: /^Whoops!, Salty\b/ }).first();
   await tabTo(page, card);
   await page.keyboard.press('Enter');
-  /* Armed: each post it can land on offers the glass tile, a real button the keyboard reaches. */
-  const here = post.getByRole('button', { name: 'Play Whoops! here' });
+  /* Armed: each post it can land on offers the ghost mark, a real button the keyboard reaches. */
+  const here = post.getByRole('button', { name: /^Play Whoops! on post \d+$/u });
   await expect(here).toBeVisible();
   await tabTo(page, here);
   await page.keyboard.press('Enter');
   const form = page.getByRole('dialog', { name: 'Whoops!' });
   await expect(form).toBeVisible();
-  /* Esc leaves the form, and focus returns to the glass tile that opened it. */
+  /* Esc leaves the form, and focus returns to the ghost mark that opened it. */
   await page.keyboard.press('Escape');
   await expect(form).toBeHidden();
   await expect(here).toBeFocused();

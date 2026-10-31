@@ -95,14 +95,14 @@ test('the ink reaches the post body\'s borders, the reactions are in front of it
 
 /*
  * Another card's effect may wrap Whoops! (Stick Around played after it, held and not yet lifted): the wrapper is the body's child, and
- * the post's controls are still in front of the ink inside it. What is at the center of the play tag, the reaction button and an action link is
+ * the post's controls are still in front of the ink inside it. What is at the center of the card's mark, the reaction button and an action link is
  * that element itself and not the canvas.
  */
-test('with a held Stick Around around the ink, the play tags, the reactions and the actions are in front of the ink', async ({ page }) => {
+test('with a held Stick Around around the ink, the marks, the reactions and the actions are in front of the ink', async ({ page }) => {
   await page.goto('/?fixture=boards&story=boards-08-hold--whoops-under-hold');
   await expect(page.locator('.kb-whoops-ink')).toBeVisible();
   await expect(page.locator('.kb-hold')).toBeVisible();
-  await expect(page.locator('.kb-play-tag').first()).toBeVisible();
+  await expect(page.locator('.kb-mark').first()).toBeVisible();
   await expect(page.locator('.kb-react-button')).toBeVisible();
   /* The ink lets pointers through, which would hide what paints over what: make it take them, so what is at a point is what is painted there. */
   await page.evaluate(() => { document.querySelector<HTMLElement>('.kb-whoops-ink')!.style.pointerEvents = 'auto'; });
@@ -112,7 +112,7 @@ test('with a held Stick Around around the ink, the play tags, the reactions and 
     const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return at !== null && el.contains(at);
   }, sel);
-  expect(await hit('.kb-play-tag')).toBe(true);
+  expect(await hit('.kb-mark')).toBe(true);
   expect(await hit('.kb-react-button')).toBe(true);
   expect(await hit('.kb-act-links .kb-link-button')).toBe(true);
 });

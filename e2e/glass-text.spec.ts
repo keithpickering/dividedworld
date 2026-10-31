@@ -198,7 +198,7 @@ const FIXTURE_OVERLAYS: readonly Screen[] = [
     then: async (page) => {
       await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
       await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
-      await page.getByRole('button', { name: 'Play Whoops! here' }).last().click();
+      await page.getByRole('button', { name: /^Play Whoops! on post \d+$/u }).last().click();
       await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
     },
   },

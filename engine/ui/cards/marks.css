@@ -1,0 +1,189 @@
+/*
+ * The marks over a post (Marks.tsx; marks-and-the-lens design, section 1): small glass tiles on the post's date row, at
+ * its right, ending just left of its number, hanging a little over the body's first line. They are positioned and never
+ * in the page's flow: the anchor is an empty flexible cell of the date row, and the strip is absolute inside it, so a post
+ * is as tall with no marks as with nine. A mark has no words on it; it is the card's icon, a count, an edge that fills
+ * with the card's progress, a gold notch and a still corner sign. Every color is a glass token, or the card's own
+ * (`--kb-mark-color`, `--kb-mark-ink`, inline), with the card's alignment choosing the border when it chose no ink.
+ */
+.kb-marks-anchor {
+  position: relative;
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 0;
+}
+
+.kb-marks {
+  --kb-mark-size: 1.7rem;
+  position: absolute;
+  top: -0.2rem;
+  right: 0.3rem;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.kb-mark {
+  --kb-mark-line: var(--kb-glass-sweet);
+  --kb-mark-text: var(--kb-glass-text);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: var(--kb-mark-size);
+  height: var(--kb-mark-size);
+  margin: 0;
+  padding: 0 0.3rem;
+  transform: skewX(var(--kb-glass-skew));
+  border: 2px solid var(--kb-mark-ink, var(--kb-mark-line));
+  background: var(--kb-glass-field);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--kb-mark-ink, var(--kb-mark-line)) 55%, transparent);
+  color: var(--kb-mark-text);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.kb-mark[data-kb-alignment="salty"] {
+  --kb-mark-line: var(--kb-glass-salty);
+}
+
+/* The icon and the count stand upright on the skew, as the kit's tile labels do. */
+.kb-mark-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+.kb-mark-icon,
+.kb-mark-swatch {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+/* A card with no icon or face is its color alone. */
+.kb-mark-swatch {
+  box-sizing: border-box;
+  border: 2px solid var(--kb-glass-text-hi);
+  background: var(--kb-mark-color, var(--kb-mark-line));
+}
+
+.kb-mark-count {
+  letter-spacing: 0.04em;
+}
+
+/* The edge: along the mark's bottom, in the card's ink, filled to its progress. No progress draws none. */
+.kb-mark-edge {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: linear-gradient(to right, var(--kb-mark-ink, var(--kb-mark-line)) calc(var(--kb-mark-progress, 0) * 100%), transparent 0);
+  pointer-events: none;
+}
+
+/* The notch: a gold corner at the top left, for a card the reader can act on. */
+.kb-mark-notch {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--kb-glass-ready);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+  pointer-events: none;
+}
+
+/* The corner sign: a small still square in the top right corner, while a play of the kind has more reactions than the post. */
+.kb-mark-sign {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 0.5rem;
+  height: 0.5rem;
+  box-sizing: border-box;
+  border: 2px solid var(--kb-glass-ground);
+  background: var(--kb-glass-text-hi);
+  pointer-events: none;
+}
+
+.kb-mark:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+/* On the post's ground the glass's white ring would vanish on a white post: the ring is doubled by the post's own ink. */
+.kb-mark:focus-visible {
+  box-shadow: 0 0 0 5px var(--kb-fg);
+}
+
+.kb-mark[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--kb-mark-ink, var(--kb-mark-line)) 22%, var(--kb-glass-field));
+}
+
+/* The ghost mark: the armed card as it would stand here, dashed, in its color, with a "+". */
+.kb-ghost-mark {
+  --kb-mark-line: var(--kb-mark-color, var(--kb-glass-sweet));
+  border-style: dashed;
+  box-shadow: none;
+  color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-mark-line) 28%, var(--kb-glass-field));
+}
+
+.kb-mark-plus {
+  font-size: 1.1rem;
+}
+
+/* The ORIGIN box's head carries the strip the same way: absolute at its right, with the head's words kept clear of it. */
+.kb-origin-head {
+  position: relative;
+}
+
+.kb-origin-head:has(.kb-marks-anchor) {
+  padding-inline-end: 9rem;
+}
+
+.kb-origin-head > .kb-marks-anchor {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 0;
+}
+
+:root[data-kb-layout='phone'] .kb-mark,
+:root[data-kb-layout='phone'] .kb-mark-plus {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+/* Forced colors drop the fills: a mark is outlined in a system color, and its notch and sign are drawn in one. */
+@media (forced-colors: active) {
+  .kb-mark {
+    border-color: ButtonText;
+    box-shadow: none;
+  }
+
+  .kb-mark-edge,
+  .kb-mark-notch,
+  .kb-mark-sign {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+
+  .kb-mark[aria-expanded="true"] {
+    border-color: Highlight;
+  }
+
+  .kb-mark:focus-visible {
+    outline-color: Highlight;
+    box-shadow: none;
+  }
+}

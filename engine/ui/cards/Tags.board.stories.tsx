@@ -1,4 +1,7 @@
 /**
+ * (Going in Task 8 of the marks-and-the-lens plan, which rebuilds these as the marks' stories; until then the stack's
+ * stories draw #41's marks, and a story that opened the unstacked list shows the marks.)
+ *
  * The plays on a post, quiet, as stories for the owner (docs/plans/2026-10-31-plays-on-a-post-plan.md, Task 6; the
  * mockup they are set against is docs/research/2026-10-31-plays-on-a-post/mock-a-b.html, B, as the owner amended it
  * on #97's shots: a stack that unstacks into a floating list): post #41 of the boards fixture, with one play, three, or
@@ -69,22 +72,17 @@ function useSeeded(thread: string | null, count: Count): boolean {
   return ready;
 }
 
-/** Unstacks #41's plays, and opens its tag's panel or the first unstacked play's, once the thread has drawn them, as presses would. */
+/** Opens the panel of #41's first mark once the thread has drawn it, as a press would (the stack is gone: the marks of the marks-and-the-lens plan replace it, and Task 8 rebuilds these stories). */
 function Open({ which }: { readonly which: Opened }) {
   useEffect(() => {
-    if (which === 'none') return;
-    let then: ReturnType<typeof setTimeout> | null = null;
+    if (which === 'none' || which === 'unstacked') return;
     const timer = setInterval(() => {
-      const list = document.querySelector('#post-41 [aria-label="Cards played on this post"]');
-      const tag = list?.querySelector<HTMLButtonElement>('.kb-play-tag');
-      if (!list || !tag) return;
+      const mark = document.querySelector<HTMLButtonElement>('#post-41 .kb-mark[data-kb-card]');
+      if (!mark) return;
       clearInterval(timer);
-      if (which === 'tag') { tag.click(); return; }
-      if (which === 'unstacked') { list.querySelector<HTMLButtonElement>('.kb-play-unstack')?.click(); return; }
-      list.querySelector<HTMLButtonElement>('.kb-play-unstack')?.click();
-      then = setTimeout(() => list.querySelector<HTMLButtonElement>('.kb-play-unstacked .kb-play-tag')?.click(), 50);
+      mark.click();
     }, 100);
-    return () => { clearInterval(timer); if (then !== null) clearTimeout(then); };
+    return () => { clearInterval(timer); };
   }, [which]);
   return null;
 }

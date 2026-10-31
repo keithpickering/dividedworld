@@ -200,8 +200,8 @@ for (const scheme of ['light', 'dark'] as const) {
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
         await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
-        await expect(page.getByRole('button', { name: 'Play Whoops! here' }).first()).toBeVisible();
-        await page.getByRole('button', { name: 'Play Whoops! here' }).first().click();
+        await expect(page.getByRole('button', { name: /^Play Whoops! on post \d+$/u }).first()).toBeVisible();
+        await page.getByRole('button', { name: /^Play Whoops! on post \d+$/u }).first().click();
         await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
       });

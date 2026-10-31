@@ -10,8 +10,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { billPost, drawnOf } from '../cards/billing.ts';
-import { inkOf, PlayTag, PlayTags, PostEffects, useNarrow } from '../cards/Effects.tsx';
-import { PlayPanel } from '../cards/Panel.tsx';
+import { PostEffects } from '../cards/Effects.tsx';
+import { PostMarks } from '../cards/Marks.tsx';
 import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Character, Id, ThreadSummary } from '../data/api.ts';
@@ -103,33 +103,6 @@ function useNames(ids: readonly (Id | null)[]): (id: Id | null) => string {
   return (id) => (id === null ? 'The System' : known.get(id)?.name ?? 'A character');
 }
 
-/** A spin from a card play itself: the play as its tag, linking to the post it landed on. */
-function CardOrigin({ act, nameOf, onSpin }: { readonly act: Act; readonly nameOf: (id: Id | null) => string; readonly onSpin: (o: SpinOrigin) => void }) {
-  const { perPage, tallies, mine } = useThread();
-  const { ui } = useKayfa();
-  const narrow = useNarrow();
-  const play = playOf(act);
-  const target = useLocated(act.targetActId);
-  const [open, setOpen] = useState<HTMLButtonElement | null>(null);
-  if (!play) return <p className="kb-small kb-muted">A card was played here.</p>;
-  const tint = inkOf(ui, play, [play]);
-  return (
-    <ul className="kb-play-tags" aria-label="The card play this thread was spun from">
-      <li className="kb-play-tags-lead">
-        <PlayTag play={play} caster={nameOf(play.caster)} tint={tint} tallies={tallies} onOpen={(el) => setOpen((was) => (was ? null : el))} expanded={open !== null} />
-      </li>
-      {open && (
-        <PlayPanel
-          play={play} caster={nameOf(play.caster)} tint={tint} tallies={tallies} mine={mine} sheet={narrow} opener={open} onClose={() => setOpen(null)}
-          /* Go to post leads back to the post the play landed on, as the tag's link did. */
-          to={target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null}
-          onSpin={(p, name) => { const from = open; setOpen(null); onSpin({ id: p.id, label: name, opener: from }); }}
-        />
-      )}
-    </ul>
-  );
-}
-
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const { perPage, tallies, mine } = useThread();
   const originId = summary.originActId!;
@@ -140,7 +113,14 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const slot = useRef<HTMLDivElement>(null);
   useEffect(() => { if (takeOrigin(summary.id)) box.current?.focus(); }, [summary.id]);
   const played = usePlays(plays, originId).plays;
-  const nameOf = useNames([act?.character ?? null, ...played.map((p) => p.caster)]);
+  /*
+   * A spin from a card play itself shows the play as the box's one mark, kept under the post it landed on (the Act is not a
+   * post of this thread, and its post is in another).
+   */
+  const cardPlay = useMemo(() => (act?.kind === 'card' ? playOf(act) : null), [act]);
+  const target = useLocated(cardPlay?.post ?? null);
+  useEffect(() => { if (act && cardPlay) plays.add([act]); }, [act, cardPlay, plays]);
+  const nameOf = useNames([act?.character ?? null, ...played.map((p) => p.caster), ...(cardPlay ? [cardPlay.caster] : [])]);
   const history = useHistory(originId);
   /* A play in the box is spun from in a form of the box's own, under it: the box's post is in another thread. */
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
@@ -161,7 +141,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     }
     const name = nameOf(act.character);
     switch (act.kind) {
-      case 'card': return <CardOrigin act={act} nameOf={nameOf} onSpin={setSpinOrigin} />;
+      case 'card': return cardPlay ? null : <p className="kb-small kb-muted">A card was played here.</p>;
       case 'unmask': return <UnmaskLine act={act} name={name} />;
       case 'tally':
       case 'reveal': return <SystemPost act={act} />;
@@ -169,7 +149,6 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-            <PlayTags plays={plays} post={originId} to={backHref} nameOf={nameOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />
             <PostEffects plays={plays} post={act} place="origin" slot={slot} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small">{history.button}</p>}
@@ -184,7 +163,18 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   return (
     <>
       <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>
-        <p className="kb-origin-head"><b>ORIGIN</b> · Spun from {back ?? 'an Act'}</p>
+        <p className="kb-origin-head">
+          <b>ORIGIN</b> · Spun from {back ?? 'an Act'}
+          {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}
+          {act && (act.kind === 'card' ? cardPlay !== null : holdsEffects(act.kind)) && (
+            <PostMarks
+              post={cardPlay ? cardPlay.post : originId} compare={cardPlay === null} plays={plays}
+              to={cardPlay ? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null) : backHref}
+              nameOf={nameOf} tallies={tallies} mine={mine}
+              onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
+            />
+          )}
+        </p>
         {body()}
         {act && act.kind !== 'card' && more && (
           <p className="kb-small kb-muted">More than {CARDS_SHOWN} cards were played on this Act; the rest are in {back ?? 'the thread it was spun from'}.</p>

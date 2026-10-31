@@ -153,8 +153,8 @@ describe('the take-over', () => {
     const held = document.querySelector('.kb-hold') as HTMLElement;
     expect(held).not.toBeNull();
     expect(held.querySelector('.kb-glass, button, [role="button"], a[href]')).toBeNull();
-    /* The post's body holds no glass but the play's tag, which stands above its words. */
-    expect(held.closest('.kb-act-main')?.querySelector('.kb-glass:not(.kb-play-tag)')).toBeNull();
+    /* The post's body holds no glass at all: the marks stand in its date row. */
+    expect(held.closest('.kb-act-main')?.querySelector('.kb-glass')).toBeNull();
   });
 
   test('a settled scroll with the post mostly out of the window does not take over; once it is mostly in, it does', async () => {
