@@ -72,39 +72,31 @@ test.describe('a desktop', () => {
 });
 
 /*
- * The Phone board's moment (docs/research/2026-10-29-two-worlds/02-phone.html): #41 wears a Whoops! tag. The
- * tag stands clear of the post's line (its date and permalink) at every width, and is quiet: one line, the card's
- * name and its caster side by side, with the caster's words left to the play's panel (the plays-on-a-post design,
- * section 3).
+ * The Phone board's moment (docs/research/2026-10-29-two-worlds/02-phone.html): #41 wears a Whoops! mark. The mark
+ * stands in the post's date row, at its right and clear of its permalink, inside the post's width, with no words on it
+ * (the marks-and-the-lens design, section 1).
  */
 for (const [label, viewport, moment] of [['a narrow post', { width: 390, height: 844 }, '02-phone'], ['a wide post', { width: 1440, height: 1120 }, '01-main']] as const) {
-  test.describe(`a play tag on ${label}`, () => {
+  test.describe(`a card mark on ${label}`, () => {
     test.use({ viewport });
 
-    test('clears the post\'s line, stays inside the post\'s width, and is one line, the card beside its caster', async ({ page }) => {
+    test('stands in the date row clear of the permalink, stays inside the post\'s width, and has no words on it', async ({ page }) => {
       await page.goto(`/?fixture=boards&moment=${moment}`);
       const post = page.locator('#post-41');
-      const tag = post.locator('.kb-play-tag').first();
-      await expect(tag).toBeVisible();
-      const [t, line, main, who, card] = await Promise.all([
-        tag.boundingBox(),
+      const mark = post.locator('.kb-mark[data-kb-card]').first();
+      await expect(mark).toBeVisible();
+      const [m, number, row, article] = await Promise.all([
+        mark.boundingBox(),
+        post.locator('.kb-act-number').boundingBox(),
         post.locator('header.kb-act-meta').boundingBox(),
-        post.locator('.kb-act-main').boundingBox(),
-        tag.locator('.kb-play-tag-who').boundingBox(),
-        tag.locator('.kb-play-tag-card').boundingBox(),
+        post.boundingBox(),
       ]);
-      /* Not over the post's line (its date and permalink). */
-      expect(t!.y, 'the tag starts below the post\'s line').toBeGreaterThanOrEqual(line!.y + line!.height - 1);
-      /* It stays inside the post's width. */
-      expect(t!.x).toBeGreaterThanOrEqual(main!.x - 1);
-      expect(t!.x + t!.width).toBeLessThanOrEqual(main!.x + main!.width + 1);
-      /* The post's words start below the tag, which stands in the flow and never over them. */
-      const words = await post.locator('.kb-play-tags + *').boundingBox();
-      const tags = await post.locator('.kb-play-tags').boundingBox();
-      expect(words!.y, 'the post\'s words start below the tag').toBeGreaterThanOrEqual(tags!.y + tags!.height - 1);
-      /* One line: the caster stands beside the card's name, not under it, and the message is not on the tag. */
-      expect(who!.y, 'the caster is on the card\'s line').toBeLessThan(card!.y + card!.height);
-      await expect(tag.locator('.kb-play-tag-message')).toHaveCount(0);
+      /* In the row, and clear of the permalink to its right. */
+      expect(m!.y, 'the mark starts within the date row').toBeLessThan(row!.y + row!.height);
+      expect(m!.x + m!.width, 'the mark ends before the permalink').toBeLessThanOrEqual(number!.x + 1);
+      expect(m!.x).toBeGreaterThanOrEqual(article!.x - 1);
+      /* No words on it: the name is for a screen reader. */
+      expect(((await mark.textContent()) ?? '').replace(/\s|×\d+/gu, '')).toBe('');
       expect(await overflow(page)).toBeLessThanOrEqual(0);
     });
   });

@@ -289,3 +289,33 @@
 .kb-glass-dialog[data-kb-place='above'] {
   overflow-y: auto;
 }
+
+/*
+ * A float (Float.tsx): placed fixed in the window by the float itself. The wrapper is unclipped and carries the glow
+ * (a drop shadow in the owner's `--kb-float-glow`), which the dialog's chamfer would cut from a box-shadow; it takes no
+ * pointer of its own, so only the dialog is in the page's way. It stands under the overlays (50).
+ */
+.kb-float {
+  position: fixed;
+  z-index: 40;
+  width: max-content;
+  max-width: calc(100vw - 8px);
+  pointer-events: none;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--kb-float-glow, var(--kb-glass-neon)) 60%, transparent));
+}
+
+.kb-float > .kb-float-box {
+  pointer-events: auto;
+  overflow-y: auto;
+}
+
+@media (forced-colors: active) {
+  .kb-float {
+    filter: none;
+  }
+}
+
+/* What stands beside the dialog's box in the overlay (the Lens a takeover hosts): it takes no box, and what it holds is fixed to the window. */
+.kb-glass-overlay-beside {
+  display: contents;
+}

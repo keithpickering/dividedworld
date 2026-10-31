@@ -263,7 +263,7 @@
 }
 
 /*
- * The reactions in a play's panel (engine/ui/cards/Panel.tsx): the same chips, picker, refusals and "your own"
+ * The reactions in a play's row in the Lens (engine/ui/cards/Lens.tsx): the same chips, picker, refusals and "your own"
  * outline, drawn on the glass, in its tokens rather than the 2003 chrome's.
  */
 .kb-reactions[data-kb-look="glass"] .kb-chip {

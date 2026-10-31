@@ -8,18 +8,18 @@
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { landsOnPost, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { LOST_ANSWER } from '../data/api.ts';
 import { plainRefusal } from './faces.ts';
+import { LensHost } from './Lens.tsx';
 import { Frame } from '../frame/Frame.tsx';
 import { hudKey, usePlayer } from '../player.tsx';
 import { usePlay } from './play.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
-import { EffectStrip } from './Effects.tsx';
 import type { CardUi, ConfigFormProps } from './types.ts';
 
 const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'stick.price': 100 };
@@ -57,7 +57,7 @@ function Ink({ config, onChange, id }: ConfigFormProps) {
   );
 }
 const cards: CardUi[] = [
-  { key: 'whoops', art: { color: '#ff3d7f', ink: '#14030a' }, ConfigForm: Ink, describe: () => 'Splats a post.', surcharge: () => 'Long post, +0.25 per 500 characters' },
+  { key: 'whoops', art: { color: '#ff3d7f', ink: '#14030a', mark: '/whoops-mark.svg' }, ConfigForm: Ink, describe: () => 'Splats a post.', surcharge: () => 'Long post, +0.25 per 500 characters' },
   { key: 'stick-around', art: { color: '#2ee6ff', ink: '#03141a' }, describe: () => 'Holds a reader.' },
 ];
 
@@ -98,7 +98,7 @@ async function open(w: ReturnType<typeof world>, ui: CardUi[] = cards) {
 const post = (seq: number) => document.getElementById(`post-${seq}`)!;
 const handButton = () => screen.getByRole('button', { name: /^Hand, \d postcards?/u });
 const drawer = () => screen.getByRole('region', { name: 'Your hand' });
-const here = (seq: number) => within(post(seq)).queryByRole('button', { name: 'Play Whoops! here' });
+const here = (seq: number) => within(post(seq)).queryByRole('button', { name: `Play Whoops! on post ${seq}` });
 const arm = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(handButton());
   await user.click(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })[0]!);
@@ -129,93 +129,60 @@ describe('the post offers no "Play card"', () => {
   });
 });
 
-/* The owner on #80's round 2: the play control is a glass tile, in the card's plate on a post whose effect has drawn one and under the post on a post that has none, and never in the 2003 action row. */
-describe('where "Play Whoops! here" stands', () => {
-  /** Whoops! given an effect that draws a plate with a readout and one tile, as the instance's does. */
-  const withPlate: CardUi[] = [
-    { ...cards[0]!, Effect: ({ slot, children }) => (
-      <>
-        {children}
-        <EffectStrip slot={slot} card="whoops" readout={<span className="kb-plate-state">1 layer · 0% washed</span>}>
-          <button type="button" className="kb-plate-tile">Hold to scrub</button>
-        </EffectStrip>
-      </>
-    ) },
-    cards[1]!,
-  ];
+/* The ghost mark (marks-and-the-lens design, section 1): the armed card's play control is the last mark of the post's strip, in the post's date row, and never in the 2003 body or action row. */
+describe('where the ghost mark stands', () => {
+  test('on a post with no plays it is a mark of its own in the date row, a dashed "+" in the card\'s color, and in no body', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    expect(here(2)).toBeNull();
+    await arm(user);
+    const ghost = here(2)!;
+    expect(ghost).toHaveClass('kb-ghost-mark');
+    expect(ghost).toHaveTextContent('+');
+    expect(ghost.closest('.kb-act-meta')).not.toBeNull();
+    expect(ghost.closest('.kb-act-links, .kb-act-main')).toBeNull();
+    expect(ghost.style.getPropertyValue('--kb-mark-color')).toBe('#ff3d7f');
+    /* In the card's art as well as its color (the design, section 1), faint under the "+". */
+    expect(ghost.querySelector('img.kb-ghost-icon')).toHaveAttribute('src', '/whoops-mark.svg');
+  });
 
-  test('on a post with no plate the tile is under the post in its slot, a glass tile outside the 2003 body and action row', async () => {
+  test('on a post with a mark it ends the strip, after the marks', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    w.fake.seed.card(w.gloomba, w.ids[1]!, 'stick-around', { message: 'one', layer: 1, config: {} });
+    await open(w);
+    await arm(user);
+    const strip = post(2).querySelector('.kb-marks') as HTMLElement;
+    const buttons = within(strip).getAllByRole('button');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toHaveAccessibleName(/^Stick Around, 1 play, /u);
+    expect(buttons[1]).toHaveAccessibleName('Play Whoops! on post 2');
+  });
+
+  test('a strip a takeover hosts (Stick Around\'s view) has no ghost mark: the play form would open under the view', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    renderIn(w.fake, <Frame><LensHost host={document.createElement('div')}><ThreadScreen thread={w.thread} /></LensHost></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
+    await screen.findByRole('article', { name: /^Post 4 /u });
+    await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
+    await arm(user);
+    expect(here(2)).toBeNull();
+    expect(document.querySelector('.kb-ghost-mark')).toBeNull();
+  });
+
+  test('it opens the play form on its post', async () => {
     const user = userEvent.setup();
     const w = world();
     await open(w);
     await arm(user);
-    const tile = here(2)!;
-    expect(tile).toHaveClass('kb-plate-tile', 'kb-play-here');
-    expect(tile.closest('.kb-act-slot')).not.toBeNull();
-    expect(tile.closest('.kb-act-links, .kb-act-main')).toBeNull();
-    expect(tile.closest('.kb-effect-strip')).toBeNull();
-    expect(tile).toHaveAttribute('data-kb-where', 'post');
-  });
-
-  test('on a post whose effect draws a plate the tile is in the plate, beside its readout and controls, and no second one is under the post', async () => {
-    const user = userEvent.setup();
-    const w = world();
-    w.fake.seed.card(w.gloomba, w.ids[1]!, 'whoops', { message: 'one', layer: 1, config: { color: '#ff2bd6' } });
-    await open(w, withPlate);
-    await arm(user);
-    const plate = post(2).querySelector('.kb-effect-strip') as HTMLElement;
-    expect(plate).not.toBeNull();
-    expect(post(2).querySelector('.kb-act-main')).not.toContainElement(plate);
-    expect(plate).toHaveTextContent('1 layer · 0% washed');
-    const tile = within(plate).getByRole('button', { name: 'Play Whoops! here' });
-    expect(tile).toHaveAttribute('data-kb-where', 'plate');
-    expect(within(post(2)).getAllByRole('button', { name: 'Play Whoops! here' })).toHaveLength(1);
-    expect(tile.closest('.kb-act-links, .kb-act-main')).toBeNull();
-    expect(within(plate).getByRole('button', { name: 'Hold to scrub' })).toBeInTheDocument();
-  });
-
-  /* Two effects each draw a plate on one post: the play tile stands in one of them, and the other going away does not take the tile out of the plate that remains. */
-  test('with two plates on a post, one going away leaves the tile in the other', async () => {
-    const user = userEvent.setup();
-    const w = world();
-    w.fake.seed.card(w.gloomba, w.ids[1]!, 'whoops', { message: 'one', layer: 1, config: { color: '#ff2bd6' } });
-    w.fake.seed.card(w.gloomba, w.ids[1]!, 'stick-around', { message: 'two', layer: 1, config: {} });
-    function Dropping({ slot, children }: { readonly slot: HTMLElement | null; readonly children: React.ReactNode }) {
-      const [on, setOn] = useState(true);
-      return (
-        <>
-          {children}
-          {on && <EffectStrip slot={slot} card="stick-around"><button type="button" className="kb-plate-tile" onClick={() => setOn(false)}>Drop this plate</button></EffectStrip>}
-        </>
-      );
-    }
-    const two: CardUi[] = [
-      { ...withPlate[0]! },
-      { ...cards[1]!, Effect: Dropping },
-    ];
-    await open(w, two);
-    await arm(user);
-    const plates = () => [...post(2).querySelectorAll<HTMLElement>('.kb-effect-strip')];
-    expect(plates()).toHaveLength(2);
-    const tile = within(post(2)).getByRole('button', { name: 'Play Whoops! here' });
-    expect(tile).toHaveAttribute('data-kb-where', 'plate');
-    const drop = within(post(2)).getByRole('button', { name: 'Drop this plate' });
-    /* The plate to lose is the one the tile is not in; if the tile is in the dropping plate, it is the other that is the remaining. */
-    if (drop.closest('.kb-effect-strip')!.contains(tile)) {
-      await user.click(drop);
-      expect(plates()).toHaveLength(1);
-      expect(within(post(2)).getByRole('button', { name: 'Play Whoops! here' })).toHaveAttribute('data-kb-where', 'plate');
-      return;
-    }
-    await user.click(drop);
-    expect(plates()).toHaveLength(1);
-    expect(within(plates()[0]!).getByRole('button', { name: 'Play Whoops! here' })).toHaveAttribute('data-kb-where', 'plate');
-    expect(within(post(2)).getAllByRole('button', { name: 'Play Whoops! here' })).toHaveLength(1);
+    await user.click(here(2)!);
+    expect(await screen.findByRole('dialog', { name: /Whoops!/u })).toBeInTheDocument();
   });
 });
 
 describe('arming a card', () => {
-  test('each post the card can land on shows "Play Whoops! here", and a post already carrying three shows none', async () => {
+  test('each post the card can land on shows its ghost mark, "Play Whoops! on post N", and a post already carrying three shows none', async () => {
     const user = userEvent.setup();
     const w = world();
     await open(w);
@@ -231,12 +198,13 @@ describe('arming a card', () => {
     expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(1);
   });
 
-  test('the button belongs to its post: its name is the card\'s and the post describes it', async () => {
+  test('the button belongs to its post: its name is the card\'s and the post\'s number', async () => {
     const user = userEvent.setup();
     const w = world();
     await open(w);
     await arm(user);
-    expect(here(2)).toHaveAccessibleDescription(/Post 2 by Gloomba/u);
+    expect(here(2)).toHaveAccessibleName('Play Whoops! on post 2');
+    expect(here(3)).toHaveAccessibleName('Play Whoops! on post 3');
   });
 
   test('Esc puts the card back and leaves the hand open; pressing the armed card does the same', async () => {
@@ -262,7 +230,7 @@ describe('arming a card', () => {
     const w = world();
     await open(w);
     await arm(user);
-    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is armed. Press Play Whoops! here on a post, or Esc to put it back.');
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is armed. Press Play Whoops! on a post, the dashed + mark beside its date, to play it there, or Esc to put it back.');
     await user.keyboard('{Escape}');
     expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is put back.');
   });
@@ -271,7 +239,7 @@ describe('arming a card', () => {
 describe('the play form', () => {
   const playHere = async (user: ReturnType<typeof userEvent.setup>, seq: number) => {
     await arm(user);
-    await user.click(within(post(seq)).getByRole('button', { name: 'Play Whoops! here' }));
+    await user.click(within(post(seq)).getByRole('button', { name: `Play Whoops! on post ${seq}` }));
     return screen.findByRole('dialog', { name: 'Whoops!' });
   };
 
@@ -412,7 +380,7 @@ describe('the play form', () => {
     const own = await playHere(user, 3);
     expect(own).toHaveTextContent('You play both. It costs the same; your log will say so.');
     await user.click(within(own).getByRole('button', { name: 'Cancel' }));
-    await user.click(within(post(1)).getByRole('button', { name: 'Play Whoops! here' }));
+    await user.click(within(post(1)).getByRole('button', { name: 'Play Whoops! on post 1' }));
     const theirs = await screen.findByRole('dialog', { name: 'Whoops!' });
     expect(theirs).not.toHaveTextContent('You play both');
   });
@@ -426,8 +394,7 @@ describe('the play form', () => {
     await user.type(within(form).getByRole('textbox', { name: 'Your message' }), 'you dropped your ink');
     await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    const tags = await within(post(2)).findByRole('list', { name: 'Cards played on this post' });
-    expect(within(tags).getByRole('button', { name: 'Whoops! by Pipewrench, no reactions. Opens the play.' })).toBeInTheDocument();
+    expect(await within(post(2)).findByRole('button', { name: /^Whoops!, 1 play, .* Opens the cards on this post\.$/u })).toBeInTheDocument();
     await waitFor(() => expect(handButton()).toHaveAccessibleName('Hand, 2 postcards'));
     expect(await w.fake.myCards()).toEqual(expect.arrayContaining([{ card: 'whoops', held: 1 }]));
     expect(screen.getByRole('img', { name: /^Wallet 4\.37 of 6 orbs/u })).toBeInTheDocument();
@@ -515,7 +482,7 @@ describe('the play form', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(lost).toHaveBeenCalledTimes(1);
     expect(await w.fake.cardsOn(w.ids[1]!, 10)).toHaveLength(1);
-    expect(await within(post(2)).findByRole('list', { name: 'Cards played on this post' })).toBeInTheDocument();
+    expect(await within(post(2)).findByRole('button', { name: /^Whoops!, 1 play, .* Opens the cards on this post\.$/u })).toBeInTheDocument();
     await waitFor(() => expect(handButton()).toHaveAccessibleName('Hand, 2 postcards'));
     await act(async () => {});
   });
@@ -524,7 +491,7 @@ describe('the play form', () => {
 describe('from the Task 3 quality review', () => {
   const playHere = async (user: ReturnType<typeof userEvent.setup>, seq: number) => {
     await arm(user);
-    await user.click(within(post(seq)).getByRole('button', { name: 'Play Whoops! here' }));
+    await user.click(within(post(seq)).getByRole('button', { name: `Play Whoops! on post ${seq}` }));
     return screen.findByRole('dialog', { name: 'Whoops!' });
   };
   const threeOn = (w: ReturnType<typeof world>, post: number, live: boolean) => {
@@ -682,7 +649,7 @@ describe('from the Task 3 quality review', () => {
     test.each([
       ['Cancel', async (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: 'Cancel' }))],
       ['Esc', async (user: ReturnType<typeof userEvent.setup>) => user.keyboard('{Escape}')],
-    ])('%s on the armed route gives focus back to the post\'s "Play Whoops! here"', async (_name, leave) => {
+    ])('%s on the armed route gives focus back to the post\'s ghost mark', async (_name, leave) => {
       const user = userEvent.setup();
       const w = world();
       await open(w);

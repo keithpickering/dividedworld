@@ -49,6 +49,39 @@ export interface EffectReader {
 export type EffectPlace = 'thread' | 'origin';
 
 /**
+ * One control a card puts on the kit's glass tiles (Kit.tsx, Task 2): at most two are drawn. The engine draws them, so every
+ * card's controls share one floor of size, focus and labels; the card says only what each does.
+ */
+export type KitControl =
+  /** Held down to act: `start` on pointer down or Space/Enter, `stop` on release, leave, cancel, key up and blur, and when the tile unmounts mid-hold. `stop` may be called without a `start` before it (a pointer leaving a tile that was never pressed), so it must be idempotent. */
+  | { readonly kind: 'hold'; readonly label: string; readonly describe?: string; readonly start: () => void; readonly stop: () => void }
+  | { readonly kind: 'press'; readonly label: string; readonly run: () => void }
+  | { readonly kind: 'toggle'; readonly label: string; readonly on: boolean; readonly set: (on: boolean) => void }
+  | { readonly kind: 'choose'; readonly label: string; readonly options: readonly { readonly value: string; readonly label: string }[]; readonly value: string; readonly choose: (value: string) => void }
+  | { readonly kind: 'go'; readonly label: string; readonly to: string };
+
+/**
+ * What one card says about itself on one post, on this screen only (never saved or sent): the Lens and the marks are
+ * drawn from it. An effect sets it as its state changes (`EffectProps.show`) and the engine draws a card with none from
+ * `defaultView`.
+ */
+export interface CardView {
+  /** How far the effect has gone, 0 to 1, drawn as the mark's edge; null draws no edge. */
+  readonly progress: number | null;
+  /** The card's state in plain words ("18% washed"). */
+  readonly state: string;
+  /** When or how the state ends, in plain words, if it does ("Ends when you scroll past it"). */
+  readonly ends?: string;
+  /** The reader has something to do with this card on this post now: the mark's notch. */
+  readonly yours: boolean;
+  readonly controls: readonly KitControl[];
+  /** A line about each play, by play: what the notes were ("Layer 3 of 3, on top · 40% washed"). */
+  readonly notes: Readonly<Record<Id, string>>;
+  /** A longer plain-words report for the Lens, when the card has one. */
+  readonly report?: string;
+}
+
+/**
  * What an effect is given. It wraps `children`, the post's words as they would be drawn without it,
  * and draws whatever it likes around them or over them; with several cards played on a post each
  * card's `Effect` wraps the one played before it, the latest outermost, so a card's `children`
@@ -66,13 +99,15 @@ export interface EffectProps {
   readonly reader: EffectReader;
   readonly place: EffectPlace;
   /**
-   * Where an effect's own words and controls go: a place the engine draws under the post, outside its 2003
-   * chrome, or null until it is there. A card's explanation of its effect and every control a player
-   * needs are glass and never part of the post's words (the owner's notes on #80, so an effect can
-   * cover a post freely without hiding a control), and are drawn into it with `EffectStrip`
-   * (engine/ui/cards/Effects.tsx). The effect itself, around `children`, is the only thing the post holds.
+   * Say what this card's state is on this post, for its mark and the Lens, or clear it with null. Bound to this post and
+   * this card by the engine; an effect says it as often as its state changes, and equal views cost nothing. The engine clears
+   * it when the effect is gone.
    */
-  readonly slot: HTMLElement | null;
+  readonly show: (view: CardView | null) => void;
+  /** The reader has met this card's effect (the first-time callout). */
+  readonly met: () => void;
+  /** The post's marks, drawn where the card's effect puts them (a takeover's only; null for every other card). */
+  readonly marks: ReactNode;
   /**
    * Save a play's state, as the post's author (the server refuses anyone else, and so does this,
    * without asking); the screen shows what is saved at once and every other reader hears of it.
@@ -81,13 +116,6 @@ export interface EffectProps {
   readonly save: (play: Id, state: Readonly<Record<string, unknown>>) => Promise<Answer<{ readonly play: Id; readonly savedAt: string }>>;
   /** Release the reader from a play's effect for good (Stick Around's certification), and show it at once. */
   readonly release: (play: Id) => Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
-  /**
-   * Say one line about a play's state on this screen, in plain words, for its panel (the plays-on-a-post design,
-   * section 4: "Layer 3 of 3, on top · 40% washed"), or clear it with null. It is this reader's view, never saved or
-   * sent, and it draws only the panel that shows it, so an effect may say it as often as its state changes; an effect
-   * clears what it said when it is gone.
-   */
-  readonly note: (play: Id, line: string | null) => void;
   /** A character's name as the screen the post is drawn on knows it, for a card that names a play's caster ("top: Spritey's yellow"). */
   readonly nameOf: (character: Id | null) => string;
   readonly children: ReactNode;
@@ -118,6 +146,8 @@ export interface CardArt {
   readonly image?: string;
   /** One short line for the face of a small card, such as the hand's ("Hold a reader on a post."); none draws the name alone. */
   readonly tagline?: string;
+  /** A small icon for the card's mark on a post (a URL the bundler resolved); `image` when none is given. */
+  readonly mark?: string;
 }
 
 export interface CardUi {
@@ -152,6 +182,10 @@ export interface CardUi {
   readonly describe: (settings: Settings) => string;
   /** What the card does in one sentence with no numbers in it, for the face of a large card (the hand's sheet); `describe`'s words when none is given. */
   readonly summary?: string;
+  /** The effect covers the post (the reader cannot read it as it stands), so the Lens leads with the card's controls. */
+  readonly takeover?: boolean;
+  /** One short line the Lens gives a reader who has not yet met the card's effect. */
+  readonly hint?: string;
   readonly art: CardArt;
   /**
    * What the player's log says of a state the post's author saved on a play of this card on one of the player's posts, where the

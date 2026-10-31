@@ -103,7 +103,7 @@ test.describe('the app at the Hold board\'s moment', () => {
     const box = view(page).getByRole('checkbox', { name: /I have read every word of Spritey's changelog and I feel changed\./u });
     for (let i = 0; i < 8 && !(await box.evaluate((el) => el === document.activeElement)); i += 1) await page.keyboard.press('Tab');
     await expect(box).toBeFocused();
-    await expect(view(page).getByRole('button', { name: 'Break free' })).toBeVisible();
+    await expect(view(page).getByRole('button', { name: 'Break free', exact: true })).toBeVisible();
     await page.keyboard.press('Space');
     await expect(view(page)).toBeHidden();
     /* The release holds when the thread is left and opened again: the screen asks the backend and is told. */
@@ -120,7 +120,7 @@ test.describe('the app at the Hold board\'s moment', () => {
     await page.goto(MOMENT);
     await ready(page);
     await expect(view(page)).toBeVisible({ timeout: 10_000 });
-    const button = view(page).getByRole('button', { name: 'Break free' });
+    const button = view(page).getByRole('button', { name: 'Break free', exact: true });
     for (let i = 0; i < 60 && (await view(page).isVisible()); i += 1) {
       await button.click({ timeout: 2000 }).catch(() => {});
       await page.waitForTimeout(130);
@@ -187,4 +187,110 @@ test.describe('the app at the Hold board\'s moment', () => {
       await expect(view(page)).toBeVisible({ timeout: 10_000 });
     });
   });
+});
+
+/*
+ * Nothing remounts (marks-and-the-lens design, section 4), on a real browser: Stick Around draws the post's words once and moves their
+ * element between the thread and its view, so Whoops!'s canvas, its observers and the reader's unsaved scrubbing are the same ones
+ * before the lift, in the view and after the release. jsdom cannot draw the ink or move a canvas, so this is the only place it is read.
+ */
+test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing across the lift into the view and the release back', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 980 });
+  await page.goto('/?fixture=boards&story=boards-08-hold--live-inked');
+  await ready(page);
+  const canvas = page.locator('.kb-whoops-ink');
+  await expect(canvas).toBeVisible();
+  const inked = () => canvas.evaluate((c: HTMLCanvasElement) => {
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i]! > 40) n++;
+    return n / (c.width * c.height);
+  });
+  /* The share of the canvas that is inked, not the pixels: the view's canvas is wider than the thread's. */
+  await expect.poll(inked).toBeGreaterThan(0.01);
+  const whole = await inked();
+  /* The reader scrubs in the thread, before the hold has taken them over. */
+  const box = (await canvas.boundingBox())!;
+  const y = Math.min(box.y + box.height / 2, 900);
+  await page.mouse.move(box.x + box.width * 0.2, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.8, y, { steps: 30 });
+  await page.mouse.up();
+  await expect.poll(inked).toBeLessThan(whole * 0.97);
+  const scrubbed = await inked();
+  await canvas.evaluate((c) => { (c as HTMLElement).dataset.kbSame = 'yes'; });
+
+  /* The hold takes the reader over: the same canvas, in the view, with the same ink. */
+  await page.mouse.move(720, 500);
+  await page.mouse.wheel(0, 20);
+  await expect(view(page)).toBeVisible({ timeout: 10_000 });
+  await expect(view(page).locator('.kb-whoops-ink[data-kb-same="yes"]')).toHaveCount(1);
+  await expect.poll(inked).toBeLessThan(whole * 0.97);
+  expect(Math.abs((await inked()) - scrubbed) / whole).toBeLessThan(0.1);
+
+  /* Released back into the thread: still the same canvas and the same scrubbing. */
+  const button = view(page).getByRole('button', { name: 'Break free', exact: true });
+  for (let i = 0; i < 60 && (await view(page).isVisible()); i += 1) {
+    await button.click({ timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(130);
+  }
+  await expect(view(page)).toBeHidden();
+  await expect(page.locator('article .kb-whoops-ink[data-kb-same="yes"]')).toHaveCount(1);
+  await expect.poll(inked).toBeLessThan(whole * 0.97);
+  expect(Math.abs((await inked()) - scrubbed) / whole).toBeLessThan(0.1);
+});
+
+/* Input over the post's words in the view counts like input over the scroller: the words are a portal moved into the view, in a real browser too. */
+test('a wheel over the post\'s text, pushed past its end, fills the bar and frees the reader', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 980 });
+  await intoView(page);
+  await scroller(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  const text = view(page).locator('.kb-hold-post-body').first();
+  const at = (await text.boundingBox())!;
+  /* The post's last lines, which are in the window with the scroller at its end. */
+  await page.mouse.move(at.x + at.width / 2, at.y + at.height - 20);
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('.kb-hold-post-body') !== null, [at.x + at.width / 2, at.y + at.height - 20])).toBe(true);
+  /*
+   * The push is a stream of wheel events dispatched on the post's own words, in the page, as the scroller test above does: its
+   * pace is the page's and not the test's round trips, which on a busy runner let the bar drain faster than it filled. Dispatched
+   * on the words, the events reach the view's listeners only by bubbling through the DOM the words were moved into.
+   */
+  await text.evaluate((el) => new Promise<void>((done) => {
+    const began = performance.now();
+    const timer = setInterval(() => {
+      if (!el.isConnected || performance.now() - began > 6000) { clearInterval(timer); done(); return; }
+      el.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }));
+    }, 8);
+  }));
+  await expect(view(page)).toBeHidden();
+});
+
+/* The Lens a mark opens inside the hold stands in the overlay, outside the dialog box whose chamfer would clip it. */
+test('a mark in the hold opens the Lens unclipped, beside the dialog\'s box', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 980 });
+  await page.goto(MOMENT);
+  await ready(page);
+  await expect(view(page)).toBeVisible({ timeout: 10_000 });
+  await view(page).getByRole('button', { name: /^Stick Around, 1 play/u }).click();
+  const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+  await expect(lens).toBeVisible();
+  const read = await lens.evaluate((el) => {
+    const clipped: string[] = [];
+    for (let n: Element | null = el; n; n = n.parentElement) if (getComputedStyle(n).clipPath !== 'none') clipped.push(n.className);
+    const r = el.getBoundingClientRect();
+    return { clipped, inBox: el.parentElement!.closest('.kb-glass-dialog') !== null, inert: el.closest('[inert]') !== null, r: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } };
+  });
+  /* The Lens's own chamfer clips its box (the dialog inside the wrapper); no ancestor of its wrapper does. */
+  expect(read.inBox, 'the Lens is not inside the dialog box').toBe(false);
+  expect(read.inert).toBe(false);
+  expect(read.r.left).toBeGreaterThanOrEqual(0);
+  expect(read.r.top).toBeGreaterThanOrEqual(0);
+  expect(read.r.right).toBeLessThanOrEqual(1440);
+  expect(read.r.bottom).toBeLessThanOrEqual(980);
+  const wrapperClips = await lens.evaluate((el) => { const out: string[] = []; for (let n = el.parentElement; n; n = n.parentElement) if (getComputedStyle(n).clipPath !== 'none') out.push(n.className); return out; });
+  expect(wrapperClips).toEqual([]);
+  /* Esc closes the Lens, and the view stays up. */
+  await page.keyboard.press('Escape');
+  await expect(lens).toBeHidden();
+  await expect(view(page)).toBeVisible();
 });

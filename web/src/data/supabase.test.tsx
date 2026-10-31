@@ -434,18 +434,37 @@ describe('reads and their rows', () => {
 
   it('answers preferences with the defaults when no row exists', async () => {
     const h = harness(() => rows([]));
-    expect(await h.api.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100 });
+    expect(await h.api.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [] });
   });
 
   it('reads the glass\'s three preferences from their columns and sends them to set_preferences by its parameter names', async () => {
     const h = harness((r) => {
-      if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', text_size: 200 });
+      if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', text_size: 200, cards_met: ['whoops'] });
       return rows([{ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150 }]);
     });
-    expect(await h.api.preferences()).toEqual({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150 });
-    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,postbit,motion,smoke,contrast,text_size');
-    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200 } });
+    expect(await h.api.preferences()).toEqual({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, cardsMet: [] });
+    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,postbit,motion,smoke,contrast,text_size,cards_met');
+    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: ['whoops'] } });
     expect(h.to('rpc/set_preferences')[0]?.body).toEqual({ theme: null, postbit: null, motion: null, smoke: 'off', contrast: 'high', text_size: 200 });
+  });
+
+  it('reads the cards met from their column and calls meet_card and forget_cards_met by their parameter names', async () => {
+    const mine = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', text_size: 100 };
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/meet_card')) return json({ ...mine, cards_met: ['whoops', 'stick-around'] });
+      if (r.url.pathname.endsWith('/rpc/forget_cards_met')) return json({ ...mine, cards_met: [] });
+      return rows([{ ...mine, cards_met: ['whoops'] }]);
+    });
+    expect((await h.api.preferences()).cardsMet).toEqual(['whoops']);
+    expect(await h.api.meetCard('stick-around')).toMatchObject({ ok: true, value: { cardsMet: ['whoops', 'stick-around'] } });
+    expect(h.to('rpc/meet_card')[0]?.body).toEqual({ card: 'stick-around' });
+    expect(await h.api.forgetCardsMet()).toMatchObject({ ok: true, value: { cardsMet: [] } });
+    expect(h.to('rpc/forget_cards_met')).toHaveLength(1);
+  });
+
+  it('returns a meet_card refusal as the server\'s own words', async () => {
+    const h = harness(() => json({ code: '22023', message: 'at most 64 cards are kept as met', hint: 'kayfabb.refusal' }, 400));
+    expect(await h.api.meetCard('one-too-many')).toEqual({ ok: false, error: 'at most 64 cards are kept as met' });
   });
 
   it('keys tallies, view counts and reading by id', async () => {

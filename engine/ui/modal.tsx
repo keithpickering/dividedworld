@@ -24,7 +24,7 @@ export interface ModalProps {
   readonly returnFocusTo?: () => HTMLElement | null;
 }
 
-const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+export const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /*
  * A control taken out of the Tab order (`tabindex="-1"`, as a roving grid does with all but its one
@@ -36,7 +36,7 @@ const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([ty
 const unchosen = (el: HTMLElement, box: HTMLElement) =>
   el instanceof HTMLInputElement && el.type === 'radio' && el.name !== '' && !el.checked
   && [...box.querySelectorAll<HTMLInputElement>('input[type="radio"]')].some((r) => r.name === el.name && r.form === el.form && r.checked);
-const tabbables = (box: HTMLElement) => [...box.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => !el.closest('[hidden]') && el.getAttribute('aria-hidden') !== 'true' && el.tabIndex >= 0 && !unchosen(el, box));
+export const tabbables = (box: HTMLElement) => [...box.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => !el.closest('[hidden]') && el.getAttribute('aria-hidden') !== 'true' && el.tabIndex >= 0 && !unchosen(el, box));
 
 /* The open modals, lowest first. A parent renders before its child, so its sequence number is lower even though a child's effects run first. */
 interface Entry { readonly seq: number; overlay: HTMLElement | null }
@@ -46,6 +46,15 @@ let saved: { readonly overflow: string; readonly paddingRight: string } | null =
 const wasInert = new Map<Element, boolean>();
 
 const isTop = (entry: Entry) => stack[stack.length - 1] === entry;
+
+/** Whether any modal surface is open: a layer that is not modal (the Lens, glass/Float.tsx) leaves Esc to it while one is. */
+export const modalOpen = (): boolean => stack.length > 0;
+
+/**
+ * Whether `el` stands inside the top modal surface: a float hosted in a takeover's dialog (the Lens in Stick Around's view) is
+ * above that dialog's layer, so Esc is the float's while nothing newer (a picker opened from it) is open over both.
+ */
+export const topModalHolds = (el: Node | null): boolean => el !== null && (stack[stack.length - 1]?.overlay?.contains(el) ?? false);
 
 /** Everything in the body but the top modal's overlay is inert; what was inert before stays inert after. */
 function settle() {
@@ -77,6 +86,12 @@ export interface ModalLayer {
   readonly overlay: RefObject<HTMLDivElement | null>;
   readonly box: RefObject<HTMLDivElement | null>;
   readonly closeButton: RefObject<HTMLButtonElement | null>;
+  /**
+   * An element beside the dialog's box, in the same overlay, that is part of the layer's scope: focus in it is not pulled back into
+   * the box and Tab in it is not wrapped. A takeover hosts the Lens there (glass/Overlay.tsx `onBeside`), outside the box's
+   * chamfer, which would clip it.
+   */
+  readonly beside: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -94,6 +109,7 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
   /* Cleared first thing when the dialog closes, so giving focus back is not mistaken for focus escaping. */
   const open = useRef(true);
   const overlay = useRef<HTMLDivElement>(null);
+  const beside = useRef<HTMLElement>(null);
   const [entry] = useState<Entry>(() => ({ seq: ++sequence, overlay: null }));
 
   useLayoutEffect(() => {
@@ -138,6 +154,8 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
       if (stops.length === 0) { e.preventDefault(); return; }
       const [head, tail] = [stops[0]!, stops[stops.length - 1]!];
       const at = document.activeElement;
+      /* Inside what stands beside the box (the Lens), Tab is that element's own. */
+      if (at instanceof Node && beside.current?.contains(at)) return;
       if (!dialog.contains(at)) { e.preventDefault(); head.focus(); }
       else if (e.shiftKey && at === head) { e.preventDefault(); tail.focus(); }
       else if (!e.shiftKey && at === tail) { e.preventDefault(); head.focus(); }
@@ -145,7 +163,7 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
     /* Focus that lands outside (a script, a click through) is brought back in. */
     const onFocus = (e: FocusEvent) => {
       const dialog = box.current;
-      if (open.current && isTop(entry) && dialog && e.target instanceof Node && !dialog.contains(e.target)) (tabbables(dialog)[0] ?? dialog).focus();
+      if (open.current && isTop(entry) && dialog && e.target instanceof Node && !dialog.contains(e.target) && !beside.current?.contains(e.target)) (tabbables(dialog)[0] ?? dialog).focus();
     };
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('focusin', onFocus);
@@ -155,7 +173,7 @@ export function useModalLayer({ onClose, returnFocusTo }: Pick<ModalProps, 'onCl
     };
   }, []);
 
-  return { overlay, box, closeButton };
+  return { overlay, box, closeButton, beside };
 }
 
 export function Modal({ title, onClose, children, returnFocusTo }: ModalProps) {

@@ -1,0 +1,239 @@
+/*
+ * The Lens (Lens.tsx), on the glass's float (glass/Float.tsx): the chamfered glass of the dialog's cut with its border drawn
+ * in the open tab's ink, or its alignment's color (salty the pink, sweet the cyan), the card's name in the display face on
+ * its tab. Beside the post on a desktop, under its mark where there is no room beside it, and a short sheet on the HUD's
+ * top edge at the thread's narrow width. The glow is the float wrapper's drop shadow (shell.css `.kb-float`), since the
+ * chamfer's clip-path cuts a box-shadow. Every color is a glass token or the card's own ink (`--kb-lens-ink`, inline).
+ */
+.kb-glass-dialog.kb-lens {
+  --kb-lens-ink: var(--kb-glass-sweet);
+  --kb-lens-ink-text: var(--kb-glass-neon-text);
+  --kb-cut: var(--kb-glass-chamfer-3);
+  --kb-border: 1px;
+  width: 340px;
+  max-width: 100%;
+  padding: 8px 14px 12px;
+  background: var(--kb-lens-ink);
+  color: var(--kb-glass-text);
+  font-family: var(--kb-glass-font-body);
+  /* The glass's smallest step (label, 20px: 18px of ink in its face, the floor): a Lens never out-shouts the post's own 12px words. */
+  font-size: var(--kb-glass-size-label);
+  line-height: 1.25;
+}
+
+.kb-glass-dialog.kb-lens[data-kb-alignment="salty"] {
+  --kb-lens-ink: var(--kb-glass-salty);
+  --kb-lens-ink-text: var(--kb-glass-salty-text);
+}
+
+/* The sheet is the window's width, standing on the HUD's top edge (Float.tsx places it). */
+.kb-glass-dialog.kb-lens[data-kb-lens="sheet"] {
+  width: 100%;
+}
+
+.kb-lens-bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* The tabs scroll where there are more than fit. */
+.kb-lens-tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.kb-lens-tab {
+  flex: none;
+  min-height: 40px;
+  margin: 0;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--kb-glass-text-2);
+  font: inherit;
+  font-size: var(--kb-glass-size-display-xs);
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.kb-lens-tab[aria-selected="true"] {
+  border-bottom-color: var(--kb-lens-ink);
+  color: var(--kb-lens-ink-text);
+}
+
+.kb-lens-tab:hover {
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-lens-close {
+  --kb-cut: var(--kb-glass-chamfer-1);
+  flex: none;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  color: var(--kb-glass-text-hi);
+  font: inherit;
+  font-size: var(--kb-glass-size-label);
+  cursor: pointer;
+}
+
+.kb-lens-body {
+  position: relative;
+  z-index: 1;
+}
+
+.kb-lens-section {
+  margin-top: 0.5rem;
+}
+
+.kb-lens-state p {
+  margin: 0 0 0.3rem;
+}
+
+.kb-lens-line {
+  color: var(--kb-glass-text-hi);
+  font-weight: 700;
+}
+
+.kb-lens-ends {
+  color: var(--kb-glass-text-2);
+}
+
+.kb-lens-report {
+  color: var(--kb-glass-text);
+  font-weight: 700;
+}
+
+/* Who: a disclosure; its rows are the old panel's content, one to a play. */
+.kb-lens-fold {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 40px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--kb-glass-text-hi);
+  font: inherit;
+  font-weight: 700;
+  text-align: start;
+  cursor: pointer;
+}
+
+.kb-lens-fold:hover {
+  text-decoration: underline;
+}
+
+.kb-lens-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Each play's ink is the bar at its row's left edge (the marks' ink; with none, the card's). */
+.kb-lens-row {
+  --kb-play-ink: var(--kb-lens-ink);
+  padding: 0.5rem 0 0.5rem 10px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-lens-ink) 55%, transparent);
+  border-left: 8px solid var(--kb-play-ink);
+}
+
+.kb-lens-by {
+  margin: 0 0 0.5rem;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-lens-who {
+  color: var(--kb-lens-ink-text);
+  font-size: var(--kb-glass-size-display-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.kb-lens-message {
+  margin: 0 0 0.6rem;
+  color: var(--kb-glass-text-hi);
+  overflow-wrap: anywhere;
+}
+
+.kb-lens-note,
+.kb-lens-more,
+.kb-lens-yours {
+  margin: 0 0 0.4rem;
+  color: var(--kb-glass-text);
+  font-weight: 700;
+}
+
+/* A play's note stands above its caster, as the mockup's `.play .note` does. */
+.kb-lens-note {
+  letter-spacing: 0.06em;
+}
+
+.kb-lens-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.kb-lens-action {
+  min-height: 44px;
+  padding: 0.2rem 0.8rem;
+  border: 0;
+  color: var(--kb-glass-neon-text);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.kb-lens-action:hover {
+  text-decoration: underline;
+}
+
+.kb-lens-spun {
+  margin-top: 0.8rem;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-lens-spun p,
+.kb-lens-spun ul {
+  margin: 0;
+}
+
+.kb-lens-spun ul {
+  padding-inline-start: 1.1rem;
+}
+
+.kb-lens a {
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-lens :focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: -3px;
+}
+
+@media (forced-colors: active) {
+  .kb-lens-tab[aria-selected="true"] {
+    border-bottom-color: Highlight;
+  }
+}
+
+/* The kit's tiles in the Lens are the mockup's small buttons: the label step's type at a 36px target, not the 44px slab. */
+.kb-lens .kb-kit-tile {
+  min-height: 36px;
+  padding: 0.1rem 0.8rem;
+}

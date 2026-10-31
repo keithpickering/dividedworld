@@ -44,19 +44,35 @@ const shape = (all: readonly ThreadSummary[], saturated: boolean): Spun => ({
 
 export interface SpunLoader {
   ask(act: Id): Promise<Spun>;
-  /** Forget an Act's answer, after a spin from it. */
+  /**
+   * Forget an Act's answer, after a spin from it. A row already showing the Act keeps its count until it is drawn again: the spin
+   * navigates to the new thread (SpinForm), so no row for the Act outlives it.
+   */
   forget(act: Id): void;
+  /** What is known of an Act right now, without asking: its read answer, or the one it had before it was asked about again; null if it has none. */
+  peek(act: Id): Spun | null;
 }
 
-interface Entry { readonly at: number; readonly promise: Promise<Spun> }
+/* `value` is set when the read lands; `prior` is the answer the Act had before it was asked about again (past its time to live), shown meanwhile so a count never falls back to none. */
+interface Entry { readonly at: number; readonly promise: Promise<Spun>; value?: Spun; readonly prior?: Spun }
 
 export function createSpunLoader(api: KayfaApi, now: () => number): SpunLoader {
   const cache = new Map<Id, Entry>();
   const queue = new Map<Id, { readonly entry: Entry; readonly resolve: (s: Spun | null) => void }>();
   let scheduled = false;
 
-  /* A failed read forgets only its own entry: one asked for again since is another read's. */
-  const failed = (id: Id, entry: Entry) => { if (cache.get(id) === entry) cache.delete(id); };
+  /*
+   * A failed read forgets only its own entry: one asked for again since is another read's. An Act that had an answer before it was
+   * asked about again keeps that answer (shown now, and stale so the next ask reads again), so a count already on screen does not
+   * fall back to none for a read that did not get through; one that never had an answer is not remembered.
+   */
+  const lose = (id: Id, entry: Entry, resolve: (s: Spun | null) => void) => {
+    if (cache.get(id) === entry) {
+      if (entry.prior) cache.set(id, { at: Number.NEGATIVE_INFINITY, promise: Promise.resolve(entry.prior), value: entry.prior });
+      else cache.delete(id);
+    }
+    resolve(entry.prior ?? null);
+  };
 
   async function alone(id: Id): Promise<Spun> {
     const all = await api.spunFrom(id);
@@ -75,12 +91,12 @@ export function createSpunLoader(api: KayfaApi, now: () => number): SpunLoader {
         if (threads.length >= SPUN_READ_LIMIT) {
           /* Cut at the limit: whose lists are whole is unknown, so each is read alone. */
           await Promise.all(part.map(async ([id, { entry, resolve }]) => {
-            try { resolve(await alone(id)); } catch { failed(id, entry); resolve(null); }
+            try { resolve(await alone(id)); } catch { lose(id, entry, resolve); }
           }));
           return;
         }
         for (const [id, { resolve }] of part) resolve(shape(threads.filter((t) => t.originActId === id), false));
-      }).catch(() => { for (const [id, { entry, resolve }] of part) { failed(id, entry); resolve(null); } });
+      }).catch(() => { for (const [id, { entry, resolve }] of part) lose(id, entry, resolve); });
     }
   }
 
@@ -89,8 +105,9 @@ export function createSpunLoader(api: KayfaApi, now: () => number): SpunLoader {
       const had = cache.get(act);
       if (had && now() - had.at < SPUN_TTL_MS) return had.promise;
       let resolve!: (s: Spun | null) => void;
-      const promise = new Promise<Spun>((r) => { resolve = (s) => r(s ?? NONE); });
-      const entry: Entry = { at: now(), promise };
+      const prior = had?.value ?? had?.prior;
+      const promise = new Promise<Spun>((r) => { resolve = (s) => { if (s) entry.value = s; r(s ?? NONE); }; });
+      const entry: Entry = { at: now(), promise, ...(prior ? { prior } : {}) };
       cache.delete(act);
       cache.set(act, entry);
       while (cache.size > SPUN_CACHE_SIZE) cache.delete(cache.keys().next().value!);
@@ -99,6 +116,10 @@ export function createSpunLoader(api: KayfaApi, now: () => number): SpunLoader {
       return promise;
     },
     forget(act) { cache.delete(act); },
+    peek(act) {
+      const had = cache.get(act);
+      return had?.value ?? had?.prior ?? null;
+    },
   };
 }
 
@@ -127,13 +148,16 @@ export async function primeSpun(api: KayfaApi, ids: readonly Id[]): Promise<Read
 /** The threads spun from an Act (none until they are read). */
 export function useSpunInto(act: Id): Spun {
   const { api } = useKayfa();
-  const [spun, setSpun] = useState<Spun>(NONE);
+  const loader = spunLoader(api);
+  /* What the loader already holds is there on the first frame (the page primed it), and a stale answer stays while it is read again. */
+  const [spun, setSpun] = useState<{ readonly act: Id; readonly spun: Spun }>(() => ({ act, spun: loader.peek(act) ?? NONE }));
   useEffect(() => {
     let live = true;
-    void spunLoader(api).ask(act).then((s) => { if (live) setSpun(s); });
+    void loader.ask(act).then((s) => { if (live) setSpun({ act, spun: s }); });
     return () => { live = false; };
-  }, [api, act]);
-  return spun;
+  }, [loader, act]);
+  /* Another Act than the one the state holds: what is known of it, not the last Act's. */
+  return spun.act === act ? spun.spun : loader.peek(act) ?? NONE;
 }
 
 /* The thread a player was just taken to by a spin: its ORIGIN box takes focus when it opens (once). */

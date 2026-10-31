@@ -13,15 +13,14 @@
  * instance's order. Nothing here acts: it is a specimen for the board match and the owner's review.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import { usePlayer } from '../player.tsx';
-import { createTallies } from '../thread/tallies.ts';
-import { PlayTag } from './Effects.tsx';
 import { Postcard } from './Postcard.tsx';
 import { facesOf } from './faces.ts';
 import type { CardPlay } from './types.ts';
+import './marks.css';
 import './hand-board.css';
 
 /** Where the board stands each card, by its place in the hand: its left, its top and how far it turns; the sealed slot stands after the last. */
@@ -29,8 +28,6 @@ const PLACES = [{ left: 64, top: 204, turn: -4 }, { left: 372, top: 178, turn: 2
 
 function HandSheet() {
   const { instance, ui } = useKayfa();
-  /* The tag's reactions: none, as a specimen that nothing has reacted to. */
-  const tallies = useMemo(() => createTallies(), []);
   const { cards } = usePlayer();
   const calm = useSurfaceStyle('hand');
   const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings), [instance, ui.cards]);
@@ -39,7 +36,7 @@ function HandSheet() {
   /* The armed card is the second in the hand, as the board draws it. */
   const armed = held[1] ?? null;
   const shown = armed ?? held[0] ?? null;
-  /* The play whose tag the board's post carries: the armed card's, by Mrs. Hooligan. */
+  /* The play whose mark the board's post carries: the armed card's, by Mrs. Hooligan. */
   const play: CardPlay | null = shown && {
     id: 'play-41', card: shown.key, layer: 1, caster: null, message: 'you dropped your ink', config: {}, playedAt: '2026-10-29T21:16:00Z', post: 'post-41',
   };
@@ -80,9 +77,12 @@ function HandSheet() {
         <div className="kb-hand-board-post">
           <div className="kb-hand-board-post-bar"><span>Spritey · #41</span><span>who keeps splatting my posts</span></div>
           {play && (
-            <ul className="kb-play-tags kb-hand-board-tags">
-              <li className="kb-play-tags-lead"><PlayTag play={play} caster="Mrs. Hooligan" tallies={tallies} onOpen={() => {}} /></li>
-            </ul>
+            <div className="kb-hand-board-tags">
+              {/* The play as the post's mark (cards/Marks.tsx), drawn here as the specimen it is: it acts on nothing. */}
+              <span className="kb-mark" data-kb-card={play.card} style={shown ? { '--kb-mark-color': shown.art.color } as CSSProperties : undefined}>
+                <span className="kb-mark-in" aria-hidden="true"><span className="kb-mark-swatch" /></span>
+              </span>
+            </div>
           )}
           <div className="kb-hand-board-post-foot">
             <span className="kb-hand-board-chipline">🔥 4</span><span className="kb-hand-board-chipline">🙄 2</span>

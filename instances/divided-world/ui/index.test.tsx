@@ -42,6 +42,16 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(whoops.tag!(play('c', 'not a color'), [play('c', 'not a color')])).toBeUndefined();
     expect(instanceUi.cards.find((c) => c.key === 'stick-around')!.tag).toBeUndefined();
   });
+  test('both cards have their own mark icon, apart from the face, and Whoops! hints at the gesture', () => {
+    for (const key of ['whoops', 'stick-around']) {
+      const art = instanceUi.cards.find((c) => c.key === key)!.art;
+      expect(art.mark, key).toBeTruthy();
+    }
+    /* Stick Around's mark is a bolder drawing than its face, for a 22px icon; Whoops!'s face is already one blot, so its mark is the same drawing. */
+    const stick = instanceUi.cards.find((c) => c.key === 'stick-around')!.art;
+    expect(stick.mark).not.toBe(stick.image);
+    expect(instanceUi.cards.find((c) => c.key === 'whoops')!.hint).toBe('Drag across the ink to scrub it off your screen.');
+  });
   test('every pip style has images', () => {
     for (const p of instance.pipStyles) expect(instanceUi.pips[p.key], p.key).toBeDefined();
   });

@@ -3,7 +3,7 @@
  * the end-to-end flows (playwright.config.ts builds with --mode e2e). Its names are made up for
  * the demo; nothing here is a real player or a real post.
  */
-import type { Preferences } from '../../engine/ui/data/api.ts';
+import type { PreferencesPatch } from '../../engine/ui/data/api.ts';
 import type { Fake } from '../../engine/ui/data/fake.ts';
 
 export interface Demo {
@@ -79,12 +79,12 @@ function keepPreferences(fake: Fake): void {
   const key = 'kb-demo-preferences';
   try {
     const kept = globalThis.sessionStorage?.getItem(key);
-    if (kept) void fake.setPreferences(JSON.parse(kept) as Partial<Preferences>);
+    if (kept) void fake.setPreferences(JSON.parse(kept) as PreferencesPatch);
   } catch { /* nothing kept: the defaults hold */ }
   const real = fake.setPreferences.bind(fake);
   fake.setPreferences = async (p) => {
     const r = await real(p);
-    if (r.ok) { try { globalThis.sessionStorage?.setItem(key, JSON.stringify(r.value)); } catch { /* not kept */ } }
+    if (r.ok) { try { globalThis.sessionStorage?.setItem(key, JSON.stringify({ ...r.value, cardsMet: undefined })); } catch { /* not kept */ } }
     return r;
   };
 }

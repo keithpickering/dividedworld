@@ -9,8 +9,8 @@
  * thread the frame is the post's whole body, border to border (whoops.css bleeds it over the body's gutters,
  * and the layout keeps them as padding), so the ink covers the body edge to edge and lies within 0 to 1 of
  * the layout's width, where a stroke can wash it. In the ORIGIN box the frame is the box's content, as it was.
- * Every stroke, kept in widths of that layout, lands on the same words. The ink is a canvas laid over it; the tag and the button are the glass reaching in (`tag` in cards.ts draws the
- * tag, the button is here), on the `effect` smoke.
+ * Every stroke, kept in widths of that layout, lands on the same words. The ink is a canvas laid over it; the tag is the glass reaching in (`tag` in cards.ts draws it), and the card's
+ * state and controls are the Lens's and the kit's, from the view the effect publishes (`show`, below).
  *
  * What is the model and what is drawn. A layer's ink is the seeded splat less the strokes washed on it
  * (scrub.ts `LayerInk`), which is geometry and costs no canvas, so which layer a stroke scrubs, how much
@@ -34,12 +34,11 @@
  * while any line is covered) and the lines clear of it are read out from a hidden copy, each once it is
  * uncovered. A post with no ink left is plain again.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
-import { EffectStrip } from '../../../../engine/ui/cards/Effects.tsx';
-import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
+import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
 import { readLines } from './lines.ts';
 import { MAX_DPR, paint, type Geometry, type PaintLayer } from './paint.ts';
 import {
@@ -64,6 +63,13 @@ const FADE_MS = 700;
 const REFRESH_MS = 150;
 /** The ink of a play whose config carries none we can draw (the server keeps one, so this is a safeguard). */
 const FALLBACK_INK = '#ff2bd6';
+
+/** The help sentence of the hold, read by a screen reader with the control. */
+const HOLD_HELP = 'Hold Space or Enter on this button to scrub the ink away line by line, at the pace of a hand. Let go to stop. It never clears the ink all at once.';
+/** When the effect ends, in the Lens's State row. */
+const ENDS = 'Ends on your screen when you scrub every layer off. The author can wash it for everyone.';
+/** The author's two tools (the stroke they save for everyone is the wash). */
+const TOOLS = [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Write in ink' }] as const;
 
 interface Layer { readonly play: CardPlay; readonly color: string; readonly seed: number }
 
@@ -128,15 +134,24 @@ interface View {
   readonly fading: boolean;
 }
 
-export function Effect({ post, plays, states, reader, save, slot, place, note, nameOf, children }: EffectProps) {
+export function Effect({ post, plays, states, reader, save, place, show, met, nameOf, children }: EffectProps) {
   const { settings } = useKayfa();
-  const help = useId();
   const layers = useMemo<readonly Layer[]>(() => plays.map((play) => ({ play, color: inkOf(play), seed: seedOf(play) })), [plays]);
   const [size, setSize] = useState({ frame: 0, height: 0, above: 0, cell: 0 });
   const [near, setNear] = useState(true);
   const [built, setBuilt] = useState(false);
   const [tool, setTool] = useState<'wash' | 'ink'>('wash');
   const [report, setReport] = useState('');
+  /** The reader's first stroke on any layer has been made (`met` is said once). */
+  const met1 = useRef(false);
+  const metNow = useRef(met);
+  metNow.current = met;
+  /* Any stroke counts, the author's too: the author is a reader of their own post and has met the effect by working it. */
+  const meet = useCallback(() => {
+    if (met1.current) return;
+    met1.current = true;
+    metNow.current();
+  }, []);
   /**
    * The lines a scrub has just uncovered, said as news; the lines readable before it are not said again. `n` counts what was said, so
    * the same words said again are a change a screen reader hears (a trailing no-break space on every other one).
@@ -197,19 +212,34 @@ export function Effect({ post, plays, states, reader, save, slot, place, note, n
     const f = frameRef.current;
     const l = layoutRef.current;
     if (!f || !l) return;
-    /* In the thread the ink reaches the post body's borders (the owner's word), so the body, the cell this sits in, is measured too: how far down it the frame starts and how tall it is. */
-    const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
-    const measure = () => setSize((prev) => {
-      const next = { frame: f.clientWidth, height: l.offsetHeight, above: cell ? f.getBoundingClientRect().top - cell.getBoundingClientRect().top : 0, cell: cell ? cell.clientHeight : 0 };
-      return prev.frame === next.frame && prev.height === next.height && prev.above === next.above && prev.cell === next.cell ? prev : next;
-    });
+    /*
+     * In the thread the ink reaches the post body's borders (the owner's word), so the body, the cell this sits in, is measured too: how
+     * far down it the frame starts and how tall it is. The cell is found at each measure and not once: under a takeover (Stick Around)
+     * the words are mounted in an element that is moved into the post afterwards, and moved again into its view, so the cell is not
+     * there when this first runs and changes when the words move. The observer follows whichever cell there is.
+     */
+    let watched: HTMLElement | null = null;
+    let watch: ResizeObserver | null = null;
+    const measure = () => {
+      const cell = bleed ? f.closest<HTMLElement>('.kb-act-main') : null;
+      if (watch && cell !== watched) {
+        if (watched) watch.unobserve(watched);
+        if (cell) watch.observe(cell);
+        watched = cell;
+      }
+      setSize((prev) => {
+        const next = { frame: f.clientWidth, height: l.offsetHeight, above: cell ? f.getBoundingClientRect().top - cell.getBoundingClientRect().top : 0, cell: cell ? cell.clientHeight : 0 };
+        return prev.frame === next.frame && prev.height === next.height && prev.above === next.above && prev.cell === next.cell ? prev : next;
+      });
+    };
+    if (typeof ResizeObserver === 'function') {
+      watch = new ResizeObserver(measure);
+      watch.observe(f);
+      watch.observe(l);
+    }
     measure();
-    if (typeof ResizeObserver !== 'function') return;
-    const watch = new ResizeObserver(measure);
-    watch.observe(f);
-    watch.observe(l);
-    if (cell) watch.observe(cell);
-    return () => watch.disconnect();
+    if (!watch) return;
+    return () => watch?.disconnect();
   }, []);
 
   /* Only a post near the viewport is drawn: past a screen above or below, the canvas is dropped. */
@@ -525,6 +555,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, note, n
     const layer = pen ? topAny : topLayer(lives, p[0], p[1]);
     /* No ink under the finger, or no layer to write in: the page has the touch, for a link or a scroll. */
     if (layer < 0) return;
+    meet();
     e.preventDefault();
     frameRef.current?.setPointerCapture?.(e.pointerId);
     live.current = pen
@@ -615,6 +646,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, note, n
       if (layer < 0) layer = sameBand ? open.layer : lives.reduce((top, ink, i) => (ink?.inkNear(rows[step.sweep.row]!, ROW / 2) ? i : top), -1);
       if (open && (!sameBand || open.layer !== layer)) closeSweepStroke();
       if (layer >= 0) {
+        meet();
         const cur = sweepStroke.current;
         if (cur) {
           const last = cur.points[cur.points.length - 1]!;
@@ -636,7 +668,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, note, n
       run.raf = requestAnimationFrame(tick);
     };
     run.raf = requestAnimationFrame(tick);
-  }, [built, checkClean, closeSweepStroke, liveInks, refresh, schedulePaint, stopSweep, sud]);
+  }, [built, checkClean, closeSweepStroke, liveInks, meet, refresh, schedulePaint, stopSweep, sud]);
 
   /* The latest stop, called once on unmount: a sweep is not stopped each time a callback is made again. */
   const stopLatest = useRef(stopSweep);
@@ -670,58 +702,48 @@ export function Effect({ post, plays, states, reader, save, slot, place, note, n
     if (fresh.length > 0) setUncovered((was) => ({ words: fresh.join(' '), n: was.n + 1 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- readKey is what the view's lines and cover say, and nothing else is read
   }, [readKey]);
-  /* The hint is the board's sentence for everyone; the author's own tools and what they save follow the button. */
-  const hint = 'This post is splatted. Drag across the ink to scrub it on your screen.';
   /*
-   * The plate's readout (the plays-on-a-post design, section 5): how many layers there are (washed clean or not, as each
-   * play's panel counts them, "Layer 2 of 3"), and the top one that holds ink, which is the layer
-   * the next stroke washes, named by its caster and its ink in words (names.ts, never a hex code), with its own share washed
-   * on this screen, as the model says (geometry, never a pixel read). The meter is a segment for each layer in its ink, the
-   * top first and lit, a clean one faded.
+   * What the card says of itself on this post (`EffectProps.show`, marks-and-the-lens design, sections 3 and 6): no plate is drawn, the
+   * Lens and the mark are. `state` is the old readout's sentence: how many layers there are (washed clean or not, as each play's
+   * line counts them, "Layer 2 of 3"), and the top one that holds ink, which is the layer the next stroke washes, named by its
+   * caster and its ink in words (names.ts, never a hex code), with its own share washed on this screen, as the model says (geometry,
+   * never a pixel read). `progress` is the mean share washed of the layers that still hold ink, the mark's edge.
    */
   const cleanAt = (i: number) => (view ? view.clean[i] === true : false);
-  const washedAt = (i: number) => (view ? (view.clean[i] ? 1 : Math.min(1, view.washed[i] ?? 0)) : 0);
   const percent = (i: number) => percentWashed(view?.washed[i] ?? 0, cleanAt(i));
   const top = layers.reduce((at, _, i) => (cleanAt(i) ? at : i), -1);
   const upper = top >= 0 ? layers[top]! : null;
-  const readout = (
-    <>
-      <span className="kb-plate-state">
-        {upper === null
-          ? 'Washed clean'
-          : `${layers.length} ${layers.length === 1 ? 'layer' : 'layers'} · top: ${nameOf(upper.play.caster)}'s ${inkName(upper.color)}, ${percent(top)}% washed`}
-      </span>
-      <span className="kb-whoops-meter" aria-hidden="true">
-        {layers.map((_, i) => layers.length - 1 - i).map((i) => (
-          <span
-            key={layers[i]!.play.id} data-kb-top={i === top ? 'true' : undefined} data-kb-clean={cleanAt(i) ? 'true' : undefined}
-            style={{ '--kb-washed': washedAt(i), '--kb-ink': layers[i]!.color } as CSSProperties}
-          />
-        ))}
-      </span>
-    </>
-  );
-  /*
-   * Each layer's line for its play's panel (`EffectProps.note`): "Layer 3 of 3, on top · 40% washed", or "Washed clean". It is
-   * said when a whole percent or the top changes, at most once a frame however fast a scrub runs, and taken back when the
-   * layers change or the effect is gone. It is this screen's view, never saved or sent.
-   */
+  const state = upper === null
+    ? 'Washed clean'
+    : `${layers.length} ${layers.length === 1 ? 'layer' : 'layers'} · top: ${nameOf(upper.play.caster)}'s ${inkName(upper.color)}, ${percent(top)}% washed`;
+  /* A share that is not a number counts as nothing washed, so the view and the key it is published on agree (JSON turns NaN into null). */
+  const inked = layers.flatMap((_, i) => { const w = view?.washed[i] ?? 0; return cleanAt(i) ? [] : [Number.isFinite(w) ? Math.min(1, w) : 0]; });
+  const progress = inked.length === 0 ? null : inked.reduce((sum, w) => sum + w, 0) / inked.length;
+  /* Each layer's line for its Who row: "Layer 3 of 3, on top · 40% washed", or "Washed clean". */
   const lineOf = (i: number) => (cleanAt(i) ? 'Washed clean' : `Layer ${i + 1} of ${layers.length}${i === top ? ', on top' : ''} · ${percent(i)}% washed`);
-  const notes = layers.map((l, i) => [l.play.id, lineOf(i)] as const);
-  const notesKey = notes.map(([id, line]) => `${id}\u0000${line}`).join('\u0001');
-  const noteNow = useRef({ note, notes });
-  noteNow.current = { note, notes };
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => { for (const [id, line] of noteNow.current.notes) noteNow.current.note(id, line); });
-    return () => cancelAnimationFrame(frame);
-  }, [notesKey]);
-  /* Taken back by the plays they belong to, not by the list they came in: the engine hands the same plays again in a new one. */
-  const playIds = layers.map((l) => l.play.id).join('\u0000');
-  useEffect(() => {
-    const ids = playIds.split('\u0000');
-    return () => { for (const id of ids) noteNow.current.note(id, null); };
-  }, [playIds]);
-  const stop = (e: { preventDefault(): void }) => e.preventDefault();
+  const notes = Object.fromEntries(layers.map((l, i) => [l.play.id, lineOf(i)]));
+  const author = reader.author;
+  /*
+   * The controls are made again only when the tool or the author changes: the engine compares a view's controls by function
+   * reference (plays.ts `sameView`), so a sweep's numbers changing every few frames must not make new ones. `startSweep` and
+   * `stopSweep` are the hold, and the author's choice is the effect's own `tool` state ("Your tool"): the author's stroke is the
+   * wash saved for everyone, so there is no third option.
+   */
+  const chooseTool = useCallback((value: string) => setTool(value === 'ink' ? 'ink' : 'wash'), []);
+  const controls = useMemo<readonly KitControl[]>(() => {
+    if (!anyLive) return [];
+    const hold: KitControl = { kind: 'hold', label: 'Hold to scrub', describe: HOLD_HELP, start: startSweep, stop: stopSweep };
+    if (!author) return [hold];
+    return [hold, { kind: 'choose', label: 'Your tool', options: TOOLS, value: tool, choose: chooseTool }];
+  }, [anyLive, author, tool, startSweep, stopSweep, chooseTool]);
+  const cardView: CardView = {
+    progress, state, ...(anyLive ? { ends: ENDS } : null), yours: author && anyLive, controls, notes, ...(report ? { report } : null),
+  };
+  /* Said when it changes: the model's numbers are published at REFRESH_MS while a sweep runs, so this is never more than a frame's work. */
+  const viewKey = JSON.stringify([progress, state, anyLive, author, report, notes]);
+  const viewNow = useRef(cardView);
+  viewNow.current = cardView;
+  useEffect(() => { show(viewNow.current); }, [viewKey, controls, show]);
 
   return (
     <div
@@ -757,38 +779,11 @@ export function Effect({ post, plays, states, reader, save, slot, place, note, n
       )}
       {/*
         * What a screen reader is told, in regions on the page from the start and empty until they speak (WCAG 4.1.3; #89 P2-1): the
-        * lines a scrub has just uncovered, and the save's report. The readout above is for reading, never said as news.
+        * lines a scrub has just uncovered, and the save's report. The readout above is for reading, never said as news. The
+        * report's visible copy is the Lens's (`CardView.report`).
         */}
       <p className="kb-visually-hidden" aria-live="polite" data-kb-uncovered>{uncovered.words}{uncovered.words && uncovered.n % 2 === 0 ? '\u00a0' : ''}</p>
       <p className="kb-visually-hidden" role="status" data-kb-report>{report}</p>
-      {/* The words and the controls are glass in the plate under the post, never in the post's 2003 body (the owner's notes on #80), drawn as one game piece (the owner on #80's shots): a readout, then tiles. */}
-      {(anyLive || report) && (
-        <EffectStrip slot={slot} card="whoops" readout={readout}>
-          {anyLive && <p className="kb-plate-line kb-whoops-hint">{hint}</p>}
-          {anyLive && (
-            <button
-              type="button" className="kb-plate-tile kb-whoops-scrub" data-kb-lit aria-describedby={help}
-              onPointerDown={(e) => { stop(e); startSweep(); }} onPointerUp={stopSweep} onPointerLeave={stopSweep} onPointerCancel={stopSweep} onBlur={stopSweep}
-              onContextMenu={stop}
-              onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); startSweep(); } else if (e.key === ' ' || e.key === 'Enter') e.preventDefault(); }}
-              onKeyUp={(e) => { if (e.key === ' ' || e.key === 'Enter') stopSweep(); }}
-            >
-              <span className="kb-plate-tile-label">Hold to scrub</span>
-            </button>
-          )}
-          {anyLive && <span id={help} className="kb-visually-hidden">Hold Space or Enter on this button to scrub the ink away line by line, at the pace of a hand. Let go to stop. It never clears the ink all at once.</span>}
-          {anyLive && reader.author && (
-            <span className="kb-whoops-tools" role="group" aria-label="Your tool">
-              <span className="kb-whoops-tools-label">Yours to wash for everyone, or write back in its ink:</span>
-              <button type="button" className="kb-plate-tile kb-whoops-tool" aria-pressed={tool === 'wash'} onClick={() => setTool('wash')}><span className="kb-plate-tile-label">Wash</span></button>
-              <button type="button" className="kb-plate-tile kb-whoops-tool" aria-pressed={tool === 'ink'} onClick={() => setTool('ink')}><span className="kb-plate-tile-label">Write in ink</span></button>
-            </span>
-          )}
-          {/* Said whether or not a layer is left: a clean mark that did not get through is the author's to know of, with no ink under it. */}
-          {/* Drawn on the plate for the eye; a screen reader hears it from the status region above, once. */}
-          {report && <p className="kb-plate-line kb-whoops-status" aria-hidden="true">{report}</p>}
-        </EffectStrip>
-      )}
     </div>
   );
 }

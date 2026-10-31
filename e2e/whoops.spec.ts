@@ -95,14 +95,14 @@ test('the ink reaches the post body\'s borders, the reactions are in front of it
 
 /*
  * Another card's effect may wrap Whoops! (Stick Around played after it, held and not yet lifted): the wrapper is the body's child, and
- * the post's controls are still in front of the ink inside it. What is at the center of the play tag, the reaction button and an action link is
+ * the post's controls are still in front of the ink inside it. What is at the center of the card's mark, the reaction button and an action link is
  * that element itself and not the canvas.
  */
-test('with a held Stick Around around the ink, the play tags, the reactions and the actions are in front of the ink', async ({ page }) => {
+test('with a held Stick Around around the ink, the marks, the reactions and the actions are in front of the ink', async ({ page }) => {
   await page.goto('/?fixture=boards&story=boards-08-hold--whoops-under-hold');
   await expect(page.locator('.kb-whoops-ink')).toBeVisible();
   await expect(page.locator('.kb-hold')).toBeVisible();
-  await expect(page.locator('.kb-play-tag').first()).toBeVisible();
+  await expect(page.locator('.kb-mark').first()).toBeVisible();
   await expect(page.locator('.kb-react-button')).toBeVisible();
   /* The ink lets pointers through, which would hide what paints over what: make it take them, so what is at a point is what is painted there. */
   await page.evaluate(() => { document.querySelector<HTMLElement>('.kb-whoops-ink')!.style.pointerEvents = 'auto'; });
@@ -112,13 +112,28 @@ test('with a held Stick Around around the ink, the play tags, the reactions and 
     const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return at !== null && el.contains(at);
   }, sel);
-  expect(await hit('.kb-play-tag')).toBe(true);
+  expect(await hit('.kb-mark')).toBe(true);
   expect(await hit('.kb-react-button')).toBe(true);
   expect(await hit('.kb-act-links .kb-link-button')).toBe(true);
 });
 
 /*
- * The scrub button, the author's tool toggles and the chosen ink swatch are drawn with a border, a
+ * Stick Around moves the post's words into the post after they are mounted (the takeover draws them once and moves their element), so
+ * Whoops! finds the post body it bleeds over each time it measures. In the thread, with a hold around the ink, the ink still reaches
+ * the post body's borders.
+ */
+test('with a held Stick Around around the ink, the ink still reaches the post body\'s borders', async ({ page }) => {
+  await page.goto('/?fixture=boards&story=boards-08-hold--whoops-under-hold');
+  await expect(page.locator('.kb-whoops-ink')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const body = document.querySelector('.kb-act-main')!.getBoundingClientRect();
+    const ink = document.querySelector('.kb-whoops-ink')!.getBoundingClientRect();
+    return [ink.left - body.left, ink.right - body.right, ink.top - body.top].map((d) => Math.round(Math.abs(d)));
+  })).toEqual([0, 0, 0]);
+});
+
+/*
+ * The scrub button, the author's tool choice (both the kit's tiles in the Lens) and the chosen ink swatch are drawn with a border, a
  * glow and underlining, which forced colors (Windows High Contrast) drop or recolor: each is also
  * marked by an outline or a border in a system color there. The swatch is the play form's, which a
  * moment does not open, so a swatch is made from the card's own markup beside the post.
@@ -128,7 +143,10 @@ test.describe('in forced colors', () => {
 
   test('the scrub button, the author\'s tools and the chosen swatch are marked in system colors', async ({ page }) => {
     await page.goto('/?fixture=boards&moment=01-main');
-    await expect(page.locator('#post-41 .kb-whoops-scrub')).toBeVisible();
+    /* The hold and the tools are the kit's tiles in the Lens, opened by Whoops!'s mark. */
+    await page.locator('#post-41 .kb-mark[data-kb-card="whoops"]:not(.kb-ghost-mark)').click();
+    const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+    await expect(lens.getByRole('button', { name: 'Hold to scrub' })).toBeVisible();
     const marks = await page.evaluate(() => {
       const system = (color: string) => {
         const probe = document.createElement('div');
@@ -144,18 +162,19 @@ test.describe('in forced colors', () => {
       const outline = (el: Element) => { const c = getComputedStyle(el); return { style: c.outlineStyle, width: c.outlineWidth, color: c.outlineColor }; };
       const border = (el: Element) => { const c = getComputedStyle(el); return { style: c.borderTopStyle, width: c.borderTopWidth, color: c.borderTopColor }; };
       const [chosen, other] = [...form.querySelectorAll('input')];
-      const tools = [...document.querySelectorAll('#post-41 .kb-whoops-tools button')];
+      const tools = [...document.querySelectorAll('.kb-lens [role="group"] .kb-kit-tile')];
       return {
         buttonText: system('ButtonText'), highlight: system('Highlight'),
-        scrub: outline(document.querySelector('#post-41 .kb-whoops-scrub')!),
+        scrub: outline(document.querySelector('.kb-lens .kb-kit-tile[data-kb-hold]')!),
         tools: tools.map((t) => ({ pressed: t.getAttribute('aria-pressed'), ...outline(t) })),
         chosen: border(chosen!), other: border(other!),
       };
     });
-    expect(marks.scrub).toEqual({ style: 'solid', width: '2px', color: marks.buttonText });
+    /* The kit's tiles (kit.css) are outlined 2px in ButtonText, and in Highlight when lit (the hold) or pressed (the chosen tool). */
+    expect(marks.scrub).toEqual({ style: 'solid', width: '2px', color: marks.highlight });
     expect(marks.tools).toHaveLength(2);
     for (const t of marks.tools) {
-      expect(t).toEqual(t.pressed === 'true' ? { pressed: 'true', style: 'solid', width: '3px', color: marks.highlight } : { pressed: 'false', style: 'solid', width: '1px', color: marks.buttonText });
+      expect(t).toEqual(t.pressed === 'true' ? { pressed: 'true', style: 'solid', width: '2px', color: marks.highlight } : { pressed: 'false', style: 'solid', width: '2px', color: marks.buttonText });
     }
     expect(marks.chosen).toEqual({ style: 'solid', width: '4px', color: marks.highlight });
     expect(marks.other.style).not.toBe('solid');

@@ -8,8 +8,10 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
+import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
 import type { Act, EffectState } from '../../../../engine/ui/data/api.ts';
+import { sameView } from '../../../../engine/ui/cards/plays.ts';
+import { Kit } from '../../../../engine/ui/cards/Kit.tsx';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { STROKES, whoops } from '../whoops.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
@@ -43,7 +45,6 @@ const HEIGHT = (LINES * LINE_PX) / REF_WIDTH;
 const MAX_FRAME = REF_WIDTH;
 const PHONE_FRAME = 390;
 
-const slots: HTMLElement[] = [];
 let frameWidth = MAX_FRAME;
 /** How many lines tall the post is laid out; an edit changes it. */
 let layoutLines = LINES;
@@ -64,7 +65,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  while (slots.length > 0) slots.pop()!.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   document.documentElement.removeAttribute('data-kb-motion');
@@ -92,7 +92,8 @@ interface Options {
   readonly states?: Record<string, EffectState>;
   readonly author?: boolean;
   readonly save?: EffectProps['save'];
-  readonly note?: EffectProps['note'];
+  /** Said whenever the effect publishes its view (`EffectProps.show`); the views the effect has published are also kept in `shown`. */
+  readonly met?: EffectProps['met'];
   readonly nameOf?: EffectProps['nameOf'];
   /** The instance's share washed that counts as clean; null is an instance whose settings carry none. */
   readonly clean?: number | null;
@@ -100,14 +101,13 @@ interface Options {
 
 function mount(o: Options = {}) {
   const save = o.save ?? vi.fn(ok as unknown as EffectProps['save']);
-  /* The place the engine gives an effect outside the post's 2003 chrome: a strip under the post (engine/ui/cards/Effects.tsx). */
-  const slot = document.createElement('div');
-  slot.className = 'kb-act-slot';
-  document.body.append(slot);
-  slots.push(slot);
+  /* The engine draws the card's controls from the view the effect publishes (Kit.tsx); this host does the same beside the effect, so a test presses what a player would. */
+  const shown: (CardView | null)[] = [];
+  let say: (view: CardView | null) => void = () => {};
+  const show: EffectProps['show'] = (view) => { shown.push(view); say(view); };
   const props: EffectProps = {
-    slot, post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
-    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), note: o.note ?? (() => {}), nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
+    post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
+    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};
@@ -118,11 +118,18 @@ function mount(o: Options = {}) {
     const [list, setList] = useState(props.plays);
     push = set;
     replay = () => setList((was) => [...was]);
-    return <Effect {...props} plays={list} states={held} />;
+    const [view, setView] = useState<CardView | null>(null);
+    say = setView;
+    return (
+      <>
+        <Effect {...props} plays={list} states={held} />
+        <Kit card="whoops" controls={view?.controls ?? []} />
+      </>
+    );
   }
   const world = renderInWorld(<Host />, { settings: { cardSettings: o.clean === null ? {} : { 'whoops.clean': o.clean ?? 95 } } });
   const root = world.container.querySelector('.kb-whoops') as HTMLElement;
-  return { ...world, slot, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)), replay: () => act(() => replay()) };
+  return { ...world, shown, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)), replay: () => act(() => replay()) };
 }
 
 /** The washed share of each layer, as the component publishes it. */
@@ -200,8 +207,9 @@ describe('the layers', () => {
     const { root } = mount({ layers: 2, states: { 'play-2': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
     expect(states(root)).toEqual(['live', 'clean']);
     const all = mount({ layers: 1, states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
-    expect(all.slot.querySelector('[data-kb-scrub]')).toBeNull();
+    /* The one live post has its hold control; the plain one publishes none. */
     expect(screen.getAllByRole('button', { name: 'Hold to scrub' })).toHaveLength(1);
+    expect(all.shown.at(-1)?.controls).toEqual([]);
   });
 });
 
@@ -363,58 +371,47 @@ describe('scrubbing', () => {
   });
 });
 
-describe('the words and controls are glass, outside the post (the owner\'s notes on #80)', () => {
-  test('the hint, "Hold to scrub" and the author\'s tools are one glass element in the strip under the post, and the post\'s own body holds none of them', () => {
-    const { root, slot } = mount({ author: true });
-    const strip = slot.querySelector('.kb-effect-strip') as HTMLElement;
-    expect(strip).not.toBeNull();
-    expect(slot.querySelectorAll('.kb-effect-strip')).toHaveLength(1);
-    expect(strip).toHaveClass('kb-glass');
-    expect(strip).toHaveTextContent('This post is splatted. Drag across the ink to scrub it on your screen.');
-    for (const name of ['Hold to scrub', 'Wash', 'Write in ink']) {
-      const button = screen.getByRole('button', { name });
-      expect(strip).toContainElement(button);
-      expect(root).not.toContainElement(button);
-    }
-    expect(root.textContent).not.toMatch(/splatted|Yours to wash/u);
+describe('the view the effect publishes (marks-and-the-lens design, sections 3 and 6)', () => {
+  const clean = (savedAt = '2026-10-29T22:00:00.000Z'): EffectState => ({ state: { strokes: [], clean: true }, savedAt });
+  const last = (shown: readonly (CardView | null)[]) => shown.at(-1)!;
+
+  test('draws no plate and no controls of its own: nothing glass is inside the post', () => {
+    const { root, container } = mount({ author: true });
     expect(root.querySelector('button')).toBeNull();
+    expect(container.querySelector('.kb-act-slot, .kb-effect-strip, .kb-plate-tile, .kb-whoops-meter, .kb-whoops-hint, .kb-whoops-status')).toBeNull();
+    expect(root.textContent).not.toMatch(/splatted|Yours to wash/u);
   });
-  test('the plate\'s readout names the card, counts the layers and names the top one, its caster\'s ink and its own share washed', () => {
-    const { slot } = mount({ layers: 3 });
-    const strip = slot.querySelector('.kb-effect-strip') as HTMLElement;
-    expect(strip.querySelector('.kb-plate-name')).toHaveTextContent('Whoops!');
-    expect(strip.querySelector('.kb-plate-state')).toHaveTextContent(/^3 layers · top: Spritey's yellow, 0% washed$/u);
-    /* The sentence is what a screen reader hears of the readout; the meter beside it is for the eye. */
-    expect(strip.querySelector('.kb-plate-state')!.closest('[aria-hidden="true"]')).toBeNull();
-    expect(strip.querySelector('.kb-whoops-meter')).toHaveAttribute('aria-hidden', 'true');
-  });
-  test('two layers and one read the same way, one in the singular', () => {
-    expect(mount({ layers: 2 }).slot.querySelector('.kb-plate-state')).toHaveTextContent(/^2 layers · top: Gloomba's cyan, 0% washed$/u);
-    expect(mount({ layers: 1 }).slot.querySelector('.kb-plate-state')).toHaveTextContent(/^1 layer · top: Mrs\. Hooligan's magenta, 0% washed$/u);
-  });
-  test('the meter is one segment for each layer, in its ink, the top layer first and marked, a clean one faded', () => {
-    const { slot } = mount({ layers: 3, states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
-    const segments = [...slot.querySelectorAll<HTMLElement>('.kb-whoops-meter > *')];
-    expect(segments.map((el) => el.style.getPropertyValue('--kb-ink'))).toEqual(['#ffd93d', '#19e3ff', '#ff2bd6']);
-    expect(segments.map((el) => el.dataset.kbTop)).toEqual(['true', undefined, undefined]);
-    expect(segments.map((el) => el.dataset.kbClean)).toEqual([undefined, undefined, 'true']);
-  });
-  test('when the top layer is washed clean the readout names the next, and its caster; when every layer is, the plate is gone and each layer\'s note reads Washed clean', async () => {
-    const note = vi.fn<EffectProps['note']>();
-    const { slot, hear } = mount({ layers: 2, note });
-    expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(/^2 layers · top: Gloomba's cyan, 0% washed$/u);
-    hear({ 'play-2': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } });
-    /* Every layer counts, washed clean or not, as each play's panel counts them ("Layer 1 of 2"). */
-    expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(/^2 layers · top: Mrs\. Hooligan's magenta, 0% washed$/u);
-    expect(slot.querySelector('[data-kb-top="true"]')?.getAttribute('style')).toContain('#ff2bd6');
-    hear({
-      'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' },
-      'play-2': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' },
+  test('one layer, nothing washed: the state names the layer and its ink, the edge is at nothing, and the reader has nothing of their own to do', () => {
+    const { shown } = mount({ layers: 1 });
+    expect(last(shown)).toMatchObject({
+      progress: 0, state: "1 layer · top: Mrs. Hooligan's magenta, 0% washed", yours: false,
+      ends: 'Ends on your screen when you scrub every layer off. The author can wash it for everyone.',
+      notes: { 'play-1': 'Layer 1 of 1, on top · 0% washed' },
     });
-    /* A post washed clean draws no plate (its words stand alone); what is left to say is each play's panel's. */
-    expect(slot.querySelector('.kb-effect-strip')).toBeNull();
-    const last = (play: string) => note.mock.calls.filter(([p]) => p === play).at(-1)?.[1];
-    await vi.waitFor(() => expect([last('play-1'), last('play-2')]).toEqual(['Washed clean', 'Washed clean']));
+    expect(last(shown).report).toBeUndefined();
+  });
+  test('two layers and three read the same way: the top layer that holds ink, with every layer counted', () => {
+    expect(last(mount({ layers: 2 }).shown).state).toBe("2 layers · top: Gloomba's cyan, 0% washed");
+    const three = last(mount({ layers: 3 }).shown);
+    expect(three.state).toBe("3 layers · top: Spritey's yellow, 0% washed");
+    expect(three.notes).toEqual({ 'play-3': 'Layer 3 of 3, on top · 0% washed', 'play-2': 'Layer 2 of 3 · 0% washed', 'play-1': 'Layer 1 of 3 · 0% washed' });
+  });
+  test('a layer washed clean: the next one is on top, the notes say Washed clean, and progress is the mean share of the layers that still hold ink', () => {
+    const { shown, frame, root } = mount({ layers: 3, states: { 'play-3': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    expect(last(shown).state).toBe("3 layers · top: Gloomba's cyan, 0% washed");
+    expect(last(shown).notes).toEqual({ 'play-3': 'Washed clean', 'play-2': 'Layer 2 of 3, on top · 0% washed', 'play-1': 'Layer 1 of 3 · 0% washed' });
+    const ink = new LayerInk(splatFor(1), []);
+    scrubTo(frame, root, 1, ink, 0.4);
+    const second = Math.min(1, washed(root)[1]!);
+    const first = Math.min(1, washed(root)[0]!);
+    expect(second).toBeGreaterThan(0);
+    expect(last(shown).progress).toBeCloseTo((first + second) / 2, 2);
+    expect(last(shown).state).toBe(`3 layers · top: Gloomba's cyan, ${Math.round(100 * second)}% washed`);
+  });
+  test('every layer washed clean: no edge, no controls, nothing to end, and each note reads Washed clean', () => {
+    const { shown } = mount({ layers: 2, states: { 'play-1': clean(), 'play-2': clean() } });
+    expect(last(shown)).toMatchObject({ progress: null, state: 'Washed clean', yours: false, controls: [], notes: { 'play-1': 'Washed clean', 'play-2': 'Washed clean' } });
+    expect(last(shown).ends).toBeUndefined();
   });
   test('a layer that still holds ink never reads 100% washed, and one washed clean always does', () => {
     expect(percentWashed(0.996, false)).toBe(99);
@@ -422,48 +419,81 @@ describe('the words and controls are glass, outside the post (the owner\'s notes
     expect(percentWashed(Number.NaN, false)).toBe(0);
     expect(percentWashed(0.2, true)).toBe(100);
   });
-  test('the top layer\'s own share washed is the readout\'s, not a sum across the layers', () => {
-    const { slot, frame, root } = mount({ layers: 2 });
+  test('the author has something to do while a layer holds ink, and not once it is all clean', () => {
+    expect(last(mount({ author: true }).shown).yours).toBe(true);
+    expect(last(mount({ author: true, states: { 'play-1': clean() } }).shown).yours).toBe(false);
+  });
+  test('the reader has one control, the hold, with the help sentence as its description; the author has two, the hold and a "Your tool" choice of Wash and Write in ink; no view has more', () => {
+    const reader = mount({ layers: 3 });
+    const author = mount({ layers: 3, author: true });
+    const [hold] = last(reader.shown).controls;
+    expect(last(reader.shown).controls).toHaveLength(1);
+    expect(hold).toMatchObject({ kind: 'hold', label: 'Hold to scrub' });
+    expect((hold as { describe?: string }).describe).toMatch(/hold Space or Enter.*never clears the ink all at once/iu);
+    expect(last(author.shown).controls.map((c) => c.kind)).toEqual(['hold', 'choose']);
+    expect(last(author.shown).controls[1]).toMatchObject({ label: 'Your tool', options: [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Write in ink' }], value: 'wash' });
+    for (const view of [...reader.shown, ...author.shown]) expect(view?.controls.length ?? 0).toBeLessThanOrEqual(2);
+  });
+  test('choosing a tool is the effect\'s tool state: the published choice follows it, and the next stroke is written in the layer\'s ink, not washed', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { shown, frame, save } = mount({ author: true });
+    const choose = () => last(shown).controls[1] as Extract<KitControl, { kind: 'choose' }>;
+    act(() => choose().choose('ink'));
+    expect(choose().value).toBe('ink');
+    expect(screen.getByRole('button', { name: 'Write in ink' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Wash' })).toHaveAttribute('aria-pressed', 'false');
+    drag(frame, [[0.2, 0.3], [0.3, 0.3], [0.4, 0.35]]);
+    act(() => { vi.advanceTimersByTime(2000); });
+    const stroke = (save.mock.calls[0]![1] as { strokes: { tool: string; color: string }[] }).strokes[0]!;
+    expect([stroke.tool, stroke.color]).toEqual(['ink', COLORS[0]]);
+    act(() => choose().choose('wash'));
+    expect(choose().value).toBe('wash');
+  });
+  test('an unchanged view is equal: the controls are the same functions after a refresh, so the engine\'s comparison sees no change', () => {
+    const { shown, hear } = mount({ layers: 2, author: true });
+    const before = last(shown);
+    hear({});
+    const after = last(shown);
+    expect(after.controls.map((c) => c.kind)).toEqual(before.controls.map((c) => c.kind));
+    const [h1, h2] = [before.controls[0], after.controls[0]] as Extract<KitControl, { kind: 'hold' }>[];
+    expect([h2!.start, h2!.stop]).toEqual([h1!.start, h1!.stop]);
+    expect(sameView(before, after)).toBe(true);
+  });
+  test('the save\'s report is in the view and in the status region once, and no line of it is drawn on a plate', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const full: Stroke[] = Array.from({ length: STROKES.most }, () => ({ tool: 'wash', width: BRUSH, points: [[0.01, 0.01], [0.02, 0.01]] }));
+    const { shown, frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    expect(last(shown).report).toBeUndefined();
+    const [x, y] = inkSpot(new LayerInk(splatFor(0), full));
+    drag(frame, [[x, y], [x + 0.06, y]]);
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(last(shown).report).toMatch(/^This layer has no room for more strokes to save\./u);
+    expect(root.querySelector('[data-kb-report]')).toHaveTextContent('This layer has no room for more strokes to save.');
+    expect(document.querySelector('.kb-whoops-status')).toBeNull();
+  });
+});
+
+describe('met', () => {
+  test('is called on the first stroke on any layer, once, and not before', () => {
+    const met = vi.fn();
+    const { frame, root } = mount({ layers: 2, met });
+    expect(met).not.toHaveBeenCalled();
     const ink = new LayerInk(splatFor(1), []);
-    scrubTo(frame, root, 1, ink, 0.4);
-    const share = Math.round(100 * washed(root)[1]!);
-    expect(share).toBeGreaterThan(0);
-    expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(new RegExp(`^2 layers · top: Gloomba's cyan, ${share}% washed$`, 'u'));
+    scrubTo(frame, root, 1, ink, 0.1);
+    expect(met).toHaveBeenCalledTimes(1);
+    scrubTo(frame, root, 0, new LayerInk(splatFor(0), []), 0.1);
+    expect(met).toHaveBeenCalledTimes(1);
   });
-  test('the same plays handed again keep their lines: a line is taken back only when its play is gone', async () => {
-    const note = vi.fn<EffectProps['note']>();
-    const { replay } = mount({ layers: 2, note });
-    const last = (play: string) => note.mock.calls.filter(([p]) => p === play).at(-1)?.[1];
-    await vi.waitFor(() => expect(last('play-2')).toBe('Layer 2 of 2, on top · 0% washed'));
-    replay();
-    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
-    expect(last('play-2')).toBe('Layer 2 of 2, on top · 0% washed');
-    expect(last('play-1')).toBe('Layer 1 of 2 · 0% washed');
-  });
-  test('each layer says its line to the play\'s panel, as the shares change, and takes it back when the effect is gone', async () => {
-    const note = vi.fn<EffectProps['note']>();
-    const { hear, unmount } = mount({ layers: 3, note });
-    const last = (play: string) => note.mock.calls.filter(([p]) => p === play).at(-1)?.[1];
-    await vi.waitFor(() => expect(last('play-3')).toBe('Layer 3 of 3, on top · 0% washed'));
-    expect(last('play-2')).toBe('Layer 2 of 3 · 0% washed');
-    expect(last('play-1')).toBe('Layer 1 of 3 · 0% washed');
-    hear({ 'play-3': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } });
-    await vi.waitFor(() => expect(last('play-3')).toBe('Washed clean'));
-    expect(last('play-2')).toBe('Layer 2 of 3, on top · 0% washed');
-    unmount();
-    for (const play of ['play-1', 'play-2', 'play-3']) expect(last(play)).toBeNull();
-  });
-  test('the tiles are buttons with their names, and the author\'s two tools are toggles of which one is pressed', () => {
-    const { slot } = mount({ author: true });
-    const strip = slot.querySelector('.kb-effect-strip') as HTMLElement;
-    for (const name of ['Hold to scrub', 'Wash', 'Write in ink']) expect(within(strip).getByRole('button', { name })).toHaveClass('kb-plate-tile');
-    expect(within(strip).getByRole('button', { name: 'Hold to scrub' })).not.toHaveAttribute('aria-pressed');
-    expect(within(strip).getByRole('button', { name: 'Wash' })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(strip).getByRole('button', { name: 'Write in ink' })).toHaveAttribute('aria-pressed', 'false');
-  });
-  test('a strip is drawn only while a layer holds ink, and says nothing of itself to a post that is plain', () => {
-    const { slot } = mount({ layers: 1, states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
-    expect(slot.querySelector('.kb-effect-strip')).toBeNull();
+  test('the keyboard path\'s first sweep calls it too', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
+    const met = vi.fn();
+    mount({ met });
+    const button = screen.getByRole('button', { name: 'Hold to scrub' });
+    expect(met).not.toHaveBeenCalled();
+    act(() => { fireEvent.keyDown(button, { key: ' ' }); });
+    act(() => { vi.advanceTimersByTime(100); });
+    act(() => { fireEvent.keyUp(button, { key: ' ' }); });
+    expect(met).toHaveBeenCalledTimes(1);
   });
 });
 

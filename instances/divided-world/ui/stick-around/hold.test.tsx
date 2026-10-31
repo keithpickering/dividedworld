@@ -10,7 +10,7 @@
  * 16 ms here and a "screen" is 500 px.
  */
 import { act, fireEvent, screen, within } from '@testing-library/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
 
@@ -18,7 +18,7 @@ import { buildWorld, renderIn } from '../../../../engine/ui/test-world.tsx';
 import { instanceUi } from '../index.ts';
 import { TUNING } from '../../cards/stick-around/hold.ts';
 import type { Act } from '../../../../engine/ui/data/api.ts';
-import type { CardPlay } from '../../../../engine/ui/cards/types.ts';
+import type { CardPlay, CardUi, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { HoldStage, StickAroundEffect } from './Effect.tsx';
 import { ESC_QUIET_MS } from './takeover.ts';
 
@@ -90,10 +90,10 @@ type World = ReturnType<typeof world>;
  * time, which a find needs, and the card's first settle timer (set as the page mounts, finding the post off the window and
  * doing nothing) is let run out; from there the clock is a fake that only the test advances, so no run is a hair different.
  */
-async function openThread(w: World) {
+async function openThread(w: World, cards: readonly CardUi[] = instanceUi.cards) {
   vi.useRealTimers();
   geometry.post = { top: 5000, bottom: 5320 };
-  const rendered = renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}?page=1`, cards: instanceUi.cards });
+  const rendered = renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}?page=1`, cards });
   await screen.findByText(/Please read it this time/u);
   await new Promise((r) => setTimeout(r, TUNING.settleMs + 60));
   vi.useFakeTimers();
@@ -115,8 +115,8 @@ const level = () => Number(within(view()!).getByText(/^\d+%$/u).textContent!.rep
 const scroller = () => view()!.querySelector<HTMLElement>('.kb-hold-scroll')!;
 
 /** The thread open and the reader taken over: the view is up with its bar empty. */
-async function openView(w: World = world()) {
-  const rendered = await openThread(w);
+async function openView(w: World = world(), cards: readonly CardUi[] = instanceUi.cards) {
+  const rendered = await openThread(w, cards);
   await settleOn(geometry.post = { top: 200, bottom: 520 });
   expect(view()).not.toBeNull();
   return { ...rendered, w };
@@ -153,8 +153,8 @@ describe('the take-over', () => {
     const held = document.querySelector('.kb-hold') as HTMLElement;
     expect(held).not.toBeNull();
     expect(held.querySelector('.kb-glass, button, [role="button"], a[href]')).toBeNull();
-    /* The post's body holds no glass but the play's tag, which stands above its words. */
-    expect(held.closest('.kb-act-main')?.querySelector('.kb-glass:not(.kb-play-tag)')).toBeNull();
+    /* The post's body holds no glass at all: the marks stand in its date row. */
+    expect(held.closest('.kb-act-main')?.querySelector('.kb-glass')).toBeNull();
   });
 
   test('a settled scroll with the post mostly out of the window does not take over; once it is mostly in, it does', async () => {
@@ -630,7 +630,7 @@ describe('an effect given more than one play', () => {
     return (
       <HoldStage.Provider value={{ mode: 'view', level: 0 }}>
         <StickAroundEffect
-          post={act1()} plays={plays} states={{}} released={released} reader={{ author: false, caster: false }} place="thread" slot={null} save={vi.fn()} note={() => {}} nameOf={() => 'A character'}
+          post={act1()} plays={plays} states={{}} released={released} reader={{ author: false, caster: false }} place="thread" save={vi.fn()} show={() => {}} met={() => {}} marks={null} nameOf={() => 'A character'}
           release={async (id) => { setReleased((r) => new Set([...r, id])); return { ok: true, value: { play: id, releasedAt: 'now' } } as never; }}
         >
           <p>the post</p>
@@ -657,5 +657,226 @@ describe('an effect given more than one play', () => {
     /* A play that arrives later is not shown in a view that was open for the one before. */
     act(() => { set([]); });
     expect(view()).toBeNull();
+  });
+});
+
+/* ------------------------------------------------- the takeover: marks, the Lens, nothing remounts ---- */
+/*
+ * Whoops! is played on the held post after Stick Around, with a small effect of its own in Whoops!'s place: one that keeps a
+ * count in state (a reader's unsaved strokes), counts its mounts, and says a "Hold to scrub" control in its view. Whoops!'s own
+ * canvas and observers across the same move are e2e/hold.spec.ts's, in a real browser.
+ */
+const probes = { mounts: 0, unmounts: 0, started: 0, stopped: 0 };
+function Probe({ show, children }: EffectProps) {
+  const [strokes, setStrokes] = useState(0);
+  useEffect(() => { probes.mounts++; return () => { probes.unmounts++; }; }, []);
+  useEffect(() => {
+    show({
+      progress: strokes / 10, state: `${strokes} strokes`, yours: false, notes: {},
+      controls: [{ kind: 'hold', label: 'Hold to scrub', start: () => { probes.started++; }, stop: () => { probes.stopped++; } }],
+    });
+  }, [show, strokes]);
+  return (
+    <div data-testid="probe">
+      <button type="button" onClick={() => setStrokes((n) => n + 1)}>Scrub</button>
+      <output>{strokes}</output>
+      {children}
+    </div>
+  );
+}
+const withProbe: readonly CardUi[] = instanceUi.cards.map((c) => (c.key === 'whoops' ? { ...c, Effect: Probe } : c));
+const stuck = (): CardUi | undefined => withProbe.find((c) => c.key === 'stick-around');
+function probed(who: 'reader' | 'author' | 'caster' = 'reader') {
+  const w = world(who);
+  w.fake.seed.card(w.gloomba, w.held, 'whoops', { message: 'oops', config: {} });
+  probes.mounts = probes.unmounts = probes.started = probes.stopped = 0;
+  return w;
+}
+const markIn = (root: HTMLElement, name: RegExp) => within(root).getByRole('button', { name });
+const lensDialog = () => screen.getByRole('dialog', { name: 'Cards on this post' });
+
+describe('the takeover', () => {
+  test('Stick Around, played first, is the outermost element, and the card played after it is inside the lifted view', async () => {
+    expect(stuck()?.takeover).toBe(true);
+    await openThread(probed(), withProbe);
+    const hold = document.querySelector<HTMLElement>('.kb-hold')!;
+    expect(hold).toContainElement(screen.getByTestId('probe'));
+    await settleOn({ top: 200, bottom: 520 });
+    expect(view()).toContainElement(screen.getByTestId('probe'));
+    expect(document.querySelector('.kb-hold')).not.toContainElement(screen.getByTestId('probe'));
+    expect(view()).toContainElement(screen.getByText(/Please read it this time/u));
+  });
+
+  test('an inner effect is mounted once across a lift and a release, and keeps its state and its very elements', async () => {
+    await openThread(probed(), withProbe);
+    expect(probes.mounts).toBe(1);
+    const before = screen.getByTestId('probe');
+    fireEvent.click(within(before).getByRole('button', { name: 'Scrub' }));
+    fireEvent.click(within(before).getByRole('button', { name: 'Scrub' }));
+    await settleOn({ top: 200, bottom: 520 });
+    expect(view()).not.toBeNull();
+    expect(screen.getByTestId('probe')).toBe(before);
+    expect(before.querySelector('output')).toHaveTextContent('2');
+    fireEvent.click(within(before).getByRole('button', { name: 'Scrub' }));
+    atEnd('bottom');
+    for (let i = 0; i < 60 * 6 && view() !== null; i++) await frames(1, pushing(scroller(), 40));
+    expect(view()).toBeNull();
+    expect(screen.getByTestId('probe')).toBe(before);
+    expect(document.querySelector('article#post-2')).toContainElement(before);
+    expect(document.querySelector('.kb-hold-away')).toBeNull();
+    expect(before.querySelector('output')).toHaveTextContent('3');
+    expect([probes.mounts, probes.unmounts]).toEqual([1, 0]);
+  });
+
+  test('the lifted post shows the marks, and a mark there opens the Lens inside the hold\'s dialog', async () => {
+    await openView(probed(), withProbe);
+    const mark = markIn(view()!, /^Whoops!, 1 play/u);
+    fireEvent.click(mark);
+    expect(view()!.closest('.kb-glass-overlay')).toContainElement(lensDialog());
+    expect(lensDialog()).toHaveTextContent('0 strokes');
+    expect(view()).toContainElement(markIn(view()!, /^stick-around, 1 play/u));
+    /* The thread's own strip is under the inert page; the Lens is not. */
+    expect(lensDialog().closest('[inert]')).toBeNull();
+  });
+
+  test('Hold to scrub works from that Lens, and nothing in the Lens pushes the post or fills the bar', async () => {
+    await openView(probed(), withProbe);
+    fireEvent.click(markIn(view()!, /^Whoops!, 1 play/u));
+    const scrub = within(lensDialog()).getByRole('button', { name: 'Hold to scrub' });
+    fireEvent.pointerDown(scrub);
+    expect(probes.started).toBe(1);
+    fireEvent.pointerUp(scrub);
+    expect(probes.stopped).toBe(1);
+    atEnd('bottom');
+    await frames(10, () => {
+      fireEvent.wheel(scrub, { deltaY: 400 });
+      fireEvent.keyDown(scrub, { key: 'ArrowDown' });
+    });
+    expect(level()).toBe(0);
+  });
+
+  test('Esc in the Lens closes the Lens and not the hold, and counts no press; a second Esc is a press of Break free', async () => {
+    await openView(probed(), withProbe);
+    fireEvent.click(markIn(view()!, /^Whoops!, 1 play/u));
+    expect(lensDialog()).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await wait(60);
+    expect(screen.queryByRole('dialog', { name: 'Cards on this post' })).toBeNull();
+    expect(view()).not.toBeNull();
+    expect(level()).toBe(0);
+    expect(screen.queryByText(/Esc breaks free/u)).toBeNull();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await wait(40);
+    expect(level()).toBeGreaterThan(0);
+    expect(view()).not.toBeNull();
+  });
+});
+
+/*
+ * The post's words are drawn by a portal into an element that is moved into the view, so a synthetic event from inside them follows
+ * the fiber tree (the thread's) and never reaches the view; the view listens natively, where the DOM move is followed.
+ */
+describe('input over the post\'s words in the view', () => {
+  test('a wheel, a drag and PageDown on the words count as they do on the scroller: pushed past the post\'s end they fill the bar', async () => {
+    await openView(probed(), withProbe);
+    const words = () => within(view()!).getByTestId('probe').querySelector('output')!;
+    for (const [name, each] of [
+      ['wheel', () => { fireEvent.wheel(words(), { deltaY: 60 }); }],
+      ['PageDown', () => { fireEvent.keyDown(words(), { key: 'PageDown' }); }],
+      ['touch', (() => { let y = 400; return () => { if (y === 400) fireEvent.touchStart(words(), { touches: [{ clientY: y }] }); y -= 40; fireEvent.touchMove(words(), { touches: [{ clientY: y }] }); }; })()],
+    ] as const) {
+      await wait(1500);
+      expect(level(), `${name}: drained`).toBe(0);
+      atEnd('bottom');
+      await frames(6, each);
+      expect(level(), name).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('a Lens hosted in the hold', () => {
+  test('draws no Spin thread (its form would open behind the inert page) and says when spinning is possible', async () => {
+    await openView(probed(), withProbe);
+    fireEvent.click(markIn(view()!, /^Whoops!, 1 play/u));
+    fireEvent.click(within(lensDialog()).getByRole('button', { name: /^1 play · / }));
+    expect(within(lensDialog()).queryByRole('button', { name: 'Spin thread' })).toBeNull();
+    expect(lensDialog()).toHaveTextContent('Spin a thread from this play once you are free of the hold.');
+  });
+
+  test('stands outside the dialog\'s clipped box, inside the overlay that is the top layer, and is reached by Tab without the view pulling focus away', async () => {
+    await openView(probed(), withProbe);
+    fireEvent.click(markIn(view()!, /^Whoops!, 1 play/u));
+    const lens = lensDialog();
+    expect(view()!.contains(lens)).toBe(false);
+    expect(lens.closest('.kb-glass-overlay')).toBe(view()!.closest('.kb-glass-overlay'));
+    expect(lens.closest('[inert]')).toBeNull();
+    const tab = within(lens).getByRole('tab', { selected: true });
+    tab.focus();
+    expect(tab).toHaveFocus();
+  });
+});
+
+describe('Tab around a Lens hosted in the hold', () => {
+  test('Tab past its last stop lands inside the hold, and Shift+Tab before its first stop lands on the hold\'s mark', async () => {
+    await openView(probed(), withProbe);
+    const mark = markIn(view()!, /^Whoops!, 1 play/u);
+    fireEvent.click(mark);
+    const lens = lensDialog();
+    const stops = [...lens.querySelectorAll<HTMLElement>('button, [tabindex="0"], a[href]')].filter((el) => el.tabIndex >= 0);
+    expect(stops.length).toBeGreaterThan(1);
+    const key = (el: Element, shiftKey: boolean) => fireEvent.keyDown(el, { key: 'Tab', shiftKey });
+    stops[stops.length - 1]!.focus();
+    const forward = key(stops[stops.length - 1]!, false);
+    expect(forward, 'the Lens answers Tab at its last stop').toBe(false);
+    expect(view()!.contains(document.activeElement), 'inside the hold').toBe(true);
+    expect(document.activeElement).not.toBe(document.body);
+    expect(lens.contains(document.activeElement)).toBe(false);
+    stops[0]!.focus();
+    const back = key(stops[0]!, true);
+    expect(back).toBe(false);
+    expect(document.activeElement).toBe(mark);
+  });
+});
+
+describe('Stick Around\'s State in the Lens', () => {
+  const stateOfHold = async () => {
+    const thread = within(document.querySelector<HTMLElement>('article#post-2')!);
+    fireEvent.click(thread.getByRole('button', { name: /^stick-around, 1 play/u }));
+    return lensDialog();
+  };
+
+  test('a reader it can hold is told how it holds and how it ends, with no controls and no edge', async () => {
+    await openThread(world(), instanceUi.cards);
+    const dialog = await stateOfHold();
+    expect(dialog).toHaveTextContent('Holds you on this post until you check the caster\'s sentence, or break free for this visit');
+    expect(dialog).toHaveTextContent('Scroll past either end of the post, press Break free, or check the box.');
+    expect(within(dialog).queryByRole('button', { name: /scrub|wash/iu })).toBeNull();
+    expect(document.querySelector('.kb-mark[data-kb-card="stick-around"]')).not.toHaveAttribute('data-kb-edge');
+  });
+
+  test('after breaking free, the visit says so', async () => {
+    const { w } = await openView();
+    atEnd('bottom');
+    for (let i = 0; i < 60 * 6 && view() !== null; i++) await frames(1, pushing(scroller(), 40));
+    expect(view()).toBeNull();
+    expect(await stateOfHold()).toHaveTextContent('You broke free this visit');
+  });
+
+  test('once released it will not hold again', async () => {
+    const { w } = await openView();
+    fireEvent.click(within(view()!).getByRole('checkbox'));
+    await wait(50);
+    expect(view()).toBeNull();
+    expect(await stateOfHold()).toHaveTextContent('It will not hold you again');
+  });
+
+  test('the post\'s author and the card\'s caster are told it never holds them', async () => {
+    const author = world('author');
+    const first = await openThread(author, instanceUi.cards);
+    expect(await stateOfHold()).toHaveTextContent('It never holds you: you wrote this post');
+    first.unmount();
+    const caster = world('caster');
+    await openThread(caster, instanceUi.cards);
+    expect(await stateOfHold()).toHaveTextContent('It never holds you: you played it');
   });
 });

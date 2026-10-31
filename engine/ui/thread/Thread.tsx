@@ -31,6 +31,8 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { billPost, drawnOf } from '../cards/billing.ts';
+import { CalloutProvider } from '../cards/Callout.tsx';
+import { LensProvider } from '../cards/Lens.tsx';
 import { createPlays, effectCards, readEffects, readPlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
@@ -174,6 +176,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     seq: seqOfHash(loc.hash),
   });
   const [loadKey, setLoadKey] = useState(0);
+  /* The card kinds this account has met, as the page's last read had them (the first-time callout, cards/Callout.tsx). */
+  const [cardsMet, setCardsMet] = useState<readonly string[] | null>(null);
   /* Set once the first read has landed: a later one is the reader's own move, and focus follows it. */
   const reloaded = useRef(false);
   /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first read only. */
@@ -238,6 +242,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       if (!live) return;
       sent.current = Math.max(sent.current, reading[thread] ?? 0);
       setLayout(prefs.postbit);
+      setCardsMet(prefs.cardsMet);
       /* Known before the first post is drawn, so the reply box and the posts' Quote links do not change the page after it. */
       setSystemBoard(board ? board.isSystem : null);
       setBoardUnread(!board);
@@ -517,16 +522,20 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       </div>
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
-          <div className="kb-acts">
-            {/* The 2003 table's column head, over side-by-side posts; each article names its own author for a screen reader. */}
-            {layout === 'side' && (
-              <div className="kb-acts-head" aria-hidden="true">
-                <span>Author</span>
-                <span>Message</span>
-              </div>
-            )}
-            {shown.map((a) => <ActArticle key={a.id} act={a} person={a.character ? people.current.get(a.character) : undefined} layout={layout} slid={feed.slid.has(a.id)} />)}
-          </div>
+          <CalloutProvider met={player.session.signedIn ? cardsMet : null}>
+          <LensProvider>
+            <div className="kb-acts">
+              {/* The 2003 table's column head, over side-by-side posts; each article names its own author for a screen reader. */}
+              {layout === 'side' && (
+                <div className="kb-acts-head" aria-hidden="true">
+                  <span>Author</span>
+                  <span>Message</span>
+                </div>
+              )}
+              {shown.map((a) => <ActArticle key={a.id} act={a} person={a.character ? people.current.get(a.character) : undefined} layout={layout} slid={feed.slid.has(a.id)} />)}
+            </div>
+          </LensProvider>
+          </CalloutProvider>
         </ThreadCtx.Provider>
       </ActIndex.Provider>
       <div ref={endRef} className="kb-thread-end" data-kb-end="" aria-hidden="true" />

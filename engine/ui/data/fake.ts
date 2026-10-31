@@ -26,7 +26,7 @@ import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
-  DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
+  DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -896,7 +896,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p.smoke !== undefined && !['full', 'low', 'off'].includes(p.smoke)) return refuse('the smoke is full, low or off');
       if (p.contrast !== undefined && p.contrast !== 'standard' && p.contrast !== 'high') return refuse('contrast is standard or high');
       if (p.textSize !== undefined && ![100, 125, 150, 200].includes(p.textSize)) return refuse('text size is 100, 125, 150 or 200 percent');
-      account.prefs = { ...account.prefs, ...p };
+      /* The set of cards met is no parameter of set_preferences: a stray one in a patch is ignored, as the server would. */
+      const { cardsMet: _ignored, ...choices } = p as PreferencesPatch & { cardsMet?: unknown };
+      account.prefs = { ...account.prefs, ...choices };
+      return ok(account.prefs);
+    },
+    meetCard(card) {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (!/^[a-z][a-z0-9-]{0,39}$/.test(card)) return refuse('a card is named in lowercase words joined by hyphens');
+      const met = account.prefs.cardsMet;
+      if (!met.includes(card)) {
+        if (met.length >= 64) return refuse('at most 64 cards are kept as met');
+        account.prefs = { ...account.prefs, cardsMet: [...met, card] };
+      }
+      return ok(account.prefs);
+    },
+    forgetCardsMet() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      account.prefs = { ...account.prefs, cardsMet: [] };
       return ok(account.prefs);
     },
     estimate() {

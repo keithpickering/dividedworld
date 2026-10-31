@@ -6,7 +6,7 @@
  * way pressing its card in the hand arms it. Open the story at 390 by 844.
  *
  * Two states. `Armed`: the hand's sheet is put away, because it covers the posts to pick; each post
- * the card can land on carries "Play Whoops! here". `HandReopened`: the hand is opened again, and the
+ * the card can land on carries its ghost mark, "Play Whoops! on post N". `HandReopened`: the hand is opened again, and the
  * armed card is shown pressed. Armed, the HUD's hand button reads "Armed · Whoops!" and one press puts
  * the card back, which is how a phone, with no Esc, does (the owner's answer on #80).
  */
@@ -53,7 +53,7 @@ export default meta;
 
 type Story = StoryObj<typeof ArmedThread>;
 
-/** Whoops! armed, the sheet put away: the posts it can land on offer "Play Whoops! here". */
+/** Whoops! armed, the sheet put away: the posts it can land on offer their ghost marks, "Play Whoops! on post N". */
 export const Armed: Story = { args: { reopen: false } };
 /** The hand opened again with the armed card pressed. */
 export const HandReopened: Story = { args: { reopen: true } };

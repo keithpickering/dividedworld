@@ -31,7 +31,13 @@ const manifest: BoardManifest = {
   build: { story: 'boards-08-hold--view' },
   landmarks: [
     { id: 'post', role: 'article', name: 'Held post: Spritey, #44', type: false, box: 'none' },
-    { id: 'tag-card', role: 'text', name: 'STICK AROUND', buildName: 'Stick Around', buildSize: 20, box: 'none' },
+    /*
+     * The board's tag name. The build's first "Stick Around" used to be the quiet tag of the play in the thread behind the
+     * view (set like the board's); since the marks replaced those tags (marks-and-the-lens plan, Task 3) it is the dialog's
+     * title, which is the glass's display face at its title size. So it is held by its words alone until the owner says
+     * what the board's tag is in the view (a question for the owner, raised in Task 3's report).
+     */
+    { id: 'tag-card', role: 'text', name: 'STICK AROUND', buildName: 'Stick Around', type: false, box: 'none' },
     { id: 'tag-words', role: 'text', name: 'Gloomba: “required reading”', box: 'none' },
     { id: 'release', role: 'region', name: 'Release', type: false, box: 'none' },
     { id: 'check', role: 'checkbox', name: 'CHECK TO BE RELEASED I have read every word of Spritey\'s changelog and I feel changed.', buildName: 'Check to be released I have read every word of Spritey\'s changelog and I feel changed.', within: 'release', type: false, box: 'none' },

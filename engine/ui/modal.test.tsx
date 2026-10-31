@@ -167,7 +167,7 @@ describe('the modal', () => {
 
 describe('behind the modal', () => {
   test('a control the closing commit opens and focuses keeps focus: it is not taken back to the opener', async () => {
-    /* A play's panel closes as the spin form it asked for opens, and the form's first field takes focus (engine/ui/cards/Panel.tsx). */
+    /* A play's Lens closes as the spin form it asked for opens, and the form's first field takes focus (the Lens's Spin thread, engine/ui/cards/Lens.tsx). */
     function Handoff() {
       const [open, setOpen] = useState(false);
       const [next, setNext] = useState(false);

@@ -198,7 +198,7 @@ const FIXTURE_OVERLAYS: readonly Screen[] = [
     then: async (page) => {
       await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
       await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
-      await page.getByRole('button', { name: 'Play Whoops! here' }).last().click();
+      await page.getByRole('button', { name: /^Play Whoops! on post \d+$/u }).last().click();
       await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
     },
   },
@@ -211,10 +211,21 @@ const FIXTURE_OVERLAYS: readonly Screen[] = [
  * are. The other board stories are the boards' drawings for the board match, whose screens are read above as the app draws them.
  */
 const SETTLEMENT: Screen = { name: 'The settlement\'s summary, on the Settlement board\'s moment', path: '/?fixture=boards&moment=09-settlement' };
+/** A Lens story opens its Lens on its own once the thread is read; the lines are read when it stands. */
+const lensOpen = async (page: Page) => { await expect(page.getByRole('dialog', { name: 'Cards on this post' })).toBeVisible({ timeout: 15_000 }); };
 const STORIES: readonly Screen[] = [
   { name: 'My log, on the Log board\'s moment', path: '/?fixture=boards&moment=12-log' },
   SETTLEMENT,
   { name: 'My log with a settlement\'s posts open, in its story', path: '/?fixture=boards&story=boards-12-log--open' },
+  /* The Lens, on each tab with Who unfolded, for a reader and for the post's author: glass type over the 2003 post. */
+  { name: 'The Lens on Whoops!, Who unfolded, in its story', path: '/?fixture=boards&story=boards-01-lens--lens-whoops-who', then: lensOpen },
+  { name: 'The Lens on Stick Around, Who unfolded, in its story', path: '/?fixture=boards&story=boards-01-lens--lens-stick-around-who', then: lensOpen },
+  { name: 'The author\'s Lens on Whoops!, in its story', path: '/?fixture=boards&story=boards-01-lens--lens-author-whoops-who', then: lensOpen },
+  /*
+   * The Lens opened inside Stick Around's view (story `held-inside`) is not read here: the Lens stands over the view's tag and, at a phone,
+   * over the checkbox's words, as the mockup's held shot does, and a line it covers is read through the Lens's own pixels. The view's lines are
+   * read above with the Lens closed (the Hold board's moment), and the Lens's lines on the post's own page.
+   */
 ];
 
 /** The demo world starts signed in, and starts over on a load: sign out in the app. */

@@ -12,7 +12,9 @@
 import { useSyncExternalStore } from 'react';
 import type { Act, ActKind, EffectState, Id, KayfaApi } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
-import type { CardPlay } from './types.ts';
+import type { CardRules } from '../../rules/cards.ts';
+import type { Settings } from '../../rules/types.ts';
+import type { CardPlay, CardUi, CardView, KitControl } from './types.ts';
 
 /** More than any card stacks on one post; a page of posts asks for this many plays per post at most. */
 export const PLAYS_PER_POST = 8;
@@ -52,6 +54,46 @@ export interface PostPlays {
 
 const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>(), read: 0 });
 
+const viewKey = (post: Id, card: string): string => `${post}\u0000${card}`;
+
+const sameEntries = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean => {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => k in b && a[k] === b[k]);
+};
+/** A control is the same when every field is (functions by reference, options and all else by entry): an effect that rebuilds its controls each render should memoize them. */
+const sameControl = (a: KitControl, b: KitControl): boolean => {
+  const x = a as unknown as Record<string, unknown>;
+  const y = b as unknown as Record<string, unknown>;
+  const keys = Object.keys(x);
+  if (keys.length !== Object.keys(y).length) return false;
+  return keys.every((k) => {
+    if (!(k in y)) return false;
+    if (k === 'options') {
+      const o = x[k] as readonly { value: string; label: string }[];
+      const p = y[k] as readonly { value: string; label: string }[];
+      return o.length === p.length && o.every((q, i) => q.value === p[i]!.value && q.label === p[i]!.label);
+    }
+    return x[k] === y[k];
+  });
+};
+
+/** Whether two views say the same, field by field: `notes` entry by entry, `controls` control by control. */
+export function sameView(a: CardView, b: CardView): boolean {
+  return Object.is(a.progress, b.progress) && a.state === b.state && a.ends === b.ends && a.yours === b.yours && a.report === b.report
+    && sameEntries(a.notes, b.notes) && a.controls.length === b.controls.length && a.controls.every((c, i) => sameControl(c, b.controls[i]!));
+}
+
+/**
+ * The engine's view for a card with no effect, or before its effect has said anything: its State is the card's `summary`,
+ * else the first sentence of what `describe` says under `settings`, else (no settings to describe under) its name; no
+ * edge, no notch, no controls.
+ */
+export function defaultView(rules: Pick<CardRules, 'name'>, ui: Pick<CardUi, 'summary' | 'describe'> | undefined, settings?: Settings): CardView {
+  const described = ui && settings ? ui.describe(settings) : '';
+  const first = /^.*?[.!?](?=\s|$)/s.exec(described.trim())?.[0] ?? described.trim();
+  return { progress: null, state: ui?.summary ?? (first || rules.name), yours: false, controls: [], notes: {} };
+}
+
 export interface Plays {
   get(post: Id): PostPlays;
   /** Take in card Acts (anything else is ignored); true when a play was new. A play is its Act's id: the same again is the same play. */
@@ -64,13 +106,14 @@ export interface Plays {
   billing(post: Id): readonly Id[];
   /** Set the post's billing, when its page is read (a new read, even in the same order); a play it leaves out keeps its place after the ones it names. */
   setBilling(post: Id, plays: readonly Id[]): void;
-  /** The card's line about a play's state on this screen (design, section 4), or null; never saved or sent. */
-  note(play: Id): string | null;
+  /** The card's view of itself on a post (`CardView`), or null; on this screen only, never saved or sent. */
+  view(post: Id, card: string): CardView | null;
   /**
-   * Set or clear (null) a play's line. It wakes the play's post and leaves the post's snapshot as it was, so a note
-   * written while an effect runs draws only what reads it (`useNote`), never the effects or the post's words.
+   * Set or clear (null) a card's view on a post. A view equal to the one held (`sameView`) does nothing; any other wakes
+   * the post's listeners and leaves the post's snapshot as it was, so a view written while an effect runs draws only what
+   * reads it (`useCardView`), never the effects or the post's words, and never another card's view.
    */
-  setNote(play: Id, line: string | null): void;
+  setView(post: Id, card: string, view: CardView | null): void;
   subscribe(post: Id, listener: () => void): () => void;
 }
 
@@ -81,7 +124,8 @@ export function createPlays(): Plays {
   const released = new Set<Id>();
   /* Each post's billing order, by play id: set by a read of its page, with a play that arrives later appended. */
   const order = new Map<Id, readonly Id[]>();
-  const notes = new Map<Id, string>();
+  /* Each card's view on a post, by `viewKey`: kept apart from the snapshots, so setting one never moves a snapshot or another card's view. */
+  const views = new Map<string, CardView>();
   const reads = new Map<Id, number>();
   const snapshots = new Map<Id, PostPlays>();
   const listeners = new Map<Id, Set<() => void>>();
@@ -160,12 +204,13 @@ export function createPlays(): Plays {
       reads.set(post, (reads.get(post) ?? 0) + 1);
       changed([post]);
     },
-    note: (play) => notes.get(play) ?? null,
-    setNote(play, line) {
-      if ((notes.get(play) ?? null) === line) return;
-      if (line === null) notes.delete(play); else notes.set(play, line);
-      const post = postOf.get(play);
-      if (post !== undefined) for (const l of [...(listeners.get(post) ?? [])]) l();
+    view: (post, card) => views.get(viewKey(post, card)) ?? null,
+    setView(post, card, view) {
+      const key = viewKey(post, card);
+      const was = views.get(key) ?? null;
+      if (was === view || (was !== null && view !== null && sameView(was, view))) return;
+      if (view === null) views.delete(key); else views.set(key, view);
+      for (const l of [...(listeners.get(post) ?? [])]) l();
     },
     subscribe(post, listener) {
       const set = listeners.get(post) ?? new Set();
@@ -182,9 +227,9 @@ export function usePlays(plays: Plays, post: Id): PostPlays {
   return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.get(post));
 }
 
-/** A play's note (`Plays.note`): what reads it is drawn again when it changes, and nothing else is. */
-export function useNote(plays: Plays, post: Id, play: Id): string | null {
-  return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.note(play));
+/** A card's view on a post (`Plays.view`): what reads it is drawn again when it changes, and nothing else is. */
+export function useCardView(plays: Plays, post: Id, card: string): CardView | null {
+  return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.view(post, card));
 }
 
 /** The keys of the cards the instance draws an effect for: only their plays' saved states and releases are ever read. */
@@ -216,7 +261,7 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
 /**
  * The kinds of Act drawn as a plain line or a System post, with no card effect around them. The thread's post (its
  * default case draws the words in `PostEffects`) and the ORIGIN box both ask `holdsEffects`, so the kinds that wear an
- * effect and the kinds that hold its slot are one list.
+ * effect, and so carry marks, are one list.
  */
 const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'tally', 'reveal']);
 export const holdsEffects = (kind: ActKind): boolean => !WITHOUT_EFFECTS.has(kind);
