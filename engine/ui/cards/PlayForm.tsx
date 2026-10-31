@@ -33,7 +33,7 @@ import { Orbs } from '../orbs/Orbs.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
-import { faceOf, orbs, plainRefusal } from './faces.ts';
+import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
 import { landing, lengthOf, targetOf } from './land.ts';
 import { effectCards, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
@@ -49,7 +49,9 @@ export interface PlayFormProps {
 }
 
 export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
-  const { api, instance, ui } = useKayfa();
+  const { api, instance, settings: screen, ui } = useKayfa();
+  /* Priced as the server will charge (withCardEconomy): a surcharge an admin has tuned is the one shown. */
+  const priced = useMemo(() => withCardEconomy(instance.settings, screen.cardEconomy), [instance.settings, screen.cardEconomy]);
   const player = usePlayer();
   const id = useId();
   const [config, setConfig] = useState<Readonly<Record<string, unknown>> | undefined>(undefined);
@@ -80,7 +82,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
 
   const rules = instance.cards.find((c) => c.key === card);
   const cardUi = ui.cards.find((c) => c.key === card);
-  const face = useMemo(() => (rules ? faceOf(rules, cardUi, instance.settings) : null), [rules, cardUi, instance.settings]);
+  const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced) : null), [rules, cardUi, priced]);
   const hud = player.hudCharacter;
   const wallet = player.wallet;
 
@@ -91,11 +93,11 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     if (!rules) return 0;
     try {
       const checked = rules.validateConfig(config);
-      return rules.playPrice(instance.settings, targetOf(post), checked.ok ? checked.value : config ?? {});
+      return rules.playPrice(priced, targetOf(post), checked.ok ? checked.value : config ?? {});
     } catch {
       return 0;
     }
-  }, [rules, instance.settings, post, config]);
+  }, [rules, priced, post, config]);
 
   if (!rules || !face) return null;
   const length = lengthOf(post);
@@ -162,7 +164,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   };
 
   const Config = cardUi?.ConfigForm;
-  const surcharge = cardUi?.surcharge?.(instance.settings) ?? 'This post';
+  const surcharge = cardUi?.surcharge?.(priced) ?? 'This post';
   const hint = `${id}-hint`;
 
   return (

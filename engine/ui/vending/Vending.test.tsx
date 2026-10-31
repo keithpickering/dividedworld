@@ -41,6 +41,23 @@ const orbSolids = () => [...document.querySelectorAll<HTMLElement>('.kb-vending-
 beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
 afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.useRealTimers(); });
 
+/* #86: an admin tuned a price in the economy row; the machine sells at the server's price, not the compiled one. */
+describe('a price an admin has tuned', () => {
+  test('is the price on the face and the buy button, and the price the purchase is charged', async () => {
+    const tuned: Instance = { ...shop, settings: { ...shop.settings, economy: { ...shop.settings.economy, 'whoops.price': 250 } } };
+    const fake = buildWorld(undefined, tuned);
+    const account = fake.seed.account('ana');
+    fake.seed.character(account, 'Pipewrench', 'heel');
+    fake.seed.wallet(account, 500);
+    fake.signInAs(account);
+    /* The screens on the compiled instance, given the settings the backend reads, as the app gives them (web/src/App.tsx). */
+    renderIn(fake, <Vending />, { instance: shop, cards: faces, path: '/vending', settings: { cardEconomy: (await fake.settings()).cardEconomy } });
+    fireEvent.click(await screen.findByRole('button', { name: /^Buy Whoops!, 2\.50 orbs?$/u }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 2.50' }));
+    await waitFor(async () => expect((await fake.wallet()).balance).toBe(250));
+  });
+});
+
 describe('the machine as the Vending board draws it', () => {
   test('each slot is a button that names the card and its price, the selected one says so, and the rest are sealed', async () => {
     open(seeded(562));

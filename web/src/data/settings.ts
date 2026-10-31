@@ -21,4 +21,6 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   registrationMode: defaults.registrationMode,
   settlementLength: defaults.settlementLength,
   cardSettings: defaults.cardSettings,
+  /* None held: every price is the compiled economy's until the view says otherwise. */
+  cardEconomy: {},
 });

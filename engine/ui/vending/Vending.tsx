@@ -36,7 +36,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { motionReduced } from '../appearance.ts';
 import { Postcard } from '../cards/Postcard.tsx';
-import { facesOf, orbs, plainRefusal, priceOf, type CardFace } from '../cards/faces.ts';
+import { facesOf, orbs, plainRefusal, priceOf, withCardEconomy, type CardFace } from '../cards/faces.ts';
 import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
@@ -192,10 +192,11 @@ function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, 
 }
 
 export function Vending() {
-  const { instance, ui } = useKayfa();
+  const { instance, settings, ui } = useKayfa();
   const player = usePlayer();
   const location = useLocation();
-  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings), [instance, ui.cards]);
+  /* Priced as the server will charge (withCardEconomy): a price an admin has tuned is the one the machine shows. */
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy)), [instance, ui.cards, settings.cardEconomy]);
   /*
    * What the screen holds (the pick, the answer in words, the drain, the card in flight, the press
    * in progress) is kept with the account it was made for and read in render against the account

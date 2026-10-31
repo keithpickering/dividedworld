@@ -40,7 +40,7 @@ import { signInHref } from '../account/next.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { Link, searchOf, useLocation, useNavigate } from '../router.tsx';
 import { Hand } from '../cards/Hand.tsx';
-import { facesOf } from '../cards/faces.ts';
+import { facesOf, withCardEconomy } from '../cards/faces.ts';
 import { usePlay } from '../cards/play.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
@@ -71,7 +71,8 @@ export function Hud() {
   const section = useRef<HTMLElement>(null);
   const aura = useRef<HTMLDivElement>(null);
   const drawerId = useId();
-  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings), [instance, ui.cards]);
+  /* Priced as the server prices them now (withCardEconomy). */
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy)), [instance, ui.cards, settings.cardEconomy]);
   const selectId = useId();
   /* Each of the two surfaces here draws its own recipe's calm under its text (useSurfaceStyle, engine/ui/glass/Smoke.tsx). */
   const hudCalm = useSurfaceStyle('hud');

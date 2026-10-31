@@ -19,7 +19,7 @@ import { usePlayer } from '../player.tsx';
 import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { usePlateHere } from './Effects.tsx';
-import { faceOf } from './faces.ts';
+import { faceOf, withCardEconomy } from './faces.ts';
 import { landing } from './land.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
 import { usePlays } from './plays.ts';
@@ -35,7 +35,7 @@ function useTarget(act: Act): PlayTarget | null {
 export function PlayHere({ act, slot }: { readonly act: Act; readonly slot: RefObject<HTMLElement | null> }) {
   const play = usePlay();
   const { hudCharacter } = usePlayer();
-  const { instance, ui } = useKayfa();
+  const { instance, settings, ui } = useKayfa();
   const { plays } = useThread();
   const here = usePlays(plays, act.id);
   const target = useTarget(act);
@@ -47,7 +47,7 @@ export function PlayHere({ act, slot }: { readonly act: Act; readonly slot: RefO
   const where = plate ?? own;
   if (!play || !hudCharacter || !target || act.seq === null || !rules || !where) return null;
   if (!landing(rules, act, here.plays).ok) return null;
-  const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), instance.settings);
+  const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy));
   return createPortal(
     <button
       type="button" className="kb-plate-tile kb-play-here" aria-describedby={`post-${act.seq}-title`} data-kb-card={rules.key} data-kb-alignment={rules.alignment}

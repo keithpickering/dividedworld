@@ -29,6 +29,7 @@ const FALLBACK: ScreenSettings = {
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
   cardSettings: { 'whoops.clean': 95 },
+  cardEconomy: {},
 };
 
 const B64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -456,6 +457,13 @@ describe('reads and their rows', () => {
     expect(await h.api.tallies([A, B])).toEqual({ [A]: { fire: 3, zzz: 1 }, [B]: {} });
     expect(await h.api.viewCounts([T])).toEqual({ [T]: 9 });
     expect(await h.api.reading([T])).toEqual({ [T]: 4 });
+  });
+
+  /* #86: the prices the server charges now reach the screens, which lay them over the compiled economy (engine/ui/cards/faces.ts). */
+  it('reads the cards\' economy the server prices with, and holds none where the view has none', async () => {
+    const h = harness(() => rows([{ settings: { cardEconomy: { 'whoops.price': 250, 'whoops.perLength': 40 } } }]));
+    expect((await h.api.settings()).cardEconomy).toEqual({ 'whoops.price': 250, 'whoops.perLength': 40 });
+    expect((await harness(() => rows([{ settings: { walletCap: 900 } }])).api.settings()).cardEconomy).toEqual({});
   });
 
   it('fills a missing settings key from the instance fallback and uses what the view holds', async () => {

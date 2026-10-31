@@ -4,7 +4,8 @@
  * words (`CardUi`). A card the instance gives no `CardUi` still has a face here, in the glass's
  * plain tokens, so a rule without art is bought, held and played all the same.
  *
- * Prices are the rules' own, read from the settings the screen was given: the base price the
+ * Prices are the rules' own, read from the settings the screen was given, the server's economy laid over the compiled one
+ * (`withCardEconomy`): the base price the
  * Vending Machine sells at (`basePrice`), and what playing the card on a very long post costs on
  * top of it, which says whether the price reads "1.00" or "1.00+" and how much more a long post
  * can cost. A card whose rules refuse the probe is shown at its base price alone.
@@ -80,6 +81,16 @@ export function faceOf(rules: CardRules, ui: CardUi | undefined, settings: Setti
     summary: ui?.summary ?? describe,
     describe,
   };
+}
+
+/**
+ * The settings a card is priced with on a screen: the compiled ones, with the economy numbers the server prices with now laid over
+ * them (`ScreenSettings.cardEconomy`, 0039_card_economy.sql), so a price an admin has tuned shows as the server will charge it. A
+ * key the server did not give, or gave as anything but a number, is the compiled economy's.
+ */
+export function withCardEconomy(settings: Settings, cardEconomy: Readonly<Record<string, unknown>> | undefined): Settings {
+  const tuned = Object.entries(cardEconomy ?? {}).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1]));
+  return tuned.length === 0 ? settings : { ...settings, economy: { ...settings.economy, ...Object.fromEntries(tuned) } };
 }
 
 /** Every card the instance sells, in the order its rules list them. */
