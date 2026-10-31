@@ -99,6 +99,9 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_releases (account, play) values (bob, play);
       insert into reading (account, thread, furthest_seq, first_character) values (bob, t, 1, b);
       insert into thread_reads (thread, reader) values (t, b);
+      -- Presence: a mask browsing a thread, and a mask hidden from the online lists.
+      insert into presence (character, place_kind, place, board, place_since, online_since, seen_at) values (b, 'thread', t, (select board from threads where id = t), now(), now(), now());
+      insert into presence_hidden (character) values (a);
       perform count_thread_views();
       insert into account_preferences (account, theme, postbit, motion, smoke, contrast, text_size, cards_met) values (ann, 'dark', 'stacked', 'reduce', 'low', 'high', 150, '{whoops,stick-around}');
       insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame)

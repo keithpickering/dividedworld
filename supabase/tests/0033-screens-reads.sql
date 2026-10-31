@@ -98,7 +98,7 @@ begin
   -- The columns are exactly these: nothing the tables withhold.
   if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_characters')
      is distinct from array['id', 'name', 'class', 'class_since', 'turn_opens_at', 'debuted_at', 'debut_loudness', 'retired_at', 'pending_class', 'pending_loudness',
-                            'pending_show_from', 'pending_show_to', 'takes_effect_at'] then
+                            'pending_show_from', 'pending_show_to', 'takes_effect_at', 'presence_hidden'] then
     raise exception 'my_characters shows more or less than it should';
   end if;
 end $$;
@@ -161,6 +161,8 @@ declare
   seen jsonb;
   listed text[] := array['postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime', 'turnCooldown',
                          'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
+                         -- How often a page polls who is browsing it, and the window it counts (0041).
+                         'presencePollSeconds', 'presenceWindow',
                          -- The cards' prices and what they read, never the whole economy (0039; 0044-card-economy.sql holds what it holds).
                          'cardEconomy'];
   k text;

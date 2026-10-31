@@ -26,6 +26,9 @@ insert into settings (key, value) values
   ('titleMaxLength', '120'),
   ('postsPerPage', '20'),
   ('hotReplies', '10'),
+  ('presenceWindow', '{"unit": "minute", "count": 5}'),
+  ('presenceNames', '15'),
+  ('presencePollSeconds', '30'),
   ('cardSettings', '{"whoops.clean": 95}'),
   ('economy', '{"sweetie.price": 100, "splat.price": 100, "blot.price": 100}'),
   ('copy', '{"turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
