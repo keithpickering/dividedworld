@@ -11,7 +11,7 @@
  * tier it reports is the authority on what was billed, whatever the request asked for.
  */
 import type { Duty } from './duties.ts';
-import type { Trim } from './validate.ts';
+import type { Rule, Trim } from './validate.ts';
 
 /** The tier an instance maps to a model: a setting per tier, not a model id in the engine. */
 export type Tier = 'strong' | 'light';
@@ -21,23 +21,33 @@ export interface ChatMessage {
   readonly content: string;
 }
 
-export interface ChatRequest {
+/** Who is asking, for the call's ledger row: the staff member the duty belongs to, and the meeting it was made in. */
+export interface CallContext {
+  readonly staff?: string;
+  readonly meeting?: number;
+}
+
+export interface ChatRequest extends CallContext {
   readonly duty: Duty;
   readonly tier: Tier;
   readonly system: string;
   readonly messages: readonly ChatMessage[];
   /** A JSON schema the answer must follow: structured output. */
   readonly schema: Readonly<Record<string, unknown>>;
+  /** The bounds a provider's schema cannot express; the answer is repaired against them (validate.ts) and the trims recorded. */
+  readonly rules?: Rule;
   readonly maxTokens: number;
 }
 
-export interface CompletionRequest {
+export interface CompletionRequest extends CallContext {
   readonly duty: Duty;
   readonly prompt: string;
   readonly temperature: number;
   readonly topP: number;
   readonly stop: readonly string[];
   readonly maxTokens: number;
+  /** The most characters kept; a completion's length is capped after the fact (cutCompletion). Six a token when unset. */
+  readonly maxChars?: number;
 }
 
 /** What a provider reported, each field as it reported it; a field it did not report is absent. */
@@ -60,6 +70,10 @@ export interface ModelResult<T> {
   readonly model: string;
   /** Every bound the call's answer was trimmed to ("A validator tighter than the schema…"). */
   readonly trims: readonly Trim[];
+  /** Transport failures retried before this answer came. */
+  readonly retries: number;
+  /** What the call cost, in whole microdollars, priced from `usage` as reported. */
+  readonly costMicrodollars: number;
 }
 
 export interface Models {
