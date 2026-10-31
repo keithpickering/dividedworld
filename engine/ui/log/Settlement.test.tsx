@@ -6,6 +6,7 @@
  * as the log and says nothing the log does not; the last settlement seen is kept on the device.
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { hudKey } from '../player.tsx';
@@ -274,6 +275,33 @@ describe('the summary on the first load after a settlement', () => {
     await waitFor(() => expect(localStorage.getItem(seenKey(me))).toBe(new Date(at(30, 8, 17)).toISOString()));
     expect(where.path).toBe('/');
   });
+
+  /* #89: a read dropped by leaving the board page is looked for again, on the next board page of the same load. */
+  for (const leave of ['leaves for a glass page', 'unmounts'] as const) {
+    test(`a first load whose read is dropped (the page ${leave}) is looked for again on the next board page`, async () => {
+      const { fake, me } = world();
+      localStorage.clear();
+      startLoad();
+      let release: () => void = () => {};
+      const real = fake.log.bind(fake);
+      const held = vi.spyOn(fake, 'log').mockImplementationOnce(async (before) => { await new Promise<void>((r) => { release = r; }); return real(before); });
+      let setActive: (on: boolean) => void = () => {};
+      function Board() {
+        const [on, set] = useState(true);
+        setActive = set;
+        return <SettlementOnLoad active={on} />;
+      }
+      const first = renderIn(fake, <><Board /><Where /></>, { path: '/' });
+      await waitFor(() => expect(held).toHaveBeenCalledTimes(1));
+      if (leave === 'unmounts') first.unmount();
+      else act(() => setActive(false));
+      await act(async () => { release(); await new Promise((r) => setTimeout(r, 20)); });
+      expect(localStorage.getItem(seenKey(me))).toBeNull();
+      if (leave === 'unmounts') load(fake);
+      else act(() => setActive(true));
+      await waitFor(() => expect(where.path).toBe('/log/settlement'));
+    }, 10_000);
+  }
 
   test('a settlement that held nothing of the player\'s is marked seen without opening', async () => {
     const fake = buildWorld();

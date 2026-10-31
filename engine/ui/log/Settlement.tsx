@@ -211,12 +211,15 @@ export function SettlementScreen() {
   );
 }
 
-/** The accounts this load has looked for an unseen settlement for, by backend: a load is one backend, made once (web/src/main.tsx). */
-let looked = new WeakMap<object, Set<Id>>();
+/**
+ * What this load has done, by backend: a load is one backend, made once (web/src/main.tsx). `looked` holds the accounts this load has
+ * finished looking for an unseen settlement for; `begun`, those it began a look for on a board page, finished or not.
+ */
+let loads = new WeakMap<object, { readonly looked: Set<Id>; readonly begun: Set<Id> }>();
 
 /** Forgets what this load has looked for, as a new page load starts afresh: for a test that loads twice on one backend. */
 export function startLoad(): void {
-  looked = new WeakMap();
+  loads = new WeakMap();
 }
 
 /**
@@ -230,24 +233,34 @@ export function SettlementOnLoad({ active }: { readonly active: boolean }) {
   useEffect(() => {
     const account = session.account;
     if (!sessionKnown || !account) return undefined;
-    /* Once per load and account, whatever page the load met: a load of a glass page is not met by it later, on a move to the board. */
-    const seenThisLoad = looked.get(api) ?? new Set<Id>();
-    looked.set(api, seenThisLoad);
-    if (seenThisLoad.has(account)) return undefined;
-    seenThisLoad.add(account);
-    if (!active) return undefined;
+    const load = loads.get(api) ?? { looked: new Set<Id>(), begun: new Set<Id>() };
+    loads.set(api, load);
+    if (load.looked.has(account)) return undefined;
+    /*
+     * Once per load and account. A load that met a glass page first is not met by it later, on a move to the board. A look begun on a
+     * board page and dropped (the page left, or the board's word turned off, while its read was on its way) marks nothing, so the next
+     * board page of the same load asks again (#89): a dropped read is never the end of the summary.
+     */
+    if (!active) {
+      if (!load.begun.has(account)) load.looked.add(account);
+      return undefined;
+    }
+    load.begun.add(account);
     let live = true;
+    const done = () => { if (live) load.looked.add(account); };
     void (async () => {
       const last = await api.lastSettledAt();
-      if (!last) return;
+      if (!live) return;
+      if (!last) return done();
       const seen = readSeen(account);
-      if (seen !== null && micros(seen) >= micros(last)) return;
+      if (seen !== null && micros(seen) >= micros(last)) return done();
       const newest = (await api.log()).settlements[0];
       if (!live) return;
+      done();
       markSeen(account, last);
       /* The summary is of a settlement the player has lines in; one that scored nothing of theirs is only marked. */
       if (newest && micros(newest.endsAt) === micros(last)) navigate('/log/settlement');
-    })().catch(() => { /* a load the summary could not be read for opens as it would have */ });
+    })().catch(() => { done(); /* a load the summary could not be read for opens as it would have */ });
     return () => { live = false; };
   }, [active, api, navigate, session.account, sessionKnown]);
   return null;

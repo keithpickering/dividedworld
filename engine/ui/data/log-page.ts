@@ -13,9 +13,18 @@
  *
  * So a page holds whole settlements: a settlement whose lines ran past a full read is left for the
  * next page, whole. A settlement has at most a line per character and reason (the ledger's unique
- * index, 0034), a few dozen for a player, far under `LOG_ROWS`. A source that does hold `LOG_ROWS` rows at
- * one instant would cut the page where it was read from; `readLogPage` reads that instant whole and moves
- * the cursor past it, so every page moves the cursor back.
+ * index, 0034), a few dozen for a player, far under `LOG_ROWS`.
+ *
+ * A source that does hold `LOG_ROWS` rows at one instant would cut the page exactly where it was read from
+ * and hand back the same cursor, and Show older lines would read that page forever (#89 F4). Of the two
+ * ways the glass cleanup's plan gave, the page reads that instant again, every row there with no limit,
+ * and moves the cursor to the microsecond before it (`readLogPage`); it does not fail, since a failure
+ * would leave the older lines out of reach, a dead end of its own. Weighed at a busy instance: the views
+ * are the caller's own, so the second read holds one player's rows at one instant. A settlement writes
+ * at most a line per character and reason (with 6 characters and a class's handful of reasons, some 30)
+ * and one wallet event; an action writes a row or two. So it is tens of rows, read only on a page that
+ * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
+ * and even then it is that player's own rows at that instant, never more than their whole history.
  */
 import type { CardEvent, EffectSaved, Log, LogLine, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
 
@@ -116,17 +125,9 @@ export function justBefore(iso: string): string {
 }
 
 /**
- * One page of the log from a backend's reads (both backends page through here). A page cut where it was read from hands back
- * the cursor it was given: every full source holds `limit` rows at that one instant, and reading again from it would read the
- * same page forever (#89 F4). Then the page is every row at that instant, read again with no limit, and the next cursor is
- * the microsecond before it, so a cursor only ever moves back and every row is read once.
- *
- * Read again rather than failed: a failure would leave the player's older lines out of reach, a dead end of its own ("No player
- * is ever stuck"). What the second read can hold is what one player's own rows hold at one instant: a settlement's lines (one
- * per character and reason), its wallet event, and what one action wrote. At a busy instance that stays a few dozen rows,
- * since the views are the caller's own and a player runs a handful of characters; it reaches `LOG_ROWS` only where rows were
- * written in bulk at one time (a backfill), and even then it is bounded by that player's own history. It is read only when a
- * page would not move, so an ordinary page costs no more than it did.
+ * One page of the log from a backend's reads (both backends page through here). A page cut where it was read from is read
+ * again at that one instant, whole, and the next cursor is the microsecond before it, so a cursor only ever moves back and
+ * every row is read once (the header says why, and what the second read can cost).
  */
 export async function readLogPage(read: (range: LogRange) => LogRead | Promise<LogRead>, before: string | null, limit: number = LOG_ROWS): Promise<Log> {
   const page = cutLog(await read({ before, limit }), limit);
