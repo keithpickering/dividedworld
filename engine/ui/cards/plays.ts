@@ -261,7 +261,7 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
 /**
  * The kinds of Act drawn as a plain line or a System post, with no card effect around them. The thread's post (its
  * default case draws the words in `PostEffects`) and the ORIGIN box both ask `holdsEffects`, so the kinds that wear an
- * effect and the kinds that hold its slot are one list.
+ * effect, and so carry marks, are one list.
  */
 const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'tally', 'reveal']);
 export const holdsEffects = (kind: ActKind): boolean => !WITHOUT_EFFECTS.has(kind);

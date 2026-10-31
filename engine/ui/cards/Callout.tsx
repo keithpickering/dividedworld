@@ -1,7 +1,7 @@
 /**
  * The first-time callout (docs/plans/2026-10-31-marks-and-the-lens-design.md, section 5): a small glass bubble off the
  * page's first mark of a card kind the reader has not met, saying the card's name in the display face, its one-line
- * `CardUi.hint` and "Got it". It replaces the hint Whoops! used to show on every plate forever.
+ * `CardUi.hint` and "Got it". It replaces the hint #97's plate showed on every post forever.
  *
  * Met is the account's own (`Preferences.cardsMet`, read with the page's preferences and handed to `CalloutProvider`),
  * so a visitor, who has no account to remember it on, sees none. A callout goes away on "Got it", or when the card's

@@ -1,6 +1,6 @@
 /*
  * The kit's tiles (Kit.tsx): glass tiles at the glass's floor. They name the glass's face and size tokens rather than
- * inheriting them, because a kit is drawn into a post's plate or the Lens, not into the glass itself, and would
+ * inheriting them, because a kit is drawn into the Lens, not into the glass itself, and would
  * otherwise take the 2003 board's body face. A card's color arrives as `--kb-tag`; with none, the glass's sweet.
  */
 .kb-kit {

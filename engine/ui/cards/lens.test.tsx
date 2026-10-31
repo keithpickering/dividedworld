@@ -254,6 +254,7 @@ describe('what the Lens says and offers', () => {
     expect(row.querySelector('.kb-lens-who')).toHaveTextContent('Spritey');
     expect(row.querySelector('blockquote')).toHaveTextContent(`“k1 by ${w.spritey}”`);
     expect(row).toHaveTextContent('Layer 1 of 3, on top');
+    expect(row.querySelector('.kb-lens-note')).toHaveTextContent('Layer 1 of 3, on top');
     expect(await within(row).findByText('1 thread spun from this play')).toBeInTheDocument();
     expect(within(row).getByRole('link', { name: 'All about the ink' })).toHaveAttribute('href', expect.stringMatching(/^\/t\//u));
     expect(within(row).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
@@ -271,6 +272,8 @@ describe('what the Lens says and offers', () => {
     const row = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
     expect(row(drawn)).toHaveTextContent('More reactions than the post');
     expect(row(quiet)).not.toHaveTextContent('More reactions than the post');
+    /* A card whose view says nothing of a play draws no note line for it: the view's notes are the only source. */
+    expect(row(quiet).querySelector('.kb-lens-note')).toBeNull();
     expect(lens()).not.toHaveTextContent(/outdraw/iu);
   });
 
