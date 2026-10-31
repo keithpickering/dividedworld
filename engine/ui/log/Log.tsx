@@ -161,7 +161,7 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
       <div className="kb-log-head">
         <h1 className="kb-log-title kb-glass-display">My log</h1>
         {tabs.length > 0 && (
-          <nav aria-label="Whose log" className="kb-log-tabs">
+          <nav aria-label="Whose log" className="kb-log-tabs kb-calm">
             <button type="button" className="kb-log-tab kb-glass-skew" aria-pressed={current === null} onClick={() => onTab(null)}><span className="kb-glass-upright">All</span></button>
             {tabs.map((c) => (
               <button key={c.id} type="button" className="kb-log-tab kb-glass-skew" aria-pressed={current?.id === c.id} onClick={() => onTab(c.id)}><span className="kb-glass-upright">{c.name}</span></button>

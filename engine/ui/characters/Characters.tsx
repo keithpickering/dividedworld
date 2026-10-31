@@ -287,6 +287,8 @@ export function Characters() {
         <div className="kb-roster-actions">
           {turnCell(c)}
           {live && <Link to="/characters/edit" state={{ character: c.id }} className="kb-glass-action kb-glass-skew" aria-label="Edit profile"><span className="kb-glass-upright">Edit profile</span></Link>}
+          {/* Its own tab of My log, chosen by the navigation's state and never the address (engine/ui/log/Log.tsx), as the Roster board draws the link. */}
+          <Link to="/log" state={{ character: c.id }} className="kb-glass-action kb-glass-skew"><span className="kb-glass-upright">{c.name}'s log</span></Link>
           {live && <button type="button" className="kb-glass-action kb-glass-skew" aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}><span className="kb-glass-upright">Reveal…</span></button>}
         </div>
         <p className="kb-roster-line kb-roster-most">{per} characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.</p>

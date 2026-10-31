@@ -98,11 +98,18 @@
   border-collapse: collapse;
 }
 
+/* A column's width is its cell's whole box, padding in, as the board's colgroup sets them. */
+.kb-log-table th,
+.kb-log-table td {
+  box-sizing: border-box;
+}
+
 .kb-log-table thead th {
   padding: 0 16px 12px 0;
   text-align: left;
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
+  line-height: normal;
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--kb-glass-neon-text);
@@ -161,8 +168,8 @@
   color: var(--kb-glass-text-2);
 }
 
-.kb-log-num[data-kb-sign='1'] { color: var(--kb-glass-neon-text); }
-.kb-log-num[data-kb-sign='-1'] { color: var(--kb-glass-loss); }
+.kb-log .kb-log-num[data-kb-sign='1'] { color: var(--kb-glass-neon-text); }
+.kb-log .kb-log-num[data-kb-sign='-1'] { color: var(--kb-glass-loss); }
 
 /* The open window's estimate: in italics, as the web plan's Task 8 says, until the settlement makes it a line of its own. */
 .kb-log-table tr[data-kb-estimate] > td {

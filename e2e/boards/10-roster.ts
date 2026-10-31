@@ -9,7 +9,8 @@
  * Edit profile for the board's Change avatar. The menu bar's tabs are compared in full: the
  * Vending Machine's joined it with the cards (the glass build plan, Part 3).
  *
- * Left out: "Pipewrench's log", whose page is Part 4's. Mrs. Hooligan's and Spritey's classes and
+ * "Pipewrench's log" opens My log on Pipewrench's tab (the glass build's Part 4); its place follows the
+ * panel's actions, where Reveal… sits beside Edit profile, so it is compared by size. Left out: Mrs. Hooligan's and Spritey's classes and
  * Turns are the fixture's, not the board's (the board's Mrs. Hooligan is a Jabroni in her cooldown;
  * the fixture's is a Face who has never Turned), so only Pipewrench's card and Spritey's Turn line
  * are compared.
@@ -74,6 +75,7 @@ const manifest: BoardManifest = {
     { id: 'panel-turn', role: 'button', name: 'TURN · OPENS NOV 29', buildName: 'Turn Pipewrench', within: 'panel' },
     { id: 'panel-cooldown', role: 'text', name: 'A character can Turn once every 30 days. Pipewrench last Turned at the Oct 30 settlement.', within: 'panel' },
     { id: 'panel-avatar', role: 'link', name: 'Change avatar', buildName: 'Edit profile', within: 'panel' },
+    { id: 'panel-log', role: 'link', name: 'Pipewrench\'s log', within: 'panel', box: 'size' },
     {
       id: 'panel-most', role: 'text', name: 'Six characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.',
       buildName: '6 characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.',

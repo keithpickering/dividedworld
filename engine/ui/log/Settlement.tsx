@@ -123,7 +123,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
             </section>
           )}
           {turn && (
-            <section aria-label="Turn" className="kb-settled-turn" style={{ '--kb-settled-class': `var(--kb-glass-class-${turn.to}-fill, var(--kb-glass-neon))` } as CSSProperties}>
+            <section aria-label="Turn" className="kb-settled-turn" style={{ '--kb-settled-class': `var(--kb-glass-class-${turn.to}-fill, var(--kb-glass-neon))`, '--kb-settled-class-large': `var(--kb-glass-class-${turn.to}-large)` } as CSSProperties}>
               <div className="kb-settled-turn-classes">
                 {turn.from && <><span className="kb-settled-turn-was kb-glass-display">{className(turn.from)}</span><span className="kb-settled-turn-arrow" aria-hidden="true" /></>}
                 <span className="kb-settled-turn-now kb-glass-display">{className(turn.to)}</span>

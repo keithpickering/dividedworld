@@ -104,6 +104,7 @@ const PAGES: readonly Screen[] = [
   { name: 'New character', path: '/characters/new' },
   { name: 'Edit profile', path: '/characters/edit' },
   { name: 'Rankings', path: '/rankings' },
+  { name: 'My log, before anything has settled', path: '/log' },
   { name: 'The Vending Machine', path: '/vending' },
   { name: 'The hand, open', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
   /* The armed card, with its floating tag where the layout keeps the hand open to show it. */
@@ -204,12 +205,17 @@ const FIXTURE_OVERLAYS: readonly Screen[] = [
 ];
 
 /**
- * The settlement's surface, which no screen draws until the glass build's Part 4: a stand-in story
- * draws it (engine/ui/glass/Surfaces.board.stories.tsx), so its `calmAll` recipe is held now. The
- * other board stories are the boards' drawings for the board match (the Orbs board's anatomy, the
- * React and Rankings boards' screens), whose screens are read above as the app draws them.
+ * The log and the settlement's summary, at the Log and Settlement boards' moments, where they hold lines (the demo world's
+ * log has none), and the log's breakdown open, which no board draws (its story, "12 Log, open"). The summary is the
+ * `calmAll` surface: every line on it, large text too, stands in a calm. Read in the first runs only, as the overlays above
+ * are. The other board stories are the boards' drawings for the board match, whose screens are read above as the app draws them.
  */
-const STORIES: readonly Screen[] = [{ name: 'The settlement\'s surface, in its stand-in story', path: '/?fixture=boards&story=boards-glass-surfaces--settlement' }];
+const SETTLEMENT: Screen = { name: 'The settlement\'s summary, on the Settlement board\'s moment', path: '/?fixture=boards&moment=09-settlement' };
+const STORIES: readonly Screen[] = [
+  { name: 'My log, on the Log board\'s moment', path: '/?fixture=boards&moment=12-log' },
+  SETTLEMENT,
+  { name: 'My log with a settlement\'s posts open, in its story', path: '/?fixture=boards&story=boards-12-log--open' },
+];
 
 /** The demo world starts signed in, and starts over on a load: sign out in the app. */
 async function signOut(page: Page) {
@@ -230,7 +236,8 @@ async function open(page: Page, s: Screen) {
   else await page.goto(s.path);
   const ready = s.path.includes('story=')
     ? page.locator('#root > *').first()
-    : page.getByRole('navigation', { name: 'Menu' }).or(page.getByRole('region', { name: 'Game HUD' })).first();
+    /* The settlement's summary has no menu bar: its heading says it is drawn. */
+    : page.getByRole('navigation', { name: 'Menu' }).or(page.getByRole('region', { name: 'Game HUD' })).or(page.getByRole('heading', { level: 1, name: 'While you were away' })).first();
   await expect(ready).toBeVisible();
   await s.then?.(page);
   await page.evaluate(() => document.fonts.ready);
@@ -604,10 +611,10 @@ test.describe('the poisons, planted in a real page', () => {
   });
 
   test('on a calmAll surface, the settlement\'s heading moved out of its calm', async ({ page }) => {
-    await open(page, STORIES[0]!);
+    await open(page, SETTLEMENT);
     expect(await measure(page)).toEqual([]);
-    await page.locator('.kb-surfaces-story-head').evaluate((el) => el.classList.remove('kb-calm'));
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Settled" in .*h1\.kb-surfaces-story-head[^(]* \(surface settlement\): stands in no calm and on no panel as solid as the calm \(0\.85\); surface settlement \(recipe settlement\) is calmAll/u));
+    await page.locator('.kb-settled-title').evaluate((el) => el.classList.remove('kb-calm'));
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"While you were away" in .*h1\.kb-settled-title[^(]* \(surface settlement\): stands in no calm and on no panel as solid as the calm \(0\.85\); surface settlement \(recipe settlement\) is calmAll/u));
   });
 
   test('a class\'s large text on a surface the engine\'s list says does not draw it', async ({ page }) => {

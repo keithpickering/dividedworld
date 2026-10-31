@@ -95,6 +95,17 @@ describe('My characters', () => {
     expect(window.history.state).toEqual({ character: w.hoolie });
   });
 
+  test('a character\'s log opens My log on its tab, carried in history.state as Edit profile is, never in the address', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const link = within(row('Mrs. Hooligan')).getByRole('link', { name: 'Mrs. Hooligan\'s log' });
+    expect(link).toHaveAttribute('href', '/log');
+    await userEvent.click(link);
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe('/log');
+    expect(window.history.state).toEqual({ character: w.hoolie });
+  });
+
   test('says when a Turn opens instead of offering it, and why', async () => {
     const w = world();
     await cooldown(w);

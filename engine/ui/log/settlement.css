@@ -13,6 +13,12 @@
  * and the type takes the phone's sizes.
  */
 .kb-settled {
+  display: flex;
+  flex-direction: column;
+  /* A screen of results, its ways out at the window's foot as the board draws them (44px up), over the column's own 64px below. */
+  min-height: calc(100vh - 44px);
+  margin-bottom: -20px;
+  box-sizing: border-box;
   padding-top: 36px;
 }
 
@@ -26,6 +32,7 @@
 
 .kb-settled-when {
   margin: 0;
+  line-height: normal;
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
   letter-spacing: 4px;
@@ -73,7 +80,8 @@
 .kb-settled-title {
   margin: 10px 0 0;
   font-size: 7rem;
-  line-height: 0.95;
+  /* Room in its own box for the face's ascent and descent, so the words lie inside the calm's interior. */
+  line-height: 1.15;
   letter-spacing: 2px;
   color: var(--kb-glass-text);
   text-shadow: 0 0 40px color-mix(in srgb, var(--kb-glass-ready) 35%, transparent);
@@ -89,7 +97,7 @@
   grid-template-columns: minmax(0, 640px) minmax(0, 616px);
   justify-content: space-between;
   gap: 40px;
-  margin-top: 26px;
+  margin-top: 17px;
 }
 
 /* ---- the wallet and the reasons ---- */
@@ -104,7 +112,8 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 18px;
-  margin: 18px 0 0;
+  /* The board's 18px, less the half of the new figure's taller line (below) that falls above it. */
+  margin: 11px 0 0;
 }
 
 .kb-settled-was {
@@ -115,7 +124,7 @@
 
 .kb-settled-now {
   font-size: var(--kb-glass-size-display-xl);
-  line-height: 1;
+  line-height: 1.15;
   color: var(--kb-glass-ready);
   text-shadow: 0 0 34px color-mix(in srgb, var(--kb-glass-ready) 55%, transparent);
 }
@@ -131,7 +140,8 @@
 }
 
 .kb-settled-why {
-  margin: 34px 0 0;
+  /* The board's 34px, less what the new figure's taller line (above) adds under it. */
+  margin: 20px 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
@@ -140,6 +150,7 @@
 
 .kb-settled-why-head {
   margin: 0 0 10px;
+  font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
   line-height: 1.2;
@@ -190,11 +201,15 @@
   display: flex;
   flex-direction: column;
   gap: 30px;
+  margin-top: -4px;
 }
 
 .kb-settled-rank {
+  box-sizing: border-box;
+  min-height: 330px;
   padding: 26px 32px;
-  background: var(--kb-glass-panel);
+  /* At least as solid as the calm (0.85): the surface is calmAll, so a card's words stand on a panel that is one. */
+  background: var(--kb-glass-panel-strong);
   border: 1px solid var(--kb-glass-ready);
   box-shadow: 0 0 50px color-mix(in srgb, var(--kb-glass-ready) 35%, transparent), inset 0 0 50px color-mix(in srgb, var(--kb-glass-ready) 8%, transparent);
   clip-path: polygon(0 0, calc(100% - var(--kb-glass-chamfer-5)) 0, 100% var(--kb-glass-chamfer-5), 100% 100%, var(--kb-glass-chamfer-5) 100%, 0 calc(100% - var(--kb-glass-chamfer-5)));
@@ -211,6 +226,7 @@
 
 .kb-settled-rank-was {
   margin-top: 6px;
+  line-height: normal;
   font-size: var(--kb-glass-size-display-s);
   font-weight: 600;
   text-decoration: line-through;
@@ -264,7 +280,7 @@
 
 .kb-settled-turn {
   padding: 20px 28px;
-  background: var(--kb-glass-panel);
+  background: var(--kb-glass-panel-strong);
   border: 1px solid var(--kb-settled-class);
   box-shadow: 0 0 34px color-mix(in srgb, var(--kb-settled-class) 35%, transparent);
 }
@@ -311,7 +327,8 @@
 .kb-settled-turn-now {
   font-size: var(--kb-glass-size-display-l);
   line-height: 1;
-  color: var(--kb-glass-text-hi);
+  /* The new class in its own large color, in the calm the surface draws it in (apply.ts's classLargeText: settlement, calmed). */
+  color: var(--kb-settled-class-large, var(--kb-glass-text-hi));
   text-shadow: 0 0 22px var(--kb-settled-class);
 }
 
@@ -322,7 +339,8 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 16px;
-  margin-top: 40px;
+  margin-top: auto;
+  padding-top: 40px;
 }
 
 .kb-settled-log {
@@ -346,6 +364,8 @@
 /* ---- the Phone board's layout ---- */
 
 :where(:root[data-kb-layout='phone']) .kb-settled {
+  min-height: 0;
+  margin-bottom: 0;
   padding-top: 16px;
 }
 
