@@ -816,6 +816,28 @@ describe('a Lens hosted in the hold', () => {
   });
 });
 
+describe('Tab around a Lens hosted in the hold', () => {
+  test('Tab past its last stop lands inside the hold, and Shift+Tab before its first stop lands on the hold\'s mark', async () => {
+    await openView(probed(), withProbe);
+    const mark = markIn(view()!, /^Whoops!, 1 play/u);
+    fireEvent.click(mark);
+    const lens = lensDialog();
+    const stops = [...lens.querySelectorAll<HTMLElement>('button, [tabindex="0"], a[href]')].filter((el) => el.tabIndex >= 0);
+    expect(stops.length).toBeGreaterThan(1);
+    const key = (el: Element, shiftKey: boolean) => fireEvent.keyDown(el, { key: 'Tab', shiftKey });
+    stops[stops.length - 1]!.focus();
+    const forward = key(stops[stops.length - 1]!, false);
+    expect(forward, 'the Lens answers Tab at its last stop').toBe(false);
+    expect(view()!.contains(document.activeElement), 'inside the hold').toBe(true);
+    expect(document.activeElement).not.toBe(document.body);
+    expect(lens.contains(document.activeElement)).toBe(false);
+    stops[0]!.focus();
+    const back = key(stops[0]!, true);
+    expect(back).toBe(false);
+    expect(document.activeElement).toBe(mark);
+  });
+});
+
 describe('Stick Around\'s State in the Lens', () => {
   const stateOfHold = async () => {
     const thread = within(document.querySelector<HTMLElement>('article#post-2')!);
