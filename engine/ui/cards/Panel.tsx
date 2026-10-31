@@ -44,6 +44,8 @@ export interface PlayPanelProps {
   readonly sheet: boolean;
   /** What opened the panel, which it stands beside on a desktop and gives focus back to. */
   readonly opener: HTMLElement;
+  /** Where focus goes when the opener is gone by the time the panel closes (a chip folded into "+N more" as the window narrowed). */
+  readonly fallback?: () => HTMLElement | null;
   readonly onClose: () => void;
   /** Spin a thread from the play: the panel closes, and the post's spin form opens with the play as its origin. */
   readonly onSpin: (play: CardPlay, name: string) => void;
@@ -69,7 +71,7 @@ function Spun({ play }: { readonly play: Id }) {
   );
 }
 
-export function PlayPanel({ play, caster, tint, plays, tallies, mine, to, sheet, opener, onClose, onSpin }: PlayPanelProps) {
+export function PlayPanel({ play, caster, tint, plays, tallies, mine, to, sheet, opener, fallback, onClose, onSpin }: PlayPanelProps) {
   const { instance } = useKayfa();
   const rules = instance.cards.find((c) => c.key === play.card);
   const card = rules?.name ?? play.card;
@@ -80,7 +82,7 @@ export function PlayPanel({ play, caster, tint, plays, tallies, mine, to, sheet,
   return (
     <Overlay
       title={card} label={`${card} by ${caster}`} surface="effect" anchor={anchor} sheetBelow={sheet ? Number.POSITIVE_INFINITY : 0}
-      onClose={onClose} returnFocusTo={() => (opener.isConnected ? opener : null)} className="kb-play-panel"
+      onClose={onClose} returnFocusTo={() => (opener.isConnected ? opener : fallback?.() ?? null)} className="kb-play-panel"
       style={tint ? { '--kb-tag': tint } as CSSProperties : undefined}
       data={{ 'kb-panel': sheet ? 'sheet' : 'popover', 'kb-card': play.card, 'kb-alignment': rules?.alignment, 'kb-tinted': tint ? 'true' : undefined, 'kb-play': play.id }}
     >

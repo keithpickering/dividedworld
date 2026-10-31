@@ -268,6 +268,7 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
   const { ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useNarrow();
+  const list = useRef<HTMLUListElement>(null);
   const [more, setMore] = useState(false);
   const [open, setOpen] = useState<{ readonly play: Id; readonly opener: HTMLButtonElement } | null>(null);
   /* A read of the page closes what was opened on it, before it is drawn again. */
@@ -279,8 +280,10 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
   const hidden = rest.length - (narrow ? 0 : Math.min(rest.length, CHIPS_SHOWN));
   const opener = (play: Id) => (el: HTMLButtonElement) => setOpen((was) => (was?.play === play ? null : { play, opener: el }));
   const opened = open ? here.plays.find((p) => p.id === open.play) ?? null : null;
+  /* A chip folded away while its panel was open gives focus to what holds it now: "+N more", or the tag. */
+  const fallback = () => list.current?.querySelector<HTMLElement>('.kb-play-more') ?? list.current?.querySelector<HTMLElement>('.kb-play-tag') ?? null;
   return (
-    <ul className="kb-play-tags" aria-label="Cards played on this post">
+    <ul ref={list} className="kb-play-tags" aria-label="Cards played on this post">
       <li className="kb-play-tags-lead">
         <PlayTag play={lead!} caster={nameOf(lead!.caster)} tint={inkOf(ui, lead!, here.plays)} tallies={tallies} onOpen={opener(lead!.id)} expanded={open?.play === lead!.id} />
       </li>
@@ -300,7 +303,7 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
       {open && opened && (
         <PlayPanel
           play={opened} caster={nameOf(opened.caster)} tint={inkOf(ui, opened, here.plays)} plays={plays} tallies={tallies} mine={mine} to={to}
-          sheet={narrow} opener={open.opener} onClose={() => setOpen(null)}
+          sheet={narrow} opener={open.opener} fallback={fallback} onClose={() => setOpen(null)}
           onSpin={(play, name) => { const from = open.opener; setOpen(null); onSpin(play, name, from); }}
         />
       )}

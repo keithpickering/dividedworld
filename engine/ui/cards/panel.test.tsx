@@ -186,6 +186,22 @@ describe('a play\'s panel', () => {
     expect(within(panel()).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
   });
 
+  test('a chip folded away while its panel is open (the window narrowed) gives focus to "+N more" when the panel closes', async () => {
+    let phone = false;
+    const heard = new Set<() => void>();
+    vi.stubGlobal('matchMedia', (q: string) => ({
+      get matches() { return phone && q.includes('max-width: 40em'); }, media: q,
+      addEventListener: (_: string, l: () => void) => heard.add(l), removeEventListener: (_: string, l: () => void) => heard.delete(l),
+    }) as unknown as MediaQueryList);
+    const w = world();
+    open(w);
+    await userEvent.click(await chip());
+    await act(async () => { phone = true; for (const l of [...heard]) l(); });
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(within(await post2()).getByRole('button', { name: 'Show 1 more card played on this post' })).toHaveFocus();
+  });
+
   test('is a popover on a desktop and a bottom sheet on a phone', async () => {
     width(false);
     const w = world();
