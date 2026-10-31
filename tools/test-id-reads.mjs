@@ -112,6 +112,18 @@ check('a chunk read through satisfies is clean', faults(`byChunks(ids, (part) =>
 check('a chunk used as the list of two reads in its callback is clean', faults(`byChunks(ids, (part) => Promise.all([q.in('id', part), r.in('act', part)]));`).length === 0);
 check('chunks and byChunks named through an object fire (only the bare helpers are read)', faults(`u.chunks(ids).map((part) => q.in('id', part)); h.byChunks(ids, (part) => q.in('id', part));`).length === 2);
 
+check('a chunk read through a non-null mark is clean', faults(`chunks(ids).map((part) => q.in('id', part!));`).length === 0);
+check('a non-null `.in` called in a chunk is clean', faults(`chunks(ids).map((part) => q.in!('id', part));`).length === 0);
+check('a type-asserted `.in` given ids fires', faults(`(<F>q.in)('id', ids);`).length === 1);
+check('a renamed destructure of another member is not `.in` taken', faults(`const { id: f } = q;`).length === 0);
+check('a parenthesized map on chunks is clean', faults(`(chunks(ids).map)((part) => q.in('id', part));`).length === 0);
+check('a function stored rather than passed fires', faults(`const g = (part) => q.in('id', part);`).length === 1);
+check('a JSX file is parsed as JSX', faults(`const a = <div>{chunks(ids).map((part) => q.in('id', part))}</div>;`, 'web/src/data/View.tsx').length === 0);
+check('a `.js` and an `.mts` file in the data layer are read', faults(`q.in('id', ids);`, 'web/src/data/a.js').length === 1 && faults(`q.in('id', ids);`, 'web/src/data/a.mts').length === 1);
+check('a path that only contains web/src/data is not read', faults(`q.in('id', ids);`, 'engine/web/src/data/x.ts').length === 0);
+check('count reads none in a file with no `.in()` and every one in a file with three',
+  readFaults.count({ [DATA]: `const x = 1;` }) === 0 && readFaults.count({ [DATA]: `q.in('id', ids); q.in('kind', ks); chunks(ids).map((part) => q.in('id', part));` }) === 3);
+
 /* ---- what is read ---- */
 check('a test file is not read', faults(`await client.from('x').select('*').in('id', ids);`, 'web/src/data/supabase.test.tsx').length === 0);
 check('a file outside web/src/data is not read', faults(`await client.from('x').select('*').in('id', ids);`, 'engine/ui/data/fake.ts').length === 0);

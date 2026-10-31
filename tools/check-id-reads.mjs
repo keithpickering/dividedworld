@@ -26,7 +26,7 @@
  * `.in` taken as a value rather than called at once (`q.in.call(…)`, `.apply`, `run(q.in)`, `const f = q['in']`,
  * `const { in: f } = q`) fires too, since the guard cannot follow where it is called. It fires on any property named
  * `in` read as a value, a query's or not: the data layer has no other, and the safe side costs nothing.
-
+ *
  * Out of scope, named so a reader knows: a method reached by a computed key (`q[k](…)`) is not read, since the guard
  * cannot know `k` names `in`; check-web-reads.mjs holds each `.from()` read at once with `.select()`, so a query is
  * never handed to code that could filter it that way.
@@ -65,8 +65,9 @@ function memberName(node) {
   return null;
 }
 
-/** @type {(n: ts.Node) => n is ts.FunctionLikeDeclaration} */
-const isFunction = (n) => ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) || ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n) || ts.isConstructorDeclaration(n);
+/** The functions a chunk's callback can be; a parameter bound by any other kind is never a chunk. */
+/** @type {(n: ts.Node) => n is ts.ArrowFunction | ts.FunctionExpression} */
+const isFunction = (n) => ts.isArrowFunction(n) || ts.isFunctionExpression(n);
 const calls = (node, name) => ts.isCallExpression(node) && ts.isIdentifier(unwrap(node.expression)) && unwrap(node.expression).text === name;
 
 /** True when a function is a chunk's callback: `chunks(…).map(fn)`/`.flatMap(fn)`, or `byChunks(ids, fn)`. */
