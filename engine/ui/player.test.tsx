@@ -25,6 +25,9 @@ function stubApi(over: Partial<KayfaApi> = {}) {
   return { api, estimate };
 }
 
+/** What the last purchase answered. */
+let bought: unknown = null;
+
 function Probe() {
   const p = usePlayer();
   return (
@@ -34,12 +37,55 @@ function Probe() {
       <span data-testid="acting">{p.actingCharacters.map((c) => c.id).join(',')}</span>
       <button onClick={() => p.setHudCharacter('b')}>swap</button>
       <button onClick={() => p.reactionLanded()}>landed</button>
+      <span data-testid="wallet">{p.wallet?.balance ?? 'none'}</span>
+      <span data-testid="hand">{p.cards.map((c) => `${c.card}×${c.held}`).join(',')}</span>
+      <button onClick={() => void p.buyCard('whoops').then((a) => { bought = a; })}>buy</button>
     </div>
   );
 }
 
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.useRealTimers());
+
+describe('a purchase from the Vending Machine', () => {
+  /* A server whose wallet and hand a purchase changes, as the real one's do. */
+  function shop(refuse = false) {
+    let balance = 562;
+    let held = 2;
+    const buyCard = vi.fn(async (card: string) => {
+      if (refuse) return { ok: false as const, error: 'that costs 100, and your wallet holds 62' };
+      balance -= 100;
+      held += 1;
+      return { ok: true as const, value: { card, balance, held } };
+    });
+    const { api } = stubApi({ wallet: async () => ({ balance, cap: 600 }), myCards: async () => [{ card: 'whoops', held }], buyCard });
+    return { api, buyCard };
+  }
+
+  test('reads the wallet and the hand again once it is bought, so the HUD and the machine show the new count', async () => {
+    bought = null;
+    const { api, buyCard } = shop();
+    render(<PlayerProvider api={api}><Probe /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('hand').textContent).toBe('whoops×2'));
+    expect(screen.getByTestId('wallet').textContent).toBe('562');
+    act(() => screen.getByText('buy').click());
+    await waitFor(() => expect(screen.getByTestId('hand').textContent).toBe('whoops×3'));
+    expect(screen.getByTestId('wallet').textContent).toBe('462');
+    expect(buyCard).toHaveBeenCalledWith('whoops');
+    expect(bought).toEqual({ ok: true, value: { card: 'whoops', balance: 462, held: 3 } });
+  });
+
+  test('a refused purchase changes nothing and says why in the server\'s words', async () => {
+    bought = null;
+    const { api } = shop(true);
+    render(<PlayerProvider api={api}><Probe /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('hand').textContent).toBe('whoops×2'));
+    act(() => screen.getByText('buy').click());
+    await waitFor(() => expect(bought).toEqual({ ok: false, error: 'that costs 100, and your wallet holds 62' }));
+    expect(screen.getByTestId('wallet').textContent).toBe('562');
+    expect(screen.getByTestId('hand').textContent).toBe('whoops×2');
+  });
+});
 
 describe('the player behind the HUD', () => {
   test('the HUD\'s character is one that can act, kept per device and per account', async () => {

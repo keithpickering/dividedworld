@@ -108,3 +108,13 @@ describe('what a return cannot make of a read', () => {
     expect(waitingPosts(f)).toBeNull();
   });
 });
+
+describe('a legacy numbered card at the thread\'s tail', () => {
+  /* Card #4 was numbered before cards took none: a read returns 1 to 3 for a thread whose last number is 4. */
+  const f = reduce({ type: 'loaded', summary: summary(4), firstPage: 1, lastPage: 1, acts: run(1, 3), tailLoaded: true, through: 4 });
+  it('counts the numbers the read covered as shown, so the next post is released, not held', () => {
+    expect(shownEnd(f)).toBe(4);
+    const live = feedReducer(f, { type: 'live', act: act(5) });
+    expect(seqs(feedReducer(live, { type: 'release', slide: false, force: false }).shown)).toEqual([1, 2, 3, 5]);
+  });
+});

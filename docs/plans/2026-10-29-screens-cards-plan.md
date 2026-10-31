@@ -90,6 +90,16 @@ behavior the engine's.
 - **Tests first:** a purchase with too little solid Aura is refused before and by the server; the count rises by one;
   the cascade runs backwards; the buy buttons' accessible names carry the price.
 
+**Amended 2026-10-30, the owner's answer on #75 (the Vending Machine on a phone).** The owner: "Looks good in
+general. "In the machine" I think is not going to scale well, we should consider an `i` button on each card that opens a
+modal showing what it is." So the phone's stack stands as #75 draws it, and the "In the machine" list is gone at every
+width, since the list grows with every card added: each card's slot carries an info button named for its card ("About
+Whoops!") that opens an `Overlay` with that card's rules in plain words (`describe`) and closes the usual way (its
+Close, Esc, focus back on the button). Opening it never selects a slot and never spends. A sealed slot has no info
+button; the line "4 slots empty: More postcards arrive in later seasons." stays, near the slots. Board 07 draws the list
+on a desktop; its manifest leaves that region out, naming this answer. **Tests first:** the button's name; the
+overlay's content and the focus's return; that it neither selects nor spends.
+
 ### Task 3. Playing a card
 
 - From a post ("Play card" opens the hand, showing only cards whose `canApply` passes there) or by arming a card in the
@@ -100,6 +110,26 @@ behavior the engine's.
 - The card's Act shows the caster's message.
 - **Tests first:** a post already carrying three Whoops! offers no fourth; the surcharge shown equals the server's;
   the message's bound; the armed state's way out (Esc, or play).
+
+**Amended 2026-10-30, the owner's answer on #78.** "Paid for once at the machine makes sense." A card is paid for at
+the Vending Machine; the play form's price is what the card's rules add for that post (Whoops!'s long-post fee), and
+the form says the card is paid. The glass plan's section 2.1 amendment of this date moves the boards' timeline with it.
+
+**Amended 2026-10-30, the owner's answer on #80 (an armed card on a phone), and the owner's notes on its screenshot.**
+On #80: "Agreed with your rec for the question". While a card is armed, the Hand button reads "Armed · Whoops!" and one
+press puts the card back; the screen reader's line says to press Armed on a phone and Esc on a wide screen. Of the play
+tag, the owner: "the custom note from the card user is wrapping to too many lines, which will scale even worse with a longer message. This should break to its own line in a smaller font. The chip overlays the date line of the post itself, so it will need to be moved. At this screen size ui elements can stand to be a little smaller." So, at every width, the caster's message stands on its own line under the card's name and the
+caster, in a smaller size, and wraps there; the tag never covers the post's line (its date and permalink); on the Phone
+board's layout the tag and the other glass controls are a step smaller, within the size floors. And the principle the
+owner's notes give, which holds for every card: game state and its controls never live in the 2003 chrome, so an effect
+can cover a post freely. Whether "Play Whoops! here" in the post's action row (board 01 draws it there) goes against it
+is raised in PR #71, not moved without the owner's word.
+
+**Amended 2026-10-30, the owner on #80's shots: the play control.** The owner: "For "Play whoops here" and the associated "splatted" state data - whatever we did for the turn checkboxes to bring back the gamelike theatrics, impeccable or something else, let's do that here. It's starting to look a bit like just "let the text and buttons flow however", less focused and intentional than it could be. And yes we should try to find a way to make the play button itself glass-styled" So "Play Whoops! here" is a glass
+control: while a card is armed it stands in the post's glass plate (Task 5's amendment of this date), or as its own
+glass tile attached to each post it can land on, and leaves the 2003 action row; "Play card" stays in the row as a plain
+2003 link that opens the hand. It keeps its accessible name and its keyboard path. It is drawn first as stories, for
+the owner's word, before tests are written against its look.
 
 ### Task 4. Stick Around
 
@@ -162,6 +192,17 @@ The view is drawn by no board: its story goes to the owner on the PR before its 
 ways-out row below becomes "Certify (holds on every device), fill the bar by scrolling (or BREAK FREE) for this visit,
 or leave the page."
 
+**Amended 2026-10-30, the owner's answer on the view's story** (#74, PR #71). The stories stand as drawn, with one
+change. On the view having no Close and Esc not closing it, the owner: "Yes, this is our rules working. By default the
+build session would want to make the modal easily closeable - instead it's treating it according to the game rules.
+"Esc" is something people may try though, so it's good to give it something to do: just map it to the "Break Free" so
+each Esc press counts the same as if you had the button focused while tapping enter." And of the rest: "No other notes
+on anything else, all looks/sounds good." So the view has no Close; each Esc press fills the bar exactly as one BREAK
+FREE press does, against the same drain, and a held key's repeats count no more than repeated presses would; the line
+the view shows on Esc says that Esc breaks free like the button. The take-over, the release after breaking free and
+after certifying, what the view shows, the keys and touch, the focus and the bar's words stand as #74 draws them. The
+view's tests and board 08's manifest follow from the approved stories.
+
 ### Task 5. Whoops!
 
 - `instances/divided-world/cards/whoops/splat.ts` (pure): the seeded generator (the play's seed to a blob with
@@ -188,6 +229,62 @@ or leave the page."
   uncovers the same words at 320 px; a stroke started where the top layer is gone scrubs the one under it; a reader's
   scrubbing is gone after a reload and the author's is not; the sweep at its pace takes about as long as a hand to clear
   a layer; a third play stacks and a fourth is not offered.
+
+**Amended 2026-10-30, the owner's answer on #76 (a splatted post's size on a wide screen).** The owner: "B makes sense
+for the splat". The fixed layout's scale is capped at 1×, not 1.5×: a splatted post keeps the board's 12px type in its
+360px column on a wide screen, and is scaled down, never up, on a narrow one. Board 01's #42, #43 and "Hold to scrub"
+are compared as fully as the 1× layout allows.
+
+**Amended 2026-10-30, the owner's notes on #80's screenshot (Whoops! on a post).** The owner: "there is 2003 verdana with a glass button inline in the same paragraph, doesn't fit the break between the two styles. A description of a postcard effect is pure glass, only the effect itself should be integrated with the game world's copy and styling." And: "whoops spill looks odd when it's not actually filling a whole bordered container (another reason why game state data should not be in the 2003 chrome - we should be able to cover posts up without worrying about hiding controls)" So
+the effect's copy and controls ("This post is splatted. Drag across the ink…", Hold to scrub, and the author's Wash and
+Write in ink) leave the post's 2003 body for one glass element attached to the post, outside its chrome: a strip under
+the post or a part of the tag. The 2003 post keeps only the effect itself, and no 2003 paragraph holds a glass control.
+The splat covers the post's whole bordered body, edge to edge, since no control a player needs sits in it any more.
+Stick Around's in-thread frame and tag hold to the same principle. Board 01 draws the scrub sentence in the post; its
+manifest names that region as differing by this answer.
+
+**Amended 2026-10-30, the owner on Whoops!'s line breaks and the board's width (in Part 3's build session).** With the
+2003 board at most 960px wide (the glass plan's section 8 amendment of this date), the owner chose that the fixed
+layout's reference width is the post body's width at the board's max, not 360px: at the board's max a splatted post is
+laid out as any other post is, and the ink fills its body edge to edge; below it the layout is scaled down as a whole,
+never up, so line breaks stay the same everywhere. This replaces the 360px reference (#76's cap at 1× stands: never
+scaled up). On a phone a splatted post's text is small until it is scrubbed; the owner chose that knowingly.
+
+**Amended 2026-10-30, the owner on #80's shots: the splat and the effect's plate.** Of the splat, the owner: "The spill still has edges that end before the black post borders, most likely an effort to avoid covering reactions etc - I think such things can just render in front of the splat, or we can slightly redesign the post component so the actual post content (coverable)is always contained within a dedicated block for these purposes (but that probably wouldn't look as nice)." The
+owner's first option: the ink runs to the post's black borders, edge to edge, and the reactions row, the action row and
+every other control in the post draw in front of it, visible and usable; the ink is not inset to avoid them, and the
+post is not split into a coverable block. The words under the ink stay covered. Of the effect's words and controls,
+the owner: "For "Play whoops here" and the associated "splatted" state data - whatever we did for the turn checkboxes to bring back the gamelike theatrics, impeccable or something else, let's do that here. It's starting to look a bit like just "let the text and buttons flow however", less focused and intentional than it could be. And yes we should try to find a way to make the play button itself glass-styled" So the strip of the amendment above becomes one deliberate game piece, given the treatment the Turn
+modal's How loud row got (#51, restyled to board 06's idiom: skewed, chamfered tiles, a lit and glowing chosen state,
+every part composed in one shape): a chamfered glass plate attached to the post, with the effect's name and state as a
+readout, and its controls (Hold to scrub, Wash, Write in ink, and the armed card's play control of Task 3's amendment of
+this date) as glass tiles in the boards' idiom. impeccable's shape and critique steps are run on it first. Every
+control keeps its accessible name and keyboard path, and Hold to scrub's cost is unchanged. Drawn first as stories
+(splatted, armed, and both), for the owner's word, before tests are written against its look.
+
+**Amended 2026-10-31, the owner's word on #80's round 2.** The owner: "This is almost right but I think the Play Here
+button is inheriting the Verdana". The plate, the tiles and the six choices #80's round 2 lists stand as drawn; the play
+tile, standalone and in the plate, is set in the glass's own tile face and size, as the plate's other tiles are, and no
+glass control in or under a 2003 post takes the board's face. The look's tests follow from the approved stories.
+
+**Amended 2026-10-31, the owner on the post's footer bar.** The owner: "I think we will likely need to put Quote, Spin,
+Edit, etc on a solid-color bar of their own, a footer bar similar to the header bar for the date and post number.
+There's no way the current #000 text against that magenta ink passes contrast, and that ink color is totally variable
+too." So every post, splatted or not, carries an opaque footer bar in the 2003 chrome, drawn like its header bar (the
+same ground, rule and type), holding its action row (Quote, Spin thread, Edit, History, Play card); no 2003 text lies on ink. The owner then:
+"Note: reactions are fine as is. They already each have an individual solid background+border", so the reactions
+row stays as it is, over the ink, each chip read against its own ground. And then: "why do we have "Play card" in this row at all
+anymore? It's a game act so it should be Glass, right? I believe the flow is Hand -> Select a card -> glass-styled
+button appears on each applicable post?" So "Play card" leaves the post's action row everywhere (Task 3's "from a post"
+path is gone): the footer bar holds only the board's own actions, Quote, Spin thread, Edit and History, and a card is
+played only from the hand: the HUD's Hand, arm a card, then its glass "Play … here" tile on a post it can land on.
+Boards 01 and 02 draw "Play card" in the row; their manifests say it differs by this answer. As built, the effect's glass plate
+attaches under the footer bar, and a post's spin form and History open under the bar, which holds only the row. The splat fills the body between the
+header bar and the footer bar, edge to edge; both bars draw over it and are never inked, so nothing's contrast depends
+on an ink a player picks, and a splat never moves the layout. Boards 01 and 02 draw the row without a bar: that region
+differs by this answer and their manifests say so. **Tests first:** at 390 and 1440 every footer control's text read
+against the bar's own ground with the post splatted in the lightest and the darkest ink a player can pick; the bar's
+ground opaque; a poison, the bar made transparent, fails.
 
 ### Task 6. The log's card lines, and the audit
 

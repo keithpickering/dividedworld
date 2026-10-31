@@ -82,6 +82,13 @@ boards show, and a named moment for each board. It is the boards' sample data ma
   | 11 settings | Oct 30 08:30 | the player | Settings, Accessibility |
   | 12 log | Oct 30 08:30 | the player | My log, Pipewrench's tab |
 
+  **Amended 2026-10-30, the owner's answer on #78 (what playing a card costs).** The owner: "Paid for once at the
+  machine makes sense." A card's price is charged once, when it is bought; playing it costs only what its own rules add.
+  So the 21:52 play of Whoops! on Gloomba's #46 costs the long post's 0.25 alone, and the wallet after it is 4.37, not
+  3.37; every later figure in the timeline moves by 1.00 with it (the settlement's 4.37 → 4.72). Board 05's cost lines
+  are read as the build draws them: "Card: paid", the long post 0.25, "To pay now 0.25", "Wallet after playing: 4.37
+  of 6.00".
+
   **Amended 2026-10-30, in the glass build's Task 2.2.** 06 turn is at Oct 30 00:34, a minute before the Turn,
   as 05 cards and 07 vending sit a minute before their acts: the board shows the Turn being chosen, so the
   build opens Turn Pipewrench and chooses Face, rather than reopening a Turn already made.
@@ -145,6 +152,13 @@ while every part inside it sits at the board's offsets. Board 03 therefore compa
 parts from the picker's corner, in full. Where the picker stands against its post is held by `e2e/reactions.spec.ts`
 instead. Both were driven red in `e2e/board-match.test.ts` first: a whole popover moved with its parts is clean, a part
 9px off within it fails and 8px passes, `size` never compares the place, and a missing or unknown origin is a mismatch.
+
+**Amended 2026-10-30, in the glass build's Part 3 (the cards).** The comparator gains four things, each driven red in
+`e2e/board-match.test.ts` or `e2e/board-snapshot.spec.ts` first. A landmark's `buildRole` names its role in the build
+where it differs by a decision (as `buildName` names its name). A board's manifest may name further build sides
+(`also`), each its own build (the app at a moment, or a story) compared against the same board, so board 05 holds its
+hand sheet (a story) and its play form (the app); a mismatch names its side, and each side's report is its own folder.
+A press that reaches a state may pick the last of several matches (`nth: -1`) and may type into a field (`fill`).
 
 ### 2.4 The e2e spec
 
@@ -290,6 +304,17 @@ In `engine/ui/glass/base.css` (web Task 1), as tokens a component sets and class
 - **Motion,** all stopped under reduced motion with the end state shown: the HUD smoke's drift (28s, a 1560px strip
   moving 120px), `ghostpulse`, `armed`, and the Vending sign's `flicker`.
 
+**Amended 2026-10-30, the owner's notes on #80's screenshot.** A card's tag over a post holds the card's name and its
+caster on one line and the caster's message on its own line under them, a size smaller, and stands clear of the post's
+line; an effect's words and controls are one glass element attached to the post, outside its 2003 chrome (the cards
+plan's Task 3 and 5 amendments of this date). On the Phone board's layout these are a step smaller, within the size
+floors.
+
+**Amended 2026-10-30, the owner on #80's shots.** The owner: "For "Play whoops here" and the associated "splatted" state data - whatever we did for the turn checkboxes to bring back the gamelike theatrics, impeccable or something else, let's do that here. It's starting to look a bit like just "let the text and buttons flow however", less focused and intentional than it could be. And yes we should try to find a way to make the play button itself glass-styled" An effect's words and controls over a post
+are one chamfered glass plate attached to the post, in board 06's idiom (the How loud row's, #51), and "Play Whoops!
+here" is a glass control in it while a card is armed (the cards plan's Task 3 and 5 amendments of this date); the
+splat runs to the post's borders with the post's controls drawn in front of it.
+
 ## 6. The smoke: a recipe per surface
 
 The design and web Task 1 describe one smoke of two layers. The boards draw nine recipes, each tuned to its screen.
@@ -394,6 +419,11 @@ build's where section 3 changed it.
 | `button "Hand, 3 postcards"` | web Task 3, cards Task 2 | full |
 | the fanned postcards, each a `button` by its name, the armed one's tag | cards Task 2 (hand), Task 3 (armed) | full |
 
+**Amended 2026-10-30, the owner's notes on #80's screenshot.** Board 01 draws #41's scrub sentence, with its keyboard
+button, inside the 2003 post; the build draws Whoops!'s words and controls as a glass element outside the post, and the
+splat over the post's whole body, by the owner's word (the cards plan's Task 5 amendment of this date). The manifest
+names that region as differing.
+
 ### 02 phone (390×844): web Task 3; cards Task 2
 
 | Part | Built by | Compared |
@@ -418,6 +448,16 @@ Groan's label matches and is compared.
 
 Amended 2026-10-30, the owner's answer on #54 (section 6): the quadrant labels are 24px, 2px over the board's 22px,
 so they are large at WCAG's size; Groan's label is compared with that size as the decided one.
+
+**Amended 2026-10-30, in the glass build's Part 3 (the cards).** Boards 01 and 05 are compared as the build reached
+them, each difference in its manifest's header. On 01: the hand's fan opens from the hand button, so the button is
+compared as "Hand, 3 postcards, open"; the fan's postcards are named by the words each shows (Label in Name), by
+`buildName`; "Play Whoops! here" on #42 is compared by type, as #42 itself is (#76's numbers: #41's 360px column and the
+board's avatar slot under #42 move it); "Hold to scrub" likewise. On 05: the play form's dialog is compared by
+position and some rows below the ink by size, since Whoops!'s ink form adds an "Any color" picker and a preview the
+board does not draw (about 190px); "Total" reads "To pay now" at the body size; the cost lines read as #78 settled
+("Card: paid", the long post 0.25, to pay now 0.25, the wallet after 4.37). On 07: the "In the machine" list is gone
+(#75), and the title, the slots and the price display are the instance's art, compared by place.
 
 ### 04 orbs (1440×900): web Task 3
 
@@ -516,6 +556,15 @@ picked by hand, and a test asserts it. The one width also replaces the menu bar'
 bar, so a glass page and the HUD change layout together. The 1024px story is replaced by two, one just above that
 width and one just below it, and the owner reviews those.
 
+**Amended 2026-10-30, the owner's answer on #48 (a wallet past its cap on a phone).** The owner chose (c): "it's
+normal to need to hide some explanatory text on mobile layouts and an additional 40px is not nothing for a sticky
+bar." On the Phone board's layout (below the switch above), a wallet past its cap shows as a visible marker on the last
+orb, and the words "past the cap" and its amount are not drawn in the HUD's row: they are in the orbs' accessible name
+only, which already says them (`walletName`, `engine/ui/orbs/fill.ts`). The docked HUD keeps its 124px with an
+over-cap wallet at 360px. The Main board's layout keeps the words as board 04 draws them ("+0.40 past the cap"). Built
+in Part 3, tests first: the docked HUD's height with an over-cap wallet at 360px, the marker visible, and the orbs'
+accessible name saying past the cap with its amount.
+
 - **The glass between the boards' widths.** A glass page's content sits in a column at most 1312px wide (the boards'
   1440 less two 64px gutters), centered past 1440px; its gutters are `clamp(16px, 4.44vw, 64px)`; text blocks stay at
   most 680px wide; at more than 150% text size the page is one column (web Task 11). The menu bar spans the width: its
@@ -539,6 +588,15 @@ width and one just below it, and the owner reviews those.
   editable), invites (make one, the cap and expiry said plainly, reissue) and Sign out at its foot. Its surface is
   `account`.
 - **High contrast and 200% text** have no board. Their tests are web Tasks 11 and 12's.
+
+**Amended 2026-10-30, the owner on the 2003 board's width (in Part 3's build session).** The owner: "Looks like we
+need a smaller max width for the 2003 board in general. There's the need to keep the line breaks the same for whoops,
+and widening the table too much makes it look a bit silly." Asked for a width, the owner chose 960px. So the board's
+own pages (the banner, the index, the boards, the threads, the profile, the standings) stand in a column at most 960px
+wide, centered past it; the glass (the HUD, the menu bar, the glass pages and overlays) keeps its own widths. The boards
+drawn at 1440 (01 and 08 among them) draw the board across the window; their manifests compare the board's parts by
+the decision (`box` modes or an `origin`, each saying so). Whoops!'s layout follows it (the cards plan's Task 5
+amendment of this date).
 
 ## 9. Choices this plan made, for the owner to overturn
 

@@ -33,6 +33,18 @@ describe('the orbs', () => {
     render(<Orbs settled={500} pending={140} cap={600} />);
     expect(screen.getByText('+0.40 past the cap')).toBeInTheDocument();
   });
+  test('a wallet past its cap marks its last orb, hidden from a screen reader since the name says it', () => {
+    render(<Orbs settled={500} pending={140} cap={600} />);
+    const marks = document.querySelectorAll('.kb-orb-over');
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toBe(orbEls()[5]!.querySelector('.kb-orb-over'));
+    expect(marks[0]!.getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByRole('img', { name: /past the cap/ })).toBeInTheDocument();
+  });
+  test('a wallet within its cap has no mark', () => {
+    render(<Orbs settled={500} pending={50} cap={600} />);
+    expect(document.querySelector('.kb-orb-over')).toBeNull();
+  });
   test('each orb takes its own gradient from the glass, by its place in the row', () => {
     render(<Orbs settled={0} pending={0} cap={600} />);
     expect(orbEls()[4]!.style.getPropertyValue('--kb-orb-color')).toBe('var(--kb-glass-orb-5-color)');

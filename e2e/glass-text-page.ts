@@ -23,7 +23,7 @@
  * and its surface's element. A panel under the smoke (the dialog's own ground, under its smoke) is
  * not under the text, so the walk stops at the surface's element.
  */
-import { parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, type TextFact } from './glass-text.ts';
+import { isSkipped, parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, type TextFact } from './glass-text.ts';
 
 /**
  * What a face inks is read over a string with an ascender and a descender: the design's "ascender
@@ -34,14 +34,6 @@ import { parseColor, pixelStats, type Backing, type Box, type Calm, type Rgba, t
  * size the guard refuses.
  */
 export const INK_SAMPLE = 'Hg';
-
-/**
- * The board drawn inside the glass: the post a Turn or a debut previews as the thread will show it
- * (characters/PreviewBox.tsx), in the board's own ground and type, opaque, which the board's rules
- * and axe hold, not the glass's.
- */
-const BOARD = '.kb-preview-post';
-const SKIP = `.kb-smoke, script, style, noscript, template, option, ${BOARD}`;
 
 /** A line as gathered, before its pixels are read: the judgment's fact less `brightest` and `smoke`. */
 export interface Gathered extends Omit<TextFact, 'brightest' | 'smoke'> {
@@ -307,12 +299,14 @@ export async function gather(): Promise<Gathered[]> {
   const overlays = [...document.querySelectorAll('.kb-glass-overlay')];
   const overlay = overlays.at(-1) ?? null;
   const view: Box = { x: 0, y: 0, width: innerWidth, height: innerHeight };
+  const hudEl = document.querySelector('[aria-label="Game HUD"]');
+  const hud = hudEl && getComputedStyle(hudEl).position === 'fixed' ? Object.assign(hudEl.getBoundingClientRect(), { contains: (n: Node) => hudEl.contains(n) }) : null;
   const out: Gathered[] = [];
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
     if (!/\S/.test(n.data) || PICTURE.test(n.data)) continue;
     const el = n.parentElement;
-    if (!el || el.closest(SKIP)) continue;
+    if (!el || isSkipped(el)) continue;
     if (overlay && !overlay.contains(el)) continue;
     const s = getComputedStyle(el);
     if (s.visibility !== 'visible') continue;
@@ -337,7 +331,9 @@ export async function gather(): Promise<Gathered[]> {
     lines.forEach((line, i) => {
       const box = visiblePart(inkBand(toBox(line), m), el);
       if (!box || box.width < 2 || box.height < 2) return;
-      const inView = intersect(box, view)?.width === box.width && intersect(box, view)?.height === box.height;
+      /* The HUD is docked over the window's foot: a line of the page lying behind it is read in a later window, where it is clear. An open overlay stands above the HUD, so its lines are not behind it. */
+      const seen = hud && hud.top > 0 && hud.top < view.height && !hud.contains(el) && !overlay?.contains(el) ? { ...view, height: hud.top } : view;
+      const inView = intersect(box, seen)?.width === box.width && intersect(box, seen)?.height === box.height;
       out.push({
         key: `${idOf(n)}:${i}`, inView, name: nameOf(n.data, el), surface: ground.surface, box, color,
         family: s.fontFamily.split(',')[0]!.replace(/["']/g, '').trim(), size, weight: parseFloat(s.fontWeight), ink, calm, calmOpacity, panels,

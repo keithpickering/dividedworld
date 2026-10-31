@@ -15,9 +15,11 @@
  * it). The ceilings are the committed ones (e2e/glass-ceilings.json), the palette Divided World's.
  */
 import { readFileSync } from 'node:fs';
+// @ts-expect-error jsdom ships no declarations in this repository; only the document it builds is used.
+import { JSDOM } from 'jsdom';
 import { describe, expect, test } from 'vitest';
 import {
-  judge, paletteOf, pixelStats, within, type Backing, type CeilingsFile, type GlassColors, type TextFact,
+  isSkipped, judge, paletteOf, pixelStats, within, type Backing, type CeilingsFile, type GlassColors, type TextFact,
 } from './glass-text.ts';
 
 const glass = JSON.parse(readFileSync(new URL('../instances/divided-world/ui/glass.json', import.meta.url), 'utf8')) as GlassColors;
@@ -277,5 +279,39 @@ describe('the geometry and the pixels', () => {
     expect(pixelStats(bare, w, h, { x: 0, y: 1, width: 3, height: 2 }, bare).smoke).toBe(0);
     /* With no smokeless shot there is nothing to compare: no smoke is read. */
     expect(pixelStats(data, w, h, { x: 0, y: 1, width: 3, height: 2 }).smoke).toBe(0);
+  });
+});
+
+describe('what the measurement does not read', () => {
+  const page = (new JSDOM(`<body>
+    <div class="kb-glass-overlay">
+      <p id="outside">Glass words</p>
+      <article class="kb-hold-post"><b id="inside">The board's post</b><span><i id="deeper">deeper still</i></span></article>
+      <p class="kb-hold-post-line" id="lookalike">A glass line whose class only starts like the board's</p>
+      <span data-kb-art><b id="art">VEND</b></span>
+      <div class="kb-hand-board-post-bar"><span id="bar">Spritey · #41</span></div>
+      <div class="kb-hand-board-post-foot"><span id="foot">quote</span></div>
+      <p class="kb-hand-board-post-barely" id="barLookalike">A glass line whose class only starts like the bar's</p>
+      <p class="kb-hand-board-post-footer" id="footLookalike">A glass line whose class only starts like the foot's</p>
+    </div></body>`) as { window: { document: Document } }).window.document;
+  const at = (id: string) => page.getElementById(id)!;
+
+  test('a node inside the post Stick Around lifts is skipped, however deep, and a glass line beside it is not', () => {
+    expect(isSkipped(at('inside'))).toBe(true);
+    expect(isSkipped(at('deeper'))).toBe(true);
+    expect(isSkipped(at('outside'))).toBe(false);
+    expect(isSkipped(at('lookalike'))).toBe(false);
+  });
+
+  test('a node inside the 2003 window\'s post bar or foot on the hand sheet\'s story is skipped, and one outside them is not', () => {
+    expect(isSkipped(at('bar'))).toBe(true);
+    expect(isSkipped(at('foot'))).toBe(true);
+    expect(isSkipped(at('outside'))).toBe(false);
+    expect(isSkipped(at('barLookalike'))).toBe(false);
+    expect(isSkipped(at('footLookalike'))).toBe(false);
+  });
+
+  test('the instance\'s art is skipped too', () => {
+    expect(isSkipped(at('art'))).toBe(true);
   });
 });

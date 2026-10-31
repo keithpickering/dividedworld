@@ -20,8 +20,11 @@
  * click on the avatar or the orbs opens its page as the browser would and leaves this one alone.
  * Menu navigates rather than opening a menu, so it claims no popup.
  *
- * The hand opens as a region above the bar and takes focus, so a keyboard is in it at once; its
- * Close the hand button, or Esc, closes it and returns focus to the hand.
+ * The hand opens as a region and takes focus, so a keyboard is in it at once; its Close the hand
+ * button, or Esc, closes it and returns focus to the hand. What it holds is the cards' (engine/ui/cards/Hand.tsx):
+ * a sheet above the bar on the Phone board's layout, and on the Main board's the cards themselves,
+ * fanned through the seam over the hand button. It is not a modal: the HUD stays live under it, as
+ * the boards draw it, since the hand is how a card is picked to play on the board behind.
  *
  * The swap is named "Swap mask" on the Main board's layout and "Posting as" on the Phone board's.
  * Which layout it is comes from useBoard (engine/ui/glass/useBoard.ts): the Main board's from the
@@ -29,13 +32,16 @@
  * at the window's scale below 1440px, and the Phone board's below that width. The glass pages
  * switch at the same width.
  */
-import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { signInHref } from '../account/next.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { Link, searchOf, useLocation, useNavigate } from '../router.tsx';
+import { Hand } from '../cards/Hand.tsx';
+import { facesOf } from '../cards/faces.ts';
+import { usePlay } from '../cards/play.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { motionReduced } from '../appearance.ts';
@@ -51,7 +57,7 @@ const TAB = 24;
 const TAB_OUT = 20;
 
 export function Hud() {
-  const { api, instance, settings } = useKayfa();
+  const { api, instance, settings, ui } = useKayfa();
   const player = usePlayer();
   const location = useLocation();
   const navigate = useNavigate();
@@ -59,18 +65,22 @@ export function Hud() {
   const wide = board === 'main';
   const [face, setFace] = useState<Character | null>(null);
   const [next, setNext] = useState<string | null>(null);
-  const [handOpen, setHandOpen] = useState(false);
   const [tab, setTab] = useState<readonly [number, number, number, number] | null>(null);
   const handButton = useRef<HTMLButtonElement>(null);
   const drawer = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
   const aura = useRef<HTMLDivElement>(null);
   const drawerId = useId();
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings), [instance, ui.cards]);
   const selectId = useId();
   /* Each of the two surfaces here draws its own recipe's calm under its text (useSurfaceStyle, engine/ui/glass/Smoke.tsx). */
   const hudCalm = useSurfaceStyle('hud');
   const handCalm = useSurfaceStyle('hand');
   const hud = player.hudCharacter;
+  /* Whether the hand is open and which card is armed are the Frame's (cards/play.tsx): a post's own buttons read them too. */
+  const play = usePlay();
+  if (!play) throw new Error('the HUD is drawn inside the Frame');
+  const { handOpen, setHandOpen, armed } = play;
   const signedIn = player.session.signedIn;
 
   const hudId = hud?.id ?? null;
@@ -152,6 +162,12 @@ export function Hud() {
     if (!signedIn) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.repeat || e.isComposing) return;
+      /* An armed card is put back first, and the hand, if it is open, stays; the next Esc is the hand's. */
+      if (armed !== null) {
+        e.preventDefault();
+        play.arm(null);
+        return;
+      }
       if (handOpen) {
         e.preventDefault();
         setHandOpen(false);
@@ -164,11 +180,28 @@ export function Hud() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [signedIn, handOpen, navigate]);
+  }, [signedIn, handOpen, armed, play, setHandOpen, navigate]);
+
+  /* A card in the hand is armed, or put back if it was the armed one; a post then offers it (cards/PlayActions.tsx). */
+  const pick = (face: { readonly key: string }) => {
+    play.arm(armed === face.key ? null : face.key);
+    /* The Phone board's sheet covers the foot of the page, where the posts to pick are: it is put away, and the armed card waits in the hand. */
+    if (!wide) {
+      setHandOpen(false);
+      /* The sheet held the keyboard's place and is hidden now: it goes to the hand button, which is the armed card's words. */
+      handButton.current?.focus();
+    }
+  };
 
   const held = player.cards.reduce((n, c) => n + c.held, 0);
-  const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
-  const handName = `Hand, ${held} ${held === 1 ? 'postcard' : 'postcards'}${handOpen ? ', open' : ''}`;
+  /*
+   * On the Phone board's layout an armed card is the hand button's words, and one press puts it back
+   * (the owner's answer on #80): the sheet is put away once a card is armed, so the HUD is where the
+   * player is told, and where the way out is. The name holds the visible words first (WCAG 2.5.3).
+   * The Main board keeps the fan open with the armed card and its tag, and Esc.
+   */
+  const armedName = !wide && armed !== null ? instance.cards.find((c) => c.key === armed)?.name ?? armed : null;
+  const handName = armedName !== null ? `Armed · ${armedName}, press to put it back` : `Hand, ${held} ${held === 1 ? 'postcard' : 'postcards'}${handOpen ? ', open' : ''}`;
   const className = hud ? instance.classes.find((c) => c.key === hud.class)?.name ?? hud.class : null;
   const tabVars = tab ? { '--tab-a': `${tab[0]}px`, '--tab-b': `${tab[1]}px`, '--tab-c': `${tab[2]}px`, '--tab-d': `${tab[3]}px` } as CSSProperties : undefined;
   const seam = tab ? `0,${TAB + 6} ${tab[0]},${TAB + 6} ${tab[1]},6 ${tab[2]},6 ${tab[3]},${TAB + 6} 10000,${TAB + 6}` : `0,${TAB + 6} 10000,${TAB + 6}`;
@@ -178,25 +211,12 @@ export function Hud() {
       {signedIn && (
         <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen} style={handCalm}>
           <Smoke surface="hand" />
-          <div className="kb-hand-bar">
-            <button
-              type="button"
-              className="kb-hand-close"
-              aria-label="Close the hand"
-              onClick={() => { setHandOpen(false); handButton.current?.focus(); }}
-            >
-              <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 16 16"><path d="M3 3 L13 13 M13 3 L3 13" /></svg>
-            </button>
-          </div>
-          {held === 0 ? (
-            <p className="kb-hand-empty">No postcards in your hand.</p>
-          ) : (
-            <ul className="kb-hand-cards">
-              {player.cards.filter((c) => c.held > 0).map((c) => (
-                <li key={c.card} className="kb-hand-card" data-kb-card={c.card}>{cardName(c.card)} ×{c.held}</li>
-              ))}
-            </ul>
-          )}
+          <Hand
+            held={player.cards} faces={faces} vendingHref={GLASS_NAV.vending}
+            armed={armed}
+            onPick={hud ? pick : undefined}
+            onClose={() => { setHandOpen(false); handButton.current?.focus(); }}
+          />
         </div>
       )}
       <section ref={section} className={HUD_CLASS} aria-label="Game HUD" style={tabVars}>
@@ -278,12 +298,14 @@ export function Hud() {
                     ref={handButton}
                     type="button"
                     className="kb-hud-hand kb-glass-skew"
-                    aria-expanded={handOpen}
-                    aria-controls={drawerId}
+                    {...(armedName === null ? { 'aria-expanded': handOpen, 'aria-controls': drawerId } : {})}
                     aria-label={handName}
-                    onClick={() => setHandOpen((o) => !o)}
+                    data-kb-armed={armedName !== null ? 'true' : undefined}
+                    onClick={() => (armedName !== null ? play.arm(null) : setHandOpen(!handOpen))}
                   >
-                    <span className="kb-glass-upright">Hand</span> <span className="kb-hud-hand-count kb-glass-upright kb-num">{held}</span>
+                    {armedName !== null
+                      ? <span className="kb-hud-hand-armed kb-glass-upright">Armed · {armedName}</span>
+                      : <><span className="kb-glass-upright">Hand</span> <span className="kb-hud-hand-count kb-glass-upright kb-num">{held}</span></>}
                   </button>
                 </div>
               </div>

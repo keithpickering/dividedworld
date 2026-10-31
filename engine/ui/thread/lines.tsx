@@ -1,6 +1,6 @@
 /**
  * The pieces of an Act that the thread and the ORIGIN box both draw: the link a quote carries, the
- * lines for a card, an unmask and The System's posts, "Last edited", and the History of a post.
+ * lines for an unmask and The System's posts, "Last edited", and the History of a post.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
@@ -64,19 +64,6 @@ export function useHistory(post: Id): { readonly button: ReactNode; readonly pan
 export function LastEdited({ act }: { readonly act: Act }) {
   if (!act.shownEditedAt) return null;
   return <div className="kb-post-edited kb-small kb-muted">Last edited <time dateTime={act.shownEditedAt}>{when(act.shownEditedAt)}</time></div>;
-}
-
-export function CardLine({ act, name }: { readonly act: Act; readonly name: string }) {
-  const { instance } = useKayfa();
-  const { perPage } = useThread();
-  const target = useLocated(act.targetActId);
-  const card = instance.cards.find((c) => c.key === act.payload.card)?.name ?? (text(act.payload.card) || 'a card');
-  const message = text(act.payload.message);
-  return (
-    <p className="kb-act-line">
-      {name} played {card} on {target ? <Link to={threadHref(target.thread, pageOf(target.seq, perPage), target.seq)}>post #{target.seq}</Link> : 'a post'}{message && <>: “{message}”</>}
-    </p>
-  );
 }
 
 export function UnmaskLine({ act, name }: { readonly act: Act; readonly name: string }) {

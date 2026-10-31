@@ -1,5 +1,5 @@
 /**
- * The end-to-end build's story route: the board match's stories (`engine/ui/**\/*.board.stories.tsx`),
+ * The end-to-end build's story route: the board match's stories (`engine/ui/**\/*.board.stories.tsx`, and an instance's own beside its art, `instances/*\/ui/**\/*.board.stories.tsx`),
  * each found by the id Storybook gives it and composed with the preview's decorators, as Storybook
  * renders it, so a story that asks for a world gets the fake with the app's providers around it.
  * The board match opens one at `?fixture=boards&story=<id>` (address.ts; e2e/boards.spec.ts), at the
@@ -16,7 +16,7 @@ import * as preview from '../../../../.storybook/preview.tsx';
 
 setProjectAnnotations(preview as never);
 
-const modules = import.meta.glob<Record<string, unknown>>('../../../../engine/ui/**/*.board.stories.tsx', { eager: true });
+const modules = import.meta.glob<Record<string, unknown>>(['../../../../engine/ui/**/*.board.stories.tsx', '../../../../instances/*/ui/**/*.board.stories.tsx'], { eager: true });
 
 type Composed = ComponentType & { readonly id: string };
 const STORIES: ReadonlyMap<string, Composed> = new Map(

@@ -6,10 +6,10 @@
  */
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { ActKind, CharacterCounts, Id } from '../data/api.ts';
+import type { Act, ActKind, CharacterCounts, Id } from '../data/api.ts';
 import { Ago, PageLinks, SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Link, useLocation } from '../router.tsx';
-import { RECORD_KINDS, RECORD_LABELS, RECORD_PAGE, SEASONS_SHOWN, actRow, mergeWindow, newest, recordKind, revealRow, seasonRow, turnLinks, turnRow, type RecordKind, type RecordRow, type Words } from './record.ts';
+import { RECORD_KINDS, RECORD_LABELS, RECORD_PAGE, SEASONS_SHOWN, actRow, mergeWindow, newest, playLinks, recordKind, revealRow, seasonRow, turnLinks, turnRow, type RecordKind, type RecordRow, type Words } from './record.ts';
 import { useCharacter } from './useCharacter.ts';
 import './profile.css';
 
@@ -56,6 +56,8 @@ export function RecordScreen({ id }: { readonly id: Id }) {
       const links = await turnLinks(api, t, words.perPage);
       return newest([...r.map((x) => revealRow(x, words)), ...t.map((x) => turnRow(x, words, links)), ...seasons.map((a) => seasonRow(a, words))]);
     };
+    /* Each card play's row links to its target post, placed with one batched read per page of rows. */
+    const rowsOf = async (acts: readonly Act[]) => { const plays = await playLinks(api, acts, words.perPage); return acts.map((a) => actRow(a, words, plays)); };
     const read = kind === 'class'
       ? Promise.all([api.classReveals([id]), api.turnsAnnounced([id])]).then(async ([r, t]) => {
         const links = await turnLinks(api, t, words.perPage);
@@ -67,9 +69,9 @@ export function RecordScreen({ id }: { readonly id: Id }) {
           ? Promise.all([extras(), api.characterCounts(id)]).then(async ([more, counts]) => {
             const from = Math.max(0, offset - more.length);
             const acts = await api.characterActs(id, KINDS.all, { offset: from, limit: offset + RECORD_PAGE - from });
-            return { rows: mergeWindow(more, acts.map((a) => actRow(a, words)), from, offset, RECORD_PAGE), total: totalOf(counts) + more.length };
+            return { rows: mergeWindow(more, await rowsOf(acts), from, offset, RECORD_PAGE), total: totalOf(counts) + more.length };
           })
-          : Promise.all([api.characterActs(id, KINDS[kind], { offset, limit: RECORD_PAGE }), api.characterCounts(id)]).then(([acts, counts]) => ({ rows: acts.map((a) => actRow(a, words)), total: totalOf(counts) }));
+          : Promise.all([api.characterActs(id, KINDS[kind], { offset, limit: RECORD_PAGE }), api.characterCounts(id)]).then(async ([acts, counts]) => ({ rows: await rowsOf(acts), total: totalOf(counts) }));
     read.then((r) => { if (live) setLoaded({ status: 'ready', ...r }); }, () => { if (live) setLoaded({ status: 'failed' }); });
     return () => { live = false; };
   }, [api, id, kind, page, found.status, instance, settings.postsPerPage]);

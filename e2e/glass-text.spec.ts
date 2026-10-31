@@ -104,6 +104,17 @@ const PAGES: readonly Screen[] = [
   { name: 'New character', path: '/characters/new' },
   { name: 'Edit profile', path: '/characters/edit' },
   { name: 'Rankings', path: '/rankings' },
+  { name: 'The Vending Machine', path: '/vending' },
+  { name: 'The hand, open', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
+  /* The armed card, with its floating tag where the layout keeps the hand open to show it. */
+  {
+    name: 'The hand, with a card armed',
+    path: '/b/general',
+    then: async (page) => {
+      await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
+      await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
+    },
+  },
   { name: 'Settings', path: '/settings' },
   { name: 'Settings › Account, with the invites', path: '/settings?section=account' },
   { name: 'Sign in', path: '/sign-in', signedOut: true },
@@ -157,8 +168,39 @@ const OVERLAYS: readonly Screen[] = [
       await expect(page.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeVisible();
     },
   },
+  {
+    name: 'The Vending Machine\'s card info, from a slot',
+    path: '/vending',
+    then: async (page) => {
+      await page.getByRole('button', { name: 'About Whoops!' }).click();
+      await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
+    },
+  },
   { name: 'The Debut dialog, dropping now', path: '/characters/new', then: debut('Drop Waiting Wanda now', 'Drop Waiting Wanda now') },
   { name: 'The Debut dialog, choosing how', path: '/characters/new', then: debut('Change how Waiting Wanda debuts', 'How Waiting Wanda debuts') },
+];
+
+/**
+ * An overlay that opens on its own on the boards' fixture, whose account is the fixture's and not the demo world's: read in
+ * the first run only, as the stories are (the runs below sign in as the demo's player, which this fixture has no use for).
+ */
+const FIXTURE_OVERLAYS: readonly Screen[] = [
+  {
+    name: 'Stick Around\'s view, taking the reader over on the Hold board\'s moment',
+    path: '/?fixture=boards&moment=08-hold',
+    then: async (page) => { await expect(page.getByRole('dialog', { name: 'Stick Around' })).toBeVisible({ timeout: 10_000 }); },
+  },
+  {
+    /* The Cards board's moment: the hand, the card armed, then the post's own button, which opens the form on the post. */
+    name: 'The play form, on the Cards board\'s moment',
+    path: '/?fixture=boards&moment=05-cards',
+    then: async (page) => {
+      await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
+      await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
+      await page.getByRole('button', { name: 'Play Whoops! here' }).last().click();
+      await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
+    },
+  },
 ];
 
 /**
@@ -202,7 +244,7 @@ const SIZES = [['1920×1080', { width: 1920, height: 1080 }], ['a phone, 390×84
 for (const [label, viewport] of SIZES) {
   test.describe(`at ${label}`, () => {
     test.use({ viewport });
-    for (const s of [...PAGES, ...OVERLAYS, ...STORIES]) {
+    for (const s of [...PAGES, ...OVERLAYS, ...FIXTURE_OVERLAYS, ...STORIES]) {
       test(`${s.name}: every line of glass text is legible on its smoke`, async ({ page }) => {
         await open(page, s);
         expect(await measure(page)).toEqual([]);
@@ -336,6 +378,55 @@ test.describe('under high contrast', () => {
  * it. The web plan's five (the fifth, under high contrast, is above) and the glass plan's section
  * 6 two. Each plant lives only in its own test's page.
  */
+test.describe('the instance\'s drawn art', () => {
+  test.use({ viewport: { width: 1920, height: 1080 } });
+
+  test('the poison: a line in a color no token names is named, and the same line marked as the machine\'s art is left alone', async ({ page }) => {
+    await open(page, PAGES.find((p) => p.path === '/vending')!);
+    const plantLine = (art: boolean) => page.locator('.kb-vending-list').evaluate((list, marked) => {
+      document.querySelector('.kb-planted')?.remove();
+      const p = document.createElement('p');
+      p.className = 'kb-planted kb-calm';
+      p.style.cssText = 'color: #2ef0a0; font-size: 21px; margin: 0';
+      if (marked) p.setAttribute('data-kb-art', '');
+      p.textContent = 'A line printed on the machine in a color no token names.';
+      list.append(p);
+    }, art);
+    await plantLine(false);
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-planted \(surface vending\): its color rgb\(46, 240, 160\) is not one of the glass's text colors in the standard key$/u));
+    await plantLine(true);
+    expect((await measure(page)).filter((m) => m.includes('kb-planted'))).toEqual([]);
+  });
+});
+
+/*
+ * The picked slot and the armed card are marked by a glow (box-shadow), which forced colors
+ * (Windows High Contrast) drop: each is also marked by a border in the system's Highlight there.
+ */
+test.describe('the picked slot and the armed card in forced colors', () => {
+  test.use({ viewport: { width: 1920, height: 1080 } });
+
+  test('are ringed in Highlight, and a slot that is not picked is not', async ({ page }) => {
+    await page.emulateMedia({ forcedColors: 'active' });
+    await open(page, PAGES.find((p) => p.path === '/vending')!);
+    const slots = page.locator('button.kb-vending-slot');
+    await slots.first().click();
+    const ring = (selector: string) => page.locator(selector).first().evaluate((el) => {
+      const probe = document.createElement('div');
+      probe.style.cssText = 'forced-color-adjust: none; color: Highlight';
+      document.body.append(probe);
+      const highlight = getComputedStyle(probe).color;
+      probe.remove();
+      const ring = getComputedStyle(el, '::after');
+      return { style: ring.borderTopStyle, width: ring.borderTopWidth, highlight: ring.borderTopColor === highlight };
+    });
+    expect(await ring('button.kb-vending-slot[aria-pressed="true"]')).toEqual({ style: 'solid', width: '3px', highlight: true });
+    expect((await ring('button.kb-vending-slot[aria-pressed="false"]')).style).not.toBe('solid');
+    await page.locator('button.kb-vending-slot > .kb-postcard').first().evaluate((card) => card.setAttribute('data-armed', ''));
+    expect(await ring('.kb-postcard[data-armed]')).toEqual({ style: 'solid', width: '3px', highlight: true });
+  });
+});
+
 test.describe('the poisons, planted in a real page', () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
   const rankings = PAGES.find((p) => p.path === '/rankings')!;
@@ -410,6 +501,63 @@ test.describe('the poisons, planted in a real page', () => {
       glassPage.append(p);
     });
     expect(await measure(page)).toContainEqual('"A line the window always cuts" in div.kb-glass > p.kb-planted: never lies wholly in the window, so it is cut off');
+  });
+
+  /** The fixed HUD the boards dock at the window's foot, drawn bright so a line read under it is read over the wrong pixels. */
+  const dockHud = (page: Page) => page.locator('.kb-glass-page').evaluate((glassPage) => {
+    const hud = document.createElement('div');
+    hud.setAttribute('role', 'region');
+    hud.setAttribute('aria-label', 'Game HUD');
+    hud.style.cssText = 'position: fixed; left: 0; right: 0; bottom: 0; height: 120px; z-index: 50; background: #ffffff';
+    glassPage.append(hud);
+  });
+
+  test('a line always behind the fixed HUD is named as cut off, not read over the HUD', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await open(page, rankings);
+    await dockHud(page);
+    await page.locator('.kb-glass-page').evaluate((glassPage) => {
+      const p = document.createElement('p');
+      p.className = 'kb-calm kb-planted';
+      p.style.cssText = 'position: fixed; left: 40px; bottom: 30px; margin: 0; z-index: 1';
+      p.textContent = 'A line the HUD always covers';
+      glassPage.append(p);
+    });
+    expect(await measure(page)).toContainEqual('"A line the HUD always covers" in div.kb-glass > p.kb-planted: never lies wholly in the window, so it is cut off');
+  });
+
+  test('a line behind the fixed HUD at one scroll position is read at another, where it is clear', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await open(page, rankings);
+    await dockHud(page);
+    await page.locator('main').evaluate((main) => {
+      /* In the first window the line lies under the HUD; a window down it stands clear on the smoke. */
+      const spacer = document.createElement('div');
+      const p = document.createElement('p');
+      p.className = 'kb-calm kb-planted';
+      p.textContent = 'A line the HUD covers at first';
+      const tail = document.createElement('div');
+      tail.style.height = '1800px';
+      main.append(spacer, p, tail);
+      spacer.style.height = `${Math.max(0, innerHeight - 70 - p.getBoundingClientRect().top)}px`;
+    });
+    const found = await measure(page);
+    /* Read in the clear it is a legible line on the smoke; read under the HUD it would be judged over the HUD's white. */
+    expect(found.filter((f) => f.includes('A line the HUD covers at first'))).toEqual([]);
+  });
+
+  test('a line of an open overlay standing where the fixed HUD is docked is read where it stands, the overlay being above the HUD', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await open(page, OVERLAYS.find((o) => o.name.startsWith('The Turn modal'))!);
+    await dockHud(page);
+    await page.locator('.kb-glass-dialog-body').evaluate((body) => {
+      const p = document.createElement('p');
+      p.className = 'kb-planted';
+      p.style.cssText = 'position: fixed; left: 40px; bottom: 30px; margin: 0; color: rgba(241, 236, 255, 0.8)';
+      p.textContent = 'A line over the HUD';
+      body.append(p);
+    });
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"A line over the HUD" in .*p\.kb-planted \(surface turn\): its color rgba\(241, 236, 255, 0\.8\) is translucent/u));
   });
 
   test('a line on a page longer than the window is found by reading it a window at a time', async ({ page }) => {

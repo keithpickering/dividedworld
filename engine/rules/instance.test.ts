@@ -21,6 +21,7 @@ const settings: Settings = {
   titleMaxLength: 120,
   postsPerPage: 20,
   hotReplies: 10,
+  cardSettings: { 'splat.clean': 95 },
   economy: { 'a.bonus': 5, 'splat.price': 100 },
   settlementLength: { unit: 'day', count: 1 },
 };
@@ -75,6 +76,26 @@ test('a thread\'s page and what makes it hot are whole numbers, at least 1', () 
       assert.match(settingsProblems({ ...settings, [key]: bad as number }).join('\n'), new RegExp(`setting "${key}"`), `${String(bad)}`);
     }
   }
+});
+
+test('the numbers a card gives the screens are an object of named numbers, like the economy', () => {
+  const { cardSettings: _gone, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "cardSettings" is missing/);
+  for (const bad of [null, [1], 'x', { 'splat.clean': 'ninety' }, { 'splat.clean': Number.NaN }]) {
+    assert.match(settingsProblems({ ...settings, cardSettings: bad as never }).join('\n'), /setting "cardSettings"/, JSON.stringify(bad));
+  }
+  assert.deepEqual(settingsProblems({ ...settings, cardSettings: {} }), []);
+});
+
+test('a number a card reads for the screens is one the settings hold, within the card\'s bounds', () => {
+  const card = (screenReads: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', screenReads, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  const reads = [{ key: 'splat.clean', whole: true, min: 1, max: 100 }];
+  assert.deepEqual(instanceProblems(card(reads)), []);
+  assert.match(instanceProblems(card([{ key: 'splat.other' }])).join('\n'), /card "splat" reads card setting "splat\.other", which the settings do not hold/);
+  const held = (n: number) => ({ ...card(reads), settings: { ...settings, cardSettings: { 'splat.clean': n } } }) as Instance;
+  assert.match(instanceProblems(held(101)).join('\n'), /card "splat" reads card setting "splat\.clean" as 101; it must be at most 100/);
+  assert.match(instanceProblems(held(0)).join('\n'), /at least 1/);
+  assert.match(instanceProblems(held(94.5)).join('\n'), /whole number/);
 });
 
 test('ranks start at 0 and rise, each named', () => {

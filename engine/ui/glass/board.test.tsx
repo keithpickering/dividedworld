@@ -94,7 +94,7 @@ const UI = path.join(here, '..');
  * every folder that holds a sheet is one or the other, so a new folder is a failure until it is
  * named here.
  */
-const GLASS_FOLDERS = ['glass', 'frame', 'orbs', 'account', 'characters', 'profile-edit', 'rankings', 'reactions'];
+const GLASS_FOLDERS = ['glass', 'frame', 'orbs', 'account', 'characters', 'profile-edit', 'rankings', 'reactions', 'cards', 'vending'];
 const BOARD_FOLDERS = ['bbcode', 'board', 'composer', 'index', 'postbit', 'profile', 'reveal', 'spin', 'standings', 'thread'];
 const sheetsIn = (folder: string) => fs.readdirSync(path.join(UI, folder)).filter((f) => f.endsWith('.css')).map((f) => path.join(UI, folder, f));
 const SHEETS = GLASS_FOLDERS.flatMap(sheetsIn);
@@ -167,7 +167,7 @@ describe('the smallest text on the scaled layout', () => {
   const floor = Math.min(...Object.values(testGlass.sizes).filter((s) => !s.phone).map((s) => s.px));
   test('the floor is the test world\'s smallest Main board size, and the sheets it reads are there', () => {
     expect(floor).toBe(20);
-    expect(SHEETS.map((s) => path.basename(s))).toEqual(expect.arrayContaining(['frame.css', 'shell.css', 'base.css', 'calm.css', 'contrast.css', 'orbs.css', 'orbs-board.css', 'rankings.css', 'characters.css', 'profile-edit.css', 'reactions.css', 'reactions-board.css', 'account.css']));
+    expect(SHEETS.map((s) => path.basename(s))).toEqual(expect.arrayContaining(['frame.css', 'shell.css', 'base.css', 'calm.css', 'contrast.css', 'orbs.css', 'orbs-board.css', 'rankings.css', 'characters.css', 'profile-edit.css', 'reactions.css', 'reactions-board.css', 'account.css', 'cards.css']));
   });
   test('every folder under engine/ui/ that holds a stylesheet is named as the glass\'s or the board\'s', () => {
     const folders = fs.readdirSync(UI, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)

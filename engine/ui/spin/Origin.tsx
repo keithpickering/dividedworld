@@ -7,14 +7,17 @@
  * for the second): it never stays on "Loading" for good. When the player has just spun the thread,
  * focus is on this box.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
+import { PlayTag, PlayTags, PostEffects } from '../cards/Effects.tsx';
+import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Character, Id, ThreadSummary } from '../data/api.ts';
 import { newer } from '../thread/feed.ts';
-import { CardLine, LastEdited, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from '../thread/lines.tsx';
+import { LastEdited, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from '../thread/lines.tsx';
 import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
+import { useLocated } from '../thread/locate.tsx';
 import { Link } from '../router.tsx';
 import { takeOrigin } from './spun.ts';
 import './spin.css';
@@ -24,35 +27,43 @@ const CARDS_SHOWN = 20;
 
 type Reading = 'loading' | 'ready' | 'gone' | 'failed';
 
-/** The origin Act and the card plays on it, kept current. */
-function useOrigin(origin: Id, thread: Id): { readonly act: Act | null; readonly cards: readonly Act[]; readonly reading: Reading; readonly retry: () => void } {
-  const { api } = useKayfa();
+/**
+ * The origin Act and the card plays on it, kept current: the plays are in a store of the box's own
+ * (engine/ui/cards/plays.ts), the one the thread keeps for its posts, so the post's effects draw here as they
+ * do there. `more` says there were more plays than the box lists.
+ */
+function useOrigin(origin: Id, thread: Id, plays: Plays): { readonly act: Act | null; readonly more: boolean; readonly reading: Reading; readonly retry: () => void } {
+  const { api, ui } = useKayfa();
   const [act, setAct] = useState<Act | null>(null);
-  const [cards, setCards] = useState<readonly Act[]>([]);
+  const [more, setMore] = useState(false);
   const [read, setRead] = useState<'loading' | 'gone' | 'failed'>('loading');
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
     setRead('loading');
-    const addCard = (c: Act) => setCards((all) => (all.some((x) => x.id === c.id) ? all : [...all, c].sort(byTime)));
+    const cards = effectCards(ui);
     const off = api.subscribeThread(thread, {
       onAct(a) {
         if (a.id === origin) setAct((was) => (was ? newer(was, a) : a));
-        else if (a.kind === 'card' && a.targetActId === origin) addCard(a);
+        else if (a.kind === 'card' && a.targetActId === origin) { plays.add([a]); void readEffects(api, plays, [a], cards); }
       },
+      onEffect(play) { void api.effectStates([play]).then((saved) => plays.setStates(saved), () => { /* the next save is heard again */ }); },
     });
     api.act(origin).then(
       (a) => { if (live) { if (a) setAct((was) => (was ? newer(was, a) : a)); else setRead('gone'); } },
       () => { if (live) setRead('failed'); },
     );
-    void api.cardsOn(origin, CARDS_SHOWN + 1).then((all) => { if (live) for (const c of all) addCard(c); }, () => { /* the card lines are left out */ });
+    void api.cardsOn(origin, CARDS_SHOWN + 1).then((all) => {
+      if (!live) return;
+      setMore(all.length > CARDS_SHOWN);
+      const shown = all.slice(0, CARDS_SHOWN);
+      plays.add(shown);
+      return readEffects(api, plays, shown, cards);
+    }, () => { /* the tags are left out */ });
     return () => { live = false; off(); };
-  }, [api, origin, thread, attempt]);
-  return { act, cards, reading: act ? 'ready' : read, retry: () => setAttempt((n) => n + 1) };
+  }, [api, ui, origin, thread, attempt, plays]);
+  return { act, more, reading: act ? 'ready' : read, retry: () => setAttempt((n) => n + 1) };
 }
-
-/** Oldest first; two plays in the same instant by their order in the thread, then by id. */
-const byTime = (a: Act, b: Act) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || (a.seq ?? 0) - (b.seq ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 function useNames(ids: readonly (Id | null)[]): (id: Id | null) => string {
   const { api } = useKayfa();
@@ -67,17 +78,33 @@ function useNames(ids: readonly (Id | null)[]): (id: Id | null) => string {
   return (id) => (id === null ? 'The System' : known.get(id)?.name ?? 'A character');
 }
 
+/** A spin from a card play itself: the play as its tag, linking to the post it landed on. */
+function CardOrigin({ act, nameOf }: { readonly act: Act; readonly nameOf: (id: Id | null) => string }) {
+  const { perPage } = useThread();
+  const play = playOf(act);
+  const target = useLocated(act.targetActId);
+  if (!play) return <p className="kb-small kb-muted">A card was played here.</p>;
+  return (
+    <ul className="kb-play-tags">
+      <PlayTag play={play} caster={nameOf(play.caster)} to={target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null} />
+    </ul>
+  );
+}
+
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const { perPage } = useThread();
   const originId = summary.originActId!;
-  const { act, cards, reading, retry } = useOrigin(originId, summary.originThread!);
+  const plays = useMemo(() => createPlays(), []);
+  const { act, more, reading, retry } = useOrigin(originId, summary.originThread!, plays);
   const box = useRef<HTMLDivElement>(null);
+  /* The effect's plate is drawn here, after the box and attached to it, and not in it: the 2003 chrome holds the post's words, never the game's. */
+  const slot = useRef<HTMLDivElement>(null);
   useEffect(() => { if (takeOrigin(summary.id)) box.current?.focus(); }, [summary.id]);
-  const nameOf = useNames([act?.character ?? null, ...cards.slice(0, CARDS_SHOWN).map((c) => c.character)]);
+  const played = usePlays(plays, originId).plays;
+  const nameOf = useNames([act?.character ?? null, ...played.map((p) => p.caster)]);
   const history = useHistory(originId);
-  const back = summary.originSeq !== null && summary.originTitle !== null
-    ? <Link to={threadHref(summary.originThread!, pageOf(summary.originSeq, perPage), summary.originSeq)}>#{summary.originSeq} in {summary.originTitle}</Link>
-    : null;
+  const backHref = summary.originSeq !== null && summary.originTitle !== null ? threadHref(summary.originThread!, pageOf(summary.originSeq, perPage), summary.originSeq) : null;
+  const back = backHref !== null ? <Link to={backHref}>#{summary.originSeq} in {summary.originTitle}</Link> : null;
 
   const body = () => {
     if (!act) {
@@ -93,7 +120,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     }
     const name = nameOf(act.character);
     switch (act.kind) {
-      case 'card': return <CardLine act={act} name={name} />;
+      case 'card': return <CardOrigin act={act} nameOf={nameOf} />;
       case 'unmask': return <UnmaskLine act={act} name={name} />;
       case 'tally':
       case 'reveal': return <SystemPost act={act} />;
@@ -101,7 +128,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-            <BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} />
+            <PlayTags plays={plays} post={originId} to={backHref} nameOf={nameOf} />
+            <PostEffects plays={plays} post={act} place="origin" slot={slot}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small">{history.button}</p>}
             {history.panel}
@@ -110,14 +138,18 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     }
   };
 
+  /* The kinds `body` draws with the post's effects (its default case) are the ones that hold a plate: the thread's post asks the same helper. */
+  const effects = act !== null && holdsEffects(act.kind);
   return (
-    <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>
-      <p className="kb-origin-head"><b>ORIGIN</b> · Spun from {back ?? 'an Act'}</p>
-      {body()}
-      {act && act.kind !== 'card' && cards.slice(0, CARDS_SHOWN).map((c) => <CardLine key={c.id} act={c} name={nameOf(c.character)} />)}
-      {act && act.kind !== 'card' && cards.length > CARDS_SHOWN && (
-        <p className="kb-small kb-muted">More than {CARDS_SHOWN} cards were played on this Act; the rest are in {back ?? 'the thread it was spun from'}.</p>
-      )}
-    </div>
+    <>
+      <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>
+        <p className="kb-origin-head"><b>ORIGIN</b> · Spun from {back ?? 'an Act'}</p>
+        {body()}
+        {act && act.kind !== 'card' && more && (
+          <p className="kb-small kb-muted">More than {CARDS_SHOWN} cards were played on this Act; the rest are in {back ?? 'the thread it was spun from'}.</p>
+        )}
+      </div>
+      {effects && <div className="kb-act-slot" ref={slot} />}
+    </>
   );
 }

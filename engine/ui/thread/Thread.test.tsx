@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
@@ -302,15 +303,54 @@ describe('the postbit in a thread', () => {
 
 /* ------------------------------------------------------------------- acts that are not posts ---- */
 describe('Acts that are not posts', () => {
-  test('a card is one line naming who played what on which post', async () => {
+  test('a card play is a tag on its post, naming who played what with their words and when, and never a line of its own', async () => {
     const w = world(3);
     const tapped = tap(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 3 /u });
     see(sentinel(), true);
-    deliver(() => tapped().onAct?.(live(w.thread, 4, w.pipe, { kind: 'card', targetActId: w.ids[1]!, payload: { card: 'whoops', message: 'oops' }, currentPayload: { card: 'whoops', message: 'oops' } })));
-    const line = await screen.findByRole('article', { name: /^Post 4 /u });
-    expect(line).toHaveTextContent('Pipewrench played Whoops! on post #2: “oops”');
+    deliver(() => tapped().onAct?.(live(w.thread, null as unknown as number, w.pipe, { kind: 'card', seq: null, targetActId: w.ids[1]!, payload: { card: 'whoops', layer: 1, message: 'oops' }, currentPayload: { card: 'whoops', layer: 1, message: 'oops' }, createdAt: '2026-10-29T21:16:00Z' })));
+    const tags = await within(post(2)).findByRole('list', { name: 'Cards played on this post' });
+    expect(tags).toHaveTextContent('Pipewrench played Whoops! on this post: “oops”');
+    expect(within(tags).getByText(/Oct 29, 2026/u)).toBeInTheDocument();
+    /* The caster's words are a line of their own under the card's name and the caster (the owner's notes on #80), so a long message wraps there and nowhere else. */
+    expect(tags.querySelector('.kb-play-tag-who')).toHaveTextContent(/^Pipewrench$/u);
+    expect(tags.querySelector('.kb-play-tag-message')).toHaveTextContent(/^“oops”$/u);
+    expect(tags.querySelector('.kb-play-tag-who')?.parentElement).toBe(tags.querySelector('.kb-play-tag-message')?.parentElement);
+    /* Linking to the post it is on: a play is a layer on a post and has no number of its own to link to. */
+    expect(within(tags).getByRole('link', { name: 'Pipewrench played Whoops! on this post: “oops”' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
+    /* No line of its own: still three posts, and no other post carries the tag. */
+    expect(screen.getAllByRole('article')).toHaveLength(3);
+    expect(within(post(3)).queryByRole('list', { name: 'Cards played on this post' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /new posts?$/u })).toBeNull();
+  });
+
+  test('a play already on a post is its tag when the page opens, read for the whole page in one request, and the posts keep their numbers', async () => {
+    const w = world(4);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'first' });
+    const next = w.fake.seed.post(w.thread, w.spritey, 'after the card');
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'whoops', { message: 'second' });
+    const many = vi.spyOn(w.fake, 'cardsOnMany');
+    const one = vi.spyOn(w.fake, 'cardsOn');
+    open(w);
+    await screen.findByRole('article', { name: /^Post 5 /u });
+    expect(post(5)).toHaveTextContent('after the card');
+    expect((await w.fake.act(next))?.seq).toBe(5);
+    expect(await within(post(2)).findByRole('list', { name: 'Cards played on this post' })).toHaveTextContent('Spritey played Whoops! on this post: “first”');
+    expect(await within(post(3)).findByRole('list', { name: 'Cards played on this post' })).toHaveTextContent('Pipewrench played Whoops! on this post: “second”');
+    expect(screen.getAllByRole('article')).toHaveLength(5);
+    expect(many).toHaveBeenCalledTimes(1);
+    expect(one).not.toHaveBeenCalled();
+  });
+
+  test('several plays on one post are several tags, in the order they were played', async () => {
+    const w = world(2);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'one' });
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'two' });
+    open(w);
+    const tags = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('list', { name: 'Cards played on this post' });
+    expect(within(tags).getAllByRole('listitem').map((li) => li.getAttribute('data-kb-card'))).toEqual(['whoops', 'stick-around']);
   });
 
   test('an unmask says who revealed which class, and its message', async () => {
@@ -526,6 +566,35 @@ describe('live updates', () => {
     expect(post(6).nextElementSibling).toBe(post(7));
   });
 
+  /* A card numbered before cards took none (0035_card_takes_no_seq.sql) is a seq no read returns: the fake cannot hold
+     one, so the read is stubbed to leave it out, as the server's reads leave cards out. */
+  const withoutSeq = (w: ReturnType<typeof world>, gone: number) => {
+    const real = w.fake.acts.bind(w.fake);
+    vi.spyOn(w.fake, 'acts').mockImplementation(async (t, a, b) => (await real(t, a, b)).filter((x) => x.seq !== gone));
+  };
+
+  test('a page with a legacy numbered card missing from it is short but is not the end of the thread', async () => {
+    const w = world(30);
+    withoutSeq(w, 4);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 20 /u });
+    expect(post(4)).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'Continue to page 2' }).length).toBeGreaterThan(0);
+  });
+
+  test('a post that follows a legacy numbered card at the tail is shown at the bottom as any next post is', async () => {
+    const w = world(4);
+    withoutSeq(w, 4);
+    const tapped = tap(w.fake);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    see(sentinel(), true);
+    w.fake.seed.post(w.thread, w.pipe, 'post 5');
+    const five = (await w.fake.acts(w.thread, 5, 5))[0]!;
+    deliver(() => tapped().onAct?.(five));
+    await screen.findByRole('article', { name: /^Post 5 /u });
+  });
+
   test('a gap that never fills is read from the server', async () => {
     const w = world(5);
     const tapped = tap(w.fake);
@@ -678,9 +747,9 @@ describe('back from the glass, to a thread that grew meanwhile', { timeout: 15_0
     await screen.findByRole('article', { name: /^Post 3 /u });
     expect(post(4)).toHaveTextContent('post 4, edited while away');
     expect(post(4)).toHaveTextContent('Last edited');
-    /* The card is an Act of its own that came after the reader left: it waits behind the bar. */
-    await userEvent.click(await screen.findByRole('button', { name: '1 new post' }));
-    await waitFor(() => expect(post(6)).toHaveTextContent('Whoops!'));
+    /* The play is no post that came after the reader left: no bar, and its tag is on the post it landed on. */
+    expect(await within(post(4)).findByRole('list', { name: 'Cards played on this post' })).toHaveTextContent('Spritey played Whoops! on this post');
+    expect(screen.queryByRole('button', { name: /new posts?$/u })).toBeNull();
   });
 
   test('a thread opened with no return is the page as it is, and holds nothing back', async () => {
@@ -688,6 +757,142 @@ describe('back from the glass, to a thread that grew meanwhile', { timeout: 15_0
     open(w, '#post-3', '?page=1');
     await screen.findByRole('article', { name: /^Post 7 /u });
     expect(screen.queryByRole('button', { name: /new posts?$/u })).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------------ card effects ---- */
+/** An instance's card, drawing what it is given as data a test can read, around the post's words. */
+function fx(key: string): CardUi {
+  return {
+    key, art: { color: '#000000', ink: '#ffffff' }, describe: () => `${key}`,
+    Effect: ({ plays, states, released, reader, place, save, release, children }) => (
+      <div
+        data-testid={`fx-${key}`} data-plays={plays.map((p) => `${p.layer}:${p.message}`).join('|')} data-author={String(reader.author)} data-caster={String(reader.caster)}
+        data-place={place} data-states={JSON.stringify(states)} data-released={[...released].join(',')}
+      >
+        <button type="button" onClick={() => void save(plays[0]!.id, { saved: key })}>save {key}</button>
+        <button type="button" onClick={() => void release(plays[0]!.id)}>release {key}</button>
+        {children}
+      </div>
+    ),
+  };
+}
+const openWith = (w: { fake: Fake; thread: Id }, cards: readonly CardUi[]) =>
+  renderIn(w.fake, <ThreadScreen thread={w.thread} />, { path: `/t/${w.thread}`, cards });
+
+describe('a card\'s effect on a post', () => {
+  test('a card with no CardUi draws the post untouched, and its play as its tag alone', async () => {
+    const w = world(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    openWith(w, []);
+    const second = await screen.findByRole('article', { name: /^Post 2 /u });
+    await within(second).findByRole('list', { name: 'Cards played on this post' });
+    expect(second).toHaveTextContent('post 2');
+    expect(within(second).queryByTestId('fx-whoops')).toBeNull();
+    expect(second.querySelector('.kb-act-main')).toHaveTextContent('Spritey played Whoops! on this post: “oops”');
+  });
+
+  test('a card the instance gives an effect wraps the post\'s words, given its plays and who the reader is', async () => {
+    const w = world(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'whoops', { message: 'mine' });
+    openWith(w, [fx('whoops')]);
+    const second = await screen.findByRole('article', { name: /^Post 2 /u });
+    const wrapped = await within(second).findByTestId('fx-whoops');
+    expect(wrapped).toHaveTextContent('post 2');
+    expect(wrapped.getAttribute('data-plays')).toBe('1:oops');
+    /* Post 2 is the reader's own character's: the author, and not a caster. Post 3 is Spritey's, played on by the reader's own. */
+    expect([wrapped.dataset.author, wrapped.dataset.caster, wrapped.dataset.place]).toEqual(['true', 'false', 'thread']);
+    const third = within(await screen.findByRole('article', { name: /^Post 3 /u })).getByTestId('fx-whoops');
+    expect([third.dataset.author, third.dataset.caster]).toEqual(['false', 'true']);
+    /* A post no card was played on is the post as it is. */
+    expect(within(post(1)).queryByTestId('fx-whoops')).toBeNull();
+  });
+
+  test('each played card\'s effect wraps the one played before it, in play order, the latest outermost', async () => {
+    const w = world(2);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'first' });
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'second' });
+    openWith(w, [fx('whoops'), fx('stick-around')]);
+    const outer = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByTestId('fx-whoops');
+    const inner = within(outer).getByTestId('fx-stick-around');
+    expect(inner).toHaveTextContent('post 2');
+    expect(within(inner).queryByTestId('fx-whoops')).toBeNull();
+  });
+
+  test('its saved state and the reader\'s release arrive with the page, in one read each, for the cards that draw an effect only', async () => {
+    const w = world(2);
+    const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const other = w.fake.seed.card(w.spritey, w.ids[1]!, 'no-effect', { message: 'plain' });
+    expect((await w.fake.saveEffect(played, w.pipe, { strokes: [1] })).ok).toBe(true);
+    expect((await w.fake.releaseEffect(played)).ok).toBe(true);
+    const states = vi.spyOn(w.fake, 'effectStates');
+    const releases = vi.spyOn(w.fake, 'myReleases');
+    openWith(w, [fx('whoops')]);
+    const wrapped = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByTestId('fx-whoops');
+    await waitFor(() => expect(JSON.parse(wrapped.dataset.states!)[played].state).toEqual({ strokes: [1] }));
+    expect(wrapped.dataset.released).toBe(played);
+    expect(states).toHaveBeenCalledTimes(1);
+    expect(states.mock.calls[0]![0]).toEqual([played]);
+    expect(releases).toHaveBeenCalledTimes(1);
+    expect(states.mock.calls[0]![0]).not.toContain(other);
+  });
+
+  test('the author\'s save lands at once and is heard live by another reader; a release shows at once', async () => {
+    const w = world(2);
+    const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    openWith(w, [fx('whoops')]);
+    const wrapped = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByTestId('fx-whoops');
+    await userEvent.click(within(wrapped).getByRole('button', { name: 'save whoops' }));
+    await waitFor(() => expect(JSON.parse(wrapped.dataset.states!)[played].state).toEqual({ saved: 'whoops' }));
+    expect((await w.fake.effectStates([played]))[played]?.state).toEqual({ saved: 'whoops' });
+    await userEvent.click(within(wrapped).getByRole('button', { name: 'release whoops' }));
+    await waitFor(() => expect(wrapped.dataset.released).toBe(played));
+    expect(await w.fake.myReleases([played])).toEqual([played]);
+    /* The same state saved elsewhere (another device of the author's) is heard by the broadcast and read. */
+    w.fake.clock.advance(1000);
+    await w.fake.saveEffect(played, w.pipe, { saved: 'from elsewhere' });
+    await waitFor(() => expect(JSON.parse(wrapped.dataset.states!)[played].state).toEqual({ saved: 'from elsewhere' }));
+  });
+
+  test('a reader who is not the post\'s author cannot save: the effect is told so in the server\'s words', async () => {
+    const w = world(3);
+    w.fake.seed.card(w.pipe, w.ids[2]!, 'whoops', { message: 'mine' });
+    openWith(w, [fx('whoops')]);
+    const third = within(await screen.findByRole('article', { name: /^Post 3 /u }));
+    const saved = vi.spyOn(w.fake, 'saveEffect');
+    await userEvent.click(await third.findByRole('button', { name: 'save whoops' }));
+    expect(saved).not.toHaveBeenCalled();
+  });
+
+  test('a card can tint the border and glow of the tag of the play it chooses (Whoops!\'s top layer takes its ink) on the same glass, and the other plays keep their alignment\'s', async () => {
+    const w = world(2);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'under', layer: 1 });
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'over', layer: 2 });
+    const tint: CardUi = { ...fx('whoops'), tag: (play, all) => (play === all[all.length - 1] ? '#ff2bd6' : undefined) };
+    openWith(w, [tint]);
+    const tags = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('list', { name: 'Cards played on this post' });
+    const [under, over] = within(tags).getAllByRole('listitem');
+    expect(over!).toHaveAttribute('data-kb-tinted', 'true');
+    /* The tint is the tag's border and glow (both are drawn from --kb-tag); the glass and its smoke stay. */
+    expect(over!.style.getPropertyValue('--kb-tag')).toBe('#ff2bd6');
+    expect(over!.querySelector('.kb-smoke-svg')).not.toBeNull();
+    expect(under!).not.toHaveAttribute('data-kb-tinted');
+    expect(under!.style.getPropertyValue('--kb-tag')).toBe('');
+    expect(under!.querySelector('.kb-smoke-svg')).not.toBeNull();
+  });
+
+  test('a play that arrives live gets its tag and its effect on a post already on screen', async () => {
+    const w = world(3);
+    const tapped = tap(w.fake);
+    openWith(w, [fx('whoops')]);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    expect(within(post(2)).queryByTestId('fx-whoops')).toBeNull();
+    deliver(() => tapped().onAct?.(live(w.thread, 0, w.spritey, { kind: 'card', seq: null, targetActId: w.ids[1]!, payload: { card: 'whoops', layer: 1, message: 'live' }, currentPayload: { card: 'whoops', layer: 1, message: 'live' } })));
+    expect(await within(post(2)).findByTestId('fx-whoops')).toHaveAttribute('data-plays', '1:live');
+    expect(post(2)).toHaveTextContent('Spritey played Whoops! on this post: “live”');
   });
 });
 
@@ -712,19 +917,20 @@ describe('the announcer', () => {
     expect(region.textContent).not.toMatch(/fire|changed|edit/iu);
   });
 
-  test('stays silent for a card, an unmask and a tally, which still appear', async () => {
+  test('stays silent for a card, an unmask and a tally: the card is a tag, the others still appear', async () => {
     const w = world(5);
     const tapped = tap(w.fake);
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     see(sentinel(), true);
-    deliver(() => tapped().onAct?.(live(w.thread, 6, w.pipe, { kind: 'card', targetActId: w.ids[1]!, payload: { card: 'whoops' }, currentPayload: { card: 'whoops' } })));
-    deliver(() => tapped().onAct?.(live(w.thread, 7, w.pipe, { kind: 'unmask', payload: { class: 'heel', message: '' }, currentPayload: { class: 'heel', message: '' } })));
-    deliver(() => tapped().onAct?.(live(w.thread, 8, null, { kind: 'tally', payload: { body: 'x' }, currentPayload: { body: 'x' } })));
-    await screen.findByRole('article', { name: /^Post 8 /u });
+    deliver(() => tapped().onAct?.(live(w.thread, 0, w.pipe, { kind: 'card', seq: null, targetActId: w.ids[1]!, payload: { card: 'whoops' }, currentPayload: { card: 'whoops' } })));
+    deliver(() => tapped().onAct?.(live(w.thread, 6, w.pipe, { kind: 'unmask', payload: { class: 'heel', message: '' }, currentPayload: { class: 'heel', message: '' } })));
+    deliver(() => tapped().onAct?.(live(w.thread, 7, null, { kind: 'tally', payload: { body: 'x' }, currentPayload: { body: 'x' } })));
+    await screen.findByRole('article', { name: /^Post 7 by The System/u });
     expect(post(6)).toBeInTheDocument();
+    expect(await within(post(2)).findByRole('list', { name: 'Cards played on this post' })).toBeInTheDocument();
     expect(announcer()).toBeEmptyDOMElement();
-    deliver(() => tapped().onAct?.(live(w.thread, 9, w.spritey)));
+    deliver(() => tapped().onAct?.(live(w.thread, 8, w.spritey)));
     await waitFor(() => expect(announcer()).toHaveTextContent('New post by Spritey'));
   });
 

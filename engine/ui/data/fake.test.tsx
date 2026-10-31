@@ -14,7 +14,7 @@ const settings: Settings = {
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 },
-  postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, economy: {},
+  postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, cardSettings: {}, economy: {},
 };
 
 const earn = () => [];
@@ -764,6 +764,100 @@ describe('what a list row shows', () => {
     expect(await fake.spunFrom(opener, 0)).toEqual([]);
     fake.seed.card(boFace, second.id, 'whoops', { message: 'again' });
     expect(await fake.cardsOn(second.id, 1)).toHaveLength(1);
+    /* A card's own settings ride in the payload as the server keeps them (Stick Around's sentence). */
+    fake.seed.card(boFace, opener, 'stick-around', { message: 'read it', config: { sentence: 'I read it.' } });
+    expect((await fake.cardsOn(opener, 50)).map((c) => c.payload).filter((p) => p.card === 'stick-around')).toEqual([{ card: 'stick-around', message: 'read it', config: { sentence: 'I read it.' } }]);
+  });
+
+  test('a card play takes no thread number, as an edit takes none: the posts keep theirs, and the play is found through its post', async () => {
+    const { fake, anaFace, boFace, thread } = world();
+    const second = must(await fake.post(thread, anaFace, 'second', null));
+    const play = fake.seed.card(boFace, second.id, 'whoops', { message: 'oops' });
+    const third = must(await fake.post(thread, anaFace, 'third', null));
+    expect(second.seq).toBe(2);
+    expect(third.seq).toBe(3);
+    const played = await fake.act(play);
+    expect([played?.kind, played?.seq, played?.targetActId]).toEqual(['card', null, second.id]);
+    expect((await fake.acts(thread, 1, 10)).map((a) => [a.kind, a.seq])).toEqual([['post', 1], ['post', 2], ['post', 3]]);
+    const row = await fake.thread(thread);
+    expect([row?.lastSeq, row?.lastAct, row?.replies]).toEqual([3, third.id, 2]);
+    expect((await fake.cardsOn(second.id, 5)).map((c) => c.seq)).toEqual([null]);
+  });
+
+  test('a card seeded with a layer and the server\'s config carries them in its payload, as a seeded card\'s play does', async () => {
+    const { fake, boFace, opener } = world();
+    const play = fake.seed.card(boFace, opener, 'whoops', { message: 'inked', layer: 2, config: { color: '#ff2bd6', seed: 41 } });
+    expect((await fake.act(play))?.payload).toEqual({ card: 'whoops', message: 'inked', layer: 2, config: { color: '#ff2bd6', seed: 41 } });
+  });
+
+  test('cardsOnMany reads the card plays on any of several posts in one read, oldest first, at most the limit', async () => {
+    const { fake, anaFace, boFace, thread, opener } = world();
+    const second = must(await fake.post(thread, anaFace, 'second', null));
+    const third = must(await fake.post(thread, anaFace, 'third', null));
+    const a = fake.seed.card(boFace, second.id, 'whoops', { message: 'one' });
+    const b = fake.seed.card(boFace, opener, 'whoops');
+    fake.seed.card(boFace, third.id, 'whoops');
+    const many = await fake.cardsOnMany([second.id, opener], 50);
+    expect(many.map((c) => [c.id, c.targetActId])).toEqual([[a, second.id], [b, opener]]);
+    expect(await fake.cardsOnMany([], 50)).toEqual([]);
+    expect((await fake.cardsOnMany([second.id, opener, third.id], 2)).map((c) => c.id)).toEqual([a, b]);
+  });
+
+  test('a card seeded live is heard by the thread\'s subscribers, with no number', async () => {
+    const { fake, boFace, thread, opener } = world();
+    const heard: Act[] = [];
+    fake.subscribeThread(thread, { onAct: (a) => heard.push(a) });
+    fake.seed.card(boFace, opener, 'whoops', { live: true });
+    fake.seed.card(boFace, opener, 'stick-around');
+    await flush();
+    expect(heard.map((a) => [a.kind, a.seq, a.payload.card])).toEqual([['card', null, 'whoops']]);
+  });
+
+  test('effect state: the post\'s author saves it, every reader reads it, and the subscribers hear of it', async () => {
+    const { fake, anaFace, anaHeel, boFace, thread } = world();
+    const mine = must(await fake.post(thread, anaFace, 'a post to ruin', null));
+    const play = fake.seed.card(boFace, mine.id, 'whoops');
+    expect(await fake.effectStates([play])).toEqual({});
+    const heard: [string, string][] = [];
+    fake.subscribeThread(thread, { onEffect: (p, at) => heard.push([p, at]) });
+    const saved = must(await fake.saveEffect(play, anaFace, { strokes: [1, 2] }));
+    expect(saved.play).toBe(play);
+    expect(await fake.effectStates([play, 'nothing'])).toEqual({ [play]: { state: { strokes: [1, 2] }, savedAt: saved.savedAt } });
+    await flush();
+    expect(heard).toEqual([[play, saved.savedAt]]);
+    /* Saved again, the newest is what is kept. */
+    fake.clock.advance(1000);
+    const again = must(await fake.saveEffect(play, anaFace, { strokes: [] }));
+    expect((await fake.effectStates([play]))[play]).toEqual({ state: { strokes: [] }, savedAt: again.savedAt });
+    expect(again.savedAt > saved.savedAt).toBe(true);
+    /* Refused in the server's words: not the post's author (another of the player's own characters included), not a play, not signed in, not an object. */
+    expect(await fake.saveEffect(play, anaHeel, { strokes: [] })).toEqual(refused('only the post\'s author saves what is on it'));
+    expect(await fake.saveEffect(mine.id, anaFace, { strokes: [] })).toEqual(refused('there is no such card on a post'));
+    expect(await fake.saveEffect(play, boFace, { strokes: [] })).toEqual(refused('you do not play that character'));
+    expect(await fake.saveEffect(play, anaFace, null as never)).toEqual(refused('is the effect\'s state, an object', 'state'));
+    fake.signInAs(null);
+    expect(await fake.saveEffect(play, anaFace, { strokes: [] })).toEqual(refused('sign in to act'));
+  });
+
+  test('releasing from an effect is the player\'s own, kept from the first, and read back only for the plays asked about', async () => {
+    const { fake, bo, anaFace, boFace, thread, opener } = world();
+    const mine = must(await fake.post(thread, anaFace, 'held', null));
+    const play = fake.seed.card(boFace, mine.id, 'stick-around');
+    const other = fake.seed.card(boFace, opener, 'stick-around');
+    expect(await fake.myReleases([play, other])).toEqual([]);
+    const first = must(await fake.releaseEffect(play));
+    expect(first.play).toBe(play);
+    fake.clock.advance(1000);
+    expect(must(await fake.releaseEffect(play)).releasedAt).toBe(first.releasedAt);
+    expect(await fake.myReleases([play, other])).toEqual([play]);
+    expect(await fake.myReleases([other])).toEqual([]);
+    expect(await fake.releaseEffect(mine.id)).toEqual(refused('there is no such card on a post'));
+    /* Another player's release is not this one's. */
+    fake.signInAs(bo);
+    expect(await fake.myReleases([play])).toEqual([]);
+    fake.signInAs(null);
+    expect(await fake.releaseEffect(play)).toEqual(refused('sign in to act'));
+    expect(await fake.myReleases([play])).toEqual([]);
   });
 
   test('loseNextAnswer: the next post answers with an uncertain refusal, done or not as asked, once', async () => {
@@ -794,6 +888,91 @@ describe('what a list row shows', () => {
     // And a later one with no time is made now again.
     const now = fake.seed.post(thread, anaFace, 'now');
     expect((await fake.act(now))?.createdAt).toBe(new Date(fake.clock.now()).toISOString());
+  });
+});
+
+describe('the Vending Machine and a card play, refused as the server refuses them', () => {
+  /* One salty card at 1.00, and a long post costs 0.50 more: the rules the server prices a play by (engine/rules/cards.ts). */
+  const splat = {
+    key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', stack: 2,
+    playPrice: (_s: Settings, t: { length: number }) => (t.length > 20 ? 50 : 0),
+    canApply: (t: { kind: string }, on: readonly { card: string }[]) => (t.kind !== 'post' ? refused2('a card lands on a post') : on.length >= 2 ? refused2('this post already carries 2 of that card, the most it takes') : { ok: true as const, value: undefined }),
+    validateConfig: (c: unknown) => ([undefined, 'red'].includes((c as { color?: unknown } | undefined)?.color as string | undefined) ? { ok: true as const, value: c ?? {} } : refused2('the ink is red')),
+  };
+  const refused2 = (why: string) => ({ ok: false as const, why });
+  const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
+  function shopWorld(wallet: number, held = 0) {
+    const fake = createFake({ instance: shop });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    fake.seed.wallet(ana, wallet);
+    if (held > 0) fake.seed.cards(ana, { splat: held });
+    fake.signInAs(ana);
+    return { fake, ana, anaFace, boFace, thread, opener };
+  }
+
+  test('buying takes the card\'s price from the settled wallet, and the count rises by one', async () => {
+    const { fake } = shopWorld(562, 1);
+    expect(must(await fake.buyCard('splat'))).toEqual({ card: 'splat', balance: 462, held: 2 });
+    expect(await fake.wallet()).toEqual({ balance: 462, cap: 600 });
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 2 }]);
+  });
+
+  test('a wallet that holds less than the price is refused in the server\'s words, and nothing is spent or given', async () => {
+    const { fake } = shopWorld(99);
+    expect(await fake.buyCard('splat')).toEqual(refused('that costs 100, and your wallet holds 99'));
+    expect((await fake.wallet()).balance).toBe(99);
+    expect(await fake.myCards()).toEqual([]);
+  });
+
+  test('the ghost estimate is not the wallet: a purchase reads the settled balance only', async () => {
+    const { fake, ana } = shopWorld(50);
+    fake.seed.estimate(ana, { entries: [{ character: fake.seed.character(ana, 'Ghosty', 'face'), reason: 'face.cheered', amount: 500 }] });
+    expect((await fake.buyCard('splat')).ok).toBe(false);
+  });
+
+  test('a card the machine does not sell, and signed out, are refused as the decision refuses them', async () => {
+    const { fake } = shopWorld(500);
+    expect((await fake.buyCard('nothing'))).toMatchObject({ ok: false, field: 'card' });
+    fake.signInAs(null);
+    expect(await fake.buyCard('splat')).toEqual(refused('sign in to act'));
+  });
+
+  test('a play needs a card in hand, in the server\'s words, and spends the card and the price of the post', async () => {
+    const { fake, anaFace, opener } = shopWorld(500);
+    expect(await fake.playCard('splat', anaFace, opener, {}, '')).toEqual(refused('you hold no "splat" card; the Vending Machine sells them'));
+    must(await fake.buyCard('splat'));
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 1 }]);
+    const played = must(await fake.playCard('splat', anaFace, opener, { color: 'red' }, ' Take that. '));
+    expect(played).toMatchObject({ kind: 'card', character: anaFace, targetActId: opener, seq: null, payload: { card: 'splat', layer: 1, message: 'Take that.', config: { color: 'red' } } });
+    /* The post is 10 characters, so the play costs nothing more than the card already bought. */
+    expect((await fake.wallet()).balance).toBe(400);
+    expect(await fake.myCards()).toEqual([]);
+  });
+
+  test('a play is priced from the post as it stands, refused where the wallet cannot pay it, and keeps the layer count of a stack', async () => {
+    const { fake, ana, anaFace, boFace, thread } = shopWorld(0, 3);
+    const long = fake.seed.post(thread, boFace, 'x'.repeat(30));
+    fake.seed.wallet(ana, 49);
+    expect(await fake.playCard('splat', anaFace, long, {}, '')).toEqual(refused('that costs 50, and your wallet holds 49'));
+    fake.seed.wallet(ana, 100);
+    expect(must(await fake.playCard('splat', anaFace, long, {}, '')).payload).toMatchObject({ layer: 1 });
+    expect(must(await fake.playCard('splat', anaFace, long, {}, '')).payload).toMatchObject({ layer: 2 });
+    expect(await fake.playCard('splat', anaFace, long, {}, '')).toEqual(refused('this post already carries 2 of that card, the most it takes', 'config'));
+    expect((await fake.wallet()).balance).toBe(0);
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 1 }]);
+  });
+
+  test('a play is refused for a character the player does not play, a target that is no post, a bad setting and a message past 200', async () => {
+    const { fake, anaFace, boFace, thread, opener } = shopWorld(500, 1);
+    expect(await fake.playCard('splat', boFace, opener, {}, '')).toEqual(refused('you do not play that character'));
+    expect(await fake.playCard('splat', anaFace, thread, {}, '')).toMatchObject({ ok: false });
+    expect(await fake.playCard('splat', anaFace, opener, { color: 'blue' }, '')).toEqual(refused('the ink is red', 'config'));
+    expect(await fake.playCard('splat', anaFace, opener, {}, 'x'.repeat(201))).toMatchObject({ ok: false, field: 'message' });
+    expect(await fake.myCards()).toEqual([{ card: 'splat', held: 1 }]);
   });
 });
 

@@ -17,7 +17,7 @@
  * is where the orbs' cascade runs from.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Estimate, HeldCard, Id, KayfaApi, MyCharacter, Session, Wallet } from './data/api.ts';
+import type { Answer, Bought, Estimate, HeldCard, Id, KayfaApi, MyCharacter, Session, Wallet } from './data/api.ts';
 import { clearDrafts } from './composer/draft.ts';
 
 export interface Player {
@@ -42,6 +42,8 @@ export interface Player {
   readonly reactionLanded: () => void;
   /** Read the player's own rows again, after an action of theirs that changes them. */
   readonly refresh: () => Promise<void>;
+  /** Buy a card from the Vending Machine; once it is bought the wallet and the hand are read again, so every screen shows the new ones. */
+  readonly buyCard: (card: string) => Promise<Answer<Bought>>;
   readonly loaded: boolean;
 }
 
@@ -194,6 +196,13 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
     };
   }, [account, ask]);
 
+  const buyCard = useCallback(async (card: string): Promise<Answer<Bought>> => {
+    const bought = await api.buyCard(card);
+    /* A lost answer may have spent the Aura, so the rows are read again whatever came back. */
+    if (bought.ok || bought.uncertain) await refresh();
+    return bought;
+  }, [api, refresh]);
+
   const actingCharacters = useMemo(() => characters.filter(canAct), [characters]);
   const hudCharacter = actingCharacters.find((c) => c.id === chosen) ?? actingCharacters[0] ?? null;
 
@@ -217,8 +226,8 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
 
   const value = useMemo<Player>(() => ({
     session, sessionKnown, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen,
-    pending, estimate, cards, reactionLanded: ask, refresh, loaded,
-  }), [session, sessionKnown, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, loaded]);
+    pending, estimate, cards, reactionLanded: ask, refresh, buyCard, loaded,
+  }), [session, sessionKnown, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, buyCard, loaded]);
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }

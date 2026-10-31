@@ -1,0 +1,199 @@
+/*
+ * The Vending Machine's drawing, Divided World's: its body, its marquee, the glass and the slots,
+ * the display, the coin slot and the tray, as the Vending board draws them
+ * (docs/research/2026-10-29-two-worlds/07-vending.html). The engine lays the machine out
+ * (engine/ui/vending/vending.css) and marks each decorative part `data-kb-art`; this gives those
+ * parts their colors, their glow and the words printed on them, written in by the stylesheet
+ * (`content`) so that nothing printed on the machine is text a screen reader or the type
+ * measurement reads. The labels are the board's 13px printing: decoration, outside the type floor.
+ * What a player reads and presses (the slots' names, the wallet, the list) is the engine's, in the
+ * glass's tokens.
+ *
+ * Loaded by the composition roots (web/src/main.tsx and .storybook/preview.tsx) beside the glass's
+ * stylesheets.
+ */
+.kb-vending-body {
+  border-radius: 28px 28px 8px 8px;
+  background: #0d0819;
+  box-shadow: 0 0 0 2px #ff3d7f, 0 0 40px rgba(255, 61, 127, 0.45), inset 0 0 0 10px #140d26, inset 0 0 0 11px rgba(25, 227, 255, 0.5);
+}
+
+.kb-vending-marquee {
+  border-radius: 16px;
+  background: #07040e;
+  box-shadow: inset 0 0 0 1px rgba(255, 217, 61, 0.4);
+}
+
+.kb-vending-sign {
+  color: #fff4c4;
+  text-shadow: 0 0 6px #ffd93d, 0 0 18px #ffd93d, 0 0 36px rgba(255, 154, 61, 0.8);
+  animation: kb-vending-flicker 6s steps(1) infinite;
+}
+
+@keyframes kb-vending-flicker {
+  0%, 100% { opacity: 1; }
+  47% { opacity: 1; }
+  48% { opacity: 0.55; }
+  49% { opacity: 1; }
+  83% { opacity: 1; }
+  84% { opacity: 0.7; }
+  85% { opacity: 1; }
+}
+
+/* The sign stops flickering under reduced motion and shows lit. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-vending-sign { animation: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-vending-sign { animation: none; }
+
+.kb-vending-front {
+  background: rgba(25, 227, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(201, 248, 255, 0.5), inset 0 0 40px rgba(25, 227, 255, 0.12);
+}
+
+.kb-vending-sheen {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.kb-vending-slot {
+  border-bottom: 1px solid rgba(201, 248, 255, 0.35);
+}
+
+/* The picked slot, ringed and lit in its card's color. */
+.kb-vending-slot[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--kb-card-color) 10%, transparent);
+  box-shadow: inset 0 0 0 2px var(--kb-card-color), 0 0 20px color-mix(in srgb, var(--kb-card-color) 50%, transparent);
+}
+
+/* Forced colors drop the glow, so the picked slot is ringed in the system's Highlight, a pseudo-element so a focus ring on it still shows. */
+@media (forced-colors: active) {
+  .kb-vending-slot[aria-pressed='true']::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 3px solid Highlight;
+    pointer-events: none;
+  }
+}
+
+.kb-vending-coil path {
+  stroke: #b7afd6;
+}
+
+.kb-vending-slot-code {
+  font-family: 'Barlow Condensed', sans-serif;
+}
+
+/* The code is written from the engine's attribute: pseudo-element text is no text a button's label is read from. */
+.kb-vending-slot-code::before {
+  content: attr(data-code);
+}
+
+button.kb-vending-slot .kb-vending-slot-code {
+  padding: 0 6px;
+  background: var(--kb-card-color);
+  color: var(--kb-card-ink);
+}
+
+.kb-vending-slot--sealed .kb-vending-slot-code {
+  padding: 0;
+  font-size: 13px;
+  color: #ffd93d;
+}
+
+.kb-vending-sealed {
+  border: 1.5px dashed rgba(255, 217, 61, 0.5);
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(255, 217, 61, 0.6);
+}
+
+.kb-vending-sealed::before {
+  content: '?';
+}
+
+.kb-vending-lcd {
+  background: #030806;
+  border: 1px solid rgba(46, 240, 160, 0.5);
+  box-shadow: inset 0 0 18px rgba(46, 240, 160, 0.2);
+}
+
+.kb-vending-lcd-name {
+  color: #8af7c9;
+}
+
+.kb-vending-lcd-price {
+  color: #2ef0a0;
+  text-shadow: 0 0 10px rgba(46, 240, 160, 0.9);
+}
+
+.kb-vending-aura-in {
+  border: 1px solid rgba(255, 217, 61, 0.35);
+}
+
+.kb-vending-aura-slot {
+  background: #030303;
+  box-shadow: inset 0 0 0 1px rgba(255, 217, 61, 0.6), 0 0 14px rgba(255, 217, 61, 0.55);
+}
+
+.kb-vending-aura-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #ffe27a;
+}
+
+.kb-vending-aura-label::before {
+  content: 'Aura in';
+}
+
+.kb-vending-tray {
+  background: #05030a;
+  box-shadow: inset 0 0 0 1px rgba(201, 248, 255, 0.4), inset 0 16px 24px rgba(0, 0, 0, 0.8);
+}
+
+.kb-vending-tray-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #b7afd6;
+}
+
+.kb-vending-tray-label::before {
+  content: 'Push';
+}
+
+.kb-vending-tray-to {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #ff9cc0;
+}
+
+.kb-vending-tray-to::before {
+  content: 'To your hand';
+}
+
+/* The arrow's streaks and head, to the left of the label. */
+.kb-vending-tray::after {
+  content: '';
+  position: absolute;
+  left: 330px;
+  top: 40px;
+  width: 150px;
+  height: 36px;
+  background: linear-gradient(170deg, transparent 40%, rgba(255, 156, 192, 0.8) 41%, rgba(255, 156, 192, 0.8) 44%, transparent 45%), linear-gradient(170deg, transparent 62%, rgba(255, 156, 192, 0.5) 63%, rgba(255, 156, 192, 0.5) 66%, transparent 67%);
+  pointer-events: none;
+}
+
+.kb-vending-drop > .kb-postcard {
+  transform: none;
+  box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 26px color-mix(in srgb, var(--kb-card-color) 80%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-tray::after {
+  display: none;
+}

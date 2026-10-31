@@ -7,9 +7,8 @@
  * sentence, and "Changes save as you make them."
  *
  * Where the build differs by a decision:
- *  - the menu bar holds all six tabs (web Task 3; the glass plan, section 3), where the board leaves
- *    out Rankings, so the build's Rankings tab is not a landmark; the Vending Machine's tab joins the
- *    bar with its screen (the glass build plan, Part 3), so it is left out until then and Part 3 adds it;
+ *  - the menu bar holds all six tabs (web Task 3; the glass plan, section 3), as the board draws them
+ *    now (it draws Rankings and the Vending Machine too), each compared in full;
  *  - the sections' navigation holds Account and Accessibility (the glass plan, section 9, choice 3):
  *    the board's Notifications, Privacy and Export my data are not built;
  *  - "The board" is the radiogroup's name, as its row's label, where the board names it "Board colors";
@@ -44,15 +43,16 @@ const manifest: BoardManifest = {
   build: { moment: '11-settings' },
   landmarks: [
     /*
-     * The menu bar, Settings current. The build's tabs after Back stand one tab along from the
-     * board's, with no Vending Machine before them (Part 3) and Rankings among them where the board
-     * has none, so each is compared by its size and type, not its place, as board 10 compares them.
+     * The menu bar, Settings current, its tabs compared in full (the Vending Machine's joined the
+     * bar with the cards, the glass build's Part 3).
      */
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
     { id: 'menu-back', role: 'link', name: 'ESC BACK TO THE BOARD', buildName: 'Back to the board', within: 'menu' },
-    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu', box: 'size' },
-    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu', box: 'size' },
-    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu', box: 'size' },
+    { id: 'menu-vending', role: 'link', name: 'Vending Machine', within: 'menu' },
+    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu' },
+    { id: 'menu-rankings', role: 'link', name: 'Rankings', within: 'menu' },
+    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu' },
+    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu' },
 
     { id: 'title', role: 'heading', name: 'Settings', nth: 0 },
 

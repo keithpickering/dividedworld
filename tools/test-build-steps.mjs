@@ -16,7 +16,7 @@
  * drives it red, which is a guard nobody has ever seen work.
  */
 import fs from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { steps, problems, runSteps, defaultJobs, SERIAL, AFTER, OUTSIDE_THE_BUILD, SCRIPTS } from './build.mjs';
 
 const TRACKED = new Set(execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean));
@@ -204,6 +204,18 @@ const test = async (name, fn) => {
     return d.jobs === 2 && /constrainedMemory/.test(d.memHow) || JSON.stringify(d);
   });
   await test('a zero constrained memory is no limit, and there is always at least one worker', () => defaultJobs({ available: 1, totalMem: 1 * GB, constrainedMem: 0 }).jobs === 1 && /totalmem/.test(defaultJobs({ ...base }).memHow));
+}
+
+/* ---- the exit ---- */
+{
+  /* A failed step's whole output is written to stderr in one go and the process exits at once. A pipe holds 64 KB;
+   * Node's `process.exit` drops what the pipe has not taken, so CI's log lost the end of a 1 MB test run, the summary
+   * that names the test that failed. The case is a child that writes 2 MB and exits through the function under test. */
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e',
+    `import { exitAfterFlush } from './tools/build.mjs'; console.error('x'.repeat(2e6) + '\\nTHE END'); console.log('stdout end'); exitAfterFlush(3);`],
+  { encoding: 'utf8', maxBuffer: 1 << 26 });
+  await test('exitAfterFlush delivers every byte written to a pipe before it exits, with the status given',
+    () => child.status === 3 && child.stderr.endsWith('THE END\n') && child.stdout === 'stdout end\n' || `status ${child.status}, stderr ${child.stderr.length} bytes ending ${JSON.stringify(child.stderr.slice(-12))}`);
 }
 
 /* ---- and the real thing passes ---- */

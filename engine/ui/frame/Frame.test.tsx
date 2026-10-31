@@ -40,10 +40,15 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
   const kayfa = {
     api,
     instance: {
-      cards: [{ key: 'whoops', name: 'Whoops!' }, { key: 'stick-around', name: 'Stick Around' }],
+      /* Rules enough for the hand to price and draw each card (engine/ui/cards/faces.ts). */
+      cards: [
+        { key: 'whoops', name: 'Whoops!', alignment: 'salty', priceKey: 'whoops.price', playPrice: () => 0 },
+        { key: 'stick-around', name: 'Stick Around', alignment: 'sweet', priceKey: 'stick.price', playPrice: () => 0 },
+      ],
+      settings: { economy: { 'whoops.price': 100, 'stick.price': 100 } },
       classes: [{ key: 'face', name: 'Face' }, { key: 'heel', name: 'Heel' }],
     },
-    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine' } },
+    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine' }, cards: [] },
     settings: { walletCap: 600 },
   } as unknown as Kayfa;
   const view = render(
@@ -215,9 +220,10 @@ describe('the hand', () => {
     await userEvent.click(hand);
     expect(hand).toHaveAccessibleName('Hand, 3 postcards, open');
     expect(hand).toHaveAttribute('aria-expanded', 'true');
+    /* One card for each copy held, each a button by its name. */
     const drawer = screen.getByRole('region', { name: 'Your hand' });
-    expect(drawer).toHaveTextContent('Whoops! ×2');
-    expect(drawer).toHaveTextContent('Stick Around ×1');
+    expect(within(drawer).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(2);
+    expect(within(drawer).getByRole('button', { name: 'Stick Around, Sweet postcard' })).toBeInTheDocument();
   });
   test('Esc closes the drawer and returns focus to the hand, and does not open the menu', async () => {
     window.history.replaceState(null, '', '/b/general');
@@ -231,6 +237,8 @@ describe('the hand', () => {
     expect(here()).toBe('/b/general');
   });
   test('the hand is a sheet of its own above the HUD, not inside it, and its close button is an icon named for what it does', async () => {
+    /* The Phone board's layout: the Main board's has no sheet, only the cards (engine/ui/frame/frame.css). */
+    width(390);
     setup();
     await userEvent.click(await screen.findByRole('button', { name: 'Hand, 3 postcards' }));
     const sheet = screen.getByRole('region', { name: 'Your hand' });
@@ -241,7 +249,45 @@ describe('the hand', () => {
     expect(close).toHaveTextContent(/^$/u);
     expect(close.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
   });
+  test('on the Phone board arming a card puts the sheet away, and the card waits armed in the hand', async () => {
+    width(390);
+    setup();
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
+    await userEvent.click(hand);
+    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard' }));
+    expect(document.querySelector('.kb-hand-drawer')).toHaveAttribute('hidden');
+    /* The hand button now says the card is armed, and one press puts it back (#80), so the hand is opened again from there. */
+    const armed = screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' });
+    expect(armed).toHaveTextContent('Armed · Stick Around');
+    await userEvent.click(armed);
+    await userEvent.click(screen.getByRole('button', { name: 'Hand, 3 postcards' }));
+    expect(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: 'Stick Around, Sweet postcard' })).toHaveLength(1);
+  });
+  test('on the Phone board an armed card is the hand button\'s words, one press puts it back, and the status line says to press Armed (#80)', async () => {
+    width(390);
+    setup();
+    const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
+    await userEvent.click(hand);
+    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard' }));
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is armed. Press Play Stick Around here on a post, or press Armed to put it back.');
+    const armed = screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' });
+    expect(armed).not.toHaveAttribute('aria-expanded');
+    await userEvent.click(armed);
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is put back.');
+    expect(screen.getByRole('button', { name: 'Hand, 3 postcards' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /^Armed/u })).toBeNull();
+  });
+  test('on the Main board the hand button keeps its words while a card is armed, and the status line says Esc (#80)', async () => {
+    width(1440);
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Hand, 3 postcards' }));
+    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard' }));
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is armed. Press Play Stick Around here on a post, or Esc to put it back.');
+    expect(screen.getByRole('button', { name: 'Hand, 3 postcards, open' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Armed/u })).toBeNull();
+  });
   test('Close the hand closes it', async () => {
+    width(390);
     setup();
     const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     await userEvent.click(hand);
@@ -394,6 +440,7 @@ describe('from the Task 1.4 reviews', () => {
     }
   });
   test('the hand, opened from the keyboard, takes focus into its sheet; Tab reaches Close the hand', async () => {
+    width(390);
     setup();
     const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     hand.focus();

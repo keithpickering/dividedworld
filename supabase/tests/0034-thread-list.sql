@@ -72,22 +72,23 @@ begin
   if (select replies_this_week from thread_list where id = fresh) is distinct from 0 then raise exception 'an opening post is not a reply'; end if;
 
   -- Replies are the posts after the first, a counter kept with the sequence number: a card, a spin,
-  -- an unmask, a tally and an edit never count, and a thread's own first post does not.
+  -- an unmask, a tally and an edit never count, and a thread's own first post does not. A card (and
+  -- an edit) takes no number (0035), so it is no last Act either: the tally is the thread's 6th number, the card none.
   select * into r from thread_list where id = older;
   if r.replies is distinct from 4 or r.last_seq is distinct from 5 then raise exception 'replies are the posts after the first: %', to_jsonb(r); end if;
   card := tests.act(b, 'card', older, '{"card": "splat", "config": {"color": "red"}}', op, now());
   perform tests.act(null, 'tally', older, '{"body": "x"}', null, now());
   perform tests.act(a, 'edit', older, '{"body": "thrice"}', op, now());
   select * into r from thread_list where id = older;
-  if r.replies is distinct from 4 or r.last_seq is distinct from 7 then raise exception 'a card, a tally and an edit are no replies: %', to_jsonb(r); end if;
+  if r.replies is distinct from 4 or r.last_seq is distinct from 6 then raise exception 'a card, a tally and an edit are no replies: %', to_jsonb(r); end if;
   if (select replies from thread_list where id = fresh) is distinct from 0 or (select replies from thread_list where id = newer) is distinct from 1 then
     raise exception 'a one-post thread has no replies, and the other thread''s count is its own';
   end if;
   -- A thread opened by a spin, in the list's one query: the origin Act's thread, that thread's title and the Act's seq.
   spun := tests.thread('Spun');
-  update threads set origin_act_id = card where id = spun;
+  update threads set origin_act_id = op where id = spun;
   select * into r from thread_list where id = spun;
-  if (r.origin_thread, r.origin_title, r.origin_seq) is distinct from (older, 'Older', (select seq from acts where id = card)) then raise exception 'a spun thread names its origin: %', to_jsonb(r); end if;
+  if (r.origin_thread, r.origin_title, r.origin_seq) is distinct from (older, 'Older', (select seq from acts where id = op)) then raise exception 'a spun thread names its origin: %', to_jsonb(r); end if;
   select * into r from thread_list where id = older;
   if r.origin_thread is not null or r.origin_title is not null or r.origin_seq is not null then raise exception 'a thread that was not spun has no origin: %', to_jsonb(r); end if;
 

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { expect, test, type Page } from '@playwright/test';
-import { boardsToRun, compareBoard, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
+import { expect, test, type Browser, type Page } from '@playwright/test';
+import { boardsToRun, compareBoard, compareSides, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
 import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
@@ -32,9 +32,6 @@ const REPORT = path.join(here, 'report', 'boards');
 
 /** The boards not built yet, each with the part of docs/plans/2026-10-30-glass-build-plan.md that builds it. */
 const PENDING: Readonly<Record<string, string>> = {
-  '05-cards': 'Part 3',
-  '07-vending': 'Part 3',
-  '08-hold': 'Part 3',
   '09-settlement': 'Part 4',
   '12-log': 'Part 4',
 };
@@ -73,48 +70,58 @@ function reportPage(board: string, mismatches: readonly Mismatch[], error?: stri
 <div class="pair"><figure><figcaption>Board</figcaption><img src="board.png" alt="The board"></figure><figure><figcaption>Build</figcaption><img src="build.png" alt="The build"></figure></div>`;
 }
 
+/**
+ * One build side of a board compared with the board page: both pages opened at the board's size, the
+ * build pressed to its state, both read, and the report written. Returns the mismatches' words;
+ * `compareSides` (e2e/board-match.ts) leads a further side's with its name (`BoardManifest.also`).
+ */
+async function compareSide(browser: Browser, baseURL: string | undefined, id: string, manifest: BoardManifest, folder: string): Promise<string[]> {
+  const context = await browser.newContext({ baseURL, viewport: manifest.size, deviceScaleFactor: 1, reducedMotion: 'reduce', timezoneId: 'UTC', bypassCSP: true });
+  try {
+    await standInFaces(context);
+    const boardPage = await context.newPage();
+    const buildPage = await context.newPage();
+    let mismatches: Mismatch[] = [];
+    const shots = { board: { shots: [] } as Snapshot, build: { shots: [] } as Snapshot };
+    const dir = path.join(REPORT, folder);
+    /* The report is written whether the pages loaded or not, with the error in it. */
+    let failure: unknown;
+    try {
+      await routeBoardFonts(boardPage);
+      await boardPage.goto(pathToFileURL(path.join(BOARDS, `${id}.html`)).href);
+      const query = 'moment' in manifest.build ? `moment=${encodeURIComponent(manifest.build.moment)}` : `story=${encodeURIComponent(manifest.build.story)}`;
+      await buildPage.goto(`/?fixture=boards&${query}`);
+      await pressControls(buildPage, manifest.press);
+      for (const page of [boardPage, buildPage]) await page.evaluate(() => document.fonts.ready);
+      shots.board = await snapshotPage(boardPage, manifest, 'board');
+      shots.build = await settledSnapshot(buildPage, manifest, 'build');
+      mismatches = compareBoard(shots.board, shots.build, manifest);
+    } catch (error) {
+      failure = error;
+    } finally {
+      fs.mkdirSync(dir, { recursive: true });
+      for (const [page, snap, file] of [[boardPage, shots.board, 'board.png'], [buildPage, shots.build, 'build.png']] as const) {
+        try {
+          await outline(page, snap.shots.flatMap((s) => (s.found && s.box ? [{ id: s.id, box: s.box }] : [])));
+          await page.screenshot({ path: path.join(dir, file), fullPage: true });
+        } catch { /* a page that never loaded has no screenshot; the error below says why */ }
+      }
+      fs.writeFileSync(path.join(dir, 'index.html'), reportPage(folder, mismatches, failure === undefined ? undefined : String(failure instanceof Error ? failure.message : failure)));
+    }
+    if (failure !== undefined) throw failure;
+    return mismatches.map((m) => m.message);
+  } finally {
+    await context.close();
+  }
+}
+
 for (const id of run) {
   test(`${id} matches its board`, async ({ browser }, testInfo) => {
     const manifest = (await import(pathToFileURL(path.join(MANIFESTS, `${id}.ts`)).href) as { default: BoardManifest }).default;
     expect(manifest.board).toBe(id);
     const baseURL = testInfo.project.use.baseURL;
-    const context = await browser.newContext({ baseURL, viewport: manifest.size, deviceScaleFactor: 1, reducedMotion: 'reduce', timezoneId: 'UTC', bypassCSP: true });
-    try {
-      await standInFaces(context);
-      const boardPage = await context.newPage();
-      const buildPage = await context.newPage();
-      let mismatches: Mismatch[] = [];
-      const shots = { board: { shots: [] } as Snapshot, build: { shots: [] } as Snapshot };
-      const dir = path.join(REPORT, id);
-      /* The report is written whether the pages loaded or not, with the error in it. */
-      let failure: unknown;
-      try {
-        await routeBoardFonts(boardPage);
-        await boardPage.goto(pathToFileURL(path.join(BOARDS, `${id}.html`)).href);
-        const query = 'moment' in manifest.build ? `moment=${encodeURIComponent(manifest.build.moment)}` : `story=${encodeURIComponent(manifest.build.story)}`;
-        await buildPage.goto(`/?fixture=boards&${query}`);
-        await pressControls(buildPage, manifest.press);
-        for (const page of [boardPage, buildPage]) await page.evaluate(() => document.fonts.ready);
-        shots.board = await snapshotPage(boardPage, manifest, 'board');
-        shots.build = await settledSnapshot(buildPage, manifest, 'build');
-        mismatches = compareBoard(shots.board, shots.build, manifest);
-      } catch (error) {
-        failure = error;
-      } finally {
-        fs.mkdirSync(dir, { recursive: true });
-        for (const [page, snap, file] of [[boardPage, shots.board, 'board.png'], [buildPage, shots.build, 'build.png']] as const) {
-          try {
-            await outline(page, snap.shots.flatMap((s) => (s.found && s.box ? [{ id: s.id, box: s.box }] : [])));
-            await page.screenshot({ path: path.join(dir, file), fullPage: true });
-          } catch { /* a page that never loaded has no screenshot; the error below says why */ }
-        }
-        fs.writeFileSync(path.join(dir, 'index.html'), reportPage(id, mismatches, failure === undefined ? undefined : String(failure instanceof Error ? failure.message : failure)));
-      }
-      if (failure !== undefined) throw failure;
-
-      expect(mismatches.map((m) => m.message), `${id} differs from its board; see e2e/report/boards/${id}/index.html`).toEqual([]);
-    } finally {
-      await context.close();
-    }
+    /* The board's own build side, then each further one (the Cards board's play form is the app, its hand sheet a story). */
+    const mismatches = await compareSides(manifest, (side, folder) => compareSide(browser, baseURL, id, side, folder));
+    expect(mismatches, `${id} differs from its board; see e2e/report/boards/${id}/index.html`).toEqual([]);
   });
 }

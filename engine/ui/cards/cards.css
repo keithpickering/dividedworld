@@ -1,0 +1,414 @@
+/*
+ * A card play's tag, on the board: the glass reaching into a 2003 post, as the Main board draws it
+ * over #41 (docs/research/2026-10-29-two-worlds/01-main.html) and the Cards board draws "the same
+ * card on the board" (05-cards.html): a skewed piece of glass on the `effect` smoke, breaking the
+ * post's frame at its top right, the card's name in the display face and its caster's words in
+ * the body face. Every color is a glass token, the card's alignment choosing which (salty is the
+ * pink, sweet the cyan); sizes are the glass's.
+ *
+ * A tag is two lines at every width (the owner's notes on #80): the card's name and its caster, with
+ * when, on the first, and the caster's words on a line of their own under them, a size smaller, where a
+ * longer message wraps. It stands in the flow at the top of the post's words and never covers the post's
+ * line (its date and permalink), which the board draws it over. Several plays read side by side and wrap.
+ */
+.kb-play-tags {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem 0.9rem;
+  margin: 0.4rem 3% 0.6rem 0.9rem;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-play-tag {
+  --kb-tag: var(--kb-glass-sweet);
+  --kb-tag-text: var(--kb-glass-neon-text);
+  position: relative;
+  isolation: isolate;
+  max-width: min(100%, 36rem);
+  padding: 0.3rem 1rem 0.35rem 0.75rem;
+  transform: skewX(-12deg);
+  overflow: hidden;
+  background: var(--kb-glass-ground);
+  border: 1px solid var(--kb-tag);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-tag) 70%, transparent);
+  color: var(--kb-glass-text);
+  font-size: var(--kb-glass-size-body);
+  line-height: 1.2;
+}
+
+.kb-play-tag[data-kb-alignment="salty"] {
+  --kb-tag: var(--kb-glass-salty);
+  --kb-tag-text: var(--kb-glass-salty-text);
+}
+
+/*
+ * A tag whose card chose its ink (CardUi.tag) keeps the glass, its smoke and all its text colors: the
+ * ink is only the border and the glow, as the Main board draws Whoops!'s tag over #41 (`--kb-tag` is set
+ * inline). The card's name stays the alignment's text color, because an ink of any luminance tints a
+ * name legibly on no more than a measured few, and the glass's text colors are the ones measured.
+ */
+
+/* The text stands upright on the skewed glass, over the smoke (which fills the glass behind it), on one calm. */
+.kb-play-tag-in {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.1rem 0.75rem;
+  transform: skewX(12deg);
+}
+
+.kb-play-tag-card {
+  color: var(--kb-tag-text);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* The link is not a box: the caster and the message take their places in the tag's grid, and the tag is one link. */
+.kb-play-tag-words {
+  display: contents;
+}
+
+.kb-play-tag-words,
+.kb-play-tag-words:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+.kb-play-tag-who {
+  grid-column: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+/* The caster's words: a line of their own, a size smaller (the Main board's smallest, which is the label's). */
+.kb-play-tag-message {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+}
+
+.kb-play-tag-words:hover .kb-play-tag-who,
+.kb-play-tag-words:hover .kb-play-tag-message {
+  text-decoration: underline;
+}
+
+/* The link has no box to ring, so the tag is ringed. */
+.kb-play-tag:has(.kb-play-tag-words:focus-visible) {
+  outline: 2px solid var(--kb-tag-text);
+  outline-offset: 2px;
+}
+
+.kb-play-tag-when {
+  grid-column: 3;
+  flex: none;
+  color: var(--kb-glass-text-2);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/*
+ * On the Phone board's layout the tag is a step smaller, within the phone's size floor: the card's name
+ * and the time at its smallest, the caster at its body, the message at its smallest.
+ */
+:where(:root[data-kb-layout='phone']) .kb-play-tag {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-play-tag-card,
+:where(:root[data-kb-layout='phone']) .kb-play-tag-message,
+:where(:root[data-kb-layout='phone']) .kb-play-tag-when {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+/* On a narrow post the tag takes the post's width (less the skew's lean at both sides). */
+@media (max-width: 40em) {
+  .kb-play-tags {
+    justify-content: stretch;
+  }
+
+  .kb-play-tag {
+    flex: 1 1 100%;
+  }
+}
+
+/*
+ * The plate under a post where a card's words and controls stand (EffectStrip, Effects.tsx): one deliberate piece of
+ * glass attached to the post, outside its 2003 chrome, and the post's own tag's partner (the tag at the top right, the
+ * plate at the bottom right). The owner on #80's shots asked for the gamelike theatrics the Turn modal's How loud row
+ * got (#51), where the text and buttons had flowed "however": so a plate is a shape, not a bar. A chamfered panel
+ * (section 5's top-right and bottom-left cut, the first step) with its border drawn on the cut in the card's
+ * alignment's color and a glow, on the `effect` smoke; a head that reads out the card's name and state; and the
+ * controls as tiles (below), all one skew. It is flat and draws only where an effect puts something in it.
+ *
+ * The glow is a drop-shadow on the element around the plate, since a clip-path cuts a shadow of its own.
+ */
+.kb-glass.kb-effect-strip {
+  --kb-tag: var(--kb-glass-sweet);
+  --kb-tag-text: var(--kb-glass-neon-text);
+  flex: 0 1 44rem;
+  min-width: 0;
+  background: none;
+  color: var(--kb-glass-text);
+  font-size: var(--kb-glass-size-label);
+  line-height: 1.3;
+  filter: drop-shadow(0 0 9px color-mix(in srgb, var(--kb-tag) 60%, transparent));
+}
+
+.kb-effect-strip[data-kb-alignment="salty"] {
+  --kb-tag: var(--kb-glass-salty);
+  --kb-tag-text: var(--kb-glass-salty-text);
+}
+
+.kb-effect-strip .kb-effect-plate {
+  --kb-cut: var(--kb-glass-chamfer-1);
+  --kb-border: 1.5px;
+  background: var(--kb-tag);
+}
+
+.kb-effect-plate::after {
+  background: var(--kb-glass-ground);
+}
+
+/* The smoke is inside the border, cut by the same line as the panel under it (the cut-dialog's inner polygon). */
+.kb-effect-plate > .kb-smoke {
+  inset: var(--kb-border);
+  clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, var(--kb-cut-in) 100%, 0 calc(100% - var(--kb-cut-in)));
+}
+
+.kb-effect-plate-in {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 1.5rem 0.75rem;
+}
+
+/* The readout: the card's name in the display face, then what the card has to say of its state. */
+.kb-plate-head {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 1rem;
+  margin: 0;
+}
+
+.kb-plate-name {
+  color: var(--kb-tag-text);
+  font-size: var(--kb-glass-size-display-s);
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-shadow: 0 0 14px color-mix(in srgb, var(--kb-tag) 55%, transparent);
+}
+
+.kb-plate-state {
+  color: var(--kb-glass-text);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* A line of the card's words in the plate. */
+.kb-plate-line {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--kb-glass-text-2);
+}
+
+/* The place the post's play control stands, among the controls: its tile is the plate's own item. */
+.kb-plate-here {
+  display: contents;
+}
+
+.kb-plate-here > * {
+  order: 1;
+}
+
+/*
+ * A tile: a control of a plate, or of a post, in the Turn's idiom (a skewed piece with a quiet border that is lit and
+ * glows when it is chosen or when it is the thing to do). The skew is the glass's, and the label stands upright on it as the boards'
+ * tabs do. A tile is opaque ground, so its words stand on a panel and not the smoke. A toggle (aria-pressed) carries
+ * the Turn's skewed square, filled when on, so what is chosen is not the color alone.
+ */
+.kb-plate-tile {
+  --kb-tile: color-mix(in srgb, var(--kb-glass-text) 35%, transparent);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0.2rem 1.1rem;
+  transform: skewX(var(--kb-glass-skew));
+  border: 2px solid var(--kb-tile);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text-2);
+  /* The glass's own face and size, named here and not inherited: a tile drawn into a post's slot (the play tile under a post) stands in the 2003 board's body, whose Verdana it would otherwise take (the owner on #80's round 2). */
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: border-color 0.18s ease-out, box-shadow 0.18s ease-out, background-color 0.18s ease-out;
+}
+
+.kb-plate-tile-label {
+  display: inline-block;
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+.kb-plate-tile[data-kb-lit],
+.kb-plate-tile[aria-pressed="true"] {
+  --kb-tile: var(--kb-tag, var(--kb-glass-sweet));
+  background: color-mix(in srgb, var(--kb-tile) 14%, var(--kb-glass-field));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-tile) 55%, transparent);
+  color: var(--kb-glass-text);
+}
+
+.kb-plate-tile[aria-pressed]::before {
+  content: '';
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  box-sizing: border-box;
+  border: 2px solid var(--kb-glass-text-2);
+}
+
+.kb-plate-tile[aria-pressed="true"]::before {
+  border-color: var(--kb-tile);
+  background: var(--kb-tile);
+  box-shadow: inset 0 0 0 2px var(--kb-glass-ground);
+}
+
+.kb-plate-tile:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+/* On the post, outside any glass, the focus ring is the post's own ink: the glass's white would vanish on a white post. */
+.kb-plate-tile[data-kb-where="post"]:focus-visible {
+  outline-color: var(--kb-fg);
+}
+
+/*
+ * "Play Whoops! here": the tile that is the thing to do, in the card's alignment. It is lit, brighter than any other
+ * tile, with the card's color as a swatch, and while it is offered it breathes as the armed card in the hand does.
+ */
+.kb-play-here {
+  --kb-tile: var(--kb-tag, var(--kb-glass-sweet));
+  --kb-tag: var(--kb-glass-sweet);
+  background: color-mix(in srgb, var(--kb-tile) 24%, var(--kb-glass-field));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--kb-tile) 70%, transparent);
+  color: var(--kb-glass-text-hi);
+  animation: kb-play-here-armed 1.8s ease-in-out infinite;
+}
+
+.kb-play-here[data-kb-alignment="salty"] {
+  --kb-tag: var(--kb-glass-salty);
+}
+
+.kb-play-here-swatch {
+  flex: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  box-sizing: border-box;
+  border: 2px solid var(--kb-glass-text-hi);
+  background: var(--kb-card-color);
+}
+
+@keyframes kb-play-here-armed {
+  50% { box-shadow: 0 0 18px color-mix(in srgb, var(--kb-tile) 100%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-play-here { animation: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-play-here { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-plate-tile { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-plate-tile { transition: none; }
+
+/* Forced colors drop the glow and the fills: a tile is outlined in a system color, the one to do in Highlight. */
+@media (forced-colors: active) {
+  /* The plate's edge is drawn from backgrounds, which forced colors replace with the canvas: it is a border in a system color, and square, since the cut would take the border's corners off. */
+  .kb-effect-strip .kb-effect-plate {
+    border: var(--kb-border) solid CanvasText;
+    clip-path: none;
+  }
+
+  .kb-effect-plate::after {
+    clip-path: none;
+  }
+
+  .kb-plate-tile {
+    outline: 2px solid ButtonText;
+    outline-offset: 1px;
+  }
+
+  .kb-play-here {
+    outline-color: Highlight;
+  }
+
+  .kb-plate-tile:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .kb-plate-tile[aria-pressed]::before {
+    forced-color-adjust: none;
+    border-color: ButtonText;
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .kb-plate-tile[aria-pressed="true"]::before {
+    border-color: Highlight;
+    background: Highlight;
+  }
+}
+
+/* On the Phone board's layout the plate's words are a step smaller, at the phone's smallest size, and its name the glass's phone display size. */
+:root[data-kb-layout='phone'] .kb-glass.kb-effect-strip,
+:root[data-kb-layout='phone'] .kb-plate-tile {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-plate-name {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+/* On a narrow post the plate takes the post's width: a narrow window, or the Phone board's layout on a wide one (the fold at large text). */
+@media (max-width: 40em) {
+  .kb-glass.kb-effect-strip {
+    flex: 1 1 100%;
+  }
+}
+
+:root[data-kb-layout='phone'] .kb-glass.kb-effect-strip {
+  flex: 1 1 100%;
+}

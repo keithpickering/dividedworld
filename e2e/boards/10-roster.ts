@@ -6,9 +6,8 @@
  *
  * Words the screen had before the glass and keeps (web Task 9's, which every glass amendment says
  * stand): its heading "Your characters (3 of 6)" for the board's MY CHARACTERS, its lead line, and
- * Edit profile for the board's Change avatar. The menu bar has no Vending Machine until the cards
- * (the glass build plan, Part 3), so My characters, the build's first tab after Back, stands where
- * the board's Vending Machine does: the tabs are compared by their size and type, not their place.
+ * Edit profile for the board's Change avatar. The menu bar's tabs are compared in full: the
+ * Vending Machine's joined it with the cards (the glass build plan, Part 3).
  *
  * Left out: "Pipewrench's log", whose page is Part 4's. Mrs. Hooligan's and Spritey's classes and
  * Turns are the fixture's, not the board's (the board's Mrs. Hooligan is a Jabroni in her cooldown;
@@ -26,10 +25,11 @@ const manifest: BoardManifest = {
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
     /* The board writes the key cap into the link's name; the build hides it (MenuBar.tsx). */
     { id: 'menu-back', role: 'link', name: 'ESC BACK TO THE BOARD', buildName: 'Back to the board', within: 'menu' },
-    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu', box: 'size' },
-    { id: 'menu-rankings', role: 'link', name: 'Rankings', within: 'menu', box: 'size' },
-    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu', box: 'size' },
-    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu', box: 'size' },
+    { id: 'menu-vending', role: 'link', name: 'Vending Machine', within: 'menu' },
+    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu' },
+    { id: 'menu-rankings', role: 'link', name: 'Rankings', within: 'menu' },
+    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu' },
+    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu' },
 
     /*
      * The head: the heading's words are the screen's own, and longer, so its box is compared by

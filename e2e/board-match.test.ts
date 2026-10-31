@@ -10,7 +10,7 @@
  * name, and a pending map that has gone stale fails, so a board cannot be left out by forgetting it.
  */
 import { describe, expect, test } from 'vitest';
-import { boardsToRun, compareBoard, type BoardManifest, type Landmark, type Shot, type Snapshot, type TypeRead } from './board-match.ts';
+import { boardsToRun, compareBoard, compareSides, type BoardManifest, type Landmark, type Shot, type Snapshot, type TypeRead } from './board-match.ts';
 
 const BARLOW: TypeRead = { family: 'Barlow Condensed', size: 18, weight: 500, color: 'rgb(228, 222, 247)', letterSpacing: 0.4 };
 const shot = (id: string, box: Shot['box'], type: TypeRead | null = BARLOW): Shot => (type ? { id, found: true, box, type } : { id, found: true, box });
@@ -272,5 +272,38 @@ describe('compareBoard: the color syntaxes a browser or a board may hand back', 
   test('transparent is a translucent color, not an unreadable one', () => {
     expect(colorOf('transparent', 'transparent')[0]).toMatch(/translucent/);
     expect(colored('transparent').shots).toHaveLength(4);
+  });
+});
+
+/*
+ * A board that draws two screens at once (the Cards board's hand sheet and its play form) has a
+ * further build side in `also`, compared on its own. The side loop is `compareSides`: each side is
+ * read with its own landmarks and report folder, and a side's finding is led by the side's name.
+ */
+describe('compareSides: the further build sides of a board', () => {
+  const sided: BoardManifest = {
+    ...manifest(lm('sheet')),
+    board: '05-cards',
+    also: [{ name: 'play form', build: { moment: '05-cards' }, landmarks: [lm('dialog')] }],
+  };
+  /* A fake reader: the sheet agrees with its board, the play form's dialog does not. */
+  const read = async (side: BoardManifest, folder: string, label: string | null) => {
+    const seen = side.landmarks.map((l) => l.id).join(',');
+    return seen === 'dialog' ? [`dialog: height is 40 in the build, 30 on the board (${folder}, ${label})`] : [];
+  };
+
+  test('a mismatch in a further side fails and is named with its side', async () => {
+    const r = await compareSides(sided, read);
+    expect(r).toEqual(['play form: dialog: height is 40 in the build, 30 on the board (05-cards-play form, play form)']);
+  });
+
+  test('every side is read, the board\'s own first with no label, each with its own landmarks', async () => {
+    const calls: string[] = [];
+    await compareSides(sided, async (side, folder, label) => { calls.push(`${folder}|${label}|${side.landmarks[0]!.id}|${side.also === undefined}`); return []; });
+    expect(calls).toEqual(['05-cards|null|sheet|false', '05-cards-play form|play form|dialog|true']);
+  });
+
+  test('a board with no further side is read once', async () => {
+    expect(await compareSides(manifest(lm('sheet')), async () => [])).toEqual([]);
   });
 });

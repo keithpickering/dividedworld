@@ -10,8 +10,11 @@
  * `Orb` is one orb on its own, for a page that shows the orbs apart from a wallet: the Orbs board's
  * anatomy and the cascade's frames, held still.
  *
+ * A wallet past its cap marks its last orb (`kb-orb-over`), which only the Phone board's layout draws: there
+ * the words "past the cap" would cost the docked HUD a line, so they are left to the name below (issue 48).
+ *
  * A screen reader hears the wallet's name (fill.ts's walletName), always the wallet as it now is,
- * never a frame of the animation.
+ * never a frame of the animation; a page that previews a spend names the row itself (`label`).
  */
 import { useLayoutEffect, useState, type CSSProperties } from 'react';
 import { motionReduced } from '../appearance.ts';
@@ -30,6 +33,8 @@ export interface OrbsProps {
   readonly cascadeFrom?: number | null;
   /** `false` where the page around the row says the figures itself (the Orbs board's states). */
   readonly figures?: boolean;
+  /** The row's name where the page says more than the wallet as it stands (the Vending Machine's "buying Whoops! leaves 3.62"); the wallet's own name by default. */
+  readonly label?: string;
 }
 
 /** One orb: its fill, its place in the row (0 to 5, for its gradient), and a still frame of the cascade's beat. */
@@ -75,7 +80,7 @@ export function Orb({ fill, place, beat }: OrbProps) {
   );
 }
 
-export function Orbs({ settled, pending, cap, cascadeFrom = null, figures = true }: OrbsProps) {
+export function Orbs({ settled, pending, cap, cascadeFrom = null, figures = true, label }: OrbsProps) {
   /* The first frame of a cascade is the wallet it starts from, set before paint, so the end never flashes first. */
   const [shown, setShown] = useState(() => (cascadeFrom !== null && !motionReduced() ? cascadeFrom : settled));
   const [flash, setFlash] = useState<number | null>(null);
@@ -98,10 +103,11 @@ export function Orbs({ settled, pending, cap, cascadeFrom = null, figures = true
   const { orbs, overflow } = orbFills(shown, pending, cap);
   return (
     <span className="kb-orbs">
-      <span className="kb-orbs-row" role="img" aria-label={walletName(settled, pending, cap)}>
+      <span className="kb-orbs-row" role="img" aria-label={label ?? walletName(settled, pending, cap)}>
         {orbs.map((o, i) => (
           <span key={i} className={`kb-orb${o.solid === 1 ? ' kb-orb--full' : ''}${flash === i ? ' kb-orb--flash' : ''}`} style={orbStyle(o, i)}>
             {orbParts}
+            {overflow > 0 && i === orbs.length - 1 && <span className="kb-orb-over" aria-hidden="true" />}
           </span>
         ))}
       </span>

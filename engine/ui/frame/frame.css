@@ -1,8 +1,11 @@
 /*
  * The frame: the banner, the links, and the Game HUD docked at the bottom. The banner is the 2003
  * board's, as the Main board draws it: the name on a row, the links on a row of their own under it,
- * each ruled off, and the page the window's width less a 2% gutter each side. On a phone the links
- * fold behind Boards, a 44px control, as the Phone board draws it.
+ * each ruled off, and the page the window's width less a 2% gutter each side. Past `--kb-board-max`
+ * (960px, the owner's word: engine/ui/tokens.css) the three stand in one column of that width,
+ * centered, rules and all, so the board does not stretch into a table too wide to read; the HUD below
+ * is the glass's and spans the window. On a phone the links fold behind Boards, a 44px control, as
+ * the Phone board draws it.
  */
 .kb-frame {
   --kb-hud-height: 3.4em;
@@ -14,7 +17,14 @@
   align-items: baseline;
   gap: 0.4em 1.2em;
   border-bottom: 1px solid var(--kb-rule);
-  padding: 12px 2%;
+  padding: 12px 0;
+}
+
+.kb-banner,
+.kb-nav {
+  box-sizing: border-box;
+  width: min(96%, var(--kb-board-max));
+  margin-inline: auto;
 }
 
 .kb-logo {
@@ -26,7 +36,7 @@
 }
 
 .kb-nav {
-  padding: 5px 2%;
+  padding: 5px 0;
   border-bottom: 1px solid var(--kb-rule);
   font-size: var(--kb-size-small);
 }
@@ -50,12 +60,12 @@
   margin-left: auto;
 }
 
-/* The page clears the HUD at its real height, and spans the window less the board's 2% gutters. */
+/* The page clears the HUD at its real height, and spans the window less the board's 2% gutters, up to the board's column. */
 .kb-frame > .kb-page {
-  width: auto;
+  width: min(96%, var(--kb-board-max));
   max-width: none;
-  padding-left: 2%;
-  padding-right: 2%;
+  padding-left: 0;
+  padding-right: 0;
   padding-bottom: calc(var(--kb-hud-measured, 9em) + 1.5em);
 }
 
@@ -520,11 +530,140 @@
 }
 
 /*
- * The hand: the `hand` smoke, a sheet of its own drawn above the HUD (the Phone board's: 364px
- * under a ruled seam, its close a 48px icon at the top right). Its heading and its cards are the
- * cards part's (the glass build plan, Part 3), which fills the sheet the board draws.
+ * The hand (engine/ui/cards/Hand.tsx), one region that is two things by the board's layout.
+ *
+ * On the Main board's layout it is the cards alone, fanned through the HUD's seam over the hand
+ * button (the Main board draws them at -11, -1 and 10 degrees, 150 by 225 each): the region is the
+ * HUD's own box, on the HUD's own grid, so the cards stand over the hand button wherever the
+ * button stands, and it takes no click but the cards'. Its sheet parts (the smoke, the heading
+ * and Close, the line, the Vending Machine link) are the Phone board's and are not drawn there;
+ * the cards are reached by Tab and the hand closes with Esc, and the hand button.
+ *
+ * On the Phone board's layout it is the board's sheet: the `hand` smoke, 364px under a ruled seam
+ * above the HUD, its close a 48px icon at the top right, a heading with the count, the cards in a
+ * row, one line saying what the card in view does and the Vending Machine link. Its type is the
+ * phone's, so every rule for it is under the Phone board's mark.
  */
-.kb-hand-drawer {
+.kb-hand-drawer[hidden] {
+  display: none;
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-drawer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 31;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 420px minmax(0, 44px) 452px minmax(0, 28px) 426px;
+  max-width: 1440px;
+  /* The HUD's own height as the window draws it (Hud.tsx measures it), in the HUD's own px, so the fan is placed from the HUD's top at any text size. */
+  height: max(13.25rem, calc(var(--kb-hud-measured, 0px) / var(--kb-board-scale, 1)));
+  margin: 0 auto;
+  padding: 0 34px 0 36px;
+  zoom: var(--kb-board-scale, 1);
+  background: transparent;
+  pointer-events: none;
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-drawer > .kb-smoke,
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-bar,
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-says,
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-vending {
+  display: none;
+}
+
+/* The hand button's box in the bar, which the fan stands over: 170 by 52, at the right end of the HUD's last column. */
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-cards {
+  grid-column: 5;
+  position: relative;
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-card {
+  position: absolute;
+  left: calc(256px + var(--kb-fan-x));
+  top: calc(8.875rem + var(--kb-fan-y));
+  z-index: var(--kb-fan-z);
+  transform: rotate(var(--kb-fan-turn));
+  pointer-events: auto;
+}
+
+/*
+ * The cards stand over the HUD's clock, as the board draws them. A larger text size widens the clock
+ * under them (its label and time grow with the text and reach the cards' left edge), and a card over
+ * a player's words is a card over words they cannot read, so at any size but the board's own the fan
+ * stands clear above the HUD: 7rem less 5px higher, which puts its foot at the clock's top.
+ */
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'], [data-kb-layout='phone'])) .kb-hand-card {
+  top: calc(8.875rem + var(--kb-fan-y) - 7rem + 5px);
+}
+
+/* The armed card stands 48px higher than the rest, as the Main board draws it. */
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-card[data-armed] {
+  margin-top: -48px;
+}
+
+/*
+ * The armed card's floating tag, "Armed · pick a post", up and to the left of its corner as the Main
+ * board draws it: a skewed plate on the ground with the salty border and glow, its words upright.
+ * It is for the eye; the card's name says the same, and the status in the Frame says it aloud.
+ */
+.kb-hand-armed {
+  position: absolute;
+  z-index: 9;
+  left: -56px;
+  top: -38px;
+  padding: 2px 12px;
+  background: var(--kb-glass-ground);
+  border: 1px solid var(--kb-glass-salty);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-glass-salty) 60%, transparent);
+  font-size: var(--kb-glass-size-label);
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  line-height: normal;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--kb-glass-salty-text);
+  pointer-events: none;
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-hand-empty {
+  position: absolute;
+  right: 34px;
+  bottom: calc(13.25rem + 12px);
+  box-sizing: border-box;
+  width: 360px;
+  margin: 0;
+  padding: 12px 16px;
+  line-height: 1.5;
+  pointer-events: auto;
+  background: var(--kb-glass-sheet);
+  border: 1px solid var(--kb-glass-neon);
+}
+
+/* How many of a kind the hand holds, over the last face drawn of it. */
+.kb-hand-times {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 0 8px;
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1.3;
+  background: var(--kb-glass-ink-salty);
+  color: var(--kb-glass-salty-text);
+  pointer-events: none;
+}
+
+/* ---- the Phone board's sheet ---- */
+
+:where(:root[data-kb-layout='phone']) .kb-hand-drawer {
   position: fixed;
   left: 0;
   right: 0;
@@ -538,16 +677,30 @@
   box-shadow: 0 -2px 18px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
 }
 
-.kb-hand-drawer[hidden] {
-  display: none;
-}
-
-.kb-hand-bar {
+:where(:root[data-kb-layout='phone']) .kb-hand-bar {
   position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-head {
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1;
+  letter-spacing: 0.5px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-head-count {
+  /* The count stands in its own calm, a few px wider than its ink, which the heading's box does not reach. */
+  display: inline-block;
+  margin: -4px;
+  padding: 4px;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-phone-display);
+  font-weight: 800;
+  color: var(--kb-glass-salty-text);
 }
 
 .kb-hand-close {
@@ -571,25 +724,71 @@
   stroke-linecap: round;
 }
 
-.kb-hand-cards {
+:where(:root[data-kb-layout='phone']) .kb-hand-cards {
   position: relative;
   display: flex;
-  flex-wrap: wrap;
+  justify-content: center;
   gap: 12px;
   list-style: none;
   margin: 0;
   padding: 14px 16px 0;
 }
 
-.kb-hand-card {
-  padding: 6px 14px;
-  background: var(--kb-glass-card);
-  border: 1.5px solid var(--kb-glass-neon);
+:where(:root[data-kb-layout='phone']) .kb-hand-card {
+  position: relative;
 }
 
-.kb-hand-empty {
+/* The armed card stands 10px higher in the row. */
+:where(:root[data-kb-layout='phone']) .kb-hand-card[data-armed] {
+  top: -10px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-armed {
+  left: 8px;
+  top: -14px;
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-times {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-empty {
   position: relative;
   margin: 14px 16px 0;
+  font-size: var(--kb-glass-size-phone-body);
+  line-height: 1.5;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-says {
+  position: relative;
+  margin: 12px 16px 0;
+  font-size: var(--kb-glass-size-phone-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-says b {
+  font-weight: 800;
+  color: var(--kb-glass-salty-text);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hand-vending {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  margin: 12px 16px 0;
+  background: var(--kb-glass-panel-strong);
+  border: 1px solid var(--kb-glass-ready);
+  color: var(--kb-glass-ready);
+  text-decoration: none;
+  font-size: var(--kb-glass-size-phone-body);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
 
 /* ---- below the switch: the Phone board's HUD ---- */
@@ -597,10 +796,12 @@
 /*
  * The Phone board's glass is 124px, and so is this one while what it holds fits. It grows past
  * that rather than cut its last row at the window's foot: a wallet past its cap, which the board
- * does not draw, or text spaced wider by the reader, needs more.
+ * does not draw, or text spaced wider by the reader, needs more. Its border is inside those 124px
+ * (border-box), as the board draws it. A wallet past its cap is a mark on the last orb here, not
+ * words (issue 48), so it no longer grows the glass.
  */
 :where(:root[data-kb-layout='phone']) .kb-hud-glass {
-  box-sizing: content-box;
+  box-sizing: border-box;
   min-height: 124px;
   border-top: 1.5px solid var(--kb-glass-pale);
   box-shadow: 0 -2px 18px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
@@ -773,15 +974,16 @@
 /*
  * The Phone board's orbs are 30px; the row under the mask picker has 41px of the glass's 124. What
  * the row holds wraps rather than runs past the window's edge: a wallet past its cap, which the
- * board does not draw, puts its figure on a line of its own at the right, whole, and the glass
- * grows to hold it. Each figure keeps its words on one line.
+ * board does not draw, is shown by a mark on the last orb and not in words (issue 48), so the
+ * glass keeps its 124px; the words stay in the orbs' name. The estimate keeps its words on one line.
  */
 :where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs {
   --kb-orb-size: 30px;
   --kb-orb-gap: 6px;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  /* Tight across, so the orbs, the figure and the estimate keep to one row at 360px and the glass to its 124px. */
+  gap: 4px 2px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-row {
@@ -800,8 +1002,7 @@
   display: none;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-pending,
-:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-over {
+:where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-pending {
   margin-left: 0;
   padding: 0;
   font-size: var(--kb-glass-size-phone-body);
@@ -810,7 +1011,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-orbs .kb-orbs-over {
-  margin-left: auto;
+  display: none;
 }
 
 @media (max-width: 40em) {
@@ -858,4 +1059,22 @@
 /* Focus moves into the hand as it opens; the sheet itself draws no ring for it, its buttons do. */
 .kb-hand-drawer:focus {
   outline: none;
+}
+
+/*
+ * An armed card is the Phone board's hand button's words (the owner's answer on #80): "Armed · Whoops!"
+ * in the phone's smallest size, wrapping to two lines in the button's height so a longer card name
+ * never widens it into the mask picker beside it.
+ */
+:where(:root[data-kb-layout='phone']) .kb-hud-hand[data-kb-armed] {
+  max-width: 9rem;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-hand > span.kb-hud-hand-armed:first-child {
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-phone-small);
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
 }

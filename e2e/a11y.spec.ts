@@ -37,7 +37,7 @@ export async function pageViolations(page: Page): Promise<string[]> {
 test.use({ bypassCSP: true });
 
 /* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
-const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/rankings']);
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/rankings', '/vending']);
 const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.has(path)
   ? page.getByRole('navigation', { name: 'Menu' })
   : page.getByRole('region', { name: 'Game HUD' }));
@@ -82,7 +82,7 @@ const ABOVE_SWITCH = SWITCH + 8;
 const BELOW_SWITCH = SWITCH - 8;
 
 const PAGES: readonly [string, string][] = [
-  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['standings', '/standings'], ['rankings', '/rankings'], ['settings', '/settings'], ['invites', '/invites'],
+  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['standings', '/standings'], ['rankings', '/rankings'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'],
 ];
 
 const STORIES = boardStoryIds();
@@ -145,8 +145,33 @@ for (const scheme of ['light', 'dark'] as const) {
         });
         await expect(page.locator('.kb-hud-orbs')).toHaveCount(0);
         await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbDemo.me); });
-        await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d past the cap$/);
+        /* The Main board's layout draws the words as board 04 does; the Phone board's draws a mark on the last orb instead (issue 48). */
+        if (width >= ABOVE_SWITCH) await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d past the cap$/);
+        else {
+          await expect(page.locator('.kb-hud-orbs .kb-orb:last-child .kb-orb-over')).toBeVisible();
+          await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toBeHidden();
+          /* The demo's estimate lies wholly past a full wallet, so the name carries that estimate as its amount. */
+          const name = await page.locator('.kb-hud-orbs [role="img"]').getAttribute('aria-label');
+          const pending = /, (\d\.\d\d) pending until the next settlement/.exec(name ?? '')?.[1];
+          expect(pending).toBeDefined();
+          expect(name).toMatch(new RegExp(`, ${pending!.replace('.', '\\.')} past the cap$`));
+          /* A mark a sighted player can tell from the orb under it: a disc in the over-cap color, ringed and crossed in the ground's. */
+          const mark = await page.locator('.kb-hud-orbs .kb-orb:last-child .kb-orb-over').evaluate((el) => {
+            const s = getComputedStyle(el);
+            const root = getComputedStyle(document.documentElement);
+            const probe = (v: string) => { const p = document.createElement('i'); p.style.color = v; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; };
+            return { fill: s.backgroundColor, ring: s.borderTopColor, over: probe(root.getPropertyValue('--kb-glass-over')), ground: probe(root.getPropertyValue('--kb-glass-ground')) };
+          });
+          expect(mark.fill).toBe(mark.over);
+          expect(mark.ring).toBe(mark.ground);
+          /* Under forced colors the mark keeps its cross, in the system's colors, so it still reads as more than an empty orb. */
+          await page.emulateMedia({ forcedColors: 'active' });
+          expect(await page.locator('.kb-hud-orbs .kb-orb:last-child .kb-orb-over').evaluate((el) => getComputedStyle(el).backgroundImage)).toMatch(/gradient.*gradient/);
+          await page.emulateMedia({ forcedColors: 'none' });
+        }
         expect(await hudCut(page)).toEqual([]);
+        /* The docked HUD keeps its 124px on a phone with an over-cap wallet: the words are not drawn there. */
+        if (width < ABOVE_SWITCH) expect(Math.abs((await page.locator('.kb-hud-glass').boundingBox())!.height - 124)).toBeLessThanOrEqual(0.5);
         expect(await pageViolations(page)).toEqual([]);
       });
 
@@ -157,6 +182,27 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.locator('#post-1').getByRole('button', { name: 'Spin thread' }).click();
         await page.locator('#post-3').getByRole('button', { name: 'React' }).click();
         await expect(page.getByRole('dialog', { name: /^React to / })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+      });
+
+      test('the open hand, its postcards named by what they show, has none', async ({ page }) => {
+        await page.goto('/b/general');
+        await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
+        await expect(page.locator('.kb-hand-card button').first()).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+      });
+
+      test('the play form, reached through an armed card and its button on a post, has none', async ({ page }) => {
+        await page.goto('/b/general');
+        await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click();
+        await page.getByRole('button', { name: /^Whoops!, Salty\b/ }).first().click();
+        await expect(page.getByRole('button', { name: 'Play Whoops! here' }).first()).toBeVisible();
+        await page.getByRole('button', { name: 'Play Whoops! here' }).first().click();
+        await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
       });
 
@@ -200,6 +246,16 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.getByRole('button', { name: 'Change how Waiting Wanda debuts' }).click();
         await expect(page.getByRole('dialog', { name: 'How Waiting Wanda debuts' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
+      });
+
+      test('the Vending Machine\'s card info has none', async ({ page }) => {
+        await page.goto('/vending');
+        await page.getByRole('button', { name: 'About Whoops!' }).click();
+        await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
+        expect(await pageViolations(page)).toEqual([]);
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'About Whoops!' })).toBeFocused();
       });
 
       test('signed out: sign-in and register have none', async ({ page }) => {

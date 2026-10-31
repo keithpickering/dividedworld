@@ -18,20 +18,14 @@
  * Where the fixture is less than the real thing, it says so:
  *  - Posts and reactions need accounts to make them: four more players (Ringside 1 to 4) hold the
  *    crowd's reactions, which one player cannot (a player reacts once to a kind on a post).
- *  - Card plays against the boards. The boards number the posts #41 to #46 with no gap and draw a card
- *    as a frame on its post. The engine gives a card play a number in its thread, as the server does,
- *    and `engine/ui/thread/Post.tsx` draws each one as its own line ("X played Whoops! on post #41").
- *    Written between the posts, the plays would renumber them, so they are written after the moment's
- *    posts, dated as they happened: on page 3 the six posts come first and the lines follow at #47 and
- *    up, out of time order. The owner chose the boards' way (the cards plan's amendment of
- *    2026-10-30): cards Task 3 gives a play no number and draws it as its post's tag, and then
- *    writes the plays here in time order. Until then boards.test.ts pins the fact.
+ *  - Card plays are written in time order between the posts, as they happened. A play takes no number
+ *    in its thread (supabase/migrations/0035_card_takes_no_seq.sql), so the posts are #41 to #46 with
+ *    no gap whenever it falls, and `engine/ui/cards/` draws each as the tag on its post.
  *  - The marker the production bundle is checked for is the fake's (`FAKE_BACKEND_MARKER`); the
  *    fixture carries no marker of its own.
  *  - The Whoops! on #41 is a card Act by Mrs. Hooligan with no spend in Pipewrench's wallet, which the
  *    timeline does not show (the player owns both); the plan seeds it that way.
- *  - Stick Around's release sentence is a card's effect state, not part of its Act; the cards part
- *    seeds it when it draws the Hold board.
+ *  - Stick Around's release sentence is the play's own setting (its `config`), seeded on #44's play.
  */
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
@@ -149,14 +143,17 @@ const FILLER = [
 /*
  * The money, in hundredths of an orb, derived from the instance's own prices so the timeline reads as
  * arithmetic (glass plan, section 2.1): the wallet after the Oct 29 settlement, less the Whoops! bought
- * at 20:10, less the card and the long post at the 21:52 play, plus what the Oct 30 settlement scored.
+ * at 20:10, less the long post's surcharge at the 21:52 play (the card was paid for at the machine, #78), plus what the Oct 30 settlement scored.
  */
 const economy = instance.settings.economy;
 const WHOOPS = economy['whoops.price']!;
+/** The ink of the board's Whoops!: magenta, the Cards board's first swatch, and the seed the server chose for the play. */
+const WHOOPS_INK = { color: '#ff2bd6', seed: 20261029 };
 const LONG_POST_COST = economy['whoops.perLength']! * Math.floor(LONG_POST_LENGTH / economy['whoops.lengthStep']!);
 const WALLET_START = 562;
 const WALLET_BOUGHT = WALLET_START - WHOOPS;
-const WALLET_PLAYED = WALLET_BOUGHT - WHOOPS - LONG_POST_COST;
+/* A card is paid for once, at the machine (#78): playing it costs only what the long post adds. */
+const WALLET_PLAYED = WALLET_BOUGHT - LONG_POST_COST;
 /** The settlement's scoring as a Heel: drew heat, stole thunder (the play on #46), a polite shrug. */
 const SCORED = [['heel.drewHeat', 20], ['heel.stoleThunder', 20], ['heel.shrugged', -5]] as const;
 const WALLET_SETTLED = WALLET_PLAYED + SCORED.reduce((sum, [, amount]) => sum + amount, 0);
@@ -200,15 +197,9 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
 
   const steps: Step[] = [];
   const when = (at: number, run: (at: number) => void) => steps.push({ at, run });
-  /*
-   * A card play is an Act that takes a number in its thread, as the server's does, so one written
-   * between two posts would move every post after it (the boards number #41 to #46 without a gap).
-   * The plays are written after the moment's posts, dated as they happened: a post keeps its number
-   * at every moment, and a card's own number is the thread's next.
-   */
-  const plays: Step[] = [];
-  const play = (at: number, character: string, target: number, card: string, message: string) =>
-    plays.push({ at, run: (when) => { seed.card(character, posts[target]!, card, { message, at: when }); } });
+  /* A card play takes no number in its thread, so it is written where it happened, between the posts. */
+  const play = (at: number, character: string, target: number, card: string, message: string, config?: Readonly<Record<string, unknown>>) =>
+    when(at, (when_) => { seed.card(character, posts[target]!, card, { message, at: when_, ...(card === 'whoops' ? { layer: 1, config: WHOOPS_INK } : config === undefined ? {} : { config }) }); });
   const post = (n: keyof typeof POSTED, character: string, body: string, quote?: number) =>
     when(POSTED[n], (at) => { posts[n] = seed.post(opener.thread, character, body, { at, ...(quote === undefined ? {} : { quote: posts[quote]! }) }); });
 
@@ -229,7 +220,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
     'Undo goes back 200 steps instead of 20.\nThe tile picker remembers your last three tilesets.\nWater no longer flows uphill when the level is resized.\nCustom music loops at the point you set, not at the start of the file.\nFixed the crash when an enemy was placed inside another enemy.\nFixed a second, different crash when that happened in water.',
     'Every one of these was requested in this forum. You\'re welcome. Please read it this time.',
   ].join('\n\n'));
-  play(STICK_AROUND_AT, gloomba, 44, 'stick-around', 'required reading');
+  play(STICK_AROUND_AT, gloomba, 44, 'stick-around', 'required reading', { sentence: 'I have read every word of Spritey\'s changelog and I feel changed.' });
   post(45, gloomba, 'I read the whole changelog and I have a question about the water. Mostly I have a question about who keeps splatting these.');
   post(46, gloomba, LONG_POST);
   play(PLAYED_AT, pipewrench, 46, 'whoops', 'you dropped your ink');
@@ -294,7 +285,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   });
 
   // Stable by time: steps given in the order a day happened stay in it where two share a minute.
-  for (const step of [...steps.filter((s) => s.at <= now).sort((a, b) => a.at - b.at), ...plays.filter((s) => s.at <= now).sort((a, b) => a.at - b.at)]) step.run(step.at);
+  for (const step of steps.filter((s) => s.at <= now).sort((a, b) => a.at - b.at)) step.run(step.at);
 
   fake.signInAs({ player, rival, reader }[MOMENTS[moment].account]);
   /*

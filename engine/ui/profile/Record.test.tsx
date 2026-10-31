@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
+import { pageOf, threadHref } from '../thread/pages.ts';
 import { RecordScreen } from './Record.tsx';
 
 const DAY = 86_400_000;
@@ -36,6 +37,20 @@ describe('the full public record', () => {
     expect(dataRows()[1]).toHaveTextContent('Revealed: Face');
     expect(dataRows()[2]).toHaveTextContent('Played Whoops!');
     expect(screen.getByText(/Page 1 of 3/u)).toBeInTheDocument();
+  });
+
+  test('a "Played" row links to the post the play landed on, not the thread\'s top', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    /* Post #30 is on page 2 at twenty a page, so a link to the thread's top cannot pass for its permalink. */
+    const target = fake.seed.post(w.thread, w.spritey, 'the target', { at: T0 + 5 * DAY });
+    const seq = (await fake.actsById([target]))[0]!.seq!;
+    fake.seed.card(w.spritey, target, 'whoops', { at: T0 + 6 * DAY });
+    open(fake, w.spritey, '?kind=card');
+    const rows = await waitFor(() => { const r = dataRows(); expect(r).toHaveLength(2); return r; });
+    const hrefs = rows.map((r) => within(r).getByRole('link').getAttribute('href'));
+    expect(hrefs[0]).toBe(threadHref(w.thread, pageOf(seq, 20), seq));
+    expect(hrefs[1]).toBe(threadHref(w.thread, 1, 1));
   });
 
   test('"All" pages the merge exactly: every row once, in order, across the pages', async () => {

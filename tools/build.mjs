@@ -493,6 +493,15 @@ async function main(argv) {
   return code;
 }
 
+/** Exits with `code`, once everything written to the two streams has left this process: a failed step's whole
+ * output goes to stderr in one write, a pipe (CI's) takes 64 KB of it before the write waits, and `process.exit` right
+ * after drops the rest, which was the end of the log and the summary that names what failed. */
+export function exitAfterFlush(code) {
+  /* An empty write's callback runs after every earlier write to that stream has been taken. */
+  const drained = [process.stdout, process.stderr].map((out) => new Promise((resolve) => out.write('', resolve)));
+  Promise.all(drained).then(() => process.exit(code));
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
-  process.exit(await main(process.argv.slice(2)));
+  exitAfterFlush(await main(process.argv.slice(2)));
 }

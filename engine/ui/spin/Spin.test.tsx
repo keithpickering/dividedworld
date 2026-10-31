@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createPortal } from 'react-dom';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Swapper, openThread, threadWorld } from '../composer/support.tsx';
 import { useLocation } from '../router.tsx';
@@ -21,7 +22,8 @@ describe('the Spin thread link', () => {
     w.fake.seed.card(w.pipe, w.ids[1]!, 'whoops', { message: 'oops' });
     w.fake.seed.reveal(w.pipe, w.thread);
     openThread(w);
-    for (const name of [/^Post 1 /u, /^Post 2 /u, /^Post 4 /u, /^Post 5 /u]) {
+    /* A card play is no Act of the thread's (it is a tag on its post), so the Acts are the posts and the reveal. */
+    for (const name of [/^Post 1 /u, /^Post 2 /u, /^Post 3 /u, /^Post 4 /u]) {
       expect(spinLink(await screen.findByRole('article', { name }))).toBeInTheDocument();
     }
     const said = w.fake.seed.thread('the-system', null, 'The tally', 'Settled.');
@@ -146,7 +148,7 @@ describe('the ORIGIN box', () => {
     expect(box).not.toHaveTextContent('post 2,');
   });
 
-  test('lists the card plays on the Act as lines, and one that is played later joins them', async () => {
+  test('lists the card plays on the Act as tags, and one that is played later joins them', async () => {
     const w = threadWorld(3);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
     const spun = await spinFrom(w, w.ids[1]!);
@@ -155,15 +157,76 @@ describe('the ORIGIN box', () => {
     w.fake.subscribeThread = (t, l) => { if (t === w.thread) listeners.push(l); return real(t, l); };
     openSpun(w, spun);
     const box = await origin();
-    await waitFor(() => expect(box).toHaveTextContent('Spritey played Whoops! on post #2: “oops”'));
+    await waitFor(() => expect(box).toHaveTextContent('Spritey played Whoops! on this post: “oops”'));
+    /* The tag links to the post it is on, as the box's own link does. */
+    expect(within(box).getByRole('link', { name: 'Spritey played Whoops! on this post: “oops”' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
     const [original] = await w.fake.acts(w.thread, 2, 2);
-    const played: Act = { ...original!, id: '99999999-0000-4000-8000-000000000001', kind: 'card', character: w.spritey, targetActId: w.ids[1]!, seq: 4, payload: { card: 'whoops', message: 'again' }, currentPayload: { card: 'whoops', message: 'again' } };
+    const played: Act = { ...original!, id: '99999999-0000-4000-8000-000000000001', kind: 'card', character: w.spritey, targetActId: w.ids[1]!, seq: null, payload: { card: 'whoops', layer: 2, message: 'again' }, currentPayload: { card: 'whoops', layer: 2, message: 'again' } };
     await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
     await act(async () => { for (const l of listeners) l.onAct?.(played); });
-    await waitFor(() => expect(box).toHaveTextContent('Spritey played Whoops! on post #2: “again”'));
+    await waitFor(() => expect(box).toHaveTextContent('Spritey played Whoops! on this post: “again”'));
     /* A card played on some other Act is no effect of this one. */
     await act(async () => { for (const l of listeners) l.onAct?.({ ...played, id: '99999999-0000-4000-8000-000000000002', targetActId: w.ids[0]!, payload: { card: 'whoops', message: 'elsewhere' } }); });
     expect(box).not.toHaveTextContent('elsewhere');
+  });
+
+  test('draws the origin\'s card effects around its words, as the thread does', async () => {
+    const w = threadWorld(3);
+    const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    renderIn(w.fake, <ThreadScreen thread={spun} />, {
+      path: `/t/${spun}`,
+      cards: [{
+        key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x',
+        Effect: ({ plays, reader, place, children }) => <div data-testid="fx" data-plays={plays.map((p) => p.id).join(',')} data-author={String(reader.author)} data-place={place}>{children}</div>,
+      }],
+    });
+    const wrapped = await within(await origin()).findByTestId('fx');
+    expect(wrapped).toHaveTextContent('post 2');
+    expect(wrapped.dataset.plays).toBe(played);
+    /* The reader's own character wrote post 2, and the box says it is drawn as an origin. */
+    expect([wrapped.dataset.author, wrapped.dataset.place]).toEqual(['true', 'origin']);
+  });
+
+  test('draws the effect\'s plate beside the ORIGIN box, attached to it, and not inside the 2003 box', async () => {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    renderIn(w.fake, <ThreadScreen thread={spun} />, {
+      path: `/t/${spun}`,
+      cards: [{
+        key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x',
+        Effect: ({ slot, children }) => <>{children}{slot && createPortal(<div data-testid="plate">a plate</div>, slot)}</>,
+      }],
+    });
+    const box = await origin();
+    const plate = await screen.findByTestId('plate');
+    /* The owner's principle: an effect's words and controls are one glass element outside the 2003 chrome. */
+    expect(box).not.toContainElement(plate);
+    /* Attached to the box: the slot is the box's next sibling. */
+    expect(box.nextElementSibling).toContainElement(plate);
+    expect(box.nextElementSibling).toHaveClass('kb-act-slot');
+  });
+
+  test('the spin\'s own post holds a slot for an effect, as a post does', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    openSpun(w, spun);
+    await origin();
+    const first = await screen.findByRole('article', { name: /^Post 1 /u });
+    expect(first).toHaveAttribute('data-kb-kind', 'spin');
+    /* The post's own slot is a child of the article, after its words and links; the ORIGIN box's is inside the body. */
+    expect(first.querySelector(':scope > .kb-act-slot')).not.toBeNull();
+  });
+
+  test('a card with no CardUi draws the origin\'s words untouched, with its tag', async () => {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    openSpun(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(box).toHaveTextContent('Spritey played Whoops! on this post'));
+    expect(box).toHaveTextContent('post 2');
   });
 
   test('a spin of a card Act or of The System\'s tally shows that Act in the box', async () => {
@@ -173,7 +236,7 @@ describe('the ORIGIN box', () => {
     const fromCard = await spinFrom(w, card, 'About that card');
     const fromSystem = await spinFrom(w, said.act, 'About the tally');
     openSpun(w, fromCard);
-    await waitFor(async () => expect(await origin()).toHaveTextContent('Spritey played Whoops! on post #2'));
+    await waitFor(async () => expect(await origin()).toHaveTextContent('Spritey played Whoops! on this post: “oops”'));
     document.body.innerHTML = '';
     openSpun(w, fromSystem);
     expect(await within(await origin()).findByText('Settled in your favor.')).toBeInTheDocument();
@@ -232,7 +295,7 @@ describe('the ORIGIN box', () => {
     const box = await origin();
     await waitFor(() => expect(box).toHaveTextContent('More than 20 cards were played'));
     expect(asked).toHaveBeenCalledWith(w.ids[1], 21);
-    expect(box.querySelectorAll('.kb-card-line, [data-kb-kind="card"]').length).toBeLessThanOrEqual(20);
+    expect(box.querySelectorAll('[data-kb-play]').length).toBeLessThanOrEqual(20);
   });
 });
 

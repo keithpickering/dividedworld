@@ -1,0 +1,214 @@
+/*
+ * A postcard's face (Postcard.tsx), at the four sizes the boards draw it: the Vending Machine's slot
+ * (92 by 128), the HUD's fan (150 by 225, the glass plan's section 5), the Phone board's sheet
+ * (104 by 156) and the hand's sheet (276 by 480). The card's own color and the ink set on it arrive
+ * as --kb-card-color and --kb-card-ink (the instance's art, `CardArt`); every other color is a
+ * glass token. Positions are the boards' own, in px, the way the boards place a card's parts; sizes
+ * of type are rem or the glass's size tokens, and the Phone board's, which are smaller than the Main
+ * board's floor, are under its layout's mark (engine/ui/glass/board.test.tsx reads this file).
+ *
+ * The armed card pulses (the board's `armed`) and stops under reduced motion with its brightest
+ * ring shown, as every motion here does.
+ */
+.kb-postcard {
+  --kb-card-color: var(--kb-glass-neon);
+  --kb-card-ink: var(--kb-glass-ink-neon);
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  color: var(--kb-glass-text-hi);
+  text-align: left;
+  font: inherit;
+  background: var(--kb-glass-card);
+  box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 14px color-mix(in srgb, var(--kb-card-color) 50%, transparent);
+}
+
+button.kb-postcard {
+  cursor: pointer;
+}
+
+/* A card is a drawing of one size: its words never outgrow it, whatever the text size (cqw is a share of the card's own width). */
+.kb-postcard {
+  container-type: inline-size;
+}
+
+/* The picture's glow, and the picture over it. */
+.kb-postcard-glow {
+  position: absolute;
+  inset: 0 0 auto 0;
+  background: radial-gradient(circle at 50% 55%, color-mix(in srgb, var(--kb-card-color) 45%, transparent), transparent 70%);
+}
+
+.kb-postcard-art {
+  position: absolute;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The state tag, skewed, in the card's color with its ink. */
+.kb-postcard-tag {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 1px 8px;
+  transform: skewX(var(--kb-glass-skew-tag));
+  background: var(--kb-card-color);
+  color: var(--kb-card-ink);
+  font-family: var(--kb-glass-font-body);
+  font-size: min(var(--kb-glass-size-label), 13.4cqw);
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 1px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.kb-postcard-name {
+  position: absolute;
+  font-family: var(--kb-glass-font-display);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--kb-card-color) 75%, transparent);
+}
+
+.kb-postcard-line {
+  position: absolute;
+  font-family: var(--kb-glass-font-body);
+  font-size: min(var(--kb-glass-size-body), 14cqw);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- the machine's slot ---- */
+.kb-postcard[data-size='slot'] {
+  width: 92px;
+  height: 128px;
+  border-radius: 6px;
+}
+
+.kb-postcard[data-size='slot'] .kb-postcard-glow { height: 84px; }
+.kb-postcard[data-size='slot'] .kb-postcard-art { left: 14px; top: 16px; width: 64px; height: 60px; }
+.kb-postcard[data-size='slot'] .kb-postcard-name { left: 6px; right: 4px; bottom: 6px; font-size: min(var(--kb-glass-size-display-xs), 21.7cqw); }
+
+/* ---- the HUD's fan ---- */
+.kb-postcard[data-size='fan'] {
+  width: 150px;
+  height: 225px;
+  border-radius: 9px;
+  box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 22px color-mix(in srgb, var(--kb-card-color) 55%, transparent), 0 18px 30px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+}
+
+.kb-postcard[data-size='fan'] .kb-postcard-glow { height: 150px; }
+.kb-postcard[data-size='fan'] .kb-postcard-art { left: 15px; top: 26px; width: 120px; height: 110px; }
+.kb-postcard[data-size='fan'] .kb-postcard-name { left: 10px; right: 10px; bottom: 66px; font-size: min(1.5rem, 16cqw); }
+.kb-postcard[data-size='fan'] .kb-postcard-line { left: 10px; right: 10px; bottom: 10px; }
+
+/* ---- the Phone board's sheet ---- */
+:where(:root[data-kb-layout='phone']) .kb-postcard[data-size='phone'] {
+  width: 104px;
+  height: 156px;
+  border-radius: 7px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-postcard[data-size='phone'] .kb-postcard-glow { height: 104px; }
+:where(:root[data-kb-layout='phone']) .kb-postcard[data-size='phone'] .kb-postcard-art { left: 12px; top: 20px; width: 80px; height: 74px; }
+:where(:root[data-kb-layout='phone']) .kb-postcard[data-size='phone'] .kb-postcard-tag { left: 6px; top: 6px; padding: 0 6px; font-size: min(var(--kb-glass-size-phone-small), 15.4cqw); }
+:where(:root[data-kb-layout='phone']) .kb-postcard[data-size='phone'] .kb-postcard-name { left: 7px; right: 6px; bottom: 8px; font-size: min(var(--kb-glass-size-phone-display), 19.2cqw); }
+
+/* ---- the hand's sheet ---- */
+.kb-postcard[data-size='sheet'] {
+  width: 276px;
+  height: 480px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 2px var(--kb-card-color), 0 0 30px color-mix(in srgb, var(--kb-card-color) 60%, transparent), 0 30px 50px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+}
+
+/* The card's inner rule, one step in. */
+.kb-postcard[data-size='sheet']::before {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  border: 1px solid color-mix(in srgb, var(--kb-card-color) 45%, transparent);
+  border-radius: 8px;
+}
+
+.kb-postcard[data-size='sheet'] .kb-postcard-glow { height: 250px; }
+.kb-postcard[data-size='sheet'] .kb-postcard-art { left: 18px; top: 44px; width: 240px; height: 200px; }
+.kb-postcard[data-size='sheet'] .kb-postcard-tag { left: 18px; top: 18px; padding: 1px 10px; letter-spacing: 1.5px; }
+.kb-postcard[data-size='sheet'] .kb-postcard-name { left: 20px; right: 20px; top: 246px; font-size: min(2.375rem, 13.8cqw); }
+.kb-postcard[data-size='sheet'] .kb-postcard-line { left: 20px; right: 20px; top: 292px; line-height: 1.5; font-size: min(var(--kb-glass-size-body), 7.6cqw); }
+
+.kb-postcard-price {
+  position: absolute;
+  right: 18px;
+  top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: min(1.375rem, 8cqw);
+  font-weight: 800;
+}
+
+/* The price's little orb, in the machine's gold. */
+.kb-postcard-orb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, var(--kb-glass-ready-text), var(--kb-glass-ready) 52%, var(--kb-glass-ground));
+}
+
+.kb-postcard-foot {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  height: 40px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-card-color) 45%, transparent);
+  color: var(--kb-glass-neon-text);
+  font-family: var(--kb-glass-font-body);
+  font-size: min(var(--kb-glass-size-label), 7.25cqw);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.kb-postcard[data-size='sheet'][data-kb-alignment='salty'] .kb-postcard-foot { color: var(--kb-glass-salty-text); }
+
+/* ---- armed ---- */
+.kb-postcard[data-armed] {
+  box-shadow: 0 0 0 2px var(--kb-card-color), 0 0 26px color-mix(in srgb, var(--kb-card-color) 75%, transparent), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+  animation: kb-postcard-armed 1.8s ease-in-out infinite;
+}
+
+@keyframes kb-postcard-armed {
+  50% { box-shadow: 0 0 0 2px var(--kb-glass-text-hi), 0 0 44px var(--kb-card-color), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-postcard[data-armed] { animation: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-postcard[data-armed] { animation: none; }
+
+/* Forced colors drop the ring and its glow, which are shadows: the armed card is ringed in the system's Highlight instead. */
+@media (forced-colors: active) {
+  .kb-postcard[data-armed]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 3px solid Highlight;
+    pointer-events: none;
+  }
+}

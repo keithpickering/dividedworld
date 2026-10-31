@@ -21,6 +21,7 @@ import { Page as GlassPage } from '../../engine/ui/glass/Page.tsx';
 import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
+import { Vending } from '../../engine/ui/vending/Vending.tsx';
 import { RankingsScreen } from '../../engine/ui/rankings/Rankings.tsx';
 import { StandingsScreen } from '../../engine/ui/standings/Standings.tsx';
 import { RouterProvider, useLocation, useNavigate } from '../../engine/ui/router.tsx';
@@ -37,6 +38,7 @@ const ROUTES: readonly Route[] = [
   { path: '/characters/edit', render: () => <ProfileEdit /> },
   { path: '/standings', render: () => <StandingsScreen /> },
   { path: '/rankings', render: () => <RankingsScreen /> },
+  { path: '/vending', render: () => <Vending /> },
   { path: '/c/:id', render: ({ id }) => <ProfileScreen id={id!} /> },
   { path: '/c/:id/record', render: ({ id }) => <RecordScreen id={id!} /> },
   { path: '/sign-in', render: () => <SignInScreen mode="sign-in" /> },
@@ -61,6 +63,7 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/sign-in': 'account',
   '/register': 'account',
   '/rankings': 'rankings',
+  '/vending': 'vending',
 };
 
 const isGlass = (path: string): boolean => Object.hasOwn(GLASS, path);

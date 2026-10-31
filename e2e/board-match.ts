@@ -28,6 +28,8 @@ export interface Landmark {
   readonly name: string;
   /** The build's accessible name where a decision makes it differ from the board's. */
   readonly buildName?: string;
+  /** The build's role where a decision makes it differ from the board's (the board draws a link where the build has a button). */
+  readonly buildRole?: string;
   /** Another landmark's id: the search is made inside that one. */
   readonly within?: string;
   /**
@@ -61,7 +63,31 @@ export interface BoardManifest {
    * Controls pressed on the build's page, in order, before it is read: a board that draws a state
    * the player reaches by a press (the Phone board's hand, open) is reached the same way.
    */
-  readonly press?: readonly { readonly role: string; readonly name: string }[];
+  readonly press?: readonly Press[];
+  readonly landmarks: readonly Landmark[];
+  /**
+   * Further build sides of the same board page, each compared against it on its own: a board that
+   * draws two screens at once (the Cards board's hand sheet, a story, and its play form, the app)
+   * has one build for each. A side has its own build, presses and landmarks; its ids stand alone.
+   */
+  readonly also?: readonly BoardSide[];
+}
+
+/** A control pressed on the build's page: found by role and whole name, the `nth` match of those (the first by default; -1 is the last). */
+export interface Press {
+  readonly role: string;
+  readonly name: string;
+  readonly nth?: number;
+  /** Words typed into a text box in place of a press (the play form's message), to reach the state the board draws it in. */
+  readonly fill?: string;
+}
+
+/** One further build side of a board (`BoardManifest.also`). */
+export interface BoardSide {
+  /** Names the side in the test's title and the report's folder. */
+  readonly name: string;
+  readonly build: BoardManifest['build'];
+  readonly press?: readonly Press[];
   readonly landmarks: readonly Landmark[];
 }
 
@@ -179,6 +205,25 @@ export function compareBoard(board: Snapshot, build: Snapshot, manifest: BoardMa
       if (b.type && u.type) out.push(...compareType(l.id, b.type, u.type, l.buildSize));
       else if (b.type || u.type) out.push(mismatch(l.id, 'font', b.type ? 'text' : 'no text', u.type ? 'text' : 'no text', 'one side has no text to read'));
     }
+  }
+  return out;
+}
+
+/**
+ * Every build side of a board compared, the board's own first and then each of `also` in order, each
+ * with its own manifest (its build, presses and landmarks; its ids stand alone) and the report folder
+ * `<board>-<side>`. `compare` reads one side and returns its mismatches' words; a further side's are
+ * led by its name, so a finding says which screen of the board it is about. A side is never skipped:
+ * the list is the manifest's, whatever the first side found.
+ */
+export async function compareSides(
+  manifest: BoardManifest,
+  compare: (side: BoardManifest, folder: string, label: string | null) => Promise<string[]>,
+): Promise<string[]> {
+  const out = await compare(manifest, manifest.board, null);
+  for (const side of manifest.also ?? []) {
+    const found = await compare({ ...manifest, build: side.build, press: side.press, landmarks: side.landmarks, also: undefined }, `${manifest.board}-${side.name}`, side.name);
+    out.push(...found.map((m) => `${side.name}: ${m}`));
   }
   return out;
 }

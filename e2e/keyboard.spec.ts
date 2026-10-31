@@ -68,6 +68,37 @@ test('reacts: opens the picker from the keyboard, moves with arrows, chooses wit
   await expect(react).toBeFocused();
 });
 
+test('plays a card by keyboard: the HUD\'s Hand, a card armed, the glass tile on a post, the form, and Esc puts the armed card back', async ({ page }) => {
+  await page.goto('/b/general');
+  await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+  const post = page.locator('#post-3');
+  /* The post's row has no "Play card" (the owner: a game act is glass): the hand is the HUD's. */
+  await expect(post.getByRole('button', { name: 'Play card' })).toHaveCount(0);
+  const handButton = page.getByRole('button', { name: /^Hand, \d+ postcards?$/ });
+  await tabTo(page, handButton);
+  await page.keyboard.press('Enter');
+  const hand = page.getByRole('region', { name: 'Your hand' });
+  await expect(hand).toBeFocused();
+  const card = hand.getByRole('button', { name: /^Whoops!, Salty\b/ }).first();
+  await tabTo(page, card);
+  await page.keyboard.press('Enter');
+  /* Armed: each post it can land on offers the glass tile, a real button the keyboard reaches. */
+  const here = post.getByRole('button', { name: 'Play Whoops! here' });
+  await expect(here).toBeVisible();
+  await tabTo(page, here);
+  await page.keyboard.press('Enter');
+  const form = page.getByRole('dialog', { name: 'Whoops!' });
+  await expect(form).toBeVisible();
+  /* Esc leaves the form, and focus returns to the glass tile that opened it. */
+  await page.keyboard.press('Escape');
+  await expect(form).toBeHidden();
+  await expect(here).toBeFocused();
+  /* The card is still armed: Esc puts it back and the post's tile with it. */
+  await expect(here).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(here).toBeHidden();
+});
+
 test('spins: opens the form from a post, types a title, sends with Enter, and lands on ORIGIN', async ({ page }) => {
   await page.goto('/b/general');
   await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
@@ -81,4 +112,27 @@ test('spins: opens the form from a post, types a title, sends with Enter, and la
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { level: 1, name: 'Spun by keyboard' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Origin' })).toBeFocused();
+});
+
+/*
+ * On the Phone board's layout the sheet is put away once a card is armed (Hud.tsx), and the sheet held focus: a keyboard
+ * player who armed a card must land on the hand button (now "Armed · X"), not on the page.
+ */
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('arming a card from the hand\'s sheet leaves focus on the hand button', async ({ page }) => {
+    await page.goto('/b/general');
+    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    const handButton = page.getByRole('button', { name: /^Hand, \d+ postcards?$/ });
+    await tabTo(page, handButton);
+    await page.keyboard.press('Enter');
+    const hand = page.getByRole('region', { name: 'Your hand' });
+    await expect(hand).toBeFocused();
+    const card = hand.getByRole('button', { name: /^Whoops!, Salty\b/ }).first();
+    await tabTo(page, card);
+    await page.keyboard.press('Enter');
+    await expect(hand).toBeHidden();
+    await expect(page.getByRole('button', { name: /^Armed · Whoops!/ })).toBeFocused();
+  });
 });

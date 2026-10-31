@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
+import { pageOf, threadHref } from '../thread/pages.ts';
 import { ProfileScreen } from './Profile.tsx';
 
 const DAY = 86_400_000;
@@ -142,6 +143,18 @@ describe('the public record on the profile', () => {
     expect(body.length).toBeLessThanOrEqual(5);
     expect(body[0]).toHaveTextContent('Played Whoops!');
     expect(within(record).getByRole('link', { name: 'See the full record' })).toHaveAttribute('href', `/c/${w.spritey}/record`);
+  });
+
+  test('a "Played" row links to the post the play landed on', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    const target = fake.seed.post(w.thread, w.spritey, 'the target', { at: T0 + 5 * DAY });
+    const seq = (await fake.actsById([target]))[0]!.seq!;
+    fake.seed.card(w.spritey, target, 'whoops', { at: T0 + 6 * DAY });
+    open(w.spritey, fake);
+    const record = await screen.findByRole('region', { name: 'Public record' });
+    await waitFor(() => expect(record).toHaveTextContent('Played Whoops!'));
+    expect(within(record).getAllByText(/Played Whoops!/u)[0]!.closest('a')).toHaveAttribute('href', threadHref(w.thread, pageOf(seq, 20), seq));
   });
 
   test('a character with nothing public yet says so', async () => {

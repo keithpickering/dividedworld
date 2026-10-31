@@ -436,4 +436,16 @@ describe('from the Task 1.4 reviews', () => {
     expect(document.body.style.overflow).toBe('');
     expect(opener).toHaveFocus();
   });
+  test('an overlay that is not to be dismissed (closeAt none) has no Close, and Esc asks its owner, who decides', async () => {
+    const asked = vi.fn();
+    renderInWorld(
+      <Overlay title="Held" surface="effect" closeAt="none" onClose={asked}><button type="button">Only way out</button></Overlay>,
+      { path: '/characters', seed: signedIn },
+    );
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Only way out' })).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    expect(asked).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog', { name: 'Held' })).toBeInTheDocument();
+  });
 });

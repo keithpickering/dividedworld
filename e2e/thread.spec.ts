@@ -70,3 +70,40 @@ test.describe('a desktop', () => {
     expect(slot!.height).toBeLessThan(80);
   });
 });
+
+/*
+ * The Phone board's moment (docs/research/2026-10-29-two-worlds/02-phone.html): #41 wears a Whoops! tag. The
+ * tag stands clear of the post's line (its date and permalink) at every width, and the caster's words are a
+ * line of their own under the card's name and the caster (the owner's notes on #80).
+ */
+for (const [label, viewport, moment] of [['a narrow post', { width: 390, height: 844 }, '02-phone'], ['a wide post', { width: 1440, height: 1120 }, '01-main']] as const) {
+  test.describe(`a play tag on ${label}`, () => {
+    test.use({ viewport });
+
+    test('clears the post\'s line, wraps inside the post\'s width, and puts the caster\'s words on a line of their own', async ({ page }) => {
+      await page.goto(`/?fixture=boards&moment=${moment}`);
+      const post = page.locator('#post-41');
+      const tag = post.locator('.kb-play-tag').first();
+      await expect(tag).toBeVisible();
+      const [t, line, main, who, message] = await Promise.all([
+        tag.boundingBox(),
+        post.locator('header.kb-act-meta').boundingBox(),
+        post.locator('.kb-act-main').boundingBox(),
+        tag.locator('.kb-play-tag-who').boundingBox(),
+        tag.locator('.kb-play-tag-message').boundingBox(),
+      ]);
+      /* Not over the post's line (its date and permalink). */
+      expect(t!.y, 'the tag starts below the post\'s line').toBeGreaterThanOrEqual(line!.y + line!.height - 1);
+      /* It stays inside the post's width. */
+      expect(t!.x).toBeGreaterThanOrEqual(main!.x - 1);
+      expect(t!.x + t!.width).toBeLessThanOrEqual(main!.x + main!.width + 1);
+      /* The post's words start below the tag, which stands in the flow and never over them. */
+      const words = await post.locator('.kb-play-tags + *').boundingBox();
+      const tags = await post.locator('.kb-play-tags').boundingBox();
+      expect(words!.y, 'the post\'s words start below the tag').toBeGreaterThanOrEqual(tags!.y + tags!.height - 1);
+      /* The caster's words start under the caster's name, on their own line. */
+      expect(message!.y, 'the message is under the caster').toBeGreaterThanOrEqual(who!.y + who!.height - 1);
+      expect(await overflow(page)).toBeLessThanOrEqual(0);
+    });
+  });
+}

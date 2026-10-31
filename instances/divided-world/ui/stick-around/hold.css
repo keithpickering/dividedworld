@@ -1,0 +1,343 @@
+/*
+ * Stick Around's look (docs/research/2026-10-29-two-worlds/08-hold.html): the held post in its thread wears the game's
+ * frame, a ring in the Sweet cyan with its glow; the full-screen view is glass on the `effect` smoke with the 2003 post
+ * still white inside it, the caster's release below the post, and the gold bar in the foot. Every color is a glass token
+ * (cyan for the card, the gold of "ready" for the bar that fills toward being free); sizes are the glass's.
+ */
+
+/* ---- in the thread ---- */
+
+/* The whole post is framed, not just its words: the effect only wraps the words, so the post is found from them. */
+article:has(> .kb-act-main .kb-hold) {
+  position: relative;
+  box-shadow: 0 0 0 4px var(--kb-glass-ground), 0 0 0 6px var(--kb-glass-sweet), 0 0 60px color-mix(in srgb, var(--kb-glass-sweet) 60%, transparent);
+}
+
+/* The ring that breathes out from the frame (the board's `ring`); still, and shown, under reduced motion. */
+article:has(> .kb-act-main .kb-hold)::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px var(--kb-glass-sweet), 0 0 30px color-mix(in srgb, var(--kb-glass-sweet) 80%, transparent);
+  animation: kb-hold-ring 2.6s ease-out infinite;
+}
+
+@keyframes kb-hold-ring {
+  from { opacity: 0.7; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.006); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) article:has(> .kb-act-main .kb-hold)::after { animation: none; opacity: 0.35; }
+}
+
+:root[data-kb-motion='reduce'] article:has(> .kb-act-main .kb-hold)::after { animation: none; opacity: 0.35; }
+
+/* In the ORIGIN box there is no post article around the words; the words wear the ring themselves. */
+.kb-origin .kb-hold {
+  box-shadow: 0 0 0 4px var(--kb-glass-ground), 0 0 0 6px var(--kb-glass-sweet);
+}
+
+/* The space the post leaves while it is in the view. */
+.kb-hold-away {
+  min-height: 1px;
+}
+
+/* ---- the view ---- */
+
+.kb-glass-overlay:has(> .kb-hold-view) {
+  display: block;
+  padding: 16px;
+}
+
+.kb-glass-dialog.kb-hold-view {
+  --kb-cut: var(--kb-glass-chamfer-5);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  padding: 20px 28px 22px;
+}
+
+.kb-hold-view .kb-glass-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 14px;
+}
+
+.kb-hold-view .kb-glass-dialog-bar {
+  align-items: center;
+}
+
+/* The card's tag, in the view's bar: the caster's words on skewed glass, as on the post. */
+.kb-hold-tag {
+  margin: 0;
+  max-width: 60%;
+  padding: 4px 16px 5px 12px;
+  transform: skewX(-12deg);
+  border: 1px solid var(--kb-glass-sweet);
+  background: var(--kb-glass-ground);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-sweet) 70%, transparent);
+  color: var(--kb-glass-text);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.kb-hold-tag > span {
+  display: block;
+  transform: skewX(12deg);
+}
+
+.kb-hold-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+
+/* The post scrolls inside the view. Its overscroll stays here, so a push past its end never moves the page behind. */
+.kb-hold-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 8px;
+}
+
+.kb-hold-post {
+  box-sizing: border-box;
+  max-width: 1000px;
+  margin: 0 auto;
+  background: var(--kb-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-rule);
+  box-shadow: 0 0 0 4px var(--kb-glass-ground), 0 0 0 6px var(--kb-glass-sweet), 0 0 60px color-mix(in srgb, var(--kb-glass-sweet) 60%, transparent);
+  font-family: var(--kb-font-body);
+  font-size: var(--kb-size-body);
+  font-weight: 400;
+  line-height: var(--kb-line);
+}
+
+.kb-hold-post-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.35em 0.8em;
+  border-bottom: 1px solid var(--kb-rule);
+  font-size: var(--kb-size-small);
+  color: var(--kb-muted);
+}
+
+.kb-hold-post-line b {
+  color: var(--kb-fg);
+}
+
+.kb-hold-post-body {
+  padding: 0.9em 1em 1.1em;
+  overflow-wrap: anywhere;
+}
+
+/* The release, at the post's end. */
+.kb-hold-release {
+  max-width: 1000px;
+  margin: 28px auto 8px;
+  color: var(--kb-glass-text);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+}
+
+.kb-hold-check {
+  --kb-cut: var(--kb-glass-chamfer-1);
+  --kb-border: 1px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 22px;
+  background: var(--kb-glass-sweet);
+  cursor: pointer;
+}
+
+.kb-hold-check::after {
+  background: var(--kb-glass-panel);
+}
+
+.kb-hold-check > *,
+.kb-hold-check input {
+  position: relative;
+  z-index: 1;
+}
+
+.kb-hold-check input {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: 2px 0 0;
+  accent-color: var(--kb-glass-sweet);
+}
+
+.kb-hold-check-head,
+.kb-hold-check-words {
+  display: block;
+}
+
+.kb-hold-check-head {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-hold-check-words {
+  margin-top: 6px;
+  font-size: var(--kb-glass-size-lead);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.kb-hold-refused {
+  margin: 10px 0 0;
+  color: var(--kb-glass-over);
+}
+
+/* The foot: the bar, and the button beside it. */
+.kb-hold-foot {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 20px;
+}
+
+.kb-hold-bar {
+  --kb-cut: var(--kb-glass-chamfer-1);
+  --kb-border: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 16px 22px;
+  background: color-mix(in srgb, var(--kb-glass-ready) 55%, transparent);
+  color: var(--kb-glass-text-2);
+}
+
+.kb-hold-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+.kb-hold-bar-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-ready-text);
+}
+
+.kb-hold-track {
+  height: 14px;
+  margin-top: 10px;
+  background: var(--kb-glass-field-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kb-glass-ready) 50%, transparent);
+}
+
+.kb-hold-fill {
+  height: 100%;
+  background: var(--kb-glass-ready);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-glass-ready) 80%, transparent);
+}
+
+.kb-hold-hint {
+  margin: 10px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.kb-hold-button {
+  --kb-cut: var(--kb-glass-chamfer-1);
+  flex: none;
+  min-width: 200px;
+  padding: 0 28px;
+  border: 0;
+  background: var(--kb-glass-ready);
+  font: inherit;
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-ready-text);
+  cursor: pointer;
+}
+
+.kb-hold-ways {
+  margin: 0;
+  min-height: 1.3em;
+  font-size: var(--kb-glass-size-body);
+  color: var(--kb-glass-text);
+}
+
+/* The Phone board's width: the foot stacks, and the glass's phone sizes stand in. */
+@media (max-width: 599.98px) {
+  .kb-glass-overlay:has(> .kb-hold-view) {
+    padding: 8px;
+  }
+
+  .kb-glass-dialog.kb-hold-view {
+    padding: 14px 14px 16px;
+  }
+
+  .kb-hold-view .kb-glass-dialog-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .kb-hold-tag {
+    max-width: 100%;
+    font-size: var(--kb-glass-size-phone-body);
+  }
+
+  .kb-hold-foot {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .kb-hold-bar {
+    padding: 12px 14px;
+  }
+
+  .kb-hold-bar-head,
+  .kb-hold-check-head {
+    font-size: var(--kb-glass-size-phone-small);
+  }
+
+  .kb-hold-hint,
+  .kb-hold-ways,
+  .kb-hold-release {
+    font-size: var(--kb-glass-size-phone-body);
+  }
+
+  .kb-hold-check {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .kb-hold-check-words {
+    font-size: var(--kb-glass-size-phone-body);
+  }
+
+  .kb-hold-button {
+    min-height: 52px;
+    font-size: var(--kb-glass-size-phone-body);
+  }
+
+  .kb-hold-post {
+    font-size: var(--kb-size-body);
+  }
+}

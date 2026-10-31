@@ -31,6 +31,8 @@ export const whoops: CardRules<{ color: string }> = {
   priceKey: 'whoops.price',
   stack: 3,
   seeded: true,
+  /** A layer counts as washed clean at this share of it, in whole percent (the effect's, read by the screens). */
+  screenReads: [{ key: 'whoops.clean', whole: true, min: 1, max: 100 }],
   reads: [{ key: 'whoops.perLength', whole: true, min: 0 }, { key: 'whoops.lengthStep', whole: true, min: 1 }, { key: 'whoops.mostInAll', whole: true, min: 1 }],
   playPrice: (settings, target) =>
     Math.max(0, Math.min(economyOf(settings, 'whoops.perLength') * Math.floor(target.length / economyOf(settings, 'whoops.lengthStep')),

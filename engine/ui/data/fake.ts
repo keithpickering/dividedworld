@@ -16,14 +16,15 @@
  *  - A month is thirty days (a cooldown, a lifetime); the server counts calendar months.
  *  - A name is taken by the engine's own `sameName` (case and look-alike folding, as the database's).
  *  - A debut dropped "now" writes no announcement Act; tests that need one seed it.
- *  - There is no card, no purchase, no saved effect, and no check that a Turn's settlement is now due.
+ *  - A card's seeded settings are not drawn (a play carries no `seed`); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
  */
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
+import { basePrice, casterMessage, decidePlay, type CardTarget } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
 import type {
-  Act, ActKind, Answer, AvatarUpload, Board, BoardListener, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness,
+  Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
   DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal,
   ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet,
 } from './api.ts';
@@ -75,7 +76,7 @@ export interface Seed {
   announceTurn(character: Id, thread: Id, options?: { was?: string; since?: string; at?: number }): Id;
   avatar(character: Id, urls: { square?: string; portrait?: string }): void;
   /** A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action). */
-  card(character: Id, target: Id, card: string, options?: { message?: string; at?: number }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number }): Id;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
   /**
@@ -173,7 +174,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     postsPerPage: settings.postsPerPage, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
-    registrationMode: settings.registrationMode, settlementLength: settings.settlementLength,
+    registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
   };
 
   /* ----------------------------------------------------------------------- time ---- */
@@ -296,7 +297,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let stamp: number | null = null;
   function write(a: { character: Id | null; kind: ActKind; thread: Id; target?: Id | null; payload: Record<string, unknown>; at?: number }): ActRec {
     const t = threads.get(a.thread)!;
-    const placedAct = a.kind !== 'edit';
+    /* An edit is a version of its post and a card is a tag on its post: neither takes a place in the thread (0035_card_takes_no_seq.sql). */
+    const placedAct = a.kind !== 'edit' && a.kind !== 'card';
     const rec: ActRec = {
       id: uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target: a.target ?? null, seq: placedAct ? t.nextSeq++ : null,
       at: a.at ?? stamp ?? now(), payload: a.payload,
@@ -407,6 +409,85 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const tally = tallyOf(act);
     send(`thread:${target.thread}`, 'tally', () => { for (const l of [...(threadListeners.get(target.thread) ?? [])]) l.onTally?.(act, tally); });
     return ok({ act, tally });
+  }
+
+  /** The state a play's effect has saved, as effect_state keeps it: one row per play, the newest save. */
+  const effects = new Map<Id, { state: unknown; at: number }>();
+  /** The plays an account has released itself from, as "account play". */
+  const releases = new Map<string, number>();
+  const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
+
+  function saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Answer<{ play: Id; savedAt: string }> {
+    const bad = request({ action: 'saveEffect', character, play, state });
+    if (bad) return bad;
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    const played = playOf(play);
+    if (!played) return refuse('there is no such card on a post');
+    if (acts.get(played.target!)?.character !== character) return refuse('only the post\'s author saves what is on it');
+    const at = now();
+    effects.set(play, { state, at });
+    send(`thread:${played.thread}`, 'effect', () => { for (const l of [...(threadListeners.get(played.thread) ?? [])]) l.onEffect?.(play, iso(at)); });
+    return ok({ play, savedAt: iso(at) });
+  }
+
+  function releaseEffect(play: Id): Answer<{ play: Id; releasedAt: string }> {
+    const account = me();
+    if (!account) return refuse('sign in to act');
+    if (!playOf(play)) return refuse('there is no such card on a post');
+    /* Kept from the first release. */
+    const key = `${account.id} ${play}`;
+    if (!releases.has(key)) releases.set(key, now());
+    return ok({ play, releasedAt: iso(releases.get(key)!) });
+  }
+
+  /**
+   * What a wallet debit refuses, in the words of `wallet_spend` (0006_cards.sql): the amounts are hundredths, as the server says them.
+   * Returns the balance left, or the refusal.
+   */
+  function spend(account: AccountRec, amount: number): number | Refusal {
+    if (account.wallet < amount) return refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`);
+    account.wallet -= amount;
+    return account.wallet;
+  }
+
+  /** `buy_card` (0006_cards.sql): the card's base price from the settled wallet, and one more of it in the hand. */
+  function buyCard(card: string): Answer<Bought> {
+    const bad = request({ action: 'buyCard', card });
+    if (bad) return bad;
+    const account = me()!;
+    const price = basePrice(instance.cards.find((c) => c.key === card)!, settings);
+    const left = spend(account, price);
+    if (typeof left !== 'number') return left;
+    account.cards[card] = (account.cards[card] ?? 0) + 1;
+    return ok({ card, balance: left, held: account.cards[card]! });
+  }
+
+  /**
+   * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
+   * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
+   */
+  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Answer<Act> {
+    const bad = request({ action: 'playCard', card, character, target, config, message });
+    if (bad) return bad;
+    const on = acts.get(target);
+    if (!on) return refuse('there is no such post', 'target');
+    const rules = instance.cards.find((c) => c.key === card)!;
+    const text = (publicAct(on).currentPayload as { body?: unknown }).body;
+    const effects = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target).map((a) => ({ card: String(a.payload.card), act: a.id }));
+    const decided = decidePlay(rules, settings, { act: on.id, kind: on.kind as CardTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effects, config, message);
+    if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    const account = me()!;
+    if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
+    const left = spend(account, decided.value.price);
+    if (typeof left !== 'number') return left;
+    account.cards[card]! -= 1;
+    const layer = effects.filter((e) => e.card === card).length + 1;
+    const written = write({ character, kind: 'card', thread: on.thread, target, payload: { card, layer, message: decided.value.message, config: decided.value.config } });
+    sendAct(written);
+    return ok(publicAct(written));
   }
 
   function edit(target: Id, character: Id, body: string): Answer<Act> {
@@ -613,6 +694,23 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const wanted = new Set(ids);
       return [...threads.values()].filter((t) => t.origin !== null && wanted.has(t.origin)).sort((a, b) => a.at - b.at).slice(0, limit).map(summary);
     },
+    cardsOnMany(ids, limit) {
+      const wanted = new Set(ids);
+      return [...acts.values()].filter((a) => a.kind === 'card' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct);
+    },
+    effectStates(plays) {
+      const out: Record<Id, EffectState> = {};
+      for (const play of plays) {
+        const saved = effects.get(play);
+        if (saved) out[play] = { state: saved.state, savedAt: iso(saved.at) };
+      }
+      return out;
+    },
+    myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
+    releaseEffect,
+    saveEffect,
+    buyCard: lossy(buyCard),
+    playCard: lossy(playCard),
     cardsOn: (act, limit) => [...acts.values()].filter((a) => a.kind === 'card' && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct),
     characters: (ids) => ids.map((id) => characters.get(id)).filter((c): c is CharRec => c !== undefined && c.debutedAt !== null).map(publicCharacter),
     characterCounts(id) {
@@ -911,7 +1009,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!on) throw new Error(`no such Act ${target}`);
       const payload: Record<string, unknown> = { card };
       if (o?.message !== undefined) payload.message = o.message;
-      return asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload })).id;
+      if (o?.layer !== undefined) payload.layer = o.layer;
+      if (o?.config !== undefined) payload.config = o.config;
+      const written = asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload }));
+      if (o?.live) sendAct(written);
+      return written.id;
     },
     loseNextAnswer(went) { losing = { went }; },
     effect(thread, play) {

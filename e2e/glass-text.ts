@@ -342,3 +342,27 @@ function reading(fact: TextFact, role: ColorRole, s: SurfaceCeilings, at: string
   }
   return faults;
 }
+
+/**
+ * The board drawn inside the glass: the post a Turn or a debut previews as the thread will show it
+ * (characters/PreviewBox.tsx), and the 2003 window on the hand sheet's story, around the card's tag
+ * (cards/Hand.board.stories.tsx; the tag itself is glass and is read): in the board's own ground
+ * and type, opaque, which the board's rules and axe hold, not the glass's; and the post Stick Around
+ * lifts into its full-screen view, still the board's 2003 post, white, with the release and the bar
+ * (the glass's, read) around it.
+ */
+export const BOARD = '.kb-preview-post, .kb-hand-board-post-bar, .kb-hand-board-post-foot, .kb-hold-post';
+/**
+ * The instance's drawn art, marked `data-kb-art` by the engine screen that leaves it a place (the Vending
+ * Machine's sign and the codes printed on its slots): decoration, hidden from a screen reader, with no
+ * words in it a player needs (what a slot is and costs is said by its button's name), and so outside the
+ * type measurement (docs/plans/2026-10-30-glass-to-the-boards-plan.md, section 7, board 07). A
+ * postcard drawn at the slot size is art too (Postcard.tsx marks it so): the name printed on its
+ * face is not measured, and the slot's button, named "Buy Stick Around, 1.00 orb", says it in words.
+ * Postcards at the other sizes are glass and are read.
+ */
+export const ART = '[data-kb-art]';
+export const SKIP = `.kb-smoke, script, style, noscript, template, option, ${BOARD}, ${ART}`;
+
+/** The node is outside the glass's type measurement: its text is the board's, instance art, or not text a player reads. */
+export const isSkipped = (el: Element): boolean => el.closest(SKIP) !== null;

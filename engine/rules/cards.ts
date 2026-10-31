@@ -35,6 +35,8 @@ export interface CardRules<Config = unknown> {
   readonly priceKey: string;
   /** The economy numbers its rules read beside its price. */
   readonly reads?: readonly EconomyRead[];
+  /** The numbers in `Settings.cardSettings` its screens read, so an instance missing one, or holding one out of its bounds, is refused. */
+  readonly screenReads?: readonly EconomyRead[];
   /** How many of this card one post may carry, each its own play and layer; 1 unless said. */
   readonly stack?: number;
   /** Whether each play is drawn from a seed the server chooses (a splat different every time), stored on its Act. */
