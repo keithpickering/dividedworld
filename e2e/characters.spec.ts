@@ -306,13 +306,24 @@ async function fades(dialog: ReturnType<Page['locator']>) {
     return { before: px('before'), after: px('after') };
   });
 }
+/** How much of a card shows inside the row, in whole px, measured from the boxes. */
+async function showing(dialog: ReturnType<Page['locator']>, key: string) {
+  return classGroup(dialog).locator('.kb-class-grid').evaluate((row, k) => {
+    const r = row.getBoundingClientRect();
+    const c = row.querySelector(`[data-kb-class="${k}"]`)!.getBoundingClientRect();
+    return Math.max(0, Math.round(Math.min(r.right, c.right) - Math.max(r.left, c.left)));
+  }, key);
+}
 
 test('the fade covers only a peeking card, at its start and its end, and never a card snapped whole on a phone', async ({ page }) => {
   const dialog = await openTurnAt(page, 1440);
-  // Four cards of 216 and three gaps of 14 in 972: the Lurker peeks 66px.
-  expect(await fades(dialog)).toEqual({ before: 0, after: 66 });
+  // At the start the Lurker peeks: the fade is as wide as it shows. At the end the Face does.
+  const lurker = await showing(dialog, 'lurker');
+  expect(lurker).toBeGreaterThan(20);
+  expect(await fades(dialog)).toEqual({ before: 0, after: lurker });
   await classGroup(dialog).getByRole('radio', { name: 'Lurker' }).check();
-  await expect.poll(() => fades(dialog)).toEqual({ before: 66, after: 0 });
+  await expect.poll(async () => (await fades(dialog)).after).toBe(0);
+  expect((await fades(dialog)).before).toBe(await showing(dialog, 'face'));
 
   const phone = await openTurnAt(page, 390, 844);
   const group = classGroup(phone);

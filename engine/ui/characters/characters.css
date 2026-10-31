@@ -489,10 +489,22 @@
 .kb-class-nav {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 10px + var(--kb-glass-size-body) * 0.6 - 22px);
+  bottom: calc(100% + 10px + var(--kb-glass-size-body) * 0.6 - var(--kb-glass-size-display-s) * 22 / 26);
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+/*
+ * Past 100% text the arrows grow past the legend's line and would reach the words above it, so
+ * while they are drawn the legend is padded to their height and they stand on its line exactly.
+ */
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-class-cards[data-kb-overflow] > legend {
+  padding-block: max(0px, (var(--kb-glass-size-display-s) * 44 / 26 - var(--kb-glass-size-body) * 1.2) / 2);
+}
+
+:where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-class-cards[data-kb-overflow] .kb-class-nav {
+  bottom: calc(100% + 10px + max(var(--kb-glass-size-body) * 0.6, var(--kb-glass-size-display-s) * 22 / 26) - var(--kb-glass-size-display-s) * 22 / 26);
 }
 
 .kb-class-count {
@@ -504,27 +516,34 @@
 }
 
 .kb-class-arrow {
-  width: 44px;
-  height: 44px;
+  /* The board's 44px square at 100% text, grown with the glyph it holds. */
+  width: calc(var(--kb-glass-size-display-s) * 44 / 26);
+  height: calc(var(--kb-glass-size-display-s) * 44 / 26);
   padding: 0;
   font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-display-s);
   font-weight: 800;
   line-height: 1;
-  color: var(--kb-glass-text-2);
-  background: var(--kb-glass-panel-soft);
+  /* On an opaque ground, a panel of its own: the glass's type stands on solid ground or in a calm (e2e/glass-text.ts). */
+  color: var(--kb-glass-text-hi);
+  background: var(--kb-glass-ground);
   border: 1px solid currentColor;
   cursor: pointer;
 }
 
+/*
+ * At its end an arrow is dimmed, as the board draws it at 35%, but in the glass's quieter text
+ * token and not by opacity, since glass type is opaque (e2e/glass-text.ts); its frame dims and
+ * turns dashed, so its state is not told by color alone.
+ */
 .kb-class-arrow:disabled {
-  opacity: 0.35;
+  color: var(--kb-glass-text-2);
+  border: 1px dashed color-mix(in srgb, var(--kb-glass-text-2) 45%, transparent);
   cursor: default;
 }
 
 @media (forced-colors: active) {
   .kb-class-arrow:disabled {
-    opacity: 1;
     color: GrayText;
   }
 }

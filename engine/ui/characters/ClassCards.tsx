@@ -190,7 +190,7 @@ export function ClassCards({ legend, value, onChange, current, large = false }: 
         })}
       </div>
       {row.overflow && (
-        <div className="kb-class-nav">
+        <div className="kb-class-nav kb-calm">
           <span className="kb-class-count">{`${row.first}\u2013${row.last} of ${count}`}</span>
           <button ref={earlier} type="button" className="kb-class-arrow" aria-label="Earlier classes" disabled={!row.before} onClick={() => move(-1)}>
             <span aria-hidden="true">‹</span>
