@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
-import { billing, drawnOf } from '../cards/billing.ts';
+import { billPost, drawnOf } from '../cards/billing.ts';
 import { PlayTag, PlayTags, PostEffects } from '../cards/Effects.tsx';
 import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
@@ -58,13 +58,13 @@ function useOrigin(origin: Id, thread: Id, plays: Plays, tallies: Tallies, mine:
     );
     void api.cardsOn(origin, CARDS_SHOWN + 1).then(async (all) => {
       if (!live) return;
-      setMore(all.length > CARDS_SHOWN);
       const shown = all.slice(0, CARDS_SHOWN);
-      plays.add(shown);
       /*
        * The plays are Acts like the post: their tallies and the player's own reactions to them are read in one read
        * each, with the origin's (its tally is a card play's own when it was spun from one), and their spins through
-       * the line's batching; then they are billed as the thread bills a post's plays, once for this read.
+       * the line's batching; then they are billed as the thread bills a post's plays, once for this read. They join
+       * the store only then, so their tags are first drawn in billing order and never move. A count that cannot be
+       * read leaves the tags in the order they came, since the box is a view of another thread and not this page.
        */
       const ids = [origin, ...shown.map((a) => a.id)];
       const [counted, own, spun] = await Promise.all([
@@ -76,8 +76,9 @@ function useOrigin(origin: Id, thread: Id, plays: Plays, tallies: Tallies, mine:
       if (!live) return;
       for (const [id, t] of Object.entries(counted)) tallies.merge(id, t);
       for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
-      const here = plays.get(origin).plays;
-      plays.setBilling(origin, billing(here, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!))).map((p) => p.id));
+      setMore(all.length > CARDS_SHOWN);
+      plays.add(shown);
+      billPost(plays, origin, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
     }, () => { /* the tags are left out */ });
     return () => { live = false; off(); };
   }, [api, ui, origin, thread, attempt, plays, tallies, mine]);

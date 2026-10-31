@@ -453,6 +453,43 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
     expect(billed(2)).toEqual([w.first, w.third, w.second]);
   });
 
+  test('a play that arrives while the page\'s reads are out is billed after the ones the read counted, and the page still opens', async () => {
+    const w = played();
+    const tapped = tap(w.fake);
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const real = w.fake.spunFromMany.bind(w.fake);
+    const spins = vi.spyOn(w.fake, 'spunFromMany').mockImplementation(async (ids, limit) => { await held; return real(ids, limit); });
+    open(w);
+    const late = live(w.thread, null as unknown as number, w.pipe, { kind: 'card', seq: null, targetActId: w.ids[1]!, payload: { card: 'whoops', layer: 3, message: 'late' }, currentPayload: { card: 'whoops', layer: 3, message: 'late' }, createdAt: '2026-11-01T00:00:00Z' });
+    /* The page's plays are read, and their spins are being read. */
+    await waitFor(() => expect(spins).toHaveBeenCalled());
+    deliver(() => tapped().onAct?.(late));
+    await act(() => pause(20));
+    release();
+    /* The page opens: the reads' answers bill the plays they counted, and none of them is lost to the one that came. */
+    await waitFor(() => expect(document.querySelector('.kb-thread')).not.toHaveAttribute('aria-busy'));
+    expect(screen.queryByText(/could not be loaded/u)).toBeNull();
+    await waitFor(() => expect(billed(2)).toHaveLength(4));
+    expect(billed(2)).toEqual([w.third, w.second, w.first, late.id]);
+  });
+
+  test('two posts with plays cost one read of the plays and the spins read in the line\'s chunks, never one per post or play', async () => {
+    const w = played(4);
+    w.fake.seed.card(w.spritey, w.ids[3]!, 'whoops', { message: 'on four' });
+    const many = vi.spyOn(w.fake, 'cardsOnMany');
+    const spins = vi.spyOn(w.fake, 'spunFromMany');
+    const one = vi.spyOn(w.fake, 'spunFrom');
+    open(w);
+    await waitFor(() => expect(billed(4)).toHaveLength(1));
+    expect(billed(2)).toHaveLength(3);
+    expect(many).toHaveBeenCalledTimes(1);
+    /* Four posts and four plays: eight Acts, one chunk. */
+    expect(spins).toHaveBeenCalledTimes(1);
+    expect(spins.mock.calls[0]![0]).toHaveLength(8);
+    expect(one).not.toHaveBeenCalled();
+  });
+
   test('a play that arrives live is billed last, however new it is', async () => {
     const w = played();
     const tapped = tap(w.fake);

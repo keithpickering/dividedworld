@@ -7,6 +7,7 @@
  * order is only the tags': the order the effects wrap a post's words in is `inPlayOrder` (plays.ts), unchanged.
  */
 import type { Id, Tally } from '../data/api.ts';
+import type { Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 
 /** A play's draw: the sum of its public tally, plus the threads spun from it. */
@@ -24,4 +25,15 @@ export function billing(plays: readonly CardPlay[], drawn: (play: Id) => number)
     draws.get(b.id)! - draws.get(a.id)!
     || Date.parse(b.playedAt) - Date.parse(a.playedAt)
     || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/**
+ * Bill a post's plays once its page's reads are in: the plays the read counted (`counted`), most drawn first. A play
+ * that arrived while the reads were out was not counted, and keeps its place after them, as any play that arrives
+ * live does; so a read never has to know what came meanwhile, and nothing is asked of a count it does not have.
+ */
+export function billPost(plays: Plays, post: Id, counted: { has(play: Id): boolean }, drawn: (play: Id) => number): void {
+  const here = plays.get(post).plays.filter((p) => counted.has(p.id));
+  if (here.length === 0) return;
+  plays.setBilling(post, billing(here, drawn).map((p) => p.id));
 }

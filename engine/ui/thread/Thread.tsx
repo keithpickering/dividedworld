@@ -30,7 +30,7 @@
  * re-renders the posts it lands on and not the page.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { billing, drawnOf } from '../cards/billing.ts';
+import { billPost, drawnOf } from '../cards/billing.ts';
 import { createPlays, effectCards, readEffects, readPlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
@@ -161,11 +161,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       ]);
       for (const [id, t] of Object.entries(counted)) tallies.merge(id, t);
       for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
-      for (const post of posts) {
-        const here = plays.get(post).plays;
-        if (here.length === 0) continue;
-        plays.setBilling(post, billing(here, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!))).map((p) => p.id));
-      }
+      for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
     }
   }, [api, ensurePeople, tallies, mine, plays, effects]);
 
