@@ -43,6 +43,14 @@ for (const [label, viewport, story, six] of [
       await page.keyboard.press('Escape');
       await expect(list).toBeHidden();
       expect((await post.boundingBox())!.height).toBe(stacked!.height);
+      /* A press outside the list, on the post's own footer, stacks it and presses nothing under it. */
+      await button.click();
+      await expect(list).toBeVisible();
+      await expect(post.locator('footer')).toHaveAttribute('inert', '');
+      await post.locator('footer').getByRole('button', { name: 'History' }).click({ force: true });
+      await expect(list).toBeHidden();
+      await expect(post.getByRole('list', { name: 'Versions of this post, oldest first' })).toHaveCount(0);
+      await expect(post.locator('footer')).not.toHaveAttribute('inert', '');
     });
 
     test('unstacked, a list long enough to run past the post\'s words stands over the card\'s plate and the next post: every tag is what is at its middle', async ({ page }) => {

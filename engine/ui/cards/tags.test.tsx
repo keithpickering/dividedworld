@@ -192,6 +192,20 @@ describe('the stack of plays over a post', () => {
     await waitFor(() => expect(lower).toHaveFocus());
   });
 
+  test('a press outside a play\'s panel opened from the list closes the panel and leaves the list unstacked', async () => {
+    const w = world();
+    w.play(w.spritey);
+    w.play(w.gloomba);
+    open(w);
+    const list = await tags();
+    await userEvent.click(unstack(list));
+    await userEvent.click(reachable(list)[1]!);
+    const dialog = screen.getByRole('dialog', { name: 'Whoops! by Spritey' });
+    await userEvent.pointer({ keys: '[MouseLeft]', target: dialog.closest('.kb-glass-overlay')! });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(reachable(list)).toHaveLength(2);
+  });
+
   test('a read of the page stacks it again', async () => {
     const w = world();
     for (let i = 0; i < 25; i++) w.fake.seed.post(w.thread, w.spritey, `more ${i}`);

@@ -1,5 +1,5 @@
 /**
- * A play's panel (docs/plans/2026-10-31-plays-on-a-post-design.md, section 3): what its quiet tag or chip opens. A play
+ * A play's panel (docs/plans/2026-10-31-plays-on-a-post-design.md, section 3): what its quiet tag opens. A play
  * is an Act like a post, so it is reacted to and spun from here, on its own: a sharp card can steal its post's thunder
  * (the core-loop design's section 7), and "outdraws" its target by the reactions to it.
  *
@@ -44,7 +44,7 @@ export interface PlayPanelProps {
   readonly sheet: boolean;
   /** What opened the panel, which it stands beside on a desktop and gives focus back to. */
   readonly opener: HTMLElement;
-  /** Where focus goes when the opener is gone by the time the panel closes (a chip folded into "+N more" as the window narrowed). */
+  /** Where focus goes when the opener is gone by the time the panel closes (its tag gone with a read of the page): the stack's button, or its top tag. */
   readonly fallback?: () => HTMLElement | null;
   readonly onClose: () => void;
   /** Spin a thread from the play: the panel closes, and the post's spin form opens with the play as its origin. */

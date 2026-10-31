@@ -152,7 +152,7 @@ export function EffectStrip({ slot, card, readout, children }: { readonly slot: 
   );
 }
 
-/** The thread's narrow width (thread.css's 40em, where a post is stacked): the tags fold their chips into "+N more" there, and a play's panel is a sheet. */
+/** The thread's narrow width (thread.css's 40em, where a post is stacked): a play's panel is a sheet there. */
 const NARROW = '(max-width: 40em)';
 /* One query for the page, however many posts ask it, with one listener behind every post's subscription; asked again only if the window's `matchMedia` is another. */
 let narrowQuery: { readonly source: typeof globalThis.matchMedia; readonly list: MediaQueryList } | null = null;
@@ -182,7 +182,7 @@ export const TAG_REACTIONS = 3;
 /** How many reactions a play has drawn, in one phrase ("no reactions", "1 reaction", "8 reactions"). */
 export const reactionCount = (n: number): string => (n === 0 ? 'no reactions' : n === 1 ? '1 reaction' : `${n} reactions`);
 
-/** A play as a screen reader hears its tag or chip: one sentence. */
+/** A play as a screen reader hears its tag: one sentence. */
 export const playSentence = (card: string, caster: string, reactions: number): string => `${card} by ${caster}, ${reactionCount(reactions)}. Opens the play.`;
 
 /** A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order. */
