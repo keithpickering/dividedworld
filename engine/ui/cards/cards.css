@@ -19,6 +19,11 @@
   list-style: none;
 }
 
+/* A stack keeps its deepest edge's room under the tag (12px), so it never lies on the post's first line. */
+.kb-play-tags[data-kb-stacked] {
+  margin-bottom: calc(0.6rem + 12px);
+}
+
 /* Unstacked, the list stands over everything the post draws after it: its words, its effect and its reactions. */
 .kb-play-tags[data-kb-unstacked] {
   z-index: 6;

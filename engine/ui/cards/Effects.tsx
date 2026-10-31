@@ -268,8 +268,15 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
   useEffect(() => {
     if (!unstacked || panelOpen) return;
     const press = (e: PointerEvent) => { if (!list.current?.contains(e.target as Node)) setUnstacked(false); };
+    /* Esc stacks it wherever focus is: a press that does not focus what it presses (Safari, Firefox on a Mac) leaves it on the page. */
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      setUnstacked(false);
+      if (list.current?.contains(document.activeElement)) toggle.current?.focus();
+    };
     document.addEventListener('pointerdown', press);
-    return () => document.removeEventListener('pointerdown', press);
+    document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('pointerdown', press); document.removeEventListener('keydown', key); };
   }, [unstacked, panelOpen]);
   /*
    * Unstacked, the list floats over its post's own controls (its reactions, its plate, its footer), which are out of reach
@@ -278,12 +285,14 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
    * target-size at a phone's width). Set and released in the commit itself, so Tab's focus move finds them reachable.
    */
   useLayoutEffect(() => {
-    const post = unstacked ? list.current?.closest('article') : null;
-    if (!post) return;
-    const under = [post.querySelector<HTMLElement>(':scope > footer'), post.querySelector<HTMLElement>(':scope > .kb-act-slot'), ...post.querySelectorAll<HTMLElement>(':scope > .kb-act-main > :not(.kb-play-tags)')]
+    const article = unstacked ? list.current?.closest('article') : null;
+    if (!article) return;
+    const under = [article.querySelector<HTMLElement>(':scope > footer'), article.querySelector<HTMLElement>(':scope > .kb-act-slot'), ...article.querySelectorAll<HTMLElement>(':scope > .kb-act-main > :not(.kb-play-tags)')]
       .filter((el): el is HTMLElement => el !== null && !el.hasAttribute('inert'));
     for (const el of under) el.setAttribute('inert', '');
-    return () => { for (const el of under) el.removeAttribute('inert'); };
+    /* The post is lifted over the next, and its body over its plate (thread.css), for as long as its controls are out of reach. */
+    article.setAttribute('data-kb-lifted', 'true');
+    return () => { for (const el of under) el.removeAttribute('inert'); article.removeAttribute('data-kb-lifted'); };
   }, [unstacked]);
   if (here.billed.length === 0) return null;
   const [lead, ...rest] = here.billed;
@@ -302,7 +311,7 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
   const stack = () => { setUnstacked(false); toggle.current?.focus(); };
   return (
     <ul
-      ref={list} className="kb-play-tags" aria-label="Cards played on this post" data-kb-unstacked={unstacked ? 'true' : undefined}
+      ref={list} className="kb-play-tags" aria-label="Cards played on this post" data-kb-unstacked={unstacked ? 'true' : undefined} data-kb-stacked={rest.length > 0 ? 'true' : undefined}
       onKeyDown={(e) => { if (e.key === 'Escape' && unstacked && !panelOpen) { e.stopPropagation(); stack(); } else tabOut(e); }}
     >
       <li className="kb-play-tags-lead">

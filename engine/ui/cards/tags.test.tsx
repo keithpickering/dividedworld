@@ -113,6 +113,58 @@ describe('the stack of plays over a post', () => {
     expect(within(list).getByRole('button', { name: /^Unstack/u })).toHaveFocus();
   });
 
+  test('Esc stacks it wherever focus is, as a press that does not focus what it presses leaves it on the page', async () => {
+    const w = world();
+    w.play(w.spritey);
+    w.play(w.gloomba);
+    open(w);
+    const list = await tags();
+    await userEvent.click(unstack(list));
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.keyboard('{Escape}');
+    expect(reachable(list)).toHaveLength(1);
+  });
+
+  test('nothing is left out of reach: a read of the page, or leaving it, while unstacked, gives the post its controls back', async () => {
+    const w = world();
+    for (let i = 0; i < 25; i++) w.fake.seed.post(w.thread, w.spritey, `more ${i}`);
+    w.play(w.spritey);
+    w.play(w.gloomba);
+    const view = open(w);
+    let list = await tags();
+    await userEvent.click(unstack(list));
+    const lifted = () => document.querySelectorAll('[inert], [data-kb-lifted]').length;
+    expect(lifted()).toBeGreaterThan(0);
+    await userEvent.click(screen.getAllByRole('link', { name: 'Page 2' })[0]!);
+    await screen.findByRole('article', { name: /^Post 21 /u });
+    expect(lifted()).toBe(0);
+    await userEvent.click(screen.getAllByRole('link', { name: 'Page 1' })[0]!);
+    list = await tags();
+    await userEvent.click(unstack(list));
+    expect(lifted()).toBeGreaterThan(0);
+    view.unmount();
+    expect(lifted()).toBe(0);
+  });
+
+  test('unstacked, its post is lifted over the next, and a post beside it is left as it was', async () => {
+    const w = world();
+    w.play(w.spritey);
+    w.play(w.gloomba);
+    const third = w.fake.seed.post(w.thread, w.spritey, 'post 3');
+    w.fake.seed.card(w.gloomba, third, 'whoops');
+    w.fake.seed.card(w.spritey, third, 'whoops', { layer: 2 });
+    open(w);
+    const list = await tags();
+    const post = await post2();
+    const other = await screen.findByRole('article', { name: /^Post 3 /u });
+    await userEvent.click(unstack(list));
+    expect(post).toHaveAttribute('data-kb-lifted', 'true');
+    expect(other).not.toHaveAttribute('data-kb-lifted');
+    expect(other.querySelector('[inert]')).toBeNull();
+    await userEvent.keyboard('{Escape}');
+    expect(post).not.toHaveAttribute('data-kb-lifted');
+  });
+
   test('a press outside it stacks it', async () => {
     const w = world();
     w.play(w.spritey);

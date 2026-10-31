@@ -166,18 +166,19 @@
 /*
  * The plays unstacked float over the post (cards/Effects.tsx `PlayTags`, the owner on #97's shots): over the post's
  * reactions, over the card's plate under the body (the body is lifted over the slot, a sibling drawn after it), and over
- * the next post, which the list may run into. While stacked, nothing is lifted.
+ * the next post, which the list may run into. PlayTags marks its post `data-kb-lifted` while unstacked, beside the
+ * controls it puts out of reach, and lifts nothing else.
  */
 .kb-act-main > .kb-play-tags[data-kb-unstacked] {
   z-index: 3;
 }
 
-.kb-act:has(.kb-play-tags[data-kb-unstacked]) {
+.kb-act[data-kb-lifted] {
   position: relative;
   z-index: 3;
 }
 
-.kb-act:has(.kb-play-tags[data-kb-unstacked]) > .kb-act-main {
+.kb-act[data-kb-lifted] > .kb-act-main {
   position: relative;
   z-index: 2;
 }
