@@ -75,11 +75,6 @@
   text-decoration: underline;
 }
 
-.kb-play-panel-action:focus-visible {
-  outline: 2px solid var(--kb-tag-text);
-  outline-offset: 2px;
-}
-
 .kb-play-panel-spun {
   margin-top: 0.8rem;
   color: var(--kb-glass-text-2);
