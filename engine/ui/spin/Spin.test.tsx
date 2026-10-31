@@ -286,6 +286,29 @@ describe('the ORIGIN box', () => {
     expect(box).not.toHaveTextContent('could not be read');
   });
 
+  test('reads its plays\' tallies and the player\'s own reactions to them in one read each, and bills them the way the thread does', async () => {
+    const w = threadWorld(3);
+    const early = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'early' });
+    w.fake.clock.advance(60_000);
+    const middle = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'middle', layer: 2 });
+    w.fake.clock.advance(60_000);
+    const late = w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'late' });
+    w.fake.seed.react(w.me, w.pipe, middle, 'fire');
+    const spun = await spinFrom(w, w.ids[1]!);
+    const tallies = vi.spyOn(w.fake, 'tallies');
+    const own = vi.spyOn(w.fake, 'myReactions');
+    openSpun(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(box.querySelectorAll('[data-kb-play]')).toHaveLength(3));
+    /* The middle play has drawn a reaction, so it is billed first, then the newest. */
+    expect([...box.querySelectorAll('[data-kb-play]')].map((el) => el.getAttribute('data-kb-play'))).toEqual([middle, late, early]);
+    const forPlays = (spy: typeof tallies | typeof own) => spy.mock.calls.filter(([ids]) => ids.includes(early));
+    expect(forPlays(tallies)).toHaveLength(1);
+    expect(forPlays(tallies)[0]![0]).toContain(late);
+    expect(forPlays(own)).toHaveLength(1);
+    expect(forPlays(own)[0]![0]).toContain(late);
+  });
+
   test('lists at most twenty card plays and says where the rest are', async () => {
     const w = threadWorld(3);
     for (let i = 0; i < 22; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });

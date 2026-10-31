@@ -9,6 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
+import { billing, drawnOf } from '../cards/billing.ts';
 import { PlayTag, PlayTags, PostEffects } from '../cards/Effects.tsx';
 import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
@@ -19,7 +20,9 @@ import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { useLocated } from '../thread/locate.tsx';
 import { Link } from '../router.tsx';
-import { takeOrigin } from './spun.ts';
+import type { Mine } from '../reactions/mine.ts';
+import type { Tallies } from '../thread/tallies.ts';
+import { primeSpun, spunCount, takeOrigin } from './spun.ts';
 import './spin.css';
 
 /** Card plays listed under the origin; a read of one more says there are more on the Act itself. */
@@ -32,7 +35,7 @@ type Reading = 'loading' | 'ready' | 'gone' | 'failed';
  * (engine/ui/cards/plays.ts), the one the thread keeps for its posts, so the post's effects draw here as they
  * do there. `more` says there were more plays than the box lists.
  */
-function useOrigin(origin: Id, thread: Id, plays: Plays): { readonly act: Act | null; readonly more: boolean; readonly reading: Reading; readonly retry: () => void } {
+function useOrigin(origin: Id, thread: Id, plays: Plays, tallies: Tallies, mine: Mine): { readonly act: Act | null; readonly more: boolean; readonly reading: Reading; readonly retry: () => void } {
   const { api, ui } = useKayfa();
   const [act, setAct] = useState<Act | null>(null);
   const [more, setMore] = useState(false);
@@ -53,15 +56,31 @@ function useOrigin(origin: Id, thread: Id, plays: Plays): { readonly act: Act | 
       (a) => { if (live) { if (a) setAct((was) => (was ? newer(was, a) : a)); else setRead('gone'); } },
       () => { if (live) setRead('failed'); },
     );
-    void api.cardsOn(origin, CARDS_SHOWN + 1).then((all) => {
+    void api.cardsOn(origin, CARDS_SHOWN + 1).then(async (all) => {
       if (!live) return;
       setMore(all.length > CARDS_SHOWN);
       const shown = all.slice(0, CARDS_SHOWN);
       plays.add(shown);
-      return readEffects(api, plays, shown, cards);
+      /*
+       * The plays are Acts like the post: their tallies and the player's own reactions to them are read in one read
+       * each, with the origin's (its tally is a card play's own when it was spun from one), and their spins through
+       * the line's batching; then they are billed as the thread bills a post's plays, once for this read.
+       */
+      const ids = [origin, ...shown.map((a) => a.id)];
+      const [counted, own, spun] = await Promise.all([
+        api.tallies(ids).catch(() => ({})),
+        api.myReactions(ids).catch(() => []),
+        primeSpun(api, ids),
+        readEffects(api, plays, shown, cards),
+      ]);
+      if (!live) return;
+      for (const [id, t] of Object.entries(counted)) tallies.merge(id, t);
+      for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
+      const here = plays.get(origin).plays;
+      plays.setBilling(origin, billing(here, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!))).map((p) => p.id));
     }, () => { /* the tags are left out */ });
     return () => { live = false; off(); };
-  }, [api, ui, origin, thread, attempt, plays]);
+  }, [api, ui, origin, thread, attempt, plays, tallies, mine]);
   return { act, more, reading: act ? 'ready' : read, retry: () => setAttempt((n) => n + 1) };
 }
 
@@ -92,10 +111,10 @@ function CardOrigin({ act, nameOf }: { readonly act: Act; readonly nameOf: (id: 
 }
 
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {
-  const { perPage } = useThread();
+  const { perPage, tallies, mine } = useThread();
   const originId = summary.originActId!;
   const plays = useMemo(() => createPlays(), []);
-  const { act, more, reading, retry } = useOrigin(originId, summary.originThread!, plays);
+  const { act, more, reading, retry } = useOrigin(originId, summary.originThread!, plays, tallies, mine);
   const box = useRef<HTMLDivElement>(null);
   /* The effect's plate is drawn here, after the box and attached to it, and not in it: the 2003 chrome holds the post's words, never the game's. */
   const slot = useRef<HTMLDivElement>(null);

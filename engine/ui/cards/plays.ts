@@ -38,14 +38,17 @@ export function playOf(act: Act): CardPlay | null {
 export const inPlayOrder = (a: CardPlay, b: CardPlay): number =>
   a.layer - b.layer || Date.parse(a.playedAt) - Date.parse(b.playedAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-/** What a post carries: its plays in play order, their saved states, and the reader's releases among them. */
+/** What a post carries: its plays in play order and in billing order, their saved states, and the reader's releases among them. */
 export interface PostPlays {
+  /** In play order (`inPlayOrder`): the order the effects wrap the post's words in. */
   readonly plays: readonly CardPlay[];
+  /** In billing order (billing.ts): the order the tags are drawn in, set when the page is read and never moved while it is read. */
+  readonly billed: readonly CardPlay[];
   readonly states: Readonly<Record<Id, EffectState>>;
   readonly released: ReadonlySet<Id>;
 }
 
-const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>() });
+const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>() });
 
 export interface Plays {
   get(post: Id): PostPlays;
@@ -55,6 +58,17 @@ export interface Plays {
   setStates(states: Readonly<Record<Id, EffectState>>): boolean;
   /** The reader released themselves from these plays. */
   setReleased(plays: readonly Id[]): boolean;
+  /** The post's plays in billing order: as last set, then each play added since, in the order it arrived. */
+  billing(post: Id): readonly Id[];
+  /** Set the post's billing, when its page is read; a play it leaves out keeps its place after the ones it names. */
+  setBilling(post: Id, plays: readonly Id[]): void;
+  /** The card's line about a play's state on this screen (design, section 4), or null; never saved or sent. */
+  note(play: Id): string | null;
+  /**
+   * Set or clear (null) a play's line. It wakes the play's post and leaves the post's snapshot as it was, so a note
+   * written while an effect runs draws only what reads it (`useNote`), never the effects or the post's words.
+   */
+  setNote(play: Id, line: string | null): void;
   subscribe(post: Id, listener: () => void): () => void;
 }
 
@@ -63,6 +77,9 @@ export function createPlays(): Plays {
   const postOf = new Map<Id, Id>();
   const states = new Map<Id, EffectState>();
   const released = new Set<Id>();
+  /* Each post's billing order, by play id: set by a read of its page, with a play that arrives later appended. */
+  const order = new Map<Id, readonly Id[]>();
+  const notes = new Map<Id, string>();
   const snapshots = new Map<Id, PostPlays>();
   const listeners = new Map<Id, Set<() => void>>();
 
@@ -82,6 +99,7 @@ export function createPlays(): Plays {
         const plays = [...own.values()].sort(inPlayOrder);
         snap = {
           plays,
+          billed: (order.get(post) ?? []).map((id) => own.get(id)!),
           states: Object.fromEntries(plays.filter((p) => states.has(p.id)).map((p) => [p.id, states.get(p.id)!])),
           released: new Set(plays.filter((p) => released.has(p.id)).map((p) => p.id)),
         };
@@ -98,6 +116,7 @@ export function createPlays(): Plays {
         if (own.has(play.id)) continue;
         own.set(play.id, play);
         byPost.set(play.post, own);
+        order.set(play.post, [...(order.get(play.post) ?? []), play.id]);
         postOf.set(play.id, play.post);
         touched.add(play.post);
       }
@@ -127,6 +146,24 @@ export function createPlays(): Plays {
       changed(touched);
       return touched.size > 0;
     },
+    billing: (post) => order.get(post) ?? [],
+    setBilling(post, ids) {
+      const own = byPost.get(post);
+      if (!own) return;
+      const named = [...new Set(ids.filter((id) => own.has(id)))];
+      const next = [...named, ...(order.get(post) ?? []).filter((id) => !named.includes(id))];
+      const was = order.get(post) ?? [];
+      if (next.length === was.length && next.every((id, i) => id === was[i])) return;
+      order.set(post, next);
+      changed([post]);
+    },
+    note: (play) => notes.get(play) ?? null,
+    setNote(play, line) {
+      if ((notes.get(play) ?? null) === line) return;
+      if (line === null) notes.delete(play); else notes.set(play, line);
+      const post = postOf.get(play);
+      if (post !== undefined) for (const l of [...(listeners.get(post) ?? [])]) l();
+    },
     subscribe(post, listener) {
       const set = listeners.get(post) ?? new Set();
       listeners.set(post, set.add(listener));
@@ -140,6 +177,11 @@ export function createPlays(): Plays {
 
 export function usePlays(plays: Plays, post: Id): PostPlays {
   return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.get(post));
+}
+
+/** A play's note (`Plays.note`): what reads it is drawn again when it changes, and nothing else is. */
+export function useNote(plays: Plays, post: Id, play: Id): string | null {
+  return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.note(play));
 }
 
 /** The keys of the cards the instance draws an effect for: only their plays' saved states and releases are ever read. */

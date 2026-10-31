@@ -94,3 +94,87 @@ describe('the kinds of Act that hold a card\'s effect', () => {
     for (const [kind, held] of Object.entries(kinds)) expect(holdsEffects(kind as ActKind), kind).toBe(held);
   });
 });
+
+describe('billing, in the store', () => {
+  test('a post\'s billing is the order set, kept as it is set, and its plays are given in that order as `billed` while `plays` stays in play order', () => {
+    const plays = createPlays();
+    const a = card({ createdAt: '2026-10-29T21:00:00.000Z' });
+    const b = card({ createdAt: '2026-10-29T21:05:00.000Z' });
+    const c = card({ createdAt: '2026-10-29T21:10:00.000Z' });
+    plays.add([a, b, c]);
+    plays.setBilling(POST, [b.id, c.id, a.id]);
+    expect(plays.billing(POST)).toEqual([b.id, c.id, a.id]);
+    expect(plays.get(POST).billed.map((p) => p.id)).toEqual([b.id, c.id, a.id]);
+    expect(plays.get(POST).plays.map((p) => p.id)).toEqual([a.id, b.id, c.id]);
+  });
+
+  test('a play added later is billed last, and a new billing sets the order again', () => {
+    const plays = createPlays();
+    const a = card({ createdAt: '2026-10-29T21:00:00.000Z' });
+    const b = card({ createdAt: '2026-10-29T21:05:00.000Z' });
+    plays.add([a, b]);
+    plays.setBilling(POST, [b.id, a.id]);
+    const early = card({ createdAt: '2026-10-29T20:00:00.000Z' });
+    plays.add([early]);
+    expect(plays.get(POST).billed.map((p) => p.id)).toEqual([b.id, a.id, early.id]);
+    plays.setBilling(POST, [early.id, a.id, b.id]);
+    expect(plays.get(POST).billed.map((p) => p.id)).toEqual([early.id, a.id, b.id]);
+  });
+
+  test('a billing that leaves a play out keeps it after the ones it names, and one naming no play of the post\'s is ignored', () => {
+    const plays = createPlays();
+    const a = card({ createdAt: '2026-10-29T21:00:00.000Z' });
+    const b = card({ createdAt: '2026-10-29T21:05:00.000Z' });
+    plays.add([a, b]);
+    plays.setBilling(POST, [b.id, '55555555-0000-4000-8000-000000000009']);
+    expect(plays.get(POST).billed.map((p) => p.id)).toEqual([b.id, a.id]);
+  });
+
+  test('setting a billing wakes only its post, and the same billing again wakes nothing', () => {
+    const plays = createPlays();
+    const a = card();
+    const b = card();
+    plays.add([a, b]);
+    const here = vi.fn();
+    const there = vi.fn();
+    plays.subscribe(POST, here);
+    plays.subscribe(OTHER, there);
+    plays.setBilling(POST, [b.id, a.id]);
+    expect(here).toHaveBeenCalledTimes(1);
+    plays.setBilling(POST, [b.id, a.id]);
+    expect(here).toHaveBeenCalledTimes(1);
+    expect(there).not.toHaveBeenCalled();
+  });
+});
+
+describe('notes, in the store', () => {
+  test('a card\'s line about a play is kept by the play, and cleared with null', () => {
+    const plays = createPlays();
+    const a = card();
+    plays.add([a]);
+    expect(plays.note(a.id)).toBeNull();
+    plays.setNote(a.id, 'Layer 1 of 1, on top · 40% washed');
+    expect(plays.note(a.id)).toBe('Layer 1 of 1, on top · 40% washed');
+    plays.setNote(a.id, null);
+    expect(plays.note(a.id)).toBeNull();
+  });
+
+  test('setting one wakes that post\'s listener and no other\'s, leaves the post\'s snapshot as it was, and the same line again wakes nothing', () => {
+    const plays = createPlays();
+    const a = card();
+    const b = card({ targetActId: OTHER });
+    plays.add([a, b]);
+    const here = vi.fn();
+    const there = vi.fn();
+    plays.subscribe(POST, here);
+    plays.subscribe(OTHER, there);
+    const before = plays.get(POST);
+    plays.setNote(a.id, 'Washed clean');
+    expect(here).toHaveBeenCalledTimes(1);
+    expect(there).not.toHaveBeenCalled();
+    /* The effects read the snapshot: a note is the panel's, so a wash that writes one draws no effect again. */
+    expect(plays.get(POST)).toBe(before);
+    plays.setNote(a.id, 'Washed clean');
+    expect(here).toHaveBeenCalledTimes(1);
+  });
+});

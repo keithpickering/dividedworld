@@ -59,3 +59,10 @@ test('billing reads nothing but its arguments: the same counts in another insert
   assert.deepEqual(first, ['c', 'b', 'a']);
   assert.deepEqual(second, first);
 });
+
+test('each play\'s draw is asked once, and a draw that is not a number counts as none', () => {
+  let asked = 0;
+  const order = billing([a, b, c], (id) => { asked += 1; return id === 'a' ? Number.NaN : id === 'b' ? 1 : 0; });
+  assert.equal(asked, 3);
+  assert.deepEqual(ids(order), ['b', 'c', 'a']);
+});

@@ -18,7 +18,8 @@ export function drawnOf(tally: Tally, spun: number): number {
 
 /** The plays in billing order, a new list: the most drawn first, then the newest, then by id. */
 export function billing(plays: readonly CardPlay[], drawn: (play: Id) => number): readonly CardPlay[] {
-  const draws = new Map(plays.map((p) => [p.id, drawn(p.id)]));
+  /* Each play's draw is asked once; one that is not a number counts as none, so the order stays total. */
+  const draws = new Map(plays.map((p) => { const n = drawn(p.id); return [p.id, Number.isFinite(n) ? n : 0]; }));
   return [...plays].sort((a, b) =>
     draws.get(b.id)! - draws.get(a.id)!
     || Date.parse(b.playedAt) - Date.parse(a.playedAt)

@@ -343,14 +343,14 @@ describe('Acts that are not posts', () => {
     expect(one).not.toHaveBeenCalled();
   });
 
-  test('several plays on one post are several tags, in the order they were played', async () => {
+  test('several plays on one post are several tags, in billing order: with nothing drawn yet, the newest first', async () => {
     const w = world(2);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'one' });
     w.fake.clock.advance(60_000);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'two' });
     open(w);
     const tags = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('list', { name: 'Cards played on this post' });
-    expect(within(tags).getAllByRole('listitem').map((li) => li.getAttribute('data-kb-card'))).toEqual(['whoops', 'stick-around']);
+    expect(within(tags).getAllByRole('listitem').map((li) => li.getAttribute('data-kb-card'))).toEqual(['stick-around', 'whoops']);
   });
 
   test('an unmask says who revealed which class, and its message', async () => {
@@ -386,6 +386,86 @@ describe('Acts that are not posts', () => {
 });
 
 /* ------------------------------------------------------------------------------ quoting ---- */
+/* The plays on a post, in the order their tags are drawn. */
+const billed = (seq: number) => [...post(seq).querySelectorAll('[aria-label="Cards played on this post"] [data-kb-play]')].map((el) => el.getAttribute('data-kb-play'));
+
+describe('the plays on a post: their tallies, own reactions and spins, read with the page', () => {
+  /* Three plays on post 2, a minute apart: Spritey's, then Pipewrench's, then Spritey's again. */
+  function played(acts = 3) {
+    const w = world(acts);
+    const first = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'one' });
+    w.fake.clock.advance(60_000);
+    const second = w.fake.seed.card(w.pipe, w.ids[1]!, 'stick-around', { message: 'two' });
+    w.fake.clock.advance(60_000);
+    const third = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'three', layer: 2 });
+    return { ...w, first, second, third };
+  }
+
+  test('a page whose post has three plays makes one tallies read and one read of the player\'s own reactions, each with the plays in it', async () => {
+    const w = played();
+    const tallies = vi.spyOn(w.fake, 'tallies');
+    const own = vi.spyOn(w.fake, 'myReactions');
+    open(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    await waitFor(() => expect(billed(2)).toHaveLength(3));
+    expect(tallies).toHaveBeenCalledTimes(1);
+    expect(own).toHaveBeenCalledTimes(1);
+    for (const play of [w.first, w.second, w.third]) {
+      expect(tallies.mock.calls[0]![0]).toContain(play);
+      expect(own.mock.calls[0]![0]).toContain(play);
+    }
+    expect(tallies.mock.calls[0]![0]).toContain(w.ids[1]);
+  });
+
+  test('the play that has drawn the most is billed first; with no draws the newest is', async () => {
+    const w = played();
+    open(w);
+    await waitFor(() => expect(billed(2)).toHaveLength(3));
+    expect(billed(2)).toEqual([w.third, w.second, w.first]);
+  });
+
+  test('a play\'s reactions and the threads spun from it are what it has drawn', async () => {
+    const w = played();
+    w.fake.seed.react(w.me, w.pipe, w.first, 'fire');
+    w.fake.seed.react(w.other, w.spritey, w.second, 'fire');
+    await w.fake.spin(w.second, w.pipe, 'From the second play', '');
+    open(w);
+    await waitFor(() => expect(billed(2)).toHaveLength(3));
+    expect(billed(2)).toEqual([w.second, w.first, w.third]);
+  });
+
+  test('a live reaction that makes a later play the most drawn leaves the order as it was, and a reread of the page reorders it', async () => {
+    const w = played(25);
+    const tapped = tap(w.fake);
+    open(w);
+    await waitFor(() => expect(billed(2)).toHaveLength(3));
+    expect(billed(2)).toEqual([w.third, w.second, w.first]);
+    w.fake.seed.react(w.me, w.pipe, w.first, 'fire');
+    w.fake.seed.react(w.me, w.pipe, w.first, 'tea');
+    deliver(() => tapped().onTally?.(w.first, { fire: 1, tea: 1 }));
+    await act(() => pause(20));
+    expect(billed(2)).toEqual([w.third, w.second, w.first]);
+    await userEvent.click(screen.getAllByRole('link', { name: 'Page 2' })[0]!);
+    await screen.findByRole('article', { name: /^Post 21 /u });
+    await userEvent.click(screen.getAllByRole('link', { name: 'Page 1' })[0]!);
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(billed(2)).toHaveLength(3));
+    expect(billed(2)).toEqual([w.first, w.third, w.second]);
+  });
+
+  test('a play that arrives live is billed last, however new it is', async () => {
+    const w = played();
+    const tapped = tap(w.fake);
+    open(w);
+    await waitFor(() => expect(billed(2)).toHaveLength(3));
+    expect(billed(2)).toEqual([w.third, w.second, w.first]);
+    const late = live(w.thread, null as unknown as number, w.pipe, { kind: 'card', seq: null, targetActId: w.ids[1]!, payload: { card: 'whoops', layer: 3, message: 'late' }, currentPayload: { card: 'whoops', layer: 3, message: 'late' }, createdAt: '2026-11-01T00:00:00Z' });
+    deliver(() => tapped().onAct?.(late));
+    await waitFor(() => expect(billed(2)).toHaveLength(4));
+    expect(billed(2)).toEqual([w.third, w.second, w.first, late.id]);
+  });
+});
+
 describe('quotes', () => {
   test('a quote of an Act in this thread links to its post', async () => {
     const w = world(2);
@@ -906,7 +986,8 @@ describe('a card\'s effect on a post', () => {
     const tint: CardUi = { ...fx('whoops'), tag: (play, all) => (play === all[all.length - 1] ? '#ff2bd6' : undefined) };
     openWith(w, [tint]);
     const tags = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('list', { name: 'Cards played on this post' });
-    const [under, over] = within(tags).getAllByRole('listitem');
+    /* Billed newest first, with neither drawing yet: the top layer's tag leads. */
+    const [over, under] = within(tags).getAllByRole('listitem');
     expect(over!).toHaveAttribute('data-kb-tinted', 'true');
     /* The tint is the tag's border and glow (both are drawn from --kb-tag); the glass and its smoke stay. */
     expect(over!.style.getPropertyValue('--kb-tag')).toBe('#ff2bd6');

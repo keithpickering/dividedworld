@@ -190,7 +190,7 @@ export function PlayTags({ plays, post, to, nameOf }: { readonly plays: Plays; r
   if (here.plays.length === 0) return null;
   return (
     <ul className="kb-play-tags" aria-label="Cards played on this post">
-      {here.plays.map((p) => <PlayTag key={p.id} play={p} caster={nameOf(p.caster)} to={to} tint={ui.cards.find((c) => c.key === p.card)?.tag?.(p, here.plays.filter((o) => o.card === p.card))} />)}
+      {here.billed.map((p) => <PlayTag key={p.id} play={p} caster={nameOf(p.caster)} to={to} tint={ui.cards.find((c) => c.key === p.card)?.tag?.(p, here.plays.filter((o) => o.card === p.card))} />)}
     </ul>
   );
 }

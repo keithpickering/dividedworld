@@ -30,6 +30,7 @@
  * re-renders the posts it lands on and not the page.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { billing, drawnOf } from '../cards/billing.ts';
 import { createPlays, effectCards, readEffects, readPlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
@@ -48,6 +49,7 @@ import { ActArticle } from './Post.tsx';
 import { ThreadCtx, type ThreadContext } from './context.ts';
 import { text } from './lines.tsx';
 import { createMine } from '../reactions/mine.ts';
+import { primeSpun, spunCount } from '../spin/spun.ts';
 import { createTallies } from './tallies.ts';
 import './thread.css';
 
@@ -136,20 +138,34 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   /* A character's name as the thread knows it: read before the posts that name it are drawn. */
   const nameOf = useCallback((id: Id | null) => (id === null ? 'The System' : people.current.get(id)?.character.name ?? 'A character'), []);
 
-  /* The posts of a read, with their tallies and the plays on them, ready to show. */
+  /*
+   * The posts of a read, with the plays on them, their tallies, the player's own reactions and the threads spun from
+   * them, ready to show. A play is an Act like a post: its tally and the player's reactions to it join the posts' in
+   * one read each, and its spins go through the line's batched read, never one per post or per play. Each post's plays
+   * are then billed (cards/billing.ts), once for this read: a live count moves no tag.
+   */
   const prepare = useCallback(async (acts: readonly Act[]) => {
     await ensurePeople(acts.map((a) => a.character));
     if (acts.length > 0) {
-      const counted = await api.tallies(acts.map((a) => a.id));
+      /* Every play on the page's posts in one read; a play takes no number, so it is found through its post. */
+      const posts = acts.filter((a) => a.kind === 'post').map((a) => a.id);
+      const played = await readPlays(api, plays, posts, effects);
+      const ids = [...acts.map((a) => a.id), ...played.map((a) => a.id)];
+      const [counted, own, spun] = await Promise.all([
+        api.tallies(ids),
+        /* The player's own reactions: if they cannot be read the server still refuses a repeat, in its words. */
+        api.myReactions(ids).catch(() => []),
+        primeSpun(api, ids),
+        /* A play's caster is named before it is drawn. */
+        ensurePeople(played.map((a) => a.character)),
+      ]);
       for (const [id, t] of Object.entries(counted)) tallies.merge(id, t);
-      /* The player's own reactions: if they cannot be read the server still refuses a repeat, in its words. */
-      const ids = acts.map((a) => a.id);
-      const own = await api.myReactions(ids).catch(() => []);
       for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
-      /* Every play on the page's posts in one read; a play takes no number, so it is found through its post.
-         Its caster is named before it is drawn. */
-      const played = await readPlays(api, plays, acts.filter((a) => a.kind === 'post').map((a) => a.id), effects);
-      await ensurePeople(played.map((a) => a.character));
+      for (const post of posts) {
+        const here = plays.get(post).plays;
+        if (here.length === 0) continue;
+        plays.setBilling(post, billing(here, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!))).map((p) => p.id));
+      }
     }
   }, [api, ensurePeople, tallies, mine, plays, effects]);
 
