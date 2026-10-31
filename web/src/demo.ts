@@ -84,7 +84,7 @@ function keepPreferences(fake: Fake): void {
   const real = fake.setPreferences.bind(fake);
   fake.setPreferences = async (p) => {
     const r = await real(p);
-    if (r.ok) { try { globalThis.sessionStorage?.setItem(key, JSON.stringify(r.value)); } catch { /* not kept */ } }
+    if (r.ok) { try { globalThis.sessionStorage?.setItem(key, JSON.stringify({ ...r.value, cardsMet: undefined })); } catch { /* not kept */ } }
     return r;
   };
 }

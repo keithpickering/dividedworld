@@ -159,16 +159,19 @@ describe('Settings, as board 11 draws it', () => {
     open(w.fake);
     const button = await screen.findByRole('button', { name: 'Show card tips again' });
     expect(screen.getByRole('heading', { level: 3, name: 'Card tips' })).toBeInTheDocument();
-    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
     cleanup();
     await w.fake.meetCard('whoops');
     await w.fake.meetCard('stick-around');
     open(w.fake);
     const enabled = await screen.findByRole('button', { name: 'Show card tips again' });
-    expect(enabled).toBeEnabled();
-    await userEvent.click(enabled);
+    expect(enabled).not.toHaveAttribute('aria-disabled', 'true');
+    enabled.focus();
+    await userEvent.keyboard('{Enter}');
     await waitFor(async () => expect((await w.fake.preferences()).cardsMet).toEqual([]));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Show card tips again' })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show card tips again' })).toHaveAttribute('aria-disabled', 'true'));
+    /* Spent, the button stays in the tab order with focus on it: a keyboard player is not dropped to the page. */
+    expect(screen.getByRole('button', { name: 'Show card tips again' })).toHaveFocus();
     expect(await screen.findByRole('status')).toHaveTextContent('Saved to your account.');
   });
 
@@ -179,7 +182,7 @@ describe('Settings, as board 11 draws it', () => {
     open(w.fake);
     await userEvent.click(await screen.findByRole('button', { name: 'Show card tips again' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('try again later');
-    expect(screen.getByRole('button', { name: 'Show card tips again' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Show card tips again' })).not.toHaveAttribute('aria-disabled', 'true');
   });
 
   /** Text size changed twice before either save is answered: 100, then 125, then 150. */

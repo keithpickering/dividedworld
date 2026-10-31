@@ -48,11 +48,14 @@ declare
   kept account_preferences%rowtype;
 begin
   if card is null or card !~ '^[a-z][a-z0-9-]{0,39}$' then raise exception 'a card is named in lowercase words joined by hyphens' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  select * into kept from account_preferences where account = caller;
-  if found and not card = any (kept.cards_met) and cardinality(kept.cards_met) >= 64 then raise exception 'at most 64 cards are kept as met' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  insert into account_preferences as p (account, cards_met) values (caller, array[card])
-  on conflict (account) do update set cards_met = case when card = any (p.cards_met) then p.cards_met else p.cards_met || card end
-  returning * into kept;
+  -- The row is made if it is not there and then locked, so two calls racing for the last place meet
+  -- one after the other: the second sees 64 and is refused in the refusal's words, never by the
+  -- column's check.
+  insert into account_preferences (account) values (caller) on conflict (account) do nothing;
+  select * into kept from account_preferences where account = caller for update;
+  if not card = any (kept.cards_met) and cardinality(kept.cards_met) >= 64 then raise exception 'at most 64 cards are kept as met' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  update account_preferences set cards_met = case when card = any (cards_met) then cards_met else cards_met || card end
+  where account = caller returning * into kept;
   return jsonb_build_object('theme', kept.theme, 'postbit', kept.postbit, 'motion', kept.motion,
     'smoke', kept.smoke, 'contrast', kept.contrast, 'text_size', kept.text_size, 'cards_met', to_jsonb(kept.cards_met));
 end $$;

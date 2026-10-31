@@ -285,7 +285,7 @@ export function SettingsScreen() {
         <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
           sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />
         <Row label="Card tips" sentence="The first time one of a card's marks shows on a page, a small note says what the card does. Each shows once. This brings them all back.">
-          <p><button type="button" className="kb-acct-button kb-glass-skew" disabled={prefs.cardsMet.length === 0} onClick={forgetTips}><b className="kb-glass-upright">Show card tips again</b></button></p>
+          <p><button type="button" className="kb-acct-button kb-glass-skew" aria-disabled={prefs.cardsMet.length === 0} onClick={() => { if (prefs.cardsMet.length > 0) forgetTips(); }}><b className="kb-glass-upright">Show card tips again</b></button></p>
         </Row>
         {said}
         <p className="kb-acct-foot">Changes save as you make them.</p>

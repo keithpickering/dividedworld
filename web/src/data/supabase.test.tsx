@@ -462,6 +462,11 @@ describe('reads and their rows', () => {
     expect(h.to('rpc/forget_cards_met')).toHaveLength(1);
   });
 
+  it('returns a meet_card refusal as the server\'s own words', async () => {
+    const h = harness(() => json({ code: '22023', message: 'at most 64 cards are kept as met', hint: 'kayfabb.refusal' }, 400));
+    expect(await h.api.meetCard('one-too-many')).toEqual({ ok: false, error: 'at most 64 cards are kept as met' });
+  });
+
   it('keys tallies, view counts and reading by id', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/reaction_tallies')) return rows([{ act: A, kind: 'fire', count: 3 }, { act: A, kind: 'zzz', count: 1 }]);

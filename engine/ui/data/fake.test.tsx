@@ -630,6 +630,8 @@ describe('the account', () => {
     expect(must(await fake.meetCard('whoops')).cardsMet).toEqual(['whoops']);
     expect(must(await fake.meetCard('stick-around')).cardsMet).toEqual(['whoops', 'stick-around']);
     expect(must(await fake.setPreferences({ smoke: 'low' })).cardsMet).toEqual(['whoops', 'stick-around']);
+    /* A stray cardsMet in a patch is ignored, as the server's set_preferences has no such parameter. */
+    expect(must(await fake.setPreferences({ cardsMet: ['sneaky'] } as never)).cardsMet).toEqual(['whoops', 'stick-around']);
     expect(await fake.meetCard('Whoops')).toEqual(refused('a card is named in lowercase words joined by hyphens'));
     for (let i = 2; i < 64; i++) must(await fake.meetCard(`card-${i}`));
     expect(await fake.meetCard('one-too-many')).toEqual(refused('at most 64 cards are kept as met'));
