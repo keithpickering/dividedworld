@@ -250,9 +250,18 @@ test('a wheel over the post\'s text, pushed past its end, fills the bar and free
   /* The post's last lines, which are in the window with the scroller at its end. */
   await page.mouse.move(at.x + at.width / 2, at.y + at.height - 20);
   expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('.kb-hold-post-body') !== null, [at.x + at.width / 2, at.y + at.height - 20])).toBe(true);
-  await page.waitForTimeout(100);
-  /* Each wheel call takes a round trip, so each is a hard push: the pace of a trackpad's flick. */
-  for (let i = 0; i < 100 && (await view(page).isVisible()); i += 1) await page.mouse.wheel(0, 400);
+  /*
+   * The push is a stream of wheel events dispatched on the post's own words, in the page, as the scroller test above does: its
+   * pace is the page's and not the test's round trips, which on a busy runner let the bar drain faster than it filled. Dispatched
+   * on the words, the events reach the view's listeners only by bubbling through the DOM the words were moved into.
+   */
+  await text.evaluate((el) => new Promise<void>((done) => {
+    const began = performance.now();
+    const timer = setInterval(() => {
+      if (!el.isConnected || performance.now() - began > 6000) { clearInterval(timer); done(); return; }
+      el.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }));
+    }, 8);
+  }));
   await expect(view(page)).toBeHidden();
 });
 
