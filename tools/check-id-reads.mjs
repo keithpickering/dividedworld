@@ -14,17 +14,19 @@
  * untracked scratch file neither fails the build nor makes it pass). For each call whose callee is `X.in(…)` or
  * `X['in'](…)`, through parentheses, casts and `!`:
  * - clean when its column is a string literal in BOUNDED_IN, whose values are a fixed list with its bound stated;
- * - clean when its list is an identifier bound as the first parameter of an arrow or function expression that is the
- *   first argument of `.map`/`.flatMap` on a call to `chunks(…)`, or the second argument of a call to `byChunks(…)`,
- *   with no declaration of the same name between that function and the `.in`;
+ * - clean when its list is an identifier bound as the plain first parameter (no rest, no default) of an arrow or
+ *   function expression that is the first argument of `.map`/`.flatMap` on a call to the bare `chunks(…)`, or the
+ *   second argument of a call to the bare `byChunks(…)`, and that parameter is used nowhere in its callback but as the
+ *   list of `.in()` calls;
  * - anything else fires, with its file, line and column: a column the guard cannot read (a variable), a list spread or
- *   built in place, a list passed through a variable or a helper first, or a chunk's parameter shadowed.
+ *   built in place, a list passed through a variable or a helper first, a chunk's parameter used for anything else in
+ *   its callback (even harmlessly, such as `part.length`) or shadowed by an inner function's, and the helpers reached
+ *   through an object (`u.chunks`).
  *
- * `.in` taken as a value rather than called at once (`q.in.call(…)`, `.apply`, `const f = q['in']`, `const { in: f }
- * = q`) fires too, since the guard cannot follow where it is called; so does a chunk's parameter assigned another
- * list in its callback. A list built from a chunk and renamed through a destructuring or an object field fires (it
- * is not read through), which is the safe side.
- *
+ * `.in` taken as a value rather than called at once (`q.in.call(…)`, `.apply`, `run(q.in)`, `const f = q['in']`,
+ * `const { in: f } = q`) fires too, since the guard cannot follow where it is called. It fires on any property named
+ * `in` read as a value, a query's or not: the data layer has no other, and the safe side costs nothing.
+
  * Out of scope, named so a reader knows: a method reached by a computed key (`q[k](…)`) is not read, since the guard
  * cannot know `k` names `in`; check-web-reads.mjs holds each `.from()` read at once with `.select()`, so a query is
  * never handed to code that could filter it that way.
@@ -63,6 +65,7 @@ function memberName(node) {
   return null;
 }
 
+/** @type {(n: ts.Node) => n is ts.FunctionLikeDeclaration} */
 const isFunction = (n) => ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) || ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n) || ts.isConstructorDeclaration(n);
 const calls = (node, name) => ts.isCallExpression(node) && ts.isIdentifier(unwrap(node.expression)) && unwrap(node.expression).text === name;
 
@@ -79,44 +82,49 @@ function isChunkCallback(fn) {
   return calls(unwrap(callee.expression), 'chunks');
 }
 
-const ASSIGNS = new Set([ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken, ts.SyntaxKind.BarBarEqualsToken, ts.SyntaxKind.QuestionQuestionEqualsToken, ts.SyntaxKind.AmpersandAmpersandEqualsToken]);
-
-/** True when `name` is declared (a variable, a parameter, a function) or assigned anywhere inside `scope`. */
-function declaredWithin(scope, name) {
-  let found = false;
-  const visit = (n) => {
-    if (found) return;
-    if ((ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n) || ts.isFunctionDeclaration(n)) && n.name && ts.isIdentifier(n.name) && n.name.text === name) {
-      found = true;
-      return;
-    }
-    if (ts.isBinaryExpression(n) && ASSIGNS.has(n.operatorToken.kind) && ts.isIdentifier(unwrap(n.left)) && unwrap(n.left).text === name) {
-      found = true;
-      return;
-    }
-    ts.forEachChild(n, visit);
-  };
-  ts.forEachChild(scope, visit);
-  return found;
+/** The node under any parentheses, casts, non-null marks and satisfies wrapped around it: the outermost of them. */
+function outermost(node) {
+  let n = node;
+  while (n.parent && (ts.isParenthesizedExpression(n.parent) || ts.isAsExpression(n.parent) || ts.isNonNullExpression(n.parent) || ts.isSatisfiesExpression(n.parent) || ts.isTypeAssertionExpression(n.parent))) n = n.parent;
+  return n;
 }
 
-/** True when `list` is a chunk: the first parameter of a chunk's callback, not shadowed between it and the read. */
+/** True when an identifier is the list (the second argument) of an `.in()` call. */
+function isInList(id) {
+  const arg = outermost(id);
+  const call = arg.parent;
+  return ts.isCallExpression(call) && call.arguments[1] === arg && memberName(unwrap(call.expression)) === 'in';
+}
+
+/** The nearest function around an identifier that takes a parameter of its name, or null. */
+function binder(id) {
+  for (let n = id.parent; n; n = n.parent) {
+    if (isFunction(n) && n.parameters.some((p) => ts.isIdentifier(p.name) && p.name.text === id.text)) return n;
+  }
+  return null;
+}
+
+/**
+ * True when `list` is a chunk: the plain first parameter (no rest, no default) of a chunk's callback, and that
+ * parameter is used nowhere in the callback but as the list of `.in()` calls. Any other use (declared or assigned
+ * again, incremented, passed on, shadowed by an inner function's parameter) fires, without asking whether it is
+ * harmless: the safe side, and a shape the data layer never needs.
+ */
 function isChunk(list) {
   const id = unwrap(list);
   if (!ts.isIdentifier(id)) return false;
-  for (let n = id.parent; n; n = n.parent) {
-    if (!isFunction(n)) continue;
-    const at = n.parameters.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === id.text);
-    if (at === -1) {
-      /* A function between the read and the binder that declares or assigns the name inside it shadows it. */
-      if (declaredWithin(n.body ?? n, id.text)) return false;
-      continue;
-    }
-    if (at !== 0 || !isChunkCallback(n)) return false;
-    /* The callback's own body must not declare the name again over its parameter, or assign it another list. */
-    return !(n.body && declaredWithin(n.body, id.text));
-  }
-  return false;
+  const fn = binder(id);
+  if (!fn) return false;
+  const [first] = fn.parameters;
+  if (!first || !ts.isIdentifier(first.name) || first.name.text !== id.text || first.dotDotDotToken || first.initializer || !isChunkCallback(fn)) return false;
+  let clean = true;
+  const visit = (n) => {
+    if (!clean) return;
+    if (ts.isIdentifier(n) && n.text === id.text && n !== first.name && !isInList(n)) clean = false;
+    else ts.forEachChild(n, visit);
+  };
+  ts.forEachChild(fn, visit);
+  return clean;
 }
 
 /** Every `.in()` call in one file, with whether it is clean. */
@@ -128,8 +136,7 @@ function inCalls(file, text) {
   const visit = (node) => {
     /* `.in` taken as a value (`q.in.call(…)`, `const f = q['in']`, `const { in: f } = q`) is a read the guard cannot follow, so it fires. */
     const member = (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) && memberName(node) === 'in';
-    let callee = node;
-    while (member && (ts.isParenthesizedExpression(callee.parent) || ts.isAsExpression(callee.parent) || ts.isNonNullExpression(callee.parent) || ts.isSatisfiesExpression(callee.parent) || ts.isTypeAssertionExpression(callee.parent))) callee = callee.parent;
+    const callee = member ? outermost(node) : node;
     const taken = (member && !(ts.isCallExpression(callee.parent) && callee.parent.expression === callee))
       || (ts.isBindingElement(node) && node.propertyName !== undefined && (ts.isIdentifier(node.propertyName) || ts.isStringLiteral(node.propertyName)) && node.propertyName.text === 'in');
     if (taken) {

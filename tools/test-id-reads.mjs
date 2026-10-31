@@ -68,6 +68,30 @@ check('`.in` taken off a query by destructuring fires', faults(`const { in: f } 
 check('`.in` stored in a variable fires', faults(`const f = q['in']; f('id', ids);`).length === 1);
 check('a chunk parameter reassigned in its callback fires', faults(`chunks(ids).map((part) => { part = ids; return q.in('id', part); });`).length === 1);
 
+/* A chunk's parameter used as anything but an `.in` list: renamed, reassigned, spread, defaulted or shadowed. */
+check('a chunk parameter incremented fires', faults(`chunks(ids).map((part) => { part++; return q.in('id', part); });`).length === 1);
+check('a chunk parameter assigned by a for-of fires', faults(`chunks(ids).map((part) => { for (part of [ids]) {} return q.in('id', part); });`).length === 1);
+check('a chunk parameter assigned by destructuring fires', faults(`chunks(ids).map((part) => { [part] = [ids]; return q.in('id', part); });`).length === 1);
+check('a chunk parameter declared again in the callback fires', faults(`chunks(ids).map((part) => { var part = ids; return q.in('id', part); });`).length === 1);
+check('a rest parameter (the chunk, its index and the array) fires', faults(`chunks(ids).map((...part) => q.in('id', part));`).length === 1);
+check('a defaulted parameter fires', faults(`chunks(ids).map((part = ids) => q.in('id', part));`).length === 1);
+check('a chunk parameter used for anything else in its callback fires (the safe side)', faults(`chunks(ids).map((part) => part.length && q.in('id', part));`).length === 1);
+check('a chunk parameter passed into a helper that calls `.in` fires', faults(`const by = (q, xs) => q.in('id', xs); chunks(ids).map((part) => by(q, part));`).length === 1);
+/* The callback's place. */
+check('a function on chunks other than map or flatMap fires', faults(`chunks(ids).forEach((part) => q.in('id', part));`).length === 1);
+check('a function as map\'s second argument fires', faults(`chunks(ids).map(x, (part) => q.in('id', part));`).length === 1);
+check('a function as byChunks\' first argument fires', faults(`byChunks((part) => q.in('id', part), ids);`).length === 1);
+/* `.in` as a value, and the literals the guard reads. */
+check('`.in` taken off a query by a quoted destructuring fires', faults(`const { 'in': f } = q;`).length === 1);
+check('`.in` passed as an argument fires', faults(`run(q.in);`).length === 1);
+check('`.in` read through a template key and stored fires', faults('const f = q[`in`];').length === 1);
+check('a property named in that is not a query\'s still fires (the safe side)', faults(`const n = cfg.in ?? 1;`).length === 1);
+check('a template-literal column not in BOUNDED_IN fires', faults('q.in(`id`, ids);').length === 1);
+check('a template-literal kind column is clean', faults('q.in(`kind`, kinds);').length === 0);
+check('a `.tsx` file in the data layer is read', faults(`q.in('id', ids);`, 'web/src/data/Provider.tsx').length === 1);
+check('an `.mjs` file in the data layer is read', faults(`q.in('id', ids);`, 'web/src/data/x.mjs').length === 1);
+check('a call reached through a parenthesized callee is still read', faults(`(q.in)('id', ids);`).length === 1);
+
 /* ---- chunked and bounded shapes are clean ---- */
 check('`chunks(ids).map((part) => …in(\'id\', part))` is clean', faults(`await Promise.all(chunks(ids).map((part) => client.from('x').select('*').in('id', part)));`).length === 0);
 check('`.flatMap` on chunks is clean', faults(`chunks(ids).flatMap((part) => client.from('x').select('*').in('id', part));`).length === 0);
@@ -79,6 +103,14 @@ check('BOUNDED_IN holds only kind, with its bound stated',
   BOUNDED_IN.length === 1 && BOUNDED_IN[0]?.column === 'kind' && typeof BOUNDED_IN[0]?.bound === 'string' && BOUNDED_IN[0].bound.length > 10 && Object.isFrozen(BOUNDED_IN), JSON.stringify(BOUNDED_IN));
 check('a `.not(\'kind\', \'in\', …)` filter is not an `.in()` read', faults(`await client.from('x').select('*').not('kind', 'in', '(edit,card)');`).length === 0);
 check('an `in` that is not a call is not read', faults(`const ok = 'id' in row;`).length === 0);
+
+check('a parenthesized `.in` called in a chunk is clean', faults(`chunks(ids).map((part) => (q.in)('id', part));`).length === 0);
+check('a cast `.in` called in a chunk is clean', faults(`chunks(ids).map((part) => (q.in as F)('id', part));`).length === 0);
+check('a parenthesized callback on chunks is clean', faults(`chunks(ids).map(((part) => q.in('id', part)));`).length === 0);
+check('a parenthesized chunks is clean', faults(`(chunks)(ids).map((part) => q.in('id', part));`).length === 0);
+check('a chunk read through satisfies is clean', faults(`byChunks(ids, (part) => q.in('id', part satisfies string[]));`).length === 0);
+check('a chunk used as the list of two reads in its callback is clean', faults(`byChunks(ids, (part) => Promise.all([q.in('id', part), r.in('act', part)]));`).length === 0);
+check('chunks and byChunks named through an object fire (only the bare helpers are read)', faults(`u.chunks(ids).map((part) => q.in('id', part)); h.byChunks(ids, (part) => q.in('id', part));`).length === 2);
 
 /* ---- what is read ---- */
 check('a test file is not read', faults(`await client.from('x').select('*').in('id', ids);`, 'web/src/data/supabase.test.tsx').length === 0);
