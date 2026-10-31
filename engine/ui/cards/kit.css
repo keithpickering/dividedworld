@@ -103,4 +103,14 @@
   .kb-kit-tile:focus-visible {
     outline-color: Highlight;
   }
+
+  /* The pressed square keeps its fill, so on or off is a shape as well as a color. */
+  .kb-kit-tile[aria-pressed]::before {
+    border-color: ButtonText;
+  }
+
+  .kb-kit-tile[aria-pressed="true"]::before {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
 }
