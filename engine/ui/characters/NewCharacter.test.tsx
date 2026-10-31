@@ -1,7 +1,8 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import type { Instance } from '../../rules/types.ts';
+import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { NewCharacter } from './NewCharacter.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -96,5 +97,20 @@ describe('New character', () => {
     expect(await screen.findByText(/an admin can retire a character on request/iu)).toBeInTheDocument();
     expect(screen.queryByRole('form', { name: 'New character' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Back to your characters' })).toHaveAttribute('href', '/characters');
+  });
+});
+
+/* The carousel's five classes (the Technician plan's Task 4), in an instance of the test's own, since a test in engine/ui may not import one. */
+describe('New character\'s classes', () => {
+  test('offers every class in the instance\'s order, in one group, nothing chosen', async () => {
+    const five: Instance = { ...testInstance, classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })) };
+    const fake = buildWorld({ charactersPerPlayer: 3 }, five);
+    fake.signInAs(fake.seed.account('me'));
+    renderIn(fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: 3 }, instance: five });
+    const f = await form();
+    const radios = within(within(f).getByRole('group', { name: /class/iu })).getAllByRole('radio');
+    expect(radios.map((r) => r.getAttribute('value'))).toEqual(['face', 'heel', 'jabroni', 'technician', 'lurker']);
+    expect(new Set(radios.map((r) => r.getAttribute('name'))).size).toBe(1);
+    expect(radios.filter((r) => (r as HTMLInputElement).checked)).toEqual([]);
   });
 });

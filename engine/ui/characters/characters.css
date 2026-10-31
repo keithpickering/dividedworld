@@ -432,11 +432,83 @@
   color: var(--kb-glass-text-2);
 }
 
+/*
+ * The class cards are one row, a carousel (docs/plans/2026-10-30-technician-design.md, section 3):
+ * cards at the board's 216px, as many as the row's width holds, scrolled on the inline axis and
+ * snapped to a card's start. While cards lie past an edge, a fade is drawn there, under which the
+ * next card peeks. The scrollbar is not drawn, as the board draws none: the arrows, a swipe and the
+ * arrow keys move the row. Nothing out of view is hidden from anyone: no card is given
+ * visibility, display or inert here.
+ */
+.kb-class-cards {
+  position: relative;
+  --kb-class-card-width: 216px;
+  --kb-class-fade: 64px;
+}
+
 .kb-class-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
   gap: 14px;
   margin-top: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.kb-class-grid > .kb-class-card {
+  flex: none;
+  width: var(--kb-class-card-width);
+  scroll-snap-align: start;
+}
+
+.kb-class-grid[data-kb-more-after] {
+  mask-image: linear-gradient(90deg, #000 calc(100% - var(--kb-class-fade)), transparent);
+}
+
+.kb-class-grid[data-kb-more-before] {
+  mask-image: linear-gradient(90deg, transparent, #000 var(--kb-class-fade));
+}
+
+.kb-class-grid[data-kb-more-before][data-kb-more-after] {
+  mask-image: linear-gradient(90deg, transparent, #000 var(--kb-class-fade), #000 calc(100% - var(--kb-class-fade)), transparent);
+}
+
+/* The count and the arrows, on the legend's line at its right, as the Turn board draws them. */
+.kb-class-nav {
+  position: absolute;
+  right: 0;
+  top: -40px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.kb-class-count {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-class-arrow {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-display-s);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--kb-glass-text-2);
+  background: var(--kb-glass-panel-soft);
+  border: 1px solid currentColor;
+  cursor: pointer;
+}
+
+.kb-class-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .kb-class-card {
@@ -504,9 +576,19 @@
   content: none;
 }
 
+/*
+ * A class's name is set at the card's 40px and steps down to fit the card's width less the radio's
+ * corner (20px of the content box), never under 70% of it (28px at 100% text): a container query on the card, by the name's
+ * length in characters (`--kb-class-name-length`, set by ClassCards.tsx) at about 0.48em a capital
+ * of the display face. "TECHNICIAN" at 216px is the Turn board's 34px; the shorter names stay 40px.
+ */
+.kb-class-card {
+  container-type: inline-size;
+}
+
 .kb-class-name {
   font-family: var(--kb-glass-font-display);
-  font-size: var(--kb-glass-size-display-m);
+  font-size: clamp(calc(var(--kb-glass-size-display-m) * 0.7), calc((100cqi - 20px) / (var(--kb-class-name-length, 1) * 0.48)), var(--kb-glass-size-display-m));
   font-weight: 400;
   line-height: 1;
   text-transform: uppercase;
@@ -1195,8 +1277,9 @@
   font-size: var(--kb-glass-size-display-m);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-class-grid {
-  grid-template-columns: minmax(0, 1fr);
+/* The phone's row: one card whole and the next peeking under the fade. */
+:where(:root[data-kb-layout='phone']) .kb-class-cards {
+  --kb-class-card-width: calc(100% - var(--kb-class-fade));
 }
 
 :where(:root[data-kb-layout='phone']) .kb-class-card {

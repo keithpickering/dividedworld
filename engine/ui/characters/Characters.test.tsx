@@ -824,3 +824,90 @@ describe('the class cards\' radios', () => {
     expect(within(heel.closest('label')!).getByRole('img', { name: 'Earns from heat, hurt by the calm' })).toBeInTheDocument();
   });
 });
+
+/*
+ * Choose a class as a carousel (the Technician plan's Task 4). A test in engine/ui may not import an
+ * instance, so this is an instance of five classes in Divided World's order, which is what the
+ * engine must draw with no count of its own. jsdom lays nothing out, so the row is given the Turn
+ * board's lengths: 216px cards in a 972px row, overflowing.
+ */
+const five: Instance = {
+  ...testInstance,
+  classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })),
+};
+function overflowingRow() {
+  const grid = (el: HTMLElement) => el.classList.contains('kb-class-grid');
+  vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? 5 * 216 : 0; });
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? 972 : 0; });
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-class-card') ? 216 : 0; });
+}
+
+describe('the Turn\'s classes, as a carousel', () => {
+  const openFive = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', settings: { charactersPerPlayer: w.per }, instance: five });
+  const openTurn = async (name: string) => {
+    await userEvent.click(within(row(name)).getByRole('button', { name: `Turn ${name}` }));
+    return screen.findByRole('dialog', { name: `Turn ${name}` });
+  };
+
+  test('draws every class in the instance\'s order, the one held marked Now, the rest radios of one group', async () => {
+    const w = world({ instance: five });
+    openFive(w);
+    await ready();
+    const dialog = await openTurn('Mrs. Hooligan');
+    const group = within(dialog).getByRole('group', { name: 'Turn to' });
+    const cards = [...group.querySelectorAll<HTMLElement>('.kb-class-card')];
+    expect(cards.map((c) => c.dataset.kbClass)).toEqual(['face', 'heel', 'jabroni', 'technician', 'lurker']);
+    expect(within(cards[1]!).getByText('Now')).toBeInTheDocument();
+    const radios = within(group).getAllByRole('radio');
+    expect(radios.map((r) => r.getAttribute('value'))).toEqual(['face', 'jabroni', 'technician', 'lurker']);
+    expect(new Set(radios.map((r) => r.getAttribute('name'))).size).toBe(1);
+  });
+
+  test('hides no class from the accessibility tree while the row overflows', async () => {
+    const w = world({ instance: five });
+    openFive(w);
+    await ready();
+    overflowingRow();
+    const dialog = await openTurn('Mrs. Hooligan');
+    await within(dialog).findByText('1–4 of 5');
+    // getAllByRole leaves out what the accessibility tree leaves out (aria-hidden, display, visibility).
+    expect(within(within(dialog).getByRole('group', { name: 'Turn to' })).getAllByRole('radio').map((r) => r.getAttribute('value'))).toEqual(['face', 'jabroni', 'technician', 'lurker']);
+    for (const card of dialog.querySelectorAll<HTMLElement>('.kb-class-card')) {
+      for (let el: HTMLElement | null = card; el && el !== dialog; el = el.parentElement) {
+        expect(el.hidden || el.inert || el.getAttribute('aria-hidden') === 'true', card.dataset.kbClass).toBe(false);
+      }
+    }
+  });
+
+  test('names its arrows and its count while the row overflows, "Earlier classes" disabled at the start', async () => {
+    const w = world({ instance: five });
+    openFive(w);
+    await ready();
+    overflowingRow();
+    const dialog = await openTurn('Mrs. Hooligan');
+    expect(await within(dialog).findByText('1–4 of 5')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Earlier classes' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'More classes' })).toBeEnabled();
+    // The arrows are buttons, never a form's submit.
+    expect(within(dialog).getByRole('button', { name: 'More classes' })).toHaveAttribute('type', 'button');
+  });
+
+  test('draws no arrows and no count when every class fits', async () => {
+    const w = world({ instance: five });
+    openFive(w);
+    await ready();
+    const dialog = await openTurn('Mrs. Hooligan');
+    expect(within(dialog).queryByRole('button', { name: 'More classes' })).toBeNull();
+    expect(within(dialog).queryByText(/ of 5$/u)).toBeNull();
+  });
+
+  test('still opens with focus on the first class card, before the arrows', async () => {
+    const w = world({ instance: five });
+    openFive(w);
+    await ready();
+    overflowingRow();
+    const dialog = await openTurn('Mrs. Hooligan');
+    await within(dialog).findByText('1–4 of 5');
+    expect(within(dialog).getAllByRole('radio')[0]).toHaveFocus();
+  });
+});

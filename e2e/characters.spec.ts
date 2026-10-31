@@ -164,3 +164,126 @@ test('on a phone at 100% text, a roster card is 280px tall with its Turn line 10
   expect(got.height).toBeCloseTo(280, 0);
   expect(got.turnFoot).toBeCloseTo(10, 0);
 });
+
+/*
+ * Choose a class as a carousel (docs/plans/2026-10-30-technician-design.md, section 3; the plan's
+ * Task 4), on Divided World's five classes: Face, Heel (Pipewrench's, marked Now), Jabroni,
+ * Technician, Lurker. As many full cards as fit, the next peeking, a count and arrows; one
+ * radiogroup the arrow keys move through, the row following the choice.
+ */
+async function openTurnAt(page: Page, width: number, height = 1000) {
+  await page.setViewportSize({ width, height });
+  await page.goto('/characters');
+  await page.getByRole('list', { name: /^Roster, /u }).getByRole('button', { name: /^Pipewrench/u }).click();
+  await page.getByRole('region', { name: 'Pipewrench' }).getByRole('button', { name: 'Turn Pipewrench' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Turn Pipewrench' });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+const classGroup = (dialog: ReturnType<Page['locator']>) => dialog.getByRole('group', { name: 'Turn to' });
+/** Which of the row's cards lie whole inside it, and which only partly, by their class key. */
+async function inView(dialog: ReturnType<Page['locator']>) {
+  return classGroup(dialog).locator('.kb-class-grid').evaluate((row) => {
+    const r = row.getBoundingClientRect();
+    const whole: string[] = [];
+    const part: string[] = [];
+    for (const card of row.querySelectorAll<HTMLElement>('.kb-class-card')) {
+      const c = card.getBoundingClientRect();
+      if (c.left >= r.left - 1 && c.right <= r.right + 1) whole.push(card.dataset.kbClass!);
+      else if (c.right > r.left && c.left < r.right) part.push(card.dataset.kbClass!);
+    }
+    return { whole, part };
+  });
+}
+
+test('at 1440 the Turn shows four whole class cards and a peek, counted 1–4 of 5', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  await expect(classGroup(dialog).getByText('1–4 of 5')).toBeVisible();
+  expect(await inView(dialog)).toEqual({ whole: ['face', 'heel', 'jabroni', 'technician'], part: ['lurker'] });
+  /* The accessibility tree holds every class, the peeking Lurker's among them: role queries leave out what it leaves out. */
+  const snapshot = await classGroup(dialog).ariaSnapshot();
+  for (const name of ['Face', 'Jabroni', 'Technician', 'Lurker']) expect(snapshot).toContain(`radio "${name}"`);
+  await expect(classGroup(dialog).getByRole('radio')).toHaveCount(4);
+  await expect(classGroup(dialog).getByRole('button', { name: 'Earlier classes' })).toBeDisabled();
+  await expect(classGroup(dialog).getByRole('button', { name: 'More classes' })).toBeEnabled();
+});
+
+test('the arrow keys move the choice through every class, and the row follows it to the last', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  const group = classGroup(dialog);
+  await group.getByRole('radio', { name: 'Jabroni' }).focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('ArrowRight');
+  await expect(group.getByRole('radio', { name: 'Technician' })).toBeChecked();
+  await page.keyboard.press('ArrowRight');
+  await expect(group.getByRole('radio', { name: 'Lurker' })).toBeChecked();
+  await expect.poll(async () => (await inView(dialog)).whole).toContain('lurker');
+  await expect(group.getByText('2–5 of 5')).toBeVisible();
+  await expect(group.getByRole('button', { name: 'More classes' })).toBeDisabled();
+  await expect(group.getByRole('button', { name: 'Earlier classes' })).toBeEnabled();
+});
+
+/** Presses "More classes" and says whether the row has moved its whole card's step on the very next frame. */
+async function stepNextFrame(dialog: ReturnType<Page['locator']>) {
+  const group = classGroup(dialog);
+  const row = group.locator('.kb-class-grid');
+  const before = await row.evaluate((el) => el.scrollLeft);
+  await group.getByRole('button', { name: 'More classes' }).click();
+  const after = await row.evaluate((el) => new Promise<number>((resolve) => requestAnimationFrame(() => resolve(el.scrollLeft))));
+  return after - before;
+}
+
+/*
+ * The arrows move the row by a card and its gap (216 + 14): gliding, or at once under reduced
+ * motion. Chromium already makes a smooth scroll instant under the device's reduced motion, so
+ * what this proves is the glass's own Motion override (Settings, `data-kb-motion`) on a device with
+ * full motion. A choice made with the arrow keys moves focus, and the browser brings a focused
+ * card into view at once in either case.
+ */
+test('under reduced motion the row jumps a card at once; otherwise it glides', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const gliding = await openTurnAt(page, 1440);
+  expect(await stepNextFrame(gliding)).toBeLessThan(200);
+  await page.keyboard.press('Escape');
+  const dialog = await openTurnAt(page, 1440);
+  await page.evaluate(() => document.documentElement.setAttribute('data-kb-motion', 'reduce'));
+  expect(await stepNextFrame(dialog)).toBeGreaterThanOrEqual(164);
+});
+
+/* The name's element fills its title, which runs under the radio's corner by design; what must keep clear is the name's text. */
+test('the Technician\'s name, the longest, keeps clear of its radio', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  const card = classGroup(dialog).locator('[data-kb-class="technician"]');
+  const name = await card.locator('.kb-class-name').evaluate((el) => { const range = document.createRange(); range.selectNodeContents(el); return range.getBoundingClientRect().toJSON() as DOMRect; });
+  const radio = (await card.getByRole('radio').boundingBox())!;
+  const meets = name.x < radio.x + radio.width && radio.x < name.x + name.width && name.y < radio.y + radio.height && radio.y < name.y + name.height;
+  expect(meets).toBe(false);
+});
+
+test('on a phone the Turn shows one class card and a peek, a swipe snaps to the next, and the page never scrolls sideways', async ({ page }) => {
+  const dialog = await openTurnAt(page, 390, 844);
+  const group = classGroup(dialog);
+  await expect(group.getByText('1–1 of 5')).toBeVisible();
+  expect(await inView(dialog)).toEqual({ whole: ['face'], part: ['heel'] });
+  const row = group.locator('.kb-class-grid');
+  await row.scrollIntoViewIfNeeded();
+  const box = (await row.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  // Past half a card, as a swipe carries: mandatory snapping settles on the nearer card.
+  await page.mouse.wheel(200, 0);
+  await expect.poll(async () => (await inView(dialog)).whole).toEqual(['heel']);
+  await expect(group.getByText('2–2 of 5')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test('a Turn reopened on a pending Lurker opens with the Lurker in view', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  await classGroup(dialog).getByRole('radio', { name: 'Lurker' }).check();
+  await dialog.getByRole('button', { name: 'Confirm Turn' }).click();
+  await expect(dialog).toBeHidden();
+  await page.getByRole('region', { name: 'Pipewrench' }).getByRole('button', { name: /Change Pipewrench/u }).click();
+  const change = page.getByRole('dialog', { name: /Change Pipewrench/u });
+  await expect(change).toBeVisible();
+  await expect(classGroup(change).getByRole('radio', { name: 'Lurker' })).toBeChecked();
+  expect((await inView(change)).whole).toContain('lurker');
+});
