@@ -856,6 +856,31 @@ describe('a card\'s effect on a post', () => {
     await waitFor(() => expect(JSON.parse(wrapped.dataset.states!)[played].state).toEqual({ saved: 'from elsewhere' }));
   });
 
+  /*
+   * #85: a splat on a post whose author was later retired. Its own player washes it through the retired mask that wrote the post
+   * (supabase/migrations/0038_retired_author_washes.sql), and another reader loads the layer as they left it. Every other
+   * refusal stands: a retired mask that did not write the post, and another player's retired mask, which reads as any mask
+   * they do not play.
+   */
+  test('the player of a retired author saves for the post it wrote, and another reader loads it', async () => {
+    const w = world(3);
+    const spare = w.fake.seed.character(w.me, 'Spare Mask', 'face');
+    const played = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    w.fake.seed.retire(w.pipe);
+    w.fake.seed.retire(spare);
+    openWith(w, [fx('whoops')]);
+    const wrapped = await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByTestId('fx-whoops');
+    await waitFor(() => expect(wrapped.dataset.author).toBe('true'));
+    await userEvent.click(within(wrapped).getByRole('button', { name: 'save whoops' }));
+    await waitFor(() => expect(JSON.parse(wrapped.dataset.states!)[played].state).toEqual({ saved: 'whoops' }));
+    expect(await w.fake.saveEffect(played, spare, {})).toEqual({ ok: false, error: 'that character is retired; an admin can restore it' });
+    w.fake.signInAs(w.other);
+    expect((await w.fake.effectStates([played]))[played]?.state).toEqual({ saved: 'whoops' });
+    const theirs = await w.fake.saveEffect(played, w.pipe, {});
+    expect(theirs).toEqual(await w.fake.saveEffect(played, w.fake.seed.character(w.me, 'Not Retired', 'face'), {}));
+    expect(theirs).toEqual({ ok: false, error: 'you do not play that character' });
+  }, 15_000);
+
   test('a reader who is not the post\'s author cannot save: the effect is told so in the server\'s words', async () => {
     const w = world(3);
     w.fake.seed.card(w.pipe, w.ids[2]!, 'whoops', { message: 'mine' });

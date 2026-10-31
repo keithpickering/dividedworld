@@ -453,9 +453,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Answer<{ play: Id; savedAt: string }> {
     const bad = request({ action: 'saveEffect', character, play, state });
     if (bad) return bad;
-    const c = acting(character);
-    if (isRefusal(c)) return c;
     const played = playOf(play);
+    const mine = characters.get(character);
+    /* The post's own player answers for the mask that wrote it, retired or not (0038); every other case is acting()'s. */
+    const author = played !== null && acts.get(played.target!)?.character === character && mine !== undefined && mine.owner === me()?.id && mine.debutedAt !== null;
+    if (!author) {
+      const c = acting(character);
+      if (isRefusal(c)) return c;
+    }
     if (!played) return refuse('there is no such card on a post');
     if (acts.get(played.target!)?.character !== character) return refuse('only the post\'s author saves what is on it');
     const at = now();

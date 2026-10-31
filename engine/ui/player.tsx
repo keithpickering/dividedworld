@@ -28,6 +28,12 @@ export interface Player {
   readonly characters: readonly MyCharacter[];
   /** Those that can act now: debuted and not retired. */
   readonly actingCharacters: readonly MyCharacter[];
+  /**
+   * The masks whose own posts the player answers for: every debuted one, retired among them. Only what is on a post the mask
+   * wrote is saved through it (a Whoops! washed clean, supabase/migrations/0038_retired_author_washes.sql); every other act
+   * goes through `actingCharacters`.
+   */
+  readonly writingCharacters: readonly MyCharacter[];
   readonly hudCharacter: MyCharacter | null;
   readonly setHudCharacter: (id: Id) => void;
   readonly wallet: Wallet | null;
@@ -204,6 +210,7 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   }, [api, refresh]);
 
   const actingCharacters = useMemo(() => characters.filter(canAct), [characters]);
+  const writingCharacters = useMemo(() => characters.filter((c) => c.debutedAt !== null), [characters]);
   const hudCharacter = actingCharacters.find((c) => c.id === chosen) ?? actingCharacters[0] ?? null;
 
   const setHudCharacter = useCallback((id: Id) => {
@@ -225,9 +232,9 @@ export function PlayerProvider({ api, children }: { readonly api: KayfaApi; read
   const pending = estimate ? estimate.entries.reduce((s, e) => s + e.amount, 0) : 0;
 
   const value = useMemo<Player>(() => ({
-    session, sessionKnown, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen,
+    session, sessionKnown, characters, actingCharacters, writingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen,
     pending, estimate, cards, reactionLanded: ask, refresh, buyCard, loaded,
-  }), [session, sessionKnown, characters, actingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, buyCard, loaded]);
+  }), [session, sessionKnown, characters, actingCharacters, writingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, buyCard, loaded]);
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }
