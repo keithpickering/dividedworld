@@ -285,8 +285,9 @@ test('a Turn reopened on a pending Lurker opens with the Lurker in view', async 
   const change = page.getByRole('dialog', { name: /Change Pipewrench/u });
   await expect(change).toBeVisible();
   await expect(classGroup(change).getByRole('radio', { name: 'Lurker' })).toBeChecked();
-  /* Read within a second of opening, not on the instant it shows: under a loaded runner the dialog's first layout can land a frame later. */
-  await expect.poll(async () => (await inView(change)).whole, { timeout: 1000 }).toContain('lurker');
+  /* Focus opens on the chosen class too (a radio group's one Tab stop), so nothing scrolls the row back to the start. */
+  await expect(classGroup(change).getByRole('radio', { name: 'Lurker' })).toBeFocused();
+  expect((await inView(change)).whole).toContain('lurker');
 });
 
 test('an arrow that reaches its end hands focus to the other arrow, never dropping it out of the dialog', async ({ page }) => {

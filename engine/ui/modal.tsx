@@ -26,8 +26,17 @@ export interface ModalProps {
 
 const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/* A control taken out of the Tab order (`tabindex="-1"`, as a roving grid does with all but its one stop) is no stop of Tab's, so it is neither the first nor the last the dialog holds Tab between. */
-const tabbables = (box: HTMLElement) => [...box.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => !el.closest('[hidden]') && el.getAttribute('aria-hidden') !== 'true' && el.tabIndex >= 0);
+/*
+ * A control taken out of the Tab order (`tabindex="-1"`, as a roving grid does with all but its one
+ * stop) is no stop of Tab's, so it is neither the first nor the last the dialog holds Tab between.
+ * Nor is a radio left unchecked in a group that has a checked one: the browser's Tab stops on a
+ * group once, at its checked radio, so a dialog opened on a choice already made (a pending Turn's
+ * class) puts focus on that choice. A group with nothing checked keeps its radios.
+ */
+const unchosen = (el: HTMLElement, box: HTMLElement) =>
+  el instanceof HTMLInputElement && el.type === 'radio' && el.name !== '' && !el.checked
+  && [...box.querySelectorAll<HTMLInputElement>('input[type="radio"]')].some((r) => r.name === el.name && r.form === el.form && r.checked);
+const tabbables = (box: HTMLElement) => [...box.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => !el.closest('[hidden]') && el.getAttribute('aria-hidden') !== 'true' && el.tabIndex >= 0 && !unchosen(el, box));
 
 /* The open modals, lowest first. A parent renders before its child, so its sequence number is lower even though a child's effects run first. */
 interface Entry { readonly seq: number; overlay: HTMLElement | null }
