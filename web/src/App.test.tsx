@@ -338,7 +338,11 @@ for (const path of NO_MENU) {
       make(fake);
       render(<App api={fake} />);
       await screen.findByRole('main');
+      /* Every page passes through loading first: each state is waited for itself, so loading's link cannot answer for it. */
+      if (state === 'loading') await waitFor(() => expect(document.querySelector('main [aria-busy="true"]')).not.toBeNull());
+      else await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull());
       const back = await screen.findByRole('link', { name: 'Back to the board' });
+      expect(back.closest('[aria-busy="true"]')).toBeNull();
       expect(back).toHaveAttribute('href', '/');
       expect(screen.queryByRole('navigation', { name: 'Menu' })).toBeNull();
     }, 15_000);

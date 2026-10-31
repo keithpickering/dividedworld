@@ -123,6 +123,15 @@ describe('the settlement\'s summary', () => {
     expect(screen.getByRole('link', { name: 'Back to the board' })).toHaveAttribute('href', '/');
   });
 
+  test('Open my log follows the tab picked', async () => {
+    const { fake, me, pipe, hoo } = world();
+    openSummary(fake, me, pipe);
+    const settled = (await fake.log()).settlements[0]!;
+    fireEvent.click(await screen.findByRole('button', { name: 'Mrs. Hooligan' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Open my log' }));
+    expect(where).toEqual({ path: '/log', state: { open: settled.id, character: hoo } });
+  });
+
   test('names no one who reacted, and no class but the player\'s own: it never asks for anyone else\'s', async () => {
     const { fake, me, pipe, hoo } = world();
     const rival = fake.seed.account('rival');
@@ -158,6 +167,9 @@ describe('every state of the summary\'s page has Back to the board', () => {
   const backIn = async () => {
     const link = await screen.findByRole('link', { name: 'Back to the board' });
     expect(link).toHaveAttribute('href', '/');
+    /* Outside anything busy, so a screen reader is not told the way out is still loading; and no log to open on nothing. */
+    expect(link.closest('[aria-busy="true"]')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open my log' })).toBeNull();
     return link;
   };
 
