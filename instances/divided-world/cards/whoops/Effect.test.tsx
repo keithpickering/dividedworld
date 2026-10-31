@@ -5,7 +5,7 @@
  * attributes it publishes; the pure rules behind them are scrub.test.ts's, and the pixels are the board
  * match's and e2e/whoops.spec.ts's.
  */
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -342,6 +342,26 @@ describe('the words and controls are glass, outside the post (the owner\'s notes
     }
     expect(root.textContent).not.toMatch(/splatted|Yours to wash/u);
     expect(root.querySelector('button')).toBeNull();
+  });
+  test('the plate\'s readout names the card and counts the layers and the share washed, with one bar of the meter for each layer', () => {
+    const { slot } = mount({ layers: 3 });
+    const strip = slot.querySelector('.kb-effect-strip') as HTMLElement;
+    expect(strip.querySelector('.kb-plate-name')).toHaveTextContent('Whoops!');
+    expect(strip.querySelector('.kb-plate-state')).toHaveTextContent(/^3 layers · 0% washed$/u);
+    expect(strip.querySelectorAll('.kb-whoops-meter > *')).toHaveLength(3);
+  });
+  test('one layer reads in the singular, with one bar', () => {
+    const { slot } = mount({ layers: 1 });
+    expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(/^1 layer · 0% washed$/u);
+    expect(slot.querySelectorAll('.kb-whoops-meter > *')).toHaveLength(1);
+  });
+  test('the tiles are buttons with their names, and the author\'s two tools are toggles of which one is pressed', () => {
+    const { slot } = mount({ author: true });
+    const strip = slot.querySelector('.kb-effect-strip') as HTMLElement;
+    for (const name of ['Hold to scrub', 'Wash', 'Write in ink']) expect(within(strip).getByRole('button', { name })).toHaveClass('kb-plate-tile');
+    expect(within(strip).getByRole('button', { name: 'Hold to scrub' })).not.toHaveAttribute('aria-pressed');
+    expect(within(strip).getByRole('button', { name: 'Wash' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(strip).getByRole('button', { name: 'Write in ink' })).toHaveAttribute('aria-pressed', 'false');
   });
   test('a strip is drawn only while a layer holds ink, and says nothing of itself to a post that is plain', () => {
     const { slot } = mount({ layers: 1, states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });

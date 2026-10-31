@@ -19,6 +19,7 @@ import { hudKey, usePlayer } from '../player.tsx';
 import { usePlay } from './play.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
+import { EffectStrip } from './Effects.tsx';
 import type { CardUi, ConfigFormProps } from './types.ts';
 
 const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'stick.price': 100 };
@@ -87,8 +88,8 @@ function world() {
   return { fake, thread, ids: [p1, p2, p3, p4], pipe, me, other, hooligan, gloomba };
 }
 
-async function open(w: ReturnType<typeof world>) {
-  renderIn(w.fake, <Frame><ThreadScreen thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000 } });
+async function open(w: ReturnType<typeof world>, ui: CardUi[] = cards) {
+  renderIn(w.fake, <Frame><ThreadScreen thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards: ui, settings: { postMaxLength: 1000 } });
   await screen.findByRole('article', { name: /^Post 4 /u });
   await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
 }
@@ -139,6 +140,64 @@ describe('from a post', () => {
     await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(post(2)).toHaveFocus();
+  });
+});
+
+/* The owner on #80's round 2: the play control is a glass tile, in the card's plate on a post whose effect has drawn one and under the post on a post that has none, and never in the 2003 action row. */
+describe('where "Play Whoops! here" stands', () => {
+  /** Whoops! given an effect that draws a plate with a readout and one tile, as the instance's does. */
+  const withPlate: CardUi[] = [
+    { ...cards[0]!, Effect: ({ slot, children }) => (
+      <>
+        {children}
+        <EffectStrip slot={slot} card="whoops" readout={<span className="kb-plate-state">1 layer · 0% washed</span>}>
+          <button type="button" className="kb-plate-tile">Hold to scrub</button>
+        </EffectStrip>
+      </>
+    ) },
+    cards[1]!,
+  ];
+
+  test('"Play card" is in the action row while nothing is armed, and gone from it while a card is armed', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    expect(within(post(2)).getByRole('button', { name: 'Play card' }).closest('.kb-act-links')).not.toBeNull();
+    await arm(user);
+    expect(within(post(2)).queryByRole('button', { name: 'Play card' })).toBeNull();
+    /* Put back, the row offers it again. */
+    await user.keyboard('{Escape}');
+    expect(within(post(2)).getByRole('button', { name: 'Play card' })).toBeInTheDocument();
+  });
+
+  test('on a post with no plate the tile is under the post in its slot, a glass tile outside the 2003 body and action row', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    const tile = here(2)!;
+    expect(tile).toHaveClass('kb-plate-tile', 'kb-play-here');
+    expect(tile.closest('.kb-act-slot')).not.toBeNull();
+    expect(tile.closest('.kb-act-links, .kb-act-main')).toBeNull();
+    expect(tile.closest('.kb-effect-strip')).toBeNull();
+    expect(tile).toHaveAttribute('data-kb-where', 'post');
+  });
+
+  test('on a post whose effect draws a plate the tile is in the plate, beside its readout and controls, and no second one is under the post', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    w.fake.seed.card(w.gloomba, w.ids[1]!, 'whoops', { message: 'one', layer: 1, config: { color: '#ff2bd6' } });
+    await open(w, withPlate);
+    await arm(user);
+    const plate = post(2).querySelector('.kb-effect-strip') as HTMLElement;
+    expect(plate).not.toBeNull();
+    expect(post(2).querySelector('.kb-act-main')).not.toContainElement(plate);
+    expect(plate).toHaveTextContent('1 layer · 0% washed');
+    const tile = within(plate).getByRole('button', { name: 'Play Whoops! here' });
+    expect(tile).toHaveAttribute('data-kb-where', 'plate');
+    expect(within(post(2)).getAllByRole('button', { name: 'Play Whoops! here' })).toHaveLength(1);
+    expect(tile.closest('.kb-act-links, .kb-act-main')).toBeNull();
+    expect(within(plate).getByRole('button', { name: 'Hold to scrub' })).toBeInTheDocument();
   });
 });
 

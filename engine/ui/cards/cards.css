@@ -260,7 +260,8 @@
   border: 2px solid var(--kb-tile);
   background: var(--kb-glass-field);
   color: var(--kb-glass-text-2);
-  font: inherit;
+  /* The glass's own face and size, named here and not inherited: a tile drawn into a post's slot (the play tile under a post) stands in the 2003 board's body, whose Verdana it would otherwise take (the owner on #80's round 2). */
+  font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
   letter-spacing: 0.08em;
