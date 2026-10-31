@@ -200,16 +200,28 @@ test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing ac
   await ready(page);
   const canvas = page.locator('.kb-whoops-ink');
   await expect(canvas).toBeVisible();
-  const inked = () => canvas.evaluate((c: HTMLCanvasElement) => {
+  /*
+   * The share of the canvas that is inked, read in an animation frame: a canvas resized (the lift into the view's wider frame, the
+   * release back) is cleared at once and painted again in the next frame, before the browser shows it, so a read between the two
+   * would see no ink at all. Read in a frame, it comes after that paint.
+   */
+  const inked = () => canvas.evaluate((c: HTMLCanvasElement) => new Promise<number>((done) => requestAnimationFrame(() => {
     const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
     let n = 0;
     for (let i = 3; i < d.length; i += 4) if (d[i]! > 40) n++;
-    return n / (c.width * c.height);
-  });
+    done(n / (c.width * c.height));
+  })));
+  const size = () => canvas.evaluate((c: HTMLCanvasElement) => `${c.width}x${c.height}`);
   /* The share of the canvas that is inked, not the pixels: the view's canvas is wider than the thread's. */
   await expect.poll(inked).toBeGreaterThan(0.01);
   const whole = await inked();
-  /* The reader scrubs in the thread, before the hold has taken them over. */
+  const inThread = await size();
+  /*
+   * The reader scrubs in the thread, before the hold has taken them over. A page opened with the post on screen arms the hold at
+   * once, and it lifts the post when the reader's scroll has been quiet for its settle time, so the reader keeps the page from
+   * settling while they scrub: a stream of wheel events from the page itself, at the page's pace and not the test's round trips.
+   */
+  await page.evaluate(() => { (window as unknown as { kbBusy: number }).kbBusy = window.setInterval(() => window.dispatchEvent(new WheelEvent('wheel')), 40); });
   const box = (await canvas.boundingBox())!;
   const y = Math.min(box.y + box.height / 2, 900);
   await page.mouse.move(box.x + box.width * 0.2, y);
@@ -218,7 +230,9 @@ test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing ac
   await page.mouse.up();
   await expect.poll(inked).toBeLessThan(whole * 0.97);
   const scrubbed = await inked();
+  expect(await size(), 'the scrubbing is read in the thread, before the lift').toBe(inThread);
   await canvas.evaluate((c) => { (c as HTMLElement).dataset.kbSame = 'yes'; });
+  await page.evaluate(() => { window.clearInterval((window as unknown as { kbBusy: number }).kbBusy); });
 
   /* The hold takes the reader over: the same canvas, in the view, with the same ink. */
   await page.mouse.move(720, 500);
