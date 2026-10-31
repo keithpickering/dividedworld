@@ -284,6 +284,8 @@ describe('the play form', () => {
     expect(within(form).getByText('0 / 200')).toBeInTheDocument();
     await user.type(message, 'you dropped your ink');
     expect(within(form).getByText('20 / 200')).toBeInTheDocument();
+    /* The board draws the count in the face's own figures; tabular ones are 4 to 5px wider at 21px, past the board match's tolerance on CI's browser. */
+    expect(within(form).getByText('20 / 200')).not.toHaveClass('kb-num');
     /* Whoops! was paid for at the machine: the long post is what it costs now. */
     expect(within(form).getByText('Long post, +0.25 per 500 characters').closest('div')).toHaveTextContent('0.25');
     expect(within(form).getByText('To pay now').closest('div')).toHaveTextContent('0.25');

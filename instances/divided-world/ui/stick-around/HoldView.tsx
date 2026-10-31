@@ -172,6 +172,9 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
   useLayoutEffect(() => {
     const onEsc = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      /* The layer's listener, which also claims the Esc, is added after the view is painted; a key that comes first would reach the
+       * board's Esc (the Menu) and take the reader out of the thread. This one is there from the commit, so it claims the Esc too. */
+      e.preventDefault();
       escaping.current = true;
       /* Cleared by a timer: a real key event's microtasks run between its listeners, so a microtask would clear it before the layer's. */
       setTimeout(() => { escaping.current = false; }, 0);

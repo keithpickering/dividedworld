@@ -42,7 +42,8 @@ function Look({ post }: { readonly post: number }) {
       const el = document.getElementById(`post-${post}`);
       if (!el) return;
       clearInterval(timer);
-      el.scrollIntoView({ block: 'center' });
+      /* jsdom, where the stories are swept for accessibility, has no scrollIntoView; a throw in this timer ends the whole test run. */
+      el.scrollIntoView?.({ block: 'center' });
     }, 100);
     return () => clearInterval(timer);
   }, [post]);

@@ -161,6 +161,24 @@ test.describe('the app at the Hold board\'s moment', () => {
     await expect(view(page)).toBeHidden();
   });
 
+  test('an Esc that arrives in the task the view is drawn in is the view\'s too: it is a press of Break free, and the thread behind is not left', async ({ page }) => {
+    /* React runs a modal layer\'s own listeners after the paint that shows it, and a key can come between the two (a loaded machine
+     * lets it). A mutation observer calls back in the very commit, before them, so the Esc is sent there, as the earliest a key can arrive. */
+    await page.addInitScript(() => {
+      const watch = new MutationObserver(() => {
+        if (!document.querySelector('[role="dialog"][aria-label="Stick Around"]')) return;
+        watch.disconnect();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      });
+      watch.observe(document, { childList: true, subtree: true });
+    });
+    await page.goto(MOMENT);
+    await ready(page);
+    await expect(view(page)).toBeVisible({ timeout: 10_000 });
+    await expect(view(page).getByRole('status')).toContainText('Esc breaks free, like the Break free button');
+    expect(new URL(page.url()).pathname, 'the Esc did not take the reader out of the thread').toMatch(/^\/t\//u);
+  });
+
   test.describe('with reduced motion', () => {
     test.use({ reducedMotion: 'reduce' });
     test('the pull still happens, and the view is up', async ({ page }) => {

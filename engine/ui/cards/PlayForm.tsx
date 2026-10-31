@@ -186,7 +186,8 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
             <textarea id={`${id}-message`} className="kb-play-input" rows={3} value={message} aria-describedby={hint} onChange={(e) => change(e.target.value)} />
             <div className="kb-play-count kb-calm">
               <span id={hint}>Shown on the card's Act. Plain text.</span>
-              <span className="kb-num">{`${[...message].length} / ${MESSAGE_MOST}`}</span>
+              {/* In the face's own figures, as the board draws it: tabular ones are wider, and the board match refuses the difference. */}
+              <span>{`${[...message].length} / ${MESSAGE_MOST}`}</span>
             </div>
           </div>
           <div className="kb-play-sum">
