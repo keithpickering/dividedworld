@@ -1,0 +1,94 @@
+/*
+ * A play's panel (Panel.tsx), on the glass's overlay: the mockup's B (docs/research/2026-10-31-plays-on-a-post/mock-a-b.html),
+ * the chamfered glass of the overlay's cut with its border drawn in the play's card's ink, or its alignment's color
+ * (salty the pink, sweet the cyan), the card's name in the display face. A popover beside its tag on a desktop, and a
+ * bottom sheet at the thread's narrow width. Every color is a glass token or the card's own ink (`--kb-tag`, inline).
+ */
+.kb-glass-dialog.kb-play-panel {
+  --kb-tag: var(--kb-glass-sweet);
+  --kb-tag-text: var(--kb-glass-neon-text);
+  --kb-cut: var(--kb-glass-chamfer-3);
+  --kb-border: 1px;
+  width: 420px;
+  max-width: 100%;
+  padding: 12px 18px 16px;
+  background: var(--kb-tag);
+  color: var(--kb-glass-text);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  line-height: 1.3;
+}
+
+.kb-glass-dialog.kb-play-panel[data-kb-alignment="salty"] {
+  --kb-tag: var(--kb-glass-salty);
+  --kb-tag-text: var(--kb-glass-salty-text);
+}
+
+/* The sheet is the window's width, standing on the HUD's top edge (Overlay.tsx places it). */
+.kb-glass-dialog.kb-play-panel[data-kb-panel="sheet"] {
+  width: 100%;
+}
+
+.kb-play-panel .kb-glass-dialog-head {
+  color: var(--kb-tag-text);
+  font-size: 1.625rem;
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+}
+
+.kb-play-panel-by {
+  margin: 0 0 0.5rem;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-play-panel-message {
+  margin: 0 0 0.6rem;
+  color: var(--kb-glass-text-hi);
+  font-size: 1.15em;
+  overflow-wrap: anywhere;
+}
+
+.kb-play-panel-note {
+  margin: 0 0 0.6rem;
+  color: var(--kb-glass-text);
+  font-weight: 700;
+}
+
+.kb-play-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.kb-play-panel-action {
+  padding: 0.2rem 0.9rem;
+  border: 0;
+  color: var(--kb-glass-neon-text);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.kb-play-panel-action:hover {
+  text-decoration: underline;
+}
+
+.kb-play-panel-spun {
+  margin-top: 0.8rem;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-play-panel-spun p,
+.kb-play-panel-spun ul {
+  margin: 0;
+}
+
+.kb-play-panel-spun ul {
+  padding-inline-start: 1.1rem;
+}
+
+.kb-play-panel a {
+  color: var(--kb-glass-text-hi);
+}

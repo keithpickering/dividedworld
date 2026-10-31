@@ -126,7 +126,8 @@ test('the plate on #41 reads out the card and its layers, and its controls are b
   const plate = page.locator('#post-41 .kb-effect-strip');
   await expect(plate).toBeVisible();
   await expect(plate.locator('.kb-plate-name')).toHaveText(/whoops!/iu);
-  await expect(plate.locator('.kb-plate-state')).toHaveText(/^\d+ layers? · \d+% washed$/u);
+  /* The readout names the top layer, its caster and its ink, with its own share washed (the plays-on-a-post design, section 5). */
+  await expect(plate.locator('.kb-plate-state')).toHaveText(/^\d+ layers? · top: .+'s [a-z]+, \d+% washed$/u);
   const bars = await plate.locator('.kb-whoops-meter > *, [role="meter"] > *, .kb-whoops-bar').count();
   const layers = Number(/^(\d+)/u.exec((await plate.locator('.kb-plate-state').textContent()) ?? '')![1]);
   expect(bars).toBe(layers);

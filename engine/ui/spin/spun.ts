@@ -109,6 +109,21 @@ export function spunLoader(api: KayfaApi): SpunLoader {
   return l;
 }
 
+/** How many threads were spun from an Act, as far as the line knows: the ones it lists and the more it counts. */
+export const spunCount = (spun: Spun): number => spun.threads.length + spun.more;
+
+/**
+ * Ask for the threads spun from these Acts and wait for them, through the same batched, chunked reads the line uses,
+ * so a page's posts and plays cost `ceil(n / SPUN_CHUNK)` reads together and the lines drawn after find them read. An
+ * Act whose read failed counts as none spun.
+ */
+export async function primeSpun(api: KayfaApi, ids: readonly Id[]): Promise<ReadonlyMap<Id, Spun>> {
+  const loader = spunLoader(api);
+  const wanted = [...new Set(ids)];
+  const read = await Promise.all(wanted.map((id) => loader.ask(id)));
+  return new Map(wanted.map((id, i) => [id, read[i]!]));
+}
+
 /** The threads spun from an Act (none until they are read). */
 export function useSpunInto(act: Id): Spun {
   const { api } = useKayfa();

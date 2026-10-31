@@ -28,14 +28,15 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(whoops.describe(instance.settings)).toContain('1.00');
     expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.price': 250 } })).toContain('2.50');
   });
-  test('Whoops! draws its effect and its ink form, and its top layer\'s tag takes the ink', () => {
+  test('Whoops! draws its effect and its ink form, and each play\'s tag takes its own ink', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
     expect(whoops.Effect).toBeDefined();
     expect(whoops.ConfigForm).toBeDefined();
     const play = (id: string, color: unknown) => ({ id, card: 'whoops', layer: 1, caster: null, message: '', config: { color }, playedAt: '', post: 'p' });
     const under = play('a', '#ffd93d');
     const top = play('b', '#101010');
-    expect(whoops.tag!(under, [under, top])).toBeUndefined();
+    /* The tag on top is the most drawn play, not always the top ink, so each play's tag and chip is in its own ink. */
+    expect(whoops.tag!(under, [under, top])).toBe('#ffd93d');
     expect(whoops.tag!(top, [under, top])).toBe('#101010');
     expect(whoops.tag!(under, [under])).toBe('#ffd93d');
     expect(whoops.tag!(play('c', 'not a color'), [play('c', 'not a color')])).toBeUndefined();

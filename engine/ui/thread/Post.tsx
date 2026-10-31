@@ -14,7 +14,7 @@ import { PlateProvider, PlayTags, PostEffects } from '../cards/Effects.tsx';
 import { PlayHere } from '../cards/PlayActions.tsx';
 import { holdsEffects } from '../cards/plays.ts';
 import { EditPost } from '../composer/EditPost.tsx';
-import type { Act } from '../data/api.ts';
+import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { Postbit, Signature, type PostbitLayout, type PostbitPerson } from '../postbit/Postbit.tsx';
 import { Link } from '../router.tsx';
@@ -41,7 +41,7 @@ interface Props {
 const nameOf = (act: Act, person: PostbitPerson | undefined) => (act.character === null ? SYSTEM : person?.character.name ?? 'A character');
 
 function Body({ act, name, person, editing, onDone, slot }: { readonly slot: React.RefObject<HTMLElement | null>; readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
-  const { summary, tallies, mine, changed, plays } = useThread();
+  const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
     case 'tally':
@@ -61,7 +61,7 @@ function Body({ act, name, person, editing, onDone, slot }: { readonly slot: Rea
           {origin && <Origin summary={summary} />}
           {editing
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
-            : <PostEffects plays={plays} post={act} place="thread" slot={slot}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
+            : <PostEffects plays={plays} post={act} place="thread" slot={slot} nameOf={casterName}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
@@ -76,27 +76,42 @@ function Body({ act, name, person, editing, onDone, slot }: { readonly slot: Rea
  * The links stand on the post's footer bar, drawn like its header bar (the owner: the row on a bar of its own, so no 2003 text
  * lies on an ink a player picks); the spin form and the history, which open from them, stand under the bar.
  */
-function Actions({ act, editing, onEdit, editButton }: { readonly act: Act; readonly editing: boolean; readonly onEdit: () => void; readonly editButton: React.RefObject<HTMLButtonElement | null> }) {
+/** What the post's spin form is open for: the post itself, or a play on it (from its panel), with what gives focus back when it closes. */
+export interface SpinOrigin { readonly id: Id; readonly label: string | null; readonly opener: HTMLElement | null }
+
+function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }: {
+  readonly act: Act; readonly editing: boolean; readonly onEdit: () => void; readonly editButton: React.RefObject<HTMLButtonElement | null>;
+  readonly spinOrigin: SpinOrigin | null; readonly setSpinOrigin: (o: SpinOrigin | null) => void;
+}) {
   const { quote } = useThread();
   const { actingCharacters } = usePlayer();
-  const [spinning, setSpinning] = useState(false);
   const spinButton = useRef<HTMLButtonElement>(null);
   const history = useHistory(act.id);
   const quotable = (act.kind === 'post' || act.kind === 'spin') && quote !== null;
   const mine = act.kind === 'post' && act.character !== null && actingCharacters.some((c) => c.id === act.character);
+  /* The post's own Spin thread is pressed while its form is open for the post; a play's form is the play's panel's. */
+  const spinning = spinOrigin?.id === act.id;
   return (
     <>
       <footer className="kb-act-foot">
         <div className="kb-act-links kb-small">
           {quotable && <button type="button" className="kb-link-button" onClick={() => quote(act)}>Quote</button>}
-          <button ref={spinButton} type="button" className="kb-link-button" aria-expanded={spinning} aria-controls={`spin-${act.id}`} onClick={() => setSpinning(!spinning)}>Spin thread</button>
+          <button
+            ref={spinButton} type="button" className="kb-link-button" aria-expanded={spinning} aria-controls={`spin-${act.id}`}
+            onClick={() => setSpinOrigin(spinning ? null : { id: act.id, label: act.seq === null ? null : `post ${act.seq}`, opener: spinButton.current })}
+          >Spin thread</button>
           {mine && !editing && <button ref={editButton} type="button" className="kb-link-button" onClick={onEdit}>Edit</button>}
           {act.kind === 'post' && history.button}
         </div>
       </footer>
       <div className="kb-act-panels">
         <div id={`spin-${act.id}`}>
-          {spinning && <SpinForm origin={act.id} seq={act.seq} onClose={() => { setSpinning(false); spinButton.current?.focus(); }} />}
+          {spinOrigin && (
+            <SpinForm
+              key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
+              onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); (back?.isConnected ? back : spinButton.current)?.focus(); }}
+            />
+          )}
         </div>
         {act.kind === 'post' && history.panel}
       </div>
@@ -105,7 +120,7 @@ function Actions({ act, editing, onEdit, editButton }: { readonly act: Act; read
 }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
-  const { thread, perPage, observer, plays, nameOf: casterName } = useThread();
+  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName } = useThread();
   const ref = useRef<HTMLElement>(null);
   const seq = act.seq!;
   useEffect(() => {
@@ -126,6 +141,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
     wasEditing.current = editing;
   }, [editing]);
   const plain = act.kind === 'unmask';
+  const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   return (
     <PlateProvider>
       <article
@@ -149,11 +165,11 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
           <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
         </header>
         <div className="kb-act-main">
-          {act.kind === 'post' && <PlayTags plays={plays} post={act.id} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} />}
+          {act.kind === 'post' && <PlayTags plays={plays} post={act.id} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />}
           <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} />
           <SpunInto act={act.id} />
         </div>
-        <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} />
+        <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} />
         {holdsEffects(act.kind) && <div className="kb-act-slot" ref={slot} />}
         {act.kind === 'post' && <PlayHere act={act} slot={slot} />}
       </article>

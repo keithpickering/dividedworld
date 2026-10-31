@@ -166,6 +166,31 @@ describe('the modal', () => {
 });
 
 describe('behind the modal', () => {
+  test('a control the closing commit opens and focuses keeps focus: it is not taken back to the opener', async () => {
+    /* A play's panel closes as the spin form it asked for opens, and the form's first field takes focus (engine/ui/cards/Panel.tsx). */
+    function Handoff() {
+      const [open, setOpen] = useState(false);
+      const [next, setNext] = useState(false);
+      return (
+        <div>
+          <button type="button" onClick={() => setOpen(true)}>Open it</button>
+          {next && <input aria-label="Next field" ref={(el) => el?.focus()} />}
+          {open && (
+            <Modal title="Panel" onClose={() => setOpen(false)}>
+              <button type="button" onClick={() => { setOpen(false); setNext(true); }}>Go on</button>
+            </Modal>
+          )}
+        </div>
+      );
+    }
+    render(<Handoff />);
+    await userEvent.click(opener());
+    await userEvent.click(screen.getByRole('button', { name: 'Go on' }));
+    await Promise.resolve();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByLabelText('Next field')).toHaveFocus();
+  });
+
   test('the page cannot scroll while it is open, and its scrolling is restored exactly on close', async () => {
     document.body.style.overflow = 'scroll';
     document.body.style.paddingRight = '3px';

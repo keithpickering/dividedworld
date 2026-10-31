@@ -73,24 +73,25 @@ test.describe('a desktop', () => {
 
 /*
  * The Phone board's moment (docs/research/2026-10-29-two-worlds/02-phone.html): #41 wears a Whoops! tag. The
- * tag stands clear of the post's line (its date and permalink) at every width, and the caster's words are a
- * line of their own under the card's name and the caster (the owner's notes on #80).
+ * tag stands clear of the post's line (its date and permalink) at every width, and is quiet: one line, the card's
+ * name and its caster side by side, with the caster's words left to the play's panel (the plays-on-a-post design,
+ * section 3).
  */
 for (const [label, viewport, moment] of [['a narrow post', { width: 390, height: 844 }, '02-phone'], ['a wide post', { width: 1440, height: 1120 }, '01-main']] as const) {
   test.describe(`a play tag on ${label}`, () => {
     test.use({ viewport });
 
-    test('clears the post\'s line, wraps inside the post\'s width, and puts the caster\'s words on a line of their own', async ({ page }) => {
+    test('clears the post\'s line, stays inside the post\'s width, and is one line, the card beside its caster', async ({ page }) => {
       await page.goto(`/?fixture=boards&moment=${moment}`);
       const post = page.locator('#post-41');
       const tag = post.locator('.kb-play-tag').first();
       await expect(tag).toBeVisible();
-      const [t, line, main, who, message] = await Promise.all([
+      const [t, line, main, who, card] = await Promise.all([
         tag.boundingBox(),
         post.locator('header.kb-act-meta').boundingBox(),
         post.locator('.kb-act-main').boundingBox(),
         tag.locator('.kb-play-tag-who').boundingBox(),
-        tag.locator('.kb-play-tag-message').boundingBox(),
+        tag.locator('.kb-play-tag-card').boundingBox(),
       ]);
       /* Not over the post's line (its date and permalink). */
       expect(t!.y, 'the tag starts below the post\'s line').toBeGreaterThanOrEqual(line!.y + line!.height - 1);
@@ -101,8 +102,9 @@ for (const [label, viewport, moment] of [['a narrow post', { width: 390, height:
       const words = await post.locator('.kb-play-tags + *').boundingBox();
       const tags = await post.locator('.kb-play-tags').boundingBox();
       expect(words!.y, 'the post\'s words start below the tag').toBeGreaterThanOrEqual(tags!.y + tags!.height - 1);
-      /* The caster's words start under the caster's name, on their own line. */
-      expect(message!.y, 'the message is under the caster').toBeGreaterThanOrEqual(who!.y + who!.height - 1);
+      /* One line: the caster stands beside the card's name, not under it, and the message is not on the tag. */
+      expect(who!.y, 'the caster is on the card\'s line').toBeLessThan(card!.y + card!.height);
+      await expect(tag.locator('.kb-play-tag-message')).toHaveCount(0);
       expect(await overflow(page)).toBeLessThanOrEqual(0);
     });
   });

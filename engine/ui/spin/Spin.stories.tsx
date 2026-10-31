@@ -38,7 +38,7 @@ function SpunThread() {
 /** The first post's spin form, open under it. */
 function OpenForm() {
   const first = useThread(TITLE);
-  return first?.firstAct ? <SpinForm origin={first.firstAct} seq={1} onClose={() => undefined} /> : <div aria-busy="true" />;
+  return first?.firstAct ? <SpinForm origin={first.firstAct} label="post 1" onClose={() => undefined} /> : <div aria-busy="true" />;
 }
 
 const meta: Meta = { title: 'Spin/Spin' };

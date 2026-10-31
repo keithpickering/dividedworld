@@ -427,7 +427,7 @@ describe('the play form', () => {
     await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     const tags = await within(post(2)).findByRole('list', { name: 'Cards played on this post' });
-    expect(tags).toHaveTextContent('Pipewrench played Whoops! on this post: “you dropped your ink”');
+    expect(within(tags).getByRole('button', { name: 'Whoops! by Pipewrench, no reactions. Opens the play.' })).toBeInTheDocument();
     await waitFor(() => expect(handButton()).toHaveAccessibleName('Hand, 2 postcards'));
     expect(await w.fake.myCards()).toEqual(expect.arrayContaining([{ card: 'whoops', held: 1 }]));
     expect(screen.getByRole('img', { name: /^Wallet 4\.37 of 6 orbs/u })).toBeInTheDocument();

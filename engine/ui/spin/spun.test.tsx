@@ -1,7 +1,7 @@
 /** The loader behind "Spun into": batching, bounds, the clock, and what a failure leaves behind. */
 import { describe, expect, test, vi } from 'vitest';
 import { SPUN_FROM_MAX, type Id, type KayfaApi, type ThreadSummary } from '../data/api.ts';
-import { SPUN_CACHE_SIZE, SPUN_CHUNK, SPUN_READ_LIMIT, SPUN_SHOWN, SPUN_TTL_MS, createSpunLoader } from './spun.ts';
+import { SPUN_CACHE_SIZE, SPUN_CHUNK, SPUN_READ_LIMIT, SPUN_SHOWN, SPUN_TTL_MS, createSpunLoader, primeSpun, spunCount } from './spun.ts';
 
 const thread = (origin: Id, n: number): ThreadSummary => ({
   id: `${origin}-t${n}`, board: 'b', title: `T${n}`, originActId: origin, createdAt: '2026-10-29T12:00:00Z', lastAt: '2026-10-29T12:00:00Z', lastSeq: 1,
@@ -92,5 +92,22 @@ describe('the Spun-into loader', () => {
     expect(big.more).toBe(SPUN_FROM_MAX - SPUN_SHOWN);
     expect(big.atLeast).toBe(true);
     expect([small.threads.length, small.atLeast]).toEqual([1, false]);
+  });
+});
+
+describe('priming the spins of a page', () => {
+  test('asks each Act once, in the line\'s chunks, and answers for every Act asked, a failed read counting as none spun', async () => {
+    const many = vi.fn(async (acts: readonly Id[]) => {
+      if (acts.includes('bad')) throw new Error('down');
+      return acts.filter((a) => a === 'a').map((a) => thread(a, 0));
+    });
+    const api = { spunFromMany: many, spunFrom: vi.fn(async () => []) } as unknown as KayfaApi;
+    const ids = ['a', 'a', ...Array.from({ length: SPUN_CHUNK }, (_, i) => `x${i}`), 'bad'];
+    const spun = await primeSpun(api, ids);
+    expect(many.mock.calls.map(([acts]) => acts.length)).toEqual([SPUN_CHUNK, 2]);
+    expect(spun.size).toBe(SPUN_CHUNK + 2);
+    expect(spunCount(spun.get('a')!)).toBe(1);
+    expect(spunCount(spun.get('x0')!)).toBe(0);
+    expect(spunCount(spun.get('bad')!)).toBe(0);
   });
 });

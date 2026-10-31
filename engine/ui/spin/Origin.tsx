@@ -9,7 +9,9 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
-import { PlayTag, PlayTags, PostEffects } from '../cards/Effects.tsx';
+import { billPost, drawnOf } from '../cards/billing.ts';
+import { inkOf, PlayTag, PlayTags, PostEffects, useNarrow } from '../cards/Effects.tsx';
+import { PlayPanel } from '../cards/Panel.tsx';
 import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Character, Id, ThreadSummary } from '../data/api.ts';
@@ -19,7 +21,11 @@ import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { useLocated } from '../thread/locate.tsx';
 import { Link } from '../router.tsx';
-import { takeOrigin } from './spun.ts';
+import type { Mine } from '../reactions/mine.ts';
+import type { Tallies } from '../thread/tallies.ts';
+import { primeSpun, spunCount, takeOrigin } from './spun.ts';
+import type { SpinOrigin } from '../thread/Post.tsx';
+import { SpinForm } from './SpinForm.tsx';
 import './spin.css';
 
 /** Card plays listed under the origin; a read of one more says there are more on the Act itself. */
@@ -32,7 +38,7 @@ type Reading = 'loading' | 'ready' | 'gone' | 'failed';
  * (engine/ui/cards/plays.ts), the one the thread keeps for its posts, so the post's effects draw here as they
  * do there. `more` says there were more plays than the box lists.
  */
-function useOrigin(origin: Id, thread: Id, plays: Plays): { readonly act: Act | null; readonly more: boolean; readonly reading: Reading; readonly retry: () => void } {
+function useOrigin(origin: Id, thread: Id, plays: Plays, tallies: Tallies, mine: Mine): { readonly act: Act | null; readonly more: boolean; readonly reading: Reading; readonly retry: () => void } {
   const { api, ui } = useKayfa();
   const [act, setAct] = useState<Act | null>(null);
   const [more, setMore] = useState(false);
@@ -48,20 +54,39 @@ function useOrigin(origin: Id, thread: Id, plays: Plays): { readonly act: Act | 
         else if (a.kind === 'card' && a.targetActId === origin) { plays.add([a]); void readEffects(api, plays, [a], cards); }
       },
       onEffect(play) { void api.effectStates([play]).then((saved) => plays.setStates(saved), () => { /* the next save is heard again */ }); },
+      /* A reaction to the origin, or to a play on it, counts on its tag here as it does in its thread. */
+      onTally(act, t) { if (act === origin || plays.get(origin).plays.some((p) => p.id === act)) tallies.merge(act, t); },
     });
     api.act(origin).then(
       (a) => { if (live) { if (a) setAct((was) => (was ? newer(was, a) : a)); else setRead('gone'); } },
       () => { if (live) setRead('failed'); },
     );
-    void api.cardsOn(origin, CARDS_SHOWN + 1).then((all) => {
+    void api.cardsOn(origin, CARDS_SHOWN + 1).then(async (all) => {
       if (!live) return;
-      setMore(all.length > CARDS_SHOWN);
       const shown = all.slice(0, CARDS_SHOWN);
+      /*
+       * The plays are Acts like the post: their tallies and the player's own reactions to them are read in one read
+       * each, with the origin's (its tally is a card play's own when it was spun from one), and their spins through
+       * the line's batching; then they are billed as the thread bills a post's plays, once for this read. They join
+       * the store only then, so their tags are first drawn in billing order and never move. A count that cannot be
+       * read leaves the tags in the order they came, since the box is a view of another thread and not this page.
+       */
+      const ids = [origin, ...shown.map((a) => a.id)];
+      const [counted, own, spun] = await Promise.all([
+        api.tallies(ids).catch(() => ({})),
+        api.myReactions(ids).catch(() => []),
+        primeSpun(api, ids),
+        readEffects(api, plays, shown, cards),
+      ]);
+      if (!live) return;
+      for (const [id, t] of Object.entries(counted)) tallies.merge(id, t);
+      for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
+      setMore(all.length > CARDS_SHOWN);
       plays.add(shown);
-      return readEffects(api, plays, shown, cards);
+      billPost(plays, origin, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
     }, () => { /* the tags are left out */ });
     return () => { live = false; off(); };
-  }, [api, ui, origin, thread, attempt, plays]);
+  }, [api, ui, origin, thread, attempt, plays, tallies, mine]);
   return { act, more, reading: act ? 'ready' : read, retry: () => setAttempt((n) => n + 1) };
 }
 
@@ -79,23 +104,37 @@ function useNames(ids: readonly (Id | null)[]): (id: Id | null) => string {
 }
 
 /** A spin from a card play itself: the play as its tag, linking to the post it landed on. */
-function CardOrigin({ act, nameOf }: { readonly act: Act; readonly nameOf: (id: Id | null) => string }) {
-  const { perPage } = useThread();
+function CardOrigin({ act, nameOf, onSpin }: { readonly act: Act; readonly nameOf: (id: Id | null) => string; readonly onSpin: (o: SpinOrigin) => void }) {
+  const { perPage, tallies, mine } = useThread();
+  const { ui } = useKayfa();
+  const narrow = useNarrow();
   const play = playOf(act);
   const target = useLocated(act.targetActId);
+  const [open, setOpen] = useState<HTMLButtonElement | null>(null);
   if (!play) return <p className="kb-small kb-muted">A card was played here.</p>;
+  const tint = inkOf(ui, play, [play]);
   return (
-    <ul className="kb-play-tags">
-      <PlayTag play={play} caster={nameOf(play.caster)} to={target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null} />
+    <ul className="kb-play-tags" aria-label="The card play this thread was spun from">
+      <li className="kb-play-tags-lead">
+        <PlayTag play={play} caster={nameOf(play.caster)} tint={tint} tallies={tallies} onOpen={(el) => setOpen((was) => (was ? null : el))} expanded={open !== null} />
+      </li>
+      {open && (
+        <PlayPanel
+          play={play} caster={nameOf(play.caster)} tint={tint} tallies={tallies} mine={mine} sheet={narrow} opener={open} onClose={() => setOpen(null)}
+          /* Go to post leads back to the post the play landed on, as the tag's link did. */
+          to={target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null}
+          onSpin={(p, name) => { const from = open; setOpen(null); onSpin({ id: p.id, label: name, opener: from }); }}
+        />
+      )}
     </ul>
   );
 }
 
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {
-  const { perPage } = useThread();
+  const { perPage, tallies, mine } = useThread();
   const originId = summary.originActId!;
   const plays = useMemo(() => createPlays(), []);
-  const { act, more, reading, retry } = useOrigin(originId, summary.originThread!, plays);
+  const { act, more, reading, retry } = useOrigin(originId, summary.originThread!, plays, tallies, mine);
   const box = useRef<HTMLDivElement>(null);
   /* The effect's plate is drawn here, after the box and attached to it, and not in it: the 2003 chrome holds the post's words, never the game's. */
   const slot = useRef<HTMLDivElement>(null);
@@ -103,6 +142,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const played = usePlays(plays, originId).plays;
   const nameOf = useNames([act?.character ?? null, ...played.map((p) => p.caster)]);
   const history = useHistory(originId);
+  /* A play in the box is spun from in a form of the box's own, under it: the box's post is in another thread. */
+  const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   const backHref = summary.originSeq !== null && summary.originTitle !== null ? threadHref(summary.originThread!, pageOf(summary.originSeq, perPage), summary.originSeq) : null;
   const back = backHref !== null ? <Link to={backHref}>#{summary.originSeq} in {summary.originTitle}</Link> : null;
 
@@ -120,7 +161,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     }
     const name = nameOf(act.character);
     switch (act.kind) {
-      case 'card': return <CardOrigin act={act} nameOf={nameOf} />;
+      case 'card': return <CardOrigin act={act} nameOf={nameOf} onSpin={setSpinOrigin} />;
       case 'unmask': return <UnmaskLine act={act} name={name} />;
       case 'tally':
       case 'reveal': return <SystemPost act={act} />;
@@ -128,8 +169,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-            <PlayTags plays={plays} post={originId} to={backHref} nameOf={nameOf} />
-            <PostEffects plays={plays} post={act} place="origin" slot={slot}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
+            <PlayTags plays={plays} post={originId} to={backHref} nameOf={nameOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />
+            <PostEffects plays={plays} post={act} place="origin" slot={slot} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small">{history.button}</p>}
             {history.panel}
@@ -149,6 +190,12 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
           <p className="kb-small kb-muted">More than {CARDS_SHOWN} cards were played on this Act; the rest are in {back ?? 'the thread it was spun from'}.</p>
         )}
       </div>
+      {spinOrigin && (
+        <SpinForm
+          key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
+          onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); if (back?.isConnected) back.focus(); }}
+        />
+      )}
       {effects && <div className="kb-act-slot" ref={slot} />}
     </>
   );

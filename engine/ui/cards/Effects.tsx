@@ -21,14 +21,15 @@
  * in play order, so the latest is outermost. A post with no plays, or whose plays' cards draw no
  * effect, is drawn untouched.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
-import { createPortal } from 'react-dom';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
-import { Link } from '../router.tsx';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
-import { when } from '../thread/lines.tsx';
+import type { Mine } from '../reactions/mine.ts';
+import { useTally, type Tallies } from '../thread/tallies.ts';
+import { PlayPanel } from './Panel.tsx';
 import { usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, EffectPlace, EffectProps } from './types.ts';
 import './cards.css';
@@ -36,7 +37,11 @@ import './cards.css';
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 
 /** Wraps a post's words in the effect of each card played on it, in play order. */
-export function PostEffects({ plays, post, place, slot, children }: { readonly plays: Plays; readonly post: Act; readonly place: EffectPlace; readonly slot?: RefObject<HTMLElement | null>; readonly children: ReactNode }) {
+export function PostEffects({ plays, post, place, slot, nameOf, children }: {
+  readonly plays: Plays; readonly post: Act; readonly place: EffectPlace; readonly slot?: RefObject<HTMLElement | null>;
+  /** A character's name as the screen knows it, for an effect that names a caster. */
+  readonly nameOf: (character: Id | null) => string; readonly children: ReactNode;
+}) {
   const [own, setOwn] = useState<HTMLElement | null>(null);
   const hosted = slot !== undefined;
   /* The slot the thread's post draws is read once it is mounted, here, so only the effect is drawn again and not the post's words. */
@@ -61,6 +66,7 @@ export function PostEffects({ plays, post, place, slot, children }: { readonly p
     if (released.ok) plays.setReleased([play]);
     return released;
   }, [api, plays]);
+  const note = useCallback<EffectProps['note']>((play, line) => plays.setNote(play, line), [plays]);
 
   if (here.plays.length === 0) return <>{children}</>;
   /* The cards in the order each was first played: the first is innermost. */
@@ -73,7 +79,7 @@ export function PostEffects({ plays, post, place, slot, children }: { readonly p
     const Effect = card.Effect;
     wrapped = (
       <Effect
-        key={key} post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} save={save} release={release}
+        key={key} post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} save={save} release={release} note={note} nameOf={nameOf}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
         {wrapped}
@@ -146,51 +152,213 @@ export function EffectStrip({ slot, card, readout, children }: { readonly slot: 
   );
 }
 
-/** One play's tag: the card, who played it with their words, and when. */
-export function PlayTag({ play, caster, to, tint }: { readonly play: CardPlay; readonly caster: string; readonly to: string | null; readonly tint?: ReturnType<NonNullable<CardUi['tag']>> }) {
+/** The thread's narrow width (thread.css's 40em, where a post is stacked): a play's panel is a sheet there. */
+const NARROW = '(max-width: 40em)';
+/* One query for the page, however many posts ask it, with one listener behind every post's subscription; asked again only if the window's `matchMedia` is another. */
+let narrowQuery: { readonly source: typeof globalThis.matchMedia; readonly list: MediaQueryList } | null = null;
+const narrowWatchers = new Set<() => void>();
+const queryOf = (): MediaQueryList | null => {
+  const source = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia : null;
+  if (!source) return null;
+  if (narrowQuery?.source !== source) {
+    const list = source(NARROW);
+    list.addEventListener?.('change', () => { for (const w of [...narrowWatchers]) w(); });
+    narrowQuery = { source, list };
+  }
+  return narrowQuery.list;
+};
+const watchNarrow = (changed: () => void) => {
+  narrowWatchers.add(changed);
+  return () => { narrowWatchers.delete(changed); };
+};
+/** Whether the window is at the thread's narrow width; a screen with no `matchMedia` is wide. */
+export const useNarrow = (): boolean => useSyncExternalStore(watchNarrow, () => queryOf()?.matches ?? false, () => false);
+
+/** The edges of the stacked tags fanned behind the top one, at most: enough to see a stack, however many plays it holds. */
+export const STACK_EDGES = 3;
+/** Reactions a tag shows, small. */
+export const TAG_REACTIONS = 3;
+
+/** How many reactions a play has drawn, in one phrase ("no reactions", "1 reaction", "8 reactions"). */
+export const reactionCount = (n: number): string => (n === 0 ? 'no reactions' : n === 1 ? '1 reaction' : `${n} reactions`);
+
+/** A play as a screen reader hears its tag: one sentence. */
+export const playSentence = (card: string, caster: string, reactions: number): string => `${card} by ${caster}, ${reactionCount(reactions)}. Opens the play.`;
+
+/** A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order. */
+export const inkOf = (ui: { readonly cards: readonly CardUi[] }, play: CardPlay, plays: readonly CardPlay[]): string | undefined =>
+  ui.cards.find((c) => c.key === play.card)?.tag?.(play, plays.filter((o) => o.card === play.card));
+
+/** The glass's style for a play: the `effect` smoke's, and the card's ink for its border and glow where it chose one. */
+const tinted = (calm: CSSProperties | undefined, ink: string | undefined): CSSProperties | undefined => (ink ? { ...calm, '--kb-tag': ink } as CSSProperties : calm);
+
+/**
+ * One play as the quiet tag the top-billed play gets (design, section 3): the card's name, its caster, and at most its
+ * three top reactions, small, from the public tally, or none (#79). It is a button that opens the play's panel; the
+ * message, when, React and Spin are the panel's. A card that chooses its tag's ink (`CardUi.tag`) gives the glass that
+ * ink for its border and glow, as the Main board draws the tag over #41; the smoke and the glass's own text stay.
+ */
+export function PlayTag({ play, caster, tint, tallies, onOpen, expanded }: {
+  readonly play: CardPlay; readonly caster: string; readonly tint?: string; readonly tallies: Tallies;
+  readonly onOpen: (opener: HTMLButtonElement) => void; readonly expanded?: boolean;
+}) {
   const { instance } = useKayfa();
   const rules = instance.cards.find((c) => c.key === play.card);
   const card = rules?.name ?? play.card;
   const calm = useSurfaceStyle('effect');
-  const said = play.message ? `“${play.message}”` : '';
-  /* One sentence to read; the drawn pieces (the card's name, its caster, and the caster's words on a line of their own) are for the eye, so a screen reader hears it once. */
-  const sentence = `${caster} played ${card} on this post${said ? `: ${said}` : ''}`;
-  /*
-   * The link's box is `display: contents` (cards.css), so the caster and the message are grid items of the tag itself and the
-   * message can take the line under the first, while the whole tag is still one link to the post.
-   */
-  const words = (
-    <>
-      <span className="kb-visually-hidden">{sentence}</span>
-      <span className="kb-play-tag-who" aria-hidden="true">{caster}</span>
-      {said && <span className="kb-play-tag-message" aria-hidden="true">{said}</span>}
-    </>
-  );
-  /* A card that chooses its tag's ink gives the glass that ink for its border and glow, as the Main board draws the tag over #41; the smoke and the glass's own text stay. */
-  const style = tint ? { ...calm, '--kb-tag': tint } as CSSProperties : calm;
+  const tally = useTally(tallies, play.id);
+  const total = Object.values(tally).reduce((a, b) => a + b, 0);
+  /* The largest first, a tie going to the instance's own order of its reactions. */
+  const top = instance.reactions
+    .map((r, i) => ({ r, i, n: tally[r.key] ?? 0 }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n || a.i - b.i)
+    .slice(0, TAG_REACTIONS);
   return (
-    <li className="kb-glass kb-play-tag" data-kb-card={play.card} data-kb-alignment={rules?.alignment} data-kb-tinted={tint ? 'true' : undefined} data-kb-play={play.id} style={style}>
+    <button
+      type="button" className="kb-glass kb-play-tag" data-kb-card={play.card} data-kb-alignment={rules?.alignment} data-kb-tinted={tint ? 'true' : undefined}
+      data-kb-play={play.id} style={tinted(calm, tint)} aria-haspopup="dialog" aria-expanded={expanded ?? false} onClick={(e) => onOpen(e.currentTarget)}
+    >
       <Smoke surface="effect" />
-      <div className="kb-play-tag-in kb-calm">
-        <span className="kb-play-tag-card" aria-hidden="true">{card}</span>
-        {to ? <Link className="kb-play-tag-words" to={to}>{words}</Link> : <span className="kb-play-tag-words">{words}</span>}
-        <time className="kb-play-tag-when" dateTime={play.playedAt}>{when(play.playedAt)}</time>
-      </div>
-    </li>
+      {/* One sentence to hear; the drawn pieces are for the eye. */}
+      <span className="kb-visually-hidden">{playSentence(card, caster, total)}</span>
+      <span className="kb-play-tag-in kb-calm" aria-hidden="true">
+        <span className="kb-play-tag-card">{card}</span>
+        <span className="kb-play-tag-who kb-glass-display">{caster}</span>
+        {top.length > 0 && (
+          <span className="kb-play-tag-reactions">
+            {top.map(({ r, n }) => <span key={r.key} data-kb-reaction={r.key}>{r.emoji} {n}</span>)}
+          </span>
+        )}
+      </span>
+    </button>
   );
 }
 
 /**
- * The tags of every play on a post, in play order; nothing at all where there are none. `to` is the
- * post's own address, which each tag links to; `nameOf` says the caster's name.
+ * The plays on a post, quiet (the design's section 3, as the owner amended it on #97's shots): the top-billed play's
+ * tag, with the edges of the next few fanned behind it in their inks, for the eye alone, and a button that unstacks the
+ * rest into a list floating under it, over the post, like a dropdown: the post's height is the same stacked or not, at
+ * every width. Every play is the one tag that opens its panel, however long its caster's name or its card's. Billing is
+ * the store's, set when the page was read, so nothing moves while it is read.
+ *
+ * Its ways out: the button, Esc, a press outside it, and a read of the page, which stack it again. While a play's panel
+ * is open over it, the panel answers Esc and a press first, and the list stays as it was under it. `to` is the post's own
+ * address, which the panel leads back to as "Go to post"; `nameOf` says the caster's name.
  */
-export function PlayTags({ plays, post, to, nameOf }: { readonly plays: Plays; readonly post: Id; readonly to: string | null; readonly nameOf: (character: Id | null) => string }) {
-  const { ui } = useKayfa();
+export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
+  readonly plays: Plays; readonly post: Id; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
+  readonly tallies: Tallies; readonly mine: Mine;
+  /** Spin a thread from a play: the panel has closed, and the post opens its spin form for it, giving focus back to `opener` when the form closes. */
+  readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
+}) {
+  const { ui, instance } = useKayfa();
   const here = usePlays(plays, post);
-  if (here.plays.length === 0) return null;
+  const narrow = useNarrow();
+  const id = useId();
+  const list = useRef<HTMLUListElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const [unstacked, setUnstacked] = useState(false);
+  const [open, setOpen] = useState<{ readonly play: Id; readonly opener: HTMLButtonElement } | null>(null);
+  /* A read of the page stacks it and closes what was opened on it, before it is drawn again. */
+  const [seen, setSeen] = useState(here.read);
+  if (seen !== here.read) { setSeen(here.read); setUnstacked(false); setOpen(null); }
+  /* A press outside the stack stacks it, unless a panel is open over it, which the press closes first. */
+  const panelOpen = open !== null;
+  useEffect(() => {
+    if (!unstacked || panelOpen) return;
+    const press = (e: PointerEvent) => { if (!list.current?.contains(e.target as Node)) setUnstacked(false); };
+    /* Esc stacks it wherever focus is: a press that does not focus what it presses (Safari, Firefox on a Mac) leaves it on the page. */
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      setUnstacked(false);
+      if (list.current?.contains(document.activeElement)) toggle.current?.focus();
+    };
+    document.addEventListener('pointerdown', press);
+    document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('pointerdown', press); document.removeEventListener('keydown', key); };
+  }, [unstacked, panelOpen]);
+  /*
+   * Unstacked, the list floats over its post's own controls (its reactions, its plate, its footer), which are out of reach
+   * until it is stacked again, as what lies under an open menu is: a press lands on the backdrop and stacks it, and Tab
+   * past either end of the list stacks it and goes on. So a control the list half-covers is never half-pressed (axe's
+   * target-size at a phone's width). Set and released in the commit itself, so Tab's focus move finds them reachable.
+   */
+  useLayoutEffect(() => {
+    const article = unstacked ? list.current?.closest('article') : null;
+    if (!article) return;
+    const under = [article.querySelector<HTMLElement>(':scope > footer'), article.querySelector<HTMLElement>(':scope > .kb-act-slot'), ...article.querySelectorAll<HTMLElement>(':scope > .kb-act-main > :not(.kb-play-tags)')]
+      .filter((el): el is HTMLElement => el !== null && !el.hasAttribute('inert'));
+    for (const el of under) el.setAttribute('inert', '');
+    /* The post is lifted over the next, and its body over its plate (thread.css), for as long as its controls are out of reach. */
+    article.setAttribute('data-kb-lifted', 'true');
+    return () => { for (const el of under) el.removeAttribute('inert'); article.removeAttribute('data-kb-lifted'); };
+  }, [unstacked]);
+  if (here.billed.length === 0) return null;
+  const [lead, ...rest] = here.billed;
+  const opener = (play: Id) => (el: HTMLButtonElement) => setOpen((was) => (was?.play === play ? null : { play, opener: el }));
+  /* Tab past the last of the stack's controls, or Shift+Tab before the first, stacks it, and the focus goes on where Tab takes it. */
+  const tabOut = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab' || !unstacked || panelOpen) return;
+    const stops = [...(list.current?.querySelectorAll<HTMLElement>('button:not([disabled])') ?? [])].filter((b) => !b.closest('[hidden]'));
+    const at = stops.indexOf(document.activeElement as HTMLElement);
+    if ((e.shiftKey && at === 0) || (!e.shiftKey && at === stops.length - 1)) flushSync(() => setUnstacked(false));
+  };
+  const opened = open ? here.plays.find((p) => p.id === open.play) ?? null : null;
+  const tagOf = (p: CardPlay) => (
+    <PlayTag play={p} caster={nameOf(p.caster)} tint={inkOf(ui, p, here.plays)} tallies={tallies} onOpen={opener(p.id)} expanded={open?.play === p.id} />
+  );
+  const stack = () => { setUnstacked(false); toggle.current?.focus(); };
   return (
-    <ul className="kb-play-tags" aria-label="Cards played on this post">
-      {here.plays.map((p) => <PlayTag key={p.id} play={p} caster={nameOf(p.caster)} to={to} tint={ui.cards.find((c) => c.key === p.card)?.tag?.(p, here.plays.filter((o) => o.card === p.card))} />)}
+    <ul
+      ref={list} className="kb-play-tags" aria-label="Cards played on this post" data-kb-unstacked={unstacked ? 'true' : undefined} data-kb-stacked={rest.length > 0 ? 'true' : undefined}
+      onKeyDown={(e) => { if (e.key === 'Escape' && unstacked && !panelOpen) { e.stopPropagation(); stack(); } else tabOut(e); }}
+    >
+      <li className="kb-play-tags-lead">
+        {/* The top tag, with the edges of the next few behind it, offset as a fanned deck. */}
+        <span className="kb-play-stack">
+          {rest.length > 0 && (
+            <span className="kb-play-stack-edges" aria-hidden="true">
+              {rest.slice(0, STACK_EDGES).map((p, i) => {
+                const ink = inkOf(ui, p, here.plays);
+                return (
+                  <span
+                    key={p.id} className="kb-play-stack-edge" data-kb-alignment={instance.cards.find((c) => c.key === p.card)?.alignment} data-kb-depth={i + 1}
+                    style={ink ? { '--kb-tag': ink } as CSSProperties : undefined}
+                  />
+                );
+              })}
+            </span>
+          )}
+          {tagOf(lead!)}
+        </span>
+        {rest.length > 0 && (
+          <button
+            ref={toggle} type="button" className="kb-play-unstack" aria-expanded={unstacked} aria-controls={`${id}-rest`}
+            aria-label={unstacked ? 'Stack the cards played on this post' : `Unstack ${rest.length} more ${rest.length === 1 ? 'card' : 'cards'} played on this post`}
+            onClick={() => setUnstacked(!unstacked)}
+          ><span className="kb-play-unstack-in" aria-hidden="true">{unstacked ? '×' : `+${rest.length}`}</span></button>
+        )}
+      </li>
+      {rest.length > 0 && (
+        <li className="kb-play-tags-rest">
+          {/*
+            * Under the floating list, a clear backdrop over the page: a press outside the list lands on it and stacks the list,
+            * and never half-presses a control the list half-covers (axe's target-size, at a phone's width).
+            */}
+          {unstacked && <div className="kb-play-backdrop" aria-hidden="true" onPointerDown={(e) => { e.preventDefault(); setUnstacked(false); }} />}
+          <ul id={`${id}-rest`} className="kb-play-unstacked" hidden={!unstacked}>
+            {rest.map((p) => <li key={p.id}>{tagOf(p)}</li>)}
+          </ul>
+        </li>
+      )}
+      {open && opened && (
+        <PlayPanel
+          play={opened} caster={nameOf(opened.caster)} tint={inkOf(ui, opened, here.plays)} plays={plays} tallies={tallies} mine={mine} to={to}
+          sheet={narrow} opener={open.opener} fallback={() => toggle.current ?? list.current?.querySelector<HTMLElement>('.kb-play-tag') ?? null} onClose={() => setOpen(null)}
+          onSpin={(play, name) => { const from = open.opener; setOpen(null); setUnstacked(false); onSpin(play, name, from); }}
+        />
+      )}
     </ul>
   );
 }

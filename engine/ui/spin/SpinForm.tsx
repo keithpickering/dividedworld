@@ -16,7 +16,11 @@ import { Link, useNavigate } from '../router.tsx';
 import { expectOrigin, spunLoader } from './spun.ts';
 import './spin.css';
 
-export function SpinForm({ origin, seq, onClose }: { readonly origin: Id; readonly seq: number | null; readonly onClose: () => void }) {
+/**
+ * `label` names the origin as the form says it: "post 41" for a post, "Mrs. Hooligan's Whoops!" for a card play
+ * (the plays-on-a-post design, section 3); null for an Act with no such name ("this Act").
+ */
+export function SpinForm({ origin, label: named, onClose }: { readonly origin: Id; readonly label: string | null; readonly onClose: () => void }) {
   const { api, settings } = useKayfa();
   const { hudCharacter, characters, refresh } = usePlayer();
   const navigate = useNavigate();
@@ -31,7 +35,7 @@ export function SpinForm({ origin, seq, onClose }: { readonly origin: Id; readon
 
   useEffect(() => { first.current?.focus(); }, []);
 
-  const label = seq === null ? 'Spin a thread' : `Spin a thread from post ${seq}`;
+  const label = named === null ? 'Spin a thread' : `Spin a thread from ${named}`;
   if (!hudCharacter) {
     return (
       <div className="kb-spin-form kb-box" role="group" aria-label={label}>
@@ -80,7 +84,7 @@ export function SpinForm({ origin, seq, onClose }: { readonly origin: Id; readon
 
   return (
     <form className="kb-spin-form kb-box" aria-label={label} onSubmit={(e) => void submit(e)} onKeyDown={key} noValidate>
-      <p className="kb-small">Spinning a thread from {seq === null ? 'this Act' : <b>post {seq}</b>} as <strong>{hudCharacter.name}</strong></p>
+      <p className="kb-small">Spinning a thread from {named === null ? 'this Act' : <b>{named}</b>} as <strong>{hudCharacter.name}</strong></p>
       <div className="kb-spin-now-region" role="status">
         {who.changed && (
           <p className="kb-notice">

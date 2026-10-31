@@ -64,8 +64,8 @@ function target(key: string, all: readonly HTMLButtonElement[], at: number): num
 
 interface Props {
   readonly act: Id;
-  /** Whose post it is, as the thread names it, for the dialog's name. */
-  readonly authorName: string;
+  /** What is reacted to, as the thread names it, for the dialog's name ("Alex's post", "Mrs. Hooligan's Whoops!"). */
+  readonly subject: string;
   readonly as: MyCharacter | null;
   readonly own: readonly MyReaction[];
   readonly tallies: Tallies;
@@ -75,7 +75,7 @@ interface Props {
   readonly onClose: (refocus: boolean) => void;
 }
 
-export function Picker({ act, authorName, as, own, tallies, mine, anchor, onClose }: Props) {
+export function Picker({ act, subject, as, own, tallies, mine, anchor, onClose }: Props) {
   const { api, instance, ui, settings } = useKayfa();
   const player = usePlayer();
   const [placed, setPlaced] = useState<Placed | null>(null);
@@ -139,7 +139,7 @@ export function Picker({ act, authorName, as, own, tallies, mine, anchor, onClos
   const at = cells(GRID.map((q) => instance.reactions.filter((r) => r.quadrant === q).length), columns);
   return (
     <Overlay
-      title={<span className="kb-calm">React</span>} label={`React to ${authorName}'s post`} surface="react" className="kb-picker"
+      title={<span className="kb-calm">React</span>} label={`React to ${subject}`} surface="react" className="kb-picker"
       describedBy={describedId} closeAt="foot" anchor={anchor} sheetBelow={POPOVER_ROOM} onPlace={setPlaced} onClose={() => onClose(true)}
       aside={<span id={countId} className="kb-picker-left kb-calm" role="status">{left} of {cap} left</span>}
     >

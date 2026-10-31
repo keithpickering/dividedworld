@@ -26,9 +26,13 @@ interface Props {
   readonly authorName?: string;
   readonly tallies: Tallies;
   readonly mine: Mine;
+  /** What is reacted to, as the picker is named ("React to Mrs. Hooligan's Whoops!"); the author's post where none is given. */
+  readonly subject?: string;
+  /** Drawn on the glass (a play's panel), with the same picker, refusals and "your own" outline; the 2003 chrome's otherwise. */
+  readonly look?: 'glass';
 }
 
-export function Reactions({ act, author, authorName = 'this character', tallies, mine }: Props) {
+export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject, look }: Props) {
   const { instance } = useKayfa();
   const player = usePlayer();
   const tally = useTally(tallies, act);
@@ -45,7 +49,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   useEffect(() => { setOpen(false); }, [asId]);
   if (shown.length === 0 && !canReact) return null;
   return (
-    <div ref={row} className="kb-reactions">
+    <div ref={row} className="kb-reactions" data-kb-look={look}>
       {shown.length > 0 && (
         <ul className="kb-chips" aria-label="Reactions">
           {shown.map((r) => {
@@ -66,7 +70,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
       )}
       {open && canReact && (
         <Picker
-          act={act} authorName={authorName} as={as} own={own} tallies={tallies} mine={mine} anchor={row}
+          act={act} subject={subject ?? `${authorName}'s post`} as={as} own={own} tallies={tallies} mine={mine} anchor={row}
           onClose={(refocus) => { setOpen(false); if (refocus) button.current?.focus(); }}
         />
       )}

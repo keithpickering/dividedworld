@@ -17,6 +17,7 @@ import { useMemo } from 'react';
 import { useKayfa } from '../context.tsx';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import { usePlayer } from '../player.tsx';
+import { createTallies } from '../thread/tallies.ts';
 import { PlayTag } from './Effects.tsx';
 import { Postcard } from './Postcard.tsx';
 import { facesOf } from './faces.ts';
@@ -28,6 +29,8 @@ const PLACES = [{ left: 64, top: 204, turn: -4 }, { left: 372, top: 178, turn: 2
 
 function HandSheet() {
   const { instance, ui } = useKayfa();
+  /* The tag's reactions: none, as a specimen that nothing has reacted to. */
+  const tallies = useMemo(() => createTallies(), []);
   const { cards } = usePlayer();
   const calm = useSurfaceStyle('hand');
   const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings), [instance, ui.cards]);
@@ -78,7 +81,7 @@ function HandSheet() {
           <div className="kb-hand-board-post-bar"><span>Spritey · #41</span><span>who keeps splatting my posts</span></div>
           {play && (
             <ul className="kb-play-tags kb-hand-board-tags">
-              <PlayTag play={play} caster="Mrs. Hooligan" to={null} />
+              <li className="kb-play-tags-lead"><PlayTag play={play} caster="Mrs. Hooligan" tallies={tallies} onOpen={() => {}} /></li>
             </ul>
           )}
           <div className="kb-hand-board-post-foot">

@@ -81,6 +81,15 @@ export interface EffectProps {
   readonly save: (play: Id, state: Readonly<Record<string, unknown>>) => Promise<Answer<{ readonly play: Id; readonly savedAt: string }>>;
   /** Release the reader from a play's effect for good (Stick Around's certification), and show it at once. */
   readonly release: (play: Id) => Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
+  /**
+   * Say one line about a play's state on this screen, in plain words, for its panel (the plays-on-a-post design,
+   * section 4: "Layer 3 of 3, on top · 40% washed"), or clear it with null. It is this reader's view, never saved or
+   * sent, and it draws only the panel that shows it, so an effect may say it as often as its state changes; an effect
+   * clears what it said when it is gone.
+   */
+  readonly note: (play: Id, line: string | null) => void;
+  /** A character's name as the screen the post is drawn on knows it, for a card that names a play's caster ("top: Spritey's yellow"). */
+  readonly nameOf: (character: Id | null) => string;
   readonly children: ReactNode;
 }
 
