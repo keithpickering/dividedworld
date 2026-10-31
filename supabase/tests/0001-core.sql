@@ -89,6 +89,9 @@ begin
       -- my_characters (0030) reads the owner to keep each caller to their own characters, and the class to say what it is now;
       -- 0033-screens-reads.sql holds that it shows nobody else's.
       and not (u.view_name = 'my_characters' and (u.table_name, u.column_name) in (('characters', 'owner'), ('class_history', 'class_key')))
+      -- my_posts_played_on (0037) reads the owner to keep each caller to the plays on their own posts, and to leave out the
+      -- plays made through their own characters; 0042-log-reads.sql holds that it shows nobody else's and names no owner.
+      and not (u.view_name = 'my_posts_played_on' and (u.table_name, u.column_name) = ('characters', 'owner'))
   loop
     leaks := leaks || format(' %s reads %s.%s;', r.view_name, r.table_name, r.column_name);
   end loop;

@@ -57,6 +57,14 @@ check('a REST rpc path outside the allowlist fires', fires('fetch(`${url}/rest/v
 check('a write to an allowed view still names the view, and a write is not a read the guard allows', fires(`client.from('acts_public').insert({});`).length === 1);
 check('an upsert, update or delete fires', fires(`client.from('reading').upsert({}); client.from('reading').update({}); client.from('reading').delete();`).length === 3);
 
+/* ---- the log's own views (docs/plans/2026-10-30-log-shares-plan.md, Task 4) ---- */
+for (const t of ['my_ledger_shares', 'my_card_ledger', 'my_posts_played_on']) {
+  check(`.from('${t}'), the player's own log, is clean`, fires(`client.from('${t}').select('*').lte('at', before);`).length === 0);
+}
+for (const t of ['ledger_shares', 'ledger_shares_kept']) {
+  check(`.from('${t}'), the table under the log's own view, fires`, fires(`client.from('${t}').select('*');`).length === 1);
+}
+
 /* ---- a Supabase client only in web/src/data/ ---- */
 check('supabase-js imported in a screen fires', fires(`import { createClient } from '@supabase/supabase-js';`, 'engine/ui/thread/Thread.tsx').length === 1);
 check('supabase-js imported in the web app outside its data layer fires', fires(`import { createClient } from '@supabase/supabase-js';`, 'web/src/App.tsx').length === 1);
