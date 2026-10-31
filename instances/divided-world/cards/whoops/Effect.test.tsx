@@ -111,14 +111,18 @@ function mount(o: Options = {}) {
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};
+  let replay: () => void = () => {};
   function Host() {
     const [held, set] = useState(props.states);
+    /* The engine hands an effect a new list of the same plays whenever the post's plays are drawn again (Effects.tsx `PostEffects`). */
+    const [list, setList] = useState(props.plays);
     push = set;
-    return <Effect {...props} states={held} />;
+    replay = () => setList((was) => [...was]);
+    return <Effect {...props} plays={list} states={held} />;
   }
   const world = renderInWorld(<Host />, { settings: { cardSettings: o.clean === null ? {} : { 'whoops.clean': o.clean ?? 95 } } });
   const root = world.container.querySelector('.kb-whoops') as HTMLElement;
-  return { ...world, slot, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)) };
+  return { ...world, slot, save: save as ReturnType<typeof vi.fn>, root, frame: world.container.querySelector('.kb-whoops-frame') as HTMLElement, hear: (next: Record<string, EffectState>) => act(() => push(next)), replay: () => act(() => replay()) };
 }
 
 /** The washed share of each layer, as the component publishes it. */
@@ -380,6 +384,9 @@ describe('the words and controls are glass, outside the post (the owner\'s notes
     const strip = slot.querySelector('.kb-effect-strip') as HTMLElement;
     expect(strip.querySelector('.kb-plate-name')).toHaveTextContent('Whoops!');
     expect(strip.querySelector('.kb-plate-state')).toHaveTextContent(/^3 layers · top: Spritey's yellow, 0% washed$/u);
+    /* The sentence is what a screen reader hears of the readout; the meter beside it is for the eye. */
+    expect(strip.querySelector('.kb-plate-state')!.closest('[aria-hidden="true"]')).toBeNull();
+    expect(strip.querySelector('.kb-whoops-meter')).toHaveAttribute('aria-hidden', 'true');
   });
   test('two layers and one read the same way, one in the singular', () => {
     expect(mount({ layers: 2 }).slot.querySelector('.kb-plate-state')).toHaveTextContent(/^2 layers · top: Gloomba's cyan, 0% washed$/u);
@@ -415,6 +422,16 @@ describe('the words and controls are glass, outside the post (the owner\'s notes
     const share = Math.round(100 * washed(root)[1]!);
     expect(share).toBeGreaterThan(0);
     expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(new RegExp(`^2 layers · top: Gloomba's cyan, ${share}% washed$`, 'u'));
+  });
+  test('the same plays handed again keep their lines: a line is taken back only when its play is gone', async () => {
+    const note = vi.fn<EffectProps['note']>();
+    const { replay } = mount({ layers: 2, note });
+    const last = (play: string) => note.mock.calls.filter(([p]) => p === play).at(-1)?.[1];
+    await vi.waitFor(() => expect(last('play-2')).toBe('Layer 2 of 2, on top · 0% washed'));
+    replay();
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+    expect(last('play-2')).toBe('Layer 2 of 2, on top · 0% washed');
+    expect(last('play-1')).toBe('Layer 1 of 2 · 0% washed');
   });
   test('each layer says its line to the play\'s panel, as the shares change, and takes it back when the effect is gone', async () => {
     const note = vi.fn<EffectProps['note']>();

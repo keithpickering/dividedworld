@@ -706,10 +706,12 @@ export function Effect({ post, plays, states, reader, save, slot, place, note, n
     const frame = requestAnimationFrame(() => { for (const [id, line] of noteNow.current.notes) noteNow.current.note(id, line); });
     return () => cancelAnimationFrame(frame);
   }, [notesKey]);
+  /* Taken back by the plays they belong to, not by the list they came in: the engine hands the same plays again in a new one. */
+  const playIds = layers.map((l) => l.play.id).join('\u0000');
   useEffect(() => {
-    const ids = layers.map((l) => l.play.id);
+    const ids = playIds.split('\u0000');
     return () => { for (const id of ids) noteNow.current.note(id, null); };
-  }, [layers]);
+  }, [playIds]);
   const stop = (e: { preventDefault(): void }) => e.preventDefault();
 
   return (
