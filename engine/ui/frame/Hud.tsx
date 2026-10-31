@@ -186,7 +186,11 @@ export function Hud() {
   const pick = (face: { readonly key: string }) => {
     play.arm(armed === face.key ? null : face.key);
     /* The Phone board's sheet covers the foot of the page, where the posts to pick are: it is put away, and the armed card waits in the hand. */
-    if (!wide) setHandOpen(false);
+    if (!wide) {
+      setHandOpen(false);
+      /* The sheet held the keyboard's place and is hidden now: it goes to the hand button, which is the armed card's words. */
+      handButton.current?.focus();
+    }
   };
 
   const held = player.cards.reduce((n, c) => n + c.held, 0);

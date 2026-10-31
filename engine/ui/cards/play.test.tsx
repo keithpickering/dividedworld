@@ -8,7 +8,7 @@
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { landsOnPost, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
@@ -170,6 +170,45 @@ describe('where "Play Whoops! here" stands', () => {
     expect(within(post(2)).getAllByRole('button', { name: 'Play Whoops! here' })).toHaveLength(1);
     expect(tile.closest('.kb-act-links, .kb-act-main')).toBeNull();
     expect(within(plate).getByRole('button', { name: 'Hold to scrub' })).toBeInTheDocument();
+  });
+
+  /* Two effects each draw a plate on one post: the play tile stands in one of them, and the other going away does not take the tile out of the plate that remains. */
+  test('with two plates on a post, one going away leaves the tile in the other', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    w.fake.seed.card(w.gloomba, w.ids[1]!, 'whoops', { message: 'one', layer: 1, config: { color: '#ff2bd6' } });
+    w.fake.seed.card(w.gloomba, w.ids[1]!, 'stick-around', { message: 'two', layer: 1, config: {} });
+    function Dropping({ slot, children }: { readonly slot: HTMLElement | null; readonly children: React.ReactNode }) {
+      const [on, setOn] = useState(true);
+      return (
+        <>
+          {children}
+          {on && <EffectStrip slot={slot} card="stick-around"><button type="button" className="kb-plate-tile" onClick={() => setOn(false)}>Drop this plate</button></EffectStrip>}
+        </>
+      );
+    }
+    const two: CardUi[] = [
+      { ...withPlate[0]! },
+      { ...cards[1]!, Effect: Dropping },
+    ];
+    await open(w, two);
+    await arm(user);
+    const plates = () => [...post(2).querySelectorAll<HTMLElement>('.kb-effect-strip')];
+    expect(plates()).toHaveLength(2);
+    const tile = within(post(2)).getByRole('button', { name: 'Play Whoops! here' });
+    expect(tile).toHaveAttribute('data-kb-where', 'plate');
+    const drop = within(post(2)).getByRole('button', { name: 'Drop this plate' });
+    /* The plate to lose is the one the tile is not in; if the tile is in the dropping plate, it is the other that is the remaining. */
+    if (drop.closest('.kb-effect-strip')!.contains(tile)) {
+      await user.click(drop);
+      expect(plates()).toHaveLength(1);
+      expect(within(post(2)).getByRole('button', { name: 'Play Whoops! here' })).toHaveAttribute('data-kb-where', 'plate');
+      return;
+    }
+    await user.click(drop);
+    expect(plates()).toHaveLength(1);
+    expect(within(plates()[0]!).getByRole('button', { name: 'Play Whoops! here' })).toHaveAttribute('data-kb-where', 'plate');
+    expect(within(post(2)).getAllByRole('button', { name: 'Play Whoops! here' })).toHaveLength(1);
   });
 });
 

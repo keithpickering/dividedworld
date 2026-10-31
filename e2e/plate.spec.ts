@@ -137,3 +137,42 @@ test('the plate on #41 reads out the card and its layers, and its controls are b
     if (await tool.count()) await expect(tool).toHaveAttribute('aria-pressed', /^(true|false)$/u);
   }
 });
+
+/*
+ * Forced colors (Windows High Contrast) replace the plate's backgrounds, which draw its edge, with the canvas: the plate
+ * is edged by a border in a system color there, and is not cut by a clip-path that would cut the border's corners off.
+ */
+test.describe('in forced colors', () => {
+  test.use({ forcedColors: 'active' });
+
+  test('the effect plate has a visible edge in a system color', async ({ page }) => {
+    await page.goto('/?fixture=boards&moment=01-main');
+    const plate = page.locator('#post-41 .kb-effect-plate');
+    await expect(plate).toBeVisible();
+    const edge = await plate.evaluate((el) => {
+      const probe = document.createElement('div');
+      probe.style.cssText = 'forced-color-adjust: none; color: CanvasText';
+      document.body.append(probe);
+      const text = getComputedStyle(probe).color;
+      probe.remove();
+      const c = getComputedStyle(el);
+      return { style: c.borderTopStyle, width: parseFloat(c.borderTopWidth), color: c.borderTopColor, text };
+    });
+    expect(edge.style).toBe('solid');
+    expect(edge.width).toBeGreaterThanOrEqual(1);
+    expect(edge.color).toBe(edge.text);
+  });
+});
+
+/* The plate takes the post's width on the Phone board's layout, including a wide window folded to it by large text. */
+test('the plate takes the post\'s full width where the layout is the phone\'s, whatever the window\'s width', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1120 });
+  await page.goto('/?fixture=boards&moment=01-main');
+  const strip = page.locator('#post-41 .kb-effect-strip');
+  await expect(strip).toBeVisible();
+  const narrow = (await strip.boundingBox())!.width;
+  await page.evaluate(() => document.documentElement.setAttribute('data-kb-layout', 'phone'));
+  const folded = await strip.evaluate((el) => getComputedStyle(el).flexBasis);
+  expect(narrow).toBeLessThan((await page.locator('#post-41 .kb-act-main').boundingBox())!.width - 48);
+  expect(folded).toBe('100%');
+});

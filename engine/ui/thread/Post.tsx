@@ -12,6 +12,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { PlateProvider, PlayTags, PostEffects } from '../cards/Effects.tsx';
 import { PlayHere } from '../cards/PlayActions.tsx';
+import { holdsEffects } from '../cards/plays.ts';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -153,7 +154,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
           <SpunInto act={act.id} />
         </div>
         <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} />
-        {act.kind === 'post' && <div className="kb-act-slot" ref={slot} />}
+        {holdsEffects(act.kind) && <div className="kb-act-slot" ref={slot} />}
         {act.kind === 'post' && <PlayHere act={act} slot={slot} />}
       </article>
     </PlateProvider>

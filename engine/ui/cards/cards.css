@@ -356,6 +356,16 @@
 
 /* Forced colors drop the glow and the fills: a tile is outlined in a system color, the one to do in Highlight. */
 @media (forced-colors: active) {
+  /* The plate's edge is drawn from backgrounds, which forced colors replace with the canvas: it is a border in a system color, and square, since the cut would take the border's corners off. */
+  .kb-effect-strip .kb-effect-plate {
+    border: var(--kb-border) solid CanvasText;
+    clip-path: none;
+  }
+
+  .kb-effect-plate::after {
+    clip-path: none;
+  }
+
   .kb-plate-tile {
     outline: 2px solid ButtonText;
     outline-offset: 1px;
@@ -392,9 +402,13 @@
   font-size: var(--kb-glass-size-phone-display);
 }
 
-/* On a narrow post the plate takes the post's width. */
+/* On a narrow post the plate takes the post's width: a narrow window, or the Phone board's layout on a wide one (the fold at large text). */
 @media (max-width: 40em) {
   .kb-glass.kb-effect-strip {
     flex: 1 1 100%;
   }
+}
+
+:root[data-kb-layout='phone'] .kb-glass.kb-effect-strip {
+  flex: 1 1 100%;
 }

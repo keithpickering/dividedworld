@@ -113,3 +113,26 @@ test('spins: opens the form from a post, types a title, sends with Enter, and la
   await expect(page.getByRole('heading', { level: 1, name: 'Spun by keyboard' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Origin' })).toBeFocused();
 });
+
+/*
+ * On the Phone board's layout the sheet is put away once a card is armed (Hud.tsx), and the sheet held focus: a keyboard
+ * player who armed a card must land on the hand button (now "Armed · X"), not on the page.
+ */
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('arming a card from the hand\'s sheet leaves focus on the hand button', async ({ page }) => {
+    await page.goto('/b/general');
+    await page.getByRole('link', { name: 'Who keeps reacting with tea?', exact: true }).click();
+    const handButton = page.getByRole('button', { name: /^Hand, \d+ postcards?$/ });
+    await tabTo(page, handButton);
+    await page.keyboard.press('Enter');
+    const hand = page.getByRole('region', { name: 'Your hand' });
+    await expect(hand).toBeFocused();
+    const card = hand.getByRole('button', { name: /^Whoops!, Salty\b/ }).first();
+    await tabTo(page, card);
+    await page.keyboard.press('Enter');
+    await expect(hand).toBeHidden();
+    await expect(page.getByRole('button', { name: /^Armed · Whoops!/ })).toBeFocused();
+  });
+});

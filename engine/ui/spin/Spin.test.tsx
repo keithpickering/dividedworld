@@ -208,6 +208,17 @@ describe('the ORIGIN box', () => {
     expect(box.nextElementSibling).toHaveClass('kb-act-slot');
   });
 
+  test('the spin\'s own post holds a slot for an effect, as a post does', async () => {
+    const w = threadWorld(3);
+    const spun = await spinFrom(w, w.ids[1]!);
+    openSpun(w, spun);
+    await origin();
+    const first = await screen.findByRole('article', { name: /^Post 1 /u });
+    expect(first).toHaveAttribute('data-kb-kind', 'spin');
+    /* The post's own slot is a child of the article, after its words and links; the ORIGIN box's is inside the body. */
+    expect(first.querySelector(':scope > .kb-act-slot')).not.toBeNull();
+  });
+
   test('a card with no CardUi draws the origin\'s words untouched, with its tag', async () => {
     const w = threadWorld(3);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });

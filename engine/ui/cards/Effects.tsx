@@ -21,7 +21,7 @@
  * in play order, so the latest is outermost. A post with no plays, or whose plays' cards draw no
  * effect, is drawn untouched.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
@@ -87,12 +87,16 @@ export function PostEffects({ plays, post, place, slot, children }: { readonly p
  * there is not. It is state in a provider of its own so that a plate appearing draws the control again and not the
  * post's words.
  */
-interface PlateHost { readonly here: HTMLElement | null; readonly setHere: (el: HTMLElement | null) => void }
+interface PlateHost { readonly here: HTMLElement | null; readonly add: (el: HTMLElement) => void; readonly remove: (el: HTMLElement) => void }
 const PlateContext = createContext<PlateHost | null>(null);
 
 export function PlateProvider({ children }: { readonly children: ReactNode }) {
-  const [here, setHere] = useState<HTMLElement | null>(null);
-  const host = useMemo(() => ({ here, setHere }), [here]);
+  /* Every plate on the post, in the order each was drawn: two effects can each draw one, and the tile stands in the first that remains. */
+  const [plates, setPlates] = useState<readonly HTMLElement[]>([]);
+  const add = useCallback((el: HTMLElement) => setPlates((all) => (all.includes(el) ? all : [...all, el])), []);
+  const remove = useCallback((el: HTMLElement) => setPlates((all) => (all.includes(el) ? all.filter((o) => o !== el) : all)), []);
+  const here = plates[0] ?? null;
+  const host = useMemo(() => ({ here, add, remove }), [here, add, remove]);
   return <PlateContext.Provider value={host}>{children}</PlateContext.Provider>;
 }
 
@@ -112,9 +116,13 @@ export function EffectStrip({ slot, card, readout, children }: { readonly slot: 
   const { instance } = useKayfa();
   const calm = useSurfaceStyle('effect');
   const host = useContext(PlateContext);
-  const setHere = host?.setHere;
-  /* The plate's place for the play control is the post's while the plate is drawn, and no longer. */
-  const place = useCallback((el: HTMLElement | null) => { setHere?.(el); }, [setHere]);
+  const add = host?.add;
+  const remove = host?.remove;
+  /* The plate's place for the play control is the post's while the plate is drawn, and no longer. A ref's null does not say which element left, so each plate remembers its own. */
+  const mine = useRef<HTMLElement | null>(null);
+  const place = useCallback((el: HTMLElement | null) => {
+    if (el) { mine.current = el; add?.(el); } else if (mine.current) { remove?.(mine.current); mine.current = null; }
+  }, [add, remove]);
   if (!slot) return null;
   const rules = instance.cards.find((c) => c.key === card);
   return createPortal(

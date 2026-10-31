@@ -97,6 +97,10 @@ for (const [label, viewport, moment] of [['a narrow post', { width: 390, height:
       /* It stays inside the post's width. */
       expect(t!.x).toBeGreaterThanOrEqual(main!.x - 1);
       expect(t!.x + t!.width).toBeLessThanOrEqual(main!.x + main!.width + 1);
+      /* The post's words start below the tag, which stands in the flow and never over them. */
+      const words = await post.locator('.kb-play-tags + *').boundingBox();
+      const tags = await post.locator('.kb-play-tags').boundingBox();
+      expect(words!.y, 'the post\'s words start below the tag').toBeGreaterThanOrEqual(tags!.y + tags!.height - 1);
       /* The caster's words start under the caster's name, on their own line. */
       expect(message!.y, 'the message is under the caster').toBeGreaterThanOrEqual(who!.y + who!.height - 1);
       expect(await overflow(page)).toBeLessThanOrEqual(0);

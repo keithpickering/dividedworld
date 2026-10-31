@@ -10,11 +10,11 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect } from 'react';
-import { Frame } from '../frame/Frame.tsx';
-import { useKayfa } from '../context.tsx';
-import type { Fake } from '../data/fake.ts';
-import { useLocation } from '../router.tsx';
-import { ThreadScreen } from './Thread.tsx';
+import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
+import { useKayfa } from '../../../../engine/ui/context.tsx';
+import type { Fake } from '../../../../engine/ui/data/fake.ts';
+import { useLocation } from '../../../../engine/ui/router.tsx';
+import { ThreadScreen } from '../../../../engine/ui/thread/Thread.tsx';
 
 /** What the extreme inks are: the lightest and the darkest a color field can hold. */
 const INKS = { lightest: '#ffffff', darkest: '#000000' } as const;

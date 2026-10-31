@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
  * "There's no way the current #000 text against that magenta ink passes contrast, and that ink color is totally variable too."
  * So the action row (Quote, Spin thread, Edit, History) stands on an opaque bar of its own, drawn like the header bar, and the
  * splat fills the body between the two bars and never lies under either. #41 is splatted in the lightest and the darkest ink
- * (engine/ui/thread/Footer.board.stories.tsx), at 390 and 1440, and every footer control's text is read against the bar's own
+ * (instances/divided-world/ui/whoops/Footer.board.stories.tsx), at 390 and 1440, and every footer control's text is read against the bar's own
  * ground (the 2003 body text's 4.5:1), each reaction chip's text against the chip's own ground (the owner: "reactions are
  * fine as is. They already each have an individual solid background+border"), and the bar's ground is opaque.
  *

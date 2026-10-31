@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { PlayTag, PlayTags, PostEffects } from '../cards/Effects.tsx';
-import { createPlays, effectCards, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
+import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Character, Id, ThreadSummary } from '../data/api.ts';
 import { newer } from '../thread/feed.ts';
@@ -138,8 +138,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     }
   };
 
-  /* The kinds `body` draws with the post's effects (its default case) are the ones that hold a plate. */
-  const effects = act !== null && !['card', 'unmask', 'tally', 'reveal'].includes(act.kind);
+  /* The kinds `body` draws with the post's effects (its default case) are the ones that hold a plate: the thread's post asks the same helper. */
+  const effects = act !== null && holdsEffects(act.kind);
   return (
     <>
       <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>

@@ -5,7 +5,8 @@
  */
 import { describe, expect, test, vi } from 'vitest';
 import type { Act } from '../data/api.ts';
-import { createPlays, effectCards, inPlayOrder, playOf } from './plays.ts';
+import type { ActKind } from '../data/api.ts';
+import { createPlays, effectCards, holdsEffects, inPlayOrder, playOf } from './plays.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
 const OTHER = '11111111-0000-4000-8000-000000000002';
@@ -85,4 +86,11 @@ describe('the store', () => {
 test('only the cards the instance draws an effect for have a state to read', () => {
   const ui = { cards: [{ key: 'a', Effect: () => null }, { key: 'b' }] } as unknown as Parameters<typeof effectCards>[0];
   expect([...effectCards(ui)]).toEqual(['a']);
+});
+
+describe('the kinds of Act that hold a card\'s effect', () => {
+  test('are the ones drawn as words: not a card, an unmask, a tally or a reveal', () => {
+    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, tally: false, reveal: false };
+    for (const [kind, held] of Object.entries(kinds)) expect(holdsEffects(kind as ActKind), kind).toBe(held);
+  });
 });
