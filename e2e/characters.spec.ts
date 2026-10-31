@@ -287,3 +287,43 @@ test('a Turn reopened on a pending Lurker opens with the Lurker in view', async 
   await expect(classGroup(change).getByRole('radio', { name: 'Lurker' })).toBeChecked();
   expect((await inView(change)).whole).toContain('lurker');
 });
+
+test('an arrow that reaches its end hands focus to the other arrow, never dropping it out of the dialog', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  const group = classGroup(dialog);
+  const more = group.getByRole('button', { name: 'More classes' });
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await expect(more).toBeDisabled();
+  await expect(group.getByRole('button', { name: 'Earlier classes' })).toBeFocused();
+});
+
+/* The fade is drawn over a card that only peeks, as wide as its peek: never over a card shown whole. */
+async function fades(dialog: ReturnType<Page['locator']>) {
+  return classGroup(dialog).locator('.kb-class-grid').evaluate((row) => {
+    const s = getComputedStyle(row);
+    const px = (name: string) => (row.hasAttribute(`data-kb-peek-${name}`) ? Math.round(parseFloat(s.getPropertyValue(`--kb-class-peek-${name}`))) : 0);
+    return { before: px('before'), after: px('after') };
+  });
+}
+
+test('the fade covers only a peeking card, at its start and its end, and never a card snapped whole on a phone', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  // Four cards of 216 and three gaps of 14 in 972: the Lurker peeks 66px.
+  expect(await fades(dialog)).toEqual({ before: 0, after: 66 });
+  await classGroup(dialog).getByRole('radio', { name: 'Lurker' }).check();
+  await expect.poll(() => fades(dialog)).toEqual({ before: 66, after: 0 });
+
+  const phone = await openTurnAt(page, 390, 844);
+  const group = classGroup(phone);
+  await expect(group.getByText('1–1 of 5')).toBeVisible();
+  const row = group.locator('.kb-class-grid');
+  await row.scrollIntoViewIfNeeded();
+  const box = (await row.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(200, 0);
+  await expect(group.getByText('2–2 of 5')).toBeVisible();
+  // Snapped to the Heel, nothing of the Face shows: no fade at its start; the Jabroni peeks at its end.
+  await expect.poll(async () => (await fades(phone)).before).toBe(0);
+  expect((await fades(phone)).after).toBeGreaterThan(40);
+});

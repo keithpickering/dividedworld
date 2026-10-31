@@ -435,21 +435,28 @@
 /*
  * The class cards are one row, a carousel (docs/plans/2026-10-30-technician-design.md, section 3):
  * cards at the board's 216px, as many as the row's width holds, scrolled on the inline axis and
- * snapped to a card's start. While cards lie past an edge, a fade is drawn there, under which the
- * next card peeks. The scrollbar is not drawn, as the board draws none: the arrows, a swipe and the
- * arrow keys move the row. Nothing out of view is hidden from anyone: no card is given
- * visibility, display or inert here.
+ * snapped to a card's start. A fade is drawn over a card that only peeks in at an edge, as wide as
+ * its peek (ClassCards.tsx measures it), so a card shown whole is never faded. The scrollbar is not
+ * drawn, as the board draws none: the arrows, a swipe and the arrow keys move the row. Nothing out
+ * of view is hidden from anyone: no card is given visibility, display or inert here.
  */
 .kb-class-cards {
-  position: relative;
   --kb-class-card-width: 216px;
-  --kb-class-fade: 64px;
+  /* The phone's peek, which its card leaves of the row. */
+  --kb-class-peek: 64px;
+}
+
+/* The row and its count and arrows; the row's block padding holds the chosen card's glow, which the scroll would clip. */
+.kb-class-rail {
+  position: relative;
+  margin-top: 10px;
 }
 
 .kb-class-grid {
   display: flex;
   gap: 14px;
-  margin-top: 10px;
+  padding-block: 30px;
+  margin-block: -30px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
@@ -462,23 +469,27 @@
   scroll-snap-align: start;
 }
 
-.kb-class-grid[data-kb-more-after] {
-  mask-image: linear-gradient(90deg, #000 calc(100% - var(--kb-class-fade)), transparent);
+.kb-class-grid[data-kb-peek-after] {
+  mask-image: linear-gradient(90deg, #000 calc(100% - var(--kb-class-peek-after)), transparent);
 }
 
-.kb-class-grid[data-kb-more-before] {
-  mask-image: linear-gradient(90deg, transparent, #000 var(--kb-class-fade));
+.kb-class-grid[data-kb-peek-before] {
+  mask-image: linear-gradient(90deg, transparent, #000 var(--kb-class-peek-before));
 }
 
-.kb-class-grid[data-kb-more-before][data-kb-more-after] {
-  mask-image: linear-gradient(90deg, transparent, #000 var(--kb-class-fade), #000 calc(100% - var(--kb-class-fade)), transparent);
+.kb-class-grid[data-kb-peek-before][data-kb-peek-after] {
+  mask-image: linear-gradient(90deg, transparent, #000 var(--kb-class-peek-before), #000 calc(100% - var(--kb-class-peek-after)), transparent);
 }
 
-/* The count and the arrows, on the legend's line at its right, as the Turn board draws them. */
+/*
+ * The count and the arrows, on the legend's line at its right, as the Turn board draws them:
+ * centered on the legend's line, which ends the rail's 10px above the row and is about 1.2 times
+ * the legend's size tall, so they follow the player's text size.
+ */
 .kb-class-nav {
   position: absolute;
   right: 0;
-  top: -40px;
+  bottom: calc(100% + 10px + var(--kb-glass-size-body) * 0.6 - 22px);
   display: flex;
   gap: 10px;
   align-items: center;
@@ -509,6 +520,13 @@
 .kb-class-arrow:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+@media (forced-colors: active) {
+  .kb-class-arrow:disabled {
+    opacity: 1;
+    color: GrayText;
+  }
 }
 
 .kb-class-card {
@@ -1279,7 +1297,7 @@
 
 /* The phone's row: one card whole and the next peeking under the fade. */
 :where(:root[data-kb-layout='phone']) .kb-class-cards {
-  --kb-class-card-width: calc(100% - var(--kb-class-fade));
+  --kb-class-card-width: calc(100% - var(--kb-class-peek));
 }
 
 :where(:root[data-kb-layout='phone']) .kb-class-card {
