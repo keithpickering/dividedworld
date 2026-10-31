@@ -136,22 +136,80 @@
   text-decoration: underline;
 }
 
+/* The fold's chevron, drawn: right when folded, down when open. */
+.kb-lens-fold-sign {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 4px 0 2px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(-45deg);
+  transition: transform 0.15s ease-out;
+}
+
+.kb-lens-fold[aria-expanded="true"] .kb-lens-fold-sign {
+  transform: translateY(-4px) rotate(45deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-lens-fold-sign { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-lens-fold-sign { transition: none; }
+
 .kb-lens-rows {
-  margin: 0;
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 0;
   padding: 0;
   list-style: none;
 }
 
-/* Each play's ink is the bar at its row's left edge (the marks' ink; with none, the card's). */
+.kb-lens-rows[hidden] {
+  display: none;
+}
+
+/*
+ * Each play is a plate of its own: the glass's chamfered panel at a small cut, its 1px border in the play's ink (the marks' ink;
+ * with none, the card's) over a breath of that ink in the field, and the cut corner filled solid in the ink, as a mark's
+ * corner sign is. The plate is opaque, so its words need no calm.
+ */
 .kb-lens-row {
   --kb-play-ink: var(--kb-lens-ink);
-  padding: 0.5rem 0 0.5rem 10px;
-  border-top: 1px solid color-mix(in srgb, var(--kb-lens-ink) 55%, transparent);
-  border-left: 8px solid var(--kb-play-ink);
+  --kb-cut: 18px;
+  --kb-border: 1px;
+  --kb-cut-in: calc(var(--kb-cut) - var(--kb-border) * 0.5858);
+  position: relative;
+  isolation: isolate;
+  padding: 10px 14px 12px;
+  background: color-mix(in srgb, var(--kb-play-ink) 60%, transparent);
+  clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, 0 100%);
+}
+
+.kb-lens-row::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: var(--kb-border);
+  background: color-mix(in srgb, var(--kb-play-ink) 6%, var(--kb-glass-field-2));
+  clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, 0 100%);
+}
+
+/* The ink's corner: a triangle on the top right, of which the plate's cut leaves a band along the chamfer. */
+.kb-lens-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: calc(var(--kb-cut) + 10px);
+  height: calc(var(--kb-cut) + 10px);
+  background: var(--kb-play-ink);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
 }
 
 .kb-lens-by {
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.35rem;
   color: var(--kb-glass-text-2);
 }
 
@@ -163,7 +221,7 @@
 }
 
 .kb-lens-message {
-  margin: 0 0 0.6rem;
+  margin: 0 0 0.5rem;
   color: var(--kb-glass-text-hi);
   overflow-wrap: anywhere;
 }
@@ -171,7 +229,7 @@
 .kb-lens-note,
 .kb-lens-more,
 .kb-lens-yours {
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.35rem;
   color: var(--kb-glass-text);
   font-weight: 700;
 }
@@ -181,26 +239,28 @@
   letter-spacing: 0.06em;
 }
 
-.kb-lens-actions {
+/* The play's reactions, React, Spin thread and Go to post: one wrapping run of chips and tiles. */
+.kb-lens-row-foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.6rem;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 0.5rem;
 }
 
-.kb-lens-action {
-  min-height: 44px;
-  padding: 0.2rem 0.8rem;
-  border: 0;
-  color: var(--kb-glass-neon-text);
-  font: inherit;
-  font-weight: 700;
-  text-decoration: none;
-  cursor: pointer;
+.kb-lens-row-foot .kb-reactions {
+  margin: 0;
 }
 
-.kb-lens-action:hover {
-  text-decoration: underline;
+.kb-lens-actions {
+  display: contents;
+}
+
+/* Where a hosted Lens says when spinning is possible, the sentence takes its own line. */
+.kb-lens-actions > .kb-lens-note {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--kb-glass-text-2);
 }
 
 .kb-lens-spun {
@@ -217,7 +277,7 @@
   padding-inline-start: 1.1rem;
 }
 
-.kb-lens a {
+.kb-lens a:not(.kb-kit-tile) {
   color: var(--kb-glass-text-hi);
 }
 
@@ -232,8 +292,18 @@
   }
 }
 
-/* The kit's tiles in the Lens are the mockup's small buttons: the label step's type at a 36px target, not the 44px slab. */
+/*
+ * The kit's tiles in the Lens are the mockup's small buttons: the label step's type at a 36px target, not the 44px slab. Every
+ * button in a Lens is one (Hold to scrub, React, Spin thread, Go to post), so the panel speaks one shape; only the × keeps the
+ * glass dialog's cut, as every glass dialog's close does.
+ */
 .kb-lens .kb-kit-tile {
   min-height: 36px;
   padding: 0.1rem 0.8rem;
+}
+
+/* A row's tiles are its own: a step quieter, so the card's controls above them stay the Lens's first. */
+.kb-lens-row .kb-kit-tile {
+  padding: 0.1rem 0.7rem;
+  letter-spacing: 0.06em;
 }
