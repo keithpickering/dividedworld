@@ -48,6 +48,9 @@ export interface PlayFormProps {
   readonly onPlayed: () => void;
 }
 
+/** Where the message's counter starts to speak: its last stretch before the limit. */
+const MESSAGE_NEAR = MESSAGE_MOST - 20;
+
 export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const { api, instance, settings: screen, ui } = useKayfa();
   /* Priced as the server will charge (withCardEconomy): a surcharge an admin has tuned is the one shown. */
@@ -56,6 +59,8 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const id = useId();
   const [config, setConfig] = useState<Readonly<Record<string, unknown>> | undefined>(undefined);
   const [message, setMessage] = useState('');
+  /** What the counter last said aloud: only on crossing into its last stretch, or on reaching the limit (#89 P2-2). */
+  const [countSaid, setCountSaid] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
@@ -108,7 +113,15 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const blocked = busy || !hud || !wallet || short || !lands.ok;
 
   const change = (value: string) => {
-    setMessage([...value].slice(0, MESSAGE_MOST).join(''));
+    const typed = [...value];
+    const was = [...message].length;
+    const now = Math.min(typed.length, MESSAGE_MOST);
+    setMessage(typed.slice(0, MESSAGE_MOST).join(''));
+    /* Said politely and seldom: never on every key, only as the message nears its limit, reaches it, or loses what ran past it. */
+    if (typed.length > MESSAGE_MOST) setCountSaid(`${MESSAGE_MOST} of ${MESSAGE_MOST} characters: the message is full, and the rest was not kept.`);
+    else if (now === MESSAGE_MOST && was < MESSAGE_MOST) setCountSaid(`${MESSAGE_MOST} of ${MESSAGE_MOST} characters: the message is full.`);
+    else if (now >= MESSAGE_NEAR && was < MESSAGE_NEAR) setCountSaid(`${MESSAGE_MOST - now} characters left.`);
+    else if (now < MESSAGE_NEAR) setCountSaid('');
     if (again) { setAgain(false); setRefusal(null); }
   };
   const settle = (words: string | null) => (words === null ? null : plainRefusal(words));
@@ -190,6 +203,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
               <span id={hint}>Shown on the card's Act. Plain text.</span>
               {/* In the face's own figures, as the board draws it: tabular ones are wider, and the board match refuses the difference. */}
               <span>{`${[...message].length} / ${MESSAGE_MOST}`}</span>
+              <span className="kb-visually-hidden" aria-live="polite" data-kb-count-said>{countSaid}</span>
             </div>
           </div>
           <div className="kb-play-sum">

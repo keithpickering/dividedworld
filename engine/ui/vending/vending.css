@@ -111,7 +111,11 @@
   color: var(--kb-glass-text-2);
 }
 
-/* What the machine just said: a refusal in the pink, a purchase in the text color. */
+/* What the machine just said: a refusal in the pink, a purchase in the text color. Each region waits on the page, empty and taking no room, until it speaks. */
+.kb-vending-outcome:empty {
+  margin: 0;
+}
+
 .kb-vending-outcome[data-kb-tone='refusal'] {
   color: var(--kb-glass-loss);
 }
@@ -422,11 +426,13 @@ button.kb-vending-slot {
 
 :root[data-kb-motion='reduce'] .kb-vending-drop { display: none; }
 
-/* ---- the plain list ---- */
+/* ---- the sealed slots' line ---- */
 
-/* The line about the empty slots, near the slots; the rules of each card are in its info button's overlay. */
-.kb-vending-list {
+/* The line about the empty slots, near the slots, as the board draws it; the rules of each card are in its info button's overlay. */
+.kb-vending-sealed {
+  --kb-card-color: var(--kb-glass-ready);
   position: relative;
+  padding: 14px 16px;
 }
 
 .kb-vending-about {
@@ -484,13 +490,8 @@ button.kb-vending-slot {
   color: var(--kb-glass-text-2);
 }
 
-.kb-vending-item {
-  --kb-card-color: var(--kb-glass-ready);
-  padding: 14px 16px;
-}
-
-/* The ring, drawn over the item's calm (a ring on the item's own box would sit under the calm's backing). */
-.kb-vending-item::after {
+/* The ring, drawn over the line's calm (a ring on its own box would sit under the calm's backing). */
+.kb-vending-sealed::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -498,27 +499,18 @@ button.kb-vending-slot {
   pointer-events: none;
 }
 
-.kb-vending-item-row {
-  display: flex;
-  justify-content: space-between;
+/* One block, as the board draws it (no price shares its row). */
+.kb-vending-sealed-row {
+  margin: 0;
   font-family: var(--kb-glass-font-display);
   font-weight: 400;
   font-size: var(--kb-glass-size-display-s);
   line-height: 1;
   text-transform: uppercase;
-}
-
-/* The sealed line is one block, as the board draws it (no price shares its row), so its text spans the row. */
-.kb-vending-item--sealed .kb-vending-item-row,
-.kb-vending-item--sealed .kb-vending-item-name {
-  display: block;
-}
-
-.kb-vending-item--sealed .kb-vending-item-name {
   color: var(--kb-glass-ready-text);
 }
 
-.kb-vending-item-says {
+.kb-vending-sealed-says {
   margin: 8px 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 500;
@@ -557,7 +549,7 @@ button.kb-vending-slot {
 :where(:root[data-kb-layout='phone']) .kb-vending-sum,
 :where(:root[data-kb-layout='phone']) .kb-vending-fine,
 :where(:root[data-kb-layout='phone']) .kb-vending-price-note,
-:where(:root[data-kb-layout='phone']) .kb-vending-item-says,
+:where(:root[data-kb-layout='phone']) .kb-vending-sealed-says,
 :where(:root[data-kb-layout='phone']) .kb-vending-signin {
   font-size: var(--kb-glass-size-phone-body);
 }
@@ -572,7 +564,7 @@ button.kb-vending-slot {
 }
 
 :where(:root[data-kb-layout='phone']) .kb-vending-hand-word,
-:where(:root[data-kb-layout='phone']) .kb-vending-item-row {
+:where(:root[data-kb-layout='phone']) .kb-vending-sealed-row {
   font-size: var(--kb-glass-size-phone-display);
 }
 

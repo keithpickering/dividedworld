@@ -309,9 +309,12 @@ export function Vending() {
               {orbs(balance)}{after !== null ? <> → <b>{orbs(after)}</b></> : null}
             </p>
             {short && !outcome && <p className="kb-vending-fine kb-calm">{shortWords}</p>}
-            {outcome && (outcome.tone === 'refusal'
-              ? <p className="kb-vending-fine kb-vending-outcome kb-calm" role="alert" data-kb-tone="refusal">{outcome.text}</p>
-              : <p className="kb-vending-fine kb-vending-outcome kb-calm" aria-live="polite" data-kb-tone="done">{outcome.text}</p>)}
+            {/*
+              * Each on the page from the start and empty until it speaks, so a screen reader hears the outcome (WCAG 4.1.3; #89 P2-1): a
+              * purchase made politely, a refusal at once.
+              */}
+            <p className="kb-vending-fine kb-vending-outcome kb-calm" role="status" aria-live="polite" data-kb-tone="done">{outcome?.tone === 'refusal' ? '' : outcome?.text ?? ''}</p>
+            <p className="kb-vending-fine kb-vending-outcome kb-calm" role="alert" data-kb-tone="refusal">{outcome?.tone === 'refusal' ? outcome.text : ''}</p>
             <p className="kb-vending-fine kb-calm">The ghost estimate can't be spent. What you buy is private: nobody else sees it until you play it.</p>
           </div>
         </section>
@@ -339,9 +342,9 @@ export function Vending() {
       )}
 
       {faces.length < slotsFor(faces.length) && (
-        <div className="kb-vending-list kb-vending-item kb-vending-item--sealed kb-calm">
-          <p className="kb-vending-item-row"><span className="kb-vending-item-name">{slotsFor(faces.length) - faces.length} {slotsFor(faces.length) - faces.length === 1 ? 'slot' : 'slots'} empty</span></p>
-          <p className="kb-vending-item-says">More postcards arrive in later seasons.</p>
+        <div className="kb-vending-sealed kb-calm">
+          <p className="kb-vending-sealed-row">{slotsFor(faces.length) - faces.length} {slotsFor(faces.length) - faces.length === 1 ? 'slot' : 'slots'} empty</p>
+          <p className="kb-vending-sealed-says">More postcards arrive in later seasons.</p>
         </div>
       )}
     </div>

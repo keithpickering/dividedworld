@@ -390,7 +390,7 @@ test.describe('the instance\'s drawn art', () => {
 
   test('the poison: a line in a color no token names is named, and the same line marked as the machine\'s art is left alone', async ({ page }) => {
     await open(page, PAGES.find((p) => p.path === '/vending')!);
-    const plantLine = (art: boolean) => page.locator('.kb-vending-list').evaluate((list, marked) => {
+    const plantLine = (art: boolean) => page.locator('.kb-vending-sealed').evaluate((list, marked) => {
       document.querySelector('.kb-planted')?.remove();
       const p = document.createElement('p');
       p.className = 'kb-planted kb-calm';

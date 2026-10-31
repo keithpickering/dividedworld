@@ -321,6 +321,25 @@ describe('the play form', () => {
     expect(within(form).getByText('200 / 200')).toBeInTheDocument();
   });
 
+  /* #89 P2-2: the message's limit is said, not only drawn: the counter speaks politely as it nears the limit, never on every key. */
+  test('pasting past 200 characters leaves 200 and says the limit; a key far from it says nothing', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    const form = await playHere(user, 1);
+    const message = within(form).getByRole('textbox', { name: 'Your message' });
+    const said = form.querySelector<HTMLElement>('[data-kb-count-said]');
+    expect(said).not.toBeNull();
+    expect(said).toHaveAttribute('aria-live', 'polite');
+    await user.click(message);
+    await user.type(message, 'hi');
+    expect(said).toHaveTextContent('');
+    await user.paste('x'.repeat(210));
+    expect([...(message as HTMLTextAreaElement).value]).toHaveLength(200);
+    expect(said).toHaveTextContent('200 of 200 characters: the message is full, and the rest was not kept.');
+    expect(form.querySelector('[data-kb-count-said]')).toBe(said);
+  });
+
   test('the price shown is the price the server charges', async () => {
     const user = userEvent.setup();
     const w = world();

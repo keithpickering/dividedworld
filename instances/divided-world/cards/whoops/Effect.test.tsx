@@ -475,7 +475,8 @@ describe('what a screen reader is given', () => {
   test('with no ink left, the post is plain: nothing hidden, nothing read twice', () => {
     const { root } = mount({ states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
     expect(root.querySelector('.kb-whoops-layout')).not.toHaveAttribute('inert');
-    expect(root.querySelector('[data-kb-readout]')).toBeNull();
+    /* The readout waits on the page, saying nothing: the post's own words are read, once. */
+    expect(root.querySelector('[data-kb-readout]')).toBeEmptyDOMElement();
   });
 });
 
@@ -766,7 +767,7 @@ describe('a save that did not get through', () => {
     await settle(RETRY_AFTER_MS);
     expect(save).toHaveBeenCalledTimes(3);
     expect((save.mock.calls.at(-1) as unknown as [string, { clean?: boolean }])[1].clean).toBe(true);
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
     await settle(RETRY_AFTER_MS * 100);
     expect(save).toHaveBeenCalledTimes(3);
   });
@@ -967,5 +968,37 @@ describe('what a post costs a page', () => {
     expect(built.grids, 'the echo of what was just sent').toBe(before);
     hear({ 'play-1': { state: { strokes: [{ tool: 'wash', width: BRUSH, points: [[0.5, 0.5]] }] }, savedAt: SAVED_AT } });
     expect(built.grids, 'a state from somewhere else').toBe(before + 1);
+  });
+});
+
+/* #89 P2-1: what the effect says (the save's report, a line uncovered) is written into a polite region already on the page. */
+describe('what the effect says to a screen reader', () => {
+  test('the report is written into a region that was on the page, empty, before it spoke', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const full: Stroke[] = Array.from({ length: STROKES.most }, () => ({ tool: 'wash', width: BRUSH, points: [[0.01, 0.01], [0.02, 0.01]] }));
+    const { frame, root } = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    const region = root.querySelector<HTMLElement>('[data-kb-report]');
+    expect(region).not.toBeNull();
+    expect(region).toHaveAttribute('role', 'status');
+    expect(region).toHaveTextContent('');
+    const [x, y] = inkSpot(new LayerInk(splatFor(0), full));
+    drag(frame, [[x, y], [x + 0.06, y]]);
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(region).toHaveTextContent('This layer has no room for more strokes to save.');
+    expect(root.querySelector('[data-kb-report]')).toBe(region);
+  });
+
+  test('a line uncovered is written into a polite region that was on the page before it', () => {
+    const { frame, root } = mount();
+    const region = root.querySelector<HTMLElement>('[data-kb-readout]');
+    expect(region).not.toBeNull();
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    const ink = new LayerInk(splatFor(0), []);
+    const line = Math.floor(ink.splat.placement.cy / ROW);
+    const name = `L${String(line).padStart(2, '0')} alpha beta gamma`;
+    expect(region).not.toHaveTextContent(name);
+    drag(frame, rowAcross(ink, (line + 0.5) * ROW));
+    expect(region).toHaveTextContent(name);
+    expect(root.querySelector('[data-kb-readout]')).toBe(region);
   });
 });

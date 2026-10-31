@@ -127,6 +127,9 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   const [built, setBuilt] = useState(false);
   const [tool, setTool] = useState<'wash' | 'ink'>('wash');
   const [report, setReport] = useState('');
+  /** The readout is on the page before it holds anything, so what it gains is said as news. */
+  const [spoken, setSpoken] = useState(false);
+  useEffect(() => { setSpoken(true); }, []);
   const [view, setView] = useState<View | null>(null);
   /** How many layers' ink grids are held: none for a post that has left the viewport. */
   const [held, setHeld] = useState(0);
@@ -678,11 +681,15 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
         )}
         <div ref={sudsRef} className="kb-whoops-suds" aria-hidden="true" />
       </div>
-      {read && read.length > 0 && (
-        <div className="kb-visually-hidden" data-kb-readout>
-          {read.map((line, i) => <span key={i}>{line.text} </span>)}
-        </div>
-      )}
+      {/*
+        * What a screen reader hears, in regions on the page from the start (WCAG 4.1.3; #89 P2-1): the lines readable now, each line a
+        * scrub uncovers said as it is added, and the save's report. The readout fills only once it is mounted, so the lines already
+        * readable are not said again as news.
+        */}
+      <div className="kb-visually-hidden" data-kb-readout aria-live="polite">
+        {spoken && read?.map((line, i) => <span key={i}>{line.text} </span>)}
+      </div>
+      <p className="kb-visually-hidden" role="status" data-kb-report>{report}</p>
       {/* The words and the controls are glass in the plate under the post, never in the post's 2003 body (the owner's notes on #80), drawn as one game piece (the owner on #80's shots): a readout, then tiles. */}
       {(anyLive || report) && (
         <EffectStrip slot={slot} card="whoops" readout={readout}>
@@ -707,7 +714,8 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
             </span>
           )}
           {/* Said whether or not a layer is left: a clean mark that did not get through is the author's to know of, with no ink under it. */}
-          {report && <p role="status" className="kb-plate-line kb-whoops-status">{report}</p>}
+          {/* Drawn on the plate for the eye; a screen reader hears it from the status region above, once. */}
+          {report && <p className="kb-plate-line kb-whoops-status" aria-hidden="true">{report}</p>}
         </EffectStrip>
       )}
     </div>
