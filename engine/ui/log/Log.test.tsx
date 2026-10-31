@@ -431,7 +431,7 @@ function must<T>(a: { ok: true; value: T } | { ok: false; error: string }): T {
  * Show posts, each reason's shares adding up on screen to the reason's exact total, and the two sentences that say what a share is.
  */
 describe('the breakdown', () => {
-  /** The world, with a settlement on Oct 30 whose drew heat is split across three posts and whose shrug is scored over the window. */
+  /** The world, with a settlement on Oct 30 whose drew heat is split across three posts, whose shrug across two, and whose stolen thunder is scored over the window. */
   function split() {
     const w = world();
     const { seed } = w.fake;
@@ -441,9 +441,10 @@ describe('the breakdown', () => {
       at: at(30, 8, 17), debut: false, turns: false,
       ledger: [
         { character: w.pipe, reason: 'heel.drewHeat', amount: 287, shares: [
-          { act: w.p2, quadrant: 'excitedNegative', amount: 143 }, { act: p4, quadrant: 'excitedNegative', amount: 96 }, { act: p5, quadrant: 'calmNegative', amount: 48 },
+          { act: w.p2, quadrant: 'excitedNegative', amount: 143 }, { act: p4, quadrant: 'excitedNegative', amount: 96 }, { act: p5, quadrant: 'boredNegative', amount: 48 },
         ] },
-        { character: w.pipe, reason: 'heel.shrugged', amount: -7 },
+        { character: w.pipe, reason: 'heel.shrugged', amount: -7, shares: [{ act: w.p2, quadrant: 'calmPositive', amount: -4 }, { act: p4, quadrant: 'calmPositive', amount: -3 }] },
+        { character: w.pipe, reason: 'heel.stoleThunder', amount: 12 },
       ],
     });
     return w;
@@ -451,7 +452,7 @@ describe('the breakdown', () => {
   /** Hundredths, as a share or a total is drawn: "+1.43", "−0.07". */
   const hundredths = (drawn: string) => Math.round(Number(drawn.replace('−', '-').replace('+', '')) * 100);
 
-  test('Tab reaches Show posts, Enter opens it and Esc closes it with focus kept; Esc inside the breakdown closes it with focus back on the control', async () => {
+  test('opens and closes from the keyboard, with focus kept on Show posts and returned to it from inside', async () => {
     const { fake, me, pipe } = split();
     open(fake, me, pipe);
     await screen.findByRole('table');
@@ -484,7 +485,7 @@ describe('the breakdown', () => {
     await screen.findByRole('table');
     fireEvent.click(within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' }));
     const reasons = document.querySelectorAll<HTMLElement>('.kb-log-breakdown:not([hidden]) .kb-log-reason');
-    expect(reasons).toHaveLength(2);
+    expect(reasons).toHaveLength(3);
     let shared = 0;
     for (const reason of reasons) {
       const total = hundredths(reason.querySelector('[data-kb-amount]')!.textContent!);
@@ -493,8 +494,8 @@ describe('the breakdown', () => {
       shared++;
       expect(shares.reduce((a, b) => a + b, 0)).toBe(total);
     }
-    expect(shared).toBe(1);
-    expect([...reasons].map((r) => r.getAttribute('aria-label'))).toEqual(['Drew heat', 'Shrugged off']);
+    expect(shared).toBe(2);
+    expect([...reasons].map((r) => r.getAttribute('aria-label'))).toEqual(['Drew heat', 'Stole the thunder', 'Shrugged off']);
   });
 
   test('it says what a share is, and that a reason with no post was scored over the whole window', async () => {
@@ -504,8 +505,8 @@ describe('the breakdown', () => {
     fireEvent.click(within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' }));
     const breakdown = document.querySelector<HTMLElement>('.kb-log-breakdown:not([hidden])')!;
     expect(within(breakdown).getByText('Each reason\'s total is exact. It is split across your posts by how the live estimate valued their reactions.')).toBeInTheDocument();
-    const shrug = within(breakdown).getByRole('region', { name: 'Shrugged off' });
-    expect(within(shrug).getByText('Scored over the whole window, not post by post.')).toBeInTheDocument();
+    const thunder = within(breakdown).getByRole('region', { name: 'Stole the thunder' });
+    expect(within(thunder).getByText('Scored over the whole window, not post by post.')).toBeInTheDocument();
     expect(within(within(breakdown).getByRole('region', { name: 'Drew heat' })).queryByText('Scored over the whole window, not post by post.')).toBeNull();
   });
 });
