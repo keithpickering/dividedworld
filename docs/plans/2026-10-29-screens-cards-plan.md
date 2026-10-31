@@ -57,6 +57,11 @@ the same; the thread no longer drawing a card Act as a line (`CardLine` in `engi
 (`web/src/data/fixtures/boards.ts`) writing its plays in time order between the posts, its pinning test turned to
 assert that page 3 holds #41 to #46 and nothing else.
 
+**Amended 2026-10-31, after #84's design** (`docs/plans/2026-10-31-plays-on-a-post-design.md`). The tag stands, and a
+card Act still takes no number. Two things change. "Reactions on the post are already what a play earns from" no longer
+holds: a play is reacted to and spun from on its own, through the panel its tag opens, and the settlement already counts
+its own votes. And the tag is a button that opens the panel, which carries "Go to post", in place of a link to the post.
+
 ## The layers
 
 The card-effect interface is engine (`engine/ui/cards/`); Stick Around's and Whoops!'s effects are Divided World's
