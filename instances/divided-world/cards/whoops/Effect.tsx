@@ -642,7 +642,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
           {children}
         </div>
         {near && fixed && built && (
-          <canvas ref={canvasRef} className="kb-whoops-ink" aria-hidden="true" style={{ top: band.top, height: band.height }} />
+          <canvas ref={canvasRef} className="kb-whoops-ink" data-kb-effect-ink aria-hidden="true" style={{ top: band.top, height: band.height }} />
         )}
         <div ref={sudsRef} className="kb-whoops-suds" aria-hidden="true" />
       </div>

@@ -37,7 +37,7 @@ const LONG_CHANGELOG = [
 interface Read { readonly context: ThreadContext; readonly act: Act; readonly person: PostbitPerson | undefined }
 
 /** The post the moment's address names, read and drawn as the thread does, with its card plays read as the thread reads them. */
-function HeldPost({ stage, long = false }: { readonly stage: HoldStageValue; readonly long?: boolean }) {
+function HeldPost({ stage, long = false, inked = false }: { readonly stage: HoldStageValue; readonly long?: boolean; readonly inked?: boolean }) {
   const { api, settings, ui } = useKayfa();
   const loc = useLocation();
   const thread = /^\/t\/([^/]+)$/u.exec(loc.path)?.[1] ?? null;
@@ -61,12 +61,18 @@ function HeldPost({ stage, long = false }: { readonly stage: HoldStageValue; rea
       mine.merge(act.id, await api.myReactions([act.id]));
       const plays = createPlays();
       await readPlays(api, plays, [act.id], effectCards(ui));
+      /* A Whoops! played before the hold, so the hold wraps the ink (`inked`): the board draws no such post, and the e2e reads that its controls stay in front. */
+      if (inked) {
+        const first = Date.parse(plays.get(act.id).plays[0]?.playedAt ?? act.createdAt) - 60_000;
+        const payload = { card: 'whoops', layer: 1, message: 'you dropped your ink', config: { color: '#ff2bd6', seed: 20261029 } };
+        plays.add([{ ...act, id: '99999999-0000-4000-8000-0000000000a1', kind: 'card', seq: null, targetActId: act.id, createdAt: new Date(first).toISOString(), payload, currentPayload: payload }]);
+      }
       setRead({
         act, person,
         context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays, nameOf: () => 'Gloomba', observer: null, quote: null, changed: () => {} },
       });
     })();
-  }, [api, settings, ui, thread, seq, tallies, mine, long]);
+  }, [api, settings, ui, thread, seq, tallies, mine, long, inked]);
   if (!read) return <div aria-busy="true" />;
   return (
     <div style={{ minHeight: '100vh', boxSizing: 'border-box', padding: stage.mode === 'live' ? '55vh 32px 150vh' : '24px 32px', background: 'var(--kb-bg)', color: 'var(--kb-fg)' }}>
@@ -108,3 +114,6 @@ export const Live: Story = { args: { stage: { mode: 'live' } } };
 
 /** The page itself with a long post, which the view has to scroll to its end before a push past it counts (e2e/hold.spec.ts reads it so). */
 export const LiveLongPost: Story = { args: { stage: { mode: 'live' }, long: true } };
+
+/** A post with Whoops!'s ink under the hold, in its thread: the hold wraps the ink, and the post's tags, reactions and actions still stand in front of it (e2e/whoops.spec.ts reads it so). */
+export const WhoopsUnderHold: Story = { args: { stage: { mode: 'thread' }, inked: true } };

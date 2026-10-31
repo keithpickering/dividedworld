@@ -97,6 +97,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const plays = useMemo(() => createPlays(), []);
   const { act, more, reading, retry } = useOrigin(originId, summary.originThread!, plays);
   const box = useRef<HTMLDivElement>(null);
+  /* The effect's plate is drawn here, after the box and attached to it, and not in it: the 2003 chrome holds the post's words, never the game's. */
+  const slot = useRef<HTMLDivElement>(null);
   useEffect(() => { if (takeOrigin(summary.id)) box.current?.focus(); }, [summary.id]);
   const played = usePlays(plays, originId).plays;
   const nameOf = useNames([act?.character ?? null, ...played.map((p) => p.caster)]);
@@ -127,7 +129,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
             <PlayTags plays={plays} post={originId} to={backHref} nameOf={nameOf} />
-            <PostEffects plays={plays} post={act} place="origin"><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
+            <PostEffects plays={plays} post={act} place="origin" slot={slot}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small">{history.button}</p>}
             {history.panel}
@@ -136,13 +138,18 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     }
   };
 
+  /* The kinds `body` draws with the post's effects (its default case) are the ones that hold a plate. */
+  const effects = act !== null && !['card', 'unmask', 'tally', 'reveal'].includes(act.kind);
   return (
-    <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>
-      <p className="kb-origin-head"><b>ORIGIN</b> · Spun from {back ?? 'an Act'}</p>
-      {body()}
-      {act && act.kind !== 'card' && more && (
-        <p className="kb-small kb-muted">More than {CARDS_SHOWN} cards were played on this Act; the rest are in {back ?? 'the thread it was spun from'}.</p>
-      )}
-    </div>
+    <>
+      <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>
+        <p className="kb-origin-head"><b>ORIGIN</b> · Spun from {back ?? 'an Act'}</p>
+        {body()}
+        {act && act.kind !== 'card' && more && (
+          <p className="kb-small kb-muted">More than {CARDS_SHOWN} cards were played on this Act; the rest are in {back ?? 'the thread it was spun from'}.</p>
+        )}
+      </div>
+      {effects && <div className="kb-act-slot" ref={slot} />}
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createPortal } from 'react-dom';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Swapper, openThread, threadWorld } from '../composer/support.tsx';
 import { useLocation } from '../router.tsx';
@@ -185,6 +186,26 @@ describe('the ORIGIN box', () => {
     expect(wrapped.dataset.plays).toBe(played);
     /* The reader's own character wrote post 2, and the box says it is drawn as an origin. */
     expect([wrapped.dataset.author, wrapped.dataset.place]).toEqual(['true', 'origin']);
+  });
+
+  test('draws the effect\'s plate beside the ORIGIN box, attached to it, and not inside the 2003 box', async () => {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    renderIn(w.fake, <ThreadScreen thread={spun} />, {
+      path: `/t/${spun}`,
+      cards: [{
+        key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x',
+        Effect: ({ slot, children }) => <>{children}{slot && createPortal(<div data-testid="plate">a plate</div>, slot)}</>,
+      }],
+    });
+    const box = await origin();
+    const plate = await screen.findByTestId('plate');
+    /* The owner's principle: an effect's words and controls are one glass element outside the 2003 chrome. */
+    expect(box).not.toContainElement(plate);
+    /* Attached to the box: the slot is the box's next sibling. */
+    expect(box.nextElementSibling).toContainElement(plate);
+    expect(box.nextElementSibling).toHaveClass('kb-act-slot');
   });
 
   test('a card with no CardUi draws the origin\'s words untouched, with its tag', async () => {

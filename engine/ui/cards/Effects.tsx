@@ -14,7 +14,7 @@
  * the 2003 chrome"). An effect is given a `slot`, a place under the post's chrome, and fills it with an
  * `EffectStrip`, one chamfered glass plate attached to the post; the post's own body holds the effect and nothing a
  * player presses. The thread's post draws the slot itself (thread/Post.tsx), under its words; where a post is
- * drawn without one (the ORIGIN box) `PostEffects` draws its own right after the effect.
+ * drawn without one `PostEffects` draws its own right after the effect. The ORIGIN box draws its slot after the box (spin/Origin.tsx), outside the 2003 chrome.
  *
  * An effect (`CardUi.Effect`) wraps the post's words wherever they are drawn (the thread, and the
  * ORIGIN box of a thread spun from the post). Each played card's wraps the cards played before it,

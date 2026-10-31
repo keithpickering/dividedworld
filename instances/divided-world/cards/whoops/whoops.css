@@ -49,13 +49,11 @@
 
 /*
  * In the thread the ink runs to the post body's borders, over the tag's row and the reactions and actions under the words
- * (the owner: "such things can just render in front of the splat"). The canvas is above the words and below everything else the
- * body holds: the body is its own stacking context and lifts its other children over the canvas (thread.css), so they stay in
- * front, visible and usable. The frame no longer clips, since the canvas is sized to the body.
+ * (the owner: "such things can just render in front of the splat"). The canvas marks itself `data-kb-effect-ink`, and the
+ * thread's sheet (thread/thread.css) puts it above the words and below the post's controls, which it lifts by name, so they
+ * stay in front, visible and usable, even when another card's effect wraps this one. The frame no longer clips, since the
+ * canvas is sized to the body.
  */
-.kb-whoops[data-kb-place="thread"] .kb-whoops-ink {
-  z-index: 1;
-}
 
 .kb-whoops-suds {
   position: absolute;
