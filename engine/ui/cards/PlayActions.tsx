@@ -46,7 +46,10 @@ export function GhostMark({ act }: { readonly act: Act }) {
       style={{ '--kb-mark-color': face.art.color } as CSSProperties}
       onClick={() => play.openForm(rules.key, target)}
     >
-      <span className="kb-mark-in" aria-hidden="true"><span className="kb-mark-plus">+</span></span>
+      <span className="kb-mark-in" aria-hidden="true">
+        {(face.art.mark ?? face.art.image) && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark ?? face.art.image} alt="" draggable={false} />}
+        <span className="kb-mark-plus">+</span>
+      </span>
     </button>
   );
 }

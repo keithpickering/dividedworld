@@ -56,7 +56,7 @@ function Ink({ config, onChange, id }: ConfigFormProps) {
   );
 }
 const cards: CardUi[] = [
-  { key: 'whoops', art: { color: '#ff3d7f', ink: '#14030a' }, ConfigForm: Ink, describe: () => 'Splats a post.', surcharge: () => 'Long post, +0.25 per 500 characters' },
+  { key: 'whoops', art: { color: '#ff3d7f', ink: '#14030a', mark: '/whoops-mark.svg' }, ConfigForm: Ink, describe: () => 'Splats a post.', surcharge: () => 'Long post, +0.25 per 500 characters' },
   { key: 'stick-around', art: { color: '#2ee6ff', ink: '#03141a' }, describe: () => 'Holds a reader.' },
 ];
 
@@ -142,6 +142,8 @@ describe('where the ghost mark stands', () => {
     expect(ghost.closest('.kb-act-meta')).not.toBeNull();
     expect(ghost.closest('.kb-act-links, .kb-act-main, .kb-act-slot')).toBeNull();
     expect(ghost.style.getPropertyValue('--kb-mark-color')).toBe('#ff3d7f');
+    /* In the card's art as well as its color (the design, section 1), faint under the "+". */
+    expect(ghost.querySelector('img.kb-ghost-icon')).toHaveAttribute('src', '/whoops-mark.svg');
   });
 
   test('on a post with a mark it ends the strip, after the marks', async () => {

@@ -161,13 +161,13 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, co
   const shown = kinds.length > room ? kinds.slice(0, room) : kinds;
   const hidden = kinds.slice(shown.length);
   return (
-    <div className="kb-marks">
+    <span className="kb-marks">
       {shown.map((kind) => (
         <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} onOpen={press} />
       ))}
       {hidden.length > 0 && <More hidden={hidden.length} first={hidden[0]!} expanded={open !== null && hidden.includes(open)} onOpen={press} />}
       {ghost && <GhostMark act={ghost} />}
-    </div>
+    </span>
   );
 }
 

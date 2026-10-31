@@ -142,6 +142,11 @@
   font-size: 1.1rem;
 }
 
+/* The card's own art under the "+", faint: it is the card that would land, not one that has. */
+.kb-ghost-icon {
+  opacity: 0.45;
+}
+
 /* The ORIGIN box's head carries the strip the same way: absolute at its right, with the head's words kept clear of it. */
 .kb-origin-head {
   position: relative;
