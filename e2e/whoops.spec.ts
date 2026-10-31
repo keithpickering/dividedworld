@@ -64,10 +64,10 @@ test('at the board\'s max the splat covers the post body edge to edge, and its w
 
 /*
  * The owner on the spill: "the spill still has edges that end before the black post borders ... such things can just render in front
- * of the splat". The ink runs to the post body's borders on every side, and the reactions and the action row are drawn in front of
- * it, visible and usable.
+ * of the splat". The ink runs to the post body's borders on every side, and the reactions are drawn in front of it, visible and
+ * usable. The action row is on the footer bar below the body (the owner's word of 2026-10-31), never under the ink (e2e/footer.spec.ts).
  */
-test('the ink reaches the post body\'s borders, and the reactions and the action links are in front of it, clickable', async ({ page }) => {
+test('the ink reaches the post body\'s borders, the reactions are in front of it, clickable, and the action links stand on the footer bar clear of it', async ({ page }) => {
   await page.goto('/?fixture=boards&moment=01-main');
   await expect(page.locator('#post-41 .kb-whoops-ink')).toBeVisible();
   const read = await page.evaluate(() => {
@@ -78,7 +78,7 @@ test('the ink reaches the post body\'s borders, and the reactions and the action
       return ink.left < r.right && ink.right > r.left && ink.top < r.bottom && ink.bottom > r.top;
     };
     return { body: { top: body.top, bottom: body.bottom, left: body.left, right: body.right }, ink: { top: ink.top, bottom: ink.bottom, left: ink.left, right: ink.right },
-      chip: over('#post-41 .kb-chip'), links: over('#post-41 .kb-act-links') };
+      chip: over('#post-41 .kb-chip'), links: ink.bottom > document.querySelector('#post-41 .kb-act-foot')!.getBoundingClientRect().top + 1 };
   });
   /* Down to the body's top border, and across to its sides: the ink's canvas starts at the body's top. */
   expect(read.ink.top).toBeCloseTo(read.body.top, 0);
@@ -86,8 +86,8 @@ test('the ink reaches the post body\'s borders, and the reactions and the action
   expect(read.ink.right).toBeCloseTo(read.body.right, 0);
   expect(read.ink.bottom).toBeGreaterThan(read.body.top + 100);
   expect(read.chip).toBe(true);
-  expect(read.links).toBe(true);
-  /* Under the canvas's box, each is still what a click reaches (a trial click fails if anything else would take it). */
+  expect(read.links).toBe(false);
+  /* The chip is under the canvas's box and still what a click reaches (a trial click fails if anything else would take it); the links are on the bar. */
   await page.locator('#post-41 .kb-act-links').getByRole('button', { name: 'Quote' }).click({ trial: true });
   await page.locator('#post-41 .kb-act-links').getByRole('button', { name: 'Spin thread' }).click({ trial: true });
   await page.locator('#post-41 .kb-chip').first().click({ trial: true });

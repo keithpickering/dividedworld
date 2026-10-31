@@ -76,11 +76,12 @@ for (const [name, width, height] of [['1440', 1440, 1120], ['390', 390, 844]] as
       expect(await page.locator('#post-41 .kb-act-main .kb-effect-strip').count()).toBe(0);
       const r = await page.evaluate(() => {
         const rect = (s: string) => { const b = document.querySelector(s)!.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width }; };
-        return { body: rect('#post-41 .kb-act-main'), plate: rect('#post-41 .kb-effect-strip') };
+        return { body: rect('#post-41 .kb-act-main'), foot: rect('#post-41 .kb-act-foot'), plate: rect('#post-41 .kb-effect-strip') };
       });
-      /* Attached: it starts at the body's bottom edge (a border's width of play), never over the words. */
-      expect(r.plate.t).toBeGreaterThanOrEqual(r.body.b - 3);
-      expect(r.plate.t - r.body.b).toBeLessThan(24);
+      /* Attached: it starts at the post's footer bar's bottom edge (a border's width of play), under the bar and never over the words. */
+      expect(r.foot.t).toBeGreaterThanOrEqual(r.body.b - 3);
+      expect(r.plate.t).toBeGreaterThanOrEqual(r.foot.b - 3);
+      expect(r.plate.t - r.foot.b).toBeLessThan(24);
       if (width >= 1000) {
         /* At the bottom right: the plate's right edge is the body's less the slot's padding, and it is narrower than the body. */
         expect(r.body.r - r.plate.r).toBeGreaterThanOrEqual(0);
@@ -107,13 +108,14 @@ for (const [name, width, height] of [['1440', 1440, 1120], ['390', 390, 844]] as
       expect(own).toEqual({ under: true, slot: true });
     });
 
-    test('"Play card" is in the action row while no card is armed, and gone while one is armed', async ({ page }) => {
+    test('no post has "Play card" in its row, armed or not: the armed card is the glass tile alone', async ({ page }) => {
       await page.goto(SPLATTED);
-      await expect(page.locator('#post-42 .kb-act-links').getByRole('button', { name: 'Play card' })).toBeVisible();
+      await expect(page.locator('#post-42 .kb-act-links')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Play card' })).toHaveCount(0);
       await expect(page.locator('.kb-play-here')).toHaveCount(0);
       await page.goto(ARMED);
       await expect(page.locator('#post-42 .kb-play-here')).toBeVisible();
-      await expect(page.locator('article.kb-act .kb-act-links').getByRole('button', { name: 'Play card' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Play card' })).toHaveCount(0);
     });
   });
 }

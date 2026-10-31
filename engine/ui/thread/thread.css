@@ -56,8 +56,10 @@
   grid-template-areas:
     "bit meta"
     "bit main"
+    "bit foot"
+    "bit panels"
     "slot slot";
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr auto auto auto;
   border-bottom: 1px solid var(--kb-rule);
   scroll-margin-top: 0.5em;
 }
@@ -66,21 +68,49 @@
   border-bottom: 0;
 }
 
-/* The post's line: when, and its permalink, small and in the muted ink, the link with them. */
-.kb-act-meta {
-  grid-area: meta;
+/*
+ * The post's two bars: the line above the words (when, and its permalink) and the footer below them (Quote, Spin thread, Edit,
+ * History). Each is opaque, in the page's ground, with a rule against the body and the muted ink for its own words, so no 2003
+ * text lies on the ink a splat lays over the body between them, and the ink a player picks never decides a bar's contrast
+ * (the owner on the footer bar: "that ink color is totally variable too"). The splat is the body's alone, bar to bar
+ * (cards/whoops Effect.tsx measures `.kb-act-main`), and both bars are on every post, so a splat moves nothing.
+ */
+.kb-act-meta,
+.kb-act-foot {
   display: flex;
   justify-content: space-between;
   gap: 1em;
   padding: 0.25em 1%;
-  border-bottom: 1px solid var(--kb-rule);
+  background-color: var(--kb-bg);
   font-size: var(--kb-size-fine);
   color: var(--kb-muted);
+}
+
+.kb-act-meta {
+  grid-area: meta;
+  border-bottom: 1px solid var(--kb-rule);
+}
+
+.kb-act-foot {
+  grid-area: foot;
+  /* The action links are text a reader presses, so they keep the small size and not the line's fine one. */
+  align-items: center;
+  border-top: 1px solid var(--kb-rule);
 }
 
 .kb-act-meta a,
 .kb-act-meta a:visited {
   color: inherit;
+}
+
+/* What opens from the footer's links (the spin form, the history), under the bar, drawn only when it holds something. */
+.kb-act-panels {
+  grid-area: panels;
+  min-width: 0;
+}
+
+.kb-act-panels:has(> :not(:empty)) {
+  padding: 0.5em 1%;
 }
 
 .kb-act > .kb-postbit,
@@ -116,7 +146,7 @@
   /*
    * A card's effect may paint over the post's words, out to the borders of this body (Whoops!'s ink, instances/divided-world/
    * cards/whoops/whoops.css). The effect marks the layer it paints with `data-kb-effect-ink`, wherever another card's effect has
-   * wrapped it, and the controls of the post are lifted over that layer by name, so a tag, a reaction, an action or a link is
+   * wrapped it, and the controls of the post are lifted over that layer by name, so a tag, a reaction or a link is
    * never covered, whatever lies under it. No wrapper is a stacking context of its own, so the ink is in this one.
    */
   isolation: isolate;
@@ -128,7 +158,6 @@
 
 .kb-act-main > .kb-play-tags,
 .kb-act-main > .kb-reactions,
-.kb-act-main > .kb-act-actions,
 .kb-act-main > .kb-spun {
   position: relative;
   z-index: 2;
@@ -140,6 +169,8 @@
   grid-template-areas:
     "meta"
     "main"
+    "foot"
+    "panels"
     "slot";
   grid-template-rows: none;
 }
@@ -155,6 +186,8 @@
     "bit"
     "meta"
     "main"
+    "foot"
+    "panels"
     "slot";
   grid-template-rows: none;
 }
@@ -177,6 +210,8 @@
       "bit"
       "meta"
       "main"
+      "foot"
+      "panels"
       "slot";
     grid-template-rows: none;
   }
@@ -191,15 +226,22 @@
   .kb-act[data-kb-kind="unmask"] {
     grid-template-areas:
       "meta"
-      "main";
+      "main"
+      "foot"
+      "panels";
   }
 
   .kb-act-main {
     padding: 0.5em 3%;
   }
 
-  .kb-act-meta {
+  .kb-act-meta,
+  .kb-act-foot {
     padding: 0.25em 3%;
+  }
+
+  .kb-act-panels:has(> :not(:empty)) {
+    padding: 0.5em 3%;
   }
 }
 
@@ -224,9 +266,8 @@
 .kb-act-links {
   display: flex;
   flex-wrap: wrap;
-  /* Rows far enough apart that each link stays 24px clear of the next where "Play card" or the armed card's button makes the row wrap (WCAG's target size). */
+  /* Rows far enough apart that each link stays 24px clear of the next where the row wraps on a narrow screen (WCAG's target size). */
   gap: 0.5em 1em;
-  margin-top: 0.6em;
 }
 
 .kb-post-history {

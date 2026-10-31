@@ -13,6 +13,11 @@
  * the board draws #42 alone under the title, and the build's thread holds the posts of its page
  * (a card play takes no number, so none is a line below #46); neither is under the sheet and the HUD,
  * which sit at the bottom of the window.
+ * Where the board draws a post's row of actions (Quote, Spin thread and the rest, with "Play card" among them) bare, the
+ * build draws it on an opaque footer bar of its own, like the post's header bar, and without "Play card": the owner's word
+ * ("a footer bar similar to the header bar ... that ink color is totally variable too", and "why do we have "Play card" in
+ * this row at all anymore? It's a game act so it should be Glass", the footer bar's amendment of 2026-10-31). Nothing of
+ * that row is compared, and the thread is not compared here at all.
  * The Boards button is set in the board's 12px words, not at a control's 11px (engine/ui/frame/frame.css).
  */
 import type { BoardManifest } from '../board-match.ts';

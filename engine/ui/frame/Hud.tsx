@@ -41,7 +41,6 @@ import { dayAndTime } from '../characters/format.ts';
 import { Link, searchOf, useLocation, useNavigate } from '../router.tsx';
 import { Hand } from '../cards/Hand.tsx';
 import { facesOf } from '../cards/faces.ts';
-import { landing } from '../cards/land.ts';
 import { usePlay } from '../cards/play.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
@@ -78,10 +77,10 @@ export function Hud() {
   const hudCalm = useSurfaceStyle('hud');
   const handCalm = useSurfaceStyle('hand');
   const hud = player.hudCharacter;
-  /* Whether the hand is open, which card is armed and which post the hand was opened for are the Frame's (cards/play.tsx): a post's own buttons read them too. */
+  /* Whether the hand is open and which card is armed are the Frame's (cards/play.tsx): a post's own buttons read them too. */
   const play = usePlay();
   if (!play) throw new Error('the HUD is drawn inside the Frame');
-  const { handOpen, setHandOpen, armed, handFor } = play;
+  const { handOpen, setHandOpen, armed } = play;
   const signedIn = player.session.signedIn;
 
   const hudId = hud?.id ?? null;
@@ -183,27 +182,11 @@ export function Hud() {
     return () => document.removeEventListener('keydown', onKey);
   }, [signedIn, handOpen, armed, play, setHandOpen, navigate]);
 
-  /* Opened for a post, the hand shows only the cards that can land on it. */
-  const shown = useMemo(() => {
-    if (!handFor) return faces;
-    const carried = handFor.plays.get(handFor.post.id).plays;
-    return faces.filter((f) => {
-      const rules = instance.cards.find((c) => c.key === f.key);
-      return rules !== undefined && landing(rules, handFor.post, carried).ok;
-    });
-  }, [faces, handFor, instance.cards]);
-  /* Opened for a post, a card is played on it; opened alone, a card is armed, or put back if it was the armed one. */
+  /* A card in the hand is armed, or put back if it was the armed one; a post then offers it (cards/PlayActions.tsx). */
   const pick = (face: { readonly key: string }) => {
-    if (handFor) {
-      /* The hand is put away as the form opens, so focus goes to the post first: that is where the form hands it back. */
-      document.getElementById(`post-${handFor.post.seq}`)?.focus({ preventScroll: true });
-      play.openForm(face.key, handFor);
-    }
-    else {
-      play.arm(armed === face.key ? null : face.key);
-      /* The Phone board's sheet covers the foot of the page, where the posts to pick are: it is put away, and the armed card waits in the hand. */
-      if (!wide) setHandOpen(false);
-    }
+    play.arm(armed === face.key ? null : face.key);
+    /* The Phone board's sheet covers the foot of the page, where the posts to pick are: it is put away, and the armed card waits in the hand. */
+    if (!wide) setHandOpen(false);
   };
 
   const held = player.cards.reduce((n, c) => n + c.held, 0);
@@ -225,8 +208,8 @@ export function Hud() {
         <div ref={drawer} id={drawerId} className="kb-glass kb-hand-drawer" role="region" aria-label="Your hand" tabIndex={-1} hidden={!handOpen} style={handCalm}>
           <Smoke surface="hand" />
           <Hand
-            held={player.cards} faces={shown} vendingHref={GLASS_NAV.vending}
-            armed={armed} forPost={handFor ? `${handFor.author}'s post #${handFor.post.seq}` : undefined}
+            held={player.cards} faces={faces} vendingHref={GLASS_NAV.vending}
+            armed={armed}
             onPick={hud ? pick : undefined}
             onClose={() => { setHandOpen(false); handButton.current?.focus(); }}
           />

@@ -69,13 +69,6 @@ describe('the hand', () => {
     expect(screen.getByRole('button', { name: 'Whoops!, Salty postcard, armed: pick a post' }).closest('li')).toHaveTextContent('Armed · pick a post');
   });
 
-  test('opened for a post it says whose, and with no card that can land there it says so', () => {
-    hand([{ card: 'whoops', held: 1 }], { forPost: 'Gloomba\'s post #46' });
-    expect(screen.getByText(/For Gloomba's post #46\./u)).toBeInTheDocument();
-    hand([], { forPost: 'Gloomba\'s post #46' });
-    expect(screen.getByText('None of your postcards can land on Gloomba\'s post #46.')).toBeInTheDocument();
-  });
-
   test('an empty hand says so and where cards are bought, and Close is named for what it does', () => {
     const onClose = vi.fn();
     hand([], { onClose });

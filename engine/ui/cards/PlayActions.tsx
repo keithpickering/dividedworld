@@ -1,19 +1,15 @@
 /**
- * What a post offers for playing a card. Two pieces, in two places (the owner on #80's shots: the play control is
- * glass, and the 2003 action row keeps only what is 2003):
+ * What a post offers for playing a card: `PlayHere`, a glass tile, and nothing in the post's 2003 footer bar (the owner on
+ * #80's shots: the play control is glass; then: "why do we have "Play card" in this row at all anymore? It's a game act so
+ * it should be Glass". The hand is the HUD's, a card is armed there, and the post offers the card itself).
  *
- * - `PlayActions`, in the post's row of actions (the Main board draws it so,
- *   docs/research/2026-10-29-two-worlds/01-main.html): "Play card", a plain 2003 link that opens the hand with only
- *   the cards that can land on this post. While a card is armed it is not offered: the post offers the card itself.
- * - `PlayHere`, a glass tile: while a card is armed, a post it can land on shows "Play Whoops! here", a real button
- *   in the card's alignment that opens the play form on the post. It stands in the plate the post's effect has drawn
- *   (cards/Effects.tsx `EffectStrip`) when the post has one, and as a tile of its own attached under the post when it
- *   has not; it is drawn into the post's slot by a portal, so it is outside the 2003 chrome and the splat's ink never
- *   lies over it. The post itself stays the board's. A post the armed card cannot land on (it already carries all the
- *   card takes) shows nothing, so what is offered is always something the server will take, though it decides again.
- *
- * Both are the reader's own screen alone: nothing here is sent anywhere, and a reader with no
- * character to play as is offered neither.
+ * While a card is armed, a post it can land on shows "Play Whoops! here", a real button in the card's alignment that opens
+ * the play form on the post. It stands in the plate the post's effect has drawn (cards/Effects.tsx `EffectStrip`) when the
+ * post has one, and as a tile of its own attached under the post when it has not; it is drawn into the post's slot by a
+ * portal, so it is outside the 2003 chrome and the splat's ink never lies over it. A post the armed card cannot land on (it
+ * already carries all the card takes) shows nothing, so what is offered is always something the server will take, though it
+ * decides again. It is the reader's own screen alone: nothing here is sent anywhere, and a reader with no character to play
+ * as is offered none.
  */
 import { useEffect, useState, type CSSProperties, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -33,18 +29,6 @@ function useTarget(act: Act): PlayTarget | null {
   const { thread, perPage, summary, plays, nameOf, know } = useThread();
   if (act.kind !== 'post' || act.seq === null) return null;
   return { post: act, title: summary.title, author: nameOf(act.character), to: threadHref(thread, pageOf(act.seq, perPage), act.seq), plays, know: know ?? (async () => {}) };
-}
-
-export function PlayActions({ act }: { readonly act: Act }) {
-  const play = usePlay();
-  const { hudCharacter } = usePlayer();
-  const target = useTarget(act);
-  if (!play || !hudCharacter || !target || act.seq === null || play.armed !== null) return null;
-  return (
-    <button type="button" className="kb-link-button" aria-describedby={`post-${act.seq}-title`} onClick={() => play.openHandFor(target)}>
-      Play card
-    </button>
-  );
 }
 
 /** The armed card's play control for a post: a glass tile in the post's plate, or under the post in its slot. */

@@ -1,12 +1,11 @@
 /**
  * What playing a card is, on a screen (the cards plan's Task 3; the screens' design, section 9):
- * which card is armed, whether the hand is open and for which post, and which play form is open.
- * The Frame holds it once, so the HUD's hand, a post's "Play card" and "Play Whoops! here", and the
- * form all read the same state, and none of them owns another's.
+ * which card is armed, whether the hand is open, and which play form is open.
+ * The Frame holds it once, so the HUD's hand, a post's "Play Whoops! here" and the form all read
+ * the same state, and none of them owns another's.
  *
- * Two ways lead to the form, and both end there. From a post, "Play card" opens the hand with only
- * the cards that can land on that post (`handFor`), and picking one opens the form on it. From the
- * hand alone, picking a card arms it: every post it can land on shows "Play Whoops! here", and
+ * One way leads to the form (the owner: a game act is glass, so no post's row offers "Play card"):
+ * from the hand, picking a card arms it, every post it can land on shows "Play Whoops! here", and
  * pressing one opens the form on that post. An armed card is a state like any other and names its
  * way out: Esc, the armed card pressed again, or playing it.
  *
@@ -15,7 +14,7 @@
  * form itself is `PlayForm`, opened here so it stands over whichever page the player is on, and so a
  * post that is no longer on screen when the play lands does not take the form down with it.
  *
- * All of it is the signed-in account's: the armed card, the hand's post, the open form and what was
+ * All of it is the signed-in account's: the armed card, the open form and what was
  * said are kept with the account they were made for and read against the account signed in now, so
  * a switch (or a sign-out) takes them away in the very commit it happens, and an answer that comes
  * back for the other account changes nothing here.
@@ -47,14 +46,10 @@ export interface PlayControls {
   /** The key of the armed card, if any. */
   readonly armed: string | null;
   readonly handOpen: boolean;
-  /** The post the hand was opened for ("Play card"); the hand then shows only the cards that can land on it. */
-  readonly handFor: PlayTarget | null;
-  /** The HUD's hand button, and every other way the hand opens or closes that is not for a post. */
+  /** The HUD's hand button, and every other way the hand opens or closes. */
   readonly setHandOpen: (open: boolean) => void;
   /** Arm a card, or put the armed one back (null). */
   readonly arm: (card: string | null) => void;
-  /** Open the hand for a post. */
-  readonly openHandFor: (target: PlayTarget) => void;
   /** Open the play form for a card on a post; the hand is put away. */
   readonly openForm: (card: string, target: PlayTarget) => void;
 }
@@ -74,21 +69,17 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   accountNow.current = account;
   /* Each is kept with the account it was made for, and reads as nothing under another: in the commit the account changes, not after it (the clearing effect below runs after that commit, and a render between would show the other account's card; play.test.tsx pins it). */
   const [armedHeld, setArmedHeld] = useState<{ readonly card: string; readonly for: Id | null } | null>(null);
-  const [handForHeld, setHandForHeld] = useState<{ readonly target: PlayTarget; readonly for: Id | null } | null>(null);
   const [formHeld, setFormHeld] = useState<{ readonly card: string; readonly target: PlayTarget; readonly for: Id | null } | null>(null);
   const [saidHeld, setSaidHeld] = useState<{ readonly words: string; readonly for: Id | null }>({ words: '', for: null });
   const [handOpen, setHandOpenState] = useState(false);
   const armed = armedHeld?.for === account ? armedHeld.card : null;
-  const handFor = handForHeld?.for === account ? handForHeld.target : null;
   const form = formHeld?.for === account ? formHeld : null;
   const said = saidHeld.for === account ? saidHeld.words : '';
   const setArmed = useCallback((card: string | null) => setArmedHeld(card === null ? null : { card, for: accountNow.current }), []);
-  const setHandFor = useCallback((target: PlayTarget | null) => setHandForHeld(target === null ? null : { target, for: accountNow.current }), []);
   const setSaid = useCallback((words: string) => setSaidHeld({ words, for: accountNow.current }), []);
   /* Read against the account in the commit it changes; dropped just after, so signing back in finds none of it. */
   useEffect(() => () => {
     setArmedHeld(null);
-    setHandForHeld(null);
     setFormHeld(null);
     setSaidHeld({ words: '', for: null });
     setHandOpenState(false);
@@ -102,29 +93,21 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const armedNow = useRef(armed);
   armedNow.current = armed;
 
-  const setHandOpen = useCallback((open: boolean) => {
-    setHandOpenState(open);
-    /* The hand opened for a post is that post's alone: opened or closed any other way, it is the whole hand. */
-    setHandFor(null);
-  }, [setHandFor]);
+  const setHandOpen = setHandOpenState;
   const arm = useCallback((card: string | null) => {
     const was = armedNow.current;
     setArmed(card);
     if (card !== null) setSaid(`${nameOf(card)} is armed. Press Play ${nameOf(card)} here on a post, or ${phone.current ? 'press Armed' : 'Esc'} to put it back.`);
     else if (was !== null) setSaid(`${nameOf(was)} is put back.`);
   }, [nameOf, setArmed, setSaid]);
-  const openHandFor = useCallback((target: PlayTarget) => {
-    setHandFor(target);
-    setHandOpenState(true);
-  }, [setHandFor]);
   const openForm = useCallback((card: string, target: PlayTarget) => {
     setHandOpen(false);
     setFormHeld({ card, target, for: accountNow.current });
   }, [setHandOpen]);
 
   const controls = useMemo<PlayControls>(
-    () => ({ armed, handOpen, handFor, setHandOpen, arm, openHandFor, openForm }),
-    [armed, handOpen, handFor, setHandOpen, arm, openHandFor, openForm],
+    () => ({ armed, handOpen, setHandOpen, arm, openForm }),
+    [armed, handOpen, setHandOpen, arm, openForm],
   );
 
   return (

@@ -11,7 +11,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { PlateProvider, PlayTags, PostEffects } from '../cards/Effects.tsx';
-import { PlayActions, PlayHere } from '../cards/PlayActions.tsx';
+import { PlayHere } from '../cards/PlayActions.tsx';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -70,7 +70,11 @@ function Body({ act, name, person, editing, onDone, slot }: { readonly slot: Rea
   }
 }
 
-/** What a reader can do with an Act: quote it, spin a thread from it, edit it (the player's own posts), and read its History. */
+/**
+ * What a reader can do with an Act: quote it, spin a thread from it, edit it (the player's own posts), and read its History.
+ * The links stand on the post's footer bar, drawn like its header bar (the owner: the row on a bar of its own, so no 2003 text
+ * lies on an ink a player picks); the spin form and the history, which open from them, stand under the bar.
+ */
 function Actions({ act, editing, onEdit, editButton }: { readonly act: Act; readonly editing: boolean; readonly onEdit: () => void; readonly editButton: React.RefObject<HTMLButtonElement | null> }) {
   const { quote } = useThread();
   const { actingCharacters } = usePlayer();
@@ -80,19 +84,22 @@ function Actions({ act, editing, onEdit, editButton }: { readonly act: Act; read
   const quotable = (act.kind === 'post' || act.kind === 'spin') && quote !== null;
   const mine = act.kind === 'post' && act.character !== null && actingCharacters.some((c) => c.id === act.character);
   return (
-    <div className="kb-act-actions">
-      <div className="kb-act-links kb-small">
-        <PlayActions act={act} />
-        {quotable && <button type="button" className="kb-link-button" onClick={() => quote(act)}>Quote</button>}
-        <button ref={spinButton} type="button" className="kb-link-button" aria-expanded={spinning} aria-controls={`spin-${act.id}`} onClick={() => setSpinning(!spinning)}>Spin thread</button>
-        {mine && !editing && <button ref={editButton} type="button" className="kb-link-button" onClick={onEdit}>Edit</button>}
-        {act.kind === 'post' && history.button}
+    <>
+      <footer className="kb-act-foot">
+        <div className="kb-act-links kb-small">
+          {quotable && <button type="button" className="kb-link-button" onClick={() => quote(act)}>Quote</button>}
+          <button ref={spinButton} type="button" className="kb-link-button" aria-expanded={spinning} aria-controls={`spin-${act.id}`} onClick={() => setSpinning(!spinning)}>Spin thread</button>
+          {mine && !editing && <button ref={editButton} type="button" className="kb-link-button" onClick={onEdit}>Edit</button>}
+          {act.kind === 'post' && history.button}
+        </div>
+      </footer>
+      <div className="kb-act-panels">
+        <div id={`spin-${act.id}`}>
+          {spinning && <SpinForm origin={act.id} seq={act.seq} onClose={() => { setSpinning(false); spinButton.current?.focus(); }} />}
+        </div>
+        {act.kind === 'post' && history.panel}
       </div>
-      <div id={`spin-${act.id}`}>
-        {spinning && <SpinForm origin={act.id} seq={act.seq} onClose={() => { setSpinning(false); spinButton.current?.focus(); }} />}
-      </div>
-      {act.kind === 'post' && history.panel}
-    </div>
+    </>
   );
 }
 
@@ -144,8 +151,8 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
           {act.kind === 'post' && <PlayTags plays={plays} post={act.id} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} />}
           <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} />
           <SpunInto act={act.id} />
-          <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} />
         </div>
+        <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} />
         {act.kind === 'post' && <div className="kb-act-slot" ref={slot} />}
         {act.kind === 'post' && <PlayHere act={act} slot={slot} />}
       </article>

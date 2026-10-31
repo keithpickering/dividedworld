@@ -48,7 +48,7 @@
 }
 
 /*
- * In the thread the ink runs to the post body's borders, over the tag's row and the reactions and actions under the words
+ * In the thread the ink runs to the post body's borders, over the tag's row and the reactions under the words, from the header bar to the footer bar (the bars are the post's, never inked)
  * (the owner: "such things can just render in front of the splat"). The canvas marks itself `data-kb-effect-ink`, and the
  * thread's sheet (thread/thread.css) puts it above the words and below the post's controls, which it lifts by name, so they
  * stay in front, visible and usable, even when another card's effect wraps this one. The frame no longer clips, since the

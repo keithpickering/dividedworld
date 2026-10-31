@@ -1,7 +1,6 @@
 /**
  * Whether a card can land on a post, as the screens ask it: to offer a card only the posts it can
- * land on (every post "Play Whoops! here" is shown on) and a post only the cards that can land on it
- * (the hand a post's "Play card" opens). It is the card's own rules (`canApply`), given the post as
+ * land on (every post "Play Whoops! here" is shown on) and the form what the post can still take. It is the card's own rules (`canApply`), given the post as
  * its rules see it, so a card that stacks three deep stops being offered on a post with three, and
  * the screen and the server agree because they ask the same function. The server decides again at
  * the play (`decidePlay`), whatever this said.

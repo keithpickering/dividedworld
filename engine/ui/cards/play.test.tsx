@@ -110,36 +110,20 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-describe('from a post', () => {
-  test('"Play card" opens the hand with only the cards that can land there', async () => {
+/* The owner: "why do we have "Play card" in this row at all anymore? It's a game act so it should be Glass": a card is played from the hand, armed, on the glass tile; no post's row offers it. */
+describe('the post offers no "Play card"', () => {
+  test('no post has one, with nothing armed or with a card armed, and the hand is reached from the HUD alone', async () => {
     const user = userEvent.setup();
     const w = world();
     await open(w);
-    /* #4 carries three Whoops! already: Stick Around is all it can take. */
-    await user.click(within(post(4)).getByRole('button', { name: 'Play card' }));
-    expect(handButton()).toHaveAttribute('aria-expanded', 'true');
-    expect(within(drawer()).getByRole('button', { name: 'Stick Around, Sweet postcard' })).toBeInTheDocument();
-    expect(within(drawer()).queryByRole('button', { name: /^Whoops!/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Play card' })).toBeNull();
+    await arm(user);
+    expect(screen.queryByRole('button', { name: 'Play card' })).toBeNull();
     await user.keyboard('{Escape}');
-    /* #2 takes both. */
-    await user.click(within(post(2)).getByRole('button', { name: 'Play card' }));
+    expect(screen.queryByRole('button', { name: 'Play card' })).toBeNull();
+    if (handButton().getAttribute('aria-expanded') !== 'true') await user.click(handButton());
     expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(2);
     expect(within(drawer()).getByRole('button', { name: 'Stick Around, Sweet postcard' })).toBeInTheDocument();
-  });
-
-  test('picking a card there opens its play form on that post and puts the hand away', async () => {
-    const user = userEvent.setup();
-    const w = world();
-    await open(w);
-    await user.click(within(post(2)).getByRole('button', { name: 'Play card' }));
-    await user.click(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })[0]!);
-    const form = await screen.findByRole('dialog', { name: 'Whoops!' });
-    expect(form).toHaveTextContent('812 characters long');
-    expect(handButton()).toHaveAttribute('aria-expanded', 'false');
-    /* Esc leaves the form, and focus goes back to the post it was opened over, not to the hand that is put away. */
-    await user.keyboard('{Escape}');
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(post(2)).toHaveFocus();
   });
 });
 
@@ -157,18 +141,6 @@ describe('where "Play Whoops! here" stands', () => {
     ) },
     cards[1]!,
   ];
-
-  test('"Play card" is in the action row while nothing is armed, and gone from it while a card is armed', async () => {
-    const user = userEvent.setup();
-    const w = world();
-    await open(w);
-    expect(within(post(2)).getByRole('button', { name: 'Play card' }).closest('.kb-act-links')).not.toBeNull();
-    await arm(user);
-    expect(within(post(2)).queryByRole('button', { name: 'Play card' })).toBeNull();
-    /* Put back, the row offers it again. */
-    await user.keyboard('{Escape}');
-    expect(within(post(2)).getByRole('button', { name: 'Play card' })).toBeInTheDocument();
-  });
 
   test('on a post with no plate the tile is under the post in its slot, a glass tile outside the 2003 body and action row', async () => {
     const user = userEvent.setup();
@@ -616,18 +588,6 @@ describe('from the Task 3 quality review', () => {
       await user.click(within(form).getByRole('button', { name: 'Cancel' }));
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
       await waitFor(() => expect(post(2)).toHaveFocus());
-    });
-
-    test('the hand opened from the HUD after one opened from a post shows every card', async () => {
-      const user = userEvent.setup();
-      const w = world();
-      await open(w);
-      await user.click(within(post(4)).getByRole('button', { name: 'Play card' }));
-      expect(within(drawer()).queryByRole('button', { name: /^Whoops!/u })).toBeNull();
-      await user.keyboard('{Escape}');
-      await user.click(handButton());
-      expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(2);
-      expect(within(drawer()).getByRole('button', { name: 'Stick Around, Sweet postcard' })).toBeInTheDocument();
     });
   });
 

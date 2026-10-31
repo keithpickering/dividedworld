@@ -131,7 +131,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   /** How many layers' ink grids are held: none for a post that has left the viewport. */
   const [held, setHeld] = useState(0);
 
-  /** In the thread the frame is the post's whole body and the ink runs to its borders, the reactions and the actions drawn in front of it. */
+  /** In the thread the frame is the post's whole body and the ink runs to its borders, the reactions drawn in front of it, and the header and footer bars outside it. */
   const bleed = place === 'thread';
   const frameRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);

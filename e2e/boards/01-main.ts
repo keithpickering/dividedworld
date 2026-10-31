@@ -103,10 +103,21 @@ const manifest: BoardManifest = {
     ...post(42, 1, 'Mrs. Hooligan', 3, 'Midcarder', 'none'),
     ...post(43, 2, 'Pipewrench', 2, 'Enhancement Talent', 'none'),
     /*
+     * The row of actions under each post. The board draws it bare, over the post's ink or ground, with "Play card" among Quote
+     * and the rest; the build draws it on an opaque footer bar of its own, like the header bar, and without "Play card". Both
+     * differ by the owner's word and neither is compared: "I think we will likely need to put Quote, Spin, Edit, etc on a
+     * solid-color bar of their own, a footer bar similar to the header bar ... There's no way the current #000 text against
+     * that magenta ink passes contrast, and that ink color is totally variable too." (the footer bar's amendment of 2026-10-31,
+     * the screens-and-cards plan), and "why do we have "Play card" in this row at all anymore? It's a game act so it should be
+     * Glass, right? ... Hand -> Select a card -> glass-styled button appears on each applicable post?" A card is played from
+     * the hand and the armed card's tile alone. The bar adds its own height to every post, so a post's box is not compared
+     * below its line either (as `post` says for its box).
+     */
+    /*
      * The armed card's button on #42. The board draws it as a link in the post's row of actions; the build draws a real
      * button (cards Task 3) and, by the owner's word on #80's shots ("we should try to find a way to make the play button
-     * itself glass-styled"), a glass tile attached under the post, outside the 2003 row, which keeps "Play card" only
-     * (the cards plan's Task 3 amendment of 2026-10-30). So it differs from the board in kind and in place, and is found
+     * itself glass-styled"), a glass tile attached under the post, outside the 2003 row (the cards plan's Task 3 amendment of
+     * 2026-10-30). So it differs from the board in kind and in place, and is found
      * by its name within the post and compared by neither its box nor its type.
      */
     { id: 'post-42-play', role: 'link', name: 'Play Whoops! here', buildRole: 'button', within: 'post-42', box: 'none', type: false },

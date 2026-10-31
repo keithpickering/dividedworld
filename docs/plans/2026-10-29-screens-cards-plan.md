@@ -278,7 +278,8 @@ anymore? It's a game act so it should be Glass, right? I believe the flow is Han
 button appears on each applicable post?" So "Play card" leaves the post's action row everywhere (Task 3's "from a post"
 path is gone): the footer bar holds only the board's own actions, Quote, Spin thread, Edit and History, and a card is
 played only from the hand: the HUD's Hand, arm a card, then its glass "Play … here" tile on a post it can land on.
-Boards 01 and 02 draw "Play card" in the row; their manifests say it differs by this answer. The splat fills the body between the
+Boards 01 and 02 draw "Play card" in the row; their manifests say it differs by this answer. As built, the effect's glass plate
+attaches under the footer bar, and a post's spin form and History open under the bar, which holds only the row. The splat fills the body between the
 header bar and the footer bar, edge to edge; both bars draw over it and are never inked, so nothing's contrast depends
 on an ink a player picks, and a splat never moves the layout. Boards 01 and 02 draw the row without a bar: that region
 differs by this answer and their manifests say so. **Tests first:** at 390 and 1440 every footer control's text read

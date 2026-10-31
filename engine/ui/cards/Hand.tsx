@@ -16,8 +16,7 @@
  * the key of the card that waits to be played ("Whoops! is armed. Every post it can land on now shows
  * Play Whoops! here"; its name says ", armed: pick a post", and it carries that as a floating tag and
  * pulses), and `onPick` is what pressing a card does. With neither, pressing a card shows its rules
- * in the sheet's line. Opened for a post, the hand is given only the cards that can land there and
- * says whose post it is for (`forPost`).
+ * in the sheet's line.
  */
 import { useId, useState, type CSSProperties } from 'react';
 import type { HeldCard } from '../data/api.ts';
@@ -64,14 +63,12 @@ export interface HandProps {
   readonly armed?: string | null;
   /** What pressing a card does; with none, it shows the card's rules. */
   readonly onPick?: (face: CardFace) => void;
-  /** The post the hand was opened for ("Play card"), in words ("Gloomba's post #46"): the cards shown are those that can land there, and the hand says so. */
-  readonly forPost?: string;
   readonly onClose: () => void;
   /** Where the Vending Machine is. */
   readonly vendingHref: string;
 }
 
-export function Hand({ held, faces, armed = null, onPick, forPost, onClose, vendingHref }: HandProps) {
+export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }: HandProps) {
   const idBase = useId();
   /* The Main board's layout fans full-size cards; the Phone board's sheet holds smaller ones in a row. */
   const { board } = useBoard();
@@ -88,7 +85,7 @@ export function Hand({ held, faces, armed = null, onPick, forPost, onClose, vend
         </button>
       </div>
       {cards.length === 0 ? (
-        <p className="kb-hand-empty kb-calm">{forPost ? `None of your postcards can land on ${forPost}.` : 'No postcards in your hand. The Vending Machine sells them.'}</p>
+        <p className="kb-hand-empty kb-calm">No postcards in your hand. The Vending Machine sells them.</p>
       ) : (
         <ul className="kb-hand-cards">
           {cards.map(({ face, copy, total }, i) => {
@@ -124,7 +121,6 @@ export function Hand({ held, faces, armed = null, onPick, forPost, onClose, vend
       )}
       {inView && cards.length > 0 && (
         <p className="kb-hand-says kb-calm">
-          {forPost && <>For {forPost}. </>}
           {armed === inView.key
             ? <>{inView.name} is armed. Every post it can land on now shows <b>Play {inView.name} here</b>.</>
             : <><b>{inView.name}.</b> {inView.summary}</>}
