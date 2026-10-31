@@ -1117,6 +1117,15 @@
   margin-right: auto;
 }
 
+/*
+ * On the Main board's layout the foot's line stands bare on the modal's smoke, as the Turn board
+ * draws it; on the phone, body text stands in its calm (#54), since the smoke's brighter patches
+ * can scroll behind it there.
+ */
+:where(:root:not([data-kb-layout='phone'])) .kb-turn-effect.kb-calm::before {
+  content: none;
+}
+
 .kb-turn-actions {
   display: flex;
   flex-wrap: wrap;

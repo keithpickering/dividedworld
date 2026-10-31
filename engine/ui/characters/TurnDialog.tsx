@@ -147,7 +147,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
           )}
         </div>
         <div className="kb-turn-foot">
-          <p className="kb-turn-line kb-turn-effect">
+          <p className="kb-turn-line kb-turn-effect kb-calm">
             Takes effect at the next settlement{when ? `, ${dayAndTime(when)}` : ''}. Until then {character.name} is still {withArticle(now)}, and you can change this Turn or withdraw it.
           </p>
           {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
