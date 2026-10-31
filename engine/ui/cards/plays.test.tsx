@@ -226,6 +226,42 @@ describe('views, in the store', () => {
     expect(here).toHaveBeenCalledTimes(3);
   });
 
+  test('a view that differs in any field wakes and replaces the one held, a control by its function as well as its words', () => {
+    const plays = createPlays();
+    const run = () => {};
+    const base = view({ progress: 0.2, ends: 'Ends', yours: false, report: undefined, controls: [{ kind: 'choose', label: 'Tool', value: 'wash', options: [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Ink' }], choose: run }] });
+    plays.setView(POST, 'whoops', base);
+    const here = vi.fn();
+    plays.subscribe(POST, here);
+    /* The same options by content, in a fresh array, is the same view. */
+    plays.setView(POST, 'whoops', { ...base, controls: [{ kind: 'choose', label: 'Tool', value: 'wash', options: [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Ink' }], choose: run }] });
+    expect(here).toHaveBeenCalledTimes(0);
+    const changes: Partial<CardView>[] = [
+      { progress: 0.3 }, { progress: null }, { ends: 'Never' }, { yours: true }, { report: 'Not saved' }, { state: 'Washed' },
+      { controls: [{ kind: 'choose', label: 'Tool', value: 'ink', options: [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Ink' }], choose: run }] },
+      { controls: [{ kind: 'choose', label: 'Tool', value: 'wash', options: [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'In ink' }], choose: run }] },
+      { controls: [{ kind: 'choose', label: 'Tool', value: 'wash', options: [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Ink' }], choose: () => {} }] },
+    ];
+    for (const [i, change] of changes.entries()) {
+      here.mockClear();
+      const next = { ...base, ...change };
+      plays.setView(POST, 'whoops', next);
+      expect(here, `change ${i}`).toHaveBeenCalledTimes(1);
+      expect(plays.view(POST, 'whoops')).toBe(next);
+      plays.setView(POST, 'whoops', base);
+      here.mockClear();
+    }
+  });
+
+  test('a progress the card could not compute does not wake on every frame', () => {
+    const plays = createPlays();
+    plays.setView(POST, 'whoops', view({ progress: Number.NaN }));
+    const here = vi.fn();
+    plays.subscribe(POST, here);
+    plays.setView(POST, 'whoops', view({ progress: Number.NaN }));
+    expect(here).not.toHaveBeenCalled();
+  });
+
   test('changing one card\'s view leaves another card\'s view, and its notes, on the same post untouched, with no frame in which it is absent', () => {
     const plays = createPlays();
     const stick = view({ state: 'Held', notes: { p1: 'Layer 1 of 1' } });

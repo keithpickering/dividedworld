@@ -79,7 +79,7 @@ const sameControl = (a: KitControl, b: KitControl): boolean => {
 
 /** Whether two views say the same, field by field: `notes` entry by entry, `controls` control by control. */
 export function sameView(a: CardView, b: CardView): boolean {
-  return a.progress === b.progress && a.state === b.state && a.ends === b.ends && a.yours === b.yours && a.report === b.report
+  return Object.is(a.progress, b.progress) && a.state === b.state && a.ends === b.ends && a.yours === b.yours && a.report === b.report
     && sameEntries(a.notes, b.notes) && a.controls.length === b.controls.length && a.controls.every((c, i) => sameControl(c, b.controls[i]!));
 }
 

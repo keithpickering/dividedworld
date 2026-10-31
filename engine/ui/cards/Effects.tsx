@@ -93,7 +93,9 @@ export function PostEffects({ plays, post, place, slot, nameOf, children }: {
 /**
  * One card's effect on one post, given a `show` bound to that post and card, and clearing the card's view when the effect
  * is gone (unmounted: the plays that drew it left, or the post did), so a mark never keeps saying what a dead effect last
- * said. `show` is stable for the pair, so an effect may list it in its dependencies.
+ * said. `show` is stable for the pair, so an effect may list it in its dependencies. A view is keyed by post and card,
+ * not by where the post is drawn: a post is drawn once on a page, in its thread or in the ORIGIN box of a thread spun
+ * from it, never both, so the two places never share a key at once.
  */
 function BoundEffect({ Effect, store, ...props }: Omit<EffectProps, 'show' | 'met' | 'marks'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays }) {
   const post = props.post.id;
