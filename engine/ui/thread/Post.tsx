@@ -105,7 +105,7 @@ function Actions({ act, editing, onEdit, editButton }: { readonly act: Act; read
 }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
-  const { thread, perPage, observer, plays, nameOf: casterName } = useThread();
+  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName } = useThread();
   const ref = useRef<HTMLElement>(null);
   const seq = act.seq!;
   useEffect(() => {
@@ -149,7 +149,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
           <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
         </header>
         <div className="kb-act-main">
-          {act.kind === 'post' && <PlayTags plays={plays} post={act.id} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} />}
+          {act.kind === 'post' && <PlayTags plays={plays} post={act.id} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} />}
           <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} />
           <SpunInto act={act.id} />
         </div>

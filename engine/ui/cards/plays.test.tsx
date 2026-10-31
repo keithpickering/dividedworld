@@ -130,7 +130,7 @@ describe('billing, in the store', () => {
     expect(plays.get(POST).billed.map((p) => p.id)).toEqual([b.id, a.id]);
   });
 
-  test('setting a billing wakes only its post, and the same billing again wakes nothing', () => {
+  test('setting a billing wakes only its post, and each is a new read of it, the same order again included', () => {
     const plays = createPlays();
     const a = card();
     const b = card();
@@ -139,10 +139,13 @@ describe('billing, in the store', () => {
     const there = vi.fn();
     plays.subscribe(POST, here);
     plays.subscribe(OTHER, there);
+    expect(plays.get(POST).read).toBe(0);
     plays.setBilling(POST, [b.id, a.id]);
     expect(here).toHaveBeenCalledTimes(1);
+    expect(plays.get(POST).read).toBe(1);
     plays.setBilling(POST, [b.id, a.id]);
-    expect(here).toHaveBeenCalledTimes(1);
+    expect(here).toHaveBeenCalledTimes(2);
+    expect(plays.get(POST).read).toBe(2);
     expect(there).not.toHaveBeenCalled();
   });
 });

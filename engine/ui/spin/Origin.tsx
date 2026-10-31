@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { billPost, drawnOf } from '../cards/billing.ts';
-import { PlayTag, PlayTags, PostEffects } from '../cards/Effects.tsx';
+import { inkOf, PlayTag, PlayTags, PostEffects } from '../cards/Effects.tsx';
 import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Character, Id, ThreadSummary } from '../data/api.ts';
@@ -51,6 +51,8 @@ function useOrigin(origin: Id, thread: Id, plays: Plays, tallies: Tallies, mine:
         else if (a.kind === 'card' && a.targetActId === origin) { plays.add([a]); void readEffects(api, plays, [a], cards); }
       },
       onEffect(play) { void api.effectStates([play]).then((saved) => plays.setStates(saved), () => { /* the next save is heard again */ }); },
+      /* A reaction to the origin, or to a play on it, counts on its tag here as it does in its thread. */
+      onTally(act, t) { if (act === origin || plays.get(origin).plays.some((p) => p.id === act)) tallies.merge(act, t); },
     });
     api.act(origin).then(
       (a) => { if (live) { if (a) setAct((was) => (was ? newer(was, a) : a)); else setRead('gone'); } },
@@ -100,13 +102,16 @@ function useNames(ids: readonly (Id | null)[]): (id: Id | null) => string {
 
 /** A spin from a card play itself: the play as its tag, linking to the post it landed on. */
 function CardOrigin({ act, nameOf }: { readonly act: Act; readonly nameOf: (id: Id | null) => string }) {
-  const { perPage } = useThread();
+  const { tallies } = useThread();
+  const { ui } = useKayfa();
   const play = playOf(act);
-  const target = useLocated(act.targetActId);
+  const [open, setOpen] = useState<HTMLButtonElement | null>(null);
   if (!play) return <p className="kb-small kb-muted">A card was played here.</p>;
   return (
-    <ul className="kb-play-tags">
-      <PlayTag play={play} caster={nameOf(play.caster)} to={target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null} />
+    <ul className="kb-play-tags" aria-label="The card play this thread was spun from">
+      <li className="kb-play-tags-lead">
+        <PlayTag play={play} caster={nameOf(play.caster)} tint={inkOf(ui, play, [play])} tallies={tallies} onOpen={(el) => setOpen((was) => (was ? null : el))} expanded={open !== null} />
+      </li>
     </ul>
   );
 }
@@ -148,7 +153,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-            <PlayTags plays={plays} post={originId} to={backHref} nameOf={nameOf} />
+            <PlayTags plays={plays} post={originId} to={backHref} nameOf={nameOf} tallies={tallies} mine={mine} />
             <PostEffects plays={plays} post={act} place="origin" slot={slot}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small">{history.button}</p>}

@@ -21,14 +21,14 @@
  * in play order, so the latest is outermost. A post with no plays, or whose plays' cards draw no
  * effect, is drawn untouched.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
-import { Link } from '../router.tsx';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
-import { when } from '../thread/lines.tsx';
+import type { Mine } from '../reactions/mine.ts';
+import { useTally, type Tallies } from '../thread/tallies.ts';
 import { usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, EffectPlace, EffectProps } from './types.ts';
 import './cards.css';
@@ -146,51 +146,142 @@ export function EffectStrip({ slot, card, readout, children }: { readonly slot: 
   );
 }
 
-/** One play's tag: the card, who played it with their words, and when. */
-export function PlayTag({ play, caster, to, tint }: { readonly play: CardPlay; readonly caster: string; readonly to: string | null; readonly tint?: ReturnType<NonNullable<CardUi['tag']>> }) {
+/** The thread's narrow width (thread.css's 40em, where a post is stacked): the tags fold their chips into "+N more" there. */
+const NARROW = '(max-width: 40em)';
+const narrowNow = () => typeof globalThis.matchMedia === 'function' && globalThis.matchMedia(NARROW).matches;
+const watchNarrow = (changed: () => void) => {
+  if (typeof globalThis.matchMedia !== 'function') return () => {};
+  const query = globalThis.matchMedia(NARROW);
+  query.addEventListener?.('change', changed);
+  return () => query.removeEventListener?.('change', changed);
+};
+/** Whether the window is at the thread's narrow width; a screen with no `matchMedia` is wide. */
+export const useNarrow = (): boolean => useSyncExternalStore(watchNarrow, narrowNow, () => false);
+
+/** Chips a desktop shows after the tag before "+N more". */
+export const CHIPS_SHOWN = 3;
+/** Reactions a tag shows, small. */
+export const TAG_REACTIONS = 3;
+
+/** How many reactions a play has drawn, in one phrase ("no reactions", "1 reaction", "8 reactions"). */
+export const reactionCount = (n: number): string => (n === 0 ? 'no reactions' : n === 1 ? '1 reaction' : `${n} reactions`);
+
+/** A play as a screen reader hears its tag or chip: one sentence. */
+export const playSentence = (card: string, caster: string, reactions: number): string => `${card} by ${caster}, ${reactionCount(reactions)}. Opens the play.`;
+
+/** A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order. */
+export const inkOf = (ui: { readonly cards: readonly CardUi[] }, play: CardPlay, plays: readonly CardPlay[]): string | undefined =>
+  ui.cards.find((c) => c.key === play.card)?.tag?.(play, plays.filter((o) => o.card === play.card));
+
+/** The glass's style for a play: the `effect` smoke's, and the card's ink for its border and glow where it chose one. */
+const tinted = (calm: CSSProperties | undefined, ink: string | undefined): CSSProperties | undefined => (ink ? { ...calm, '--kb-tag': ink } as CSSProperties : calm);
+
+/**
+ * One play as the quiet tag the top-billed play gets (design, section 3): the card's name, its caster, and at most its
+ * three top reactions, small, from the public tally, or none (#79). It is a button that opens the play's panel; the
+ * message, when, React and Spin are the panel's. A card that chooses its tag's ink (`CardUi.tag`) gives the glass that
+ * ink for its border and glow, as the Main board draws the tag over #41; the smoke and the glass's own text stay.
+ */
+export function PlayTag({ play, caster, tint, tallies, onOpen, expanded }: {
+  readonly play: CardPlay; readonly caster: string; readonly tint?: string; readonly tallies: Tallies;
+  readonly onOpen: (opener: HTMLButtonElement) => void; readonly expanded?: boolean;
+}) {
   const { instance } = useKayfa();
   const rules = instance.cards.find((c) => c.key === play.card);
   const card = rules?.name ?? play.card;
   const calm = useSurfaceStyle('effect');
-  const said = play.message ? `“${play.message}”` : '';
-  /* One sentence to read; the drawn pieces (the card's name, its caster, and the caster's words on a line of their own) are for the eye, so a screen reader hears it once. */
-  const sentence = `${caster} played ${card} on this post${said ? `: ${said}` : ''}`;
-  /*
-   * The link's box is `display: contents` (cards.css), so the caster and the message are grid items of the tag itself and the
-   * message can take the line under the first, while the whole tag is still one link to the post.
-   */
-  const words = (
-    <>
-      <span className="kb-visually-hidden">{sentence}</span>
-      <span className="kb-play-tag-who" aria-hidden="true">{caster}</span>
-      {said && <span className="kb-play-tag-message" aria-hidden="true">{said}</span>}
-    </>
-  );
-  /* A card that chooses its tag's ink gives the glass that ink for its border and glow, as the Main board draws the tag over #41; the smoke and the glass's own text stay. */
-  const style = tint ? { ...calm, '--kb-tag': tint } as CSSProperties : calm;
+  const tally = useTally(tallies, play.id);
+  const total = Object.values(tally).reduce((a, b) => a + b, 0);
+  /* The largest first, a tie going to the instance's own order of its reactions. */
+  const top = instance.reactions
+    .map((r, i) => ({ r, i, n: tally[r.key] ?? 0 }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n || a.i - b.i)
+    .slice(0, TAG_REACTIONS);
   return (
-    <li className="kb-glass kb-play-tag" data-kb-card={play.card} data-kb-alignment={rules?.alignment} data-kb-tinted={tint ? 'true' : undefined} data-kb-play={play.id} style={style}>
+    <button
+      type="button" className="kb-glass kb-play-tag" data-kb-card={play.card} data-kb-alignment={rules?.alignment} data-kb-tinted={tint ? 'true' : undefined}
+      data-kb-play={play.id} style={tinted(calm, tint)} aria-haspopup="dialog" aria-expanded={expanded ?? false} onClick={(e) => onOpen(e.currentTarget)}
+    >
       <Smoke surface="effect" />
-      <div className="kb-play-tag-in kb-calm">
-        <span className="kb-play-tag-card" aria-hidden="true">{card}</span>
-        {to ? <Link className="kb-play-tag-words" to={to}>{words}</Link> : <span className="kb-play-tag-words">{words}</span>}
-        <time className="kb-play-tag-when" dateTime={play.playedAt}>{when(play.playedAt)}</time>
-      </div>
-    </li>
+      {/* One sentence to hear; the drawn pieces are for the eye. */}
+      <span className="kb-visually-hidden">{playSentence(card, caster, total)}</span>
+      <span className="kb-play-tag-in kb-calm" aria-hidden="true">
+        <span className="kb-play-tag-card">{card}</span>
+        <span className="kb-play-tag-who">{caster}</span>
+        {top.length > 0 && (
+          <span className="kb-play-tag-reactions">
+            {top.map(({ r, n }) => <span key={r.key} data-kb-reaction={r.key}>{r.emoji} {n}</span>)}
+          </span>
+        )}
+      </span>
+    </button>
+  );
+}
+
+/** One play after the first, as a chip in its card's color (its alignment's, or the ink its card chose): a mark, its caster and the card's name. */
+function PlayChip({ play, caster, tint, tallies, onOpen, expanded }: {
+  readonly play: CardPlay; readonly caster: string; readonly tint?: string; readonly tallies: Tallies;
+  readonly onOpen: (opener: HTMLButtonElement) => void; readonly expanded: boolean;
+}) {
+  const { instance } = useKayfa();
+  const rules = instance.cards.find((c) => c.key === play.card);
+  const card = rules?.name ?? play.card;
+  const tally = useTally(tallies, play.id);
+  const total = Object.values(tally).reduce((a, b) => a + b, 0);
+  return (
+    <button
+      type="button" className="kb-play-chip" data-kb-card={play.card} data-kb-alignment={rules?.alignment} data-kb-tinted={tint ? 'true' : undefined}
+      data-kb-play={play.id} style={tint ? { '--kb-tag': tint } as CSSProperties : undefined} aria-haspopup="dialog" aria-expanded={expanded} onClick={(e) => onOpen(e.currentTarget)}
+    >
+      <span className="kb-visually-hidden">{playSentence(card, caster, total)}</span>
+      <span className="kb-play-chip-in" aria-hidden="true"><i className="kb-play-chip-mark" />{caster} · {card}</span>
+    </button>
   );
 }
 
 /**
- * The tags of every play on a post, in play order; nothing at all where there are none. `to` is the
- * post's own address, which each tag links to; `nameOf` says the caster's name.
+ * The plays on a post, quiet (design, section 3): the top-billed play as its tag, then the rest as chips in billing
+ * order, up to `CHIPS_SHOWN` on a desktop and none at the thread's narrow width, then "+N more", a disclosure that shows
+ * the rest in place until the page is read again. Billing is the store's, set when the page was read, so nothing here
+ * moves while it is read. Each tag and chip opens its play; nothing at all is drawn where there are no plays. `to` is
+ * the post's own address, which the play's panel leads back to as "Go to post"; `nameOf` says the caster's name.
  */
-export function PlayTags({ plays, post, to, nameOf }: { readonly plays: Plays; readonly post: Id; readonly to: string | null; readonly nameOf: (character: Id | null) => string }) {
+export function PlayTags({ plays, post, to, nameOf, tallies, mine }: {
+  readonly plays: Plays; readonly post: Id; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
+  readonly tallies: Tallies; readonly mine: Mine;
+}) {
   const { ui } = useKayfa();
   const here = usePlays(plays, post);
-  if (here.plays.length === 0) return null;
+  const narrow = useNarrow();
+  const [more, setMore] = useState(false);
+  const [open, setOpen] = useState<{ readonly play: Id; readonly opener: HTMLButtonElement } | null>(null);
+  /* A read of the page closes what was opened on it. */
+  const read = here.read;
+  useEffect(() => { setMore(false); }, [read]);
+  if (here.billed.length === 0) return null;
+  const [lead, ...rest] = here.billed;
+  const shown = more ? rest : rest.slice(0, narrow ? 0 : CHIPS_SHOWN);
+  const hidden = rest.length - (narrow ? 0 : Math.min(rest.length, CHIPS_SHOWN));
+  const opener = (play: Id) => (el: HTMLButtonElement) => setOpen((was) => (was?.play === play ? null : { play, opener: el }));
   return (
     <ul className="kb-play-tags" aria-label="Cards played on this post">
-      {here.billed.map((p) => <PlayTag key={p.id} play={p} caster={nameOf(p.caster)} to={to} tint={ui.cards.find((c) => c.key === p.card)?.tag?.(p, here.plays.filter((o) => o.card === p.card))} />)}
+      <li className="kb-play-tags-lead">
+        <PlayTag play={lead!} caster={nameOf(lead!.caster)} tint={inkOf(ui, lead!, here.plays)} tallies={tallies} onOpen={opener(lead!.id)} expanded={open?.play === lead!.id} />
+      </li>
+      {shown.map((p) => (
+        <li key={p.id}>
+          <PlayChip play={p} caster={nameOf(p.caster)} tint={inkOf(ui, p, here.plays)} tallies={tallies} onOpen={opener(p.id)} expanded={open?.play === p.id} />
+        </li>
+      ))}
+      {hidden > 0 && (
+        <li>
+          <button
+            type="button" className="kb-play-more" aria-expanded={more} onClick={() => setMore(!more)}
+            aria-label={more ? 'Show fewer cards played on this post' : `Show ${hidden} more ${hidden === 1 ? 'card' : 'cards'} played on this post`}
+          >{more ? 'Fewer' : `+${hidden} more`}</button>
+        </li>
+      )}
     </ul>
   );
 }

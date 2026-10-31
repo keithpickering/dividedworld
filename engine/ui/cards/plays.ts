@@ -46,9 +46,11 @@ export interface PostPlays {
   readonly billed: readonly CardPlay[];
   readonly states: Readonly<Record<Id, EffectState>>;
   readonly released: ReadonlySet<Id>;
+  /** How many times the post's page has been read (each `setBilling`): what the tags opened on it are closed by. */
+  readonly read: number;
 }
 
-const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>() });
+const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>(), read: 0 });
 
 export interface Plays {
   get(post: Id): PostPlays;
@@ -60,7 +62,7 @@ export interface Plays {
   setReleased(plays: readonly Id[]): boolean;
   /** The post's plays in billing order: as last set, then each play added since, in the order it arrived. */
   billing(post: Id): readonly Id[];
-  /** Set the post's billing, when its page is read; a play it leaves out keeps its place after the ones it names. */
+  /** Set the post's billing, when its page is read (a new read, even in the same order); a play it leaves out keeps its place after the ones it names. */
   setBilling(post: Id, plays: readonly Id[]): void;
   /** The card's line about a play's state on this screen (design, section 4), or null; never saved or sent. */
   note(play: Id): string | null;
@@ -80,6 +82,7 @@ export function createPlays(): Plays {
   /* Each post's billing order, by play id: set by a read of its page, with a play that arrives later appended. */
   const order = new Map<Id, readonly Id[]>();
   const notes = new Map<Id, string>();
+  const reads = new Map<Id, number>();
   const snapshots = new Map<Id, PostPlays>();
   const listeners = new Map<Id, Set<() => void>>();
 
@@ -102,6 +105,7 @@ export function createPlays(): Plays {
           billed: (order.get(post) ?? []).map((id) => own.get(id)!),
           states: Object.fromEntries(plays.filter((p) => states.has(p.id)).map((p) => [p.id, states.get(p.id)!])),
           released: new Set(plays.filter((p) => released.has(p.id)).map((p) => p.id)),
+          read: reads.get(post) ?? 0,
         };
         snapshots.set(post, snap);
       }
@@ -152,9 +156,8 @@ export function createPlays(): Plays {
       if (!own) return;
       const named = [...new Set(ids.filter((id) => own.has(id)))];
       const next = [...named, ...(order.get(post) ?? []).filter((id) => !named.includes(id))];
-      const was = order.get(post) ?? [];
-      if (next.length === was.length && next.every((id, i) => id === was[i])) return;
       order.set(post, next);
+      reads.set(post, (reads.get(post) ?? 0) + 1);
       changed([post]);
     },
     note: (play) => notes.get(play) ?? null,
