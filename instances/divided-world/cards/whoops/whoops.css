@@ -92,6 +92,8 @@
   box-sizing: border-box;
   transform: skewX(var(--kb-glass-skew));
   border: 1px solid var(--kb-ink, var(--kb-tag));
+  /* A neutral edge outside the ink's own, so a segment in an ink as dark as the plate is still seen. */
+  outline: 1px solid color-mix(in srgb, var(--kb-glass-text-2) 60%, transparent);
   background: linear-gradient(to right, var(--kb-ink, var(--kb-tag)) calc(var(--kb-washed) * 100%), transparent calc(var(--kb-washed) * 100%));
   opacity: 0.7;
 }

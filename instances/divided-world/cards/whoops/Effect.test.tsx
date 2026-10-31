@@ -13,7 +13,7 @@ import type { Act, EffectState } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { STROKES, whoops } from '../whoops.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
-import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS } from './Effect.tsx';
+import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS, percentWashed } from './Effect.tsx';
 import { paint, type PaintLayer } from './paint.ts';
 import { BRUSH, LayerInk, PEN, REF_WIDTH, ROW, layoutOf, type Stroke } from './scrub.ts';
 import { makeSplat } from './splat.ts';
@@ -404,7 +404,8 @@ describe('the words and controls are glass, outside the post (the owner\'s notes
     const { slot, hear } = mount({ layers: 2, note });
     expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(/^2 layers · top: Gloomba's cyan, 0% washed$/u);
     hear({ 'play-2': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } });
-    expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(/^1 layer · top: Mrs\. Hooligan's magenta, 0% washed$/u);
+    /* Every layer counts, washed clean or not, as each play's panel counts them ("Layer 1 of 2"). */
+    expect(slot.querySelector('.kb-plate-state')).toHaveTextContent(/^2 layers · top: Mrs\. Hooligan's magenta, 0% washed$/u);
     expect(slot.querySelector('[data-kb-top="true"]')?.getAttribute('style')).toContain('#ff2bd6');
     hear({
       'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' },
@@ -414,6 +415,12 @@ describe('the words and controls are glass, outside the post (the owner\'s notes
     expect(slot.querySelector('.kb-effect-strip')).toBeNull();
     const last = (play: string) => note.mock.calls.filter(([p]) => p === play).at(-1)?.[1];
     await vi.waitFor(() => expect([last('play-1'), last('play-2')]).toEqual(['Washed clean', 'Washed clean']));
+  });
+  test('a layer that still holds ink never reads 100% washed, and one washed clean always does', () => {
+    expect(percentWashed(0.996, false)).toBe(99);
+    expect(percentWashed(0.4, false)).toBe(40);
+    expect(percentWashed(Number.NaN, false)).toBe(0);
+    expect(percentWashed(0.2, true)).toBe(100);
   });
   test('the top layer\'s own share washed is the readout\'s, not a sum across the layers', () => {
     const { slot, frame, root } = mount({ layers: 2 });

@@ -1,8 +1,9 @@
 /**
  * Whoops!'s inks in words. The play form offers its swatches (ConfigForm.tsx), and the plate's readout names a
  * layer's ink so it never says a hex code ("top: Spritey's yellow", the plays-on-a-post design, section 5): the
- * swatch's name when the ink is one, else the swatch nearest it in hue. An ink with no hue to speak of (black, white,
- * a gray) is called by its lightness, since a hue would name it a color it is not. Nothing new is saved on the play.
+ * swatch's name when the ink is one, else the swatch nearest it in hue. An ink the player gave by name ("violet") is
+ * called by that name. An ink with no hue to speak of (black, white, a gray, or one too dark or too pale to show its
+ * hue) is called by its lightness, since a hue would name it a color it is not. Nothing new is saved on the play.
  *
  * The swatches live here, not in the form, so the names have one list and a Node test can read it.
  */
@@ -20,6 +21,9 @@ export const SWATCHES = [
 
 /** Below this saturation an ink has no hue worth naming. */
 const GRAY = 0.15;
+/** Below and above these lightnesses an ink reads as black or white. */
+const DARK = 0.18;
+const PALE = 0.9;
 
 /** Hue in degrees, saturation and lightness from 0 to 1. */
 function hsl([r, g, b]: readonly [number, number, number]): { readonly h: number; readonly s: number; readonly l: number } {
@@ -43,7 +47,12 @@ export function inkName(color: string): string {
   try { rgb = rgbOf(color); } catch { return 'ink'; }
   const exact = HUES.find((s) => s.color === `#${rgb.map((c) => c.toString(16).padStart(2, '0')).join('')}`);
   if (exact) return exact.name;
+  /* An ink the player gave by its name ("violet") is called what they called it, and never a swatch's that differs. */
+  if (/^[a-z]+$/iu.test(color.trim())) return color.trim().toLowerCase();
   const { h, s, l } = hsl(rgb);
-  if (s < GRAY || l < 0.08 || l > 0.95) return l < 0.25 ? 'black' : l > 0.85 ? 'white' : 'gray';
+  /* So dark or so pale that the eye sees no hue, whatever the saturation says at the ends of lightness; or plainly gray. */
+  if (l < DARK) return 'black';
+  if (l > PALE) return 'white';
+  if (s < GRAY) return l < 0.25 ? 'black' : l > 0.85 ? 'white' : 'gray';
   return HUES.reduce((best, x) => (around(x.h, h) < around(best.h, h) ? x : best)).name;
 }

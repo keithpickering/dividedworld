@@ -110,6 +110,15 @@ const canonical = (state: unknown): string => JSON.stringify(savedOf(state));
 /** A stroke being made. */
 interface Live { readonly layer: number; readonly tool: 'wash' | 'ink'; readonly width: number; readonly color: string; readonly points: Pt[]; readonly pointer: number | null }
 
+/**
+ * A layer's share washed as the readout and its panel say it, a whole percent: one washed clean is 100, and one that still
+ * holds ink is at most 99, so a layer is never called fully washed while some of its ink is left.
+ */
+export function percentWashed(washed: number, clean: boolean): number {
+  if (clean) return 100;
+  return Number.isFinite(washed) ? Math.min(99, Math.max(0, Math.round(100 * washed))) : 0;
+}
+
 /** What the component publishes of its model, to render from and for the tests to read. */
 interface View {
   readonly clean: readonly boolean[];
@@ -664,15 +673,15 @@ export function Effect({ post, plays, states, reader, save, slot, place, note, n
   /* The hint is the board's sentence for everyone; the author's own tools and what they save follow the button. */
   const hint = 'This post is splatted. Drag across the ink to scrub it on your screen.';
   /*
-   * The plate's readout (the plays-on-a-post design, section 5): how many layers hold ink, and the top one, which is the layer
+   * The plate's readout (the plays-on-a-post design, section 5): how many layers there are (washed clean or not, as each
+   * play's panel counts them, "Layer 2 of 3"), and the top one that holds ink, which is the layer
    * the next stroke washes, named by its caster and its ink in words (names.ts, never a hex code), with its own share washed
    * on this screen, as the model says (geometry, never a pixel read). The meter is a segment for each layer in its ink, the
    * top first and lit, a clean one faded.
    */
   const cleanAt = (i: number) => (view ? view.clean[i] === true : false);
   const washedAt = (i: number) => (view ? (view.clean[i] ? 1 : Math.min(1, view.washed[i] ?? 0)) : 0);
-  const percent = (i: number) => Math.round(100 * washedAt(i));
-  const liveCount = layers.filter((_, i) => !cleanAt(i)).length;
+  const percent = (i: number) => percentWashed(view?.washed[i] ?? 0, cleanAt(i));
   const top = layers.reduce((at, _, i) => (cleanAt(i) ? at : i), -1);
   const upper = top >= 0 ? layers[top]! : null;
   const readout = (
@@ -680,7 +689,7 @@ export function Effect({ post, plays, states, reader, save, slot, place, note, n
       <span className="kb-plate-state">
         {upper === null
           ? 'Washed clean'
-          : `${liveCount} ${liveCount === 1 ? 'layer' : 'layers'} · top: ${nameOf(upper.play.caster)}'s ${inkName(upper.color)}, ${percent(top)}% washed`}
+          : `${layers.length} ${layers.length === 1 ? 'layer' : 'layers'} · top: ${nameOf(upper.play.caster)}'s ${inkName(upper.color)}, ${percent(top)}% washed`}
       </span>
       <span className="kb-whoops-meter" aria-hidden="true">
         {layers.map((_, i) => layers.length - 1 - i).map((i) => (
