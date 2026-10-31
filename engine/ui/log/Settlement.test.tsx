@@ -297,6 +297,7 @@ describe('the summary on the first load after a settlement', () => {
       else act(() => setActive(false));
       await act(async () => { release(); await new Promise((r) => setTimeout(r, 20)); });
       expect(localStorage.getItem(seenKey(me))).toBeNull();
+      expect(where.path).toBe('/');
       if (leave === 'unmounts') load(fake);
       else act(() => setActive(true));
       await waitFor(() => expect(where.path).toBe('/log/settlement'));

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { CardEvent, WalletEvent } from './api.ts';
-import { cutLog, LOG_ROWS, micros, readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from './log-page.ts';
+import { cutLog, justBefore, LOG_ROWS, micros, readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from './log-page.ts';
 
 const none: LogRead = { ledger: [], shares: [], wallet: [], cards: [], playsOnMine: [], saves: [] };
 const line = (settlement: number, endsAt: string, character: string, reason: string, amount: number): LedgerRow =>
@@ -128,4 +128,12 @@ test('a source full at one instant never hands back the cursor it was read with:
   }
   assert.equal(new Set(seen).size, seen.length, 'a line was read twice');
   assert.equal(seen.length, LOG_ROWS + 1, 'a line was never read');
+});
+
+test('the microsecond before an instant is written in UTC to the microsecond, whatever offset and fraction the instant was written with', () => {
+  assert.equal(justBefore('2026-10-30T10:17:00.5+02:00'), '2026-10-30T08:17:00.499999+00:00');
+  assert.equal(justBefore('2026-10-30T08:17:00.123456-05:30'), '2026-10-30T13:47:00.123455+00:00');
+  assert.equal(justBefore('2026-10-30T08:17:00Z'), '2026-10-30T08:16:59.999999+00:00');
+  assert.equal(justBefore('2026-01-01T00:00:00+00:00'), '2025-12-31T23:59:59.999999+00:00');
+  for (const iso of ['2026-10-30T10:17:00.5+02:00', '2026-10-30T08:17:00.123456-05:30', '2026-10-30T08:17:00Z']) assert.equal(micros(iso) - micros(justBefore(iso)), 1);
 });

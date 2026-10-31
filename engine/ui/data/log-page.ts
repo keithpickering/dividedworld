@@ -124,6 +124,16 @@ export function justBefore(iso: string): string {
   return `${new Date(seconds * 1000).toISOString().slice(0, 19)}.${String(m - seconds * 1_000_000).padStart(6, '0')}+00:00`;
 }
 
+/** Whether a page moves the cursor back from the one it was read with (a first page always does). */
+function moves(page: Log, before: string | null): boolean {
+  return before === null || page.before === null || micros(page.before) < micros(before);
+}
+
+/** The page of every row at one instant, and the microsecond before it as the next cursor. */
+function atInstant(read: LogRead, at: string): Log {
+  return { ...cutLog(read, Infinity), before: justBefore(at) };
+}
+
 /**
  * One page of the log from a backend's reads (both backends page through here). A page cut where it was read from is read
  * again at that one instant, whole, and the next cursor is the microsecond before it, so a cursor only ever moves back and
@@ -140,7 +150,3 @@ export function readLogPageNow(read: (range: LogRange) => LogRead, before: strin
   return moves(page, before) ? page : atInstant(read({ at: before! }), before!);
 }
 
-/** Whether a page moves the cursor back from the one it was read with (a first page always does). */
-const moves = (page: Log, before: string | null) => before === null || page.before === null || micros(page.before) < micros(before);
-/** The page of every row at one instant, and the microsecond before it as the next cursor. */
-const atInstant = (read: LogRead, at: string): Log => ({ ...cutLog(read, Infinity), before: justBefore(at) });

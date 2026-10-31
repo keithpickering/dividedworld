@@ -743,14 +743,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           character: r['character'], reason: r['reason'], amount: num(r['amount']),
         }));
         const ids = [...new Set(ledger.map((l) => l.settlement))];
-        const shares: ShareRow[] = [];
-        for (let offset = 0; ids.length > 0; offset += ROW_CAP) {
-          const page = await list(() => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', ids)
-            .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
-            .range(offset, offset + ROW_CAP - 1));
-          for (const r of page) shares.push({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) });
-          if (page.length < ROW_CAP) break;
-        }
+        const shares: ShareRow[] = (ids.length === 0 ? [] : await every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', ids)
+          .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
+          .range(start, end)))
+          .map((r) => ({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) }));
         return {
           ledger,
           shares,

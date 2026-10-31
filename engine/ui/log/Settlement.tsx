@@ -224,7 +224,8 @@ export function startLoad(): void {
 
 /**
  * Opens the summary on the first load after a settlement this device has not seen for the account. `active` is the app's word that
- * the load may be met by it (a board page); it looks once per load and account.
+ * the load may be met by it (a board page); it looks once per load and account, and a look dropped before it finished is made again
+ * on the next board page.
  */
 export function SettlementOnLoad({ active }: { readonly active: boolean }) {
   const { api } = useKayfa();

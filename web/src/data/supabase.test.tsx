@@ -1039,6 +1039,27 @@ describe('the log', () => {
     }
   });
 
+  it('reads an instant whole however many rows it holds, a page of rows at a time, to an end past the last row', async () => {
+    const at = Array.from({ length: 1000 }, (_, i) => ({ settlement: null, kind: 'purchase', change: -100, overflow: 0, floored: 0, balance_after: i, ref: null, at: S1 }));
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_wallet_events') {
+        if (r.url.searchParams.get('at') !== `eq.${S1}`) return rows(at.slice(0, 200));
+        const offset = Number(r.url.searchParams.get('offset') ?? 0);
+        /* Past the last row, PostgREST answers 416, which a page of rows reads as empty. */
+        return offset >= at.length ? new Response('{}', { status: 416 }) : rows(at.slice(offset, offset + Number(r.url.searchParams.get('limit'))));
+      }
+      if (name.startsWith('my_')) return rows([]);
+      return undefined;
+    });
+    const log = await h.api.log(S1);
+    expect(log.wallet).toHaveLength(1000);
+    expect(log.before).toBe('2026-10-30T08:16:59.999999+00:00');
+    const whole = h.to('my_wallet_events').filter((q) => q.url.searchParams.get('at') === `eq.${S1}`);
+    expect(whole.map((q) => q.url.searchParams.get('offset') ?? '0')).toEqual(['0', '1000']);
+    expect(whole[0]?.url.searchParams.get('order')).toBe('settlement.asc,kind.asc,ref.asc,change.asc,overflow.asc,floored.asc,balance_after.asc');
+  });
+
   it('reads the shares whole, a page of rows at a time, however many a settlement has', async () => {
     /* 1,020 shares: a full page of a thousand, then the twenty past it, each on its line. */
     const act = (prefix: string, i: number) => `${prefix.slice(0, -4)}${String(i).padStart(4, '0')}`;
