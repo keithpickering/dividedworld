@@ -172,8 +172,9 @@
   "classes": {
     "face": { "fill": "#3db8ff", "ink": "#03141a", "large": "#8fd6ff" },
     "heel": { "fill": "#ff3d57", "ink": "#14030a", "large": "#ff959f" },
-    "lurker": { "fill": "#2ef0a0", "ink": "#03141a", "large": "#7dffc8" },
-    "jabroni": { "fill": "#ffd93d", "ink": "#1a1403", "large": "#ffe27a" }
+    "jabroni": { "fill": "#ffd93d", "ink": "#1a1403", "large": "#ffe27a" },
+    "technician": { "fill": "#2ef0a0", "ink": "#03141a", "large": "#7dffc8" },
+    "lurker": { "fill": "#b97aff", "ink": "#12051f", "large": "#d4b0ff" }
   },
   "orbs": {
     "gradients": [

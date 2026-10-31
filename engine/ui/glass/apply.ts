@@ -73,7 +73,7 @@ export const classLargeText: Readonly<Record<GlassSurface, ClassLargeDraw>> = {
   play: 'none',
   /* 03 react's quadrant labels are the classes' large colors at 22px Anton on the picker's smoke. */
   react: 'full',
-  /* 06 turn's four classes are named at 40px Anton on the modal's smoke, with no calm; Heel's 9% lift is for this. */
+  /* 06 turn's classes are named at 40px Anton on the modal's smoke, with no calm; Heel's 9% lift is for this. */
   turn: 'full',
   /* 08 hold's BREAK FREE is the ready-text token in the release's calm; the frame, the tag and the panel name no class. */
   effect: 'none',
