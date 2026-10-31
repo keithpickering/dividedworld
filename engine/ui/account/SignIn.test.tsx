@@ -178,26 +178,33 @@ describe('Sign in', () => {
     expect(box.getAttribute('aria-describedby')).toBe(alert.id);
   });
 
-  /* One sign-in a test: each is a whole flow typed key by key, and two in one test ran past the time limit on a loaded CI runner. */
+  /* Every address the screen goes to is recorded. The test renders the screen at any path, so once it reaches the page it
+     goes on to the index; that page is only a moment's address, and only the first step shows where the screen went. */
+  const record = () => {
+    const went: string[] = [];
+    for (const how of ['pushState', 'replaceState'] as const) {
+      const real = window.history[how].bind(window.history);
+      vi.spyOn(window.history, how).mockImplementation((data, unused, url) => { went.push(String(url)); real(data, unused, url); });
+    }
+    return went;
+  };
+
   test('after the code it returns to the page the player came from', async () => {
     const w = world();
     open(w, 'sign-in', '/sign-in?next=%2Fstandings');
     await ask('known@example.test');
+    const went = record();
     await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
-    await waitFor(() => expect(window.location.pathname).toBe('/standings'));
+    await waitFor(() => expect(went.length).toBeGreaterThan(0));
+    expect(went[0]).toBe('/standings');
   });
 
   test('after the code it returns only to a path on this site', async () => {
     const w = world();
     open(w, 'sign-in', '/sign-in?next=%2F%2Fevil.example%2Fx');
     await ask('known@example.test');
-    /* Every address the screen goes to is recorded: it ends on the index either way, since the screen goes on from any
-       page it lands on, so only the first step can show that it never went to the other site's path. */
-    const went: string[] = [];
-    for (const how of ['pushState', 'replaceState'] as const) {
-      const real = window.history[how].bind(window.history);
-      vi.spyOn(window.history, how).mockImplementation((data, unused, url) => { went.push(String(url)); real(data, unused, url); });
-    }
+    /* It ends on the index either way, so only every step can show that it never went to the other site's path. */
+    const went = record();
     await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
     await waitFor(() => expect(window.location.pathname).toBe('/'));
     expect(went.length).toBeGreaterThan(0);
