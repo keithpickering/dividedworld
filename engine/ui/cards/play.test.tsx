@@ -353,6 +353,16 @@ describe('the play form', () => {
     expect(spent).toBe(25);
   });
 
+  /* #86: the hand's postcards say their rules with the numbers the server prices with now, an admin's tuning included. */
+  test('a price an admin has tuned is the one a hand\'s postcard says', async () => {
+    const user = userEvent.setup();
+    const w = world({ ...instance, settings: { ...instance.settings, economy: { ...economy, 'whoops.price': 150 } } });
+    const saying = cards.map((c) => (c.key === 'whoops' ? { ...c, describe: (st: Instance['settings']) => `Splats a post for ${(st.economy['whoops.price']! / 100).toFixed(2)}.` } : c));
+    await open(w, saying);
+    await user.click(handButton());
+    expect(within(drawer()).getAllByRole('button', { name: /^Whoops!, Salty postcard/u })[0]).toHaveAccessibleDescription('Splats a post for 1.50.');
+  });
+
   /* #86: the server prices with the economy row an admin tunes; the form shows that price, not the compiled one. */
   test('a surcharge an admin has tuned is the one shown, and the one charged', async () => {
     const user = userEvent.setup();

@@ -127,9 +127,9 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   const [built, setBuilt] = useState(false);
   const [tool, setTool] = useState<'wash' | 'ink'>('wash');
   const [report, setReport] = useState('');
-  /** The readout is on the page before it holds anything, so what it gains is said as news. */
-  const [spoken, setSpoken] = useState(false);
-  useEffect(() => { setSpoken(true); }, []);
+  /** The lines a scrub has just uncovered, said as news; the lines readable before it are not said again. */
+  const [uncovered, setUncovered] = useState('');
+  const readBefore = useRef<ReadonlySet<number> | null>(null);
   const [view, setView] = useState<View | null>(null);
   /** How many layers' ink grids are held: none for a post that has left the viewport. */
   const [held, setHeld] = useState(0);
@@ -637,6 +637,18 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   /* Until the ink is built the post is treated as covered: nothing is read before the model says what is. */
   const hidden = anyLive && covers;
   const read = view && hidden ? view.lines.filter((_, i) => !view.covered[i]) : null;
+  /* What each change of the view uncovered: a line covered before and readable now. The first view only sets what was readable. */
+  const readNow = view ? view.lines.map((_, i) => i).filter((i) => !view.covered[i]) : null;
+  const readKey = readNow === null ? null : readNow.join(' ');
+  useEffect(() => {
+    if (!view || !readNow) return;
+    const before = readBefore.current;
+    readBefore.current = new Set(readNow);
+    if (!before) return;
+    const fresh = readNow.filter((i) => !before.has(i)).map((i) => view.lines[i]!.text);
+    if (fresh.length > 0) setUncovered(fresh.join(' '));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readKey]);
   /* The hint is the board's sentence for everyone; the author's own tools and what they save follow the button. */
   const note = 'This post is splatted. Drag across the ink to scrub it on your screen.';
   /* The plate's readout: how many layers hold ink, and how much of them is washed on this screen, as the model says (geometry, never a pixel read). */
@@ -681,14 +693,16 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
         )}
         <div ref={sudsRef} className="kb-whoops-suds" aria-hidden="true" />
       </div>
+      {read && read.length > 0 && (
+        <div className="kb-visually-hidden" data-kb-readout>
+          {read.map((line, i) => <span key={i}>{line.text} </span>)}
+        </div>
+      )}
       {/*
-        * What a screen reader hears, in regions on the page from the start (WCAG 4.1.3; #89 P2-1): the lines readable now, each line a
-        * scrub uncovers said as it is added, and the save's report. The readout fills only once it is mounted, so the lines already
-        * readable are not said again as news.
+        * What a screen reader is told, in regions on the page from the start and empty until they speak (WCAG 4.1.3; #89 P2-1): the
+        * lines a scrub has just uncovered, and the save's report. The readout above is for reading, never said as news.
         */}
-      <div className="kb-visually-hidden" data-kb-readout aria-live="polite">
-        {spoken && read?.map((line, i) => <span key={i}>{line.text} </span>)}
-      </div>
+      <p className="kb-visually-hidden" aria-live="polite" data-kb-uncovered>{uncovered}</p>
       <p className="kb-visually-hidden" role="status" data-kb-report>{report}</p>
       {/* The words and the controls are glass in the plate under the post, never in the post's 2003 body (the owner's notes on #80), drawn as one game piece (the owner on #80's shots): a readout, then tiles. */}
       {(anyLive || report) && (

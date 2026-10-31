@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'vitest';
 import type { CardRules } from '../../rules/cards.ts';
 import type { Settings } from '../../rules/types.ts';
-import { alignmentTag, faceOf, facesOf, orbs, priceOf } from './faces.ts';
+import { alignmentTag, faceOf, facesOf, orbs, priceOf, withCardEconomy } from './faces.ts';
 import type { CardUi } from './types.ts';
 
 const ok = { ok: true as const, value: undefined };
@@ -38,5 +38,15 @@ describe('what every screen knows of a card', () => {
   test('every card the instance sells, in its order, matched to its art by key', () => {
     expect(facesOf([plain, longer], [ui], settings).map((f) => [f.key, f.tagline])).toEqual([['a', ''], ['b', 'Short.']]);
     expect(alignmentTag('pepperoni')).toBe('Pepperoni');
+  });
+});
+
+describe('the economy a screen prices with', () => {
+  test('is the compiled one with the server\'s numbers laid over it, a key the server did not give, or gave as no number, the compiled one\'s', () => {
+    expect(withCardEconomy(settings, undefined)).toBe(settings);
+    expect(withCardEconomy(settings, {})).toBe(settings);
+    expect(withCardEconomy(settings, { 'b.price': 300 }).economy).toEqual({ 'a.price': 100, 'b.price': 300 });
+    expect(withCardEconomy(settings, { 'a.price': 'cheap', 'b.price': Number.NaN, 'c.step': 5 }).economy).toEqual({ 'a.price': 100, 'b.price': 250, 'c.step': 5 });
+    expect(faceOf(longer, ui, withCardEconomy(settings, { 'b.price': 300 })).price).toBe(300);
   });
 });

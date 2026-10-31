@@ -475,8 +475,7 @@ describe('what a screen reader is given', () => {
   test('with no ink left, the post is plain: nothing hidden, nothing read twice', () => {
     const { root } = mount({ states: { 'play-1': { state: { strokes: [], clean: true }, savedAt: '2026-10-29T22:00:00.000Z' } } });
     expect(root.querySelector('.kb-whoops-layout')).not.toHaveAttribute('inert');
-    /* The readout waits on the page, saying nothing: the post's own words are read, once. */
-    expect(root.querySelector('[data-kb-readout]')).toBeEmptyDOMElement();
+    expect(root.querySelector('[data-kb-readout]')).toBeNull();
   });
 });
 
@@ -988,17 +987,19 @@ describe('what the effect says to a screen reader', () => {
     expect(root.querySelector('[data-kb-report]')).toBe(region);
   });
 
-  test('a line uncovered is written into a polite region that was on the page before it', () => {
+  test('a line uncovered is said in a polite region that was on the page, empty, before it; the lines readable before are not said', () => {
     const { frame, root } = mount();
-    const region = root.querySelector<HTMLElement>('[data-kb-readout]');
+    const region = root.querySelector<HTMLElement>('[data-kb-uncovered]');
     expect(region).not.toBeNull();
     expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region).toBeEmptyDOMElement();
+    expect(root.querySelector('[data-kb-readout][aria-live]')).toBeNull();
     const ink = new LayerInk(splatFor(0), []);
     const line = Math.floor(ink.splat.placement.cy / ROW);
     const name = `L${String(line).padStart(2, '0')} alpha beta gamma`;
-    expect(region).not.toHaveTextContent(name);
     drag(frame, rowAcross(ink, (line + 0.5) * ROW));
     expect(region).toHaveTextContent(name);
-    expect(root.querySelector('[data-kb-readout]')).toBe(region);
+    expect(region).not.toHaveTextContent('L00 alpha beta gamma');
+    expect(root.querySelector('[data-kb-uncovered]')).toBe(region);
   });
 });
