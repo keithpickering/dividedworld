@@ -26,7 +26,7 @@
  *  - The Whoops! on #41 is Mrs. Hooligan's play of a card the player bought before the timeline begins;
  *    #41 is short, so the play costs nothing and moves no wallet (the timeline shows none), and the log
  *    reads it from the card ledger alone, in Mrs. Hooligan's lines and Spritey's, not Pipewrench's.
- *  - The Oct 29 settlement was made before the shares were kept (supabase/migrations/0034_ledger_shares.sql),
+ *  - The settlement at Oct 29 08:17 (scoring the window from Oct 28; the log says "for Oct 28") was made before the shares were kept (supabase/migrations/0034_ledger_shares.sql),
  *    so it has its lines and none, as the log shares plan's Task 4 asks; the wallet before it is seeded
  *    as it stood, with no history behind it.
  *  - Stick Around's release sentence is the play's own setting (its `config`), seeded on #44's play.
@@ -160,7 +160,7 @@ const economy = instance.settings.economy;
 /** The ink of the board's Whoops!: magenta, the Cards board's first swatch, and the seed the server chose for the play. */
 const WHOOPS_INK = { color: '#ff2bd6', seed: 20261029 };
 const WALLET_START = 562;
-/** What the Oct 29 settlement scored for the player's three characters, made before shares were kept: it brings the wallet to WALLET_START. */
+/** What the settlement at Oct 29 08:17 scored (for Oct 28; the board's "for Oct 29" is the next one, Oct 30 08:17) for the player's three characters, made before shares were kept: it brings the wallet to WALLET_START. */
 const SCORED_OCT_28 = [['pipewrench', 'heel.drewHeat', 25], ['hooligan', 'face.cheered', 15], ['spritey', 'jabroni.drewTheGroan', 10]] as const;
 /** What a Whoops! play costs on a post of this text: the card is paid for once, at the machine (#78), so only what a long post adds. */
 const surchargeOn = (body: string) => economy['whoops.perLength']! * Math.floor([...body].length / economy['whoops.lengthStep']!);
