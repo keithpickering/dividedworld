@@ -20,9 +20,8 @@
  *    `InstanceUi.copy.reducedMotionCard`, since the engine names no card, and reads as the board's.)
  *
  * Not compared: the smoke and its calms, which are the guards' (tools/check-glass-contrast.mjs and
- * e2e/glass-text.spec.ts). "Changes save as you make them." follows the Posts row where the board's
- * follows Read-outs, so it is held by its place (`position`), which the two rows' like heights keep
- * within the tolerance, and its type.
+ * e2e/glass-text.spec.ts). "Changes save as you make them." follows the build's own rows (Posts, and the card tips'
+ * row) where the board's follows Read-outs, so it is held by its words and type, not its place.
  */
 import type { BoardManifest, Landmark } from '../board-match.ts';
 
@@ -83,7 +82,8 @@ const manifest: BoardManifest = {
     { id: 'board-black-on-white', role: 'text', name: 'Black on white', within: 'board', box: 'none', type: false },
     { id: 'board-white-on-black', role: 'text', name: 'White on black', within: 'board', box: 'none' },
 
-    { id: 'saves', role: 'text', name: 'Changes save as you make them.', box: 'position' },
+    /* The build's Accessibility sections carry a row the board does not (Cards, "Show card tips again", the callout's way back: marks-and-the-lens plan, Task 7), so this line stands 211px lower than the board's: held by its words and type alone. */
+    { id: 'saves', role: 'text', name: 'Changes save as you make them.', box: 'none' },
   ],
 };
 

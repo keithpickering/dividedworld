@@ -13,9 +13,8 @@
  *
  * Left out until the part that builds them (the glass build plan, Part 3, the cards):
  *  - the splat itself on #41, which is pixels (the board's is a drawing in the same ink, the build's a
- *    seeded one: e2e/whoops.spec.ts reads it). "Hold to scrub" on #41 is found, and #41 carries its tag
- *    (cards Task 3, two lines and clear of the post's line: the owner's notes on #80) and its scrub
- *    sentence in a glass strip under the post (cards Task 5, the same notes).
+ *    seeded one: e2e/whoops.spec.ts reads it). #41 carries its marks in its date row, and "Hold to scrub" is the Lens's, opened
+ *    from the Whoops! mark (the marks-and-the-lens plan); neither the board nor this comparison draws them.
  * Left out because the fixture cannot hold it: the "3 new posts" bar, which is the thread's answer
  * to posts that arrive while the reader is higher up, and a seeded page has nothing arriving.
  * Not compared: the post counts and the avatars (the fixture's numbers and the board's placeholders),
@@ -123,13 +122,10 @@ const manifest: BoardManifest = {
     { id: 'post-42-play', role: 'link', name: 'Play Whoops! here', buildName: 'Play Whoops! on post 42', buildRole: 'button', within: 'post-42', box: 'none', type: false },
     /*
      * Whoops!'s keyboard path. The board draws #41's scrub sentence, "Scrub with the keyboard" in the 2003 button, inside the
-     * post's 2003 body; the build draws the sentence, "Hold to scrub" and the author's tools as one glass strip under the
-     * post, outside its chrome, by the owner's word (#80's notes: "a description of a postcard effect is pure glass, only the
-     * effect itself should be integrated with the game world's copy and styling", and game state "should not be in the 2003
-     * chrome"; the cards plan's Task 5 amendment, the glass plan's section 7 amendment of 2026-10-30). That region differs
-     * by that answer, so the button is found by its name and kind within the post and compared by neither box nor type.
+     * post's 2003 body. The build has no plate: "Hold to scrub" is a control of the Lens, which a mark on the post opens
+     * (the marks-and-the-lens design, sections 1 and 2), and the board draws neither marks nor a Lens, so there is nothing to
+     * find on the closed page. The Lens's own words and type are held by its stories (e2e/plays.spec.ts, e2e/glass-text.spec.ts).
      */
-    { id: 'post-41-scrub', role: 'button', name: 'Scrub with the keyboard', buildName: 'Hold to scrub', within: 'post-41', box: 'none', type: false },
 
     /*
      * The Game HUD, docked at the bottom of the window, is compared in full. The thread below #46 is

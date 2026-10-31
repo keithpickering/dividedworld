@@ -14,7 +14,7 @@
  *
  * A card is a button, and pressing it is the caller's to answer (engine/ui/cards/play.tsx): `armed` is
  * the key of the card that waits to be played ("Whoops! is armed. Every post it can land on now shows
- * Play Whoops! here"; its name says ", armed: pick a post", and it carries that as a floating tag and
+ * a dashed + mark beside its date. Press it to play Whoops! there"; its name says ", armed: pick a post", and it carries that as a floating tag and
  * pulses), and `onPick` is what pressing a card does. With neither, pressing a card shows its rules
  * in the sheet's line.
  */
@@ -122,7 +122,7 @@ export function Hand({ held, faces, armed = null, onPick, onClose, vendingHref }
       {inView && cards.length > 0 && (
         <p className="kb-hand-says kb-calm">
           {armed === inView.key
-            ? <>{inView.name} is armed. Every post it can land on now shows <b>Play {inView.name} here</b>.</>
+            ? <>{inView.name} is armed. Every post it can land on now shows a dashed <b>+ mark</b> beside its date. Press it to play {inView.name} there.</>
             : <><b>{inView.name}.</b> {inView.summary}</>}
         </p>
       )}

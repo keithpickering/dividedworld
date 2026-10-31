@@ -193,9 +193,9 @@ function PlayRow({ play, caster, card, view, tallies, mine, compare, to, onSpin 
   const hosted = useLensHost() !== document.body;
   return (
     <li className="kb-lens-row" data-kb-play={play.id}>
-      <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · played <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
+      <p className="kb-lens-by kb-calm"><span className="kb-lens-who kb-glass-display">{caster}</span> · played <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
-      {note && <p className="kb-lens-note">{note}</p>}
+      {note && <p className="kb-lens-note kb-calm">{note}</p>}
       {more && <p className="kb-lens-more">More reactions than the post</p>}
       {yours && <p className="kb-lens-yours">Your play</p>}
       <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} look="glass" />
@@ -351,7 +351,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
             return (
               <button
                 key={kind} ref={(el) => { if (el) tabs.current.set(kind, el); else tabs.current.delete(kind); }}
-                type="button" role="tab" id={tabId(kind)} className="kb-lens-tab kb-glass-display" aria-selected={selected} aria-controls={selected ? panelId : undefined}
+                type="button" role="tab" id={tabId(kind)} className="kb-lens-tab kb-glass-display kb-calm" aria-selected={selected} aria-controls={selected ? panelId : undefined}
                 tabIndex={selected ? 0 : -1} data-kb-card={kind} onClick={() => store.select(kind)}
               >{label}</button>
             );

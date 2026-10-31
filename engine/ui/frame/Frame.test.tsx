@@ -268,7 +268,7 @@ describe('the hand', () => {
     const hand = await screen.findByRole('button', { name: 'Hand, 3 postcards' });
     await userEvent.click(hand);
     await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard' }));
-    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is armed. Press Play Stick Around here on a post, or press Armed to put it back.');
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is armed. Press the dashed + mark beside a post\'s date to play Stick Around there, or press Armed to put it back.');
     const armed = screen.getByRole('button', { name: 'Armed · Stick Around, press to put it back' });
     expect(armed).not.toHaveAttribute('aria-expanded');
     await userEvent.click(armed);
@@ -281,7 +281,7 @@ describe('the hand', () => {
     setup();
     await userEvent.click(await screen.findByRole('button', { name: 'Hand, 3 postcards' }));
     await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Stick Around, Sweet postcard' }));
-    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is armed. Press Play Stick Around here on a post, or Esc to put it back.');
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Stick Around is armed. Press the dashed + mark beside a post\'s date to play Stick Around there, or Esc to put it back.');
     expect(screen.getByRole('button', { name: 'Hand, 3 postcards, open' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Armed/u })).toBeNull();
   });

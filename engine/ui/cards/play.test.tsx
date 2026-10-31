@@ -182,7 +182,7 @@ describe('where the ghost mark stands', () => {
 });
 
 describe('arming a card', () => {
-  test('each post the card can land on shows "Play Whoops! here", and a post already carrying three shows none', async () => {
+  test('each post the card can land on shows its ghost mark, "Play Whoops! on post N", and a post already carrying three shows none', async () => {
     const user = userEvent.setup();
     const w = world();
     await open(w);
@@ -230,7 +230,7 @@ describe('arming a card', () => {
     const w = world();
     await open(w);
     await arm(user);
-    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is armed. Press Play Whoops! here on a post, or Esc to put it back.');
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is armed. Press the dashed + mark beside a post\'s date to play Whoops! there, or Esc to put it back.');
     await user.keyboard('{Escape}');
     expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is put back.');
   });

@@ -1,11 +1,11 @@
 /**
  * What playing a card is, on a screen (the cards plan's Task 3; the screens' design, section 9):
  * which card is armed, whether the hand is open, and which play form is open.
- * The Frame holds it once, so the HUD's hand, a post's "Play Whoops! here" and the form all read
+ * The Frame holds it once, so the HUD's hand, a post's ghost mark ("Play Whoops! on post 41") and the form all read
  * the same state, and none of them owns another's.
  *
  * One way leads to the form (the owner: a game act is glass, so no post's row offers "Play card"):
- * from the hand, picking a card arms it, every post it can land on shows "Play Whoops! here", and
+ * from the hand, picking a card arms it, every post it can land on shows a dashed + mark, "Play Whoops! on post N", and
  * pressing one opens the form on that post. An armed card is a state like any other and names its
  * way out: Esc, the armed card pressed again, or playing it.
  *
@@ -97,7 +97,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const arm = useCallback((card: string | null) => {
     const was = armedNow.current;
     setArmed(card);
-    if (card !== null) setSaid(`${nameOf(card)} is armed. Press Play ${nameOf(card)} here on a post, or ${phone.current ? 'press Armed' : 'Esc'} to put it back.`);
+    if (card !== null) setSaid(`${nameOf(card)} is armed. Press the dashed + mark beside a post's date to play ${nameOf(card)} there, or ${phone.current ? 'press Armed' : 'Esc'} to put it back.`);
     else if (was !== null) setSaid(`${nameOf(was)} is put back.`);
   }, [nameOf, setArmed, setSaid]);
   const openForm = useCallback((card: string, target: PlayTarget) => {
