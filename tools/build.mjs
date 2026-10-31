@@ -80,6 +80,8 @@ export const STEPS = [
   'node tools/check-theme.mjs',
   'node tools/test-web-reads.mjs',
   'node tools/check-web-reads.mjs',
+  'node tools/test-id-reads.mjs',
+  'node tools/check-id-reads.mjs',
   'node tools/test-name-folds.mjs',
   'node tools/check-name-folds.mjs',
   'npm run test:engine',
