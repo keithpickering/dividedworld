@@ -212,11 +212,11 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, compa
   /* Gone with its Lens open (the post left the page): the page's Lens is closed with it. */
   useEffect(() => () => { if (store.get()?.owner === owner) store.close(); }, [store, owner]);
   const onOpen = useCallback<Open>((kind, opener) => store.toggle({ owner, card: kind, opener }), [store, owner]);
-  const fallback = useCallback(() => anchor.current?.querySelector<HTMLElement>('button') ?? null, []);
+  const strip = useCallback(() => anchor.current, []);
   return (
     <span className="kb-marks-anchor" ref={anchor}>
       <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} compare={compare} open={open?.card ?? null} onOpen={onOpen} />
-      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} fallback={fallback} onSpin={onSpin} />}
+      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} />}
     </span>
   );
 }

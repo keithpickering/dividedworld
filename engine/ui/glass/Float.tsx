@@ -16,11 +16,11 @@
  * and again at most once a frame on scroll, resize and a change of its own size, measured from its unplaced state. The glow
  * of its ink is a drop shadow on the wrapper, which the dialog's chamfer does not clip (#100's missing glow).
  */
-import { useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { useLayoutEffect, useRef, type CSSProperties, type KeyboardEventHandler, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { modalOpen } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
-import { isEditable } from './keys.ts';
+import { pageEscape } from './keys.ts';
 import { hudTopOf, placePopover } from './place.ts';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
@@ -46,6 +46,8 @@ export interface FloatProps {
   readonly returnFocusTo?: () => HTMLElement | null;
   /** Told where it was placed, each time it is. */
   readonly onPlace?: (place: FloatPlace) => void;
+  /** Keys typed inside the float (React events: those of a surface portaled from it arrive too, so a handler checks the target). */
+  readonly onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   readonly className?: string;
   /** The dialog's own style over its smoke's (the Lens sets its tab's ink). */
   readonly style?: CSSProperties;
@@ -62,8 +64,14 @@ const MARGIN = 4;
 /** A sheet's share of the room above the HUD, so the post stays in view above it. */
 const SHEET_SHARE = 0.55;
 
+/**
+ * Where a placement put the float, and for a sheet how far the page must scroll (`over`, in px; none or less is none) to bring the
+ * anchor above it, and where the sheet's top edge is (`sheetTop`): the caller scrolls when the edge moves, not on every placement.
+ */
+export interface Placement { readonly at: FloatPlace; readonly over: number; readonly sheetTop: number | null }
+
 /** Places `wrap` (the float and its glow) as the module comment says, measured from its unplaced state; returns where it took. */
-function place(wrap: HTMLElement, box: HTMLElement, anchor: HTMLElement, beside: HTMLElement | null, sheet: boolean): FloatPlace {
+export function placeFloat(wrap: HTMLElement, box: HTMLElement, anchor: HTMLElement, beside: HTMLElement | null, sheet: boolean): Placement {
   for (const k of ['top', 'left', 'right', 'bottom', 'maxWidth', 'width'] as const) wrap.style[k] = '';
   box.style.maxHeight = '';
   const viewport = { width: document.documentElement.clientWidth || window.innerWidth, height: window.innerHeight };
@@ -76,11 +84,8 @@ function place(wrap: HTMLElement, box: HTMLElement, anchor: HTMLElement, beside:
     wrap.style.bottom = `${Math.max(0, viewport.height - hudTop)}px`;
     const room = Math.max(0, Math.floor((hudTop - MARGIN) * SHEET_SHARE));
     box.style.maxHeight = `${room}px`;
-    /* The post is scrolled so the anchor's marks sit just above the sheet; a post that is already above it is left. */
     const top = hudTop - Math.min(room, box.scrollHeight + (box.offsetHeight - box.clientHeight));
-    const over = a.bottom - (top - GAP);
-    if (over > 0 && typeof window.scrollBy === 'function') window.scrollBy(0, over);
-    return 'sheet';
+    return { at: 'sheet', over: a.bottom - (top - GAP), sheetTop: top };
   }
   const r = box.getBoundingClientRect();
   const height = box.scrollHeight + (r.height - box.clientHeight);
@@ -91,7 +96,7 @@ function place(wrap: HTMLElement, box: HTMLElement, anchor: HTMLElement, beside:
     wrap.style.left = `${post.right + GUTTER}px`;
     wrap.style.top = `${Math.min(Math.max(a.top, MARGIN), Math.max(MARGIN, hudTop - MARGIN - tall))}px`;
     if (height > room) box.style.maxHeight = `${room}px`;
-    return 'side';
+    return { at: 'side', over: 0, sheetTop: null };
   }
   const p = placePopover({
     button: a, container: { left: a.left, top: 0, right: a.right, bottom: 0 }, size: { width: r.width, height },
@@ -101,20 +106,24 @@ function place(wrap: HTMLElement, box: HTMLElement, anchor: HTMLElement, beside:
   wrap.style.left = `${p.left + a.left}px`;
   wrap.style.maxWidth = `${p.maxWidth}px`;
   if (p.maxHeight !== null) box.style.maxHeight = `${p.maxHeight}px`;
-  return p.side === 'below' ? 'under' : 'above';
+  return { at: p.side === 'below' ? 'under' : 'above', over: 0, sheetTop: null };
 }
 
-export function Float({ label, surface, onClose, children, anchor, beside, sheet, host, returnFocusTo, onPlace, className, style, wrapStyle, data }: FloatProps) {
+export function Float({ label, surface, onClose, children, anchor, beside, sheet, host, returnFocusTo, onPlace, onKeyDown, className, style, wrapStyle, data }: FloatProps) {
   const wrap = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const calm = useSurfaceStyle(surface);
   const latest = useRef({ onClose, onPlace, returnFocusTo });
   latest.current = { onClose, onPlace, returnFocusTo };
 
-  /* Esc is the float's when no modal surface is open over it and the key is a deliberate press outside a text field. */
+  /*
+   * Esc is the float's when no modal surface is open over it and the key is a deliberate press outside a text field (the page's own
+   * test, glass/keys.ts). It listens in the capture phase of the document and answers the key, so the float closes before the HUD's
+   * Menu or the glass page's Back hears an Esc (they listen later, and an answered key is theirs no longer).
+   */
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented || e.repeat || e.isComposing || modalOpen() || isEditable(e.target)) return;
+      if (!pageEscape(e) || modalOpen()) return;
       e.preventDefault();
       e.stopPropagation();
       latest.current.onClose();
@@ -141,19 +150,37 @@ export function Float({ label, surface, onClose, children, anchor, beside, sheet
     const b = box.current;
     if (!w || !b) return;
     let last: FloatPlace | null = null;
+    let lastKey = '';
+    let lastSheetTop: number | null = null;
     let frame: number | null = null;
     const now = () => {
       frame = null;
       const target = anchor.current;
-      if (!target) return;
+      /* Never from an anchor that has left the page: a mark can be replaced by "+N" as the strip narrows, and the anchor says the live one. */
+      if (!target || !target.isConnected) return;
+      /* Placing is measuring and writing; with the anchor, the post, the window and the float's own size where they were, it is skipped. */
+      const a = target.getBoundingClientRect();
+      const post = beside?.current?.getBoundingClientRect();
+      const viewport = [document.documentElement.clientWidth || window.innerWidth, window.innerHeight];
+      const key = [a.top, a.left, a.right, a.bottom, post?.right, b.offsetWidth, b.scrollHeight, sheet, viewport[0], viewport[1], hudTopOf(viewport[1]!)].join(',');
+      if (key === lastKey) return;
+      lastKey = key;
       /* Unplaced for the measuring, the box is no scroller, so where it was scrolled to is put back after. */
       const scrolled = b.scrollTop;
-      const at = place(w, b, target, beside?.current ?? null, sheet);
+      const placed = placeFloat(w, b, target, beside?.current ?? null, sheet);
       b.scrollTop = scrolled;
-      latest.current.onPlace?.(at);
+      /*
+       * A sheet scrolls the post so its marks sit just above it: on open and when the sheet's edge moves (its size changed), never
+       * for a scroll, which would fight a reader scrolling the page.
+       */
+      if (placed.at === 'sheet') {
+        if (placed.sheetTop !== lastSheetTop && placed.over > 0 && typeof window.scrollBy === 'function') window.scrollBy(0, placed.over);
+        lastSheetTop = placed.sheetTop;
+      } else lastSheetTop = null;
+      latest.current.onPlace?.(placed.at);
       /* A change of side lays what it holds out anew, so it is measured again once that has landed. */
-      if (last !== null && at !== last) soon();
-      last = at;
+      if (last !== null && placed.at !== last) { lastKey = ''; soon(); }
+      last = placed.at;
     };
     /* Placing reads the layout, so the events that ask for it (a scroll brings many) are gathered into one placement a frame. */
     const soon = () => { if (frame === null) frame = requestAnimationFrame(now); };
@@ -175,7 +202,7 @@ export function Float({ label, surface, onClose, children, anchor, beside, sheet
   return createPortal(
     <div ref={wrap} className="kb-glass kb-float" style={wrapStyle}>
       <div
-        ref={box} className={`kb-glass-dialog kb-glass-cut-dialog kb-float-box${className ? ` ${className}` : ''}`} role="dialog" aria-modal="false" aria-label={label} tabIndex={-1}
+        ref={box} className={`kb-glass-dialog kb-glass-cut-dialog kb-float-box${className ? ` ${className}` : ''}`} role="dialog" aria-modal="false" aria-label={label} tabIndex={-1} onKeyDown={onKeyDown}
         style={{ ...calm, ...style }}
         {...Object.fromEntries(Object.entries(data ?? {}).map(([k, v]) => [`data-${k}`, v]))}
       >

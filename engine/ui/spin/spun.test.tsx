@@ -129,6 +129,17 @@ describe('the Spun-into hook', () => {
     expect(seen.every((n) => n === 1)).toBe(true);
   });
 
+  test('a re-read that fails keeps the answer it had, shown now and read again by the next ask', async () => {
+    const { loader, many, tick } = setup({ a: 2 });
+    const first = await loader.ask('a');
+    tick(SPUN_TTL_MS + 1);
+    many.mockRejectedValueOnce(new Error('down'));
+    expect(await loader.ask('a')).toBe(first);
+    expect(loader.peek('a')).toBe(first);
+    expect((await loader.ask('a')).threads).toHaveLength(2);
+    expect(many).toHaveBeenCalledTimes(3);
+  });
+
   test('the loader\'s peek gives a stale answer while it is read again, and none for an Act it was never asked about or has forgotten', async () => {
     const { loader, many, tick } = setup({ a: 2 });
     expect(loader.peek('a')).toBeNull();

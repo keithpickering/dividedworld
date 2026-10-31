@@ -4,7 +4,7 @@
  * kit) and Who (a play's row: the #97 panel's content, reached for every play of the kind). It never dims or blocks the
  * page, and closes by Esc, its ×, its mark, another post's Lens or leaving the page, giving focus back to the mark.
  */
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -12,6 +12,7 @@ import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
+import { LensProvider, useLensFor, useLensStore } from './Lens.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 
 beforeEach(() => {
@@ -416,6 +417,149 @@ describe('a Lens that does not block the page', () => {
     await userEvent.click(await markOf(2, 'Card 2'));
     await act(async () => {});
     expect(lens()).toHaveAttribute('data-kb-lens', 'sheet');
+  });
+});
+
+
+describe('the tablist', () => {
+  test('has a label of its own, distinct from the dialog\'s', async () => {
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    expect(within(lens()).getByRole('tablist', { name: 'Card kinds' })).toBeInTheDocument();
+    expect(lens()).toHaveAccessibleName('Cards on this post');
+  });
+
+  test('focus moves to the open tab without scrolling the page', async () => {
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    const mark = await markOf(2, 'Card 2');
+    const real = HTMLElement.prototype.focus;
+    const calls: Array<[Element, unknown]> = [];
+    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement, options?: FocusOptions) { calls.push([this, options]); return real.call(this, options); });
+    await userEvent.click(mark);
+    const onTab = calls.filter(([el]) => el === tab('Card 2'));
+    expect(onTab.length).toBeGreaterThan(0);
+    expect(onTab[0]![1]).toEqual({ preventScroll: true });
+  });
+});
+
+describe('Who across tabs', () => {
+  test('stays unfolded when the tab changes, and is folded again by the next Lens', async () => {
+    width(false);
+    const w = world();
+    const a = w.play('k2');
+    const b = w.play('k3');
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 3'));
+    await userEvent.click(whoButton());
+    expect(rows()).toEqual([b]);
+    await userEvent.click(tab('Card 2'));
+    expect(whoButton()).toHaveAttribute('aria-expanded', 'true');
+    expect(rows()).toEqual([a]);
+    await userEvent.click(tab('Card 3'));
+    expect(rows()).toEqual([b]);
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(await markOf(2, 'Card 3'));
+    expect(rows()).toEqual([]);
+  });
+});
+
+describe('the Tab order around a Lens drawn at the end of the body', () => {
+  test('Tab past its last control goes to the element after the mark, Shift+Tab before its first goes back to the mark, and it stays open', async () => {
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    const mark = await markOf(2, 'Card 2');
+    await userEvent.click(mark);
+    /* The first stop is the open tab and the last is Who's disclosure. */
+    expect(tab('Card 2')).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(mark).toHaveFocus();
+    expect(lens()).toBeInTheDocument();
+    whoButton().focus();
+    await userEvent.tab();
+    expect(within(await article(2)).getByRole('link', { name: 'Permalink to post #2' })).toHaveFocus();
+    expect(lens()).toBeInTheDocument();
+  });
+});
+
+describe('the Lens follows its mark', () => {
+  test('a mark that leaves the strip (it narrows) is replaced as the anchor by the "+N" that now hides its kind, and nothing is measured from a detached node', async () => {
+    const listeners = new Set<() => void>();
+    const query = { matches: false, media: '(max-width: 40em)', addEventListener: (_: string, l: () => void) => listeners.add(l), removeEventListener: (_: string, l: () => void) => listeners.delete(l), addListener: () => {}, removeListener: () => {} };
+    vi.stubGlobal('matchMedia', () => query as unknown as MediaQueryList);
+    const w = world();
+    for (const k of KEYS) w.play(k);
+    open(w);
+    const post = await article(2);
+    /* Billing is newest first: k6 k5 k4 k3 are drawn on a desktop, and k3 is the last. */
+    const mark = await within(post).findByRole('button', { name: /^Card 3, 1 play/u });
+    await userEvent.click(mark);
+    const measured: Element[] = [];
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) { measured.push(this); return real.call(this); });
+    query.matches = true;
+    await act(async () => { for (const l of [...listeners]) l(); });
+    expect(mark.isConnected).toBe(false);
+    expect(lens()).toBeInTheDocument();
+    measured.length = 0;
+    await act(async () => { window.dispatchEvent(new Event('resize')); await new Promise((r) => setTimeout(r, 40)); });
+    expect(measured.length).toBeGreaterThan(0);
+    expect(measured.filter((el) => !el.isConnected)).toEqual([]);
+    expect(measured.some((el) => el.classList.contains('kb-mark-more'))).toBe(true);
+  });
+});
+
+describe('the first frame of a row', () => {
+  test('has the count of threads spun from the play when the page has read it', async () => {
+    width(false);
+    const w = world();
+    const play = w.play('k2', w.spritey);
+    await w.fake.spin(play, w.pipe, 'All about the ink', '');
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    /* A synchronous click: nothing but the first frame is drawn when it returns. */
+    fireEvent.click(whoButton());
+    const row = lens().querySelector<HTMLElement>(`[data-kb-play="${play}"]`)!;
+    expect(within(row).getByText('1 thread spun from this play')).toBeInTheDocument();
+  });
+});
+
+describe('the page\'s one Lens', () => {
+  test('leaving the page closes it', () => {
+    let grab!: ReturnType<typeof useLensStore>;
+    function Probe() { grab = useLensStore(); return null; }
+    const view = render(<LensProvider><Probe /></LensProvider>);
+    grab.toggle({ owner: 'a', card: 'k1', opener: document.body });
+    expect(grab.get()?.card).toBe('k1');
+    view.unmount();
+    expect(grab.get()).toBeNull();
+  });
+
+  test('opening a Lens wakes the strip that owns it and no other', () => {
+    const renders = { a: 0, b: 0 };
+    let grab!: ReturnType<typeof useLensStore>;
+    function Strip({ owner }: { readonly owner: 'a' | 'b' }) {
+      const store = useLensStore();
+      grab = store;
+      useLensFor(store, owner);
+      renders[owner]++;
+      return null;
+    }
+    render(<LensProvider><Strip owner="a" /><Strip owner="b" /></LensProvider>);
+    const [a0, b0] = [renders.a, renders.b];
+    act(() => grab.toggle({ owner: 'a', card: 'k1', opener: document.body }));
+    expect([renders.a - a0, renders.b - b0]).toEqual([1, 0]);
+    act(() => grab.toggle({ owner: 'b', card: 'k1', opener: document.body }));
+    expect([renders.a - a0, renders.b - b0]).toEqual([2, 1]);
+    act(() => grab.select('k2'));
+    expect([renders.a - a0, renders.b - b0]).toEqual([2, 2]);
   });
 });
 

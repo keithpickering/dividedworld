@@ -24,7 +24,7 @@ export interface ModalProps {
   readonly returnFocusTo?: () => HTMLElement | null;
 }
 
-const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+export const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /*
  * A control taken out of the Tab order (`tabindex="-1"`, as a roving grid does with all but its one
@@ -36,7 +36,7 @@ const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([ty
 const unchosen = (el: HTMLElement, box: HTMLElement) =>
   el instanceof HTMLInputElement && el.type === 'radio' && el.name !== '' && !el.checked
   && [...box.querySelectorAll<HTMLInputElement>('input[type="radio"]')].some((r) => r.name === el.name && r.form === el.form && r.checked);
-const tabbables = (box: HTMLElement) => [...box.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => !el.closest('[hidden]') && el.getAttribute('aria-hidden') !== 'true' && el.tabIndex >= 0 && !unchosen(el, box));
+export const tabbables = (box: HTMLElement) => [...box.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => !el.closest('[hidden]') && el.getAttribute('aria-hidden') !== 'true' && el.tabIndex >= 0 && !unchosen(el, box));
 
 /* The open modals, lowest first. A parent renders before its child, so its sequence number is lower even though a child's effects run first. */
 interface Entry { readonly seq: number; overlay: HTMLElement | null }

@@ -30,6 +30,7 @@ import {
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
+import { tabbables } from '../modal.tsx';
 import { usePlayer } from '../player.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import type { Mine } from '../reactions/mine.ts';
@@ -194,15 +195,17 @@ function PlayRow({ play, caster, card, view, store, tallies, mine, compare, to, 
 
 const NAMES_SHOWN = 3;
 
-function Who({ plays, nameOf, card, ...row }: Omit<RowProps, 'play' | 'caster'> & { readonly plays: readonly CardPlay[]; readonly nameOf: (character: Id | null) => string }) {
-  const [unfolded, setUnfolded] = useState(false);
+/** Whether Who is unfolded is the Lens's, so it stays as it is when the tab changes and starts folded with the next Lens. */
+function Who({ plays, nameOf, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster'> & {
+  readonly plays: readonly CardPlay[]; readonly nameOf: (character: Id | null) => string; readonly unfolded: boolean; readonly onToggle: () => void;
+}) {
   const id = useId();
   const casters = [...new Set(plays.map((p) => nameOf(p.caster)))];
   const shown = casters.slice(0, NAMES_SHOWN).join(', ');
   const rest = casters.length - NAMES_SHOWN;
   return (
     <div className="kb-lens-section kb-lens-who-section">
-      <button type="button" className="kb-lens-fold" aria-expanded={unfolded} aria-controls={id} onClick={() => setUnfolded((u) => !u)}>
+      <button type="button" className="kb-lens-fold" aria-expanded={unfolded} aria-controls={id} onClick={onToggle}>
         <span className="kb-lens-fold-sign" aria-hidden="true">{unfolded ? '▾' : '▸'}</span>
         {playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}
       </button>
@@ -224,13 +227,13 @@ export interface LensProps {
   readonly compare: boolean;
   readonly to: string | null;
   readonly nameOf: (character: Id | null) => string;
-  /** Where focus goes when the mark that opened it is gone by the time it closes. */
-  readonly fallback?: () => HTMLElement | null;
+  /** The strip of marks the Lens opened from: where the mark of its kind (or the "+N" that hides it) is found again if the mark that opened it has left the page. */
+  readonly strip?: () => HTMLElement | null;
   /** Spin a thread from a play: the Lens has closed. */
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
 }
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, fallback, onSpin }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin }: LensProps) {
   const { instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useNarrow();
@@ -242,16 +245,31 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const view = useResolvedView(plays, post, open.card);
   const ids = useId();
   const tabs = useRef(new Map<string, HTMLButtonElement>());
-  const anchor = useMemo(() => ({ current: open.opener }), [open.opener]);
-  const beside = useMemo(() => ({ current: open.opener.closest<HTMLElement>('article, .kb-origin') }), [open.opener]);
+  /*
+   * The anchor is live: the mark that opened the Lens can leave the page (a strip that narrows folds it into "+N", one that widens
+   * unfolds "+N" into it), so it is the opener while that is on the page, else the strip's mark for this kind, else its "+N".
+   */
+  const live = useRef({ open, strip });
+  live.current = { open, strip };
+  const anchor = useMemo(() => ({
+    get current(): HTMLElement | null {
+      const { open: o, strip: s } = live.current;
+      if (o.opener.isConnected) return o.opener;
+      const root = s?.() ?? null;
+      const marks = [...(root?.querySelectorAll<HTMLElement>('.kb-mark') ?? [])];
+      return marks.find((m) => m.getAttribute('data-kb-card') === o.card) ?? marks.find((m) => m.classList.contains('kb-mark-more')) ?? marks[0] ?? null;
+    },
+  }), []);
+  const beside = useMemo(() => ({ get current(): HTMLElement | null { return anchor.current?.closest<HTMLElement>('article, .kb-origin') ?? null; } }), [anchor]);
+  const [unfolded, setUnfolded] = useState(false);
   /* Esc and × are a deliberate close: focus goes back to the mark whatever held it (a press on the post moves it to the post). */
   const dismiss = () => {
     store.close();
-    queueMicrotask(() => { (open.opener.isConnected ? open.opener : fallback?.())?.focus(); });
+    queueMicrotask(() => { anchor.current?.focus(); });
   };
   const [placed, setPlaced] = useState<FloatPlace>(narrow ? 'sheet' : 'side');
   /* On open, focus moves to the open tab. */
-  useLayoutEffect(() => { tabs.current.get(open.card)?.focus(); }, []);
+  useLayoutEffect(() => { tabs.current.get(open.card)?.focus({ preventScroll: true }); }, []);
   if (card === null) return null;
 
   const rules = instance.cards.find((c) => c.key === card);
@@ -274,16 +292,38 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     tabs.current.get(next)?.focus();
   };
 
+  /*
+   * The Lens is drawn at the end of the body, so Tab would carry a reader out of the page from its last control, and Shift+Tab into
+   * the page's last element from its first. Past its last control Tab goes to the element after the mark that opened it; before
+   * its first, Shift+Tab goes back to the mark. The Lens stays open either way. (Keys typed in a picker opened from a row arrive
+   * here too, through React's tree, and are the picker's.)
+   */
+  const leave = (e: KeyboardEvent<HTMLDivElement>) => {
+    const box = e.currentTarget;
+    if (e.key !== 'Tab' || e.defaultPrevented || !(e.target instanceof Node) || !box.contains(e.target)) return;
+    const stops = tabbables(box);
+    const mark = anchor.current;
+    if (stops.length === 0 || !mark) return;
+    const at = document.activeElement;
+    if (e.shiftKey && at === stops[0]) {
+      e.preventDefault();
+      mark.focus();
+    } else if (!e.shiftKey && at === stops[stops.length - 1]) {
+      const next = tabbables(document.body).find((el) => !box.contains(el) && !mark.contains(el) && (mark.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+      if (next) { e.preventDefault(); next.focus(); }
+    }
+  };
+
   return (
     <Float
       label="Cards on this post" surface="effect" anchor={anchor} beside={beside} sheet={narrow} host={host}
-      returnFocusTo={fallback} onClose={dismiss} onPlace={setPlaced} className="kb-lens"
+      returnFocusTo={() => anchor.current} onClose={dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
       style={ink ? ({ '--kb-lens-ink': ink } as CSSProperties) : undefined}
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}
       data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined }}
     >
       <div className="kb-lens-bar">
-        <div className="kb-lens-tabs" role="tablist" aria-label="Cards on this post" onKeyDown={move}>
+        <div className="kb-lens-tabs" role="tablist" aria-label="Card kinds" onKeyDown={move}>
           {kinds.map((kind) => {
             const label = instance.cards.find((c) => c.key === kind)?.name ?? kind;
             const selected = kind === card;
@@ -308,7 +348,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         <Who
-          key={card} plays={rowPlays} nameOf={nameOf} card={name} view={view} store={plays} tallies={tallies} mine={mine} compare={compare} to={to}
+          plays={rowPlays} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} store={plays} tallies={tallies} mine={mine} compare={compare} to={to}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />
       </div>

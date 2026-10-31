@@ -44,7 +44,10 @@ const shape = (all: readonly ThreadSummary[], saturated: boolean): Spun => ({
 
 export interface SpunLoader {
   ask(act: Id): Promise<Spun>;
-  /** Forget an Act's answer, after a spin from it. */
+  /**
+   * Forget an Act's answer, after a spin from it. A row already showing the Act keeps its count until it is drawn again: the spin
+   * navigates to the new thread (SpinForm), so no row for the Act outlives it.
+   */
   forget(act: Id): void;
   /** What is known of an Act right now, without asking: its read answer, or the one it had before it was asked about again; null if it has none. */
   peek(act: Id): Spun | null;
@@ -58,8 +61,18 @@ export function createSpunLoader(api: KayfaApi, now: () => number): SpunLoader {
   const queue = new Map<Id, { readonly entry: Entry; readonly resolve: (s: Spun | null) => void }>();
   let scheduled = false;
 
-  /* A failed read forgets only its own entry: one asked for again since is another read's. */
-  const failed = (id: Id, entry: Entry) => { if (cache.get(id) === entry) cache.delete(id); };
+  /*
+   * A failed read forgets only its own entry: one asked for again since is another read's. An Act that had an answer before it was
+   * asked about again keeps that answer (shown now, and stale so the next ask reads again), so a count already on screen does not
+   * fall back to none for a read that did not get through; one that never had an answer is not remembered.
+   */
+  const lose = (id: Id, entry: Entry, resolve: (s: Spun | null) => void) => {
+    if (cache.get(id) === entry) {
+      if (entry.prior) cache.set(id, { at: Number.NEGATIVE_INFINITY, promise: Promise.resolve(entry.prior), value: entry.prior });
+      else cache.delete(id);
+    }
+    resolve(entry.prior ?? null);
+  };
 
   async function alone(id: Id): Promise<Spun> {
     const all = await api.spunFrom(id);
@@ -78,12 +91,12 @@ export function createSpunLoader(api: KayfaApi, now: () => number): SpunLoader {
         if (threads.length >= SPUN_READ_LIMIT) {
           /* Cut at the limit: whose lists are whole is unknown, so each is read alone. */
           await Promise.all(part.map(async ([id, { entry, resolve }]) => {
-            try { resolve(await alone(id)); } catch { failed(id, entry); resolve(null); }
+            try { resolve(await alone(id)); } catch { lose(id, entry, resolve); }
           }));
           return;
         }
         for (const [id, { resolve }] of part) resolve(shape(threads.filter((t) => t.originActId === id), false));
-      }).catch(() => { for (const [id, { entry, resolve }] of part) { failed(id, entry); resolve(null); } });
+      }).catch(() => { for (const [id, { entry, resolve }] of part) lose(id, entry, resolve); });
     }
   }
 

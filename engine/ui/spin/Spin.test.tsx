@@ -17,6 +17,22 @@ afterEach(() => { vi.restoreAllMocks(); });
 const spinLink = (within_: HTMLElement) => within(within_).getByRole('button', { name: 'Spin thread' });
 
 describe('the Spin thread link', () => {
+  test('toggled off, a form keeps what was typed for the next time it is opened; Cancel throws it away', async () => {
+    const w = threadWorld(3);
+    openThread(w);
+    const article = await screen.findByRole('article', { name: /^Post 2 /u });
+    const link = () => within(article).getAllByRole('button', { name: 'Spin thread' }).find((b) => b.hasAttribute('aria-expanded'))!;
+    await userEvent.click(link());
+    await userEvent.type(within(article).getByLabelText('Thread title'), 'Keep me');
+    await userEvent.click(link());
+    expect(within(article).queryByRole('form')).toBeNull();
+    await userEvent.click(link());
+    expect(within(article).getByLabelText('Thread title')).toHaveValue('Keep me');
+    await userEvent.click(within(article).getByRole('button', { name: 'Cancel' }));
+    await userEvent.click(link());
+    expect(within(article).getByLabelText('Thread title')).toHaveValue('');
+  });
+
   test('is on every kind of Act, The System\'s board included', async () => {
     const w = threadWorld(3);
     w.fake.seed.card(w.pipe, w.ids[1]!, 'whoops', { message: 'oops' });
@@ -363,11 +379,40 @@ describe('the ORIGIN box', () => {
     await userEvent.click(within(lens).getByRole('tab', { name: 'stick-around' }));
     expect(within(lens).getByRole('tab', { name: 'stick-around', selected: true })).toBeInTheDocument();
     await userEvent.click(within(lens).getByRole('tab', { name: 'Whoops!' }));
-    await userEvent.click(within(lens).getByRole('button', { name: /^1 play · Spritey/u }));
+    /* Who stays unfolded across the tabs. */
+    expect(within(lens).getByRole('button', { name: /^1 play · Spritey/u })).toHaveAttribute('aria-expanded', 'true');
     await userEvent.click(within(lens).getByRole('button', { name: 'React' }));
     const picker = screen.getByRole('dialog', { name: 'React to Spritey\'s Whoops!' });
     await userEvent.click(within(picker).getByRole('button', { name: 'Tea, Calm' }));
     await waitFor(() => expect(react).toHaveBeenCalledWith(play, w.pipe, 'tea'));
+  });
+
+  test('the second tab\'s Who rows are reached by keyboard alone, down to their buttons', async () => {
+    const w = threadWorld(3);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
+    w.fake.clock.advance(60_000);
+    const late = w.fake.seed.card(w.spritey, w.ids[1]!, 'stick-around', { message: 'late' });
+    const spun = await spinFrom(w, w.ids[1]!);
+    openSpun(w, spun);
+    const box = await origin();
+    await waitFor(() => expect(box.querySelectorAll('.kb-mark')).toHaveLength(2));
+    await userEvent.click(await within(box).findByRole('button', { name: /^Whoops!, 1 play\./u }));
+    const lens = screen.getByRole('dialog', { name: 'Cards on this post' });
+    await userEvent.keyboard('{ArrowRight}');
+    expect(within(lens).getByRole('tab', { name: 'stick-around', selected: true })).toHaveFocus();
+    const who = within(lens).getByRole('button', { name: /^1 play · Spritey/u });
+    for (let i = 0; i < 4 && document.activeElement !== who; i++) await userEvent.tab();
+    expect(document.activeElement).toBe(who);
+    await userEvent.keyboard('{Enter}');
+    const row = lens.querySelector<HTMLElement>(`[data-kb-play="${late}"]`)!;
+    expect(row).toBeInTheDocument();
+    const reached = new Set<string>();
+    for (let i = 0; i < 8 && !reached.has('Go to post'); i++) {
+      await userEvent.tab();
+      const el = document.activeElement as HTMLElement;
+      if (row.contains(el)) reached.add(el.textContent ?? '');
+    }
+    expect([...reached]).toEqual(expect.arrayContaining(['Spin thread', 'Go to post']));
   });
 
   test('Spin thread from a row in the box opens a form of the box\'s own, under it, named for the play', async () => {
