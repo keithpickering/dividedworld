@@ -21,8 +21,8 @@
  * in play order, so the latest is outermost. A post with no plays, or whose plays' cards draw no
  * effect, is drawn untouched.
  */
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type RefObject } from 'react';
-import { createPortal } from 'react-dom';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -271,9 +271,30 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
     document.addEventListener('pointerdown', press);
     return () => document.removeEventListener('pointerdown', press);
   }, [unstacked, panelOpen]);
+  /*
+   * Unstacked, the list floats over its post's own controls (its reactions, its plate, its footer), which are out of reach
+   * until it is stacked again, as what lies under an open menu is: a press lands on the backdrop and stacks it, and Tab
+   * past either end of the list stacks it and goes on. So a control the list half-covers is never half-pressed (axe's
+   * target-size at a phone's width). Set and released in the commit itself, so Tab's focus move finds them reachable.
+   */
+  useLayoutEffect(() => {
+    const post = unstacked ? list.current?.closest('article') : null;
+    if (!post) return;
+    const under = [post.querySelector<HTMLElement>(':scope > footer'), post.querySelector<HTMLElement>(':scope > .kb-act-slot'), ...post.querySelectorAll<HTMLElement>(':scope > .kb-act-main > :not(.kb-play-tags)')]
+      .filter((el): el is HTMLElement => el !== null && !el.hasAttribute('inert'));
+    for (const el of under) el.setAttribute('inert', '');
+    return () => { for (const el of under) el.removeAttribute('inert'); };
+  }, [unstacked]);
   if (here.billed.length === 0) return null;
   const [lead, ...rest] = here.billed;
   const opener = (play: Id) => (el: HTMLButtonElement) => setOpen((was) => (was?.play === play ? null : { play, opener: el }));
+  /* Tab past the last of the stack's controls, or Shift+Tab before the first, stacks it, and the focus goes on where Tab takes it. */
+  const tabOut = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab' || !unstacked || panelOpen) return;
+    const stops = [...(list.current?.querySelectorAll<HTMLElement>('button:not([disabled])') ?? [])].filter((b) => !b.closest('[hidden]'));
+    const at = stops.indexOf(document.activeElement as HTMLElement);
+    if ((e.shiftKey && at === 0) || (!e.shiftKey && at === stops.length - 1)) flushSync(() => setUnstacked(false));
+  };
   const opened = open ? here.plays.find((p) => p.id === open.play) ?? null : null;
   const tagOf = (p: CardPlay) => (
     <PlayTag play={p} caster={nameOf(p.caster)} tint={inkOf(ui, p, here.plays)} tallies={tallies} onOpen={opener(p.id)} expanded={open?.play === p.id} />
@@ -282,7 +303,7 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
   return (
     <ul
       ref={list} className="kb-play-tags" aria-label="Cards played on this post" data-kb-unstacked={unstacked ? 'true' : undefined}
-      onKeyDown={(e) => { if (e.key === 'Escape' && unstacked && !panelOpen) { e.stopPropagation(); stack(); } }}
+      onKeyDown={(e) => { if (e.key === 'Escape' && unstacked && !panelOpen) { e.stopPropagation(); stack(); } else tabOut(e); }}
     >
       <li className="kb-play-tags-lead">
         {/* The top tag, with the edges of the next few behind it, offset as a fanned deck. */}
@@ -312,6 +333,11 @@ export function PlayTags({ plays, post, to, nameOf, tallies, mine, onSpin }: {
       </li>
       {rest.length > 0 && (
         <li className="kb-play-tags-rest">
+          {/*
+            * Under the floating list, a clear backdrop over the page: a press outside the list lands on it and stacks the list,
+            * and never half-presses a control the list half-covers (axe's target-size, at a phone's width).
+            */}
+          {unstacked && <div className="kb-play-backdrop" aria-hidden="true" onPointerDown={(e) => { e.preventDefault(); setUnstacked(false); }} />}
           <ul id={`${id}-rest`} className="kb-play-unstacked" hidden={!unstacked}>
             {rest.map((p) => <li key={p.id}>{tagOf(p)}</li>)}
           </ul>

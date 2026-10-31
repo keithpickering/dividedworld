@@ -187,6 +187,22 @@
   height: 0;
 }
 
+.kb-play-tags-lead,
+.kb-play-unstacked {
+  z-index: 2;
+}
+
+.kb-play-tags-lead {
+  position: relative;
+}
+
+/* Clear, the window's size, under the list and the stack and over the rest of the page while it is unstacked. */
+.kb-play-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+}
+
 .kb-play-unstacked {
   position: absolute;
   top: 0.9rem;

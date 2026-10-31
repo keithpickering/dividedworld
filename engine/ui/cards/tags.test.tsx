@@ -124,6 +124,58 @@ describe('the stack of plays over a post', () => {
     expect(reachable(list)).toHaveLength(1);
   });
 
+  test('unstacked, a clear backdrop lies under the list: a press on it stacks the list, and goes no further', async () => {
+    const w = world();
+    w.play(w.spritey);
+    w.play(w.gloomba);
+    open(w);
+    const list = await tags();
+    expect(list.querySelector('.kb-play-backdrop')).toBeNull();
+    await userEvent.click(unstack(list));
+    const backdrop = list.querySelector('.kb-play-backdrop')!;
+    expect(backdrop).toHaveAttribute('aria-hidden', 'true');
+    await userEvent.pointer({ keys: '[MouseLeft]', target: backdrop });
+    expect(reachable(list)).toHaveLength(1);
+    expect(list.querySelector('.kb-play-backdrop')).toBeNull();
+  });
+
+  test('unstacked, what it floats over in its post is out of reach until it is stacked: the post\'s footer, its plate and its reactions', async () => {
+    const w = world();
+    w.play(w.spritey);
+    w.play(w.gloomba);
+    open(w);
+    const list = await tags();
+    const post = await post2();
+    const under = () => [post.querySelector('footer'), ...post.querySelectorAll('.kb-act-main > :not(.kb-play-tags)')].filter((el): el is HTMLElement => el !== null);
+    expect(under().length).toBeGreaterThan(1);
+    expect(under().every((el) => !el.hasAttribute('inert'))).toBe(true);
+    await userEvent.click(unstack(list));
+    expect(under().every((el) => el.hasAttribute('inert'))).toBe(true);
+    expect(list.closest('[inert]')).toBeNull();
+    await userEvent.keyboard('{Escape}');
+    expect(under().every((el) => !el.hasAttribute('inert'))).toBe(true);
+  });
+
+  test('Tab past the last tag stacks it and goes on to the post\'s own controls, as Tab leaves a menu; Shift+Tab before the button does too', async () => {
+    const w = world();
+    w.play(w.spritey);
+    w.play(w.gloomba);
+    open(w);
+    const list = await tags();
+    const post = await post2();
+    await userEvent.click(unstack(list));
+    reachable(list).at(-1)!.focus();
+    await userEvent.tab();
+    expect(reachable(list)).toHaveLength(1);
+    expect(post.contains(document.activeElement)).toBe(true);
+    expect(list.contains(document.activeElement)).toBe(false);
+    await userEvent.click(unstack(list));
+    reachable(list)[0]!.focus();
+    await userEvent.tab({ shift: true });
+    expect(reachable(list)).toHaveLength(1);
+    expect(list.contains(document.activeElement)).toBe(false);
+  });
+
   test('a play\'s panel opened from the list keeps the list unstacked: Esc closes the panel first, and focus goes back to its tag', async () => {
     const w = world();
     w.play(w.spritey);
