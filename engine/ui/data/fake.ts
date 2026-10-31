@@ -991,16 +991,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
 
   /**
+   * How long after its window ends a settlement is applied, for the wallet event it writes (wallet_move dates it at now(), when the
+   * job runs): a second, so a settlement's lines and its wallet event are not one instant, as on the server, and a screen that
+   * assumed they share a page would be caught here too. A moment seeded within that second of a settlement would read its event
+   * as dated after the moment's own clock; no moment of the boards fixture is.
+   */
+  const APPLIED_AFTER = 1000;
+  /**
    * A settlement's ledger, as apply_settlement writes it (0003, 0034): its lines and their shares, each account credited with its
    * lines' sum through wallet_move (held to the cap and the floor, the event saying what each cut off), each character's standing moved.
    * A seed that breaks what the server refuses throws in the server's words.
    */
-  /**
-   * How long after its window ends a settlement is applied, for the wallet event it writes (wallet_move dates it at now(), when the
-   * job runs): a second, so a settlement's lines and its wallet event are not one instant, as on the server, and a screen that
-   * assumed they share a page would be caught here too.
-   */
-  const APPLIED_AFTER = 1000;
   function settleLedger(at: number, lines: readonly SeedLine[], sharesKept: boolean, setOutright: Readonly<Record<Id, number>>) {
     const last = settlements[settlements.length - 1];
     const startsAt = last ? last.endsAt : at - span(settings.settlementLength);
