@@ -12,6 +12,13 @@ takes the next free number when it is written, and a number that moved is report
 is now the role, played each season by a Boss from the instance's roster. Tasks 4, 5, 6, 9 and 12 change in place;
 Task 12b (succession and the handover) is new. Where a task below says "the Director", it means the season's Boss.
 
+**Amended again 2026-10-31, before any of it was built,** by `docs/plans/2026-10-31-the-staff-design.md`. The Mod
+Bots are a standing staff that outlasts Bosses, so Part 1 seeds them beside the Bosses and records who is on staff.
+Tasks 4, 5 and 12 change in place; nothing a bot does is built here (that is Part 3, whose plan is written once this
+part is merged). The design renumbers The System's parts: this is still Part 1, presence is Part 2
+(`docs/plans/2026-10-31-presence-plan.md`), and the old Part 2 (rules, the warn bar, bans, appeals) is now Part 3,
+with Mod Bots and visits.
+
 **The System ships switched off.** A setting `systemEnabled` (false by default) gates the meeting and the landing of
 moves. Tasks 1–11 build and test everything with it off on a deployed instance and on in tests. Task 12's screens are
 what make a landed move's way out visible, so the setting is turned on for Divided World only in Task 13, after them
@@ -119,11 +126,20 @@ predicate; a ledger write that fails makes the call throw). Add `model_calls` an
   staff character, debuted, so a returning Boss is the same character with the same Acts and profile.
 - `seasons` gains `boss text references characters (staff)`, nullable only for a season opened before this migration;
   `current_boss()` returns the open season's Boss's staff key.
+- **The standing staff** (amended 2026-10-31): `characters` gains `staff_kind text` in `boss | bot`, with the check
+  `(staff is null) = (staff_kind is null)`, public in `characters_public`. Every Mod Bot in the seed's roster is seeded
+  as a staff character, debuted, as Bosses are. `staff_changes` (`id`, `staff`, `on_staff boolean`, `at`, `move_act
+  uuid` nullable): who is on staff is computed from it, never updated in place ("Append-only" in spirit; Part 6's hire
+  and fire moves write rows naming their move). `seed_instance` writes one `on_staff = true` row for each bot in the
+  seed's `firstStaff` that has no row yet, so a reseed never rehires a fired bot. View `staff_now` (staff key, kind,
+  on staff since), granted to anon and authenticated. A Boss is never in `staff_changes`: the season names it.
 
 **Tests first** (`supabase/tests/0042-staff.sql`): a staff character has a null owner and a staff key; no player can
 post, spin, play a card or edit as it; `write_staff_act` posts as it; a reaction to its Act appears in
 `reaction_tallies` and in no `ledger` row after a settlement; the cap counts no staff character; a reseed leaves an
-edited staff profile alone. `supabase/tests/0001-core.sql`'s "no readable relation has a column named owner" still
+edited staff profile alone; the seeded bots in `firstStaff` are in `staff_now` and a bot outside it is not; a reseed
+after a `staff_changes` row taking a bot off staff leaves it off; a staff character with a `staff` key and no
+`staff_kind` is refused (the check). `supabase/tests/0001-core.sql`'s "no readable relation has a column named owner" still
 passes. The poison: a staff character with an owner (the check refuses it) and a player Act naming the staff character
 (refused).
 
@@ -136,11 +152,20 @@ passes. The poison: a staff character with an owner (the check refuses it) and a
   micro-event call is out of budget or fails), `feeds` (outside feed URLs), `realWorld` (the starting list of subjects
   never amplified), `wheelhouse` (starting entries), `oldVoice` (the completion prompt frame for a board description),
   and `nameStyle(name): string[]` (problems with a name The System proposes; empty when it is in style).
+  Amended 2026-10-31: `SystemContent` also has `modBots: ModBotPersona[]` (each a `StaffSeed` plus its `persona`
+  prompt, `beats` (the kinds of board it prefers), `petRules` (predicate keys it lobbies for), `strictness` (its visit
+  hours and the bands it pushes for), `weakness` (`quiz` with its question bank, `bribe` with its price, or
+  `distraction`), `voice` (`chat` or `oldVoice`) and `persuadedBy` (a line for its appeal prompt)), and `firstStaff`
+  (the keys of the bots on staff at seeding). Part 1 reads none of these but the names and `firstStaff`; their shape
+  is fixed now so the roster can be written against it. `duties` takes `boss`, `beat` (the bot on the board's beat),
+  `filer` (the bot that filed) or a staff key.
 - `engine/system/phases.ts`: `phaseAt(season, now, settings, boss)` returns `honeymoon | reign | meltdown` and that
   phase's numbers, with a Boss's overrides clamped into the engine's caps (`PHASE_CAPS`), each clamp recorded.
 - `engine/rules/instance.ts`: `instanceProblems` checks `system`: every duty assigned to `boss` or to a staff key that
   exists, `firstBoss` in the roster, a Boss's phase overrides inside `PHASE_CAPS`, every
-  standing order's stock line present, `nameStyle` a function.
+  standing order's stock line present, `nameStyle` a function; and (amended 2026-10-31) at least one key in
+  `firstStaff`, each a bot in `modBots`, no key shared between a Boss and a bot, a quiz weakness with at least one
+  question whose answer is one of its choices, and a bribe's price inside the engine's bounds (`BRIBE_BOUNDS`).
 - `Settings` gains, with validators in `SETTINGS`: `systemEnabled` (false), `meetingCron` (daily), `phases` (honeymoon
   `days` 14, `weeklyMoves` 2, `bankCap` 4; reign `weeklyMoves` 5, `bankCap` 10; meltdown `days` 21, `weeklyMoves` 8,
   `bankCap` 14; each phase also `moveExpiryMostDays`, and from Part 2 its bands and whether a permaban is allowed),
@@ -149,7 +174,7 @@ passes. The poison: a staff character with an owner (the check refuses it) and a
   (`strong`, `light`, the model id for each; the meeting defaults to the strong tier). The defaults are starting
   points in the design's sense; the build session sets the model ids from the `claude-api` skill.
 - `instances/divided-world/system/`: `bosses/` (the first roster, written with the owner before the build ships it:
-  each Boss a file with its persona, built on the shared premise in `persona.ts`); `persona.ts` (robo-McMahon, written
+  each Boss a file with its persona, built on the shared premise in `persona.ts`); `bots/` (amended 2026-10-31: the first Mod Bots, each a file with its persona, written with the owner when the Bosses are; until then one placeholder bot, named as such, keeps `firstStaff` valid and the setting `systemEnabled` keeps it from acting); `persona.ts` (robo-McMahon, written
   from the design's premise: petty for years,
   prefers controversy, stokes kayfabe and deflates a real argument by making it absurd, never takes a side in one, its
   hobbies drawn from characters it thinks are cool and from outside material in the wheelhouse); `lines.ts`;
@@ -161,7 +186,8 @@ passes. The poison: a staff character with an owner (the check refuses it) and a
   the settings as before.
 
 **Tests first:** `engine/rules/instance.test.ts` (an instance with a duty assigned to a missing staff key has a
-problem; a missing stock line has a problem); `instances/divided-world/system/name-style.test.ts` (the cases above); `engine/system/phases.test.ts` (day 1 is honeymoon, the
+problem; a missing stock line has a problem; an empty `firstStaff`, a key both a Boss and a bot, and a quiz whose
+answer is not among its choices each have a problem); `instances/divided-world/system/name-style.test.ts` (the cases above); `engine/system/phases.test.ts` (day 1 is honeymoon, the
 middle is reign, the last 21 days are meltdown; a Boss's override past a cap is clamped and recorded);
 `instances/divided-world/settings.test.ts` (the new settings validate). Engine boundary: `npm run build` still passes
 `check-engine-boundary`, since the engine names only `SystemContent`.
@@ -335,7 +361,8 @@ Designed with the owner on 2026-10-30, after the plan was first written; the moc
   - A component `MoveNotice` in `engine/ui/board/`; the label's words come from the move kind's plain template, never
     from the Director.
 - **A Boss's profile** (`mock-s2-director-profile.html`, C), for every Boss past and present; the moderation log is
-  that Boss's own moves. `ProfileScreen` (`engine/ui/profile/Profile.tsx:40`)
+  that Boss's own moves. Amended 2026-10-31: a Mod Bot's profile is the same screen with its title and a MODERATOR
+  badge in place of ADMINISTRATOR, and an empty moderation log until Part 3 gives it visits. `ProfileScreen` (`engine/ui/profile/Profile.tsx:40`)
   for a staff character: name, an ADMINISTRATOR badge, its title, and a table of Interests, Favorite Members, Current
   Mood and Posts from `staff_profile_now`, with its signature; beside it a **Moderation log** from `moves_log`, each row
   a date, what was done (with links to the boards) and how it ended in short plain words ("in force", "undone: 12

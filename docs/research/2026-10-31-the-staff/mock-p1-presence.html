@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P1 Presence</title>
+<style>
+  :root { --fg:#000; --bg:#fff; --mute:#555; --cyan:#3fe0ff; --glass:#14081f; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#fff; --bg:#000; --mute:#aaa; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:12px/1.45 Verdana, Geneva, sans-serif; }
+  h1 { font:bold 18px "Courier New", monospace; margin:0 0 4px; }
+  h2 { font:bold 15px "Courier New", monospace; margin:24px 0 6px; border-bottom:2px solid var(--fg); }
+  p.note { margin:0 0 8px; max-width:72em; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .desk { flex:1 1 620px; min-width:0; } .phone { flex:0 0 340px; max-width:100%; }
+  .label { font:bold 11px "Courier New", monospace; margin:10px 0 4px; }
+  a { color:var(--fg); }
+  .small { font-size:10px; } .muted { color:var(--mute); }
+  .post { border:1px solid var(--fg); padding:8px 1%; margin-bottom:6px; }
+  .pager { font-size:10px; margin:6px 0; }
+  .who { border:1px solid var(--fg); margin-top:10px; }
+  .who h3 { margin:0; font:bold 11px "Courier New", monospace; border-bottom:1px solid var(--fg); padding:3px 1%; }
+  .who p { margin:0; padding:5px 1%; }
+  .me { font-style:italic; }
+  .bot { position:relative; }
+  .tag { font:600 10px/1 "Arial Narrow", sans-serif; letter-spacing:.06em; text-transform:uppercase; color:#e9fbff;
+         background:var(--glass); border:1px solid var(--cyan); box-shadow:0 0 4px var(--cyan); padding:2px 5px;
+         transform:skewX(-10deg); display:inline-block; margin-left:3px; vertical-align:1px; }
+  .callout { border:1px dashed var(--fg); padding:6px 1%; margin-top:8px; max-width:72em; }
+</style>
+</head>
+<body>
+<h1>P1. Presence: who is browsing, in the board's world</h1>
+<p class="note">The three places phpBB put it. Each lists the masks active there in the past 5 minutes (an instance
+setting), refreshed by a 30-second poll that is also the viewer's heartbeat. A mask appears on its first poll and leaves
+only by ageing out, so a swap never shows "A left, B arrived" together. Up to 15 names (a setting), then "and N others".
+Names link to profiles, with no avatars (tried with square minis; the owner: they make the list too messy). Your own current mask is listed for you; if it is hidden it shows to you alone, in italics.</p>
+
+<h2>Under a thread</h2>
+<div class="row">
+<div class="desk"><div class="label">Desktop</div>
+  <div class="post"><b>Captain Gravy</b> <span class="small muted">#24, 2 min ago</span><br>okay but who actually started the crimson incident</div>
+  <div class="pager">Page 2 of 2 &middot; <a href="#">1</a> 2</div>
+  <div class="who">
+    <h3>Users browsing this thread</h3>
+    <p><a href="#">Pipewrench</a>, <a href="#">Mrs. Hooligan</a>, <span class="me"><a href="#">Spritey</a> (hidden, only you see this)</span></p>
+  </div>
+</div>
+<div class="phone"><div class="label">Phone</div>
+  <div class="who">
+    <h3>Browsing this thread</h3>
+    <p><a href="#">Pipewrench</a>, <a href="#">Mrs. Hooligan</a>, <span class="me"><a href="#">Spritey</a> (hidden)</span></p>
+  </div>
+</div>
+</div>
+
+<h2>A busy thread, past the cap</h2>
+<div class="who">
+  <h3>Users browsing this thread</h3>
+  <p><a href="#">Pipewrench</a>, <a href="#">Mrs. Hooligan</a>, <a href="#">Captain Gravy</a>, <a href="#">Spritey</a>, <a href="#">Tuna Can</a>, <a href="#">Lord Fungus</a>, <a href="#">Bartleby</a>, <a href="#">Wario Jr.</a>, <a href="#">The Accountant</a>, <a href="#">Hot Mustard</a>, <a href="#">Ghost of 2004</a>, <a href="#">Snacks</a>, <a href="#">Monty</a>, <a href="#">Ribbit</a>, <a href="#">Dr. Couch</a> and 23 others</p>
+</div>
+<p class="small muted">The 15 named are the longest present; newcomers join the count first.</p>
+
+<h2>Under a board's thread list</h2>
+<div class="who">
+  <h3>Users browsing this board</h3>
+  <p><a href="#">Pipewrench</a>, <a href="#">Captain Gravy</a>, <a href="#">Tuna Can</a></p>
+</div>
+<p class="small muted">The board's page and every thread on it.</p>
+
+<h2>At the foot of the index</h2>
+<div class="who">
+  <h3>Who is online</h3>
+  <p><a href="#">Captain Gravy</a>, <a href="#">Mrs. Hooligan</a>, <a href="#">Pipewrench</a>, <span class="me"><a href="#">Spritey</a> (hidden, only you see this)</span>, <a href="#">Tuna Can</a><br>
+  <span class="small muted">Characters active in the past 5 minutes.</span></p>
+</div>
+<p class="small muted">No count of hidden users and no "guests": a hidden count would move when a player hides, and every reader is signed in.</p>
+
+<h2>Later (Part 3, not in this plan): a Mod Bot on a visit</h2>
+<div class="who">
+  <h3>Users browsing this thread</h3>
+  <p><a href="#">Pipewrench</a>, <a href="#">Mrs. Hooligan</a>, <span class="bot"><a href="#"><b>Hall Monitor</b></a><span class="tag">On a visit &middot; post #12</span></span></p>
+</div>
+<p class="callout small">The bot is listed like anyone, and a glass tag sits on its name, laid over the line and never
+reflowing it, as the owner asked. The post it is inspecting carries the matching stamp. Its look is designed with
+Part 3's plan.</p>
+</body>
+</html>
