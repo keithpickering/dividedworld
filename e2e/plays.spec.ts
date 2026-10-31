@@ -153,8 +153,8 @@ test.describe('the ghost mark and the edge', () => {
 /*
  * The Lens never overlaps its post's words where the window has room for its side panel (the critique measured the unstacked list
  * over the plate by 37 to 194px). The mockup's post #41 where the window has room for the side panel: the board is a column at most
- * 960px wide (engine/ui/tokens.css `--kb-board-max`), the Lens is 420px and wants a gutter, so it stands in the margin from about
- * 1660px wide up, and the post's words and ink are all left of it. At 1440 the margin is 240px, so the Lens stands under its mark
+ * 960px wide (engine/ui/tokens.css `--kb-board-max`), the Lens is 340px and wants a gutter, so it stands in the margin from about
+ * 1560px wide up, and the post's words and ink are all left of it. At 1440 the margin is 240px, so the Lens stands under its mark
  * (`data-kb-lens="under"`, kept in the window); that it then covers the post's own words is the plan's gap, reported with Task 8. On a
  * phone it is a sheet, which the first describe above measures inside the window.
  */

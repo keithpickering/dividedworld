@@ -97,7 +97,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const arm = useCallback((card: string | null) => {
     const was = armedNow.current;
     setArmed(card);
-    if (card !== null) setSaid(`${nameOf(card)} is armed. Press the dashed + mark beside a post's date to play ${nameOf(card)} there, or ${phone.current ? 'press Armed' : 'Esc'} to put it back.`);
+    if (card !== null) setSaid(`${nameOf(card)} is armed. Press Play ${nameOf(card)} on a post, the dashed + mark beside its date, to play it there, or ${phone.current ? 'press Armed' : 'Esc'} to put it back.`);
     else if (was !== null) setSaid(`${nameOf(was)} is put back.`);
   }, [nameOf, setArmed, setSaid]);
   const openForm = useCallback((card: string, target: PlayTarget) => {

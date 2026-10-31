@@ -58,7 +58,7 @@ describe('the hand', () => {
     const armed = screen.getByRole('button', { name: 'Whoops!, Salty postcard, armed: pick a post' });
     expect(armed).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Stick Around, Sweet postcard' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByText('+ mark').closest('p')).toHaveTextContent('Whoops! is armed. Every post it can land on now shows a dashed + mark beside its date. Press it to play Whoops! there.');
+    expect(screen.getByText('+ mark').closest('p')).toHaveTextContent('Whoops! is armed. Every post it can land on now shows a dashed + mark beside its date, named Play Whoops! on that post. Press it to play Whoops! there.');
     fireEvent.click(armed);
     expect(onPick).toHaveBeenCalledWith(whoops);
   });

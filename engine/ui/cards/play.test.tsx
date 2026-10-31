@@ -230,7 +230,7 @@ describe('arming a card', () => {
     const w = world();
     await open(w);
     await arm(user);
-    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is armed. Press the dashed + mark beside a post\'s date to play Whoops! there, or Esc to put it back.');
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is armed. Press Play Whoops! on a post, the dashed + mark beside its date, to play it there, or Esc to put it back.');
     await user.keyboard('{Escape}');
     expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Whoops! is put back.');
   });

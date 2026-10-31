@@ -55,11 +55,11 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean): boolean
   return ready;
 }
 
-/** Arms the instance's Whoops! (the story names no instance: the card whose name is Whoops!), as the player's press in the hand does. */
+/** Arms the instance's first card with settings of its own (a `ConfigForm`), as the player's press in the hand does: the story names no card. */
 function Arm() {
-  const { instance } = useKayfa();
+  const { ui } = useKayfa();
   const play = usePlay();
-  const key = instance.cards.find((c) => c.name === 'Whoops!')?.key ?? null;
+  const key = ui.cards.find((c) => c.ConfigForm !== undefined)?.key ?? null;
   /* A card is armed for an account and put back when the account changes (play.tsx), so it is armed once the account is known. */
   const account = usePlayer().session.account;
   useEffect(() => {
