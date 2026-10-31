@@ -90,6 +90,14 @@ export const LensHostCtx = createContext<HTMLElement | null>(null);
 /** Where the Lens renders now: the nearest takeover's host, else the page's body. */
 export const useLensHost = (): HTMLElement => useContext(LensHostCtx) ?? document.body;
 
+/**
+ * A takeover's view puts this around its content, naming an element inside its dialog (null while the element is not there yet):
+ * the Lens a mark inside it opens renders there, so it stands inside the view's focus scope and is not made inert with the page.
+ */
+export function LensHost({ host, children }: { readonly host: HTMLElement | null; readonly children: ReactNode }) {
+  return <LensHostCtx.Provider value={host}>{children}</LensHostCtx.Provider>;
+}
+
 /** One Lens for the page below: the thread, or a thread's ORIGIN box inside it. Leaving the page closes it. */
 export function LensProvider({ children }: { readonly children: ReactNode }) {
   const store = useMemo(createLensStore, []);
@@ -102,6 +110,14 @@ let loose: LensStore | null = null;
 
 export function useLensStore(): LensStore {
   return useContext(LensCtx) ?? (loose ??= createLensStore());
+}
+
+/** Whether a control can be seen, and so focused: not `display: none`, `visibility: hidden` or inert, itself or in an ancestor. */
+function shown(el: HTMLElement): boolean {
+  if (el.closest('[inert]')) return false;
+  if (typeof el.checkVisibility === 'function') return el.checkVisibility({ visibilityProperty: true });
+  for (let n: HTMLElement | null = el; n; n = n.parentElement) if (getComputedStyle(n).display === 'none') return false;
+  return getComputedStyle(el).visibility !== 'hidden';
 }
 
 /** The Lens as this strip has it open, or null: a strip is redrawn when its own Lens opens or closes, and by no other post's. */
@@ -309,8 +325,12 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       e.preventDefault();
       mark.focus();
     } else if (!e.shiftKey && at === stops[stops.length - 1]) {
-      const next = tabbables(document.body).find((el) => !box.contains(el) && !mark.contains(el) && (mark.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
-      if (next) { e.preventDefault(); next.focus(); }
+      /* A control the page hides (a collapsed section) cannot take focus, so the first one after the mark that can be seen is the one. */
+      const next = tabbables(document.body).find((el) => !box.contains(el) && !mark.contains(el) && (mark.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 && shown(el));
+      if (next) {
+        next.focus();
+        if (document.activeElement === next) e.preventDefault();
+      }
     }
   };
 

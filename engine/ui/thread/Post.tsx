@@ -8,7 +8,7 @@
  * A post is memoized on its Act, its person and its layout, and its reactions read their own tally
  * from the tallies store, so a reaction re-renders the post it is on and nothing else.
  */
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { PostEffects } from '../cards/Effects.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
@@ -40,7 +40,7 @@ interface Props {
 /** A post's name for a reader and a screen reader: the character's, The System's, or "A character" where it cannot be shown. */
 const nameOf = (act: Act, person: PostbitPerson | undefined) => (act.character === null ? SYSTEM : person?.character.name ?? 'A character');
 
-function Body({ act, name, person, editing, onDone, slot }: { readonly slot: React.RefObject<HTMLElement | null>; readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
+function Body({ act, name, person, editing, onDone, slot, marks }: { readonly slot: React.RefObject<HTMLElement | null>; readonly marks: ReactNode; readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
   const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
@@ -61,7 +61,7 @@ function Body({ act, name, person, editing, onDone, slot }: { readonly slot: Rea
           {origin && <Origin summary={summary} />}
           {editing
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
-            : <PostEffects plays={plays} post={act} place="thread" slot={slot} nameOf={casterName}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
+            : <PostEffects plays={plays} post={act} place="thread" slot={slot} marks={marks} nameOf={casterName}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
@@ -145,6 +145,10 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   }, [editing]);
   const plain = act.kind === 'unmask';
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
+  /* The strip is drawn on the date row, and again by a card that lifts the post out of its thread (Stick Around): the same node, each with its own Lens owner. */
+  const marks = act.kind === 'post'
+    ? <PostMarks post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />
+    : null;
   return (
     <article
       ref={ref}
@@ -164,11 +168,11 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
         : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
       <header className="kb-act-meta">
         <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt)}</time>
-        {act.kind === 'post' && <PostMarks post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />}
+        {marks}
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>
       <div className="kb-act-main">
-        <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} />
+        <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} marks={marks} />
         <SpunInto act={act.id} />
       </div>
       <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} />

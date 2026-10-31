@@ -106,7 +106,7 @@ export interface EffectProps {
   readonly show: (view: CardView | null) => void;
   /** The reader has met this card's effect (wired in Task 7; a no-op until then). */
   readonly met: () => void;
-  /** The post's marks, drawn where the card's effect puts them (filled in Task 5; null until then). */
+  /** The post's marks, drawn where the card's effect puts them (a takeover's only; null for every other card). */
   readonly marks: ReactNode;
   /**
    * @deprecated Going: the plate is removed in Task 3 of the marks-and-the-lens plan, and Whoops! moves to `show` in Task 6.

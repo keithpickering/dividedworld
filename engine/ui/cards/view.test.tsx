@@ -3,7 +3,7 @@
  * `PostEffects`, and cleared when the effect is gone.
  */
 import { act, screen } from '@testing-library/react';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { describe, expect, test } from 'vitest';
 import type { Act } from '../data/api.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
@@ -28,10 +28,10 @@ const ui = (key: string, view: CardView, seen: EffectProps['show'][] = []): Card
   },
 });
 
-function mount(cards: readonly CardUi[], keys: readonly string[]) {
+function mount(cards: readonly CardUi[], keys: readonly string[], marks?: ReactNode) {
   const plays = createPlays();
   plays.add(keys.map((card, i) => act0({ id: `22222222-0000-4000-8000-00000000000${i + 1}`, payload: { card, layer: 1 } })));
-  const world = renderIn(buildWorld(), <PostEffects plays={plays} post={post} place="thread" nameOf={() => 'Someone'}><p>words</p></PostEffects>, { cards });
+  const world = renderIn(buildWorld(), <PostEffects plays={plays} post={post} place="thread" marks={marks} nameOf={() => 'Someone'}><p>words</p></PostEffects>, { cards });
   return { plays, world };
 }
 
@@ -58,5 +58,38 @@ describe('PostEffects gives each effect a show bound to its post and card', () =
     world.rerender(<></>);
     expect(plays.view(POST, 'alpha')).toBeNull();
     expect(plays.view(POST, 'beta')).toBeNull();
+  });
+});
+
+/* An effect that draws the marks it is given, before the words. */
+const drawing = (key: string, extra: Partial<CardUi> = {}): CardUi => ({
+  key, describe: () => key, art: { color: 'red', ink: 'white' }, ...extra,
+  Effect: ({ marks, children }) => <div data-testid={key}>{marks}{children}</div>,
+});
+const depth = (el: HTMLElement) => { let n = 0; for (let p = el.parentElement; p; p = p.parentElement) n++; return n; };
+const MARKS = <b data-testid="marks">the marks</b>;
+
+describe('a takeover wraps outermost and carries the marks (marks-and-the-lens plan, Task 5)', () => {
+  test('a takeover played first is still outermost, with the other card inside it; without the flag, play order decides', () => {
+    mount([drawing('alpha', { takeover: true }), drawing('beta')], ['alpha', 'beta']);
+    expect(screen.getByTestId('alpha')).toContainElement(screen.getByTestId('beta'));
+    expect(screen.getByTestId('beta')).toContainElement(screen.getByText('words'));
+    const flat = mount([drawing('gamma'), drawing('delta')], ['gamma', 'delta']);
+    expect(screen.getByTestId('delta')).toContainElement(screen.getByTestId('gamma'));
+    flat.world.unmount();
+  });
+
+  test('two takeovers wrap in their own play order, the latest outermost, around every other card', () => {
+    mount([drawing('alpha', { takeover: true }), drawing('beta'), drawing('gamma', { takeover: true })], ['alpha', 'gamma', 'beta']);
+    expect(screen.getByTestId('gamma')).toContainElement(screen.getByTestId('alpha'));
+    expect(screen.getByTestId('alpha')).toContainElement(screen.getByTestId('beta'));
+    expect(depth(screen.getByTestId('gamma'))).toBeLessThan(depth(screen.getByTestId('alpha')));
+  });
+
+  test('only a takeover is given the marks', () => {
+    mount([drawing('alpha', { takeover: true }), drawing('beta')], ['beta', 'alpha'], MARKS);
+    expect(screen.getAllByTestId('marks')).toHaveLength(1);
+    expect(screen.getByTestId('alpha')).toContainElement(screen.getByTestId('marks'));
+    expect(screen.getByTestId('beta')).not.toContainElement(screen.getByTestId('marks'));
   });
 });

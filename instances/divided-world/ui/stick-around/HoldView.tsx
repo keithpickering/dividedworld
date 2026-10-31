@@ -13,9 +13,16 @@
  * would otherwise close it, breaks free instead (the owner's answer on the view's story, #74): each Esc keydown is one press
  * of BREAK FREE, through the same press gap and against the same drain, so Esc costs what the button costs and a held key's
  * auto-repeat counts no more than as many presses would. An Esc that closed it would be a free way out.
+ *
+ * The view is a takeover's (marks-and-the-lens design, section 4): the post's head carries the post's marks (`marks`), and a mark
+ * opens the Lens inside this dialog (`LensHost` names the element it renders in), where focus is held and the page behind is inert.
+ * Scrolling and keys typed in the Lens are the Lens's own and push nothing past the post, and Esc in it closes the Lens (the float
+ * answers the key first, glass/Float.tsx), so the next Esc is a press of Break free again. The post's words are not drawn here: they
+ * are moved into `words` by the effect (Effect.tsx), so nothing in them is drawn again.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode, type TouchEvent, type WheelEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode, type RefObject, type TouchEvent, type WheelEvent } from 'react';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
+import { LensHost } from '../../../../engine/ui/cards/Lens.tsx';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import { Overlay } from '../../../../engine/ui/glass/Overlay.tsx';
@@ -31,7 +38,7 @@ const PAGE = 0.9;
 /** The bar is announced to a screen reader in steps of this many percent; the drawn bar is smooth. */
 const ANNOUNCE_STEP = 10;
 
-const WAYS_OUT = 'Scroll past either end of the post, press Break free, or check the box.';
+export const WAYS_OUT = 'Scroll past either end of the post, press Break free, or check the box.';
 /** What the view says after an Esc, and after a press on the dimmed page behind: the first is a way out, the second is not. */
 const ON_ESC = `Esc breaks free, like the Break free button: each press fills the bar a little, and it drains when you stop. ${WAYS_OUT}`;
 const ON_PAGE = `Pressing the page behind does not close this. ${WAYS_OUT}`;
@@ -48,10 +55,13 @@ interface Props {
   readonly release: EffectProps['release'];
   /** The bar filled: the reader is free for this visit; `pushed` is the last push's direction (positive down). */
   readonly onBreakFree: (pushed: number) => void;
-  readonly children: ReactNode;
+  /** The post's marks, drawn in its head. */
+  readonly marks: ReactNode;
+  /** The element the post's words are moved into (they are drawn once, by the effect, and never here). */
+  readonly words: RefObject<HTMLDivElement | null>;
 }
 
-export function HoldView({ post, play, stage, release, onBreakFree, children }: Props) {
+export function HoldView({ post, play, stage, release, onBreakFree, marks, words }: Props) {
   const { api } = useKayfa();
   const frozen = stage.mode === 'view';
   const [level, setLevel] = useState(stage.mode === 'view' ? stage.level : 0);
@@ -60,6 +70,9 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
   const [refused, setRefused] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  /* The Lens's place in the dialog, and whether an event came from inside it. */
+  const [lensHost, setLensHost] = useState<HTMLElement | null>(null);
+  const inLens = (e: { target: EventTarget | null }) => lensHost !== null && e.target instanceof Node && lensHost.contains(e.target);
   const touchY = useRef<number | null>(null);
   /* What the reader has done since the last frame, and where the bar has got to: read by the frame loop, written by events. */
   const input = useRef({ pushed: 0, lastPush: 1, presses: [] as number[], lastCounted: -Infinity });
@@ -120,18 +133,20 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
   }, []);
 
   const onWheel = (e: WheelEvent) => {
+    if (inLens(e)) return;
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (scroller.current?.clientHeight ?? 1) : 1;
     asked(e.deltaY * unit, false);
   };
-  const onTouchStart = (e: TouchEvent) => { touchY.current = e.touches[0]?.clientY ?? null; };
+  const onTouchStart = (e: TouchEvent) => { if (inLens(e)) return; touchY.current = e.touches[0]?.clientY ?? null; };
   const onTouchMove = (e: TouchEvent) => {
+    if (inLens(e) || touchY.current === null) return;
     const y = e.touches[0]?.clientY;
     if (y === undefined || touchY.current === null) return;
     asked(touchY.current - y, false);
     touchY.current = y;
   };
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.altKey || e.ctrlKey || e.metaKey || inLens(e)) return;
     const room = scroller.current?.clientHeight ?? 0;
     const onControl = e.target instanceof HTMLButtonElement || e.target instanceof HTMLInputElement;
     let delta = 0;
@@ -199,14 +214,16 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
       title="Stick Around" label="Stick Around" className="kb-hold-view" surface="effect" closeAt="none" onClose={onClose}
       aside={<p className="kb-hold-tag"><span className="kb-calm">{names.caster}{play.message ? `: “${play.message}”` : ''}</span></p>}
     >
+      <LensHost host={lensHost}>
       <div className="kb-hold-inner" onWheel={onWheel} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onKeyDown={onKeyDown}>
         <div ref={scroller} className="kb-hold-scroll" tabIndex={0} role="region" aria-label="The held post, and how to be released from it">
           <article className="kb-hold-post" aria-label={heading}>
             <header className="kb-hold-post-line">
               <b>{names.author}</b>
               <span><time dateTime={post.createdAt}>{when(post.createdAt)}</time> {post.seq !== null && ` · #${post.seq}`}</span>
+              {marks}
             </header>
-            <div className="kb-hold-post-body">{children}</div>
+            <div ref={words} className="kb-hold-post-body" />
           </article>
           <section className="kb-hold-release" aria-label="Release">
             <label className="kb-hold-check kb-glass-cut-panel">
@@ -233,7 +250,9 @@ export function HoldView({ post, play, stage, release, onBreakFree, children }: 
           <p id={why} className="kb-visually-hidden">Press it again and again to fill the bar, as fast scrolling does. The bar drains whenever you stop.</p>
         </div>
         <p className="kb-hold-ways" role="status">{said ?? ''}</p>
+        <div ref={setLensHost} className="kb-hold-lens-host" />
       </div>
+      </LensHost>
     </Overlay>
   );
 }

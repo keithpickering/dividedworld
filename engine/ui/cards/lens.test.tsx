@@ -487,6 +487,25 @@ describe('the Tab order around a Lens drawn at the end of the body', () => {
     expect(within(await article(2)).getByRole('link', { name: 'Permalink to post #2' })).toHaveFocus();
     expect(lens()).toBeInTheDocument();
   });
+
+  test('a control the page hides right after the mark is skipped: Tab lands on the next one that can be seen', async () => {
+    width(false);
+    const w = world();
+    w.play('k2');
+    open(w);
+    const mark = await markOf(2, 'Card 2');
+    const link = within(await article(2)).getByRole('link', { name: 'Permalink to post #2' });
+    for (const hide of ['display: none', 'visibility: hidden']) {
+      const hidden = document.createElement('button');
+      hidden.setAttribute('style', hide);
+      hidden.textContent = 'hidden';
+      mark.closest('header')!.insertBefore(hidden, link);
+    }
+    await userEvent.click(mark);
+    whoButton().focus();
+    await userEvent.tab();
+    expect(link).toHaveFocus();
+  });
 });
 
 describe('the Lens follows its mark', () => {

@@ -128,6 +128,16 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const backHref = summary.originSeq !== null && summary.originTitle !== null ? threadHref(summary.originThread!, pageOf(summary.originSeq, perPage), summary.originSeq) : null;
   const back = backHref !== null ? <Link to={backHref}>#{summary.originSeq} in {summary.originTitle}</Link> : null;
 
+  /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
+  const marks = act && (act.kind === 'card' ? cardPlay !== null : holdsEffects(act.kind)) ? (
+    <PostMarks
+      post={cardPlay ? cardPlay.post : originId} compare={cardPlay === null} plays={plays}
+      to={cardPlay ? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null) : backHref}
+      nameOf={nameOf} tallies={tallies} mine={mine}
+      onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
+    />
+  ) : null;
+
   const body = () => {
     if (!act) {
       if (reading === 'gone') return <p className="kb-notice kb-small">The Act this thread was spun from is not there.</p>;
@@ -150,7 +160,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-            <PostEffects plays={plays} post={act} place="origin" slot={slot} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
+            <PostEffects plays={plays} post={act} place="origin" slot={slot} marks={marks} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small">{history.button}</p>}
             {history.panel}
@@ -167,14 +177,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         <p className="kb-origin-head">
           <span className="kb-origin-head-text"><b>ORIGIN</b> · Spun from {back ?? 'an Act'}</span>
           {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}
-          {act && (act.kind === 'card' ? cardPlay !== null : holdsEffects(act.kind)) && (
-            <PostMarks
-              post={cardPlay ? cardPlay.post : originId} compare={cardPlay === null} plays={plays}
-              to={cardPlay ? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null) : backHref}
-              nameOf={nameOf} tallies={tallies} mine={mine}
-              onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
-            />
-          )}
+          {marks}
         </p>
         {body()}
         {act && act.kind !== 'card' && more && (

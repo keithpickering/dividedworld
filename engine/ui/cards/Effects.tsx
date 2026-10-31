@@ -10,7 +10,10 @@
  *
  * An effect (`CardUi.Effect`) wraps the post's words wherever they are drawn (the thread, and the ORIGIN box of a
  * thread spun from the post). Each played card's wraps the cards played before it, in play order, so the latest is
- * outermost. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
+ * outermost, except a card with `CardUi.takeover` (Stick Around, which lifts the post out of its thread): those wrap last, so
+ * every other card's effect is inside a takeover's `children`, and several takeovers wrap in their own play order. Only a
+ * takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
+ * it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
  *
  * Going in Task 6 of the marks-and-the-lens plan: the `slot` an effect is given and the `EffectStrip` it draws into it.
  * Whoops! still draws its readout and controls there; it moves them to `show` (the Lens and the kit) in that task, and
@@ -31,8 +34,10 @@ import './cards.css';
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 
 /** Wraps a post's words in the effect of each card played on it, in play order. */
-export function PostEffects({ plays, post, place, slot, nameOf, children }: {
+export function PostEffects({ plays, post, place, slot, marks = null, nameOf, children }: {
   readonly plays: Plays; readonly post: Act; readonly place: EffectPlace; readonly slot?: RefObject<HTMLElement | null>;
+  /** The post's marks, as the post's date row draws them: given to a takeover's effect alone. */
+  readonly marks?: ReactNode;
   /** A character's name as the screen knows it, for an effect that names a caster. */
   readonly nameOf: (character: Id | null) => string; readonly children: ReactNode;
 }) {
@@ -64,7 +69,9 @@ export function PostEffects({ plays, post, place, slot, nameOf, children }: {
 
   if (here.plays.length === 0) return <>{children}</>;
   /* The cards in the order each was first played: the first is innermost. */
-  const keys = [...new Set(here.plays.map((p) => p.card))];
+  const played = [...new Set(here.plays.map((p) => p.card))];
+  const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
+  const keys = [...played.filter((k) => !takes(k)), ...played.filter(takes)];
   let wrapped = children;
   for (const key of keys) {
     const card = ui.cards.find((c) => c.key === key);
@@ -74,7 +81,7 @@ export function PostEffects({ plays, post, place, slot, nameOf, children }: {
     wrapped = (
       <BoundEffect
         key={key} Effect={Effect} store={plays}
-        post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} save={save} release={release} note={note} nameOf={nameOf}
+        post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} marks={card.takeover ? marks : null} save={save} release={release} note={note} nameOf={nameOf}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
         {wrapped}
@@ -91,14 +98,14 @@ export function PostEffects({ plays, post, place, slot, nameOf, children }: {
  * not by where the post is drawn: a post is drawn once on a page, in its thread or in the ORIGIN box of a thread spun
  * from it, never both, so the two places never share a key at once.
  */
-function BoundEffect({ Effect, store, ...props }: Omit<EffectProps, 'show' | 'met' | 'marks'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays }) {
+function BoundEffect({ Effect, store, marks, ...props }: Omit<EffectProps, 'show' | 'met'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays }) {
   const post = props.post.id;
   const card = props.plays[0]!.card;
   const show = useCallback((view: CardView | null) => store.setView(post, card, view), [store, post, card]);
   useEffect(() => () => store.setView(post, card, null), [store, post, card]);
-  /* Wired in Task 7 (met) and Task 5 (marks). */
+  /* Wired in Task 7. */
   const met = useCallback(() => {}, []);
-  return <Effect {...props} show={show} met={met} marks={null} />;
+  return <Effect {...props} show={show} met={met} marks={marks} />;
 }
 
 /**

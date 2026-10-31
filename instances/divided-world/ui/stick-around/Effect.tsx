@@ -8,12 +8,21 @@
  * memory, and so lasts exactly as long as the visit: a reload, or coming back another day, holds them again until they
  * certify. Only this reader's own screen knows any of it.
  *
- * The post's words are this effect's `children`; it draws them where they stand, or, while the view is open, in the view,
- * leaving a space of the same height in the thread so the page does not jump when they leave.
+ * The post's words are this effect's `children`, and nothing in them is ever drawn twice or drawn again: they are drawn once,
+ * by a portal into an element this effect makes and keeps (`words`), and a layout effect moves that element between its place
+ * in the thread and its place in the view (`appendChild`). React never unmounts what is inside, so a lift and a release keep every
+ * inner effect's state, a reader's unsaved scrubbing in Whoops! included (marks-and-the-lens design, section 4). The thread keeps a
+ * space of the same height while the words are in the view, so the page does not jump when they leave.
+ *
+ * This is a takeover (`CardUi.takeover`): it wraps outermost, so every other card's effect is inside `children`, and it is given the
+ * post's `marks`, which the view draws over the lifted post. Its own tab in the Lens says how it holds and how it ends (`show`); it
+ * has no controls, since its ways out are the view's bar, Break free and the caster's checkbox, where they are.
  */
-import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
-import { HoldView } from './HoldView.tsx';
+import { useLensStore } from '../../../../engine/ui/cards/Lens.tsx';
+import { HoldView, WAYS_OUT } from './HoldView.tsx';
 import { isHeld, releaseSide } from '../../cards/stick-around/hold.ts';
 import { placeBeside, swallowEscAfterRelease, useTakeover } from './takeover.ts';
 import './hold.css';
@@ -34,7 +43,16 @@ export type HoldStageValue =
   | { readonly mode: 'view'; readonly level: number; readonly scrolled?: number };
 export const HoldStage = createContext<HoldStageValue>({ mode: 'live' });
 
-export function StickAroundEffect({ post, plays, released, reader, release, children }: EffectProps) {
+/** What the card says of itself in the Lens on this post, for this reader. */
+function stateOf({ author, caster, over, away }: { author: boolean; caster: boolean; over: boolean; away: boolean }): string {
+  if (author) return 'It never holds you: you wrote this post';
+  if (caster) return 'It never holds you: you played it';
+  if (over) return 'It will not hold you again';
+  if (away) return 'You broke free this visit';
+  return 'Holds you on this post until you check the caster\'s sentence, or break free for this visit';
+}
+
+export function StickAroundEffect({ post, plays, released, reader, release, show, marks, children }: EffectProps) {
   const stage = useContext(HoldStage);
   const away = useSyncExternalStore(subscribe, () => escaped.has(post.id), () => false);
   /* The first play the reader has not certified: its caster's sentence is the one they are asked to check. */
@@ -43,14 +61,36 @@ export function StickAroundEffect({ post, plays, released, reader, release, chil
   const [lifted, setLifted] = useState(stage.mode === 'view');
   const body = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(0);
+  const lens = useLensStore();
   /* Where the reader goes when they break free: the post they leave (kept, since its words are gone from under `body` by then) and the side. */
   const leaving = useRef<{ post: HTMLElement; side: 'after' | 'before' } | null>(null);
+
+  /* What the Lens says of the hold: no edge, no controls, its way out in a sentence. */
+  const state = stateOf({ author: reader.author, caster: reader.caster, over: play === undefined, away });
+  useEffect(() => {
+    show({ progress: null, state, ends: WAYS_OUT, yours: false, controls: [], notes: {} });
+  }, [show, state]);
+
+  /*
+   * The words' own element, made once and kept; the thread's place for it and the view's. Drawn once through the portal whatever
+   * the state, so the children are one mount for the life of this effect.
+   */
+  const [words] = useState(() => { const el = document.createElement('div'); el.className = 'kb-hold-words'; return el; });
+  const home = useRef<HTMLDivElement>(null);
+  const slot = useRef<HTMLDivElement>(null);
+  const inView = lifted && held && !!play;
+  useLayoutEffect(() => {
+    const into = inView ? slot.current : home.current;
+    if (into && words.parentElement !== into) into.appendChild(words);
+  }, [inView, words]);
 
   const take = useCallback(() => {
     /* The space the post leaves in the thread, so the thread does not move when the post is lifted out of it. */
     setHeight(body.current?.getBoundingClientRect().height ?? 0);
+    /* A Lens opened from the thread's marks is left behind under the view: the view has its own marks to open it from. */
+    lens.close();
     setLifted(true);
-  }, []);
+  }, [lens]);
   useTakeover(post.id, () => body.current, () => escaped.has(post.id), held && !lifted && stage.mode === 'live', take);
 
   const breakFree = useCallback((pushed: number) => {
@@ -71,16 +111,15 @@ export function StickAroundEffect({ post, plays, released, reader, release, chil
   /* Certified: the play drops out of the held set, and the view with it. */
   useLayoutEffect(() => { if (!held) setLifted(false); }, [held]);
 
-  if (!held || !play) return <>{children}</>;
   return (
-    <div ref={body} className="kb-hold" data-kb-hold={lifted ? 'lifted' : 'held'}>
-      {lifted ? <div className="kb-hold-away" style={{ height }} aria-hidden="true" /> : children}
-      {lifted && (
+    <div ref={body} className={held ? 'kb-hold' : 'kb-hold-off'} data-kb-hold={held ? (lifted ? 'lifted' : 'held') : undefined}>
+      {createPortal(children, words)}
+      <div ref={home} className="kb-hold-home" />
+      {held && lifted && <div className="kb-hold-away" style={{ height }} aria-hidden="true" />}
+      {held && lifted && play && (
         <HoldView
-          key={play.id} post={post} play={play} stage={stage} release={release} onBreakFree={breakFree}
-        >
-          {children}
-        </HoldView>
+          key={play.id} post={post} play={play} stage={stage} release={release} onBreakFree={breakFree} marks={marks} words={slot}
+        />
       )}
     </div>
   );

@@ -39,6 +39,17 @@ article:has(> .kb-act-main .kb-hold)::after {
   box-shadow: 0 0 0 4px var(--kb-glass-ground), 0 0 0 6px var(--kb-glass-sweet);
 }
 
+/*
+ * The post's words have an element of their own (Effect.tsx), moved between the thread and the view; it and the place it stands
+ * in the thread take no box, so a post with the hold off or on is laid out as it was. The words' own element in the view is the
+ * post's body.
+ */
+.kb-hold-off,
+.kb-hold-home,
+.kb-hold-words {
+  display: contents;
+}
+
 /* The space the post leaves while it is in the view. */
 .kb-hold-away {
   min-height: 1px;
@@ -131,6 +142,11 @@ article:has(> .kb-act-main .kb-hold)::after {
   border-bottom: 1px solid var(--kb-rule);
   font-size: var(--kb-size-small);
   color: var(--kb-muted);
+}
+
+/* Where the Lens opens (LensHost): inside the dialog, so focus is held in it and the page behind, inert, does not hold it. The Lens is fixed to the window (glass/shell.css), so this takes no box. */
+.kb-hold-lens-host {
+  display: contents;
 }
 
 .kb-hold-post-line b {

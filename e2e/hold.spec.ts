@@ -103,7 +103,7 @@ test.describe('the app at the Hold board\'s moment', () => {
     const box = view(page).getByRole('checkbox', { name: /I have read every word of Spritey's changelog and I feel changed\./u });
     for (let i = 0; i < 8 && !(await box.evaluate((el) => el === document.activeElement)); i += 1) await page.keyboard.press('Tab');
     await expect(box).toBeFocused();
-    await expect(view(page).getByRole('button', { name: 'Break free' })).toBeVisible();
+    await expect(view(page).getByRole('button', { name: 'Break free', exact: true })).toBeVisible();
     await page.keyboard.press('Space');
     await expect(view(page)).toBeHidden();
     /* The release holds when the thread is left and opened again: the screen asks the backend and is told. */
@@ -120,7 +120,7 @@ test.describe('the app at the Hold board\'s moment', () => {
     await page.goto(MOMENT);
     await ready(page);
     await expect(view(page)).toBeVisible({ timeout: 10_000 });
-    const button = view(page).getByRole('button', { name: 'Break free' });
+    const button = view(page).getByRole('button', { name: 'Break free', exact: true });
     for (let i = 0; i < 60 && (await view(page).isVisible()); i += 1) {
       await button.click({ timeout: 2000 }).catch(() => {});
       await page.waitForTimeout(130);
@@ -187,4 +187,55 @@ test.describe('the app at the Hold board\'s moment', () => {
       await expect(view(page)).toBeVisible({ timeout: 10_000 });
     });
   });
+});
+
+/*
+ * Nothing remounts (marks-and-the-lens design, section 4), on a real browser: Stick Around draws the post's words once and moves their
+ * element between the thread and its view, so Whoops!'s canvas, its observers and the reader's unsaved scrubbing are the same ones
+ * before the lift, in the view and after the release. jsdom cannot draw the ink or move a canvas, so this is the only place it is read.
+ */
+test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing across the lift into the view and the release back', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 980 });
+  await page.goto('/?fixture=boards&story=boards-08-hold--live-inked');
+  await ready(page);
+  const canvas = page.locator('.kb-whoops-ink');
+  await expect(canvas).toBeVisible();
+  const inked = () => canvas.evaluate((c: HTMLCanvasElement) => {
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i]! > 40) n++;
+    return n / (c.width * c.height);
+  });
+  /* The share of the canvas that is inked, not the pixels: the view's canvas is wider than the thread's. */
+  await expect.poll(inked).toBeGreaterThan(0.01);
+  const whole = await inked();
+  /* The reader scrubs in the thread, before the hold has taken them over. */
+  const box = (await canvas.boundingBox())!;
+  const y = Math.min(box.y + box.height / 2, 900);
+  await page.mouse.move(box.x + box.width * 0.2, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.8, y, { steps: 30 });
+  await page.mouse.up();
+  await expect.poll(inked).toBeLessThan(whole * 0.97);
+  const scrubbed = await inked();
+  await canvas.evaluate((c) => { (c as HTMLElement).dataset.kbSame = 'yes'; });
+
+  /* The hold takes the reader over: the same canvas, in the view, with the same ink. */
+  await page.mouse.move(720, 500);
+  await page.mouse.wheel(0, 20);
+  await expect(view(page)).toBeVisible({ timeout: 10_000 });
+  await expect(view(page).locator('.kb-whoops-ink[data-kb-same="yes"]')).toHaveCount(1);
+  await expect.poll(inked).toBeLessThan(whole * 0.97);
+  expect(Math.abs((await inked()) - scrubbed) / whole).toBeLessThan(0.1);
+
+  /* Released back into the thread: still the same canvas and the same scrubbing. */
+  const button = view(page).getByRole('button', { name: 'Break free', exact: true });
+  for (let i = 0; i < 60 && (await view(page).isVisible()); i += 1) {
+    await button.click({ timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(130);
+  }
+  await expect(view(page)).toBeHidden();
+  await expect(page.locator('article .kb-whoops-ink[data-kb-same="yes"]')).toHaveCount(1);
+  await expect.poll(inked).toBeLessThan(whole * 0.97);
+  expect(Math.abs((await inked()) - scrubbed) / whole).toBeLessThan(0.1);
 });

@@ -50,6 +50,12 @@ const isTop = (entry: Entry) => stack[stack.length - 1] === entry;
 /** Whether any modal surface is open: a layer that is not modal (the Lens, glass/Float.tsx) leaves Esc to it while one is. */
 export const modalOpen = (): boolean => stack.length > 0;
 
+/**
+ * Whether `el` stands inside the top modal surface: a float hosted in a takeover's dialog (the Lens in Stick Around's view) is
+ * above that dialog's layer, so Esc is the float's while nothing newer (a picker opened from it) is open over both.
+ */
+export const topModalHolds = (el: Node | null): boolean => el !== null && (stack[stack.length - 1]?.overlay?.contains(el) ?? false);
+
 /** Everything in the body but the top modal's overlay is inert; what was inert before stays inert after. */
 function settle() {
   const top = stack[stack.length - 1]?.overlay ?? null;

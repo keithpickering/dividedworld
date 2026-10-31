@@ -18,7 +18,7 @@
  */
 import { useLayoutEffect, useRef, type CSSProperties, type KeyboardEventHandler, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { modalOpen } from '../modal.tsx';
+import { modalOpen, topModalHolds } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
 import { pageEscape } from './keys.ts';
 import { hudTopOf, placePopover } from './place.ts';
@@ -120,17 +120,23 @@ export function Float({ label, surface, onClose, children, anchor, beside, sheet
    * Esc is the float's when no modal surface is open over it and the key is a deliberate press outside a text field (the page's own
    * test, glass/keys.ts). It listens in the capture phase of the document and answers the key, so the float closes before the HUD's
    * Menu or the glass page's Back hears an Esc (they listen later, and an answered key is theirs no longer).
+   *
+   * A float hosted inside a modal surface (a takeover's view gives the Lens its host, Task 5 of the marks-and-the-lens plan) stands
+   * above that surface: while that surface is the top one, Esc is the float's. It listens on the window then, which hears a key before
+   * the document does, so the view's own Esc (Stick Around's Break free press, its modal layer's close) never sees the key the float
+   * answered; the next Esc is the view's.
    */
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!pageEscape(e) || modalOpen()) return;
+      if (!pageEscape(e)) return;
+      if (modalOpen() && !topModalHolds(host ?? null)) return;
       e.preventDefault();
       e.stopPropagation();
       latest.current.onClose();
     };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, []);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [host]);
 
   /* Focus goes back to what opened it, once it has closed, only where focus fell to the page (what held it left with the float). */
   useLayoutEffect(() => {

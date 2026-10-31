@@ -117,3 +117,6 @@ export const LiveLongPost: Story = { args: { stage: { mode: 'live' }, long: true
 
 /** A post with Whoops!'s ink under the hold, in its thread: the hold wraps the ink, and the post's tags, reactions and actions still stand in front of it (e2e/whoops.spec.ts reads it so). */
 export const WhoopsUnderHold: Story = { args: { stage: { mode: 'thread' }, inked: true } };
+
+/** The page itself with Whoops!'s ink under the hold: a reader's unsaved scrubbing must survive the lift into the view and the release back (e2e/hold.spec.ts reads it so). */
+export const LiveInked: Story = { args: { stage: { mode: 'live' }, inked: true } };

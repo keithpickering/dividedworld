@@ -26,6 +26,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'stick-around',
     Effect: StickAroundEffect,
+    takeover: true,
     art: { color: '#2ee6ff', ink: '#03141a', image: stickAroundFace, mark: stickAroundMark, tagline: 'Hold a reader on a post.' },
     summary: 'Holds a reader on the post until they check your sentence, or break free.',
     describe: (settings: Settings) =>
