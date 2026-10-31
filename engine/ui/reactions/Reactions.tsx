@@ -10,6 +10,7 @@ import { usePlayer } from '../player.tsx';
 import { useTally, type Tallies } from '../thread/tallies.ts';
 import { useMine, type Mine } from './mine.ts';
 import { Picker } from './Picker.tsx';
+import '../cards/kit.css';
 import './reactions.css';
 
 /** A reaction's name for a reader: its key made readable ("raised-hands" is "Raised hands"). */
@@ -64,9 +65,18 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
         </ul>
       )}
       {canReact && (
-        <button ref={button} type="button" className="kb-button kb-react-button" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
-          <span aria-hidden="true">+ </span>React
-        </button>
+        look === 'glass'
+          /* On the glass the button is the kit's skewed tile, as every other control in the Lens is; never the dashed edge the glass keeps for what cannot be pressed yet. */
+          ? (
+            <button ref={button} type="button" className="kb-kit-tile kb-react-button" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
+              <span className="kb-kit-tile-label"><span aria-hidden="true">+ </span>React</span>
+            </button>
+          )
+          : (
+            <button ref={button} type="button" className="kb-button kb-react-button" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
+              <span aria-hidden="true">+ </span>React
+            </button>
+          )
       )}
       {open && canReact && (
         <Picker

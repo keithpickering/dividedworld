@@ -195,17 +195,19 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, on
   const hosted = useLensHost() !== document.body;
   return (
     <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
-      {note && <p className="kb-lens-note kb-calm">{note}</p>}
-      <p className="kb-lens-by kb-calm"><span className="kb-lens-who kb-glass-display">{caster}</span> · played <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
+      {note && <p className="kb-lens-note">{note}</p>}
+      <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · played <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {more && <p className="kb-lens-more">More reactions than the post</p>}
       {yours && <p className="kb-lens-yours">Your play</p>}
-      <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} look="glass" />
-      <div className="kb-lens-actions">
-        {hosted
-          ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
-          : <button type="button" className="kb-glass-cut-button kb-lens-action" onClick={() => onSpin(play, name)}>Spin thread</button>}
-        {to && <Link className="kb-glass-cut-button kb-lens-action" to={to}>Go to post</Link>}
+      <div className="kb-lens-row-foot">
+        <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} look="glass" />
+        <div className="kb-lens-actions">
+          {hosted
+            ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
+            : <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(play, name)}><span className="kb-kit-tile-label">Spin thread</span></button>}
+          {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
+        </div>
       </div>
       <Spun play={play.id} />
     </li>
@@ -227,7 +229,7 @@ function Who({ plays, nameOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omi
   return (
     <div className="kb-lens-section kb-lens-who-section">
       <button type="button" className="kb-lens-fold" aria-expanded={unfolded} aria-controls={id} onClick={onToggle}>
-        <span className="kb-lens-fold-sign" aria-hidden="true">{unfolded ? '▾' : '▸'}</span>
+        <span className="kb-lens-fold-sign" aria-hidden="true" />
         {playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}
       </button>
       <ul id={id} className="kb-lens-rows" hidden={!unfolded}>

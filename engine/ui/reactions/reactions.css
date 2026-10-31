@@ -267,6 +267,11 @@
  * outline, drawn on the glass, in its tokens rather than the 2003 chrome's.
  */
 .kb-reactions[data-kb-look="glass"] .kb-chip {
+  /* As tall as the tiles beside it, so a row of chips and buttons sits on one line. */
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 36px;
   border-color: var(--kb-glass-text-2);
   background: var(--kb-glass-ground);
   color: var(--kb-glass-text);
@@ -276,10 +281,10 @@
   outline-color: var(--kb-glass-text-hi);
 }
 
+/*
+ * The glass's React is the kit's skewed tile (cards/kit.css), as every control beside it in the Lens is, on the tile's solid edge:
+ * the glass keeps a dashed edge for what cannot be pressed yet.
+ */
 .kb-reactions[data-kb-look="glass"] .kb-react-button {
-  border: 1px dashed var(--kb-glass-text-2);
-  background: var(--kb-glass-ground);
-  color: var(--kb-glass-text);
-  font: inherit;
-  font-weight: 700;
+  border-style: solid;
 }
