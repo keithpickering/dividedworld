@@ -1,13 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * A card's plate and its ghost mark over a 2003 post, in a real browser (the owner on #80's round 2: "I think the Play
- * Here button is inheriting the Verdana"; the play control is the ghost mark since the marks-and-the-lens plan's Task 3, and
- * the plate goes in its Task 6). Two things are held here: that no glass control in or under a 2003 post is set
- * in the 2003 board's faces (a control drawn into the post's slot sits under the board's `body`, so it takes the board's
- * font unless it names the glass's own), and the shape the approved stories (engine/ui/cards/Plate.board.stories.tsx)
- * give the plate: outside the post's body and attached at its bottom right (full width on a phone), a readout and a meter,
- * tiles that are buttons, and the ghost mark in the post's date row, never in the 2003 action row.
+ * A card's ghost mark over a 2003 post, and Whoops!'s controls in the Lens, in a real browser (the owner on #80's round 2: "I think
+ * the Play Here button is inheriting the Verdana"; the play control is the ghost mark since the marks-and-the-lens plan's Task 3,
+ * and Whoops! draws no plate since its Task 6: its state and controls are the Lens's, opened by its mark). Two things are held
+ * here: that no glass control in or under a 2003 post, or in the Lens, is set in the 2003 board's faces (a control drawn under
+ * the board's `body` takes the board's font unless it names the glass's own), and the shape the approved stories
+ * (engine/ui/cards/Plate.board.stories.tsx) give the marks: the ghost mark in the post's date row, never in the 2003 action
+ * row, and the Lens's State, Hold to scrub and the author's tool choice as buttons with their names.
  */
 test.use({ reducedMotion: 'reduce' });
 
@@ -51,6 +51,16 @@ async function expectGlassFaces(page: Page, expectTile: string) {
   }
 }
 
+/** Opens the Lens on #41's Whoops! mark (the card's state and controls are there, not in a plate), and answers the Lens. */
+async function openWhoopsLens(page: Page) {
+  const mark = page.locator('#post-41 .kb-mark[data-kb-card="whoops"]:not(.kb-ghost-mark)');
+  await expect(mark).toBeVisible();
+  await mark.click();
+  const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+  await expect(lens).toBeVisible();
+  return lens;
+}
+
 test('the ghost mark on #42 is set in the glass\'s face, not the 2003 board\'s', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1120 });
   await page.goto(ARMED);
@@ -58,43 +68,24 @@ test('the ghost mark on #42 is set in the glass\'s face, not the 2003 board\'s',
   await expectGlassFaces(page, 'kb-ghost-mark');
 });
 
-test('the ghost mark on #41, the plate and its tiles are set in the glass\'s face', async ({ page }) => {
+test('the ghost mark on #41, and the Lens\'s kit tiles, are set in the glass\'s face', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1120 });
   await page.goto(SPLATTED_AND_ARMED);
   await expect(page.locator('#post-41 .kb-ghost-mark')).toBeVisible();
   await expectGlassFaces(page, 'kb-ghost-mark');
-  await expectGlassFaces(page, 'kb-plate-tile');
+  await openWhoopsLens(page);
+  const f = await faces(page);
+  const tiles = await page.locator('.kb-lens .kb-kit-tile').evaluateAll((els) => els.map((el) => ({ text: (el.textContent ?? '').trim(), family: getComputedStyle(el).fontFamily })));
+  expect(tiles.length).toBeGreaterThan(0);
+  for (const t of tiles) {
+    expect([f.glass, f.display], `${t.text} is set in ${t.family}`).toContain(t.family);
+    expect(t.family).not.toMatch(/Verdana|Geneva|Courier/u);
+  }
 });
 
 for (const [name, width, height] of [['1440', 1440, 1120], ['390', 390, 844]] as const) {
   test.describe(`at ${name}`, () => {
     test.use({ viewport: { width, height } });
-
-    test('the plate is outside #41\'s body and attached to it at its bottom right (full width on a phone)', async ({ page }) => {
-      await page.goto(SPLATTED);
-      const plate = page.locator('#post-41 .kb-effect-strip');
-      await expect(plate).toBeVisible();
-      expect(await page.locator('#post-41 .kb-act-main .kb-effect-strip').count()).toBe(0);
-      const r = await page.evaluate(() => {
-        const rect = (s: string) => { const b = document.querySelector(s)!.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width }; };
-        return { body: rect('#post-41 .kb-act-main'), foot: rect('#post-41 .kb-act-foot'), plate: rect('#post-41 .kb-effect-strip') };
-      });
-      /* Attached: it starts at the post's footer bar's bottom edge (a border's width of play), under the bar and never over the words. */
-      expect(r.foot.t).toBeGreaterThanOrEqual(r.body.b - 3);
-      expect(r.plate.t).toBeGreaterThanOrEqual(r.foot.b - 3);
-      expect(r.plate.t - r.foot.b).toBeLessThan(24);
-      if (width >= 1000) {
-        /* At the bottom right: the plate's right edge is the body's less the slot's padding, and it is narrower than the body. */
-        expect(r.body.r - r.plate.r).toBeGreaterThanOrEqual(0);
-        expect(r.body.r - r.plate.r).toBeLessThan(48);
-        expect(r.plate.w).toBeLessThan(r.body.w - 48);
-      } else {
-        /* Full width: the body's width less the slot's padding on each side. */
-        expect(r.plate.l - r.body.l).toBeLessThan(32);
-        expect(r.body.r - r.plate.r).toBeLessThan(32);
-        expect(r.plate.w).toBeGreaterThan(r.body.w - 64);
-      }
-    });
 
     test('the armed card\'s ghost mark is never in the 2003 action row or body: it ends the strip in the date row of #41 and of #42', async ({ page }) => {
       await page.goto(SPLATTED_AND_ARMED);
@@ -116,62 +107,24 @@ for (const [name, width, height] of [['1440', 1440, 1120], ['390', 390, 844]] as
   });
 }
 
-test('the plate on #41 reads out the card and its layers, and its controls are buttons with their names', async ({ page }) => {
+test('Whoops!\'s mark on #41 opens the Lens, which reads out the card and its layers, and its controls are buttons with their names; no plate is drawn', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1120 });
   await page.goto(SPLATTED_AND_ARMED);
-  const plate = page.locator('#post-41 .kb-effect-strip');
-  await expect(plate).toBeVisible();
-  await expect(plate.locator('.kb-plate-name')).toHaveText(/whoops!/iu);
-  /* The readout names the top layer, its caster and its ink, with its own share washed (the plays-on-a-post design, section 5). */
-  await expect(plate.locator('.kb-plate-state')).toHaveText(/^\d+ layers? · top: .+'s [a-z]+, \d+% washed$/u);
-  const bars = await plate.locator('.kb-whoops-meter > *, [role="meter"] > *, .kb-whoops-bar').count();
-  const layers = Number(/^(\d+)/u.exec((await plate.locator('.kb-plate-state').textContent()) ?? '')![1]);
-  expect(bars).toBe(layers);
-  await expect(plate.getByRole('button', { name: 'Hold to scrub' })).toBeVisible();
-  /* The armed card is the post's ghost mark, in its date row, and not among the plate's controls. */
-  await expect(plate.getByRole('button', { name: /^Play Whoops!/u })).toHaveCount(0);
+  await expect(page.locator('#post-41 .kb-whoops')).toBeVisible();
+  await expect(page.locator('.kb-effect-strip, .kb-effect-plate')).toHaveCount(0);
+  const lens = await openWhoopsLens(page);
+  /* The State names the top layer, its caster and its ink, with its own share washed (the plays-on-a-post design, section 5). */
+  await expect(lens.locator('.kb-lens-state .kb-lens-line')).toHaveText(/^\d+ layers? · top: .+'s [a-z]+, \d+% washed$/u);
+  await expect(lens.locator('.kb-lens-ends')).toHaveText(/^Ends on your screen when you scrub every layer off\./u);
+  await expect(lens.getByRole('button', { name: 'Hold to scrub' })).toBeVisible();
+  /* The armed card is the post's ghost mark, in its date row, and not among the Lens's controls. */
+  await expect(lens.getByRole('button', { name: /^Play Whoops!/u })).toHaveCount(0);
   await expect(page.locator('#post-41').getByRole('button', { name: 'Play Whoops! on post 41' })).toBeVisible();
-  for (const name of ['Wash', 'Write in ink']) {
-    const tool = plate.getByRole('button', { name });
-    if (await tool.count()) await expect(tool).toHaveAttribute('aria-pressed', /^(true|false)$/u);
+  /* The reader has the hold alone; the author's two tools are there only for the author. */
+  const tools = await lens.getByRole('group', { name: 'Your tool' }).count();
+  if (tools) {
+    for (const name of ['Wash', 'Write in ink']) await expect(lens.getByRole('button', { name })).toHaveAttribute('aria-pressed', /^(true|false)$/u);
   }
+  expect(await lens.locator('.kb-kit-tile').count()).toBeLessThanOrEqual(3);
 });
 
-/*
- * Forced colors (Windows High Contrast) replace the plate's backgrounds, which draw its edge, with the canvas: the plate
- * is edged by a border in a system color there, and is not cut by a clip-path that would cut the border's corners off.
- */
-test.describe('in forced colors', () => {
-  test.use({ forcedColors: 'active' });
-
-  test('the effect plate has a visible edge in a system color', async ({ page }) => {
-    await page.goto('/?fixture=boards&moment=01-main');
-    const plate = page.locator('#post-41 .kb-effect-plate');
-    await expect(plate).toBeVisible();
-    const edge = await plate.evaluate((el) => {
-      const probe = document.createElement('div');
-      probe.style.cssText = 'forced-color-adjust: none; color: CanvasText';
-      document.body.append(probe);
-      const text = getComputedStyle(probe).color;
-      probe.remove();
-      const c = getComputedStyle(el);
-      return { style: c.borderTopStyle, width: parseFloat(c.borderTopWidth), color: c.borderTopColor, text };
-    });
-    expect(edge.style).toBe('solid');
-    expect(edge.width).toBeGreaterThanOrEqual(1);
-    expect(edge.color).toBe(edge.text);
-  });
-});
-
-/* The plate takes the post's width on the Phone board's layout, including a wide window folded to it by large text. */
-test('the plate takes the post\'s full width where the layout is the phone\'s, whatever the window\'s width', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1120 });
-  await page.goto('/?fixture=boards&moment=01-main');
-  const strip = page.locator('#post-41 .kb-effect-strip');
-  await expect(strip).toBeVisible();
-  const narrow = (await strip.boundingBox())!.width;
-  await page.evaluate(() => document.documentElement.setAttribute('data-kb-layout', 'phone'));
-  const folded = await strip.evaluate((el) => getComputedStyle(el).flexBasis);
-  expect(narrow).toBeLessThan((await page.locator('#post-41 .kb-act-main').boundingBox())!.width - 48);
-  expect(folded).toBe('100%');
-});

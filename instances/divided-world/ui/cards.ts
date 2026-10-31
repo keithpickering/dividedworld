@@ -12,7 +12,9 @@ import type { CardUi } from '../../../engine/ui/cards/types.ts';
 import type { Settings } from '../../../engine/rules/types.ts';
 import { StickAroundEffect } from './stick-around/Effect.tsx';
 import stickAroundFace from './cards/stick-around.svg?url';
+import stickAroundMark from './cards/stick-around-mark.svg?url';
 import whoopsFace from './cards/whoops.svg?url';
+import whoopsMark from './cards/whoops-mark.svg?url';
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
 import { Effect as WhoopsEffect } from '../cards/whoops/Effect.tsx';
 import { luminance } from '../cards/whoops/splat.ts';
@@ -24,14 +26,15 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   {
     key: 'stick-around',
     Effect: StickAroundEffect,
-    art: { color: '#2ee6ff', ink: '#03141a', image: stickAroundFace, tagline: 'Hold a reader on a post.' },
+    art: { color: '#2ee6ff', ink: '#03141a', image: stickAroundFace, mark: stickAroundMark, tagline: 'Hold a reader on a post.' },
     summary: 'Holds a reader on the post until they check your sentence, or break free.',
     describe: (settings: Settings) =>
       `A Sweet card. Once the post settles in view, whoever reads it is pulled to it and the post fills their screen: they read it there, and get out by checking the caster's sentence to certify they read it, or by scrolling hard past either end of it (or pressing Break free, or Esc) to fill a bar that drains whenever they stop, which frees them for that visit. The post's author and the caster are never held. It costs ${orbs(settings.economy['stickAround.price'] ?? 0)} to buy, and nothing more to play.`,
   },
   {
     key: 'whoops',
-    art: { color: '#ff3d7f', ink: '#14030a', image: whoopsFace, tagline: 'Splat a post in ink.' },
+    art: { color: '#ff3d7f', ink: '#14030a', image: whoopsFace, mark: whoopsMark, tagline: 'Splat a post in ink.' },
+    hint: 'Drag across the ink to scrub it off your screen.',
     summary: 'Splats a post in your ink. Readers scrub it; only the author can wash it.',
     Effect: WhoopsEffect,
     ConfigForm: WhoopsConfigForm,

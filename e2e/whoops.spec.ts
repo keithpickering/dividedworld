@@ -118,7 +118,7 @@ test('with a held Stick Around around the ink, the marks, the reactions and the 
 });
 
 /*
- * The scrub button, the author's tool toggles and the chosen ink swatch are drawn with a border, a
+ * The scrub button, the author's tool choice (both the kit's tiles in the Lens) and the chosen ink swatch are drawn with a border, a
  * glow and underlining, which forced colors (Windows High Contrast) drop or recolor: each is also
  * marked by an outline or a border in a system color there. The swatch is the play form's, which a
  * moment does not open, so a swatch is made from the card's own markup beside the post.
@@ -128,7 +128,10 @@ test.describe('in forced colors', () => {
 
   test('the scrub button, the author\'s tools and the chosen swatch are marked in system colors', async ({ page }) => {
     await page.goto('/?fixture=boards&moment=01-main');
-    await expect(page.locator('#post-41 .kb-whoops-scrub')).toBeVisible();
+    /* The hold and the tools are the kit's tiles in the Lens, opened by Whoops!'s mark. */
+    await page.locator('#post-41 .kb-mark[data-kb-card="whoops"]:not(.kb-ghost-mark)').click();
+    const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+    await expect(lens.getByRole('button', { name: 'Hold to scrub' })).toBeVisible();
     const marks = await page.evaluate(() => {
       const system = (color: string) => {
         const probe = document.createElement('div');
@@ -144,18 +147,19 @@ test.describe('in forced colors', () => {
       const outline = (el: Element) => { const c = getComputedStyle(el); return { style: c.outlineStyle, width: c.outlineWidth, color: c.outlineColor }; };
       const border = (el: Element) => { const c = getComputedStyle(el); return { style: c.borderTopStyle, width: c.borderTopWidth, color: c.borderTopColor }; };
       const [chosen, other] = [...form.querySelectorAll('input')];
-      const tools = [...document.querySelectorAll('#post-41 .kb-whoops-tools button')];
+      const tools = [...document.querySelectorAll('.kb-lens [role="group"] .kb-kit-tile')];
       return {
         buttonText: system('ButtonText'), highlight: system('Highlight'),
-        scrub: outline(document.querySelector('#post-41 .kb-whoops-scrub')!),
+        scrub: outline(document.querySelector('.kb-lens .kb-kit-tile[data-kb-hold]')!),
         tools: tools.map((t) => ({ pressed: t.getAttribute('aria-pressed'), ...outline(t) })),
         chosen: border(chosen!), other: border(other!),
       };
     });
-    expect(marks.scrub).toEqual({ style: 'solid', width: '2px', color: marks.buttonText });
+    /* The kit's tiles (kit.css) are outlined 2px in ButtonText, and in Highlight when lit (the hold) or pressed (the chosen tool). */
+    expect(marks.scrub).toEqual({ style: 'solid', width: '2px', color: marks.highlight });
     expect(marks.tools).toHaveLength(2);
     for (const t of marks.tools) {
-      expect(t).toEqual(t.pressed === 'true' ? { pressed: 'true', style: 'solid', width: '3px', color: marks.highlight } : { pressed: 'false', style: 'solid', width: '1px', color: marks.buttonText });
+      expect(t).toEqual(t.pressed === 'true' ? { pressed: 'true', style: 'solid', width: '2px', color: marks.highlight } : { pressed: 'false', style: 'solid', width: '2px', color: marks.buttonText });
     }
     expect(marks.chosen).toEqual({ style: 'solid', width: '4px', color: marks.highlight });
     expect(marks.other.style).not.toBe('solid');

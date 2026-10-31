@@ -1,11 +1,10 @@
 /*
- * Whoops!'s effect on a post: the fixed layout the ink lies over, the canvas, the suds, and the glass
- * reaching in with its plate's readout and tiles (the tag and the plate are cards.css's, the tag tinted by the top layer's ink).
+ * Whoops!'s effect on a post: the fixed layout the ink lies over, the canvas and the suds. Its words and controls are the
+ * Lens's and the kit's (Effect.tsx publishes them as its view), so this sheet draws none; the tag is cards.css's, tinted by the top layer's ink.
  * The post itself stays the board's 2003 post; its words are laid out at a reference width and scaled
  * as a whole (Effect.tsx), so this sheet sets no size on them.
  *
- * The ink and the suds are the card's art: their colors are written by the splat, not here. The
- * plate's are the glass's tokens and sizes, on the `effect` smoke.
+ * The ink and the suds are the card's art: their colors are written by the splat, not here.
  */
 .kb-whoops {
   position: relative;
@@ -69,68 +68,6 @@
   background: rgb(255 255 255 / 0.85);
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
   pointer-events: none;
-}
-
-/*
- * The words and controls are the glass plate's (EffectStrip, engine/ui/cards/Effects.tsx; its tiles are cards.css's),
- * under the post. What is Whoops!'s: the meter in the plate's readout, the hint, and the order the controls stand in.
- */
-.kb-whoops-meter {
-  display: inline-flex;
-  gap: 5px;
-  margin-left: auto;
-}
-
-/*
- * One skewed segment for each layer, in that layer's own ink (--kb-ink), the top layer first (the plays-on-a-post design,
- * section 5): filled by the share of its ink washed on this screen (Effect.tsx sets --kb-washed, 0 to 1). The top layer,
- * the one the next stroke washes, is lit; the layers under it are dimmer, and a layer washed clean is faded.
- */
-.kb-whoops-meter > span {
-  width: 2rem;
-  height: 0.6rem;
-  box-sizing: border-box;
-  transform: skewX(var(--kb-glass-skew));
-  border: 1px solid var(--kb-ink, var(--kb-tag));
-  /* A neutral edge outside the ink's own, so a segment in an ink as dark as the plate is still seen. */
-  outline: 1px solid color-mix(in srgb, var(--kb-glass-text-2) 60%, transparent);
-  background: linear-gradient(to right, var(--kb-ink, var(--kb-tag)) calc(var(--kb-washed) * 100%), transparent calc(var(--kb-washed) * 100%));
-  opacity: 0.7;
-}
-
-.kb-whoops-meter > span[data-kb-top="true"] {
-  opacity: 1;
-  box-shadow: 0 0 8px var(--kb-ink, var(--kb-tag));
-}
-
-.kb-whoops-meter > span[data-kb-clean="true"] {
-  opacity: 0.3;
-}
-
-.kb-whoops-hint {
-  order: 0;
-}
-
-.kb-whoops-scrub {
-  order: 2;
-}
-
-.kb-whoops-tools {
-  order: 3;
-  flex: 1 1 18rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.75rem;
-}
-
-.kb-whoops-tools-label {
-  flex: 1 1 100%;
-  color: var(--kb-glass-text-2);
-}
-
-.kb-whoops-status {
-  order: 4;
 }
 
 /* ---- the play form's ink: the card's swatches, any color, and a preview ---- */
@@ -222,31 +159,11 @@
 }
 
 /*
- * Forced colors drop the scrub button's glow and recolor its border, the tools' bold and the chosen
- * swatch's rings, which are shadows, and the swatches' own fill. So the button and the tools are each
- * outlined in a system color (the chosen tool in Highlight, as thick as the board's bold), and the chosen
- * swatch has a Highlight border inside its ink, which stays the ink: the choice is the color.
+ * Forced colors drop the chosen swatch's rings, which are shadows, and recolor the swatches' own fill. So the chosen swatch has a
+ * Highlight border inside its ink, which stays the ink: the choice is the color. (The hold and the tool choice are the kit's
+ * tiles, whose forced-colors outlines are kit.css's.)
  */
 @media (forced-colors: active) {
-  /* Each is a plate tile, whose own forced-colors rule is a class less, so these name both. */
-  .kb-plate-tile.kb-whoops-scrub {
-    outline: 2px solid ButtonText;
-    outline-offset: 1px;
-  }
-
-  .kb-plate-tile.kb-whoops-scrub:focus-visible {
-    outline-color: Highlight;
-  }
-
-  .kb-plate-tile.kb-whoops-tool {
-    outline: 1px solid ButtonText;
-    outline-offset: 2px;
-  }
-
-  .kb-plate-tile.kb-whoops-tool[aria-pressed="true"] {
-    outline: 3px solid Highlight;
-  }
-
   .kb-whoops-swatch input {
     forced-color-adjust: none;
     box-sizing: border-box;
