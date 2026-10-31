@@ -2,8 +2,14 @@
  * Whoops!'s inks in words. The play form offers its swatches (ConfigForm.tsx), and the plate's readout names a
  * layer's ink so it never says a hex code ("top: Spritey's yellow", the plays-on-a-post design, section 5): the
  * swatch's name when the ink is one, else the swatch nearest it in hue. An ink the player gave by name ("violet") is
- * called by that name. An ink with no hue to speak of (black, white, a gray, or one too dark or too pale to show its
- * hue) is called by its lightness, since a hue would name it a color it is not. Nothing new is saved on the play.
+ * called by that name. Nothing new is saved on the play.
+ *
+ * The names come from one table (`NAMES`): the swatches plus black, white and gray. Each entry is classed by its own
+ * chroma in OKLCh, neutral below `GRAY_GATE` and chromatic above, so no code names a color family: a Brown added to the
+ * swatches is chromatic and wins the dark oranges on lightness, a Silver is neutral and competes with gray. An ink
+ * below the gate takes the neutral nearest in lightness; one above it takes the chromatic entry nearest in hue, with
+ * lightness weighed at half. (#97's rule weighed hue alone, which called a brown "orange" and needed HSL pre-checks to
+ * keep dark inks from being named for a hue; the gate does that now.)
  *
  * The swatches live here, not in the form, so the names have one list and a Node test can read it.
  */
@@ -19,40 +25,49 @@ export const SWATCHES = [
   { name: 'Violet', color: '#b46cff' },
 ] as const;
 
-/** Below this saturation an ink has no hue worth naming. */
-const GRAY = 0.15;
-/** Below and above these lightnesses an ink reads as black or white. */
-const DARK = 0.18;
-const PALE = 0.9;
+/** One entry of the naming table. */
+export interface InkEntry { readonly name: string; readonly color: string }
 
-/** Hue in degrees, saturation and lightness from 0 to 1. */
-function hsl([r, g, b]: readonly [number, number, number]): { readonly h: number; readonly s: number; readonly l: number } {
-  const [R, G, B] = [r / 255, g / 255, b / 255];
-  const max = Math.max(R, G, B);
-  const min = Math.min(R, G, B);
-  const l = (max + min) / 2;
-  const d = max - min;
-  if (d === 0) return { h: 0, s: 0, l };
-  const s = d / (1 - Math.abs(2 * l - 1));
-  const h = max === R ? ((G - B) / d) % 6 : max === G ? (B - R) / d + 2 : (R - G) / d + 4;
-  return { h: (h * 60 + 360) % 360, s, l };
+/** The swatches plus the neutrals: every name an ink can be given when the player did not give one. */
+export const NAMES: readonly InkEntry[] = [
+  ...SWATCHES,
+  { name: 'Black', color: '#000000' },
+  { name: 'White', color: '#ffffff' },
+  { name: 'Gray', color: '#808080' },
+];
+
+/** Below this OKLCh chroma an ink, or a table entry, is neutral: it has no hue worth naming. */
+const GRAY_GATE = 0.03;
+
+/** An sRGB color as OKLCh (Ottosson's OKLab): lightness 0 to 1, chroma, and hue in degrees from 0 to 360. */
+export function oklch(color: string): { readonly L: number; readonly C: number; readonly h: number } {
+  const [r, g, b] = rgbOf(color).map((c) => c / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)) as [number, number, number];
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const L = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return { L, C: Math.hypot(a, bb), h: ((Math.atan2(bb, a) * 180) / Math.PI + 360) % 360 };
 }
 
+/** The shortest difference between two hue angles, in degrees. */
 const around = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
-const HUES = SWATCHES.map((s) => ({ name: s.name.toLowerCase(), color: s.color, h: hsl(rgbOf(s.color)).h }));
 
 /** An ink's name for a sentence, lowercased ("yellow"); "ink" for one that cannot be read. */
-export function inkName(color: string): string {
+export function inkName(color: string, names: readonly InkEntry[] = NAMES): string {
   let rgb: [number, number, number];
   try { rgb = rgbOf(color); } catch { return 'ink'; }
-  const exact = HUES.find((s) => s.color === `#${rgb.map((c) => c.toString(16).padStart(2, '0')).join('')}`);
-  if (exact) return exact.name;
-  /* An ink the player gave by its name ("violet") is called what they called it, and never a swatch's that differs. */
+  const hex = `#${rgb.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+  const exact = names.find((n) => n.color === hex);
+  if (exact) return exact.name.toLowerCase();
+  /* An ink the player gave by its name ("violet") is called what they called it, and never an entry's that differs. */
   if (/^[a-z]+$/iu.test(color.trim())) return color.trim().toLowerCase();
-  const { h, s, l } = hsl(rgb);
-  /* So dark or so pale that the eye sees no hue, whatever the saturation says at the ends of lightness; or plainly gray. */
-  if (l < DARK) return 'black';
-  if (l > PALE) return 'white';
-  if (s < GRAY) return l < 0.25 ? 'black' : l > 0.85 ? 'white' : 'gray';
-  return HUES.reduce((best, x) => (around(x.h, h) < around(best.h, h) ? x : best)).name;
+  const ink = oklch(hex);
+  const entries = names.map((n) => ({ name: n.name.toLowerCase(), ...oklch(n.color) }));
+  const neutral = ink.C < GRAY_GATE;
+  const pool = entries.filter((e) => (e.C < GRAY_GATE) === neutral);
+  if (pool.length === 0) return 'ink';
+  const distance = (e: { L: number; h: number }) => (neutral ? Math.abs(e.L - ink.L) : Math.hypot(0.5 * (e.L - ink.L), (around(e.h, ink.h) * Math.PI) / 180 / Math.PI));
+  return pool.reduce((best, e) => (distance(e) < distance(best) ? e : best)).name;
 }
