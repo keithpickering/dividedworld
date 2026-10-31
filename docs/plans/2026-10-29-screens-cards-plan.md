@@ -271,8 +271,9 @@ glass control in or under a 2003 post takes the board's face. The look's tests f
 Edit, etc on a solid-color bar of their own, a footer bar similar to the header bar for the date and post number.
 There's no way the current #000 text against that magenta ink passes contrast, and that ink color is totally variable
 too." So every post, splatted or not, carries an opaque footer bar in the 2003 chrome, drawn like its header bar (the
-same ground, rule and type), holding its action row (Quote, Spin thread, Edit, History, Play card) and its reactions,
-or the reactions on an opaque band of their own; no 2003 text or chip lies on ink. The splat fills the body between the
+same ground, rule and type), holding its action row (Quote, Spin thread, Edit, History, Play card); no 2003 text lies on ink. The owner then:
+"Note: reactions are fine as is. They already each have an individual solid background+border", so the reactions
+row stays as it is, over the ink, each chip read against its own ground. The splat fills the body between the
 header bar and the footer bar, edge to edge; both bars draw over it and are never inked, so nothing's contrast depends
 on an ink a player picks, and a splat never moves the layout. Boards 01 and 02 draw the row without a bar: that region
 differs by this answer and their manifests say so. **Tests first:** at 390 and 1440 every footer control's text read
