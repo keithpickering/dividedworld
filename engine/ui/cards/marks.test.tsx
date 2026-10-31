@@ -243,3 +243,66 @@ describe('what a mark shows of the card\'s view', () => {
     await waitFor(() => expect(marks(mine)[0]).toHaveAccessibleName('Card 1, 1 play, 18% washed. Opens the cards on this post. One has more reactions than the post. Yours to act on.'));
   });
 });
+
+describe('what a reaction redraws', () => {
+  test('a tally on a play of one kind does not redraw the mark of another, and a play of a new kind leaves the old kinds\' marks as they were', async () => {
+    const w = world();
+    w.play('k1');
+    const second = w.play('k2');
+    const tapped = tap(w.fake);
+    /* A mark asks its card for the ink on every draw it makes, so the calls count the draws. */
+    const draws = { k1: 0, k2: 0 };
+    const counting = (key: 'k1' | 'k2') => cardUi(key, { tag: () => { draws[key]++; return undefined; } });
+    open(w, [counting('k1'), counting('k2'), ...cards.slice(2)]);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(2));
+    await act(async () => {});
+    const before = { ...draws };
+    act(() => { tapped().onTally?.(second, { fire: 2 }); });
+    await waitFor(() => expect(post.querySelector('[data-kb-card="k2"]')).toHaveAccessibleName(/One has more reactions/u));
+    expect(draws.k1, 'the other kind\'s mark is not drawn again').toBe(before.k1);
+    expect(draws.k2).toBeGreaterThan(before.k2);
+    /* The strip is drawn again for a play of a third kind, and the first two kinds' marks keep the same plays. */
+    const mid = { ...draws };
+    act(() => { w.fake.seed.card(w.spritey, w.second, 'k3', { live: true }); });
+    await waitFor(() => expect(marks(post)).toHaveLength(3));
+    expect(draws).toEqual(mid);
+  });
+});
+
+describe('the room a strip takes', () => {
+  test('the strip tells the row its measured width, so the row\'s words can keep clear of it', async () => {
+    const seen: ((entries: unknown[]) => void)[] = [];
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: (e: unknown[]) => void) { seen.push(cb); } observe() {} disconnect() {} unobserve() {} });
+    const w = world();
+    w.play('k1');
+    open(w);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(1));
+    const strip = post.querySelector('.kb-marks') as HTMLElement;
+    vi.spyOn(strip, 'getBoundingClientRect').mockReturnValue({ width: 87.2 } as DOMRect);
+    act(() => { for (const cb of seen) cb([{ target: strip }]); });
+    expect(strip.parentElement!.style.getPropertyValue('--kb-marks-width')).toBe('88px');
+  });
+});
+
+describe('a strip that compares nothing listens to nothing', () => {
+  test('with compare off it holds no tally subscription; with it on it holds some', async () => {
+    const { MarkStrip } = await import('./Marks.tsx');
+    const { createTallies } = await import('../thread/tallies.ts');
+    const { createPlays } = await import('./plays.ts');
+    const w = world();
+    const play = w.play('k1');
+    const [on] = await w.fake.acts(w.thread, 2, 2);
+    for (const compare of [false, true]) {
+      const tallies = createTallies();
+      const plays = createPlays();
+      plays.add([ (await w.fake.cardsOn(on!.id, 5))[0]! ]);
+      plays.setBilling(on!.id, [play]);
+      const view = renderIn(w.fake, <MarkStrip post={on!.id} plays={plays} tallies={tallies} onOpen={() => {}} compare={compare} />, { instance, cards });
+      await waitFor(() => expect(view.container.querySelectorAll('.kb-mark')).toHaveLength(1));
+      expect(tallies.listening() > 0, `compare=${compare}`).toBe(compare);
+      view.unmount();
+    }
+  });
+});

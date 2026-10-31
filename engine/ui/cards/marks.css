@@ -8,16 +8,31 @@
  */
 .kb-marks-anchor {
   position: relative;
-  flex: 1 1 auto;
+  /* The strip is out of the flow but takes its measured width here, so the row's words keep clear of it. */
+  flex: 0 0 var(--kb-marks-width, 0px);
+  margin-inline-start: auto;
   align-self: stretch;
   min-width: 0;
+}
+
+/* The date gives way to the strip, on one line. */
+.kb-act-meta > time {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-act-meta > .kb-act-number {
+  flex: none;
 }
 
 .kb-marks {
   --kb-mark-size: 1.7rem;
   position: absolute;
   top: -0.2rem;
-  right: 0.3rem;
+  right: 0;
   z-index: 3;
   display: flex;
   align-items: center;
@@ -115,13 +130,10 @@
   pointer-events: none;
 }
 
+/* On the post's ground the glass's white ring would vanish on a white post: the ring is doubled by the post's own ink. */
 .kb-mark:focus-visible {
   outline: 3px solid var(--kb-glass-text-hi);
   outline-offset: 3px;
-}
-
-/* On the post's ground the glass's white ring would vanish on a white post: the ring is doubled by the post's own ink. */
-.kb-mark:focus-visible {
   box-shadow: 0 0 0 5px var(--kb-fg);
 }
 
@@ -130,7 +142,7 @@
 }
 
 /* The ghost mark: the armed card as it would stand here, dashed, in its color, with a "+". */
-.kb-ghost-mark {
+.kb-mark.kb-ghost-mark {
   --kb-mark-line: var(--kb-mark-color, var(--kb-glass-sweet));
   border-style: dashed;
   box-shadow: none;
@@ -147,21 +159,20 @@
   opacity: 0.45;
 }
 
-/* The ORIGIN box's head carries the strip the same way: absolute at its right, with the head's words kept clear of it. */
+/* The ORIGIN box's head carries the strip the same way: a cell of the head with the strip's width, and the head's words wrap in the room left. */
 .kb-origin-head {
-  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
 }
 
-.kb-origin-head:has(.kb-marks-anchor) {
-  padding-inline-end: 9rem;
+.kb-origin-head-text {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .kb-origin-head > .kb-marks-anchor {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 0;
+  align-self: stretch;
 }
 
 :root[data-kb-layout='phone'] .kb-mark,
@@ -176,7 +187,12 @@
     box-shadow: none;
   }
 
-  .kb-mark-edge,
+  /* The edge keeps its gradient, so progress survives: Highlight is its color, not its whole fill. */
+  .kb-mark-edge {
+    forced-color-adjust: none;
+    background: linear-gradient(to right, Highlight calc(var(--kb-mark-progress, 0) * 100%), transparent 0);
+  }
+
   .kb-mark-notch,
   .kb-mark-sign {
     forced-color-adjust: none;

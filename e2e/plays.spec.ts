@@ -56,3 +56,86 @@ for (const [label, viewport, story] of [
     });
   });
 }
+
+/*
+ * Room (the quality review of Task 3): the strip is out of the page's flow, so the row has to keep its own words clear of
+ * it. #41 of the armed story carries a real ghost mark; five more marks are cloned in, so the strip is wider than any real
+ * one (a post draws four and "+N" at most, and the ghost). No mark may touch the date or the "#n" link, and the height holds.
+ */
+for (const [label, viewport] of [['1440', { width: 1440, height: 1120 }], ['390', { width: 390, height: 844 }]] as const) {
+  test.describe(`six kinds and the ghost mark on #41 at ${label}`, () => {
+    test.use({ viewport });
+
+    test('no mark meets the date or the permalink, the date gives way on one line, and the post keeps its height', async ({ page }) => {
+      await page.goto('/?fixture=boards&story=boards-01-plate--splatted-and-armed');
+      const post = page.locator('#post-41');
+      await expect(post.locator('.kb-ghost-mark')).toBeVisible();
+      await expect(post.locator('.kb-mark[data-kb-card]:not(.kb-ghost-mark)').first()).toBeVisible();
+      const height = async () => (await post.boundingBox())!.height;
+      const before = await height();
+      await post.locator('.kb-marks').evaluate((strip) => {
+        const first = strip.querySelector('.kb-mark:not(.kb-ghost-mark)')!;
+        const ghost = strip.querySelector('.kb-ghost-mark')!;
+        for (let i = 0; i < 5; i++) strip.insertBefore(first.cloneNode(true), ghost);
+      });
+      await expect(post.locator('.kb-mark')).toHaveCount(7);
+      const rects = await post.evaluate((el) => {
+        const r = (e: Element) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; };
+        return {
+          marks: [...el.querySelectorAll('.kb-mark')].map(r),
+          time: r(el.querySelector('header time')!),
+          number: r(el.querySelector('.kb-act-number')!),
+          timeHeight: el.querySelector('header time')!.getBoundingClientRect().height,
+          lineHeight: parseFloat(getComputedStyle(el.querySelector('header time')!).lineHeight) || 0,
+          row: r(el.querySelector('header')!),
+        };
+      });
+      const meets = (a: { l: number; r: number; t: number; b: number }, b: { l: number; r: number; t: number; b: number }) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+      for (const [i, m] of rects.marks.entries()) {
+        expect(meets(m, rects.time), `mark ${i + 1} meets the date`).toBe(false);
+        expect(meets(m, rects.number), `mark ${i + 1} meets the permalink`).toBe(false);
+        expect(m.l).toBeGreaterThanOrEqual(0);
+        expect(m.r).toBeLessThanOrEqual(viewport.width);
+      }
+      expect(await post.locator('header time').evaluate((el) => getComputedStyle(el).whiteSpace)).toBe('nowrap');
+      expect(await height(), 'the post keeps its height').toBe(before);
+    });
+  });
+}
+
+test.describe('the ghost mark and the edge', () => {
+  test.use({ viewport: { width: 1440, height: 1120 } });
+
+  test('the ghost takes the card\'s color over its alignment\'s', async ({ page }) => {
+    await page.goto('/?fixture=boards&story=boards-01-plate--splatted-and-armed');
+    const ghost = page.locator('#post-41 .kb-ghost-mark');
+    await expect(ghost).toBeVisible();
+    const same = await ghost.evaluate((el) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--kb-mark-color)';
+      el.append(probe);
+      const card = getComputedStyle(probe).color;
+      probe.remove();
+      return getComputedStyle(el).borderTopColor === card;
+    });
+    expect(same).toBe(true);
+  });
+
+  test.describe('in forced colors', () => {
+    test.use({ forcedColors: 'active' });
+
+    test('an edge keeps its fill: progress is still a gradient, not a full bar', async ({ page }) => {
+      await page.goto('/?fixture=boards&story=boards-01-plays-on-a-post--six-plays');
+      const mark = page.locator('#post-41 .kb-mark[data-kb-card]').first();
+      await expect(mark).toBeVisible();
+      const image = await mark.evaluate((el) => {
+        const edge = document.createElement('span');
+        edge.className = 'kb-mark-edge';
+        el.style.setProperty('--kb-mark-progress', '0.4');
+        el.append(edge);
+        return getComputedStyle(edge).backgroundImage;
+      });
+      expect(image).toContain('linear-gradient');
+    });
+  });
+});

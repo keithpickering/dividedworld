@@ -164,7 +164,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     <>
       <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>
         <p className="kb-origin-head">
-          <b>ORIGIN</b> · Spun from {back ?? 'an Act'}
+          <span className="kb-origin-head-text"><b>ORIGIN</b> · Spun from {back ?? 'an Act'}</span>
           {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}
           {act && (act.kind === 'card' ? cardPlay !== null : holdsEffects(act.kind)) && (
             <PostMarks

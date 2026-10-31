@@ -15,17 +15,18 @@
  * it hides. While a card is armed and can land on the post, the strip ends in the ghost mark (PlayActions.tsx).
  *
  * "At a busy instance's scale": a mark is memoized per kind and subscribes to the tallies of its own kind's plays
- * alone, as a boolean, so a reaction wakes the marks of the kind it lands on and never the strip's others; the strip
- * itself reads the post's plays and the post's tally.
+ * alone, as a boolean, so a reaction to a play wakes the mark of its kind and never the strip's others. A reaction to
+ * the post itself redraws that post's marks (each compares with the post's sum), and no other post's. A strip that
+ * compares nothing (a card play's ORIGIN box) listens to no tally.
  *
  * `PostMarks` is the strip with what a mark opens until the Lens is built (Task 4 of the plan replaces it): the play
  * panel (Panel.tsx) of the kind's first billed play.
  */
-import { memo, useCallback, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import type { Mine } from '../reactions/mine.ts';
-import { useTally, type Tallies } from '../thread/tallies.ts';
+import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useNarrow } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { PlayPanel } from './Panel.tsx';
@@ -39,13 +40,23 @@ export { MARKS_NARROW, MARKS_WIDE, kindsOf };
 
 type Open = (kind: string, opener: HTMLElement) => void;
 
-/** Whether any of these plays has more public reactions than the post: a boolean, so only a change in the answer draws the mark again. */
-function useOutdrawing(tallies: Tallies, plays: readonly CardPlay[], postTotal: number): boolean {
+/**
+ * Whether any of these plays has more public reactions than the post: a boolean, so only a change in the answer draws the
+ * mark again. Where `compare` is off (the post's tally is not read here) it listens to nothing and says no.
+ */
+function useOutdrawing(tallies: Tallies, plays: readonly CardPlay[], postTotal: number, compare: boolean): boolean {
   const subscribe = useCallback((changed: () => void) => {
+    if (!compare) return () => {};
     const off = plays.map((p) => tallies.subscribe(p.id, changed));
     return () => { for (const o of off) o(); };
-  }, [tallies, plays]);
-  return useSyncExternalStore(subscribe, () => plays.some((p) => sumOf(tallies.get(p.id)) > postTotal));
+  }, [tallies, plays, compare]);
+  return useSyncExternalStore(subscribe, () => compare && plays.some((p) => sumOf(tallies.get(p.id)) > postTotal));
+}
+
+/** The sum of the post's own tally; 0, listening to nothing, where the strip compares nothing. */
+function usePostTotal(tallies: Tallies, post: Id, compare: boolean): number {
+  const subscribe = useCallback((changed: () => void) => (compare ? tallies.subscribe(post, changed) : () => {}), [tallies, post, compare]);
+  return useSyncExternalStore(subscribe, () => (compare ? sumOf(tallies.get(post)) : 0));
 }
 
 interface MarkProps {
@@ -69,8 +80,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const given = useCardView(store, post, kind);
   const economy = useMemo(() => withCardEconomy(instance.settings, settings.cardEconomy), [instance.settings, settings.cardEconomy]);
   const view = given ?? defaultView({ name: rules?.name ?? kind }, cardUi, economy);
-  const outdrawing = useOutdrawing(tallies, plays, postTotal);
-  const more = compare && outdrawing;
+  const more = useOutdrawing(tallies, plays, postTotal, compare);
   const name = rules?.name ?? kind;
   const art = cardUi?.art;
   const icon = art?.mark ?? art?.image;
@@ -150,7 +160,24 @@ export interface MarkStripProps {
 export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, compare = true }: MarkStripProps) {
   const here = usePlays(plays, post);
   const narrow = useNarrow();
-  const postTotal = sumOf(useTally(tallies, post));
+  const postTotal = usePostTotal(tallies, post, compare);
+  /*
+   * The strip is out of the page's flow, so the row it hangs on cannot know its width: it measures itself and tells its
+   * parent cell (`--kb-marks-width`, marks.css), which takes that room in the row's width. The row's words give way to it
+   * and the row's height is the same.
+   */
+  const strip = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = strip.current;
+    const cell = el?.parentElement;
+    if (!el || !cell) return;
+    const tell = () => cell.style.setProperty('--kb-marks-width', `${Math.ceil(el.getBoundingClientRect().width)}px`);
+    tell();
+    if (typeof ResizeObserver === 'undefined') return;
+    const watch = new ResizeObserver(tell);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
   const byKind = useKindPlays(here.billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);
@@ -161,7 +188,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, co
   const shown = kinds.length > room ? kinds.slice(0, room) : kinds;
   const hidden = kinds.slice(shown.length);
   return (
-    <span className="kb-marks">
+    <span className="kb-marks" ref={strip}>
       {shown.map((kind) => (
         <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} onOpen={press} />
       ))}
