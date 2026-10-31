@@ -14,39 +14,25 @@
  * every other card's effect is inside a takeover's `children`, and several takeovers wrap in their own play order. Only a
  * takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
  * it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
- *
- * Going in Task 6 of the marks-and-the-lens plan: the `slot` an effect is given and the `EffectStrip` it draws into it.
- * Whoops! still draws its readout and controls there; it moves them to `show` (the Lens and the kit) in that task, and
- * the slot, `EffectStrip` and `EffectProps.slot` go with it. The thread's post draws the slot under its words
- * (thread/Post.tsx); where a post is drawn without one `PostEffects` draws its own right after the effect, and the
- * ORIGIN box draws its slot after the box (spin/Origin.tsx).
  */
-import { useCallback, useEffect, useState, useSyncExternalStore, type ComponentType, type ReactNode, type RefObject } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
-import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import { useMeet } from './Callout.tsx';
 import { usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
-import './cards.css';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 
 /** Wraps a post's words in the effect of each card played on it, in play order. */
-export function PostEffects({ plays, post, place, slot, marks = null, nameOf, children }: {
-  readonly plays: Plays; readonly post: Act; readonly place: EffectPlace; readonly slot?: RefObject<HTMLElement | null>;
+export function PostEffects({ plays, post, place, marks = null, nameOf, children }: {
+  readonly plays: Plays; readonly post: Act; readonly place: EffectPlace;
   /** The post's marks, as the post's date row draws them: given to a takeover's effect alone. */
   readonly marks?: ReactNode;
   /** A character's name as the screen knows it, for an effect that names a caster. */
   readonly nameOf: (character: Id | null) => string; readonly children: ReactNode;
 }) {
-  const [own, setOwn] = useState<HTMLElement | null>(null);
-  const hosted = slot !== undefined;
-  /* The slot the thread's post draws is read once it is mounted, here, so only the effect is drawn again and not the post's words. */
-  const [placed, setPlaced] = useState<HTMLElement | null>(null);
-  useEffect(() => { if (slot) setPlaced(slot.current); }, [slot]);
   const { api, ui } = useKayfa();
   const { actingCharacters, writingCharacters } = usePlayer();
   const here = usePlays(plays, post.id);
@@ -66,7 +52,6 @@ export function PostEffects({ plays, post, place, slot, marks = null, nameOf, ch
     if (released.ok) plays.setReleased([play]);
     return released;
   }, [api, plays]);
-  const note = useCallback<EffectProps['note']>((play, line) => plays.setNote(play, line), [plays]);
 
   if (here.plays.length === 0) return <>{children}</>;
   /* The cards in the order each was first played: the first is innermost. */
@@ -82,14 +67,14 @@ export function PostEffects({ plays, post, place, slot, marks = null, nameOf, ch
     wrapped = (
       <BoundEffect
         key={key} Effect={Effect} store={plays}
-        post={post} plays={mine} states={here.states} released={here.released} place={place} slot={hosted ? placed : own} marks={card.takeover ? marks : null} save={save} release={release} note={note} nameOf={nameOf}
+        post={post} plays={mine} states={here.states} released={here.released} place={place} marks={card.takeover ? marks : null} save={save} release={release} nameOf={nameOf}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
         {wrapped}
       </BoundEffect>
     );
   }
-  return <>{wrapped}{!hosted && <div className="kb-act-slot" ref={setOwn} />}</>;
+  return <>{wrapped}</>;
 }
 
 /**
@@ -106,36 +91,6 @@ function BoundEffect({ Effect, store, marks, ...props }: Omit<EffectProps, 'show
   useEffect(() => () => store.setView(post, card, null), [store, post, card]);
   const met = useMeet(card);
   return <Effect {...props} show={show} met={met} marks={marks} />;
-}
-
-/**
- * One deliberate piece of glass an effect draws into its `slot`: a chamfered plate attached to the post, outside its
- * 2003 chrome, on the `effect` smoke in the card's alignment's border and glow (the owner on #80's shots: "less
- * focused and intentional than it could be"; board 06's How loud row is the idiom, and section 5's chamfer is the
- * shape). Its head is a readout, the card's name and `readout`, the state the card has to say; the rest is the
- * card's words and its controls, which it draws as `kb-plate-tile`s (cards.css). Nothing is drawn until the slot is there. What it holds is the card's: the
- * engine fixes only where it stands and the shape it is.
- */
-export function EffectStrip({ slot, card, readout, children }: { readonly slot: HTMLElement | null; readonly card: string; readonly readout?: ReactNode; readonly children: ReactNode }) {
-  const { instance } = useKayfa();
-  const calm = useSurfaceStyle('effect');
-  if (!slot) return null;
-  const rules = instance.cards.find((c) => c.key === card);
-  return createPortal(
-    <div className="kb-glass kb-effect-strip" data-kb-card={card} data-kb-alignment={rules?.alignment} style={calm}>
-      <div className="kb-effect-plate kb-glass-cut-dialog">
-        <Smoke surface="effect" />
-        <div className="kb-effect-plate-in kb-calm">
-          <p className="kb-plate-head">
-            <span className="kb-plate-name kb-glass-display">{rules?.name ?? card}</span>
-            {readout}
-          </p>
-          {children}
-        </div>
-      </div>
-    </div>,
-    slot,
-  );
 }
 
 /** The thread's narrow width (thread.css's 40em, where a post is stacked): the Lens is a sheet there and a post's marks are fewer. */

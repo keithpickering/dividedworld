@@ -1,6 +1,6 @@
 /*
  * Whoops!'s effect on a post: the fixed layout the ink lies over, the canvas and the suds. Its words and controls are the
- * Lens's and the kit's (Effect.tsx publishes them as its view), so this sheet draws none; the tag is cards.css's, tinted by the top layer's ink.
+ * Lens's and the kit's (Effect.tsx publishes them as its view), so this sheet draws none; the mark is marks.css's, tinted by the top layer's ink.
  * The post itself stays the board's 2003 post; its words are laid out at a reference width and scaled
  * as a whole (Effect.tsx), so this sheet sets no size on them.
  *

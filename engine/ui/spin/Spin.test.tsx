@@ -1,6 +1,5 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createPortal } from 'react-dom';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Swapper, openThread, threadWorld } from '../composer/support.tsx';
 import { useLocation } from '../router.tsx';
@@ -204,7 +203,7 @@ describe('the ORIGIN box', () => {
     expect([wrapped.dataset.author, wrapped.dataset.place]).toEqual(['true', 'origin']);
   });
 
-  test('draws the effect\'s plate beside the ORIGIN box, attached to it, and not inside the 2003 box', async () => {
+  test('draws no slot for an effect, beside the ORIGIN box or on the spin\'s own post: an effect says its state with `show`', async () => {
     const w = threadWorld(3);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
     const spun = await spinFrom(w, w.ids[1]!);
@@ -212,27 +211,14 @@ describe('the ORIGIN box', () => {
       path: `/t/${spun}`,
       cards: [{
         key: 'whoops', art: { color: '#000000', ink: '#ffffff' }, describe: () => 'x',
-        Effect: ({ slot, children }) => <>{children}{slot && createPortal(<div data-testid="plate">a plate</div>, slot)}</>,
+        Effect: ({ children }) => <>{children}</>,
       }],
     });
-    const box = await origin();
-    const plate = await screen.findByTestId('plate');
-    /* The owner's principle: an effect's words and controls are one glass element outside the 2003 chrome. */
-    expect(box).not.toContainElement(plate);
-    /* Attached to the box: the slot is the box's next sibling. */
-    expect(box.nextElementSibling).toContainElement(plate);
-    expect(box.nextElementSibling).toHaveClass('kb-act-slot');
-  });
-
-  test('the spin\'s own post holds a slot for an effect, as a post does', async () => {
-    const w = threadWorld(3);
-    const spun = await spinFrom(w, w.ids[1]!);
-    openSpun(w, spun);
     await origin();
     const first = await screen.findByRole('article', { name: /^Post 1 /u });
     expect(first).toHaveAttribute('data-kb-kind', 'spin');
-    /* The post's own slot is a child of the article, after its words and links; the ORIGIN box's is inside the body. */
-    expect(first.querySelector(':scope > .kb-act-slot')).not.toBeNull();
+    expect(first.querySelector('.kb-act-slot')).toBeNull();
+    expect(document.querySelector('.kb-act-slot')).toBeNull();
   });
 
   test('a card with no CardUi draws the origin\'s words untouched, with its mark', async () => {

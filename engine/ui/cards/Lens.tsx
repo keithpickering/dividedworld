@@ -42,7 +42,7 @@ import { inkOf, useNarrow } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
 import { kindsOf, playsPhrase, sumOf } from './marks.ts';
-import { defaultView, inPlayOrder, useCardView, useNote, usePlays, type Plays } from './plays.ts';
+import { defaultView, inPlayOrder, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import './lens.css';
 
@@ -168,7 +168,6 @@ interface RowProps {
   readonly caster: string;
   readonly card: string;
   readonly view: CardView;
-  readonly store: Plays;
   readonly tallies: Tallies;
   readonly mine: Mine;
   readonly compare: boolean;
@@ -184,12 +183,10 @@ interface RowProps {
  * nothing here says a play "outdraws" anything, or that anyone won. The reader's own play says "Your play" in place of React
  * (decided on the reader's screen from their own characters, as the post's reactions decide it).
  */
-function PlayRow({ play, caster, card, view, store, tallies, mine, compare, to, onSpin }: RowProps) {
+function PlayRow({ play, caster, card, view, tallies, mine, compare, to, onSpin }: RowProps) {
   const { characters } = usePlayer();
   const name = playName(caster, card);
-  /* The note a card gives with its view, else (going in Task 6 of the plan, with `Plays.note`) the one it still gives through `note`. */
-  const deprecated = useNote(store, play.post, play.id);
-  const note = view.notes[play.id] ?? deprecated;
+  const note = view.notes[play.id];
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
@@ -372,7 +369,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         <Who
-          plays={rowPlays} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} store={plays} tallies={tallies} mine={mine} compare={compare} to={to}
+          plays={rowPlays} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />
       </div>

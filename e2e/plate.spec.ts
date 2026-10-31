@@ -33,7 +33,7 @@ async function faces(page: Page) {
 /** Every glass control in or under a 2003 post, with the family it computes. */
 function glassFamilies(page: Page) {
   return page.evaluate(() => {
-    const pick = 'article.kb-act .kb-glass, article.kb-act .kb-glass *, article.kb-act .kb-plate-tile, article.kb-act .kb-mark';
+    const pick = 'article.kb-act .kb-glass, article.kb-act .kb-glass *, article.kb-act .kb-mark';
     return Array.from(new Set(document.querySelectorAll<HTMLElement>(pick)))
       .filter((el) => !(el instanceof SVGElement) && !(el instanceof HTMLCanvasElement) && el.closest('.kb-act-main, .kb-act-links') === null)
       .map((el) => ({ what: `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80), text: (el.textContent ?? '').trim().slice(0, 30), family: getComputedStyle(el).fontFamily }));
@@ -91,7 +91,7 @@ for (const [name, width, height] of [['1440', 1440, 1120], ['390', 390, 844]] as
       await page.goto(SPLATTED_AND_ARMED);
       await expect(page.locator('#post-41 .kb-ghost-mark')).toBeVisible();
       await expect(page.locator('#post-42 .kb-ghost-mark')).toBeVisible();
-      await expect(page.locator('article.kb-act .kb-act-links .kb-ghost-mark, article.kb-act .kb-act-main .kb-ghost-mark, article.kb-act .kb-act-slot .kb-ghost-mark')).toHaveCount(0);
+      await expect(page.locator('article.kb-act .kb-act-links .kb-ghost-mark, article.kb-act .kb-act-main .kb-ghost-mark')).toHaveCount(0);
       await expect(page.locator('#post-42 .kb-act-meta .kb-ghost-mark')).toHaveCount(1);
     });
 
@@ -111,7 +111,7 @@ test('Whoops!\'s mark on #41 opens the Lens, which reads out the card and its la
   await page.setViewportSize({ width: 1440, height: 1120 });
   await page.goto(SPLATTED_AND_ARMED);
   await expect(page.locator('#post-41 .kb-whoops')).toBeVisible();
-  await expect(page.locator('.kb-effect-strip, .kb-effect-plate')).toHaveCount(0);
+  await expect(page.locator('.kb-effect-strip, .kb-effect-plate, .kb-act-slot')).toHaveCount(0);
   const lens = await openWhoopsLens(page);
   /* The State names the top layer, its caster and its ink, with its own share washed (the plays-on-a-post design, section 5). */
   await expect(lens.locator('.kb-lens-state .kb-lens-line')).toHaveText(/^\d+ layers? · top: .+'s [a-z]+, \d+% washed$/u);

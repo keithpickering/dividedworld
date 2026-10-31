@@ -12,7 +12,6 @@ import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { PostEffects } from '../cards/Effects.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
-import { holdsEffects } from '../cards/plays.ts';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -40,7 +39,7 @@ interface Props {
 /** A post's name for a reader and a screen reader: the character's, The System's, or "A character" where it cannot be shown. */
 const nameOf = (act: Act, person: PostbitPerson | undefined) => (act.character === null ? SYSTEM : person?.character.name ?? 'A character');
 
-function Body({ act, name, person, editing, onDone, slot, marks }: { readonly slot: React.RefObject<HTMLElement | null>; readonly marks: ReactNode; readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
+function Body({ act, name, person, editing, onDone, marks }: { readonly marks: ReactNode; readonly act: Act; readonly name: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onDone: () => void }) {
   const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
@@ -61,7 +60,7 @@ function Body({ act, name, person, editing, onDone, slot, marks }: { readonly sl
           {origin && <Origin summary={summary} />}
           {editing
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
-            : <PostEffects plays={plays} post={act} place="thread" slot={slot} marks={marks} nameOf={casterName}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
+            : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
@@ -134,8 +133,6 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   }, [observer]);
   const name = nameOf(act, person);
   const [editing, setEditing] = useState(false);
-  /* Where a card's words and controls stand, under the post's chrome (cards/Effects.tsx `EffectStrip`). Going in Task 6 of the marks-and-the-lens plan, when Whoops! moves from its plate to the Lens. A ref and not state, so the post's words are not drawn again when it mounts. */
-  const slot = useRef<HTMLDivElement>(null);
   const editButton = useRef<HTMLButtonElement>(null);
   /* After an edit is saved or cancelled, focus goes back to the Edit button. */
   const wasEditing = useRef(false);
@@ -172,11 +169,10 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>
       <div className="kb-act-main">
-        <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} slot={slot} marks={marks} />
+        <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} marks={marks} />
         <SpunInto act={act.id} />
       </div>
       <Actions act={act} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} />
-      {holdsEffects(act.kind) && <div className="kb-act-slot" ref={slot} />}
     </article>
   );
 });

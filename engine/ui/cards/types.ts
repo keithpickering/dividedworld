@@ -63,7 +63,7 @@ export type KitControl =
 /**
  * What one card says about itself on one post, on this screen only (never saved or sent): the Lens and the marks are
  * drawn from it. An effect sets it as its state changes (`EffectProps.show`) and the engine draws a card with none from
- * `defaultView`. It replaces the plate (`slot`) and the notes (`note`) an effect used to draw into and write.
+ * `defaultView`.
  */
 export interface CardView {
   /** How far the effect has gone, 0 to 1, drawn as the mark's edge; null draws no edge. */
@@ -104,19 +104,10 @@ export interface EffectProps {
    * it when the effect is gone.
    */
   readonly show: (view: CardView | null) => void;
-  /** The reader has met this card's effect (wired in Task 7; a no-op until then). */
+  /** The reader has met this card's effect (the first-time callout). */
   readonly met: () => void;
   /** The post's marks, drawn where the card's effect puts them (a takeover's only; null for every other card). */
   readonly marks: ReactNode;
-  /**
-   * @deprecated Going: the plate is removed in Task 3 of the marks-and-the-lens plan, and Whoops! moves to `show` in Task 6.
-   * Where an effect's own words and controls go: a place the engine draws under the post, outside its 2003
-   * chrome, or null until it is there. A card's explanation of its effect and every control a player
-   * needs are glass and never part of the post's words (the owner's notes on #80, so an effect can
-   * cover a post freely without hiding a control), and are drawn into it with `EffectStrip`
-   * (engine/ui/cards/Effects.tsx). The effect itself, around `children`, is the only thing the post holds.
-   */
-  readonly slot: HTMLElement | null;
   /**
    * Save a play's state, as the post's author (the server refuses anyone else, and so does this,
    * without asking); the screen shows what is saved at once and every other reader hears of it.
@@ -125,14 +116,6 @@ export interface EffectProps {
   readonly save: (play: Id, state: Readonly<Record<string, unknown>>) => Promise<Answer<{ readonly play: Id; readonly savedAt: string }>>;
   /** Release the reader from a play's effect for good (Stick Around's certification), and show it at once. */
   readonly release: (play: Id) => Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
-  /**
-   * @deprecated Going: the Lens still reads it as a fallback for `CardView.notes` (Lens.tsx), until Whoops! moves to `show` in Task 6.
-   * Say one line about a play's state on this screen, in plain words, for its Who row in the Lens (the plays-on-a-post design,
-   * section 4: "Layer 3 of 3, on top · 40% washed"), or clear it with null. It is this reader's view, never saved or
-   * sent, and it draws only the row that shows it, so an effect may say it as often as its state changes; an effect
-   * clears what it said when it is gone.
-   */
-  readonly note: (play: Id, line: string | null) => void;
   /** A character's name as the screen the post is drawn on knows it, for a card that names a play's caster ("top: Spritey's yellow"). */
   readonly nameOf: (character: Id | null) => string;
   readonly children: ReactNode;

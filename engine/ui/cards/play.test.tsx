@@ -131,7 +131,7 @@ describe('the post offers no "Play card"', () => {
 
 /* The ghost mark (marks-and-the-lens design, section 1): the armed card's play control is the last mark of the post's strip, in the post's date row, and never in the 2003 body or action row. */
 describe('where the ghost mark stands', () => {
-  test('on a post with no plays it is a mark of its own in the date row, a dashed "+" in the card\'s color, and in no slot or body', async () => {
+  test('on a post with no plays it is a mark of its own in the date row, a dashed "+" in the card\'s color, and in no body', async () => {
     const user = userEvent.setup();
     const w = world();
     await open(w);
@@ -141,7 +141,7 @@ describe('where the ghost mark stands', () => {
     expect(ghost).toHaveClass('kb-ghost-mark');
     expect(ghost).toHaveTextContent('+');
     expect(ghost.closest('.kb-act-meta')).not.toBeNull();
-    expect(ghost.closest('.kb-act-links, .kb-act-main, .kb-act-slot')).toBeNull();
+    expect(ghost.closest('.kb-act-links, .kb-act-main')).toBeNull();
     expect(ghost.style.getPropertyValue('--kb-mark-color')).toBe('#ff3d7f');
     /* In the card's art as well as its color (the design, section 1), faint under the "+". */
     expect(ghost.querySelector('img.kb-ghost-icon')).toHaveAttribute('src', '/whoops-mark.svg');

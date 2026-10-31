@@ -109,8 +109,6 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const plays = useMemo(() => createPlays(), []);
   const { act, more, reading, retry } = useOrigin(originId, summary.originThread!, plays, tallies, mine);
   const box = useRef<HTMLDivElement>(null);
-  /* The effect's plate is drawn here, after the box and attached to it, and not in it: the 2003 chrome holds the post's words, never the game's. */
-  const slot = useRef<HTMLDivElement>(null);
   useEffect(() => { if (takeOrigin(summary.id)) box.current?.focus(); }, [summary.id]);
   const played = usePlays(plays, originId).plays;
   /*
@@ -160,7 +158,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-            <PostEffects plays={plays} post={act} place="origin" slot={slot} marks={marks} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
+            <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small">{history.button}</p>}
             {history.panel}
@@ -169,8 +167,6 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     }
   };
 
-  /* The kinds `body` draws with the post's effects (its default case) are the ones that hold a plate: the thread's post asks the same helper. */
-  const effects = act !== null && holdsEffects(act.kind);
   return (
     <>
       <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>
@@ -191,7 +187,6 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
           onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); if (back?.isConnected) back.focus(); }}
         />
       )}
-      {effects && <div className="kb-act-slot" ref={slot} />}
     </>
   );
 }

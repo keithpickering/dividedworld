@@ -57,9 +57,8 @@
     "bit meta"
     "bit main"
     "bit foot"
-    "bit panels"
-    "slot slot";
-  grid-template-rows: auto 1fr auto auto auto;
+    "bit panels";
+  grid-template-rows: auto 1fr auto auto;
   border-bottom: 1px solid var(--kb-rule);
   scroll-margin-top: 0.5em;
 }
@@ -120,25 +119,6 @@
   border-right: 1px solid var(--kb-rule);
 }
 
-/* Under the post's chrome, the whole width of it: where a card's plate stands (cards/Effects.tsx `EffectStrip`; going in Task 6 of the marks-and-the-lens plan), drawn only when it holds some. */
-.kb-act-slot {
-  grid-area: slot;
-  min-width: 0;
-  /* The plate stands at the post's right, a plate's width at most (cards.css). */
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: 0.5rem 0.9rem;
-  padding: 0.7rem max(3%, 1.2rem) 0.9rem 0.9rem;
-  /* A glow is ink the box does not hold, and a page scrolls sideways for it at a phone's width: the padding holds it, and the slot clips what the padding does not. */
-  overflow: clip;
-}
-
-.kb-act-slot:empty {
-  display: none;
-}
-
 .kb-act-main {
   grid-area: main;
   padding: 0.5em 1%;
@@ -169,8 +149,7 @@
     "meta"
     "main"
     "foot"
-    "panels"
-    "slot";
+    "panels";
   grid-template-rows: none;
 }
 
@@ -186,8 +165,7 @@
     "meta"
     "main"
     "foot"
-    "panels"
-    "slot";
+    "panels";
   grid-template-rows: none;
 }
 
@@ -210,8 +188,7 @@
       "meta"
       "main"
       "foot"
-      "panels"
-      "slot";
+      "panels";
     grid-template-rows: none;
   }
 

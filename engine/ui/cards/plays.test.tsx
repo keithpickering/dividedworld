@@ -151,38 +151,6 @@ describe('billing, in the store', () => {
   });
 });
 
-describe('notes, in the store', () => {
-  test('a card\'s line about a play is kept by the play, and cleared with null', () => {
-    const plays = createPlays();
-    const a = card();
-    plays.add([a]);
-    expect(plays.note(a.id)).toBeNull();
-    plays.setNote(a.id, 'Layer 1 of 1, on top · 40% washed');
-    expect(plays.note(a.id)).toBe('Layer 1 of 1, on top · 40% washed');
-    plays.setNote(a.id, null);
-    expect(plays.note(a.id)).toBeNull();
-  });
-
-  test('setting one wakes that post\'s listener and no other\'s, leaves the post\'s snapshot as it was, and the same line again wakes nothing', () => {
-    const plays = createPlays();
-    const a = card();
-    const b = card({ targetActId: OTHER });
-    plays.add([a, b]);
-    const here = vi.fn();
-    const there = vi.fn();
-    plays.subscribe(POST, here);
-    plays.subscribe(OTHER, there);
-    const before = plays.get(POST);
-    plays.setNote(a.id, 'Washed clean');
-    expect(here).toHaveBeenCalledTimes(1);
-    expect(there).not.toHaveBeenCalled();
-    /* The effects read the snapshot: a note is the panel's, so a wash that writes one draws no effect again. */
-    expect(plays.get(POST)).toBe(before);
-    plays.setNote(a.id, 'Washed clean');
-    expect(here).toHaveBeenCalledTimes(1);
-  });
-});
-
 const view = (over: Partial<CardView> = {}): CardView => ({ progress: null, state: '18% washed', yours: false, controls: [], notes: {}, ...over });
 
 describe('views, in the store', () => {

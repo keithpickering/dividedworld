@@ -2,8 +2,9 @@
  * Whoops!'s layers on one post, as stories for the owner (docs/plans/2026-10-31-plays-on-a-post-plan.md, Task 6;
  * the design's section 5): post #41 of the boards fixture, with the fixture's one layer (Mrs. Hooligan's magenta), two
  * (Spritey's yellow on top) or three (Gloomba's cyan between), each untouched, its top layer partly washed, or its
- * bottom layer washed clean. The plate's readout names the top layer, its caster and its ink in words, with its own
- * share washed, and its meter has a segment for each layer in its ink, the top first and lit. No board draws these.
+ * bottom layer washed clean. Each story opens the Lens from #41's Whoops! mark: its state line names the top layer,
+ * its caster and its ink in words, with its own share washed, its Who row has a line for each layer, and its meter is the
+ * mark's edge. No board draws these.
  * Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
  *
  * The layers are handed to the fake through its seed before the thread is read, and a wash is saved as #41's author
@@ -64,14 +65,15 @@ function useSeeded(thread: string | null, layers: Layers, washed: Washed): boole
   return ready;
 }
 
-/** Scrolls #41's plate into view once it is drawn. */
+/** Scrolls #41 into view once its mark is drawn, and opens the Lens from the mark, as a player would. */
 function Look() {
   useEffect(() => {
     const timer = setInterval(() => {
-      const el = document.querySelector('#post-41 .kb-effect-strip');
+      const el = document.querySelector<HTMLElement>('#post-41 .kb-mark[data-kb-card="whoops"]');
       if (!el) return;
       clearInterval(timer);
       el.scrollIntoView?.({ block: 'center' });
+      el.click();
     }, 100);
     return () => clearInterval(timer);
   }, []);
@@ -103,7 +105,7 @@ const phone = { parameters: { moment: '02-phone' } } as const;
 export const OneLayer: Story = { args: { layers: 1, washed: 'none' } };
 export const TwoLayers: Story = { args: { layers: 2, washed: 'none' } };
 export const ThreeLayers: Story = { args: { layers: 3, washed: 'none' } };
-/** The top layer partly washed: the readout gives its own share, not a sum. */
+/** The top layer partly washed: the state line gives its own share, not a sum. */
 export const ThreeLayersPartlyWashed: Story = { args: { layers: 3, washed: 'partly' } };
 /** The bottom layer washed clean: its segment is faded, and the count stays three, as each panel counts them ("Layer 1 of 3"). */
 export const ThreeLayersOneClean: Story = { args: { layers: 3, washed: 'bottom-clean' } };

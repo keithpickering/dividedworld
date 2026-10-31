@@ -106,8 +106,8 @@ function mount(o: Options = {}) {
   let say: (view: CardView | null) => void = () => {};
   const show: EffectProps['show'] = (view) => { shown.push(view); say(view); };
   const props: EffectProps = {
-    slot: null, post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
-    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), marks: null, note: () => {}, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
+    post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
+    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};
@@ -375,10 +375,10 @@ describe('the view the effect publishes (marks-and-the-lens design, sections 3 a
   const clean = (savedAt = '2026-10-29T22:00:00.000Z'): EffectState => ({ state: { strokes: [], clean: true }, savedAt });
   const last = (shown: readonly (CardView | null)[]) => shown.at(-1)!;
 
-  test('draws no plate and no controls of its own: nothing glass is inside the post, and the strip is not given a slot', () => {
+  test('draws no plate and no controls of its own: nothing glass is inside the post', () => {
     const { root, container } = mount({ author: true });
     expect(root.querySelector('button')).toBeNull();
-    expect(container.querySelector('.kb-effect-strip, .kb-plate-tile, .kb-whoops-meter, .kb-whoops-hint, .kb-whoops-status')).toBeNull();
+    expect(container.querySelector('.kb-act-slot, .kb-effect-strip, .kb-plate-tile, .kb-whoops-meter, .kb-whoops-hint, .kb-whoops-status')).toBeNull();
     expect(root.textContent).not.toMatch(/splatted|Yours to wash/u);
   });
   test('one layer, nothing washed: the state names the layer and its ink, the edge is at nothing, and the reader has nothing of their own to do', () => {
