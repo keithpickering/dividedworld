@@ -3,13 +3,16 @@
  * kind whose card gives a `hint` carries one small bubble, out of the page's flow, with "Got it". Met is the account's own
  * (`Preferences.cardsMet`), written by `meetCard` and cleared by Settings' "Show card tips again".
  */
+import { readFileSync } from 'node:fs';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect } from 'react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Id } from '../data/api.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
+import { createCalloutStore } from './Callout.tsx';
+import { LensHost } from './Lens.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 
 beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); });
@@ -23,7 +26,6 @@ const cardUi = (key: string, extra: Partial<CardUi> = {}): CardUi => ({ key, des
 /** An effect that reports its first use when a button in its words is pressed. */
 const Uses = (props: EffectProps) => {
   const { met } = props;
-  useEffect(() => {}, []);
   return <>{props.children}<button type="button" data-testid="use" onClick={() => met()}>use</button></>;
 };
 
@@ -56,7 +58,8 @@ describe('the first-time callout', () => {
     expect(tip).toHaveTextContent('Card 2');
     expect(tip).toHaveTextContent('Do the second thing.');
     const mark = within(second).getByRole('button', { name: /^Card 2, 1 play/u });
-    expect(mark).toHaveAttribute('aria-describedby', tip.id);
+    const hintEl = within(tip).getByText('Do the second thing.');
+    expect(mark).toHaveAttribute('aria-describedby', hintEl.id);
     expect(mark).toHaveAccessibleName(expect.not.stringContaining('Do the second thing.'));
     expect(within(tip).getByRole('button', { name: 'Got it' })).toBeInTheDocument();
     expect(tip.closest('[role="dialog"]')).toBeNull();
@@ -135,5 +138,60 @@ describe('the first-time callout', () => {
     await w.fake.forgetCardsMet();
     open(w, hinted);
     await waitFor(() => expect(tips()).toHaveLength(1));
+  });
+
+  test('"Got it" gives focus back to the mark', async () => {
+    const w = world();
+    w.play('k1', w.second);
+    open(w, hinted);
+    await waitFor(() => expect(tips()).toHaveLength(1));
+    const mark = screen.getByRole('button', { name: /^Card 1, 1 play/u });
+    await userEvent.click(screen.getByRole('button', { name: 'Got it' }));
+    expect(mark).toHaveFocus();
+  });
+
+  test('met() for a card with no hint does not call meetCard', async () => {
+    const w = world();
+    w.play('k3', w.second);
+    const meet = vi.spyOn(w.fake, 'meetCard');
+    open(w, [...hinted.slice(0, 2), cardUi('k3', { Effect: Uses })]);
+    await userEvent.click(await screen.findByTestId('use'));
+    expect(meet).not.toHaveBeenCalled();
+  });
+
+  test('"Got it" is at least 24px square in the sheet', () => {
+    const css = readFileSync('engine/ui/cards/marks.css', 'utf8');
+    expect(css).toMatch(/\.kb-callout-got \{[^}]*min-width: 24px;[^}]*min-height: 24px;/u);
+  });
+
+  test('while a takeover holds the post, the held mark carries the callout', async () => {
+    const w = world();
+    w.play('k1', w.second);
+    const Holds = (props: EffectProps) => {
+      const [host, setHost] = useState<HTMLElement | null>(null);
+      return <>{props.children}<div data-testid="hold" ref={setHost}><LensHost host={host}>{props.marks}</LensHost></div></>;
+    };
+    open(w, [cardUi('k1', { hint: 'Do the first thing.', takeover: true, Effect: Holds }), ...hinted.slice(1)]);
+    await waitFor(() => expect(tips()).toHaveLength(1));
+    expect(screen.getByTestId('hold')).toContainElement(tips()[0]!);
+  });
+});
+
+describe('the callout store', () => {
+  const mark = () => { const el = document.createElement('button'); document.body.append(el); return el; };
+  test('an earlier mark that mounts later takes the callout, and only the two marks concerned are woken', () => {
+    const store = createCalloutStore(async () => {});
+    store.setMet([]);
+    const [a, b, c] = [mark(), mark(), mark()];
+    const woken: string[] = [];
+    for (const id of ['a', 'b', 'c']) store.subscribe(id, () => woken.push(id));
+    store.register('b', 'k1', b);
+    store.register('c', 'k1', c);
+    expect(store.chosen('b')).toBe(true);
+    woken.length = 0;
+    store.register('a', 'k1', a);
+    expect(store.chosen('a')).toBe(true);
+    expect(store.chosen('b')).toBe(false);
+    expect(woken.sort()).toEqual(['a', 'b']);
   });
 });

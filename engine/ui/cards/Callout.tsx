@@ -17,8 +17,9 @@
  */
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
+import { useLensHost } from './Lens.tsx';
 
-interface Entry { readonly kind: string; readonly el: HTMLElement }
+interface Entry { readonly kind: string; readonly el: HTMLElement; readonly held: boolean }
 
 export interface CalloutStore {
   /** Whether this registered mark is the page's one callout now. */
@@ -26,11 +27,13 @@ export interface CalloutStore {
   /** Listen for a change in whether `id` is the chosen mark. */
   subscribe(id: string, listener: () => void): () => void;
   /** Offer a mark; the returned function withdraws it. */
-  register(id: string, kind: string, el: HTMLElement): () => void;
+  register(id: string, kind: string, el: HTMLElement, held?: boolean): () => void;
   /** The kind was met (Got it, or the card's first use): hide it now and tell the account once. */
   meet(kind: string): void;
   /** What the page read: the kinds met, or null where nothing is remembered (a visitor, or before the read). */
   setMet(met: readonly string[] | null): void;
+  /** The page is going (or back): marks withdrawing while it goes need no rescan. */
+  closing(closing: boolean): void;
 }
 
 type Meet = (card: string) => Promise<unknown>;
@@ -43,7 +46,19 @@ export function createCalloutStore(meetCard: Meet): CalloutStore {
   const hidden = new Set<string>();
   let current: string | null = null;
   const shows = (kind: string) => met !== null && !met.has(kind) && !hidden.has(kind);
-  const first = (a: Entry | undefined, b: Entry) => (!a || (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_PRECEDING) !== 0 ? b : a);
+  let closing = false;
+  /*
+   * Which of two marks holds the callout: a mark in a takeover's view (`held`, Stick Around's hold) over the page's, which
+   * is inert under it; a mark not inert over one that is; then the earlier in document order.
+   */
+  const first = (a: Entry | undefined, b: Entry) => {
+    if (!a) return b;
+    if (a.held !== b.held) return a.held ? a : b;
+    const ia = a.el.closest('[inert]') !== null;
+    const ib = b.el.closest('[inert]') !== null;
+    if (ia !== ib) return ia ? b : a;
+    return (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_PRECEDING) !== 0 ? b : a;
+  };
   const wake = (id: string | null) => { if (id) for (const l of [...(listeners.get(id) ?? [])]) l(); };
   const choose = (next: string | null) => { if (next === current) return; const was = current; current = next; wake(was); wake(next); };
   const scan = () => {
@@ -59,14 +74,14 @@ export function createCalloutStore(meetCard: Meet): CalloutStore {
       set.add(listener);
       return () => { set.delete(listener); if (set.size === 0) listeners.delete(id); };
     },
-    register(id, kind, el) {
-      entries.set(id, { kind, el });
+    register(id, kind, el, held = false) {
+      entries.set(id, { kind, el, held });
       /* Compared with the chosen mark alone; the page's other marks are not looked at. */
       if (shows(kind)) {
         const cur = current ? entries.get(current) : undefined;
         if (!cur || first(cur, entries.get(id)!) !== cur) choose(id);
       }
-      return () => { entries.delete(id); if (current === id) { current = null; scan(); } };
+      return () => { entries.delete(id); if (current === id) { current = null; if (!closing) scan(); } };
     },
     meet(kind) {
       if (!shows(kind)) return;
@@ -74,6 +89,7 @@ export function createCalloutStore(meetCard: Meet): CalloutStore {
       scan();
       void Promise.resolve(meetCard(kind)).catch(() => {});
     },
+    closing(next) { closing = next; },
     setMet(next) {
       const was = met;
       met = next === null ? null : new Set(next);
@@ -94,6 +110,8 @@ export function CalloutProvider({ met, children }: { readonly met: readonly stri
   const store = useMemo(() => createCalloutStore((card) => apiRef.current.meetCard(card)), []);
   /* A layout effect runs before any mark's passive one, so a mark registering finds the answer. */
   useLayoutEffect(() => { store.setMet(met); }, [store, met]);
+  /* Parents' cleanups run before their children's: the marks leaving with the page do not each rescan it. */
+  useLayoutEffect(() => { store.closing(false); return () => store.closing(true); }, [store]);
   return <CalloutCtx.Provider value={store}>{children}</CalloutCtx.Provider>;
 }
 
@@ -102,33 +120,49 @@ export const useCalloutStore = (): CalloutStore => useContext(CalloutCtx);
 /** The effect's `met()`, for one card on this page: stable, and a no-op once the kind is met. */
 export function useMeet(card: string): () => void {
   const store = useCalloutStore();
-  return useCallback(() => store.meet(card), [store, card]);
+  const { ui } = useKayfa();
+  /* A card with no hint has no callout to hide, and its key is not spent on the account's 64. */
+  const hinted = ui.cards.find((c) => c.key === card)?.hint !== undefined;
+  return useCallback(() => { if (hinted) store.meet(card); }, [store, card, hinted]);
 }
 
 /**
- * A mark offers itself for the callout when its card gives a hint. Answers the bubble's id while this mark is the page's
+ * A mark offers itself for the callout when its card gives a hint. Answers the id of the bubble's hint (what the mark is described by) while this mark is the page's
  * one, else null; the mark names it as its description.
  */
 export function useCallout(kind: string, hint: string | undefined, el: RefObject<HTMLElement | null>): string | null {
   const store = useCalloutStore();
   const id = useId();
+  const held = useLensHost() !== document.body;
   useEffect(() => {
     if (!hint || !el.current) return;
-    return store.register(id, kind, el.current);
-  }, [store, id, kind, hint, el]);
+    return store.register(id, kind, el.current, held);
+  }, [store, id, kind, hint, el, held]);
   const subscribe = useCallback((l: () => void) => store.subscribe(id, l), [store, id]);
   const mine = useSyncExternalStore(subscribe, () => store.chosen(id), () => false);
-  return mine ? `${id}-callout` : null;
+  return mine ? `${id}-hint` : null;
 }
 
-/** The bubble: out of the page's flow, a sibling of the mark and never inside its button. */
+/**
+ * The bubble: out of the page's flow, a sibling of the mark and never inside its button. `id` is the hint's, which the mark
+ * is described by. Its outer box carries the glow, since a clip-path would cut it off the chamfered panel inside.
+ */
 export function Callout({ id, kind, name, hint }: { readonly id: string; readonly kind: string; readonly name: string; readonly hint: string }) {
   const store = useCalloutStore();
+  const box = useRef<HTMLDivElement>(null);
+  const got = () => {
+    /* The bubble goes with the press, so focus goes back to the mark it hung from (the sibling before it). */
+    const mark = box.current?.previousElementSibling;
+    if (mark instanceof HTMLElement) mark.focus();
+    store.meet(kind);
+  };
   return (
-    <div className="kb-glass kb-callout kb-glass-cut-panel" role="note" id={id} data-kb-callout={kind}>
-      <p className="kb-callout-name kb-glass-display">{name}</p>
-      <p className="kb-callout-hint">{hint}</p>
-      <button type="button" className="kb-callout-got kb-glass-skew" onClick={() => store.meet(kind)}><b className="kb-glass-upright">Got it</b></button>
+    <div className="kb-callout" ref={box} role="note" data-kb-callout={kind}>
+      <div className="kb-callout-panel kb-glass kb-glass-cut-panel">
+        <p className="kb-callout-name kb-glass-display">{name}</p>
+        <p className="kb-callout-hint" id={id}>{hint}</p>
+        <button type="button" className="kb-callout-got kb-glass-skew" onClick={got}><b className="kb-glass-upright">Got it</b></button>
+      </div>
     </div>
   );
 }
