@@ -149,4 +149,3 @@ export function readLogPageNow(read: (range: LogRange) => LogRead, before: strin
   const page = cutLog(read({ before, limit }), limit);
   return moves(page, before) ? page : atInstant(read({ at: before! }), before!);
 }
-

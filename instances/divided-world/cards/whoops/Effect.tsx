@@ -441,10 +441,16 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
   /*
    * A post left with strokes unsaved saves them as it goes. A play whose save is still on its way is not dropped: its strokes stay
    * marked, and the save on its way sends them once it is answered (`flush` above), from its own promise, which leaving does not cancel.
+   * Once the post has gone, a save the card refuses, or one that got no answer through every retry, is not sent again, since no next
+   * stroke will come to carry it; and a save another tab of the author's made meanwhile is not heard here, so the last of the two
+   * to land is the layer's state, as with any two screens saving one play.
    */
-  useEffect(() => () => {
-    gone.current = true;
-    if (dirty.current.size > 0) void flush();
+  useEffect(() => {
+    gone.current = false;
+    return () => {
+      gone.current = true;
+      if (dirty.current.size > 0) void flush();
+    };
   }, [flush]);
 
   /** A layer washed to the instance's share is clean: for this screen, and for everyone when the author did it. */

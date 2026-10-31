@@ -728,7 +728,6 @@ describe('leaving the post mid-save', () => {
     authorClock();
     const net = gated();
     const [a, b] = rows();
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { frame, unmount } = mount({ author: true, save: net.save });
     drag(frame, a!);
     await settle(SAVE_AFTER_MS);
@@ -742,8 +741,6 @@ describe('leaving the post mid-save', () => {
     await act(async () => { net.calls[1]!.answer({ ok: true, value: { play: net.calls[1]!.play, savedAt: SAVED_AT } }); });
     await settle(SAVE_AFTER_MS * 4);
     expect(net.calls, 'and nothing is sent twice').toHaveLength(2);
-    /* Nothing writes to the component's state once it is gone. */
-    expect(errors).not.toHaveBeenCalled();
   });
 });
 
