@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import type { Act, EffectState } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
-import { whoops } from '../whoops.ts';
+import { STROKES, whoops } from '../whoops.ts';
 import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
 import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SAVE_AFTER_MS } from './Effect.tsx';
 import { paint, type PaintLayer } from './paint.ts';
@@ -316,6 +316,33 @@ describe('scrubbing', () => {
     const state = save.mock.calls.at(-1)![1] as { clean?: boolean; strokes: unknown[] };
     expect(state.clean).toBe(true);
     expect(whoops.validateState!(state).ok).toBe(true);
+  });
+
+  test('an author whose layer has no room left for strokes still marks it clean for everyone on reaching the share', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    /* The card's whole bound in strokes, each a dab in the post's top corner, clear of the splat. */
+    const full: Stroke[] = Array.from({ length: STROKES.most }, () => ({ tool: 'wash', width: BRUSH, points: [[0.01, 0.01], [0.02, 0.01]] }));
+    expect(whoops.validateState!({ strokes: full }).ok).toBe(true);
+    const first = mount({ author: true, clean: 40, states: { 'play-1': { state: { strokes: full }, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    const ink = new LayerInk(splatFor(0), full);
+    /* Short of the share, a stroke with no room is not saved, and the author is told so. */
+    const [x, y] = inkSpot(ink);
+    drag(first.frame, [[x, y], [x + 0.06, y]]);
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(first.save).not.toHaveBeenCalled();
+    expect(first.root.ownerDocument.body).toHaveTextContent('This layer has no room for more strokes to save');
+    scrubTo(first.frame, first.root, 0, ink, 0.5);
+    /* Time runs on with each answer let in, so a save that would follow the first has its chance. */
+    for (let k = 0; k < 6; k++) await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    /* The mark goes once, with the strokes already saved, and is not sent again. */
+    expect(first.save).toHaveBeenCalledTimes(1);
+    const state = first.save.mock.calls.at(-1)![1] as { clean?: boolean; strokes: unknown[] };
+    expect(state.clean).toBe(true);
+    expect(state.strokes).toHaveLength(STROKES.most);
+    expect(whoops.validateState!(state).ok).toBe(true);
+    first.unmount();
+    const reloaded = mount({ states: { 'play-1': { state: state as Record<string, unknown>, savedAt: '2026-10-29T22:00:00.000Z' } } });
+    expect(states(reloaded.root)).toEqual(['clean']);
   });
 
   test('a saved state that arrives clean fades the layer for a reader who is looking', () => {

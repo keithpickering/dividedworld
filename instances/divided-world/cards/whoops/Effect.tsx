@@ -379,11 +379,14 @@ export function Effect({ post, plays, states, reader, save, slot, place, childre
       const kept = [...(mine.current.get(id) ?? [])];
       const cleanNow = wantClean.current.has(id);
       const clean = cleanNow || savedFor(id).clean;
-      const strokes = [...savedFor(id).strokes, ...kept];
-      if (!fits(strokes)) {
+      const all = [...savedFor(id).strokes, ...kept];
+      const room = fits(all);
+      /* A layer with no room for more strokes can still be marked clean: the saved strokes go again with the mark, so a post the author washed clean is never left splatted for everyone. */
+      if (!room && !cleanNow) {
         setReport('This layer has no room for more strokes to save. What you wash from here shows on your screen only.');
         continue;
       }
+      const strokes = room ? all : [...savedFor(id).strokes];
       const state = clean ? { strokes, clean: true } : { strokes };
       sending.current.add(id);
       lastSent.current.set(id, canonical(state));
