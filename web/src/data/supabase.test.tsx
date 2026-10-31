@@ -1005,6 +1005,40 @@ describe('the log', () => {
     expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);
   });
 
+  /* #89 F2: a settlement made before its shares were kept says so, and the log says it plainly rather than "no post". */
+  it('maps a ledger row\'s shares_kept: false to a settlement whose shares were not kept', async () => {
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_ledger') return rows([{ ...LEDGER[0], shares_kept: false }]);
+      if (name === 'my_ledger_shares') return rows([]);
+      if (name.startsWith('my_')) return rows([]);
+      return undefined;
+    });
+    const log = await h.api.log();
+    expect(log.settlements.map((x) => x.sharesKept)).toEqual([false]);
+  });
+
+  /* #89 F4: a view that fills a page at the cursor's own instant is read again there, whole, and the cursor moves past it. */
+  it('reads a page that would not move again at its one instant, every row, and moves the cursor to the microsecond before', async () => {
+    const full = Array.from({ length: 200 }, (_, i) => ({ ...LEDGER[0], character: `${B.slice(0, -4)}${String(i).padStart(4, '0')}` }));
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_ledger') return rows(r.url.searchParams.get('ends_at') === `eq.${S1}` ? [...full, LEDGER[1]] : full);
+      if (name.startsWith('my_')) return rows([]);
+      return undefined;
+    });
+    const log = await h.api.log(S1);
+    expect(log.before).toBe('2026-10-30T08:16:59.999999+00:00');
+    expect(log.settlements.map((x) => [x.id, x.lines.length])).toEqual([[9, 201]]);
+    const [page, whole] = h.to('my_ledger');
+    expect(page?.url.searchParams.get('ends_at')).toBe(`lte.${S1}`);
+    expect(whole?.url.searchParams.get('ends_at')).toBe(`eq.${S1}`);
+    expect(whole?.url.searchParams.get('order')).toBe('settlement.asc,character.asc,reason.asc');
+    for (const name of ['my_wallet_events', 'my_card_ledger', 'my_posts_played_on']) {
+      expect(h.to(name).some((q) => [...q.url.searchParams.values()].includes(`eq.${S1}`))).toBe(true);
+    }
+  });
+
   it('reads the shares whole, a page of rows at a time, however many a settlement has', async () => {
     /* 1,020 shares: a full page of a thousand, then the twenty past it, each on its line. */
     const act = (prefix: string, i: number) => `${prefix.slice(0, -4)}${String(i).padStart(4, '0')}`;

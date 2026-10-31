@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { CardEvent, WalletEvent } from './api.ts';
-import { cutLog, micros, type LedgerRow, type LogRead, type ShareRow } from './log-page.ts';
+import { cutLog, LOG_ROWS, micros, readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from './log-page.ts';
 
 const none: LogRead = { ledger: [], shares: [], wallet: [], cards: [], playsOnMine: [], saves: [] };
 const line = (settlement: number, endsAt: string, character: string, reason: string, amount: number): LedgerRow =>
@@ -95,4 +95,37 @@ test('where two full sources reach different times, the page ends at the newer, 
   /* The card ledger may hold more between 08:00 and 09:00, so the wallet's 08:00 cannot be shown before them. */
   assert.equal(log.before, '2026-10-30T09:00:00Z');
   assert.deepEqual(log.wallet.map((e) => e.at), ['2026-10-30T09:30:00Z']);
+});
+
+/*
+ * #89 F4: a source that holds `LOG_ROWS` rows at one instant. Cut at that instant, the page keeps nothing of it and hands the same
+ * instant back as the cursor, so Show older lines would read the same page forever. The cursors must only ever move back, and every
+ * row must be read once.
+ */
+test('a source full at one instant never hands back the cursor it was read with: every row is read once, and the cursors only move back', async () => {
+  const at9 = '2026-10-30T08:17:00.000000+00:00';
+  const at8 = '2026-10-29T08:17:00.000000+00:00';
+  const ledger: LedgerRow[] = [
+    ...Array.from({ length: LOG_ROWS }, (_, k) => line(9, at9, `c${String(k).padStart(3, '0')}`, 'heel.drewHeat', k + 1)),
+    line(8, at8, 'c000', 'heel.drewHeat', 7),
+  ];
+  const wallet = [spent(at9), spent(at8)];
+  /* A backend's reads over these rows, as each source reads: newest first, at or before the cursor, a page long; or all at one instant. */
+  const read = (range: LogRange): LogRead => {
+    const fits = (iso: string) => ('at' in range ? micros(iso) === micros(range.at) : range.before === null || micros(iso) <= micros(range.before));
+    const cap = <T,>(rows: T[]) => ('at' in range ? rows : rows.slice(0, range.limit));
+    return { ...none, ledger: cap(ledger.filter((l) => fits(l.endsAt))), wallet: cap(wallet.filter((e) => fits(e.at))) };
+  };
+  const seen: string[] = [];
+  const cursors: (string | null)[] = [null];
+  for (let page = 0; page < 6; page++) {
+    const cursor = cursors[cursors.length - 1]!;
+    const log = await readLogPage(read, cursor);
+    for (const s of log.settlements) for (const l of s.lines) seen.push(`${s.id} ${l.character}`);
+    if (log.before === null) break;
+    if (cursor !== null) assert.ok(micros(log.before) < micros(cursor), `the cursor ${log.before} did not move back from ${cursor}`);
+    cursors.push(log.before);
+  }
+  assert.equal(new Set(seen).size, seen.length, 'a line was read twice');
+  assert.equal(seen.length, LOG_ROWS + 1, 'a line was never read');
 });

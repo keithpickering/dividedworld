@@ -30,7 +30,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
-import { cutLog, LOG_ROWS, type LedgerRow, type ShareRow } from '../../../engine/ui/data/log-page.ts';
+import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import type {
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
   EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
@@ -223,6 +223,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const list = async (run: () => PromiseLike<unknown>): Promise<Row[]> => {
     const r = await read(run);
     return Array.isArray(r.data) ? (r.data as Row[]) : [];
+  };
+  /** Every row a read names, a page of rows at a time (the server returns at most `ROW_CAP` at once); `run` reads the rows from `start` to `end`. */
+  const every = async (run: (start: number, end: number) => PromiseLike<unknown>): Promise<Row[]> => {
+    const out: Row[] = [];
+    for (let start = 0; ; start += ROW_CAP) {
+      const r = await read(() => run(start, start + ROW_CAP - 1), true);
+      const page = Array.isArray(r.data) ? (r.data as Row[]) : [];
+      out.push(...page);
+      if (page.length < ROW_CAP) return out;
+    }
   };
 
   /** The bearer: the session's access token, or the anon key signed out. */
@@ -703,44 +713,56 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /*
      * A page of the player's own log: each of its own views read newest first, at or before the cursor and a page long, then the
      * shares of the settlements read, whole (a page of rows at a time), and the page cut where the first full source ends
-     * (engine/ui/data/log-page.ts). Every view answers from the caller's own rows alone.
+     * (engine/ui/data/log-page.ts). A page that would not move the cursor is read again at its one instant, every row there, a
+     * page of rows at a time in an order that holds still. Every view answers from the caller's own rows alone.
      */
-    async log(before) {
-      /* At or before the cursor; typed loosely, since supabase-js's builder types are too deep to pass through a generic. */
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const upTo = (q: any, column: string): any => (before ? q.lte(column, before) : q);
-      const [ledgerRows, walletRows, cardRows, playRows, saveRows] = await Promise.all([
-        list(() => upTo(client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept'), 'ends_at')
-          .order('ends_at', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).limit(LOG_ROWS)),
-        list(() => upTo(client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at').order('at', { ascending: false }).limit(LOG_ROWS)),
-        list(() => upTo(client.from('my_card_ledger').select('card,kind,act,price,at'), 'at').order('at', { ascending: false }).limit(LOG_ROWS)),
-        list(() => upTo(client.from('my_posts_played_on').select('play,post,at'), 'at').order('at', { ascending: false }).limit(LOG_ROWS)),
-        list(() => upTo(client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at').order('saved_at', { ascending: false }).limit(LOG_ROWS)),
-      ]);
-      const ledger = ledgerRows.map((r): LedgerRow => ({
-        settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
-        character: r['character'], reason: r['reason'], amount: num(r['amount']),
-      }));
-      const ids = [...new Set(ledger.map((l) => l.settlement))];
-      const shares: ShareRow[] = [];
-      for (let offset = 0; ids.length > 0; offset += ROW_CAP) {
-        const page = await list(() => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', ids)
-          .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
-          .range(offset, offset + ROW_CAP - 1));
-        for (const r of page) shares.push({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) });
-        if (page.length < ROW_CAP) break;
-      }
-      return cutLog({
-        ledger,
-        shares,
-        wallet: walletRows.map((r): WalletEvent => ({
-          settlement: typeof r['settlement'] === 'number' ? r['settlement'] : null, kind: r['kind'], change: num(r['change']), overflow: num(r['overflow']),
-          floored: num(r['floored']), balanceAfter: num(r['balance_after']), ref: r['ref'] ?? null, at: r['at'],
-        })),
-        cards: cardRows.map((r): CardEvent => ({ card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'] })),
-        playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'] })),
-        saves: saveRows.map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
-      });
+    log(before) {
+      return readLogPage(async (range) => {
+        /*
+         * One view's rows: a page long at or before the cursor, newest first by `column` then `page`'s order; or every row at one
+         * instant, a page of rows at a time, in `whole`'s order, which holds still from one page of rows to the next. Typed
+         * loosely, since supabase-js's builder types are too deep to pass through a generic.
+         */
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        type Q = any;
+        const rows = (view: string, columns: string, column: string, page: (q: Q) => Q, whole: readonly string[], narrow: (q: Q) => Q = (q) => q): Promise<Row[]> => {
+          const from = (): Q => narrow(client.from(view).select(columns));
+          if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
+          return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
+        };
+        const [ledgerRows, walletRows, cardRows, playRows, saveRows] = await Promise.all([
+          rows('my_ledger', 'settlement,starts_at,ends_at,character,reason,amount,shares_kept', 'ends_at',
+            (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
+          rows('my_wallet_events', 'settlement,kind,change,overflow,floored,balance_after,ref,at', 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
+          rows('my_card_ledger', 'card,kind,act,price,at', 'at', (q) => q, ['card', 'kind', 'act', 'price']),
+          rows('my_posts_played_on', 'play,post,at', 'at', (q) => q, ['play']),
+          rows('my_posts_played_on', 'play,post,saved_at', 'saved_at', (q) => q, ['play'], (q) => q.not('saved_at', 'is', null)),
+        ]);
+        const ledger = ledgerRows.map((r): LedgerRow => ({
+          settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
+          character: r['character'], reason: r['reason'], amount: num(r['amount']),
+        }));
+        const ids = [...new Set(ledger.map((l) => l.settlement))];
+        const shares: ShareRow[] = [];
+        for (let offset = 0; ids.length > 0; offset += ROW_CAP) {
+          const page = await list(() => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', ids)
+            .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
+            .range(offset, offset + ROW_CAP - 1));
+          for (const r of page) shares.push({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) });
+          if (page.length < ROW_CAP) break;
+        }
+        return {
+          ledger,
+          shares,
+          wallet: walletRows.map((r): WalletEvent => ({
+            settlement: typeof r['settlement'] === 'number' ? r['settlement'] : null, kind: r['kind'], change: num(r['change']), overflow: num(r['overflow']),
+            floored: num(r['floored']), balanceAfter: num(r['balance_after']), ref: r['ref'] ?? null, at: r['at'],
+          })),
+          cards: cardRows.map((r): CardEvent => ({ card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'] })),
+          playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'] })),
+          saves: saveRows.map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
+        };
+      }, before ?? null);
     },
     estimate() {
       if (lastEstimate && Date.now() < lastEstimate.until) return Promise.resolve(lastEstimate.answer);
