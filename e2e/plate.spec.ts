@@ -120,11 +120,24 @@ test('Whoops!\'s mark on #41 opens the Lens, which reads out the card and its la
   /* The armed card is the post's ghost mark, in its date row, and not among the Lens's controls. */
   await expect(lens.getByRole('button', { name: /^Play Whoops!/u })).toHaveCount(0);
   await expect(page.locator('#post-41').getByRole('button', { name: 'Play Whoops! on post 41' })).toBeVisible();
-  /* The reader has the hold alone; the author's two tools are there only for the author. */
-  const tools = await lens.getByRole('group', { name: 'Your tool' }).count();
-  if (tools) {
-    for (const name of ['Wash', 'Write in ink']) await expect(lens.getByRole('button', { name })).toHaveAttribute('aria-pressed', /^(true|false)$/u);
-  }
-  expect(await lens.locator('.kb-kit-tile').count()).toBeLessThanOrEqual(3);
+  /* The moment's player is #41's author (the mark says "Yours to act on"): the hold and the two-tool choice, no more. */
+  await expect(page.locator('#post-41 .kb-mark[data-kb-card="whoops"]:not(.kb-ghost-mark)')).toHaveAttribute('aria-label', /Yours to act on/u);
+  await expect(lens.getByRole('group', { name: 'Your tool' })).toBeVisible();
+  for (const name of ['Wash', 'Write in ink']) await expect(lens.getByRole('button', { name })).toHaveAttribute('aria-pressed', /^(true|false)$/u);
+  await expect(lens.locator('.kb-kit-tile')).toHaveCount(3);
 });
 
+
+test('a reader of a splatted post has the hold alone in the Lens: no tool choice', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1120 });
+  /* The 08-hold moment signs in the reader account, who wrote none of the posts. */
+  await page.goto('/?fixture=boards&story=boards-08-hold--whoops-under-hold');
+  const mark = page.locator('.kb-mark[data-kb-card="whoops"]:not(.kb-ghost-mark)').first();
+  await expect(mark).toBeVisible();
+  await expect(mark).not.toHaveAttribute('aria-label', /Yours to act on/u);
+  await mark.click();
+  const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+  await expect(lens.getByRole('button', { name: 'Hold to scrub' })).toBeVisible();
+  await expect(lens.locator('.kb-kit-tile')).toHaveCount(1);
+  await expect(lens.getByRole('group', { name: 'Your tool' })).toHaveCount(0);
+});

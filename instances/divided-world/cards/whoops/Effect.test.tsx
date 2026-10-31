@@ -434,14 +434,20 @@ describe('the view the effect publishes (marks-and-the-lens design, sections 3 a
     expect(last(author.shown).controls[1]).toMatchObject({ label: 'Your tool', options: [{ value: 'wash', label: 'Wash' }, { value: 'ink', label: 'Write in ink' }], value: 'wash' });
     for (const view of [...reader.shown, ...author.shown]) expect(view?.controls.length ?? 0).toBeLessThanOrEqual(2);
   });
-  test('choosing a tool is the effect\'s tool state: the published choice follows it, and the pen is what the next stroke writes', () => {
-    const { shown, frame } = mount({ author: true });
+  test('choosing a tool is the effect\'s tool state: the published choice follows it, and the next stroke is written in the layer\'s ink, not washed', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { shown, frame, save } = mount({ author: true });
     const choose = () => last(shown).controls[1] as Extract<KitControl, { kind: 'choose' }>;
     act(() => choose().choose('ink'));
     expect(choose().value).toBe('ink');
     expect(screen.getByRole('button', { name: 'Write in ink' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Wash' })).toHaveAttribute('aria-pressed', 'false');
-    expect(frame).toBeTruthy();
+    drag(frame, [[0.2, 0.3], [0.3, 0.3], [0.4, 0.35]]);
+    act(() => { vi.advanceTimersByTime(2000); });
+    const stroke = (save.mock.calls[0]![1] as { strokes: { tool: string; color: string }[] }).strokes[0]!;
+    expect([stroke.tool, stroke.color]).toEqual(['ink', COLORS[0]]);
+    act(() => choose().choose('wash'));
+    expect(choose().value).toBe('wash');
   });
   test('an unchanged view is equal: the controls are the same functions after a refresh, so the engine\'s comparison sees no change', () => {
     const { shown, hear } = mount({ layers: 2, author: true });

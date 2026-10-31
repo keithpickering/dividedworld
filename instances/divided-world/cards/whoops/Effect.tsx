@@ -9,8 +9,8 @@
  * thread the frame is the post's whole body, border to border (whoops.css bleeds it over the body's gutters,
  * and the layout keeps them as padding), so the ink covers the body edge to edge and lies within 0 to 1 of
  * the layout's width, where a stroke can wash it. In the ORIGIN box the frame is the box's content, as it was.
- * Every stroke, kept in widths of that layout, lands on the same words. The ink is a canvas laid over it; the tag and the button are the glass reaching in (`tag` in cards.ts draws the
- * tag, the button is here), on the `effect` smoke.
+ * Every stroke, kept in widths of that layout, lands on the same words. The ink is a canvas laid over it; the tag is the glass reaching in (`tag` in cards.ts draws it), and the card's
+ * state and controls are the Lens's and the kit's, from the view the effect publishes (`show`, below).
  *
  * What is the model and what is drawn. A layer's ink is the seeded splat less the strokes washed on it
  * (scrub.ts `LayerInk`), which is geometry and costs no canvas, so which layer a stroke scrubs, how much
@@ -146,6 +146,7 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const met1 = useRef(false);
   const metNow = useRef(met);
   metNow.current = met;
+  /* Any stroke counts, the author's too: the author is a reader of their own post and has met the effect by working it. */
   const meet = useCallback(() => {
     if (met1.current) return;
     met1.current = true;
@@ -700,7 +701,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const state = upper === null
     ? 'Washed clean'
     : `${layers.length} ${layers.length === 1 ? 'layer' : 'layers'} · top: ${nameOf(upper.play.caster)}'s ${inkName(upper.color)}, ${percent(top)}% washed`;
-  const inked = layers.flatMap((_, i) => (cleanAt(i) ? [] : [Math.min(1, view?.washed[i] ?? 0)]));
+  /* A share that is not a number counts as nothing washed, so the view and the key it is published on agree (JSON turns NaN into null). */
+  const inked = layers.flatMap((_, i) => { const w = view?.washed[i] ?? 0; return cleanAt(i) ? [] : [Number.isFinite(w) ? Math.min(1, w) : 0]; });
   const progress = inked.length === 0 ? null : inked.reduce((sum, w) => sum + w, 0) / inked.length;
   /* Each layer's line for its Who row: "Layer 3 of 3, on top · 40% washed", or "Washed clean". */
   const lineOf = (i: number) => (cleanAt(i) ? 'Washed clean' : `Layer ${i + 1} of ${layers.length}${i === top ? ', on top' : ''} · ${percent(i)}% washed`);
