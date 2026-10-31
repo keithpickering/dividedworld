@@ -126,10 +126,10 @@ export interface EffectProps {
   /** Release the reader from a play's effect for good (Stick Around's certification), and show it at once. */
   readonly release: (play: Id) => Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
   /**
-   * @deprecated Going: the panel that reads notes is removed in Task 4, and Whoops! moves to `show` (`CardView.notes`) in Task 6.
-   * Say one line about a play's state on this screen, in plain words, for its panel (the plays-on-a-post design,
+   * @deprecated Going: the Lens still reads it as a fallback for `CardView.notes` (Lens.tsx), until Whoops! moves to `show` in Task 6.
+   * Say one line about a play's state on this screen, in plain words, for its Who row in the Lens (the plays-on-a-post design,
    * section 4: "Layer 3 of 3, on top · 40% washed"), or clear it with null. It is this reader's view, never saved or
-   * sent, and it draws only the panel that shows it, so an effect may say it as often as its state changes; an effect
+   * sent, and it draws only the row that shows it, so an effect may say it as often as its state changes; an effect
    * clears what it said when it is gone.
    */
   readonly note: (play: Id, line: string | null) => void;

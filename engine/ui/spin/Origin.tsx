@@ -25,7 +25,7 @@ import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import { primeSpun, spunCount, takeOrigin } from './spun.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
-import { SpinForm } from './SpinForm.tsx';
+import { SpinForm, useSpinDrafts } from './SpinForm.tsx';
 import './spin.css';
 
 /** Card plays listed under the origin; a read of one more says there are more on the Act itself. */
@@ -124,6 +124,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const history = useHistory(originId);
   /* A play in the box is spun from in a form of the box's own, under it: the box's post is in another thread. */
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
+  const drafts = useSpinDrafts();
   const backHref = summary.originSeq !== null && summary.originTitle !== null ? threadHref(summary.originThread!, pageOf(summary.originSeq, perPage), summary.originSeq) : null;
   const back = backHref !== null ? <Link to={backHref}>#{summary.originSeq} in {summary.originTitle}</Link> : null;
 
@@ -183,6 +184,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
       {spinOrigin && (
         <SpinForm
           key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
+          draft={drafts.get(spinOrigin.id)} onDraft={(d) => drafts.set(spinOrigin.id, d)}
           onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); if (back?.isConnected) back.focus(); }}
         />
       )}

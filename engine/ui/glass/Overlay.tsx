@@ -28,7 +28,7 @@ import { useId, useLayoutEffect, useRef, type CSSProperties, type ReactNode, typ
 import { createPortal } from 'react-dom';
 import { useModalLayer } from '../modal.tsx';
 import type { GlassSurface } from '../types.ts';
-import { HUD_SELECTOR, placePopover } from './place.ts';
+import { hudTopOf, placePopover } from './place.ts';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
@@ -85,12 +85,6 @@ export type Placed = 'below' | 'above' | 'sheet';
 /** The room kept between the anchor and the overlay, and between the overlay and the window's edges. */
 const GAP = 30;
 const MARGIN = 4;
-
-/** The HUD's top edge in the window; the window's foot where there is no HUD, or one that is not laid out (hidden, collapsed, detached: no height). */
-function hudTopOf(viewportHeight: number): number {
-  const hud = document.querySelector(HUD_SELECTOR)?.getBoundingClientRect();
-  return hud && hud.height > 0 ? Math.min(hud.top, viewportHeight) : viewportHeight;
-}
 
 /** Places `box` by `anchor`, as the module comment says, measured from its unplaced state; returns the side it took. */
 function place(box: HTMLElement, anchor: HTMLElement, sheetBelow: number): Placed {

@@ -31,6 +31,7 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { billPost, drawnOf } from '../cards/billing.ts';
+import { LensProvider } from '../cards/Lens.tsx';
 import { createPlays, effectCards, readEffects, readPlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
@@ -517,16 +518,18 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       </div>
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
-          <div className="kb-acts">
-            {/* The 2003 table's column head, over side-by-side posts; each article names its own author for a screen reader. */}
-            {layout === 'side' && (
-              <div className="kb-acts-head" aria-hidden="true">
-                <span>Author</span>
-                <span>Message</span>
-              </div>
-            )}
-            {shown.map((a) => <ActArticle key={a.id} act={a} person={a.character ? people.current.get(a.character) : undefined} layout={layout} slid={feed.slid.has(a.id)} />)}
-          </div>
+          <LensProvider>
+            <div className="kb-acts">
+              {/* The 2003 table's column head, over side-by-side posts; each article names its own author for a screen reader. */}
+              {layout === 'side' && (
+                <div className="kb-acts-head" aria-hidden="true">
+                  <span>Author</span>
+                  <span>Message</span>
+                </div>
+              )}
+              {shown.map((a) => <ActArticle key={a.id} act={a} person={a.character ? people.current.get(a.character) : undefined} layout={layout} slid={feed.slid.has(a.id)} />)}
+            </div>
+          </LensProvider>
         </ThreadCtx.Provider>
       </ActIndex.Provider>
       <div ref={endRef} className="kb-thread-end" data-kb-end="" aria-hidden="true" />

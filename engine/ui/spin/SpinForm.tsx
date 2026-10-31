@@ -7,7 +7,7 @@
  * is looked for among the threads spun from this Act (this title, by this character) before the
  * spin is offered again ("Spin again anyway"): a spin is an Act, and a blind resend is a second one.
  */
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useWhoPosts } from '../composer/draft.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
@@ -16,16 +16,37 @@ import { Link, useNavigate } from '../router.tsx';
 import { expectOrigin, spunLoader } from './spun.ts';
 import './spin.css';
 
+/** What was typed in a spin form: the title and the opening post. */
+export interface SpinDraft { readonly title: string; readonly body: string }
+
+/**
+ * A post's spin drafts, one per origin (the post itself, or a play on it): the form is keyed by its origin and remounts
+ * when it moves from the post to a play, so what was typed is kept here and not in the form (#100). A post that is gone
+ * takes them with it; closing the form with Cancel or Esc throws that origin's away.
+ */
+export function useSpinDrafts(): { readonly get: (origin: Id) => SpinDraft | undefined; readonly set: (origin: Id, draft: SpinDraft | null) => void } {
+  const drafts = useRef(new Map<Id, SpinDraft>());
+  const get = useCallback((origin: Id) => drafts.current.get(origin), []);
+  const set = useCallback((origin: Id, draft: SpinDraft | null) => { if (draft === null || (draft.title === '' && draft.body === '')) drafts.current.delete(origin); else drafts.current.set(origin, draft); }, []);
+  return { get, set };
+}
+
 /**
  * `label` names the origin as the form says it: "post 41" for a post, "Mrs. Hooligan's Whoops!" for a card play
  * (the plays-on-a-post design, section 3); null for an Act with no such name ("this Act").
  */
-export function SpinForm({ origin, label: named, onClose }: { readonly origin: Id; readonly label: string | null; readonly onClose: () => void }) {
+export function SpinForm({ origin, label: named, onClose, draft, onDraft }: {
+  readonly origin: Id; readonly label: string | null; readonly onClose: () => void;
+  /** What was typed here before, and where to put each change (`useSpinDrafts`); a form with neither starts empty and keeps nothing. */
+  readonly draft?: SpinDraft; readonly onDraft?: (draft: SpinDraft | null) => void;
+}) {
   const { api, settings } = useKayfa();
   const { hudCharacter, characters, refresh } = usePlayer();
   const navigate = useNavigate();
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
+  const [title, setTitleNow] = useState(draft?.title ?? '');
+  const [body, setBodyNow] = useState(draft?.body ?? '');
+  const setTitle = (t: string) => { setTitleNow(t); onDraft?.({ title: t, body }); };
+  const setBody = (b: string) => { setBodyNow(b); onDraft?.({ title, body: b }); };
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
@@ -45,6 +66,7 @@ export function SpinForm({ origin, label: named, onClose }: { readonly origin: I
   }
   /* The thread is made: the player goes to it, and focus is on its ORIGIN when it opens. */
   const went = (thread: Id) => {
+    onDraft?.(null);
     spunLoader(api).forget(origin);
     void refresh();
     expectOrigin(thread);
@@ -79,7 +101,9 @@ export function SpinForm({ origin, label: named, onClose }: { readonly origin: I
     }
   };
   const edited = () => { if (again) { setAgain(false); setRefusal(null); } };
-  const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+  /* Closing the form is throwing it away; moving to another origin's form is not a close (Post.tsx). */
+  const dismiss = () => { onDraft?.(null); onClose(); };
+  const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); dismiss(); } };
   const was = characters.find((c) => c.id === who.as)?.name ?? 'another character';
 
   return (
@@ -106,7 +130,7 @@ export function SpinForm({ origin, label: named, onClose }: { readonly origin: I
         <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || title.trim() === '' || [...body].length > settings.postMaxLength}>
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Spin again anyway' : 'Spin thread'}
         </button>
-        <button type="button" className="kb-button" onClick={onClose}>Cancel</button>
+        <button type="button" className="kb-button" onClick={dismiss}>Cancel</button>
       </div>
     </form>
   );

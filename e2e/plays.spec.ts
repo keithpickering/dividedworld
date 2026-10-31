@@ -40,7 +40,7 @@ for (const [label, viewport, story] of [
       expect(await height(), 'the post is as tall with no marks as with six').toBe(drawn);
     });
 
-    test('a mark stands over the post\'s words without taking their place, and opens its card\'s play', async ({ page }) => {
+    test('a mark stands over the post\'s words without taking their place, and opens the Lens on its card, which Esc and its mark close and which leaves the page in use', async ({ page }) => {
       await page.goto(`/?fixture=boards&story=${story}`);
       const post = page.locator('#post-41');
       const mark = post.locator('.kb-mark[data-kb-card]').first();
@@ -48,7 +48,19 @@ for (const [label, viewport, story] of [
       await expect(mark).toHaveAttribute('aria-expanded', 'false');
       await mark.click();
       await expect(mark).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByRole('dialog')).toBeVisible();
+      const lens = page.getByRole('dialog', { name: 'Cards on this post' });
+      await expect(lens).toBeVisible();
+      await expect(lens).toHaveAttribute('aria-modal', 'false');
+      await expect(lens).toHaveAttribute('data-kb-lens', viewport.width <= 640 ? 'sheet' : /^(side|under|above)$/u);
+      const box = (await lens.boundingBox())!;
+      expect(box.x, 'the Lens starts inside the window').toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, 'and ends inside it').toBeLessThanOrEqual(viewport.width + 1);
+      expect(box.y + box.height, 'and stays above the window\'s foot').toBeLessThanOrEqual(viewport.height + 1);
+      /* The glow is a drop shadow on the unclipped wrapper, in the open tab's ink. */
+      expect(await lens.evaluate((el) => getComputedStyle(el.parentElement!).filter)).toContain('drop-shadow');
+      /* The page stays in use: a press on the post's words leaves it open. */
+      await post.locator('.kb-act-main').click({ position: { x: 4, y: 4 } });
+      await expect(lens).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect(mark).toHaveAttribute('aria-expanded', 'false');
@@ -79,6 +91,8 @@ for (const [label, viewport] of [['1440', { width: 1440, height: 1120 }], ['390'
         for (let i = 0; i < 5; i++) strip.insertBefore(first.cloneNode(true), ghost);
       });
       await expect(post.locator('.kb-mark')).toHaveCount(7);
+      /* The strip tells its cell its width from a ResizeObserver, a step after the clones land: read nothing until it has. */
+      await expect.poll(() => post.locator('.kb-marks').evaluate((strip) => strip.parentElement!.style.getPropertyValue('--kb-marks-width') === `${Math.ceil(strip.getBoundingClientRect().width)}px`)).toBe(true);
       const rects = await post.evaluate((el) => {
         const r = (e: Element) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; };
         return {

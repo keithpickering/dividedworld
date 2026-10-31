@@ -47,6 +47,9 @@ const wasInert = new Map<Element, boolean>();
 
 const isTop = (entry: Entry) => stack[stack.length - 1] === entry;
 
+/** Whether any modal surface is open: a layer that is not modal (the Lens, glass/Float.tsx) leaves Esc to it while one is. */
+export const modalOpen = (): boolean => stack.length > 0;
+
 /** Everything in the body but the top modal's overlay is inert; what was inert before stays inert after. */
 function settle() {
   const top = stack[stack.length - 1]?.overlay ?? null;

@@ -1,7 +1,10 @@
 /** The loader behind "Spun into": batching, bounds, the clock, and what a failure leaves behind. */
+import { renderHook } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { describe, expect, test, vi } from 'vitest';
+import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { SPUN_FROM_MAX, type Id, type KayfaApi, type ThreadSummary } from '../data/api.ts';
-import { SPUN_CACHE_SIZE, SPUN_CHUNK, SPUN_READ_LIMIT, SPUN_SHOWN, SPUN_TTL_MS, createSpunLoader, primeSpun, spunCount } from './spun.ts';
+import { SPUN_CACHE_SIZE, SPUN_CHUNK, SPUN_READ_LIMIT, SPUN_SHOWN, SPUN_TTL_MS, createSpunLoader, primeSpun, spunCount, spunLoader, useSpunInto } from './spun.ts';
 
 const thread = (origin: Id, n: number): ThreadSummary => ({
   id: `${origin}-t${n}`, board: 'b', title: `T${n}`, originActId: origin, createdAt: '2026-10-29T12:00:00Z', lastAt: '2026-10-29T12:00:00Z', lastSeq: 1,
@@ -109,5 +112,38 @@ describe('priming the spins of a page', () => {
     expect(spunCount(spun.get('a')!)).toBe(1);
     expect(spunCount(spun.get('x0')!)).toBe(0);
     expect(spunCount(spun.get('bad')!)).toBe(0);
+  });
+});
+
+describe('the Spun-into hook', () => {
+  const kayfa = (api: KayfaApi) => ({ children }: { readonly children: ReactNode }) =>
+    <KayfaProvider value={{ api, instance: {}, ui: {}, settings: {} } as unknown as Kayfa}>{children}</KayfaProvider>;
+
+  test('answers on its first render from what the loader already holds, with no frame of "none"', async () => {
+    const many = vi.fn(async (acts: readonly Id[]) => acts.map((a) => thread(a, 0)));
+    const api = { spunFromMany: many, spunFrom: vi.fn(async () => []) } as unknown as KayfaApi;
+    await primeSpun(api, ['a']);
+    const seen: number[] = [];
+    renderHook(() => { const n = spunCount(useSpunInto('a')); seen.push(n); return n; }, { wrapper: kayfa(api) });
+    expect(seen[0]).toBe(1);
+    expect(seen.every((n) => n === 1)).toBe(true);
+  });
+
+  test('the loader\'s peek gives a stale answer while it is read again, and none for an Act it was never asked about or has forgotten', async () => {
+    const { loader, many, tick } = setup({ a: 2 });
+    expect(loader.peek('a')).toBeNull();
+    const first = loader.ask('a');
+    /* Not yet read: nothing to give. */
+    expect(loader.peek('a')).toBeNull();
+    const answer = await first;
+    expect(loader.peek('a')).toBe(answer);
+    tick(SPUN_TTL_MS + 1);
+    expect(loader.peek('a')).toBe(answer);
+    const again = loader.ask('a');
+    expect(loader.peek('a')).toBe(answer);
+    await again;
+    expect(many).toHaveBeenCalledTimes(2);
+    loader.forget('a');
+    expect(loader.peek('a')).toBeNull();
   });
 });

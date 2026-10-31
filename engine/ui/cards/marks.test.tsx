@@ -110,7 +110,7 @@ describe('one mark per kind', () => {
     expect(more).not.toHaveAttribute('aria-describedby');
     await userEvent.click(more);
     expect(more).toHaveAttribute('aria-expanded', 'true');
-    expect(within(document.body).getByRole('dialog', { name: /^Card 2 by Spritey/u })).toBeInTheDocument();
+    expect(within(document.body).getByRole('tab', { name: 'Card 2', selected: true })).toBeInTheDocument();
   });
 
   test('on a phone it draws three and "+3"', async () => {
@@ -123,14 +123,14 @@ describe('one mark per kind', () => {
     expect(within(post).getByRole('button', { name: '+3 more cards played on this post' })).toHaveTextContent('+3');
   });
 
-  test('a mark opens the first billed play of its kind, and stays expanded while it is open', async () => {
+  test('a mark opens the Lens on its kind, and stays expanded while it is open', async () => {
     const w = world();
     w.play('k1');
     open(w);
     const post = await article(2);
     const mark = await waitFor(() => { const [m] = marks(post); expect(m).toBeDefined(); return m!; });
     await userEvent.click(mark);
-    expect(screen.getByRole('dialog', { name: 'Card 1 by Spritey' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Card 1', selected: true })).toBeInTheDocument();
     expect(mark).toHaveAttribute('aria-expanded', 'true');
     await userEvent.keyboard('{Escape}');
     expect(mark).toHaveAttribute('aria-expanded', 'false');

@@ -19,20 +19,18 @@
  * the post itself redraws that post's marks (each compares with the post's sum), and no other post's. A strip that
  * compares nothing (a card play's ORIGIN box) listens to no tally.
  *
- * `PostMarks` is the strip with what a mark opens until the Lens is built (Task 4 of the plan replaces it): the play
- * panel (Panel.tsx) of the kind's first billed play.
+ * `PostMarks` is the strip with what a mark opens: the Lens (Lens.tsx), on the mark's tab; "+N" opens the first kind it hides.
  */
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useNarrow } from './Effects.tsx';
-import { withCardEconomy } from './faces.ts';
-import { PlayPanel } from './Panel.tsx';
+import { Lens, useLensFor, useLensStore, useResolvedView } from './Lens.tsx';
 import { GhostMark } from './PlayActions.tsx';
 import { MARKS_NARROW, MARKS_WIDE, kindsOf, markName, moreName, sumOf } from './marks.ts';
-import { defaultView, inPlayOrder, useCardView, usePlays, type Plays } from './plays.ts';
+import { inPlayOrder, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 import './marks.css';
 
@@ -74,12 +72,10 @@ interface MarkProps {
 }
 
 const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, onOpen }: MarkProps) {
-  const { instance, settings, ui } = useKayfa();
+  const { instance, ui } = useKayfa();
   const rules = instance.cards.find((c) => c.key === kind);
   const cardUi = ui.cards.find((c) => c.key === kind);
-  const given = useCardView(store, post, kind);
-  const economy = useMemo(() => withCardEconomy(instance.settings, settings.cardEconomy), [instance.settings, settings.cardEconomy]);
-  const view = given ?? defaultView({ name: rules?.name ?? kind }, cardUi, economy);
+  const view = useResolvedView(store, post, kind);
   const more = useOutdrawing(tallies, plays, postTotal, compare);
   const name = rules?.name ?? kind;
   const art = cardUi?.art;
@@ -199,34 +195,28 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, co
 }
 
 /**
- * The strip, where a post's date row holds it, and what its marks open until the Lens exists: the panel of the kind's
- * first billed play (cards/Panel.tsx), over which React and Spin thread are reached. Going in Task 4 of the marks-and-the-lens
- * plan, which opens the Lens on the kind. A read of the page closes what was opened, since its billing may have moved.
+ * The strip, where a post's date row holds it, and the Lens its marks open (Lens.tsx): a mark opens it on its tab, "+N" on the
+ * first kind it hides, and the same mark again closes it. One Lens is open on a page, so a strip subscribes to whether it is
+ * the one and is redrawn for its own opening and closing alone.
  */
-export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, compare, onSpin }: {
+export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, compare = true, onSpin }: {
   readonly post: Id; readonly ghost?: Act; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
   readonly tallies: Tallies; readonly mine: Mine;
-  /** Spin a thread from a play: the panel has closed, and the post opens its spin form for it, giving focus back to `opener` when the form closes. */
+  /** Spin a thread from a play: the Lens has closed, and the post opens its spin form for it, giving focus back to `opener` when the form closes. */
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
 }) {
-  const { ui } = useKayfa();
-  const narrow = useNarrow();
-  const here = usePlays(plays, post);
+  const owner = useId();
+  const store = useLensStore();
+  const open = useLensFor(store, owner);
   const anchor = useRef<HTMLSpanElement>(null);
-  const [open, setOpen] = useState<{ readonly kind: string; readonly opener: HTMLElement } | null>(null);
-  const [seen, setSeen] = useState(here.read);
-  if (seen !== here.read) { setSeen(here.read); setOpen(null); }
-  const opened = open ? here.billed.find((p) => p.card === open.kind) ?? null : null;
+  /* Gone with its Lens open (the post left the page): the page's Lens is closed with it. */
+  useEffect(() => () => { if (store.get()?.owner === owner) store.close(); }, [store, owner]);
+  const onOpen = useCallback<Open>((kind, opener) => store.toggle({ owner, card: kind, opener }), [store, owner]);
+  const fallback = useCallback(() => anchor.current?.querySelector<HTMLElement>('button') ?? null, []);
   return (
     <span className="kb-marks-anchor" ref={anchor}>
-      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} compare={compare} open={open?.kind ?? null} onOpen={(kind, opener) => setOpen((was) => (was?.kind === kind ? null : { kind, opener }))} />
-      {open && opened && (
-        <PlayPanel
-          play={opened} caster={nameOf(opened.caster)} tint={inkOf(ui, opened, here.plays)} plays={plays} tallies={tallies} mine={mine} to={to}
-          sheet={narrow} opener={open.opener} fallback={() => anchor.current?.querySelector<HTMLElement>('button') ?? null} onClose={() => setOpen(null)}
-          onSpin={(play, name) => { const from = open.opener; setOpen(null); onSpin(play, name, from); }}
-        />
-      )}
+      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} compare={compare} open={open?.card ?? null} onOpen={onOpen} />
+      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} fallback={fallback} onSpin={onSpin} />}
     </span>
   );
 }

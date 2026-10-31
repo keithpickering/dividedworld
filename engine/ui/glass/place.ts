@@ -51,3 +51,9 @@ export function placePopover({ button, container, size, viewport, hudTop, gap = 
   const left = Math.min(Math.max(container.left, margin), viewport.width - margin - width);
   return { side, top: edge - container.top, left: left - container.left, maxHeight: capped ? height : null, maxWidth };
 }
+
+/** The HUD's top edge in the window; the window's foot where there is no HUD, or one that is not laid out (hidden, collapsed, detached: no height). */
+export function hudTopOf(viewportHeight: number): number {
+  const hud = document.querySelector(HUD_SELECTOR)?.getBoundingClientRect();
+  return hud && hud.height > 0 ? Math.min(hud.top, viewportHeight) : viewportHeight;
+}

@@ -115,11 +115,11 @@ export interface Plays {
    */
   setView(post: Id, card: string, view: CardView | null): void;
   /**
-   * @deprecated Going with the notes: the panel that reads them is removed in Task 4 and Whoops! moves to `CardView.notes` in Task 6.
+   * @deprecated Going with the notes: the Lens reads them only as a fallback for `CardView.notes`, until Whoops! moves to it in Task 6.
    * The card's line about a play's state on this screen (design, section 4), or null; never saved or sent. */
   note(play: Id): string | null;
   /**
-   * @deprecated Going with `note` (Tasks 4 and 6).
+   * @deprecated Going with `note` (Task 6).
    * Set or clear (null) a play's line. It wakes the play's post and leaves the post's snapshot as it was, so a note
    * written while an effect runs draws only what reads it (`useNote`), never the effects or the post's words.
    */
@@ -250,7 +250,7 @@ export function useCardView(plays: Plays, post: Id, card: string): CardView | nu
   return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.view(post, card));
 }
 
-/** @deprecated Going with the notes (Tasks 4 and 6). A play's note (`Plays.note`): what reads it is drawn again when it changes, and nothing else is. */
+/** @deprecated Going with the notes (Task 6). A play's note (`Plays.note`): what reads it is drawn again when it changes, and nothing else is. */
 export function useNote(plays: Plays, post: Id, play: Id): string | null {
   return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.note(play));
 }

@@ -19,7 +19,7 @@ import { usePlayer } from '../player.tsx';
 import { Postbit, Signature, type PostbitLayout, type PostbitPerson } from '../postbit/Postbit.tsx';
 import { Link } from '../router.tsx';
 import { Origin } from '../spin/Origin.tsx';
-import { SpinForm } from '../spin/SpinForm.tsx';
+import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
@@ -76,7 +76,7 @@ function Body({ act, name, person, editing, onDone, slot }: { readonly slot: Rea
  * The links stand on the post's footer bar, drawn like its header bar (the owner: the row on a bar of its own, so no 2003 text
  * lies on an ink a player picks); the spin form and the history, which open from them, stand under the bar.
  */
-/** What the post's spin form is open for: the post itself, or a play on it (from its panel), with what gives focus back when it closes. */
+/** What the post's spin form is open for: the post itself, or a play on it (from its Lens), with what gives focus back when it closes. */
 export interface SpinOrigin { readonly id: Id; readonly label: string | null; readonly opener: HTMLElement | null }
 
 function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }: {
@@ -86,10 +86,12 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
   const { quote } = useThread();
   const { actingCharacters } = usePlayer();
   const spinButton = useRef<HTMLButtonElement>(null);
+  /* One draft per origin: the form is keyed by its origin, so a switch between the post and a play would otherwise lose what was typed (#100). */
+  const drafts = useSpinDrafts();
   const history = useHistory(act.id);
   const quotable = (act.kind === 'post' || act.kind === 'spin') && quote !== null;
   const mine = act.kind === 'post' && act.character !== null && actingCharacters.some((c) => c.id === act.character);
-  /* The post's own Spin thread is pressed while its form is open for the post; a play's form is the play's panel's. */
+  /* The post's own Spin thread is pressed while its form is open for the post; a play's form is opened from its row in the Lens. */
   const spinning = spinOrigin?.id === act.id;
   return (
     <>
@@ -109,6 +111,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
           {spinOrigin && (
             <SpinForm
               key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
+              draft={drafts.get(spinOrigin.id)} onDraft={(d) => drafts.set(spinOrigin.id, d)}
               onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); (back?.isConnected ? back : spinButton.current)?.focus(); }}
             />
           )}
@@ -160,7 +163,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
         ? <Postbit person={person} layout={layout} />
         : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
       <header className="kb-act-meta">
-        <time dateTime={act.createdAt}>{when(act.createdAt)}</time>
+        <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt)}</time>
         {act.kind === 'post' && <PostMarks post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />}
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>

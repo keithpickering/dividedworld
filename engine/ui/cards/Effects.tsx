@@ -131,7 +131,7 @@ export function EffectStrip({ slot, card, readout, children }: { readonly slot: 
   );
 }
 
-/** The thread's narrow width (thread.css's 40em, where a post is stacked): a play's panel is a sheet there. */
+/** The thread's narrow width (thread.css's 40em, where a post is stacked): the Lens is a sheet there and a post's marks are fewer. */
 const NARROW = '(max-width: 40em)';
 /* One query for the page, however many posts ask it, with one listener behind every post's subscription; asked again only if the window's `matchMedia` is another. */
 let narrowQuery: { readonly source: typeof globalThis.matchMedia; readonly list: MediaQueryList } | null = null;
