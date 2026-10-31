@@ -271,6 +271,12 @@ looked slightly different every time etc."
 to a narrow screen and never up, so on a wide screen a splatted post keeps the board's type in its 360px column (the
 cards plan's Task 5 amendment of this date).
 
+**Amended 2026-10-31, the owner's design on #84** (`docs/plans/2026-10-31-plays-on-a-post-design.md`). Every post's
+plays, of any card, are billed with the most drawn on top. Each play's tag is a quiet button that opens a panel for that
+play, where it is reacted to and spun from on its own. Each Whoops! play's tag takes its own ink, in place of "the tag
+over the post takes the top layer's color". The plate's readout has one segment per layer in its ink and names the top
+layer, which is the layer the next stroke washes. Stacking and the rest of this section stand.
+
 ## 12. The out-of-character screens
 
 - **Invites:** one-use links the inviter shares themselves, expiring after seven days; every player holds three at a
