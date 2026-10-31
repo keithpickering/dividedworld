@@ -446,17 +446,20 @@
   --kb-class-peek: 64px;
 }
 
-/* The row and its count and arrows; the row's block padding holds the chosen card's glow, which the scroll would clip. */
+/*
+ * The row and its count and arrows. The row's block padding holds the chosen card's glow, which the
+ * scroll would clip; the rail gives that room back above and below, so the cards stand the board's
+ * 10px under the legend. (The margins are the rail's, not the row's, so none collapses through it.)
+ */
 .kb-class-rail {
   position: relative;
-  margin-top: 10px;
+  margin-block: calc(10px - 30px) -30px;
 }
 
 .kb-class-grid {
   display: flex;
   gap: 14px;
   padding-block: 30px;
-  margin-block: -30px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
@@ -489,7 +492,7 @@
 .kb-class-nav {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 10px + var(--kb-glass-size-body) * 0.6 - var(--kb-glass-size-display-s) * 22 / 26);
+  bottom: calc(100% - 30px + 10px + var(--kb-glass-size-body) * 0.6 - var(--kb-glass-size-display-s) * 22 / 26);
   display: flex;
   gap: 10px;
   align-items: center;
@@ -504,15 +507,16 @@
 }
 
 :where(:root[data-kb-text-size]:not([data-kb-text-size='100'])) .kb-class-cards[data-kb-overflow] .kb-class-nav {
-  bottom: calc(100% + 10px + max(var(--kb-glass-size-body) * 0.6, var(--kb-glass-size-display-s) * 22 / 26) - var(--kb-glass-size-display-s) * 22 / 26);
+  bottom: calc(100% - 30px + 10px + max(var(--kb-glass-size-body) * 0.6, var(--kb-glass-size-display-s) * 22 / 26) - var(--kb-glass-size-display-s) * 22 / 26);
 }
 
 .kb-class-count {
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
+  line-height: normal;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--kb-glass-text-2);
+  color: var(--kb-glass-pale);
 }
 
 .kb-class-arrow {
@@ -525,7 +529,7 @@
   font-weight: 800;
   line-height: 1;
   /* On an opaque ground, a panel of its own: the glass's type stands on solid ground or in a calm (e2e/glass-text.ts). */
-  color: var(--kb-glass-text-hi);
+  color: var(--kb-glass-pale);
   background: var(--kb-glass-ground);
   border: 1px solid currentColor;
   cursor: pointer;
@@ -583,10 +587,6 @@
   accent-color: var(--kb-class-fill);
 }
 
-.kb-class-title > .kb-class-name:only-child {
-  flex: 1;
-}
-
 .kb-class-title {
   display: flex;
   flex-wrap: wrap;
@@ -617,6 +617,7 @@
  * A class's name is set at the card's 40px and steps down to fit the card's width less the radio's
  * corner (20px of the content box), never under 70% of it (28px at 100% text): a container query on the card, by the name's
  * length in characters (`--kb-class-name-length`, set by ClassCards.tsx) at about 0.48em a capital
+ * (0.476, rounded down to a whole px: the board's 34px at its 216px card)
  * of the display face. "TECHNICIAN" at 216px is the Turn board's 34px; the shorter names stay 40px.
  */
 .kb-class-card {
@@ -625,9 +626,10 @@
 
 .kb-class-name {
   font-family: var(--kb-glass-font-display);
-  font-size: clamp(calc(var(--kb-glass-size-display-m) * 0.7), calc((100cqi - 20px) / (var(--kb-class-name-length, 1) * 0.48)), var(--kb-glass-size-display-m));
+  font-size: clamp(calc(var(--kb-glass-size-display-m) * 0.7), round(down, calc((100cqi - 20px) / (var(--kb-class-name-length, 1) * 0.476)), 1px), var(--kb-glass-size-display-m));
   font-weight: 400;
-  line-height: 1;
+  /* The board's 40px line, whatever size the name steps down to. */
+  line-height: var(--kb-glass-size-display-m);
   text-transform: uppercase;
   color: var(--kb-glass-text);
 }

@@ -17,8 +17,13 @@
  *    from the dialog's corner.
  *  - The classes' large colors are the instance's (glass.json): Heel's is the owner's lifted
  *    `#ff959f` where the board draws `#ff8a96` (the glass plan, section 6, amended 2026-10-30), and
- *    Face's and Lurker's differ from the board's too, so their names are compared by box only;
- *    Jabroni's matches and is compared in full.
+ *    Face's differs from the board's too, so their names are compared by box only; Jabroni's and the
+ *    Technician's match and are compared in full. The Lurker's is the board's violet, and differs
+ *    from the board only under the fade it peeks from, so its name is compared by box only.
+ *  - Choose a class is the carousel the Technician design redrew this board with (its section 3):
+ *    four cards in view, the Lurker peeking, the count and the two arrows on the legend's line. The
+ *    arrows' glyphs are drawn in the glass's own text tokens on its ground, not the board's
+ *    translucent ones, so they are compared by where they stand.
  *  - The preview's words are previews.ts's, held equal to the thread's (no board crumb line), so
  *    only The System's name is compared.
  *  - The footer's sentence says the settlement's time in the reader's zone where the board counts
@@ -67,8 +72,14 @@ const manifest: BoardManifest = {
     { id: 'heel', role: 'text', name: 'Heel', within: 'classes', type: false },
     /* Drawn in Heel's large color, the owner's lifted one (above), so by its box. */
     { id: 'heel-now', role: 'text', name: 'Now', within: 'classes', type: false, box: 'position' },
-    { id: 'lurker', role: 'text', name: 'Lurker', within: 'classes', type: false },
     { id: 'jabroni', role: 'text', name: 'Jabroni', within: 'classes' },
+    /* "TECHNICIAN", the longest name, set smaller to clear its radio, as the board sets it at 34px. */
+    { id: 'technician', role: 'text', name: 'Technician', within: 'classes' },
+    /* Under the fade it peeks from (above), so by its box. */
+    { id: 'lurker', role: 'text', name: 'Lurker', within: 'classes', type: false },
+    { id: 'count', role: 'text', name: '1–4 OF 5', buildName: '1–4 of 5', within: 'classes' },
+    { id: 'earlier', role: 'button', name: 'Earlier classes', within: 'classes', type: false, box: 'position' },
+    { id: 'more', role: 'button', name: 'More classes', within: 'classes', type: false, box: 'position' },
     { id: 'face-marks', role: 'img', name: 'Earns from hype, hurt by the groan', within: 'classes', type: false },
     { id: 'heel-marks', role: 'img', name: 'Earns from heat, hurt by the calm', within: 'classes', type: false },
     /* The instance's words, not the board's: their type only. */

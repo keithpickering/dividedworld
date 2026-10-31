@@ -28,6 +28,12 @@ the story the owner approved as drawn (`engine/ui/rankings/Rankings.board.storie
 style, showing the boards fixture's `13-rankings` moment; `e2e/boards/13-rankings.ts` holds the build to it. Its menu
 bar is drawn as boards 06, 07, 10, 11 and 12 draw it, the Vending Machine's tab included, with Rankings current.
 
+**Amended 2026-10-30, by the Technician design:** `06-turn.html` is the carousel of five the owner approved
+(`docs/plans/2026-10-30-technician-design.md`, section 3): Choose a class as one row of the full cards, four in view and
+the Lurker peeking under a fade, with a count and arrows, in the order Face, Heel, Jabroni, Technician, Lurker, the
+Lurker in violet. The four-card board it replaces is in this folder's history; the build that copied it over is
+`docs/plans/2026-10-30-technician-plan.md`, Task 5.
+
 - `01-main.html`: the game screen: the 2003 board with the HUD docked at the bottom as glass (the character being
   played and its swap, the orbs and the next settlement, the hand), a card armed with "Play Whoops! here" on the
   eligible posts. Drawn before the pause menu was decided, so its banner still lists the glass's pages and its HUD has
