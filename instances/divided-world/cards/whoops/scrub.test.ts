@@ -252,3 +252,33 @@ test('a pen stroke past the splat is found by the sweep and counted in the share
   assert.equal(ink.inkSpan(y, ROW / 2), null, 'swept, it is gone');
   assert.ok(row >= 0);
 });
+
+test('a point has ink as the last stroke over it says, else the splat does: the same answer a pass over every stroke gives, asked again or not', () => {
+  const splat = splatOf(7);
+  const strokes: Stroke[] = [];
+  let a = 12345;
+  const next = () => ((a = (a * 1664525 + 1013904223) >>> 0) / 4294967296);
+  for (let k = 0; k < 60; k++) {
+    const points: Pt[] = Array.from({ length: 1 + Math.floor(next() * 4) }, () => [next() * 1.2 - 0.1, next() * 1.5] as Pt);
+    strokes.push(next() < 0.3 ? { tool: 'ink', color: 'red', width: PEN, points } : { tool: 'wash', width: BRUSH, points });
+  }
+  const ink = new LayerInk(splat, strokes);
+  /* The same strokes, long hand: the latest segment that reaches the point decides, else the splat. */
+  const brute = (x: number, y: number): boolean => {
+    for (let k = strokes.length - 1; k >= 0; k--) {
+      const s = strokes[k]!, r = s.width / 2;
+      for (let i = Math.max(1, s.points.length - 1) - 1; i >= 0; i--) {
+        const [ax, ay] = s.points[i]!, [bx, by] = s.points[i + 1] ?? s.points[i]!;
+        const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+        const t = len2 === 0 ? 0 : Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy) / len2));
+        if (Math.hypot(ax + t * dx - x, ay + t * dy - y) <= r) return s.tool === 'ink';
+      }
+    }
+    return covers(splat, x, y);
+  };
+  for (let n = 0; n < 4000; n++) {
+    const x = next() * 1.2 - 0.1, y = next() * 1.5;
+    assert.equal(ink.has(x, y), brute(x, y), `(${x}, ${y})`);
+    assert.equal(ink.has(x, y), brute(x, y), `asked again: (${x}, ${y})`);
+  }
+});

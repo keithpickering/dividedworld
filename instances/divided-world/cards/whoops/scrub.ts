@@ -117,6 +117,14 @@ export function fits(strokes: readonly Stroke[]): boolean {
 /** The spacing of the points a layer's remaining ink is counted at, in widths (10px at the reference width, under half the brush). */
 const CELL = px(10);
 
+/** How many points' answers a layer keeps of its splat's outline: a post's lines sampled across (a few thousand), with room to spare. */
+const MEMO_MOST = 20_000;
+
+/** The side of the squares `has` files a stroke's segments under, in widths (about 40px at the reference width: a few cells, a little over a brush). */
+const BUCKET = px(40);
+/** A bucket's key: its column and row (a stroke is held to the card's bounds, so both are small) as one number. */
+const bucketKey = (i: number, j: number) => (j + 4096) * 8192 + (i + 4096);
+
 /** Squared distance from (px, py) to the segment a-b. */
 function segment2(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax, dy = by - ay;
@@ -146,6 +154,10 @@ export class LayerInk {
   readonly splat: Splat;
   /** Each stroke as a segment, its radius and whether it is a pen (1) or a wash (0), in the order made: ax, ay, bx, by, r, pen. */
   private readonly segments: [number, number, number, number, number, number][] = [];
+  /** The segments (by index, in the order made) whose reach overlaps each bucket of the plane, so `has` reads the few near a point and not every segment ever made. */
+  private readonly memo = new Map<number, Map<number, boolean>>();
+  private memoed = 0;
+  private readonly buckets = new Map<number, number[]>();
   private readonly region: Region | undefined;
   /** Where the grid starts: its left and top, in widths. */
   private readonly gx: number;
@@ -203,12 +215,38 @@ export class LayerInk {
 
   /** Whether a point still has ink on this layer: the last stroke that reaches it decides, and with none the splat does. */
   has(x: number, y: number): boolean {
-    for (let k = this.segments.length - 1; k >= 0; k--) {
-      const [ax, ay, bx, by, r, pen] = this.segments[k]!;
+    /* Only the segments whose reach touches this point's bucket can reach the point, and each bucket keeps them in the order made, so the latest is still read first. */
+    const near = this.buckets.get(bucketKey(Math.floor(x / BUCKET), Math.floor(y / BUCKET)));
+    for (let k = (near?.length ?? 0) - 1; k >= 0; k--) {
+      const [ax, ay, bx, by, r, pen] = this.segments[near![k]!]!;
       if (x < Math.min(ax, bx) - r || x > Math.max(ax, bx) + r || y < Math.min(ay, by) - r || y > Math.max(ay, by) + r) continue;
       if (segment2(x, y, ax, ay, bx, by) <= r * r) return pen === 1;
     }
-    return covers(this.splat, x, y);
+    return this.splatCovers(x, y);
+  }
+
+  /**
+   * Whether the splat's own outline holds a point. The outline never changes, and the lines under ink are asked about the same
+   * points again at each refresh of a sweep, so an answer is kept (by the point, exactly) rather than worked out again from every
+   * circle and vertex of the splat. The memory is bounded: past `MEMO_MOST` points it starts over.
+   */
+  private splatCovers(x: number, y: number): boolean {
+    let column = this.memo.get(x);
+    if (!column) {
+      if (this.memoed >= MEMO_MOST) {
+        this.memo.clear();
+        this.memoed = 0;
+      }
+      column = new Map();
+      this.memo.set(x, column);
+    }
+    let held = column.get(y);
+    if (held === undefined) {
+      held = covers(this.splat, x, y);
+      column.set(y, held);
+      this.memoed++;
+    }
+    return held;
   }
 
   /** A brush of `width` passing through `points` washes the ink under it; one point washes a round dab. */
@@ -221,6 +259,20 @@ export class LayerInk {
     this.stroke(points, width, true);
   }
 
+  private addSegment(seg: [number, number, number, number, number, number]): void {
+    const [ax, ay, bx, by, r] = seg;
+    const at = this.segments.push(seg) - 1;
+    const i1 = Math.floor((Math.max(ax, bx) + r) / BUCKET), j1 = Math.floor((Math.max(ay, by) + r) / BUCKET);
+    for (let j = Math.floor((Math.min(ay, by) - r) / BUCKET); j <= j1; j++) {
+      for (let i = Math.floor((Math.min(ax, bx) - r) / BUCKET); i <= i1; i++) {
+        const key = bucketKey(i, j);
+        const list = this.buckets.get(key);
+        if (list) list.push(at);
+        else this.buckets.set(key, [at]);
+      }
+    }
+  }
+
   private stroke(points: readonly Pt[], width: number, pen: boolean): void {
     const r = width / 2;
     /* The grid is coarser than a pen is thick, so a pen takes the cells whose area it crosses. */
@@ -229,7 +281,7 @@ export class LayerInk {
     for (let k = 0; k < Math.max(1, points.length - 1); k++) {
       const [ax, ay] = points[k]!;
       const [bx, by] = points[k + 1] ?? points[k]!;
-      this.segments.push([ax, ay, bx, by, r, pen ? 1 : 0]);
+      this.addSegment([ax, ay, bx, by, r, pen ? 1 : 0]);
       const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - minX) / CELL));
       const i1 = Math.min(this.nx - 1, Math.floor((Math.max(ax, bx) + reach - minX) / CELL));
       const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reach - minY) / CELL));
