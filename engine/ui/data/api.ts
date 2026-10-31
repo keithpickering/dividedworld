@@ -60,6 +60,10 @@ export interface ScreenSettings {
   readonly titleMaxLength: number;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
+  /** How often a page polls who is browsing it, in seconds; each poll is also the viewer's heartbeat. */
+  readonly presencePollSeconds: number;
+  /** How long after its last poll a mask stays listed: what "Who is online" says it counts. */
+  readonly presenceWindow: Span;
   /** The numbers the instance's cards give the screens, by name (`Settings.cardSettings`). */
   readonly cardSettings: Readonly<Record<string, number>>;
   /**

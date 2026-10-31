@@ -29,6 +29,8 @@ const FALLBACK: ScreenSettings = {
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
   cardSettings: { 'whoops.clean': 95 },
+  presencePollSeconds: 30,
+  presenceWindow: { unit: 'minute', count: 5 },
   cardEconomy: {},
 };
 

@@ -33,7 +33,7 @@ export type Hundredths = number;
 
 /** A length of time in calendar units, so "3 months" stays three months in SQL too. */
 export interface Span {
-  /** Minutes only where a setting says it takes them (editGrace); a window, a season and a cooldown count days or more. */
+  /** Minutes only where a setting says it takes them (editGrace, presenceWindow); a window, a season and a cooldown count days or more. */
   readonly unit: 'minute' | 'day' | 'week' | 'month';
   readonly count: number;
 }
@@ -85,6 +85,19 @@ export interface Settings {
   readonly postsPerPage: number;
   /** A thread is HOT when it has had at least this many replies in the last 7 days. */
   readonly hotReplies: number;
+  /**
+   * How long after a character's last poll it stays listed in "Who is online" and "Users browsing":
+   * a mask arrives on its first poll and leaves only by aging out this long after its last, so a
+   * swap of masks is never shown as one leaving as another arrives.
+   */
+  readonly presenceWindow: Span;
+  /** The most names a presence box shows, longest present first; past it the box says "and N others". */
+  readonly presenceNames: number;
+  /**
+   * How often, in seconds, a page asks who is there, which also marks the viewer's current mask
+   * present: how quickly a player sees an arrival, and how often each viewer calls the server.
+   */
+  readonly presencePollSeconds: number;
   /**
    * The numbers a card gives the screens, each named by the instance ("whoops.clean"): a card's effect
    * decides something on the client (how much of a layer counts as washed clean), so the number is one the

@@ -26,6 +26,9 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
   assert.equal(defaults.titleMaxLength, 120);
   assert.equal(defaults.postsPerPage, 20);
   assert.equal(defaults.hotReplies, 10);
+  assert.deepEqual(defaults.presenceWindow, { unit: 'minute', count: 5 });
+  assert.equal(defaults.presenceNames, 15);
+  assert.equal(defaults.presencePollSeconds, 30);
   assert.match(defaults.settlementCron, /^\d+ \d+ \* \* \*$/, 'daily');
 });
 

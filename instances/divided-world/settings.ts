@@ -36,6 +36,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   postsPerPage: 20,
   /** HOT: ten replies in the last 7 days. */
   hotReplies: 10,
+  /** Presence (the staff design, section 2): five minutes listed after the last poll, fifteen names, a poll every 30 seconds. */
+  presenceWindow: { unit: 'minute', count: 5 },
+  presenceNames: 15,
+  presencePollSeconds: 30,
   /** The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone. */
   cardSettings: { 'whoops.clean': 95 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
