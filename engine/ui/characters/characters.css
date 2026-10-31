@@ -615,10 +615,11 @@
 
 /*
  * A class's name is set at the card's 40px and steps down to fit the card's width less the radio's
- * corner (20px of the content box), never under 70% of it (28px at 100% text): a container query on the card, by the name's
- * length in characters (`--kb-class-name-length`, set by ClassCards.tsx) at about 0.48em a capital
- * (0.476, rounded down to a whole px: the board's 34px at its 216px card)
- * of the display face. "TECHNICIAN" at 216px is the Turn board's 34px; the shorter names stay 40px.
+ * corner (20px of the content box), never under 70% of it (28px at 100% text). It is a container
+ * query on the card, by the name's length in characters (`--kb-class-name-length`, set by
+ * ClassCards.tsx) at 0.476em a capital of the display face, rounded down to a whole px: "TECHNICIAN"
+ * at the 216px card is the Turn board's 34px, and the shorter names stay 40px. A browser without
+ * round() keeps the plain 40px before it.
  */
 .kb-class-card {
   container-type: inline-size;
@@ -626,6 +627,7 @@
 
 .kb-class-name {
   font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-m);
   font-size: clamp(calc(var(--kb-glass-size-display-m) * 0.7), round(down, calc((100cqi - 20px) / (var(--kb-class-name-length, 1) * 0.476)), 1px), var(--kb-glass-size-display-m));
   font-weight: 400;
   /* The board's 40px line, whatever size the name steps down to. */
