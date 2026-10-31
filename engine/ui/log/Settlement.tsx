@@ -112,24 +112,24 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
 
         <div className="kb-settled-cards">
           {rank && (
-            <section aria-label={rank.to > rank.from ? 'Rank up' : 'Rank down'} className="kb-settled-rank kb-glass-chamfer-4">
-              <div className="kb-settled-card-label">{rank.to > rank.from ? 'New rank' : 'Rank down'}</div>
-              <div className="kb-settled-rank-was">{instance.ranks[rank.from]?.name}</div>
-              <div className="kb-settled-rank-now kb-glass-display">{instance.ranks[rank.to]?.name}</div>
-              <div className="kb-settled-pips" role="img" aria-label={`Rank: ${rank.to + 1} of ${instance.ranks.length} pips`}>
-                {instance.ranks.map((_, i) => <span key={i} className="kb-settled-pip" data-kb-pip={i < rank.to ? 'full' : i === rank.to ? 'new' : 'empty'} />)}
+            <section aria-label={rank.rankNow > rank.rankWas ? 'Rank up' : 'Rank down'} className="kb-settled-rank kb-glass-chamfer-4">
+              <div className="kb-settled-card-label">{rank.rankNow > rank.rankWas ? 'New rank' : 'Rank down'}</div>
+              <div className="kb-settled-rank-was">{instance.ranks[rank.rankWas]?.name}</div>
+              <div className="kb-settled-rank-now kb-glass-display">{instance.ranks[rank.rankNow]?.name}</div>
+              <div className="kb-settled-pips" role="img" aria-label={`Rank: ${rank.rankNow + 1} of ${instance.ranks.length} pips`}>
+                {instance.ranks.map((_, i) => <span key={i} className="kb-settled-pip" data-kb-pip={i < rank.rankNow ? 'full' : i === rank.rankNow ? 'new' : 'empty'} />)}
               </div>
               <p className="kb-settled-card-words">Season standing {plain(rank.before)} → {plain(rank.after)}. Every post of {current?.name}'s now shows the new rank.</p>
             </section>
           )}
           {turn && (
-            <section aria-label="Turn" className="kb-settled-turn" style={{ '--kb-settled-class': `var(--kb-glass-class-${turn.to}-fill, var(--kb-glass-neon))`, '--kb-settled-class-large': `var(--kb-glass-class-${turn.to}-large)` } as CSSProperties}>
+            <section aria-label="Turn" className="kb-settled-turn" style={{ '--kb-settled-class': `var(--kb-glass-class-${turn.classNow}-fill, var(--kb-glass-neon))`, '--kb-settled-class-large': `var(--kb-glass-class-${turn.classNow}-large)` } as CSSProperties}>
               <div className="kb-settled-turn-classes">
-                {turn.from && <><span className="kb-settled-turn-was kb-glass-display">{className(turn.from)}</span><span className="kb-settled-turn-arrow" aria-hidden="true" /></>}
-                <span className="kb-settled-turn-now kb-glass-display">{className(turn.to)}</span>
+                {turn.classWas && <><span className="kb-settled-turn-was kb-glass-display">{className(turn.classWas)}</span><span className="kb-settled-turn-arrow" aria-hidden="true" /></>}
+                <span className="kb-settled-turn-now kb-glass-display">{className(turn.classNow)}</span>
               </div>
               <p className="kb-settled-card-words">
-                {current?.name}'s Turn took effect. From today it scores as {/^[aeiou]/iu.test(className(turn.to)) ? 'an' : 'a'} {className(turn.to)}.{' '}
+                {current?.name}'s Turn took effect. From today it scores as {/^[aeiou]/iu.test(className(turn.classNow)) ? 'an' : 'a'} {className(turn.classNow)}.{' '}
                 {turn.announced
                   ? <>The System announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <Link to={`/t/${turnAct.thread}`}>{turnTitle}</Link> : 'its board'}.</>
                   : 'It was a silent Turn: no one else was told.'}
@@ -187,7 +187,12 @@ export function SettlementScreen() {
 }
 
 /** The accounts this load has looked for an unseen settlement for, by backend: a load is one backend, made once (web/src/main.tsx). */
-const looked = new WeakMap<object, Set<Id>>();
+let looked = new WeakMap<object, Set<Id>>();
+
+/** Forgets what this load has looked for, as a new page load starts afresh: for a test that loads twice on one backend. */
+export function startLoad(): void {
+  looked = new WeakMap();
+}
 
 /**
  * Opens the summary on the first load after a settlement this device has not seen for the account. `active` is the app's word that

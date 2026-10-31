@@ -5,6 +5,7 @@ import { createFake } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 import { App } from './App.tsx';
+import { startLoad } from '../../engine/ui/log/Settlement.tsx';
 import { seedDemo } from './demo.ts';
 import { fallbackSettings } from './data/settings.ts';
 
@@ -241,6 +242,8 @@ test('the first load of a board page after a settlement opens its summary, a gla
   expect(screen.queryByRole('navigation', { name: 'Menu' })).toBeNull();
   expect(screen.queryByRole('region', { name: 'Game HUD' })).toBeNull();
   view.unmount();
+  /* A new page load, on the same backend's data: only the device's mark keeps it from opening again. */
+  startLoad();
   window.history.pushState(null, '', '/');
   render(<App api={fake} />);
   await screen.findByRole('region', { name: 'Game HUD' });

@@ -12,7 +12,7 @@ import { hudKey } from '../player.tsx';
 import { useLocation } from '../router.tsx';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { LogScreen } from './Log.tsx';
-import { SettlementOnLoad, SettlementScreen, seenKey } from './Settlement.tsx';
+import { SettlementOnLoad, SettlementScreen, seenKey, startLoad } from './Settlement.tsx';
 
 const at = (day: number, hour = 12, minute = 0) => Date.UTC(2026, 9, day, hour, minute);
 
@@ -160,6 +160,8 @@ describe('the summary on the first load after a settlement', () => {
     await waitFor(() => expect(where.path).toBe('/log/settlement'));
     expect(localStorage.getItem(seenKey(me))).toBe(new Date(at(29, 8, 17)).toISOString());
     first.unmount();
+    /* A new page load, on the same backend's data: only the device's mark keeps it from opening again. */
+    startLoad();
     load(fake);
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(where.path).toBe('/');

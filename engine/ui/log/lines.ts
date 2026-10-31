@@ -148,16 +148,17 @@ export interface RankChange {
   readonly character: Id;
   readonly before: number;
   readonly after: number;
-  readonly from: number;
-  readonly to: number;
+  /** The rank's index before the settlement and after it (`Instance.ranks`). */
+  readonly rankWas: number;
+  readonly rankNow: number;
 }
 
 /** A character's Turn that took effect at a settlement. */
 export interface TurnTaken {
   readonly character: Id;
-  readonly to: string;
+  readonly classNow: string;
   /** The class it Turned from, where the player's own rows say it; null otherwise. */
-  readonly from: string | null;
+  readonly classWas: string | null;
   /** The announcement, where The System made one. */
   readonly announced: TurnAnnounced | null;
 }
@@ -177,9 +178,9 @@ export function rankChanges(data: Pick<LogData, 'log' | 'standings' | 'season' |
       const moved = s.lines.filter((l) => l.character === c.id).reduce((sum, l) => sum + l.amount, 0);
       if (moved === 0) continue;
       const before = after - moved;
-      const from = rankIndex(instance.ranks, before);
-      const to = rankIndex(instance.ranks, after);
-      if (from !== to) out.set(s.id, [...(out.get(s.id) ?? []), { character: c.id, before, after, from, to }]);
+      const rankWas = rankIndex(instance.ranks, before);
+      const rankNow = rankIndex(instance.ranks, after);
+      if (rankWas !== rankNow) out.set(s.id, [...(out.get(s.id) ?? []), { character: c.id, before, after, rankWas, rankNow }]);
       after = before;
     }
   }
@@ -195,7 +196,7 @@ export function turnsTaken(data: Pick<LogData, 'log' | 'mine' | 'turns'>, instan
     const announced = data.turns.find((t) => t.character === c.id && sameTime(t.at, c.classSince)) ?? null;
     /* The window this settlement scored was played under the old class, so its reasons name it. */
     const from = announced?.was ?? scoredAs(s.lines.filter((l) => l.character === c.id), instance);
-    out.set(s.id, [...(out.get(s.id) ?? []), { character: c.id, to: c.class, from: from === c.class ? null : from, announced }]);
+    out.set(s.id, [...(out.get(s.id) ?? []), { character: c.id, classNow: c.class, classWas: from === c.class ? null : from, announced }]);
   }
   return out;
 }
@@ -252,7 +253,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
     }
     for (const t of turns.get(s.id) ?? []) {
       if (!inTab([t.character])) continue;
-      const details: Segment[] = [`${nameOf(t.character)} is ${withArticle(className(instance, t.to))} now.`];
+      const details: Segment[] = [`${nameOf(t.character)} is ${withArticle(className(instance, t.classNow))} now.`];
       if (t.announced) {
         const act = data.acts.get(t.announced.act);
         const title = act ? data.titles.get(act.thread) : undefined;
@@ -265,11 +266,11 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
     }
     for (const r of ranks.get(s.id) ?? []) {
       if (!inTab([r.character])) continue;
-      const up = r.to > r.from;
+      const up = r.rankNow > r.rankWas;
       const name = (i: number) => instance.ranks[i]?.name ?? '';
       rows.push({
         key: `rank:${s.id}:${r.character}`, kind: 'rank', at: s.endsAt, what: up ? 'Rank up' : 'Rank down',
-        details: [`${tab === null ? `${nameOf(r.character)}: ` : ''}${name(r.from)} to ${name(r.to)}. Standing ${plain(r.before)} to ${plain(r.after)} this season.`],
+        details: [`${tab === null ? `${nameOf(r.character)}: ` : ''}${name(r.rankWas)} to ${name(r.rankNow)}. Standing ${plain(r.before)} to ${plain(r.after)} this season.`],
         aura: 0, wallet, characters: [r.character],
       });
     }
