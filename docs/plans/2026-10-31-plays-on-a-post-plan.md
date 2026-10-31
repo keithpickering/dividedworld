@@ -74,6 +74,19 @@ three chips and "+1 more"; on a phone (match the breakpoint as the thread's test
 opens the rest; each button's accessible name; a tag shows at most three reactions, the largest first; a play with no
 reactions shows none; a chip's ink comes from `tag`.
 
+**Amended 2026-10-31, the owner's word on #97's shots** (the design's section 3 amendment of this date). The chips and
+"+N more" are replaced by a stack: the top-billed play's tag, the edges of up to three more fanned behind it
+(`aria-hidden`), and a "+N" button (`aria-expanded`, named "Unstack N more cards played on this post", then "Stack the
+cards played on this post") that floats the other plays' tags under it, absolutely positioned over the post, in billing
+order, each the same `PlayTag` that opens its panel. The same at every width. Esc, a press outside it, the button and a
+reread stack it again; with a panel open over it, the panel answers Esc and the press first. The caster's name is in
+the glass's body face, in capitals, never inherited from the post. Tests first in `engine/ui/cards/tags.test.tsx`: one
+play draws no button; three are stacked with one tag reachable, two edges and the button; unstacking reaches every tag
+in billing order; Esc, the button, a press outside and a reread each stack it, focus going back to the button where it
+was in the list; a panel over the list keeps it open. A Playwright spec (`e2e/plays.spec.ts`) measures #41 stacked and
+unstacked at 1440 and 390 (the post's height unchanged, the list over the post's words) and reads the caster's face (no
+Verdana, in capitals). Task 6's stories open the list in place of a chip.
+
 ## Task 4. The play's panel: React, Spin thread, Go to post (engine)
 
 **Files:** `engine/ui/cards/Panel.tsx` (new), `engine/ui/cards/panel.css` (new), `engine/ui/reactions/Reactions.tsx`,

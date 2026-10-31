@@ -79,6 +79,28 @@ Weighed: A, with React and Spin on the top tag and the message on it, all shown 
 covered the top of the post and pushed its words down, on a desktop and a phone alike. Also weighed: a choice in the
 post's own action row between "this post or a play on it", which is easy to miss and puts the glass in the 2003 chrome.
 
+**Amended 2026-10-31, the owner's word on #97's shots.** The owner: "the glass has some Verdana in it (usernames
+should be all caps in the glass font, like the HUD - it's condensed too, more room to work with), and also the smaller
+chips format the card name + username differently compared to the larger chip. I worry the smaller chips will not be
+applicable to longer usernames or postcard names - fragile in general. I generally like the look of the larger chip,
+curious if we can handle these as an actual layered stack with a button to expand ("unstack") the list, allowing any to
+be clicked to access its menu." Then, on the unstacked list: "I think we can unstack the list and have it float over the
+post like a dropdown menu - absolutely positioned, not a block that will cause the post to change height whether it is
+expanded or collapsed."
+
+So the chips and "+N more" are gone, and every play is drawn as the one tag:
+- **Stacked** (as the page opens): the top-billed play's tag, with the edges of up to three more tags fanned behind it,
+  each in its own ink, for the eye alone, and a "+N" button beside it ("Unstack 2 more cards played on this post").
+- **Unstacked**: the other plays' tags float under the stack like a dropdown, over the post, in billing order, each the
+  same tag that opens its own panel. The post's height is the same stacked or unstacked, on a desktop and a phone. The
+  button, now "Stack the cards played on this post", folds them back.
+- **Its ways out**: the button, Esc, a press outside it, and a read of the page, which stacks it again. While a play's
+  panel is open over it, the list stays unstacked, and Esc and a press close the panel first.
+- **The names**: a caster's name on the glass is in the glass's own face, in capitals, as the HUD sets a name, never the
+  board's. No glass control in or under a 2003 post takes the board's face (the cards plan's amendment on #80's round 2).
+
+The panel, billing, the notes and Whoops!'s layers stand as written.
+
 ## 4. A card may say one line about a play, on this screen
 
 **Decided** (the owner chose the recommendation): the panel shows a line from the card about the play's state when the
