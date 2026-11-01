@@ -171,6 +171,7 @@ function toMyCharacter(r: Row): MyCharacter {
     debutLoudness: r['debut_loudness'] ?? null,
     retiredAt: r['retired_at'] ?? null,
     pendingTurn: pending,
+    presenceHidden: r['presence_hidden'] === true,
   };
 }
 
@@ -699,6 +700,19 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async markRead(thread, seq, through) {
       return (await rpcWrite(() => client.rpc('mark_read', { in_thread: thread, seq, through }))).ok;
+    },
+    async here(place, through) {
+      const at = place.kind === 'thread' ? place.thread : place.kind === 'board' ? place.board : null;
+      const a = await rpcWrite(() => client.rpc('here', { in_kind: place.kind, in_place: at, through }));
+      // A refusal or a lost answer throws, so the poll counts it as a failure and keeps its last answer.
+      if (!a.ok) throw new Error(a.error);
+      const names = (Array.isArray(a.value['names']) ? a.value['names'] : []).flatMap((n: Row) =>
+        typeof n?.['id'] === 'string' && typeof n?.['name'] === 'string' ? [{ id: n['id'], name: n['name'] }] : []);
+      return { names, others: num(a.value['others']) };
+    },
+    async setPresenceHidden(character, hidden) {
+      const a = await rpcWrite(() => client.rpc('set_presence_hidden', { in_character: character, hidden }));
+      return a.ok ? { ok: true, value: a.value['hidden'] === true } : a;
     },
     async preferences(): Promise<Preferences> {
       const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,cards_met').limit(1)))[0];

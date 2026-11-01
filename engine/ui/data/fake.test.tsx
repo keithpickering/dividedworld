@@ -1307,3 +1307,53 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     void ana;
   });
 });
+
+describe('presence', () => {
+  const ids = (p: { names: readonly { id: string }[] }) => p.names.map((n) => n.id);
+  test('a swap of masks leaves the old one listed until the window passes', async () => {
+    const { fake, bo, anaFace, anaHeel, boFace, thread } = world();
+    expect(ids(await fake.here({ kind: 'thread', thread }, anaFace))).toEqual([anaFace]);
+    fake.clock.advance(MINUTE);
+    await fake.here({ kind: 'thread', thread }, anaHeel);
+    fake.signInAs(bo);
+    expect(ids(await fake.here({ kind: 'thread', thread }, boFace))).toEqual([anaFace, anaHeel, boFace]);
+    fake.clock.advance(4 * MINUTE + 1);
+    expect(ids(await fake.here({ kind: 'thread', thread }, boFace))).toEqual([anaHeel, boFace]);
+  });
+  test('a board counts its threads, the index counts everyone, and the answer is names and a count only', async () => {
+    const { fake, anaFace, thread } = world();
+    await fake.here({ kind: 'thread', thread }, anaFace);
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    const system = (await fake.boards()).find((b) => b.slug === 'the-system')!;
+    expect(ids(await fake.here({ kind: 'board', board: general.id }, null))).toEqual([anaFace]);
+    expect(ids(await fake.here({ kind: 'board', board: system.id }, null))).toEqual([]);
+    const online = await fake.here({ kind: 'index' }, null);
+    expect(online).toEqual({ names: [{ id: anaFace, name: 'Ana Face' }], others: 0 });
+  });
+  test('a hidden mask is written nowhere and omitted for another account; my characters say it is hidden', async () => {
+    const { fake, bo, anaFace, boFace, thread } = world();
+    await fake.here({ kind: 'thread', thread }, anaFace);
+    expect(await fake.setPresenceHidden(anaFace, true)).toEqual({ ok: true, value: true });
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)?.presenceHidden).toBe(true);
+    await fake.here({ kind: 'thread', thread }, anaFace);
+    fake.signInAs(bo);
+    expect(ids(await fake.here({ kind: 'thread', thread }, boFace))).toEqual([boFace]);
+    expect(await fake.setPresenceHidden(anaFace, false)).toEqual(refused('you do not play that character'));
+  });
+  test('past the cap, the rest are counted', async () => {
+    const { fake, bo, anaFace, anaHeel, boFace, thread } = world({ presenceNames: 2 });
+    await fake.here({ kind: 'thread', thread }, anaFace);
+    fake.clock.advance(1000);
+    await fake.here({ kind: 'thread', thread }, anaHeel);
+    fake.clock.advance(1000);
+    fake.signInAs(bo);
+    const box = await fake.here({ kind: 'thread', thread }, boFace);
+    expect(ids(box)).toEqual([anaFace, anaHeel]);
+    expect(box.others).toBe(1);
+  });
+  test('a poll through a mask not yours, or of no thread, is refused', async () => {
+    const { fake, boFace, thread } = world();
+    await expect(fake.here({ kind: 'thread', thread }, boFace)).rejects.toThrow('you do not play that character');
+    await expect(fake.here({ kind: 'thread', thread: 'nowhere' }, null)).rejects.toThrow('there is no such thread');
+  });
+});
