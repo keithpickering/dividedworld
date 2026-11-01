@@ -71,3 +71,18 @@ test('the kinds in TypeScript are the kinds demand_progress has a case for (the 
   const cases = [...body.matchAll(/^\s*when '([A-Za-z]+)' then/gm)].map((m) => m[1]!).sort();
   assert.deepEqual(cases, DEMAND_KINDS.map((k) => k.key).sort());
 });
+
+test('a crossQuote between a character and itself is rejected, naming the predicate', () => {
+  const same = demandProblems({ kind: 'crossQuote', params: { a, b: a, reactions: CAP + 1 } }, CAP);
+  assert.ok(!same.ok && same.path === 'demand.params.b' && same.predicate === 'distinctCharacters', JSON.stringify(same));
+  const shouted = demandProblems({ kind: 'crossQuote', params: { a, b: a.toUpperCase(), reactions: CAP + 1 } }, CAP);
+  assert.ok(!shouted.ok && shouted.predicate === 'distinctCharacters', 'the same uuid in capitals is the same character');
+});
+
+test('uuids in a demand are lowercased, as Postgres compares them, and not recorded as a trim', () => {
+  const mixed = '11111111-1111-4111-8111-AAAAAAAAAAAA';
+  const r = demandProblems({ kind: 'postsOnBoard', params: { board: mixed, count: 3 } }, CAP);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.ok && r.value, { kind: 'postsOnBoard', params: { board: mixed.toLowerCase(), count: 3 } });
+  assert.equal(r.ok && r.trims.length, 0);
+});

@@ -29,3 +29,11 @@ test('the log line reads in plain words with nothing unfilled', () => {
   assert.equal(words, 'The System renamed a board to "Pointless Toast Palace". Its subject is now: Toast, and only toast.');
   assert.doesNotMatch(words, /[{}]|undefined/);
 });
+
+test('an uppercase board uuid is lowercased by the repair, and is not a trim', () => {
+  const mixed = '11111111-1111-4111-8111-AAAAAAAAAAAA';
+  const r = moveParamsProblems('renameBoard', { ...rename, board: mixed });
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal((r.value as { board: string }).board, mixed.toLowerCase());
+  assert.equal(r.trims.length, 0);
+});

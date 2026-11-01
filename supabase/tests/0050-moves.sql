@@ -532,3 +532,135 @@ begin
   if not exists (select 1 from jsonb_array_elements(d -> 'moves') e where (e ->> 'act')::uuid = m4 and e #>> '{ended,why}' = 'reversed' and e #>> '{ended,by}' = 'admin') then raise exception 'a reversed move is not in the digest: %', d -> 'moves'; end if;
   perform pg_temp.end_all();
 end $$;
+
+-- ---- A demand's params are held at the door: the keys its kind needs, of the right types ----
+do $$
+declare
+  general uuid := (select id from boards where slug = 'general');
+  c1 uuid := gen_random_uuid();
+  c2 uuid := gen_random_uuid();
+  bad jsonb;
+  mv uuid;
+begin
+  insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do update set structural = excluded.structural;
+  insert into demand_kinds (key) values ('postsOnBoard'), ('distinctCharactersOnBoard'), ('quadrantOnBoard'), ('characterPostsInThread'), ('crossQuote') on conflict do nothing;
+  for bad in select * from jsonb_array_elements(jsonb_build_array(
+    jsonb_build_object('kind', 'postsOnBoard'),
+    jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general)),
+    jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general, 'count', 0)),
+    jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general, 'count', -2)),
+    jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general, 'count', 1.5)),
+    jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general, 'count', 'three')),
+    jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general, 'count', '3')),
+    jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', 'not a uuid', 'count', 3)),
+    jsonb_build_object('kind', 'distinctCharactersOnBoard', 'params', jsonb_build_object('count', 3)),
+    jsonb_build_object('kind', 'quadrantOnBoard', 'params', jsonb_build_object('board', general, 'count', 4)),
+    jsonb_build_object('kind', 'quadrantOnBoard', 'params', jsonb_build_object('board', general, 'quadrant', 7, 'count', 4)),
+    jsonb_build_object('kind', 'characterPostsInThread', 'params', jsonb_build_object('character', c1)),
+    jsonb_build_object('kind', 'characterPostsInThread', 'params', jsonb_build_object('character', c1, 'thread', 'x')),
+    jsonb_build_object('kind', 'crossQuote', 'params', jsonb_build_object('a', c1, 'b', c2)),
+    jsonb_build_object('kind', 'crossQuote', 'params', jsonb_build_object('a', c1, 'b', c2, 'reactions', 0)),
+    jsonb_build_object('kind', 'crossQuote', 'params', jsonb_build_object('a', c1, 'b', c1, 'reactions', 6)),
+    jsonb_build_object('kind', 'crossQuote', 'params', jsonb_build_object('a', c1, 'b', upper(c1::text), 'reactions', 6)))) loop
+    begin
+      mv := pg_temp.move(general, 'Malformed', bad, now());
+      raise exception 'a move with the demand % was written', bad;
+    exception when check_violation then perform set_config('kayfabb.staff_writer', '', true); end;
+  end loop;
+  -- Well-formed ones, uppercase uuids included, land; a kind with no case here is not this check's to judge (the poison seeds one).
+  mv := pg_temp.move(general, 'Fine one', jsonb_build_object('kind', 'crossQuote', 'params', jsonb_build_object('a', c1, 'b', c2, 'reactions', 6)), now());
+  mv := pg_temp.move(general, 'Fine two', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', upper(general::text), 'count', 2)), now());
+  perform pg_temp.end_all();
+end $$;
+
+-- ---- One malformed landed move does not stop the digest ----
+do $$
+declare
+  general uuid := (select id from boards where slug = 'general');
+  base timestamptz := '2041-06-01T12:00:00Z';
+  good uuid; broken uuid; notnum uuid; notuuid uuid;
+  d jsonb;
+  p jsonb;
+begin
+  insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do update set structural = excluded.structural;
+  insert into demand_kinds (key) values ('postsOnBoard') on conflict do nothing;
+  insert into settings (key, value) values ('digestThreads', '3'), ('digestExcerpts', '10'), ('digestExcerptChars', '50') on conflict (key) do update set value = excluded.value;
+  good := pg_temp.move(general, 'Good Palace', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general, 'count', 3)), base - interval '2 hours');
+  -- Moves that landed malformed (before the door's check, or restored from an export): the check is off for these writes only.
+  alter table acts disable trigger acts_well_formed;
+  broken := pg_temp.move(general, 'No Count', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general)), base - interval '90 minutes');
+  notnum := pg_temp.move(general, 'Word Count', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general, 'count', 'many')), base - interval '80 minutes');
+  notuuid := pg_temp.move(general, 'Bad Board', jsonb_build_object('kind', 'crossQuote', 'params', jsonb_build_object('a', 'nope', 'b', general, 'reactions', 6)), base - interval '70 minutes');
+  alter table acts enable trigger acts_well_formed;
+  begin perform demand_progress(broken); raise exception 'demand_progress took a demand with no count'; exception when invalid_parameter_value then null; end;
+  perform tests.become_service();
+  d := system_digest(base - interval '1 hour', base + interval '1 hour');
+  perform tests.unbecome();
+  if jsonb_array_length(d -> 'moves') <> 4 then raise exception 'the digest lists % moves, not 4: %', jsonb_array_length(d -> 'moves'), d -> 'moves'; end if;
+  select e -> 'progress' into p from jsonb_array_elements(d -> 'moves') e where (e ->> 'act')::uuid = good;
+  if p is distinct from '{"done": 0, "of": 3, "met": false}' then raise exception 'the good move beside the bad ones has progress %', p; end if;
+  foreach p in array array[(select e -> 'progress' from jsonb_array_elements(d -> 'moves') e where (e ->> 'act')::uuid = broken),
+                           (select e -> 'progress' from jsonb_array_elements(d -> 'moves') e where (e ->> 'act')::uuid = notnum),
+                           (select e -> 'progress' from jsonb_array_elements(d -> 'moves') e where (e ->> 'act')::uuid = notuuid)] loop
+    if p ->> 'error' is null or p -> 'met' is distinct from 'false'::jsonb or p -> 'done' is distinct from '0'::jsonb or p -> 'of' is distinct from '0'::jsonb then
+      raise exception 'a malformed move is not listed with its error: %', p;
+    end if;
+  end loop;
+  if (select e #>> '{progress,error}' from jsonb_array_elements(d -> 'moves') e where (e ->> 'act')::uuid = notuuid) is distinct from '22P02' then raise exception 'the error is the SQLSTATE'; end if;
+  if (select e #>> '{progress,error}' from jsonb_array_elements(d -> 'moves') e where (e ->> 'act')::uuid = broken) is distinct from '22023' then raise exception 'the error of a missing count is not 22023'; end if;
+  -- The wrapper is the digest role's, as the evaluator is, and no client reaches it.
+  if (select r.rolname from pg_proc p join pg_roles r on r.oid = p.proowner where p.oid = 'demand_progress_or_error(uuid)'::regprocedure) is distinct from 'kayfabb_digest' then raise exception 'demand_progress_or_error is not owned by kayfabb_digest'; end if;
+  if has_function_privilege('anon', 'demand_progress_or_error(uuid)', 'execute') or has_function_privilege('authenticated', 'demand_progress_or_error(uuid)', 'execute')
+     or not has_function_privilege('service_role', 'demand_progress_or_error(uuid)', 'execute') then raise exception 'demand_progress_or_error is granted wrongly'; end if;
+  perform pg_temp.end_all();
+end $$;
+
+-- ---- An uppercase board uuid in a landed rename still shows ----
+do $$
+declare
+  b uuid;
+  mv uuid;
+begin
+  insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do update set structural = excluded.structural;
+  insert into boards (slug, name, description) values ('upper-board', 'Upper Board', 'x') returning id into b;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  mv := tests.act(pg_temp.boss(), 'move', pg_temp.announcements(), jsonb_build_object('kind', 'renameBoard', 'body', 'x',
+    'params', jsonb_build_object('board', upper(b::text), 'name', 'Shouted Palace', 'premise', 'p', 'description', 'd')), null, now());
+  perform set_config('kayfabb.staff_writer', '', true);
+  if (select name from boards_now where id = b) is distinct from 'Shouted Palace' then raise exception 'a rename with an uppercase board uuid does not show'; end if;
+  perform pg_temp.end_all();
+end $$;
+
+-- ---- open_moves can be rebuilt (an admin runs it after a partial restore) ----
+do $$
+declare
+  general uuid := (select id from boards where slug = 'general');
+  m1 uuid; m2 uuid; ended uuid; post uuid;
+  n integer;
+begin
+  insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do update set structural = excluded.structural;
+  perform pg_temp.end_all();
+  m1 := pg_temp.move(general, 'Rebuild One', null, now() - interval '2 hours');
+  m2 := pg_temp.move(general, 'Rebuild Two', null, now() - interval '1 hour');
+  ended := pg_temp.move(general, 'Rebuild Ended', null, now() - interval '3 hours');
+  perform end_move(ended, 'expired', 'test');
+  post := tests.post(tests.character(tests.account('mv-rebuild'), 'Mv Rebuild'), tests.thread());
+  if has_function_privilege('anon', 'rebuild_open_moves()', 'execute') or has_function_privilege('authenticated', 'rebuild_open_moves()', 'execute')
+     or not has_function_privilege('service_role', 'rebuild_open_moves()', 'execute') then raise exception 'rebuild_open_moves is granted wrongly'; end if;
+  if rebuild_open_moves() <> 0 then raise exception 'a rebuild of a consistent table changed rows'; end if;
+  delete from open_moves where move_act = m1;
+  n := rebuild_open_moves();
+  if n <> 1 or not exists (select 1 from open_moves where move_act = m1 and landed_at = (select created_at from acts where id = m1)) then raise exception 'a deleted row was not restored (changed %, row %)', n, (select to_jsonb(o) from open_moves o where o.move_act = m1); end if;
+  insert into open_moves (move_act, landed_at) values (ended, now());
+  n := rebuild_open_moves();
+  if n <> 1 or exists (select 1 from open_moves where move_act = ended) then raise exception 'a stale row of an ended move was not removed'; end if;
+  insert into open_moves (move_act, landed_at) values (post, now());
+  delete from open_moves where move_act = m2;
+  n := rebuild_open_moves();
+  if n <> 2 or exists (select 1 from open_moves where move_act = post) or not exists (select 1 from open_moves where move_act = m2) then raise exception 'a row of an Act that is no move was not removed with another restored'; end if;
+  n := rebuild_open_moves();
+  if n <> 0 then raise exception 'a second rebuild changed % rows', n; end if;
+  select count(*) into n from open_moves;
+  if n <> 2 then raise exception 'open_moves holds % rows, not the two moves in force', n; end if;
+  perform pg_temp.end_all();
+end $$;

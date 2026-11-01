@@ -71,6 +71,8 @@ export function moveParamsProblems(key: string, params: unknown): Repaired {
   const given = out.value as Record<string, unknown>;
   for (const name of kind.uuids) {
     if (!UUID.test(text(given[name]))) return { ok: false, path: name, predicate: 'isUuid', trims: out.trims };
+    // Postgres writes uuids in lowercase and SQL compares them as text, so they are normalized here (not a bound, so no trim).
+    given[name] = text(given[name]).toLowerCase();
   }
   return out;
 }

@@ -39,7 +39,7 @@ begin
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and has_table_privilege('kayfabb_digest', oid, 'insert,update,delete,truncate,references,trigger');
   if bad is not null then raise exception 'the digest role writes %', bad; end if;
   -- The role's reach, whole: it cannot create in the schema (the owner change takes the grant and gives it back), no client
-  -- role can become it, and the functions it may execute are exactly the six reviewed here: a new grant fails this.
+  -- role can become it, and the functions it may execute are exactly the seven reviewed here: a new grant fails this.
   if has_schema_privilege('kayfabb_digest', 'public', 'create') then raise exception 'the digest role can create in public'; end if;
   foreach t in array array['anon', 'authenticated', 'service_role'] loop
     if pg_has_role(t, 'kayfabb_digest', 'member') then raise exception '% is a member of the digest role', t; end if;
@@ -48,9 +48,9 @@ begin
   where p.pronamespace = 'public'::regnamespace and has_function_privilege('kayfabb_digest', p.oid, 'execute')
     and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e');
   if fns is distinct from (select string_agg(x, ', ' order by x) from unnest(array[
-      'setting(text)', 'span_interval(jsonb)', 'standings_season()', 'current_boss()', 'demand_progress(uuid)',
+      'setting(text)', 'span_interval(jsonb)', 'standings_season()', 'current_boss()', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)',
       'system_digest(timestamp with time zone,timestamp with time zone)']) x) then
-    raise exception 'the functions the digest role may execute are not the reviewed six: %', fns;
+    raise exception 'the functions the digest role may execute are not the reviewed seven: %', fns;
   end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;
 
@@ -91,7 +91,7 @@ begin
 
   -- A later function given the role's ownership fails here, to be reviewed (0045 added the demand evaluator).
   select string_agg(p.oid::regprocedure::text, ', ') into bad from pg_proc p join pg_roles r on r.oid = p.proowner
-  where r.rolname = 'kayfabb_digest' and p.oid::regprocedure::text <> all (array['system_digest(timestamp with time zone,timestamp with time zone)', 'demand_progress(uuid)']);
+  where r.rolname = 'kayfabb_digest' and p.oid::regprocedure::text <> all (array['system_digest(timestamp with time zone,timestamp with time zone)', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)']);
   if bad is not null then raise exception 'functions owned by the digest role that this file has not reviewed: %', bad; end if;
   if exists (select 1 from pg_class where relowner = 'kayfabb_digest'::regrole) or exists (select 1 from pg_type where typowner = 'kayfabb_digest'::regrole and typtype <> 'c') then
     raise exception 'the digest role owns an object that is not a function';

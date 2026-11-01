@@ -81,6 +81,28 @@ create index open_moves_landed on open_moves (landed_at desc, move_act);
 alter table open_moves enable row level security;
 revoke all on open_moves from public, anon, authenticated;
 
+-- open_moves is derived state and a restore fires no trigger, so a partial restore can leave it short or stale. An admin runs this
+-- after one (the tick and the meeting need not): in one statement it removes every row whose Act is no move or whose move has a
+-- move_end, and adds a row for every move with no move_end. Returns how many rows it changed.
+create function rebuild_open_moves() returns integer
+language sql security definer set search_path = public, pg_temp as $$
+  with gone as (
+    delete from open_moves o
+    where not exists (select 1 from acts a where a.id = o.move_act and a.kind = 'move')
+       or exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = o.move_act)
+    returning 1
+  ), added as (
+    insert into open_moves (move_act, landed_at)
+    select a.id, a.created_at from acts a
+    where a.kind = 'move' and not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = a.id)
+    on conflict (move_act) do nothing
+    returning 1
+  )
+  select ((select count(*) from gone) + (select count(*) from added))::integer
+$$;
+revoke execute on function rebuild_open_moves() from public, anon, authenticated;
+grant execute on function rebuild_open_moves() to service_role;
+
 create function acts_track_moves() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
@@ -94,8 +116,40 @@ end $$;
 revoke execute on function acts_track_moves() from public, anon, authenticated;
 create trigger acts_track_moves after insert on acts for each row when (new.kind in ('move', 'move_end')) execute function acts_track_moves();
 
+-- Whether a demand's params carry what its kind needs, of the right types: ids that are uuids, counts that are positive whole
+-- numbers, a quadrant that is one of the four, and a crossQuote between two different characters. Returns the first thing
+-- wrong, or null. A kind with no case here (the poison of supabase/tests/0050-moves.sql) is demand_progress's to refuse, not this
+-- check's. The engine holds the same (engine/system/demands.ts); this is the door for a move written any other way.
+create function demand_params_problem(demand jsonb) returns text
+language plpgsql immutable set search_path = public, pg_temp as $$
+declare
+  p jsonb := demand -> 'params';
+  uuid_re constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+  k text;
+begin
+  if demand ->> 'kind' not in ('postsOnBoard', 'distinctCharactersOnBoard', 'quadrantOnBoard', 'characterPostsInThread', 'crossQuote') then return null; end if;
+  if jsonb_typeof(p) is distinct from 'object' then return 'params'; end if;
+  for k in select unnest(case demand ->> 'kind'
+      when 'characterPostsInThread' then array['character', 'thread']
+      when 'crossQuote' then array['a', 'b']
+      else array['board'] end) loop
+    if jsonb_typeof(p -> k) is distinct from 'string' or lower(p ->> k) !~ uuid_re then return k; end if;
+  end loop;
+  for k in select unnest(case demand ->> 'kind'
+      when 'characterPostsInThread' then array[]::text[]
+      when 'crossQuote' then array['reactions']
+      else array['count'] end) loop
+    if jsonb_typeof(p -> k) is distinct from 'number' or (p ->> k) !~ '^[1-9][0-9]{0,8}$' then return k; end if;
+  end loop;
+  if demand ->> 'kind' = 'quadrantOnBoard' and not coalesce((p ->> 'quadrant') = any (array['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative']), false) then return 'quadrant'; end if;
+  if demand ->> 'kind' = 'crossQuote' and lower(p ->> 'a') = lower(p ->> 'b') then return 'b (distinctCharacters)'; end if;
+  return null;
+end $$;
+revoke execute on function demand_params_problem(jsonb) from public, anon, authenticated;
+
 -- acts_well_formed (0042), with three rules added; everything else as 0042 wrote it:
---   a move is a staff character's Act, of a kind and with a demand the catalogs hold, and an expiry that is a time;
+--   a move is a staff character's Act, of a kind and with a demand the catalogs hold whose params are well formed
+--   (demand_params_problem), and an expiry that is a time;
 --   a move_end is written only inside end_move (it sets `kayfabb.move_end_writer` for the one insert), targets a move, and
 --   is in the move's own thread.
 create or replace function acts_well_formed() returns trigger
@@ -115,6 +169,9 @@ begin
     end if;
     if jsonb_typeof(new.payload -> 'demand') = 'object' and not exists (select 1 from demand_kinds d where d.key = new.payload #>> '{demand,kind}') then
       raise exception 'there is no demand kind "%"', coalesce(new.payload #>> '{demand,kind}', '') using errcode = '23514';
+    end if;
+    if jsonb_typeof(new.payload -> 'demand') = 'object' and demand_params_problem(new.payload -> 'demand') is not null then
+      raise exception 'the demand''s params are malformed at %', demand_params_problem(new.payload -> 'demand') using errcode = '23514';
     end if;
     -- Cast once here, so an expiry that is no time is refused at the door and the readers of it never meet one.
     if jsonb_typeof(new.payload -> 'expires_at') = 'string' then perform (new.payload ->> 'expires_at')::timestamptz; end if;
@@ -263,8 +320,14 @@ create trigger queued_moves_guard before insert or update or delete on queued_mo
 -- refuses it who reacted, who owns a mask and a class. Staff characters' own posts count for nothing: a demand is on the
 -- players. A reaction threshold is a sum of the public tallies; the engine holds every one above the reaction cap, so meeting it
 -- takes a player outside any pair named ("A response never proves a private fact"; engine/system/demands.ts).
--- A move with no demand has nothing to meet: {0, 0, false}. An Act that is no move, or a demand kind with no case, raises.
--- Each case counts at most `of` rows, so a met demand stops reading.
+-- A move with no demand has nothing to meet: {0, 0, false}. An Act that is no move, or a demand kind with no case, raises (so do
+-- params that are missing or mistyped); readers that must go on read demand_progress_or_error below.
+-- What each case reads, all of it Acts since the landing (the acts_created index) and so bounded by the move's expiry:
+--   postsOnBoard, characterPostsInThread   stop at `of` matching posts (a limit), so a met demand stops reading;
+--   distinctCharactersOnBoard              the board's posts since the landing, deduplicated by character and cut at `of` characters
+--                                          (the deduplication reads the posts, the limit only stops what it returns);
+--   quadrantOnBoard                        sums the tallies of the board's posts since the landing, every one of them;
+--   crossQuote                             the two characters' own replies since the landing.
 create function demand_progress(move_act uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -292,11 +355,10 @@ begin
       total := (p ->> 'count')::integer;
       if total is null or total < 1 then raise exception 'a demand counts at least one' using errcode = '22023'; end if;
       select count(*) into have from (
-        select a.character from acts_public a
+        select distinct a.character from acts_public a
         join thread_list tl on tl.id = a.thread
         join characters_public c on c.id = a.character
         where a.kind = 'post' and a.created_at > landed and tl.board = (p ->> 'board')::uuid and c.staff is null
-        group by a.character
         limit total) s;
     when 'quadrantOnBoard' then
       total := (p ->> 'count')::integer;
@@ -337,6 +399,22 @@ revoke create on schema public from kayfabb_digest;
 revoke execute on function demand_progress(uuid) from public, anon, authenticated;
 grant execute on function demand_progress(uuid) to service_role;
 
+-- demand_progress, or the SQLSTATE it raised: one malformed landed move must not stop the whole digest (nor, in Task 10, the tick,
+-- which must read progress through this form too and not demand_progress). {"done": 0, "of": 0, "met": false, "error": "22023"}.
+-- Same owner, so the same reach, and the same grants.
+create function demand_progress_or_error(move_act uuid) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  return demand_progress(move_act);
+exception when others then
+  return jsonb_build_object('done', 0, 'of', 0, 'met', false, 'error', sqlstate);
+end $$;
+grant create on schema public to kayfabb_digest;
+alter function demand_progress_or_error(uuid) owner to kayfabb_digest;
+revoke create on schema public from kayfabb_digest;
+revoke execute on function demand_progress_or_error(uuid) from public, anon, authenticated;
+grant execute on function demand_progress_or_error(uuid) to service_role;
+
 -- ---------------------------------------------------------------------------- the views ----
 
 -- A board as it is called now: its latest landed rename that is still in force, else its own row (its description standing as its
@@ -356,7 +434,7 @@ create view boards_now as
   from boards b
   left join lateral (
     select l.move_act, l.name, l.premise, l.description from live l
-    where l.board = b.id::text
+    where lower(l.board) = b.id::text
     order by l.created_at desc, l.move_act desc
     limit 1
   ) m on true;
@@ -506,7 +584,7 @@ begin
     'standings', coalesce((select jsonb_agg(jsonb_build_object('rank', s.rank, 'character', s.character, 'amount', s.amount) order by s.rank) from stand s), '[]'::jsonb),
     'moves', coalesce((select jsonb_agg(jsonb_build_object('act', m.act, 'kind', m.payload ->> 'kind', 'params', m.payload -> 'params',
                           'demand', m.payload -> 'demand', 'expiresAt', m.payload -> 'expires_at', 'landedAt', m.landed_at,
-                          'progress', demand_progress(m.act), 'ended', m.ended) order by m.grp, m.landed_at desc, m.act) from moved m), '[]'::jsonb),
+                          'progress', demand_progress_or_error(m.act), 'ended', m.ended) order by m.grp, m.landed_at desc, m.act) from moved m), '[]'::jsonb),
     'quotes', coalesce((select jsonb_agg(jsonb_build_object('from', q.q_from, 'to', q.q_to, 'count', q.n) order by q.n desc, q.q_from, q.q_to) from quoted q), '[]'::jsonb),
     'bossReactions', coalesce((select jsonb_agg(jsonb_build_object('act', bt.act, 'thread', bt.thread, 'total', bt.total, 'tally', bt.tally) order by bt.total desc, bt.act) from boss_tally bt), '[]'::jsonb),
     'excerpts', coalesce((select jsonb_agg(jsonb_build_object('act', e.act, 'thread', e.thread, 'character', e.character, 'reactions', e.reactions, 'text', e.excerpt)

@@ -113,7 +113,11 @@ export function demandProblems(demand: unknown, reactionCap: number): Repaired {
   const params = out.value as Record<string, unknown>;
   for (const name of kind.uuids) {
     if (!UUID.test(String(params[name]))) return no(`demand.params.${name}`, 'isUuid');
+    // Postgres writes uuids in lowercase and SQL compares them as text, so they are normalized here (not a bound, so no trim).
+    params[name] = String(params[name]).toLowerCase();
   }
+  // Two named characters are two: a crossQuote of one with itself could never be quoted "each other".
+  if (kind.key === 'crossQuote' && params['a'] === params['b']) return no('demand.params.b', 'distinctCharacters');
   for (const [name, how] of Object.entries(kind.numbers)) {
     const v = params[name] as number;
     const least = how === 'reactions' ? reactionCap + 1 : 1;
