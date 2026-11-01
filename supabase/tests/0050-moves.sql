@@ -218,7 +218,7 @@ declare
 begin
   insert into move_kinds (key, structural) values ('renameBoard', true), ('lockThread', false) on conflict (key) do update set structural = excluded.structural;
   insert into demand_kinds (key) values ('postsOnBoard') on conflict do nothing;
-  insert into meetings (started_at, finished_at, outcome) values (now(), now(), 'ok') returning id into meeting;
+  insert into meetings (started_at, slot, finished_at, outcome) values (now(), now(), now(), 'ok') returning id into meeting;
   row_ := jsonb_build_object('board', general, 'name', 'Queued Palace', 'premise', 'p', 'description', 'd');
 
   insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)

@@ -14,8 +14,8 @@ declare
   fav uuid;
 begin
   insert into characters (name, staff, staff_kind, debuted_at) values ('Dir Boss', 'dir-boss', 'boss', now()), ('Dir Other', 'dir-other', 'boss', now());
-  insert into meetings (started_at, finished_at, outcome, bank_before, bank_after) values (now() - interval '2 minutes', now() - interval '1 minute', 'ok', 2, 1) returning id into m1;
-  insert into meetings (started_at, finished_at, outcome, error, consecutive_failures) values (now() - interval '1 minute', now(), 'failed', 'upstream 500', 1) returning id into m2;
+  insert into meetings (started_at, slot, finished_at, outcome, bank_before, bank_after) values (now() - interval '2 minutes', now() - interval '2 minutes', now() - interval '1 minute', 'ok', 2, 1) returning id into m1;
+  insert into meetings (started_at, slot, finished_at, outcome, error, consecutive_failures) values (now() - interval '1 minute', now() - interval '1 minute', now(), 'failed', 'upstream 500', 1) returning id into m2;
   insert into staff_memory (staff, meeting, body) values ('dir-boss', m1, '{"opinions": []}');
   insert into move_bank (staff, balance, as_of) values ('dir-boss', 1, now());
   fav := (select id from characters where staff = 'dir-boss');
@@ -82,7 +82,7 @@ begin
   begin truncate meetings cascade; exception when sqlstate 'P0001' then denied := true; end;
   if not denied then raise exception 'meetings can be truncated'; end if;
   denied := false;
-  begin insert into meetings (started_at, finished_at, outcome) values (now(), now(), 'maybe'); exception when check_violation then denied := true; end;
+  begin insert into meetings (started_at, slot, finished_at, outcome) values (now(), now(), now(), 'maybe'); exception when check_violation then denied := true; end;
   if not denied then raise exception 'a meeting outcome outside the four is accepted'; end if;
 
   -- The bank is a counter: it is updated in place.

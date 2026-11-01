@@ -31,6 +31,7 @@ test('the seed carries the roster as staff characters, Bosses and bots, and the 
   assert.deepEqual(seed.system.staff.filter((s) => s.kind === 'bot').map((s) => s.key), modBots.map((b) => b.key));
   assert.equal(seed.system.staff.length, bosses.length + modBots.length);
   assert.deepEqual(seed.system.firstStaff, [...firstStaff]);
+  assert.equal(seed.system.firstBoss, instance.system.firstBoss, 'the first season\'s Boss');
   for (const s of seed.system.staff) {
     assert.deepEqual(Object.keys(s).sort(), ['key', 'kind', 'name', 'signature', 'title']);
     assert.ok(s.title.length <= 40 && s.signature.length <= 500, 'the SQL cuts these in silence; instanceProblems holds them');

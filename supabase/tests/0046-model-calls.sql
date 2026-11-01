@@ -41,7 +41,7 @@ begin
 
   -- A rejection keeps its predicate and its trims; a failure needs neither.
   -- The meeting it names is a real one (0043 gave model_calls.meeting its foreign key).
-  insert into meetings (started_at, finished_at, outcome) values (now(), now(), 'rejected') returning id into meeting_id;
+  insert into meetings (started_at, slot, finished_at, outcome) values (now(), now(), now(), 'rejected') returning id into meeting_id;
   made := record_model_call(payload || jsonb_build_object('outcome', 'rejected', 'predicate', 'atMost(6)', 'meeting', meeting_id,
     'trims', '[{"path": "moves", "predicate": "atMost(6)", "before": 7, "after": 6}]'::jsonb));
   select * into held from model_calls where model_calls.id = made;

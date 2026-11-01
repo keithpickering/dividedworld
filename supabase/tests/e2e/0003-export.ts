@@ -120,7 +120,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into ledger_shares_kept (from_settlement) values (1);
       -- A model call in the ledger (0041): the instance's own bookkeeping, carried across with the rest.
       -- A meeting, the Boss's memory and profile from it, and its move bank (0043); the call above names the meeting.
-      insert into meetings (started_at, finished_at, outcome, bank_before, bank_after) values (now() - interval '1 minute', now(), 'ok', 1, 0);
+      insert into meetings (started_at, slot, finished_at, outcome, bank_before, bank_after, record) values (now() - interval '1 minute', now() - interval '1 minute', now(), 'ok', 1, 0, '{"trims": []}');
       perform record_model_call(jsonb_build_object('duty', 'meeting', 'staff', 'director', 'provider', 'anthropic', 'model', 'claude-opus-5-5', 'service_tier', 'standard', 'input_tokens', 1200, 'output_tokens', 300, 'cost_microdollars', 10800, 'outcome', 'rejected', 'predicate', 'atMost(6)', 'trims', '[{"path": "moves", "predicate": "atMost(6)", "before": 7, "after": 6}]'::jsonb, 'retries', 1, 'meeting', (select max(id) from meetings)));
       -- A Boss and a Mod Bot (0042): characters with no owner, the bot on staff, the Boss named by the season and writing an Act.
       insert into characters (name, staff, staff_kind, debuted_at) values ('Exported Boss', 'exp-boss', 'boss', now()), ('Exported Bot', 'exp-bot', 'bot', now());
