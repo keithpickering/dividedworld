@@ -118,6 +118,12 @@ export interface Seed {
    */
   card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string }): Id;
   /**
+   * A card played beyond a post (what `play_card` writes for a reach, 0055): on a character (from `post`, one of its posts), a thread or
+   * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
+   * bound). Held and paid for nowhere. Returns the play's Act.
+   */
+  reach(character: Id, reach: BeyondPost, target: Id, card: string, options?: { post?: Id; at?: number; ends?: number; message?: string; config?: Readonly<Record<string, unknown>>; live?: boolean }): Id;
+  /**
    * A card set face down by a character on a post of its own (what `set_card` writes): a set Act naming no card, and the setter's own
    * record of which card it is. Returns the set Act.
    */
@@ -1197,6 +1203,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const account = me()?.id;
       return Object.fromEntries(sets.filter((s) => faceDown.get(s)?.account === account).map((s) => [s, faceDown.get(s)!.card]));
     },
+    pinnedThreads: (board) => [...reachPlays]
+      .filter(([play, r]) => r.reach === 'thread' && r.endsAt > now() && threads.get(r.target)?.board === board && instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.pins === true)
+      .map(([play, r]) => ({ thread: summary(threads.get(r.target)!), play, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }))
+      .sort((a, b) => acts.get(b.play)!.at - acts.get(a.play)!.at || acts.get(b.play)!.order - acts.get(a.play)!.order),
     effectsAbove: (chars, thread, board) => {
       const wanted = new Set(chars);
       return [...reachPlays].filter(([, r]) => r.endsAt > now() && (r.reach === 'character' ? wanted.has(r.target) : r.reach === 'thread' ? r.target === thread : r.target === board))
@@ -1699,6 +1709,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         try { spend(account, o.paid, 'play', written.id); } finally { stamp = null; }
         recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: o.paid });
       }
+      if (o?.live) sendAct(written);
+      return written.id;
+    },
+    reach(character, reach, target, card, o) {
+      const rules = instance.cards.find((c) => c.key === card);
+      const at = o?.at ?? stamp ?? now();
+      let thread: Id;
+      let on: Id | null;
+      if (reach === 'character') {
+        const from = o?.post ? acts.get(o.post) : undefined;
+        if (!from || from.character !== target) throw new Error('a character play is played from one of its posts');
+        thread = from.thread; on = from.id;
+      } else if (reach === 'thread') {
+        thread = target; on = [...acts.values()].find((a) => a.thread === target && a.seq === 1)?.id ?? null;
+      } else { thread = announcements(); on = null; }
+      const bound = span(settings.reachLasts[reach]);
+      const endsAt = o?.ends ?? at + Math.min(rules?.lasts ? span(rules.lasts) : bound, bound);
+      const written = asAt(ownerOf(character), at, () => write({ character, kind: 'card', thread, target: on, at, payload: { card, message: o?.message ?? '', config: o?.config ?? {}, reach, [reach]: target, ends: iso(endsAt) } }));
+      reachPlays.set(written.id, { reach, target, endsAt });
       if (o?.live) sendAct(written);
       return written.id;
     },

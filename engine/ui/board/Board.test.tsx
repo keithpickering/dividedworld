@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import type { Fake } from '../data/fake.ts';
+import { createFake, type Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
 import { useLocation } from '../router.tsx';
 import { BoardScreen } from './Board.tsx';
@@ -382,5 +382,74 @@ describe('who is browsing', () => {
     const box = await screen.findByRole('region', { name: 'Users browsing this board' });
     await within(box).findByRole('link', { name: 'Spritey' });
     expect(await within(box).findByRole('link', { name: 'Pipewrench' })).toBeInTheDocument();
+  });
+});
+
+/* Main Event's kind (docs/plans/2026-11-01-card-reach-plan.md, Task 5): a thread with a live play of a card that pins is drawn above
+   page 1's threads, with its mark, without taking a page's slots or moving the pager; it goes when the play ends. A board's own live
+   board card is a mark on its banner. The cards are the engine's test cards. */
+describe('pinned threads and the banner', () => {
+  /* The first render of a file parses the house CSS, which takes a few seconds under jsdom. */
+  vi.setConfig({ testTimeout: 20_000 });
+  const pinning = {
+    key: 'beacon', name: 'Beacon', alignment: 'sweet' as const, rarity: 'rare' as const, reaches: ['thread' as const], lasts: { unit: 'day' as const, count: 1 }, pins: true as const,
+    priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }),
+  };
+  const rumble = { ...pinning, key: 'rumble', name: 'Rumble', rarity: 'legendary' as const, reaches: ['board' as const], pins: undefined };
+  const instance = { ...testInstance, cards: [...testInstance.cards, pinning, rumble] };
+  const pinned = () => document.querySelector('[data-kb-pinned]') as HTMLElement | null;
+
+  async function open(o: { readonly page?: number; readonly ends?: number; readonly alsoPin?: number } = {}) {
+    const fake = createFake({ instance, now: () => Date.now() });
+    const w = world(fake, { threads: 25 });
+    /* Thread 003 is far down page 1, and Thread 001 on page 2: each is pinned all the same. */
+    fake.seed.reach(w.spritey, 'thread', w.ids[0]!, 'beacon', { ends: o.ends ?? Date.now() + DAY, message: 'Look here.' });
+    if (o.alsoPin !== undefined) fake.seed.reach(w.spritey, 'thread', w.ids[o.alsoPin]!, 'beacon', { ends: Date.now() + DAY });
+    const board = (await fake.board('general'))!.id;
+    fake.seed.reach(w.spritey, 'board', board, 'rumble', { ends: Date.now() + DAY });
+    renderIn(fake, <BoardScreen slug="general" />, { instance, path: `/b/general${o.page ? `?page=${o.page}` : ''}` });
+    await screen.findByRole('link', { name: o.page === 2 ? 'Thread 005' : 'Thread 025' });
+    return { fake, w };
+  }
+
+  test('a pin is drawn above page 1, with its mark, and not above page 2', async () => {
+    await open();
+    await waitFor(() => expect(pinned()).not.toBeNull());
+    expect(within(pinned()!).getByRole('link', { name: 'Thread 001' })).toBeInTheDocument();
+    expect(within(pinned()!).getByRole('button', { name: /^Beacon, 1 play\b.*Opens the cards on this thread\./u })).toBeInTheDocument();
+    /* It takes none of page 1's twenty slots: Thread 006 to 025 are all still there. */
+    const list = document.querySelector('.kb-thread-list tbody:not([data-kb-pinned])') as HTMLElement;
+    expect(within(list).getAllByRole('row')).toHaveLength(20);
+    expect(screen.getAllByText('Page 1 of 2').length).toBeGreaterThan(0);
+  });
+
+  test('the pager\'s total is unchanged, and page 2 shows no pin, its own thread in its bump place', async () => {
+    await open({ page: 2 });
+    expect(screen.getAllByText('Page 2 of 2').length).toBeGreaterThan(0);
+    expect(within(rowOf('Thread 001')).getByRole('link', { name: 'Thread 001' })).toBeInTheDocument();
+    expect(pinned()).toBeNull();
+  });
+
+  test('a pinned thread page 1 already holds is moved up, never listed twice', async () => {
+    await open({ alsoPin: 9 });
+    await waitFor(() => expect(within(pinned()!).getAllByRole('row')).toHaveLength(2));
+    expect(screen.getAllByRole('link', { name: 'Thread 010' })).toHaveLength(1);
+    expect(within(pinned()!).getByRole('link', { name: 'Thread 010' })).toBeInTheDocument();
+  });
+
+  test('an ended pin is gone, by itself', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await open({ ends: Date.now() + 30_000 });
+      await waitFor(() => expect(pinned()).not.toBeNull());
+      await act(() => vi.advanceTimersByTimeAsync(31_000));
+      await waitFor(() => expect(pinned()).toBeNull());
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('the board\'s live board card is a mark on its banner', async () => {
+    await open();
+    const banner = document.querySelector('.kb-board-banner') as HTMLElement;
+    expect(await within(banner).findByRole('button', { name: /^Rumble, 1 play\b.*Opens the cards on this board\./u })).toBeInTheDocument();
   });
 });

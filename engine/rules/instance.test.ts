@@ -623,3 +623,11 @@ test('each reach\'s least rarity and longest time are settings', () => {
     assert.match(settingsProblems({ ...settings, reachLasts: bad as never }).join('\n'), /setting "reachLasts" .*; it must be an object giving character, thread and board each a span/, JSON.stringify(bad));
   }
 });
+
+test('only a card that reaches a thread pins', () => {
+  const lasts = { unit: 'day', count: 1 };
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'rare', reaches: ['thread'], lasts, pins: true })), []);
+  assert.match(instanceProblems(withCards({ pins: true })).join('\n'), /card "splat" pins true; only a card that reaches a thread pins/);
+  assert.match(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['character'], lasts, pins: true })).join('\n'), /card "splat" pins true; only a card that reaches a thread pins/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', reaches: ['thread'], lasts, pins: 'yes' })).join('\n'), /card "splat" pins "yes"/);
+});

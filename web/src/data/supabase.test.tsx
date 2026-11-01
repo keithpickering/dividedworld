@@ -1189,6 +1189,14 @@ describe('reads by many ids', () => {
     expect(await h.api.effectsAbove([], null, null)).toEqual([]);
   });
 
+  it('pinnedThreads asks pinned_threads once for the board, and reads each row\'s thread, play and end', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/rpc/pinned_threads` ? json([{ thread: THREAD_ROW, play: A, ends_at: '2099-01-01T00:00:00+00:00', act: { ...ACT_ROW, kind: 'card' } }]) : undefined));
+    const pins = await h.api.pinnedThreads(C);
+    expect(h.to('rpc/pinned_threads')).toHaveLength(1);
+    expect(h.to('rpc/pinned_threads')[0]!.body).toEqual({ board: C });
+    expect(pins).toEqual([{ thread: expect.objectContaining({ id: T, title: 'A title', board: C }), play: A, endsAt: '2099-01-01T00:00:00+00:00', act: expect.objectContaining({ id: A, kind: 'card' }) }]);
+  });
+
   it.each(reads)('%s reads by id in chunks, so no request carries an address too long for a proxy, and every id is read once', async (_name, tables, call) => {
     const h = byIdHarness();
     await call(h.api);

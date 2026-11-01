@@ -153,7 +153,7 @@ describe('where the ghost mark stands', () => {
     w.fake.seed.card(w.gloomba, w.ids[1]!, 'stick-around', { message: 'one', layer: 1, config: {} });
     await open(w);
     await arm(user);
-    const strip = post(2).querySelector('.kb-marks') as HTMLElement;
+    const strip = post(2).querySelector('.kb-act-meta .kb-marks') as HTMLElement;
     const buttons = within(strip).getAllByRole('button');
     expect(buttons).toHaveLength(2);
     expect(buttons[0]).toHaveAccessibleName(/^Stick Around, 1 play, /u);

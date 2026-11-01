@@ -18,11 +18,11 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   const readKeys = (c: (typeof instance.cards)[number]) => (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key));
   assert.deepEqual(seed.cards, instance.cards.map((c) => ({
     key: c.key, name: c.name, alignment: c.alignment, priceSetting: c.priceKey, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
-    rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, ward: c.ward === true, lasts: c.lasts,
+    rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, ward: c.ward === true, lasts: c.lasts, reaches: c.reaches ?? ['post'], pins: c.pins === true,
   })));
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
     key: 'whoops', name: 'Whoops!', alignment: 'salty', priceSetting: 'whoops.price', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostInAll'],
-    rarity: 'common', play: 'cast', trap: undefined, ward: false, lasts: undefined,
+    rarity: 'common', play: 'cast', trap: undefined, ward: false, lasts: undefined, reaches: ['post'], pins: false,
   }, 'the stack, the seed, the economy numbers its price reads, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
   assert.deepEqual(seed.boards, instance.boards.map((b) => ({ ...b, system: b.system === true })));
   assert.deepEqual(seed.boards.filter((b) => b.system).map((b) => b.slug), ['the-system'], 'one board is The System\'s, said in the seed');

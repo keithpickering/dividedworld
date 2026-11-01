@@ -285,7 +285,7 @@ const spanWords = (s: Span): string => `${s.count} ${s.unit}${s.count === 1 ? ''
  * a Set on a post alone. seed_instance (supabase/migrations/0055_card_reach.sql) holds the same.
  */
 function reachProblems(c: CardRules, settings: Settings): string[] {
-  if (c.reaches === undefined) return [];
+  if (c.reaches === undefined) return c.pins !== undefined ? [`card "${c.key}" pins ${JSON.stringify(c.pins)}; only a card that reaches a thread pins, and pins is true or left out`] : [];
   const who = `card "${c.key}"`;
   const reaches: readonly unknown[] = c.reaches;
   if (!Array.isArray(reaches) || !reaches.length || reaches.some((r) => !REACHES.includes(r as never)) || new Set(reaches).size !== reaches.length) {
@@ -294,6 +294,7 @@ function reachProblems(c: CardRules, settings: Settings): string[] {
   const out: string[] = [];
   const beyond = BEYOND_POST.filter((r) => c.reaches!.includes(r));
   if ((c.play ?? 'cast') === 'set' && beyond.length) out.push(`${who} is set face down, and a Set lands only on a post`);
+  if (c.pins !== undefined && (c.pins !== true || !c.reaches.includes('thread'))) out.push(`${who} pins ${JSON.stringify(c.pins)}; only a card that reaches a thread pins, and pins is true or left out`);
   if (beyond.length && c.lasts === undefined) out.push(`${who} reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time`);
   const least = settings?.reachRarity;
   const longest = settings?.reachLasts;

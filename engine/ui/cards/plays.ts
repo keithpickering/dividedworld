@@ -12,7 +12,7 @@
 import { useSyncExternalStore } from 'react';
 import type { Act, ActKind, EffectState, Id, KayfaApi } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
-import type { CardRules } from '../../rules/cards.ts';
+import { BEYOND_POST, type BeyondPost, type CardRules } from '../../rules/cards.ts';
 import type { Settings, Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, KitControl } from './types.ts';
 
@@ -46,9 +46,12 @@ export function shownPlays(plays: readonly CardPlay[], setLasts: Span, now: numb
  * is no play of its own: `Plays.add` reveals the back it names.
  */
 export function playOf(act: Act): CardPlay | null {
-  if (act.targetActId === null) return null;
+  const beyond = act.kind === 'card' && BEYOND_POST.includes(act.payload.reach as BeyondPost) ? act.payload.reach as BeyondPost : null;
+  const on = beyond ? act.payload[beyond] : undefined;
+  if (beyond && (typeof on !== 'string' || typeof act.payload.ends !== 'string')) return null;
+  if (act.targetActId === null && !beyond) return null;
   if (act.kind === 'set') {
-    return { id: act.id, card: CARD_BACK, layer: 1, caster: act.character, message: '', config: {}, playedAt: act.createdAt, post: act.targetActId, faceDown: true };
+    return { id: act.id, card: CARD_BACK, layer: 1, caster: act.character, message: '', config: {}, playedAt: act.createdAt, post: act.targetActId ?? '', faceDown: true };
   }
   if (act.kind !== 'card' || typeof act.payload.card !== 'string') return null;
   const layer = act.payload.layer;
@@ -61,10 +64,38 @@ export function playOf(act: Act): CardPlay | null {
     message: typeof act.payload.message === 'string' ? act.payload.message : '',
     config: typeof config === 'object' && config !== null && !Array.isArray(config) ? (config as Record<string, unknown>) : {},
     playedAt: act.createdAt,
-    post: act.targetActId,
+    post: act.targetActId ?? '',
+    ...(beyond ? { reach: beyond, on: on as Id } : {}),
     ...(typeof act.payload.caught === 'string' ? { caught: act.payload.caught } : {}),
     ...(typeof act.payload.ends === 'string' ? { ends: act.payload.ends } : {}),
   };
+}
+
+/**
+ * Where a play is kept and drawn: on its post, or for a play beyond a post on its target (the character, the thread or the board),
+ * which the store reads by that id as it reads a post's (`Plays.get(character)`), so a postbit's, a thread head's and a banner's
+ * marks are drawn as a post's are.
+ */
+export const homeOf = (play: Pick<CardPlay, 'post' | 'on'>): Id => play.on ?? play.post;
+
+/**
+ * The plays still drawn: all but a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post
+ * is the Lens's to say ("has ended"), so it is kept.
+ */
+export function livePlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
+  const live = plays.filter((p) => !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
+  return live.length === plays.length ? plays : live;
+}
+
+/** The soonest end still ahead among plays beyond a post, as an epoch, or null: when what is drawn changes next by itself. */
+export function nextEnd(plays: readonly CardPlay[], now: number = Date.now()): number | null {
+  let soonest: number | null = null;
+  for (const p of plays) {
+    if (!p.reach || p.ends === undefined) continue;
+    const at = Date.parse(p.ends);
+    if (at > now && (soonest === null || at < soonest)) soonest = at;
+  }
+  return soonest;
 }
 
 /** What a spring Act reveals: the set it ends and the card that was face down. */
@@ -212,7 +243,7 @@ export function createPlays(): Plays {
           const back = own?.get(sprung.set);
           if (own && back && !back.revealed) {
             own.set(back.id, { ...back, card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at } });
-            touched.add(back.post);
+            touched.add(homeOf(back));
           }
           continue;
         }
@@ -220,13 +251,14 @@ export function createPlays(): Plays {
         if (!found) continue;
         const early = found.faceDown ? springs.get(found.id) : undefined;
         const play = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at } } : found;
-        const own = byPost.get(play.post) ?? new Map<Id, CardPlay>();
+        const home = homeOf(play);
+        const own = byPost.get(home) ?? new Map<Id, CardPlay>();
         if (own.has(play.id)) continue;
         own.set(play.id, play);
-        byPost.set(play.post, own);
-        order.set(play.post, [...(order.get(play.post) ?? []), play.id]);
-        postOf.set(play.id, play.post);
-        touched.add(play.post);
+        byPost.set(home, own);
+        order.set(home, [...(order.get(home) ?? []), play.id]);
+        postOf.set(play.id, home);
+        touched.add(home);
       }
       changed(touched);
       return touched.size > 0;
@@ -324,6 +356,20 @@ export async function readEffects(api: KayfaApi, plays: Plays, acts: readonly Ac
 export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[], cards: ReadonlySet<string>): Promise<readonly Act[]> {
   if (posts.length === 0) return [];
   const acts = await api.cardsOnMany(posts, posts.length * PLAYS_PER_POST).catch((): readonly Act[] => []);
+  plays.add(acts);
+  await readEffects(api, plays, acts, cards);
+  return acts;
+}
+
+/**
+ * Read the live plays above a page's posts (`KayfaApi.effectsAbove`): on its distinct authors, its thread and its board, in one read
+ * however many posts the page holds, each kept on its target. A failed read leaves them undrawn: a mark is missing, never a post.
+ */
+export async function readAbove(api: KayfaApi, plays: Plays, characters: readonly (Id | null)[], thread: Id | null, board: Id | null, cards: ReadonlySet<string>): Promise<readonly Act[]> {
+  const authors = [...new Set(characters.filter((c): c is Id => c !== null))];
+  if (authors.length === 0 && thread === null && board === null) return [];
+  const above = await api.effectsAbove(authors, thread, board).catch(() => []);
+  const acts = above.map((p) => p.act);
   plays.add(acts);
   await readEffects(api, plays, acts, cards);
   return acts;

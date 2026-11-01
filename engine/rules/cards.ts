@@ -132,6 +132,8 @@ export interface CardRules<Config = unknown> {
    * with none, a Use stays. A play on a post that is not a Use does not end.
    */
   readonly lasts?: Span;
+  /** A thread play of it pins the thread to the top of its board's list until it ends (Main Event's kind); only a card that reaches a thread pins. */
+  readonly pins?: true;
   /** The economy setting that holds what the Vending Machine sells it for. */
   readonly priceKey: string;
   /** The economy numbers its rules read beside its price. */

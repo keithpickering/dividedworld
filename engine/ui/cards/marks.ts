@@ -37,11 +37,11 @@ export const playsPhrase = (n: number): string => (n === 1 ? '1 play' : `${n} pl
  * what the corner sign and the notch say. The state is the card's own sentence, so any stop it ended with is dropped
  * before the name's; a card that has no more to say than its name (its view is the default's) is not named twice.
  */
-export function markName(m: { readonly card: string; readonly plays: number; readonly state: string; readonly more: boolean; readonly yours: boolean }): string {
+export function markName(m: { readonly card: string; readonly plays: number; readonly state: string; readonly more: boolean; readonly yours: boolean; readonly where?: string }): string {
   const state = m.state.trim().replace(/[.\s]+$/u, '');
   const said = state === '' || state === m.card ? '' : `, ${state}`;
   return [
-    `${m.card}, ${playsPhrase(m.plays)}${said}. Opens the cards on this post.`,
+    `${m.card}, ${playsPhrase(m.plays)}${said}. Opens the cards on this ${m.where ?? 'post'}.`,
     m.more ? 'One has more reactions than the post.' : '',
     m.yours ? 'Yours to act on.' : '',
   ].filter((s) => s !== '').join(' ');

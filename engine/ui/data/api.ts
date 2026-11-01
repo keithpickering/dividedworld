@@ -696,6 +696,14 @@ export interface BoardListener {
 
 /* ---------------------------------------------------------------- the api ---- */
 
+/** A thread pinned to the top of its board's list by a live thread play whose card pins (pinned_threads, 0055): the thread, its play's Act, and when the pin ends. */
+export interface PinnedThread {
+  readonly thread: ThreadSummary;
+  readonly play: Id;
+  readonly endsAt: string;
+  readonly act: Act;
+}
+
 /** A live play beyond a post (effects_above, 0055_card_reach.sql): its Act, the reach and target it lands on, and when it ends. */
 export interface PlayAbove {
   readonly play: Id;
@@ -777,6 +785,8 @@ export interface KayfaApi {
    * is the character, thread or board it lands on, and it is drawn there until `endsAt`. Public: nothing about who owns a character.
    */
   effectsAbove(characters: readonly Id[], thread: Id | null, board: Id | null): Promise<readonly PlayAbove[]>;
+  /** The board's pinned threads (pinned_threads, 0055), newest pin first: one read of the board's live pins, never of its threads. */
+  pinnedThreads(board: Id): Promise<readonly PinnedThread[]>;
   /** The state each play's effect has saved (the post's author saves it), by play; a play that has saved none is absent. Any signed-in reader may read it. */
   effectStates(plays: readonly Id[]): Promise<Readonly<Record<Id, EffectState>>>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */

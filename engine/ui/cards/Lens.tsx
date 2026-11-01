@@ -42,7 +42,7 @@ import { inkOf, useNarrow } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
 import { backWords, caughtWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
-import { defaultView, inPlayOrder, isBack, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
+import { defaultView, inPlayOrder, isBack, livePlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import './lens.css';
 
@@ -297,6 +297,8 @@ function Who({ plays, nameOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omi
 
 export interface LensProps {
   readonly open: LensOpen;
+  /** What the marks are on, as the Lens is named for it: a post, or a character, a thread or a board. */
+  readonly where?: string;
   readonly store: LensStore;
   /** The post the marks are on (the id its plays are kept under). */
   readonly post: Id;
@@ -312,12 +314,12 @@ export interface LensProps {
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
 }
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post' }: LensProps) {
   const { instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useNarrow();
   const host = useLensHost();
-  const billed = shownPlays(here.billed, instance.settings.setLasts);
+  const billed = livePlays(shownPlays(here.billed, instance.settings.setLasts));
   const kinds = kindsOf(billed);
   const card = kinds.includes(open.card) ? open.card : null;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
@@ -400,7 +402,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
 
   return (
     <Float
-      label="Cards on this post" surface="effect" anchor={anchor} beside={beside} sheet={narrow} host={host}
+      label={`Cards on this ${where}`} surface="effect" anchor={anchor} beside={beside} sheet={narrow} host={host}
       returnFocusTo={() => anchor.current} onClose={dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
       style={ink ? ({ '--kb-lens-ink': ink } as CSSProperties) : undefined}
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}

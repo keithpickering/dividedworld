@@ -135,7 +135,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
 }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
-  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName } = useThread();
+  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, summary, know } = useThread();
   const ref = useRef<HTMLElement>(null);
   const seq = act.seq!;
   useEffect(() => {
@@ -159,6 +159,14 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const marks = act.kind === 'post'
     ? <PostMarks post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />
     : null;
+  /* The character's own live plays, on its postbit, and the armed character card's ghost there (the card mechanic's design, section 7). */
+  const characterMarks = act.kind === 'post' && act.character !== null
+    ? <PostMarks
+        post={act.character} plays={plays} compare={false} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine}
+        reachAt={{ reach: 'character', target: act.character, name, from: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}) }}
+        onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
+      />
+    : null;
   return (
     <article
       ref={ref}
@@ -174,7 +182,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
       {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
       {!plain && (person
-        ? <Postbit person={person} layout={layout} />
+        ? <Postbit person={person} layout={layout} marks={characterMarks} />
         : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
       <header className="kb-act-meta">
         <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt)}</time>
@@ -189,3 +197,36 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
     </article>
   );
 });
+
+/**
+ * The thread's head: its title, the top pager, and the thread's own live plays as marks beside the title, with the armed thread card's
+ * ghost there (the card mechanic's design, section 7). A play's Lens offers Spin, whose form opens under the head.
+ */
+export function ThreadHead({ pager }: { readonly pager: ReactNode }) {
+  const { thread, summary, plays, tallies, mine, nameOf, know } = useThread();
+  const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
+  const drafts = useSpinDrafts();
+  const to = threadHref(thread, 1);
+  return (
+    <>
+      <div className="kb-thread-head">
+        <h1 className="kb-heading kb-thread-title">{summary.title}</h1>
+        <span className="kb-thread-head-marks">
+          <PostMarks
+            post={thread} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
+            reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, from: null, thread: null, board: summary.board, title: summary.title, to, plays, know: know ?? (async () => {}) }}
+            onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
+          />
+        </span>
+        {pager}
+      </div>
+      {spinOrigin && (
+        <SpinForm
+          key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
+          draft={drafts.get(spinOrigin.id)} onDraft={(d) => drafts.set(spinOrigin.id, d)}
+          onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); back?.focus(); }}
+        />
+      )}
+    </>
+  );
+}

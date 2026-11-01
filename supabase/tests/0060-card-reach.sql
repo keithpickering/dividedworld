@@ -301,6 +301,8 @@ begin
   -- A time up that is no span is named, never a cast error.
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "reaches": ["thread"], "lasts": {"unit": "day", "count": 1.5}}]}')$s$);
   if why !~ '^card "seedling" lasts \{"unit": "day", "count": 1.5\}; it must be a span' then raise exception 'a malformed time up is named, said %', why; end if;
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 1}, "pins": true}]}')$s$);
+  if why is distinct from 'card "seedling" pins true; only a card that reaches a thread pins, and pins is true or left out' then raise exception 'only a thread card pins, said %', why; end if;
   -- One that holds is written with its reaches.
   perform seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 7}}]}');
   if (select reaches from card_kinds where key = 'seedling') is distinct from '{character}' then raise exception 'the seed writes a card''s reaches'; end if;

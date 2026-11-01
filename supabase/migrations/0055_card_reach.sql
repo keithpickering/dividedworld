@@ -87,7 +87,7 @@ $$;
 create function card_reach_problem(cards jsonb) returns text
 language sql stable set search_path = public, pg_temp as $$
   with c as (
-    select e ->> 'key' as key, e ->> 'rarity' as rarity, coalesce(e ->> 'play', 'cast') as play, e -> 'reaches' as reaches, e -> 'lasts' as lasts
+    select e ->> 'key' as key, e ->> 'rarity' as rarity, coalesce(e ->> 'play', 'cast') as play, e -> 'reaches' as reaches, e -> 'lasts' as lasts, e -> 'pins' as pins
     from jsonb_array_elements(coalesce(cards, '[]')) e where e ? 'reaches'
   ), shaped as (
     select c.*, jsonb_typeof(c.reaches) = 'array' and jsonb_array_length(c.reaches) between 1 and 4
@@ -104,6 +104,9 @@ language sql stable set search_path = public, pg_temp as $$
     union all
     select s.key, 1, format('card "%s" is set face down, and a Set lands only on a post', s.key)
     from shaped s where s.ok and s.play = 'set' and exists (select 1 from beyond b where b.key = s.key)
+    union all
+    select s.key, 3, format('card "%s" pins %s; only a card that reaches a thread pins, and pins is true or left out', s.key, compact_json(s.pins))
+    from shaped s where s.ok and s.pins is not null and s.pins <> 'false'::jsonb and (s.pins <> 'true'::jsonb or not s.reaches ? 'thread')
     union all
     select s.key, 2, format('card "%s" reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time', s.key)
     from shaped s where s.ok and s.lasts is null and exists (select 1 from beyond b where b.key = s.key)

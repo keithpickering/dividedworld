@@ -15,19 +15,26 @@
  * takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
  * it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
  */
-import { useCallback, useEffect, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { useMeet } from './Callout.tsx';
-import { usePlays, type Plays } from './plays.ts';
+import { livePlays, nextEnd, usePlays, type Plays } from './plays.ts';
+import type { Reach } from '../../rules/cards.ts';
 import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 
-/** Wraps a post's words in the effect of each card played on it, in play order. */
-export function PostEffects({ plays, post, place, marks = null, nameOf, children }: {
+/**
+ * Wraps a post's words in the effect of each card played on it, in play order, and in the effects of the live plays above it (the
+ * card mechanic's design, section 7): the board's innermost, then the thread's, then its author's, then the post's own, as a card's
+ * rules see them (effectsOnTarget), with every takeover outermost. A play beyond a post stops wrapping at its end, by itself.
+ */
+export function PostEffects({ plays, post, board = null, place, marks = null, nameOf, children }: {
   readonly plays: Plays; readonly post: Act; readonly place: EffectPlace;
+  /** The board the post's thread is on, whose live board card wraps it; none where the screen does not know it. */
+  readonly board?: Id | null;
   /** The post's marks, as the post's date row draws them: given to a takeover's effect alone. */
   readonly marks?: ReactNode;
   /** A character's name as the screen knows it, for an effect that names a caster. */
@@ -36,6 +43,9 @@ export function PostEffects({ plays, post, place, marks = null, nameOf, children
   const { api, ui } = useKayfa();
   const { actingCharacters, writingCharacters } = usePlayer();
   const here = usePlays(plays, post.id);
+  const onBoard = usePlays(plays, board ?? '');
+  const onThread = usePlays(plays, post.thread);
+  const onAuthor = usePlays(plays, post.character ?? '');
   /*
    * The character of the reader's that wrote the post, if any: the only one a state is saved as. Retired or not, since the
    * post's player answers for what is on it (#85); casting and releasing stay with the masks that can act.
@@ -52,24 +62,35 @@ export function PostEffects({ plays, post, place, marks = null, nameOf, children
     if (released.ok) plays.setReleased([play]);
     return released;
   }, [api, plays]);
+  /* The layers above the post, each its own reach's plays still live, redrawn at the soonest end (useUntil). */
+  const above = [
+    { reach: 'board' as const, from: board === null ? [] : onBoard.plays, of: onBoard },
+    { reach: 'thread' as const, from: onThread.plays, of: onThread },
+    { reach: 'character' as const, from: post.character === null ? [] : onAuthor.plays, of: onAuthor },
+  ].map((l) => ({ ...l, from: l.from.filter((p) => p.reach === l.reach) }));
+  const now = useUntil(above.flatMap((l) => l.from));
 
   /* A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). */
-  const acting = here.plays.filter((p) => !p.caught && !p.faceDown);
-  if (acting.length === 0) return <>{children}</>;
-  /* The cards in the order each was first played: the first is innermost. */
-  const played = [...new Set(acting.map((p) => p.card))];
+  const layers = [
+    ...above.map((l) => ({ reach: l.reach as Reach, acting: livePlays(l.from, now), of: l.of })),
+    { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.faceDown && !p.reach), of: here },
+  ];
+  if (layers.every((l) => l.acting.length === 0)) return <>{children}</>;
   const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
-  const keys = [...played.filter((k) => !takes(k)), ...played.filter(takes)];
+  /* Each layer's cards in the order each was first played there, the first innermost; every takeover after all of them. */
+  const wraps = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key) => ({ ...l, key })));
+  const ordered = [...wraps.filter((w) => !takes(w.key)), ...wraps.filter((w) => takes(w.key))];
   let wrapped = children;
-  for (const key of keys) {
+  for (const { key, reach, acting, of } of ordered) {
     const card = ui.cards.find((c) => c.key === key);
     if (!card?.Effect) continue;
     const mine = acting.filter((p) => p.card === key);
     const Effect = card.Effect;
     wrapped = (
       <BoundEffect
-        key={key} Effect={Effect} store={plays}
-        post={post} plays={mine} states={here.states} released={here.released} place={place} marks={card.takeover ? marks : null} save={save} release={release} nameOf={nameOf}
+        key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach}
+        post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
+        save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
         {wrapped}
@@ -77,6 +98,24 @@ export function PostEffects({ plays, post, place, marks = null, nameOf, children
     );
   }
   return <>{wrapped}</>;
+}
+
+/** A play beyond a post has no post author to save its state (save_effect_state, 0055): refused without asking. */
+const beyondSave: EffectProps['save'] = async () => ({ ok: false, error: 'a card beyond a post keeps no state on the post' });
+
+/**
+ * The time, redrawn when the soonest of these plays' ends passes, so a play beyond a post stops drawing at its end without a reread
+ * (its way out). Nothing is scheduled while none ends ahead.
+ */
+export function useUntil(plays: readonly CardPlay[]): number {
+  const [now, setNow] = useState(() => Date.now());
+  const next = nextEnd(plays, now);
+  useEffect(() => {
+    if (next === null) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, next - Date.now()) + 1);
+    return () => clearTimeout(timer);
+  }, [next]);
+  return now;
 }
 
 /**
@@ -89,8 +128,10 @@ export function PostEffects({ plays, post, place, marks = null, nameOf, children
 function BoundEffect({ Effect, store, marks, ...props }: Omit<EffectProps, 'show' | 'met'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays }) {
   const post = props.post.id;
   const card = props.plays[0]!.card;
-  const show = useCallback((view: CardView | null) => store.setView(post, card, view), [store, post, card]);
-  useEffect(() => () => store.setView(post, card, null), [store, post, card]);
+  /* A view is a post's: an effect above the post, drawn on many posts at once, says none (its mark is its target's). */
+  const own = props.reach === 'post';
+  const show = useCallback((view: CardView | null) => { if (own) store.setView(post, card, view); }, [store, post, card, own]);
+  useEffect(() => () => { if (own) store.setView(post, card, null); }, [store, post, card, own]);
   const met = useMeet(card);
   return <Effect {...props} show={show} met={met} marks={marks} />;
 }

@@ -33,7 +33,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
-import { createPlays, effectCards, readEffects, readPlays } from '../cards/plays.ts';
+import { createPlays, effectCards, readAbove, readEffects, readPlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
@@ -48,7 +48,7 @@ import { returnOf } from '../glass/back.ts';
 import { emptyFeed, feedReducer, newer, ordered, shownEnd, waitingPosts } from './feed.ts';
 import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageEndsThread, pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
-import { ActArticle } from './Post.tsx';
+import { ActArticle, ThreadHead } from './Post.tsx';
 import { ThreadCtx, type ThreadContext } from './context.ts';
 import { text } from './lines.tsx';
 import { createMine } from '../reactions/mine.ts';
@@ -88,6 +88,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   const [feed, dispatch] = useReducer(feedReducer, emptyFeed);
   const feedRef = useRef(feed);
   feedRef.current = feed;
+  /* The thread's board, known from the first read's summary before the feed holds it: what the page's board card is read on. */
+  const boardOf = useRef<Id | null>(null);
   const [layout, setLayout] = useState<PostbitLayout>('side');
   const [busy, setBusy] = useState(false);
   const [atBottom, setAtBottom] = useState(() => typeof IntersectionObserver === 'undefined');
@@ -152,7 +154,13 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     if (acts.length > 0) {
       /* Every play on the page's posts in one read; a play takes no number, so it is found through its post. */
       const posts = acts.filter((a) => a.kind === 'post').map((a) => a.id);
-      const played = await readPlays(api, plays, posts, effects);
+      /* And every live play above them, on the page's distinct authors, its thread and its board, in one read (effects_above). */
+      const authors = acts.filter((a) => a.kind === 'post').map((a) => a.character);
+      const [onPosts, above] = await Promise.all([
+        readPlays(api, plays, posts, effects),
+        readAbove(api, plays, authors, thread, feedRef.current.summary?.board ?? boardOf.current, effects),
+      ]);
+      const played = [...onPosts, ...above];
       /* The reader's own card backs among them, by set: drawn under the back on their screen alone. */
       const sets = played.filter((a) => a.kind === 'set').map((a) => a.id);
       if (sets.length > 0) plays.setFaces(await api.myFaceDown(sets).catch(() => ({})));
@@ -169,7 +177,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       for (const id of ids) mine.merge(id, own.filter((r) => r.act === id));
       for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
     }
-  }, [api, ensurePeople, tallies, mine, plays, effects]);
+  }, [api, ensurePeople, tallies, mine, plays, effects, thread]);
 
   /* ----------------------------------------------------------------- where to scroll ---- */
   const scrollTo = useRef<{ readonly seq: number; readonly scroll: boolean; readonly focus: boolean } | null>(null);
@@ -237,6 +245,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       const summary = await api.thread(thread);
       if (!live) return;
       if (!summary) { setStatus('missing'); return; }
+      boardOf.current = summary.board;
       const last = pageOf(summary.lastSeq, P);
       const wanted = goal.current.seq !== null ? pageOf(goal.current.seq, P) : goal.current.page ?? 1;
       const page = Math.min(Math.max(1, wanted), last);
@@ -529,14 +538,11 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   return (
     <div className="kb-thread" data-kb-thread={thread} data-kb-known={feed.knownLast} aria-busy={busy || undefined}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {summary.title}</p>
-      <div className="kb-thread-head">
-        <h1 className="kb-heading kb-thread-title">{summary.title}</h1>
-        {pager('top')}
-      </div>
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
           <CalloutProvider met={player.session.signedIn ? cardsMet : null}>
           <LensProvider>
+            <ThreadHead pager={pager('top')} />
             <div className="kb-acts">
               {/* The 2003 table's column head, over side-by-side posts; each article names its own author for a screen reader. */}
               {layout === 'side' && (

@@ -36,7 +36,7 @@ import { MOVES_LOG_PAGE } from '../../../engine/ui/data/api.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
 
@@ -705,6 +705,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return answers.flat()
         .map((x): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) }))
         .sort((a, b) => (a.act.createdAt < b.act.createdAt ? -1 : a.act.createdAt > b.act.createdAt ? 1 : a.play < b.play ? -1 : a.play > b.play ? 1 : 0));
+    },
+    async pinnedThreads(board) {
+      /* One read of the board's live pins (pinned_threads, 0055), newest first, as the server orders them. */
+      if (!idOk(board)) return [];
+      const r = await read(() => client.rpc('pinned_threads', { board }));
+      const rows = Array.isArray(r.data) ? (r.data as Row[]) : [];
+      return rows.map((x): PinnedThread => ({ thread: toThread(x['thread']), play: x['play'], endsAt: x['ends_at'], act: toAct(x['act']) }));
     },
     async effectStates(plays) {
       const wanted = [...new Set(plays)].filter(idOk);
