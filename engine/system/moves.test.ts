@@ -37,3 +37,11 @@ test('an uppercase board uuid is lowercased by the repair, and is not a trim', (
   assert.equal((r.value as { board: string }).board, mixed.toLowerCase());
   assert.equal(r.trims.length, 0);
 });
+
+test('every move kind has plain words for a stock line\'s {move}, naming only params it has', () => {
+  for (const k of MOVE_KINDS) {
+    assert.ok(k.plain.trim() !== '', `${k.key} has no plain words`);
+    const fields = Object.keys((k.params as { fields: Record<string, unknown> }).fields);
+    for (const [, token] of k.plain.matchAll(/\{(\w+)\}/g)) assert.ok(fields.includes(token!), `${k.key}'s words name {${token}}, which is no param`);
+  }
+});

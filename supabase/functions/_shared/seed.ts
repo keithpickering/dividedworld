@@ -11,7 +11,12 @@ import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 export function instanceSeed(instance: Instance) {
   return {
     // The System's words travel as one setting, read by the SQL that posts them (0007).
-    settings: { ...instance.settings, copy: instance.copy } as Record<string, unknown>,
+    // The tick (0047) reads the stock lines and the moves' plain words from settings, so SQL names no instance and no kind.
+    settings: {
+      ...instance.settings, copy: instance.copy,
+      systemLines: instance.system.stockLines,
+      systemMoveWords: Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])),
+    } as Record<string, unknown>,
     classes: instance.classes.map((c) => ({ key: c.key, name: c.name })),
     reactions: instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })),
     // What each card's price reads beside its priceKey, by name, so screen_settings can hand the screens those numbers too (0039).
@@ -31,6 +36,8 @@ export function instanceSeed(instance: Instance) {
       firstStaff: [...instance.system.firstStaff],
       // The first season's Boss, set on an open season that has none (0046).
       firstBoss: instance.system.firstBoss,
+      // The thread on The System's board where moves land and end, made once (0047).
+      announcementsTitle: instance.system.announcementsTitle,
       // The engine's catalogs of moves and demands (0045), so SQL and TypeScript read one list. This file is the composition
       // root: the engine names no instance, and the SQL names no kind of its own.
       moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural })),

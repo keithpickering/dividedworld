@@ -30,6 +30,11 @@ export interface MoveKind {
   readonly params: Rule;
   /** The params that must be uuids. */
   readonly uuids: readonly string[];
+  /**
+   * The move in plain words for a stock line's `{move}`, with `{param}` filled from the move's string params (a phrase that
+   * follows "the": it is said in the world's voice by the line and plainly by this). Travels in the seed as `systemMoveWords`.
+   */
+  readonly plain: string;
   /** How the move reads in a player's log, in plain words. */
   readonly template: (params: Readonly<Record<string, unknown>>) => string;
 }
@@ -50,6 +55,7 @@ export const RENAME_BOARD: MoveKind = {
     },
   },
   uuids: ['board'],
+  plain: 'the renaming of a board to "{name}"',
   template: (p) => `The System renamed a board to "${text(p['name'])}". Its subject is now: ${text(p['premise'])}`,
 };
 

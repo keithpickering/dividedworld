@@ -7,7 +7,10 @@ import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance);
-  assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy'].sort());
+  assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'systemMoveWords'].sort());
+  assert.deepEqual(seed.settings.systemLines, instance.system.stockLines, 'the tick (0047) fills these lines in SQL');
+  assert.deepEqual(seed.settings.systemMoveWords, Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])), '{move}, in plain words, by kind');
+  assert.equal(seed.system.announcementsTitle, instance.system.announcementsTitle, 'the thread where moves land is made from the seed');
   assert.deepEqual(seed.settings.copy, instance.copy);
   assert.deepEqual(seed.settings.seasonLength, instance.settings.seasonLength);
   assert.deepEqual(seed.classes, instance.classes.map((c) => ({ key: c.key, name: c.name })));
