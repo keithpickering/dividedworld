@@ -241,12 +241,13 @@ export function casterMessage(message: unknown): Verdict<string> {
 
 /**
  * What every card holds to unless it says otherwise: it lands on a post, and a post carries at
- * most its stack of it (one unless the card says more), each its own play.
+ * most its stack of it (one unless the card says more) that are still up, each its own play.
  */
 export function landsOnPost(rules: Pick<CardRules, 'key' | 'stack'>, target: CardTarget, effects: readonly CardEffect[]): Verdict {
   if (target.kind !== 'post') return refuse('a card lands on a post');
   const stack = rules.stack ?? 1;
-  if (effects.filter((e) => e.card === rules.key).length >= stack) {
+  // An ended Use holds no place in the stack (play_card counts the same way).
+  if (effects.filter((e) => e.card === rules.key && isLive(e)).length >= stack) {
     return refuse(stack === 1 ? 'this post already carries that card' : `this post already carries ${stack} of that card, the most it takes`);
   }
   return ok(undefined);

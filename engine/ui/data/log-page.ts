@@ -5,7 +5,8 @@
  *
  * A backend reads each source of the log newest first, at or before the cursor, at most `LOG_ROWS`
  * rows: the ledger's lines by their settlement's end, the wallet's events, the card ledger and the
- * plays on the player's posts by when each happened, and the effects' saves by when each was saved.
+ * plays on the player's posts by when each happened, the effects' saves by when each was saved, the
+ * player's face-down cards by when each sprang or ended, and the player's caught plays by when each was played.
  * The shares are read whole for the settlements read. A source that came back full may hold more at
  * its oldest row's time and before, so the page ends there: it keeps what is newer than the newest of
  * those times (`after`), and the next page reads from that time on, at or before it. A source that
@@ -26,7 +27,7 @@
  * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
-import type { CardEvent, EffectSaved, Log, LogLine, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
+import type { CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogLine, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -57,6 +58,8 @@ export interface LogRead {
   readonly cards: readonly CardEvent[];
   readonly playsOnMine: readonly PlayOnMine[];
   readonly saves: readonly EffectSaved[];
+  readonly setEnds: readonly FaceDownEnd[];
+  readonly caught: readonly CaughtPlay[];
 }
 
 /**
@@ -78,6 +81,8 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.cards, () => read.cards[read.cards.length - 1]!.at),
     ...reached(read.playsOnMine, () => read.playsOnMine[read.playsOnMine.length - 1]!.at),
     ...reached(read.saves, () => read.saves[read.saves.length - 1]!.savedAt),
+    ...reached(read.setEnds, () => read.setEnds[read.setEnds.length - 1]!.endedAt),
+    ...reached(read.caught, () => read.caught[read.caught.length - 1]!.at),
   ];
   /* The newest of the times a full source reached, as that source wrote it, so the next read starts exactly there. */
   const after = edges.length === 0 ? null : edges.reduce((a, b) => (micros(b) > micros(a) ? b : a));
@@ -110,6 +115,8 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     cards: read.cards.filter((e) => keep(e.at)),
     playsOnMine: read.playsOnMine.filter((e) => keep(e.at)),
     saves: read.saves.filter((e) => keep(e.savedAt)),
+    setEnds: read.setEnds.filter((e) => keep(e.endedAt)),
+    caught: read.caught.filter((e) => keep(e.at)),
     before: after,
   };
 }

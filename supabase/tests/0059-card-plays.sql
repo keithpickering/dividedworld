@@ -185,6 +185,9 @@ begin
   perform tests.act(a, 'card', t, jsonb_build_object('card', 'shield', 'layer', 1, 'message', '', 'config', '{}', 'ends', now() - interval '1 second'), o, now() - interval '7 days');
   perform tests.become_service();
   perform play_card(bob, 'sweetie', b, o, '{}', 0, '');
+  -- And its post can be warded again: an ended Use holds no place in the stack.
+  used := play_card(ann, 'shield', a, o, '{}', 0, '');
+  if card_target(o) -> 'effects' @> jsonb_build_array(jsonb_build_object('act', used ->> 'id', 'ward', 'uncommon')) is not true then raise exception 'a post warded again after its ward ended: %', card_target(o); end if;
   perform tests.unbecome();
 end $$;
 
@@ -454,4 +457,58 @@ begin
   if not exists (select 1 from jsonb_array_elements(input -> 'unscoredTargets') x where x ->> 'id' = decree::text) then raise exception 'the staff post is not an unscored target: %', input; end if;
   -- A set is no play: it settles as an Act of its author's, naming no card.
   if exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'kind' = 'set' and x ? 'card') then raise exception 'a set names a card in the settlement''s input'; end if;
+end $$;
+
+-- ---- A trap whose setter can no longer act springs nothing, and never refuses the write ----
+do $$
+declare
+  ann uuid := tests.account('retired-ann');
+  bob uuid := tests.account('retired-bob');
+  a uuid := tests.character(ann, 'Retired Setter');
+  b uuid := tests.character(bob, 'Lively Caster');
+  t uuid := tests.thread();
+  p_cast uuid := tests.post(a, t, 'Cast on me.');
+  t2 uuid := tests.thread('Hooked');
+  p_reply uuid := tests.post(a, t2, 'Reply to me.');
+  answer jsonb;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'catcher', 'hook');
+  perform pg_temp.hand(bob, 'sweetie');
+  perform tests.become_service();
+  perform set_card(ann, 'catcher', a, p_cast, '{}', 0);
+  perform tests.unbecome();
+  perform tests.become_service();
+  perform set_card(ann, 'hook', a, p_reply, '{"color": "red"}', 0);
+  perform tests.unbecome();
+  update characters set retired_at = now() where id = a;
+  perform tests.become_service();
+  answer := play_card(bob, 'sweetie', b, p_cast, '{}', 0, '');
+  if answer ? 'sprung' or answer -> 'payload' ? 'caught' then raise exception 'a retired setter''s trap caught a cast: %', answer; end if;
+  perform tests.unbecome();
+  perform tests.become(bob);
+  answer := post(t2, b, 'A reply.');
+  if answer ? 'sprung' then raise exception 'a retired setter''s trap struck a reply: %', answer; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- The seed names the card for every pairing instanceProblems refuses, and a ward has a time up ----
+do $$
+declare why text;
+begin
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true}]}')$s$);
+  if why is distinct from 'card "seedling" is a ward with no time up (lasts); a ward ends at its time' then raise exception 'a ward with no time up seeded: %', why; end if;
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "payout"}}}]}')$s$);
+  if why is distinct from 'card "seedling" pays out on a reply; it pays out only on a cast, since only a cast is paid for' then raise exception 'a payout on a reply seeded: %', why; end if;
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "sneeze"}, "outcome": {"do": "nullify"}}}]}')$s$);
+  if why is distinct from 'card "seedling" springs on "sneeze"; a trap springs on cast, reaction, reply, quote, visit' then raise exception 'a trap on no trigger seeded: %', why; end if;
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "strike", "card": "sweetie"}}}]}')$s$);
+  if why is distinct from 'card "seedling" strikes on a cast; a strike lays its card on a reply or a quote, until cards reach characters' then raise exception 'a strike on a cast seeded: %', why; end if;
+  -- A struck card already in the table, rarer than the trap, is refused as one in the seed is.
+  update card_kinds set rarity = 'legendary' where key = 'blot';
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}}]}')$s$);
+  if why is distinct from 'card "seedling" strikes with "blot", which is rarer than the trap (common)' then raise exception 'a strike of a rarer card in the table seeded: %', why; end if;
+  -- An invite's lifetime is still a span of days or more (0020), beside setLasts.
+  why := pg_temp.refusal($s$insert into settings (key, value) values ('inviteLifetime', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);
+  if why is distinct from 'inviteLifetime is a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'an invite lifetime in minutes: %', why; end if;
 end $$;

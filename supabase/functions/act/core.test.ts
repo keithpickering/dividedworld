@@ -207,7 +207,7 @@ const base = { alignment: 'salty' as const, playPrice: () => 0, canApply: () => 
 const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as const, priceKey: 'whoops.price', validateConfig: (c: unknown) => ((c as { ink?: unknown })?.ink === 'red' ? ok({ ink: 'red' }) : { ok: false as const, why: 'the ink is red' }) };
 const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'test-inky' } }, validateConfig: (c: unknown) => ok(c) };
 const bluffy = { ...base, key: 'test-bluffy', name: 'Test Bluffy', rarity: 'common' as const, priceKey: 'whoops.price', play: 'set' as const, validateConfig: (c: unknown) => ok(c) };
-const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'use' as const, ward: true as const, validateConfig: (c: unknown) => ok(c) };
+const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
 const tested = { ...instance, cards: [...instance.cards, inky, snare, bluffy, shield] };
 const setAct = { id: 'k', kind: 'set', thread: 'th', payload: {} };
 

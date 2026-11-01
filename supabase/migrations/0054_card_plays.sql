@@ -25,7 +25,8 @@
 -- live card back. Pay out credits the setter's account read from face_down, and no response carries the amount or the account.
 --
 -- Locks, in one order everywhere: the caster's account, then the target post, then the post's face_down row, then the wallets,
--- both in account order where a payout moves two. set_card takes the same first two and writes face_down after, so it never waits
+-- both in account order where a payout moves two. A post, which may spring the quoted post's back and the thread's, locks every one
+-- of them at once, ordered by set, before it springs any. set_card takes the same first two and writes face_down after, so it never waits
 -- on a face_down row another write holds.
 --
 -- On an instance that already holds plays: every card kind is common and a Cast until it is seeded again, and no Act changes. A
@@ -48,6 +49,8 @@ alter table card_kinds
   add constraint card_kinds_trap_set check (trap is null or play = 'set'),
   add constraint card_kinds_ward_use check (not ward or play = 'use'),
   add constraint card_kinds_lasts_use check (lasts is null or play = 'use'),
+  -- A ward ends at its time: its way out.
+  add constraint card_kinds_ward_lasts check (not ward or lasts is not null),
   add constraint card_kinds_no_keep check (play <> 'keep'),
   add constraint card_kinds_trap_shape check (trap is null or (
     trap #>> '{trigger,on}' in ('cast', 'reaction', 'reply', 'quote')
@@ -60,24 +63,44 @@ alter table card_kinds
 -- same shape for any writer; this names the card for the one who seeds.
 create function card_kinds_problem(cards jsonb) returns text
 language sql stable set search_path = public, pg_temp as $$
-  select string_agg(why, '; ' order by key) from (
-    select e ->> 'key' as key, unnest(array[
-      case when e ->> 'rarity' is null then format('card "%s" has no rarity; a rarity is common, uncommon, rare or legendary', e ->> 'key')
-           when rarity_rank(e ->> 'rarity') is null then format('card "%s" has the rarity "%s"; a rarity is common, uncommon, rare or legendary', e ->> 'key', e ->> 'rarity') end,
-      case when coalesce(e ->> 'play', 'cast') not in ('cast', 'use', 'set', 'keep') then format('card "%s" is played "%s"; a card is cast, used, set or kept', e ->> 'key', e ->> 'play') end,
-      case when e ->> 'play' = 'keep' then format('card "%s" is kept, and Keep is not built until it is designed', e ->> 'key') end,
-      case when e ? 'trap' and coalesce(e ->> 'play', 'cast') <> 'set' then format('card "%s" has a trap, and only a Set card does', e ->> 'key') end,
-      case when coalesce((e ->> 'ward')::boolean, false) and coalesce(e ->> 'play', 'cast') <> 'use' then format('card "%s" is a ward, and only a Use card is', e ->> 'key') end,
-      case when e ? 'lasts' and coalesce(e ->> 'play', 'cast') <> 'use' then format('card "%s" has a time up (lasts), and only a Use card does', e ->> 'key') end,
-      case when e #>> '{trap,trigger,on}' = 'visit' then format('card "%s" springs on a visit, which is not wired until the staff build adds Mod Bot visits', e ->> 'key') end,
-      case when e #>> '{trap,outcome,do}' = 'strike' and not exists (select 1 from jsonb_array_elements(cards) s where s ->> 'key' = e #>> '{trap,outcome,card}')
-             and not exists (select 1 from card_kinds k where k.key = e #>> '{trap,outcome,card}')
-           then format('card "%s" strikes with "%s", which the instance does not have', e ->> 'key', e #>> '{trap,outcome,card}') end,
-      case when e #>> '{trap,outcome,do}' = 'strike' and rarity_rank(e ->> 'rarity') < (
-             select rarity_rank(s ->> 'rarity') from jsonb_array_elements(cards) s where s ->> 'key' = e #>> '{trap,outcome,card}' limit 1)
-           then format('card "%s" strikes with "%s", which is rarer than the trap (%s)', e ->> 'key', e #>> '{trap,outcome,card}', e ->> 'rarity') end
-    ]) as why
+  with c as (
+    select e ->> 'key' as key, e ->> 'rarity' as rarity, coalesce(e ->> 'play', 'cast') as play, e -> 'trap' as trap,
+      e #>> '{trap,trigger,on}' as trigger_on, e #>> '{trap,outcome,do}' as outcome, e #>> '{trap,outcome,card}' as struck, e
     from jsonb_array_elements(coalesce(cards, '[]')) e
+  ), struck as (
+    -- The struck card's rarity, from the seed, or from the table where the seed does not carry it.
+    select c.key, coalesce((select s ->> 'rarity' from jsonb_array_elements(cards) s where s ->> 'key' = c.struck limit 1),
+                           (select k.rarity from card_kinds k where k.key = c.struck)) as rarity
+    from c where c.outcome = 'strike'
+  )
+  select string_agg(why, '; ' order by key, n) from (
+    select c.key, w.n, w.why from c left join struck s on s.key = c.key, unnest(array[
+      case when c.rarity is null then format('card "%s" has no rarity; a rarity is common, uncommon, rare or legendary', c.key)
+           when rarity_rank(c.rarity) is null then format('card "%s" has the rarity "%s"; a rarity is common, uncommon, rare or legendary', c.key, c.rarity) end,
+      case when c.play not in ('cast', 'use', 'set', 'keep') then format('card "%s" is played "%s"; a card is cast, used, set or kept', c.key, c.play) end,
+      case when c.play = 'keep' then format('card "%s" is kept, and Keep is not built until it is designed', c.key) end,
+      case when c.trap is not null and c.play <> 'set' then format('card "%s" has a trap, and only a Set card does', c.key) end,
+      case when c.e ? 'ward' and jsonb_typeof(c.e -> 'ward') <> 'boolean' then format('card "%s" is a ward of %s; a ward is true or left out', c.key, c.e -> 'ward') end,
+      case when coalesce((c.e ->> 'ward') = 'true', false) and c.play <> 'use' then format('card "%s" is a ward, and only a Use card is', c.key) end,
+      case when coalesce((c.e ->> 'ward') = 'true', false) and c.play = 'use' and not c.e ? 'lasts' then format('card "%s" is a ward with no time up (lasts); a ward ends at its time', c.key) end,
+      case when c.e ? 'lasts' and c.play <> 'use' then format('card "%s" has a time up (lasts), and only a Use card does', c.key) end,
+      case when c.e ? 'lasts' and not (jsonb_typeof(c.e -> 'lasts') = 'object' and c.e #>> '{lasts,unit}' in ('day', 'week', 'month')
+             and jsonb_typeof(c.e #> '{lasts,count}') = 'number' and (c.e #>> '{lasts,count}')::numeric between 1 and 1000
+             and (c.e #>> '{lasts,count}')::numeric = trunc((c.e #>> '{lasts,count}')::numeric)) is true
+           then format('card "%s" lasts %s; it must be a span: a unit of day, week or month and a whole count from 1 to 1000', c.key, c.e -> 'lasts') end,
+      case when c.trap is not null and c.trigger_on is distinct from 'visit' and c.trigger_on not in ('cast', 'reaction', 'reply', 'quote') is not false
+           then format('card "%s" springs on %s; a trap springs on cast, reaction, reply, quote, visit', c.key, coalesce(to_jsonb(c.trigger_on)::text, 'null')) end,
+      case when c.trigger_on = 'visit' then format('card "%s" springs on a visit, which is not wired until the staff build adds Mod Bot visits', c.key) end,
+      case when c.trigger_on = 'reaction' and c.trap #>> '{trigger,quadrant}' not in ('excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative') is not false
+           then format('card "%s" springs on a reaction of %s, which is no quadrant; it names one of excitedPositive, excitedNegative, calmPositive, boredNegative', c.key, coalesce(c.trap #> '{trigger,quadrant}', 'null'::jsonb)) end,
+      case when c.trap is not null and c.outcome not in ('nullify', 'payout', 'strike') is not false
+           then format('card "%s" does %s when it springs; a trap does nullify, payout, strike', c.key, coalesce(to_jsonb(c.outcome)::text, 'null')) end,
+      case when c.outcome = 'payout' and c.trigger_on in ('reaction', 'reply', 'quote', 'visit') then format('card "%s" pays out on a %s; it pays out only on a cast, since only a cast is paid for', c.key, c.trigger_on) end,
+      case when c.outcome = 'strike' and c.trigger_on in ('cast', 'reaction') then format('card "%s" strikes on a %s; a strike lays its card on a reply or a quote, until cards reach characters', c.key, c.trigger_on) end,
+      case when c.outcome = 'strike' and c.trigger_on not in ('cast', 'reaction') and s.rarity is null then format('card "%s" strikes with "%s", which the instance does not have', c.key, c.struck) end,
+      case when c.outcome = 'strike' and c.trigger_on not in ('cast', 'reaction') and rarity_rank(c.rarity) < rarity_rank(s.rarity)
+           then format('card "%s" strikes with "%s", which is rarer than the trap (%s)', c.key, c.struck, c.rarity) end
+    ]) with ordinality w(why, n)
   ) p where why is not null
 $$;
 
@@ -85,11 +108,11 @@ $$;
 
 -- ------------------------------------------------------------------------------ the setting ----
 
--- setLasts, how long every Set stays set, is a span like a season's length (0007's trigger, now with it).
+-- setLasts, how long every Set stays set, is a span like a season's length (0020's trigger, now with it; everything else as 0020).
 create or replace function settings_spans_hold() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 begin
-  if new.key in ('settlementLength', 'seasonLength', 'turnCooldown', 'setLasts') and not (
+  if new.key in ('settlementLength', 'seasonLength', 'turnCooldown', 'inviteLifetime', 'setLasts') and not (
        jsonb_typeof(new.value) = 'object' and new.value ->> 'unit' in ('day', 'week', 'month')
        and jsonb_typeof(new.value -> 'count') = 'number' and (new.value ->> 'count')::numeric >= 1
        and (new.value ->> 'count')::numeric <= 1000
@@ -306,6 +329,9 @@ begin
   if not springs then return null; end if;
   outcome := kind_of.trap #>> '{outcome,do}';
   select a.character into setter_character from acts a where a.id = fd.play;
+  -- A setter's character that can no longer act (retired, until an admin restores it) springs nothing: its trap stays set until its
+  -- time, and the write that met it lands as if no trap were there (acts_well_formed would refuse the spring, and with it the write).
+  if exists (select 1 from characters c where c.id = setter_character and (c.retired_at is not null or c.debuted_at is null)) then return null; end if;
   if outcome = 'strike' then
     select * into struck from card_kinds k where k.key = kind_of.trap #>> '{outcome,card}';
     -- A strike that cannot land leaves the trap set: its target already carries its stack of the card.
@@ -399,6 +425,7 @@ declare
   said text := coalesce(message, '');
   warded record;
   sprung jsonb;
+  up integer;
 begin
   perform played_by(through, who);
   if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
@@ -429,8 +456,13 @@ begin
       raise exception 'this post''s % turns away cards up to %', warded.name, warded.rarity using hint = 'kayfabb.refusal', errcode = '42501';
     end if;
   end if;
-  select count(*) + 1 into layer from acts k where k.kind = 'card' and k.target_act_id = target and k.payload ->> 'card' = card and not (k.payload ? 'caught');
-  if layer > kind_of.stack then
+  -- The stack counts the plays still up: a caught play and an ended Use hold no place. The layer goes on from the last one taken, so
+  -- no layer is taken twice (acts_card_layers); a play written before layers counts as one (0016).
+  select count(*) filter (where k.payload ->> 'ends' is null or (k.payload ->> 'ends')::timestamptz > now()),
+         greatest(coalesce(max((k.payload ->> 'layer')::integer), 0), count(*)) + 1
+    into up, layer
+  from acts k where k.kind = 'card' and k.target_act_id = target and k.payload ->> 'card' = card and not (k.payload ? 'caught');
+  if up >= kind_of.stack then
     if kind_of.stack = 1 then raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505'; end if;
     raise exception 'this post already carries % of that card, the most it takes', kind_of.stack using hint = 'kayfabb.refusal', errcode = '23505';
   end if;
@@ -561,6 +593,11 @@ begin
   if quoting is not null and not exists (select 1 from acts where id = quoting) then raise exception 'there is no such Act to quote' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   insert into acts (character, kind, thread, target_act_id, payload)
   values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id into written;
+  -- Every live back this post may spring, the quoted post's and the thread's, locked in one statement and one order (by set), so
+  -- two posts that each quote and reply cannot hold one each and wait on the other. spring_traps then finds each row already held.
+  perform 1 from face_down f
+  where f.ends_at > now() and (f.post = quoting or (f.thread = in_thread and f.post <> written))
+  order by f.play for update;
   if quoting is not null then sprung := spring_traps('quote', quoting, written); end if;
   if sprung is null then
     for candidate in

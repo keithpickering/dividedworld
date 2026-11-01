@@ -532,6 +532,7 @@ test('a trap is a Set card\'s, and a ward and a time up are a Use card\'s', () =
   assert.deepEqual(instanceProblems(withCards({ play: 'use', ward: true, lasts: { unit: 'day', count: 7 } })), []);
   assert.match(instanceProblems(withCards({ ward: true })).join('\n'), /card "splat" is a ward, and only a Use card is/);
   assert.match(instanceProblems(withCards({ play: 'use', ward: 'yes' })).join('\n'), /card "splat" is a ward of "yes"; a ward is true or left out/);
+  assert.match(instanceProblems(withCards({ play: 'use', ward: true })).join('\n'), /card "splat" is a ward with no time up \(lasts\); a ward ends at its time/);
   assert.match(instanceProblems(withCards({ play: 'set', lasts: { unit: 'day', count: 7 } })).join('\n'), /card "splat" has a time up \(lasts\), and only a Use card does/);
   assert.match(instanceProblems(withCards({ play: 'use', lasts: { unit: 'hour', count: 7 } })).join('\n'), /card "splat" lasts .*; it must be a span/);
   assert.match(instanceProblems(withCards({ play: 'deal' })).join('\n'), /card "splat" is played "deal"; a card is cast, used, set or kept/);

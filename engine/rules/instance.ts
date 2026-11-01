@@ -242,6 +242,7 @@ function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
   if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a Set card does`);
   if (c.ward !== undefined && play !== 'use') out.push(`${who} is a ward, and only a Use card is`);
   if (c.ward !== undefined && c.ward !== true) out.push(`${who} is a ward of ${JSON.stringify(c.ward)}; a ward is true or left out`);
+  if (c.ward === true && play === 'use' && c.lasts === undefined) out.push(`${who} is a ward with no time up (lasts); a ward ends at its time`);
   if (c.lasts !== undefined && play !== 'use') out.push(`${who} has a time up (lasts), and only a Use card does`);
   if (c.lasts !== undefined && !isSpan(c.lasts)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000`);
   const trap = c.trap;

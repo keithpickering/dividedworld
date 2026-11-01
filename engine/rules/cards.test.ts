@@ -84,3 +84,9 @@ test('a strike\'s configuration is checked by the struck card\'s own rules', () 
   assert.deepEqual(set, { ok: true, value: { price: 0, config: { ink: 'red' } } });
   assert.match((decideSet(striker, settings, post, [], { ink: 'red' }, []) as { why: string }).why, /no card "inky"/);
 });
+
+test('a post\'s stack counts the plays still up: an ended Use holds no place', () => {
+  const ended: CardEffect = { card: 'shield', act: 'w', ward: 'uncommon', ends: gone };
+  assert.equal(decideUse(shield, settings, post, [ended], {}, '').ok, true);
+  assert.equal(decideUse(shield, settings, post, [{ ...ended, ends: soon }], {}, '').ok, false);
+});

@@ -1112,7 +1112,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
-  const empty = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], before: null };
+  const empty = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], caught: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
