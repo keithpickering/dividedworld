@@ -101,7 +101,7 @@ export function textSize(doc: Document = document): 100 | 125 | 150 | 200 {
 function subscribeRoot(onChange: () => void): () => void {
   if (typeof MutationObserver !== 'function') return () => {};
   const watch = new MutationObserver(onChange);
-  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-smoke-level', 'data-kb-text-size'] });
+  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-smoke-level', 'data-kb-text-size', 'data-kb-motion'] });
   return () => watch.disconnect();
 }
 
@@ -113,6 +113,17 @@ export function useSmokeLevel(): 'full' | 'low' | 'off' {
 /** The text size on the root, kept current. */
 export function useTextSize(): 100 | 125 | 150 | 200 {
   return useSyncExternalStore(subscribeRoot, () => textSize(), () => 100);
+}
+
+/** Whether motion is reduced, kept current: the player's override on the root as it changes, and the device's setting as it does. */
+export function useMotionReduced(): boolean {
+  return useSyncExternalStore(subscribeMotion, () => motionReduced(), () => false);
+}
+function subscribeMotion(onChange: () => void): () => void {
+  const off = subscribeRoot(onChange);
+  const query = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-reduced-motion: reduce)') : undefined;
+  query?.addEventListener?.('change', onChange);
+  return () => { off(); query?.removeEventListener?.('change', onChange); };
 }
 
 /** Whether motion is reduced now: the player's override, else the device's setting. */

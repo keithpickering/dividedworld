@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { render } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test } from 'vitest';
 import { parseColor, ratio, tokensOf } from '../../../../engine/ui/contrast.ts';
 import type { Act } from '../../../../engine/ui/data/api.ts';
@@ -44,8 +44,20 @@ describe('Glitter Bomb', () => {
     expect(box).toHaveAttribute('data-kb-moving', 'false');
     for (const glint of box.querySelectorAll<HTMLElement>('.dw-glint')) expect(glint.style.animationName).toBe('none');
     /* And the stylesheet holds it still too, for the device's own setting. */
-    expect(read('glitter.css')).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.dw-glint[\s\S]*animation: none/u);
-    expect(read('glitter.css')).toMatch(/\[data-kb-moving="false"\] \.dw-glint[\s\S]*animation: none/u);
+    expect(read('glitter.css')).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.dw-glint \{\s*animation: none;\s*\}/u);
+    expect(read('glitter.css')).toMatch(/\.dw-glitter\[data-kb-moving="false"\] \.dw-glint \{\s*animation: none;\s*\}/u);
+  });
+
+  test('holds still the moment the player reduces motion, on a post already drawn, and moves again when they undo it', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    render(<GlitterBombEffect {...props()} />);
+    const box = () => document.querySelector('[data-kb-glitter]') as HTMLElement;
+    expect(box()).toHaveAttribute('data-kb-moving', 'true');
+    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
+    await waitFor(() => expect(box()).toHaveAttribute('data-kb-moving', 'false'));
+    for (const glint of box().querySelectorAll<HTMLElement>('.dw-glint')) expect(glint.style.animationName).toBe('none');
+    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'full'); });
+    await waitFor(() => expect(box()).toHaveAttribute('data-kb-moving', 'true'));
   });
 
   test('moves where motion is not reduced', () => {
@@ -54,18 +66,30 @@ describe('Glitter Bomb', () => {
     expect(document.querySelector('[data-kb-glitter]')).toHaveAttribute('data-kb-moving', 'true');
   });
 
-  test('keeps the post\'s text at the house style\'s contrast with the sparkle on, in every mode', () => {
+  test('keeps the post\'s text at the house style\'s contrast with the sparkle on, in every mode, however the glints overlap', () => {
     const tokens = tokensOf(read('../../../../engine/ui/tokens.css'), read('../theme.css'));
     const mix = (fg: string, bg: string, a: number) => {
       const [f, b] = [parseColor(fg), parseColor(bg)];
       return `#${f.map((c, i) => Math.round(c * a + b[i]! * (1 - a)).toString(16).padStart(2, '0')).join('')}`;
     };
+    /* The layer is drawn at GLITTER_ALPHA, and nothing in it is lighter than solid: so one ink at GLITTER_ALPHA is the most a spot is covered. */
+    render(<GlitterBombEffect {...props()} />);
+    expect((document.querySelector('.dw-glitter-sparkle') as HTMLElement).style.opacity).toBe(String(GLITTER_ALPHA));
+    const css = read('glitter.css').replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(css).not.toMatch(/opacity/u);
+    expect(css).not.toMatch(/mix-blend-mode|filter:/u);
+    const rule = (selector: string) => { const at = css.indexOf(`${selector} {`); return at < 0 ? '' : css.slice(at, css.indexOf('}', at)); };
+    expect(rule('.dw-glitter-sparkle')).toMatch(/pointer-events:\s*none/u);
+    expect(rule('.dw-glitter-sparkle')).toMatch(/z-index:\s*0/u);
+    expect(rule('.dw-glitter-words')).toMatch(/z-index:\s*1/u);
     expect(GLITTER_ALPHA).toBeGreaterThan(0);
     for (const [mode, t] of Object.entries(tokens)) {
-      for (const ink of GLITTER_INKS) {
-        const under = mix(ink, t['--kb-bg']!, GLITTER_ALPHA);
-        for (const fg of ['--kb-fg', '--kb-link', '--kb-muted']) {
-          expect(ratio(t[fg]!, under), `${mode}: ${fg} on ${ink} at ${GLITTER_ALPHA}`).toBeGreaterThanOrEqual(4.5);
+      for (const surface of ['--kb-bg', '--kb-chip-bg']) {
+        for (const ink of GLITTER_INKS) {
+          const under = mix(ink, t[surface]!, GLITTER_ALPHA);
+          for (const fg of ['--kb-fg', '--kb-link', '--kb-link-visited', '--kb-muted']) {
+            expect(ratio(t[fg]!, under), `${mode}: ${fg} on ${ink} at ${GLITTER_ALPHA} over ${surface}`).toBeGreaterThanOrEqual(4.5);
+          }
         }
       }
     }

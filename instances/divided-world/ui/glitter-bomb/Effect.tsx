@@ -5,11 +5,13 @@
  * what the obstacle costs"), which holds the glints still, by the player's setting or the device's.
  *
  * The glints are placed from the play's own id, so every reader sees the same sparkle on the same post, and two posts of one
- * character sparkle differently. Each glint's ink is one of GLITTER_INKS at GLITTER_ALPHA at most, which the effect's test holds to the
- * house style's text contrast over the page in every mode.
+ * character sparkle differently. The glints are drawn solid in one layer, and the layer as a whole at GLITTER_ALPHA, so overlapping
+ * glints never stack: the most any spot of the page under the words is covered is one ink at GLITTER_ALPHA, which the effect's test
+ * holds to the house style's text contrast in every mode. The player's reduced motion is read live, so a change holds the glints still
+ * on the posts already drawn.
  */
 import { useMemo, type CSSProperties } from 'react';
-import { motionReduced } from '../../../../engine/ui/appearance.ts';
+import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import './glitter.css';
 
@@ -32,7 +34,7 @@ function seeded(id: string, post: string): () => number {
 }
 
 export function GlitterBombEffect({ post, plays, children }: EffectProps) {
-  const moving = !motionReduced();
+  const moving = !useMotionReduced();
   const play = plays[0]!;
   const glints = useMemo(() => {
     const next = seeded(play.id, post.id);
@@ -45,8 +47,8 @@ export function GlitterBombEffect({ post, plays, children }: EffectProps) {
     }));
   }, [play.id, post.id]);
   return (
-    <div className="dw-glitter" data-kb-glitter="" data-kb-moving={moving ? 'true' : 'false'} style={{ '--dw-glitter-alpha': GLITTER_ALPHA } as CSSProperties}>
-      <span className="dw-glitter-sparkle" aria-hidden="true">
+    <div className="dw-glitter" data-kb-glitter="" data-kb-moving={moving ? 'true' : 'false'}>
+      <span className="dw-glitter-sparkle" aria-hidden="true" style={{ opacity: GLITTER_ALPHA }}>
         {glints.map((g, i) => (
           <span
             key={i} className="dw-glint"

@@ -208,14 +208,16 @@ export function ThreadHead({ pager }: { readonly pager: ReactNode }) {
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   const drafts = useSpinDrafts();
   const to = threadHref(thread, 1);
+  /* Where focus goes back to after a play from the head: the ghost goes with the play, the title stays. */
+  const title = useRef<HTMLHeadingElement>(null);
   return (
     <>
       <div className="kb-thread-head">
-        <h1 className="kb-heading kb-thread-title">{summary.title}</h1>
+        <h1 ref={title} tabIndex={-1} className="kb-heading kb-thread-title">{summary.title}</h1>
         <span className="kb-thread-head-marks">
           <PostMarks
             post={thread} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
-            reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, from: null, thread: null, board: summary.board, title: summary.title, to, plays, know: know ?? (async () => {}), focusBack: () => document.querySelector<HTMLElement>('.kb-thread-title') }}
+            reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, from: null, thread: null, board: summary.board, title: summary.title, to, plays, know: know ?? (async () => {}), focusBack: () => title.current }}
             onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
           />
         </span>

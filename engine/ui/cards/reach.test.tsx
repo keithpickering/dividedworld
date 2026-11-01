@@ -57,7 +57,7 @@ function world() {
   const gloomba = fake.seed.character(other, 'Gloomba', 'heel');
   const { thread, act: p1 } = fake.seed.thread('general', spritey, 'Glitter everywhere', 'the first post');
   const ids = [p1, fake.seed.post(thread, gloomba, 'second'), fake.seed.post(thread, spritey, 'third'), fake.seed.post(thread, pipe, 'mine'), fake.seed.post(thread, spritey, 'fifth')];
-  fake.seed.cards(me, { sparkle: 2 });
+  fake.seed.cards(me, { sparkle: 2, beacon: 1 });
   fake.seed.wallet(me, 500);
   fake.signInAs(me);
   localStorage.setItem(hudKey(me), pipe);
@@ -138,6 +138,24 @@ describe('a character card armed', () => {
     await waitFor(() => expect(within(postbit(5)).getByRole('button', { name: /^Sparkle, 1 play\b.*Opens the cards on this character\./u })).toBeInTheDocument());
     /* The ghost is gone with the play, so focus goes back to the post it was played from. */
     await waitFor(() => expect(document.activeElement).toBe(post(3)));
+  });
+});
+
+describe('a thread card armed', () => {
+  test('puts its ghost on the thread\'s head alone, and focus goes back to the title after the play', async () => {
+    const w = world();
+    await open(w);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
+    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Beacon, Pepperoni, Cast, rare postcard/u })[0]!);
+    const head = document.querySelector('.kb-thread-head') as HTMLElement;
+    const ghost = await within(head).findByRole('button', { name: 'Play Beacon on “Glitter everywhere”' });
+    for (const seq of [1, 2, 3, 4, 5]) expect(within(post(seq)).queryByRole('button', { name: /^Play Beacon/u })).toBeNull();
+    await user.click(ghost);
+    const dialog = await screen.findByRole('dialog', { name: /Beacon/u });
+    await user.click(within(dialog).getByRole('button', { name: 'Play as Pipewrench' }));
+    expect(await within(head).findByRole('button', { name: /^Beacon, 1 play\b/u })).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(head.querySelector('h1')));
   });
 });
 

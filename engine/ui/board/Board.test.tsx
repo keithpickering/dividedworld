@@ -5,6 +5,7 @@ import { createFake, type Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
 import { useLocation } from '../router.tsx';
 import { BoardScreen } from './Board.tsx';
+import { Frame } from '../frame/Frame.tsx';
 import { seedMoves } from './move-world.ts';
 import { testInstance } from '../test-world.tsx';
 
@@ -445,6 +446,24 @@ describe('pinned threads and the banner', () => {
       await act(() => vi.advanceTimersByTimeAsync(31_000));
       await waitFor(() => expect(pinned()).toBeNull());
     } finally { vi.useRealTimers(); }
+  });
+
+  test('a board card armed puts its ghost on the banner, and focus goes back to the board\'s title after the play', async () => {
+    const fake = createFake({ instance, now: () => Date.now() });
+    const w = world(fake, { threads: 2 });
+    fake.seed.cards(w.me, { rumble: 1 });
+    fake.seed.wallet(w.me, 500);
+    renderIn(fake, <Frame><BoardScreen slug="general" /></Frame>, { instance, path: '/b/general' });
+    await screen.findByRole('link', { name: 'Thread 002' });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /^Hand, \d postcards?/u }));
+    await user.click(within(screen.getByRole('region', { name: 'Your hand' })).getAllByRole('button', { name: /^Rumble, /u })[0]!);
+    const banner = document.querySelector('.kb-board-banner') as HTMLElement;
+    await user.click(await within(banner).findByRole('button', { name: 'Play Rumble on General' }));
+    const dialog = await screen.findByRole('dialog', { name: /Rumble/u });
+    await user.click(within(dialog).getByRole('button', { name: /^Play as / }));
+    expect(await within(banner).findByRole('button', { name: /^Rumble, 1 play\b/u })).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(banner.querySelector('h1')));
   });
 
   test('the board\'s live board card is a mark on its banner', async () => {
