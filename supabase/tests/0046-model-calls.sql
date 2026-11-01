@@ -8,6 +8,7 @@ declare
     'cost_microdollars', 350, 'outcome', 'ok', 'trims', '[]'::jsonb, 'retries', 1);
   who text;
   made bigint;
+  meeting_id bigint;
   denied boolean;
   held model_calls%rowtype;
 begin
@@ -39,9 +40,12 @@ begin
   end if;
 
   -- A rejection keeps its predicate and its trims; a failure needs neither.
-  made := record_model_call(payload || '{"outcome": "rejected", "predicate": "atMost(6)", "meeting": 3, "trims": [{"path": "moves", "predicate": "atMost(6)", "before": 7, "after": 6}]}');
+  -- The meeting it names is a real one (0043 gave model_calls.meeting its foreign key).
+  insert into meetings (started_at, finished_at, outcome) values (now(), now(), 'rejected') returning id into meeting_id;
+  made := record_model_call(payload || jsonb_build_object('outcome', 'rejected', 'predicate', 'atMost(6)', 'meeting', meeting_id,
+    'trims', '[{"path": "moves", "predicate": "atMost(6)", "before": 7, "after": 6}]'::jsonb));
   select * into held from model_calls where model_calls.id = made;
-  if held.outcome <> 'rejected' or held.predicate <> 'atMost(6)' or held.meeting <> 3 or jsonb_array_length(held.trims) <> 1 then raise exception 'a rejection lost its record: %', to_jsonb(held); end if;
+  if held.outcome <> 'rejected' or held.predicate <> 'atMost(6)' or held.meeting <> meeting_id or jsonb_array_length(held.trims) <> 1 then raise exception 'a rejection lost its record: %', to_jsonb(held); end if;
   perform record_model_call('{"duty": "meeting", "provider": "completions", "model": "self-hosted", "cost_microdollars": 0, "outcome": "failed", "gpu_seconds": 2.5}');
 
   -- An outcome outside the three is refused, and so is a rejection that names no predicate and a negative cost.
