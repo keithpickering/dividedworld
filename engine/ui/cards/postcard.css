@@ -226,8 +226,8 @@ button.kb-postcard {
   line-height: 1;
 }
 .kb-postcard-play {
-  right: 6px;
-  bottom: 6px;
+  left: 6px;
+  top: 28px;
   padding: 1px 4px;
   background: var(--kb-card-color);
   font-size: var(--kb-glass-size-label);
@@ -236,9 +236,11 @@ button.kb-postcard {
 }
 .kb-postcard-gem {
   right: 6px;
-  top: 6px;
+  top: 28px;
   padding: 1px 3px;
   background: var(--kb-card-color);
   font-size: var(--kb-glass-size-label);
 }
 .kb-postcard-gem::before { content: attr(data-kb-gem); }
+.kb-postcard[data-size='sheet'] .kb-postcard-play { left: 18px; top: 52px; }
+.kb-postcard[data-size='sheet'] .kb-postcard-gem { right: 18px; top: 52px; }

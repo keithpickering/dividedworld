@@ -116,7 +116,14 @@ export interface Seed {
    * With `paid`, its player's card ledger records the play at that price and the wallet pays it, as `play_card` does (a wallet event
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere.
    */
-  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string }): Id;
+  /**
+   * A card set face down by a character on a post of its own (what `set_card` writes): a set Act naming no card, and the setter's own
+   * record of which card it is. Returns the set Act.
+   */
+  set(character: Id, target: Id, card: string, options?: { at?: number }): Id;
+  /** The spring of a set (what `spring_traps` writes): a spring Act on its post naming the card, and `caught` where it caught a play. Returns the spring Act. */
+  spring(set: Id, options?: { trigger?: string; caught?: Id; at?: number }): Id;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
   /**
@@ -1605,6 +1612,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o?.message !== undefined) payload.message = o.message;
       if (o?.layer !== undefined) payload.layer = o.layer;
       if (o?.config !== undefined) payload.config = o.config;
+      /* A play a trap caught names its set, and takes no layer; a Use carries its end (0054). */
+      if (o?.caught !== undefined) { payload.caught = o.caught; delete payload.layer; }
+      if (o?.ends !== undefined) payload.ends = o.ends;
       /* A paid play is refused before its Act is written, as play_card refuses before it writes; the hand is the seed's to set (`cards`). */
       if (o?.paid !== undefined) {
         if (!Number.isInteger(o.paid) || o.paid < 0) throw new Error(`a price is a whole amount, at least zero, not ${o.paid}`);
@@ -1619,6 +1629,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: o.paid });
       }
       if (o?.live) sendAct(written);
+      return written.id;
+    },
+    set(character, target, card, o) {
+      const on = acts.get(target);
+      if (!on) throw new Error(`no such Act ${target}`);
+      if (on.character !== character) throw new Error('a card is set face down on a post of its own author\'s');
+      const written = asAt(ownerOf(character), o?.at, () => write({ character, kind: 'set', thread: on.thread, target, payload: {} }));
+      faceDown.set(written.id, { account: ownerOf(character), card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null });
+      return written.id;
+    },
+    spring(set, o) {
+      const f = faceDown.get(set);
+      const back = acts.get(set);
+      if (!f || !back) throw new Error(`no such card set face down ${set}`);
+      const rules = instance.cards.find((c) => c.key === f.card);
+      const written = asAt(f.account, o?.at, () => write({
+        character: back.character, kind: 'spring', thread: back.thread, target: f.post,
+        payload: { card: f.card, trigger: o?.trigger ?? rules?.trap?.trigger.on ?? 'cast', outcome: rules?.trap?.outcome ?? { do: 'nullify' }, set, ...(o?.caught ? { by: o.caught, caught: o.caught } : {}) },
+      }));
+      f.sprung = written.id;
       return written.id;
     },
     loseNextAnswer(went) { losing = { went }; },
