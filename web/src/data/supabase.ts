@@ -58,6 +58,8 @@ const REFUSAL_HINT = 'kayfabb.refusal';
 const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
 const NOT_READ = 'that could not be read right now; try again';
+/** The Acts that are layers on a post, read through it: a card play, a card set face down, and the spring that reveals one (0054). */
+const LAYER_KINDS = ['card', 'set', 'spring'];
 /** PostgREST answers at most this many rows to one request unless told fewer; every list read here asks for fewer, ordered. */
 const ROW_CAP = 1000;
 const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
@@ -675,13 +677,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async cardsOn(actId, limit) {
       if (!idOk(actId)) return [];
-      const rows = await list(() => client.from('acts_public').select('*').eq('kind', 'card').eq('target_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
+      /* A post's plays, its card backs and their springs (0054): each is a layer on the post, read through it. */
+      const rows = await list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).eq('target_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
       return rows.map(toAct);
     },
     async cardsOnMany(actIds, limit) {
       const wanted = [...new Set(actIds)].filter(idOk);
       if (wanted.length === 0) return [];
-      const rows = await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card').in('target_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
+      const rows = await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).in('target_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
       return merged(rows, 'created_at', 'id', rowLimit(limit)).map(toAct);
     },
     async effectStates(plays) {
@@ -704,6 +707,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* The price is the card's rules' and the Edge Function's (it reads the settings rows as they stand), so a purchase sends the card alone. */
     buyCard: (card) => act({ action: 'buyCard', card }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
     playCard: (card, character, target, config, message) => act({ action: 'playCard', card, character, target, config, message }, toAct),
+    setCard: (card, character, target, config) => act({ action: 'setCard', card, character, target, config }, toAct),
+    useCard: (card, character, target, config, message) => act({ action: 'useCard', card, character, target, config, message }, toAct),
+    async myFaceDown(sets) {
+      if (sets.length === 0) return {};
+      const rows = await byChunks([...new Set(sets)], (part) => list(() => client.from('my_face_down').select('play,card').in('play', part)));
+      return Object.fromEntries(rows.map((r) => [r['play'], r['card']]));
+    },
     saveEffect: (play, character, state) => act({ action: 'saveEffect', character, play, state }, (r) => ({ play: r['play'], savedAt: r['saved_at'] })),
     characters,
     async characterCounts(id): Promise<CharacterCounts> {

@@ -212,3 +212,34 @@ button.kb-postcard {
     pointer-events: none;
   }
 }
+
+/*
+ * How a card is played and how rare it is (the card mechanic's design, sections 1 and 2): the play's word under the tag, and a gem in
+ * the top right corner whose shape names the rarity (●, ◆, ★, ✦), in the card's own ink, never a color of its own.
+ */
+.kb-postcard-play,
+.kb-postcard-gem {
+  position: absolute;
+  z-index: 2;
+  color: var(--kb-card-ink);
+  font-family: var(--kb-glass-font-display);
+  line-height: 1;
+}
+.kb-postcard-play {
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 4px;
+  background: var(--kb-card-color);
+  font-size: var(--kb-glass-size-label);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.kb-postcard-gem {
+  right: 6px;
+  top: 6px;
+  padding: 1px 3px;
+  background: var(--kb-card-color);
+  font-size: var(--kb-glass-size-label);
+}
+.kb-postcard[data-size='slot'] .kb-postcard-play { display: none; }
+.kb-postcard-gem::before { content: attr(data-kb-gem); }

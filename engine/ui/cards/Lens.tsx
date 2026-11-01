@@ -41,8 +41,8 @@ import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useNarrow } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { kindsOf, playsPhrase, sumOf } from './marks.ts';
-import { defaultView, inPlayOrder, useCardView, usePlays, type Plays } from './plays.ts';
+import { backWords, caughtWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
+import { CARD_BACK, defaultView, inPlayOrder, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import './lens.css';
 
@@ -126,16 +126,71 @@ export function useLensFor(store: LensStore, owner: string): LensOpen | null {
   return useSyncExternalStore(store.subscribe, snapshot, () => null);
 }
 
-/** A card's view on a post: the one its effect gave, else the engine's default for the card (its `summary`, no edge, no controls). */
-export function useResolvedView(store: Plays, post: Id, kind: string): CardView {
+/**
+ * A card's view on a post: the one its effect gave, else the engine's default for the card (its `summary`, no edge, no controls).
+ * The card mechanic's kinds are the engine's to say (docs/plans/2026-11-01-card-plays-plan.md, Task 7): a card back says who set it
+ * and when it ends, the same for every card face down, and on the setter's own screen which card it is; a ward says what it turns
+ * away and until when; a caught play's note says what caught it.
+ */
+export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (character: Id | null) => string): CardView {
   const { instance, settings, ui } = useKayfa();
   const given = useCardView(store, post, kind);
+  /*
+   * What this kind's words read of the post, as one string: its plays (who, when, caught by what, ending when, revealed as what) and
+   * the setter's own faces among them. A change elsewhere on the post leaves it equal, so a mark of another kind is not drawn again.
+   */
+  const subscribe = useCallback((l: () => void) => store.subscribe(post, l), [store, post]);
+  const signature = useSyncExternalStore(subscribe, () => {
+    const h = store.get(post);
+    return JSON.stringify(h.plays.filter((p) => p.card === kind).map((p) => [p.id, p.caster, p.playedAt, p.caught ?? null, p.ends ?? null, p.revealed ?? null, h.faces[p.id] ?? null,
+      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null]));
+  });
+  const here = useMemo(() => {
+    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null][];
+    return {
+      plays: rows.map(([id, caster, playedAt, caught, ends, revealed]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config: {}, playedAt, post, ...(kind === CARD_BACK ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}) })),
+      faces: Object.fromEntries(rows.filter((r) => r[6] !== null).map((r) => [r[0], r[6]!])) as Record<Id, string>,
+      traps: Object.fromEntries(rows.filter((r) => r[7] !== null).map((r) => [r[0], r[7]!])) as Record<Id, string>,
+    };
+  }, [signature, kind, post]);
   const economy = useMemo(() => withCardEconomy(instance.settings, settings.cardEconomy), [instance.settings, settings.cardEconomy]);
-  const fallback = useMemo(
-    () => defaultView({ name: instance.cards.find((c) => c.key === kind)?.name ?? kind }, ui.cards.find((c) => c.key === kind), economy),
-    [instance.cards, ui.cards, kind, economy],
-  );
-  return given ?? fallback;
+  const fallback = useMemo(() => {
+    const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
+    const ofKind = here.plays.filter((p) => p.card === kind);
+    if (kind === CARD_BACK && ofKind.length > 0) {
+      const say = (p: CardPlay) => backWords(p, nameOf?.(p.caster) ?? 'someone', instance.settings.setLasts, cardName);
+      const yours = (p: CardPlay) => (here.faces[p.id] ? ` Yours: ${cardName(here.faces[p.id]!)}, which nobody else can see.` : '');
+      const first = say(ofKind[0]!);
+      return { progress: null, state: `${first.state}${yours(ofKind[0]!)}`, ends: first.ends, yours: false, controls: [], notes: Object.fromEntries(ofKind.map((p) => [p.id, `${say(p).state}${yours(p)} ${say(p).ends}`])) };
+    }
+    const rules = instance.cards.find((c) => c.key === kind);
+    const base = defaultView({ name: rules?.name ?? kind }, ui.cards.find((c) => c.key === kind), economy);
+    const caught = Object.fromEntries(ofKind.filter((p) => p.caught).map((p) => {
+      const trap = here.traps[p.id];
+      return [p.id, caughtWords(trap ? cardName(trap) : null)];
+    }));
+    const live = ofKind.filter((p) => !p.caught);
+    if (live.length === 0 && ofKind.length > 0) {
+      const trap = here.traps[ofKind[0]!.id];
+      return { ...base, state: caughtWords(trap ? cardName(trap) : null), notes: caught };
+    }
+    if (rules?.ward && live.length > 0) {
+      const latest = [...live].sort((a, b) => Date.parse(b.ends ?? '') - Date.parse(a.ends ?? ''))[0]!;
+      const ward = wardWords(rules.name, rules.rarity, latest.ends);
+      return { ...base, state: ward.state, ...(ward.ends ? { ends: ward.ends } : {}), notes: caught };
+    }
+    return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
+  }, [instance.cards, instance.settings.setLasts, ui.cards, kind, economy, here, nameOf]);
+  if (!given) return fallback;
+  /* An effect's own view, with the catches the engine knows of beside its notes. */
+  return Object.keys(fallback.notes).length > 0 && kind !== CARD_BACK ? { ...given, notes: { ...fallback.notes, ...given.notes } } : given;
+}
+
+/** A tab's name: the card's, or for the card backs, "Card back", and the card it was once one has sprung. */
+export function kindName(instance: { readonly cards: readonly { readonly key: string; readonly name: string }[] }, kind: string, plays: readonly CardPlay[]): string {
+  if (kind !== CARD_BACK) return instance.cards.find((c) => c.key === kind)?.name ?? kind;
+  const sprung = plays.find((p) => p.card === CARD_BACK && p.revealed);
+  return plays.filter((p) => p.card === CARD_BACK).length === 1 && sprung ? instance.cards.find((c) => c.key === sprung.revealed!.card)?.name ?? 'Card back' : 'Card back';
 }
 
 /** Whether this play has more public reactions than the post: a boolean, so only a change in the answer draws the row again. */
@@ -196,7 +251,7 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, on
   return (
     <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
       {note && <p className="kb-lens-note">{note}</p>}
-      <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · played <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
+      <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {more && <p className="kb-lens-more">More reactions than the post</p>}
       {yours && <p className="kb-lens-yours">Your play</p>}
@@ -265,7 +320,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const card = kinds.includes(open.card) ? open.card : null;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
   useEffect(() => { if (card === null) store.close(); }, [card, store]);
-  const view = useResolvedView(plays, post, open.card);
+  const view = useResolvedView(plays, post, open.card, nameOf);
   const ids = useId();
   const tabs = useRef(new Map<string, HTMLButtonElement>());
   /*
@@ -297,7 +352,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
 
   const rules = instance.cards.find((c) => c.key === card);
   const cardUi = ui.cards.find((c) => c.key === card);
-  const name = rules?.name ?? card;
+  const name = kindName(instance, card, here.plays);
   const ofKind = here.billed.filter((p) => p.card === card);
   const ink = inkOf(ui, ofKind[0]!, [...ofKind].sort(inPlayOrder)) ?? cardUi?.art.color;
   /* A card whose rules stack lists its rows by layer, top first; any other in billing order. */
@@ -352,7 +407,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       <div className="kb-lens-bar">
         <div className="kb-lens-tabs" role="tablist" aria-label="Card kinds" onKeyDown={move}>
           {kinds.map((kind) => {
-            const label = instance.cards.find((c) => c.key === kind)?.name ?? kind;
+            const label = kindName(instance, kind, here.plays);
             const selected = kind === card;
             return (
               <button

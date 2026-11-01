@@ -860,6 +860,15 @@ export interface KayfaApi {
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.
    */
   playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Promise<Answer<Act>>;
+  /**
+   * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
+   * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
+   */
+  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>): Promise<Answer<Act>>;
+  /** Use a card the player holds on a post of the character's own (a ward), as a play is: its Act comes back, with its end. */
+  useCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Promise<Answer<Act>>;
+  /** Which card each of the player's own card backs among these sets is (`my_face_down`), by set; another's back is absent. */
+  myFaceDown(sets: readonly Id[]): Promise<Readonly<Record<Id, string>>>;
   /** Release the player from a play's effect, for good and on every device; the player's own, and said again it is the same. */
   releaseEffect(play: Id): Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
   /** Save the state of a play's effect, as the character that wrote the post it landed on (no one else may); the card's rules bound what it holds. */

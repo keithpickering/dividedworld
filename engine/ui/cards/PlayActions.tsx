@@ -18,6 +18,7 @@ import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { faceOf, withCardEconomy } from './faces.ts';
 import { landing } from './land.ts';
+import { playOf, type Play } from '../../rules/cards.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
 import { usePlays } from './plays.ts';
 
@@ -28,21 +29,29 @@ function useTarget(act: Act): PlayTarget | null {
   return { post: act, title: summary.title, author: nameOf(act.character), to: threadHref(thread, pageOf(act.seq, perPage), act.seq), plays, know: know ?? (async () => {}) };
 }
 
+/** What the ghost mark is named by its card's play: "Play Whoops! on post 41", "Set Trap Card face down on post 41", "Use Force Field on post 41". */
+export function ghostName(card: string, play: Play, seq: number): string {
+  return play === 'set' ? `Set ${card} face down on post ${seq}` : play === 'use' ? `Use ${card} on post ${seq}` : `Play ${card} on post ${seq}`;
+}
+
 /** The armed card's play control for a post: the dashed "+" mark that ends its strip. */
 export function GhostMark({ act }: { readonly act: Act }) {
   const play = usePlay();
-  const { hudCharacter } = usePlayer();
+  const { hudCharacter, actingCharacters } = usePlayer();
   const { instance, settings, ui } = useKayfa();
   const { plays } = useThread();
   const here = usePlays(plays, act.id);
   const target = useTarget(act);
   const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
   if (!play || !hudCharacter || !target || act.seq === null || !rules) return null;
-  if (!landing(rules, act, here.plays).ok) return null;
+  /* A Set and a Use go on a post of the reader's own characters alone: decided on the reader's screen, from their own characters, never sent. */
+  const how = playOf(rules);
+  if ((how === 'set' || how === 'use') && !actingCharacters.some((c) => c.id === act.character)) return null;
+  if (!landing(rules, act, here.plays, { cards: instance.cards, setLasts: instance.settings.setLasts }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy));
   return (
     <button
-      type="button" className="kb-mark kb-ghost-mark" aria-label={`Play ${rules.name} on post ${act.seq}`} data-kb-card={rules.key} data-kb-alignment={rules.alignment}
+      type="button" className="kb-mark kb-ghost-mark" aria-label={ghostName(rules.name, how, act.seq)} data-kb-card={rules.key} data-kb-alignment={rules.alignment}
       style={{ '--kb-mark-color': face.art.color } as CSSProperties}
       onClick={() => play.openForm(rules.key, target)}
     >

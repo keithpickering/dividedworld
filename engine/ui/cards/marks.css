@@ -262,3 +262,36 @@
   outline: 2px solid var(--kb-glass-text);
   outline-offset: 2px;
 }
+
+/*
+ * A card set face down (the card mechanic's design, section 3): the engine's own back, the same for every card, so a trap and a
+ * Bluff look alike. Its pattern is two crossed bands in the glass's text color on the field, no card's color. On the setter's own
+ * screen, their card's mark sits in the back's corner, small. A sprung back shows its card in the same place.
+ */
+.kb-mark[data-kb-back='down'] {
+  --kb-mark-line: var(--kb-glass-text-hi);
+}
+.kb-card-back {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  box-sizing: border-box;
+  border: 2px solid var(--kb-glass-text-hi);
+  background:
+    linear-gradient(45deg, transparent 40%, var(--kb-glass-text-hi) 40% 60%, transparent 60%),
+    linear-gradient(-45deg, transparent 40%, var(--kb-glass-text-hi) 40% 60%, transparent 60%),
+    var(--kb-glass-field);
+}
+.kb-mark-face {
+  flex: none;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-inline-start: -0.35rem;
+  align-self: flex-end;
+  object-fit: contain;
+}
+/* A caught play is spent and did nothing: its mark is drawn dim, with its name saying so. */
+.kb-mark[data-kb-caught='true'] {
+  opacity: 0.55;
+  border-style: dashed;
+}

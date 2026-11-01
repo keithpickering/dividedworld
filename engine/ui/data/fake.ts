@@ -20,7 +20,7 @@
  */
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
-import { basePrice, casterMessage, decidePlay, type CardTarget } from '../../rules/cards.ts';
+import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
@@ -447,7 +447,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function write(a: { character: Id | null; kind: ActKind; thread: Id; target?: Id | null; payload: Record<string, unknown>; at?: number }): ActRec {
     const t = threads.get(a.thread)!;
     /* An edit is a version of its post and a card is a tag on its post: neither takes a place in the thread (0035_card_takes_no_seq.sql). */
-    const placedAct = a.kind !== 'edit' && a.kind !== 'card';
+    const placedAct = a.kind !== 'edit' && a.kind !== 'card' && a.kind !== 'set' && a.kind !== 'spring';
     const rec: ActRec = {
       id: uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target: a.target ?? null, seq: placedAct ? t.nextSeq++ : null,
       at: a.at ?? stamp ?? now(), payload: a.payload,
@@ -653,8 +653,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const effects = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target).map((a) => ({ card: String(a.payload.card), act: a.id }));
-    const decided = decidePlay(rules, settings, { act: on.id, kind: on.kind as CardTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effects, config, message);
+    const effects = effectsOn(target);
+    const decided = decidePlay(rules, settings, { act: on.id, kind: on.kind as CardTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effects, config, message, { nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
     if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -663,9 +663,101 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const short = covers(account, decided.value.price);
     if (short) return short;
     account.cards[card]! -= 1;
-    const layer = effects.filter((e) => e.card === card).length + 1;
-    const written = write({ character, kind: 'card', thread: on.thread, target, payload: { card, layer, message: decided.value.message, config: decided.value.config } });
+    const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card && a.payload.caught === undefined).length + 1;
+    /* A live trap on a cast that is no rarer than it catches the play (spring_traps): the spring is written first, as the server writes it. */
+    const trap = liveBack(target);
+    const trapRules = trap ? instance.cards.find((c) => c.key === trap.card) : undefined;
+    const catches = trap && trapRules?.trap?.trigger.on === 'cast' && atOrBelow(rules.rarity, trapRules.rarity) && ownerOf(acts.get(trap.set)!.character!) !== undefined;
+    const written = write({ character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(catches ? { caught: trap!.set } : { layer }) } });
+    let spring: ActRec | null = null;
+    if (catches) {
+      spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: { card: trap.card, trigger: 'cast', outcome: trapRules!.trap!.outcome, set: trap.set, by: written.id, caught: written.id } });
+      faceDown.get(trap.set)!.sprung = spring.id;
+    }
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
+    spend(account, decided.value.price, 'play', written.id);
+    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
+    sendAct(written);
+    if (spring) {
+      const setter = accounts.get(faceDown.get(trap!.set)!.account);
+      if (setter && trapRules!.trap!.outcome.do === 'payout' && decided.value.price > 0) setter.wallet = Math.min(settings.walletCap, setter.wallet + decided.value.price);
+      sendAct(spring);
+    }
+    return ok(publicAct(written));
+  }
+
+  /**
+   * The cards set face down (face_down, 0054): which card a set is, its setter's account alone; when it ends; the spring that ended it.
+   * The in-memory backend springs a cast trap on a cast; the other triggers are the server's to test.
+   */
+  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null }>();
+  function liveBack(post: Id): { set: Id; card: string } | null {
+    for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.endsAt > now()) return { set, card: f.card };
+    return null;
+  }
+  /** What a card's rules see on a post (card_target): its plays not caught, each ward's rarity and end, and its card backs naming no card. */
+  function effectsOn(target: Id): CardEffect[] {
+    const out: CardEffect[] = [];
+    for (const a of acts.values()) {
+      if (a.target !== target) continue;
+      if (a.kind === 'card' && a.payload.caught === undefined) {
+        const r = instance.cards.find((c) => c.key === a.payload.card);
+        out.push({ card: String(a.payload.card), act: a.id, ...(r?.ward ? { ward: r.rarity } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}) });
+      } else if (a.kind === 'set') {
+        const f = faceDown.get(a.id);
+        out.push({ card: null, act: a.id, faceDown: true, ends: iso(f?.sprung ? acts.get(f.sprung)!.at : f?.endsAt ?? a.at) });
+      }
+    }
+    return out;
+  }
+
+  /** set_card (0054): decided by the card's rules (decideSet), then the author, the hand and the post's one back are the database's. */
+  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>): Answer<Act> {
+    const bad = request({ action: 'setCard', card, character, target, config });
+    if (bad) return bad;
+    const on = acts.get(target);
+    if (!on) return refuse('there is no such post', 'target');
+    const rules = instance.cards.find((c) => c.key === card)!;
+    const text = (publicAct(on).currentPayload as { body?: unknown }).body;
+    const decided = decideSet(rules, settings, { act: on.id, kind: on.kind as CardTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effectsOn(target), config, instance.cards);
+    if (!decided.ok) return refuse(decided.why, 'config');
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    if (on.character !== character) return refuse('a card is set face down on a post of your own character\'s');
+    const account = me()!;
+    if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
+    const short = covers(account, decided.value.price);
+    if (short) return short;
+    account.cards[card]! -= 1;
+    const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
+    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null });
+    spend(account, decided.value.price, 'play', written.id);
+    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
+    sendAct(written);
+    return ok(publicAct(written));
+  }
+
+  /** A Use (play_card, 0054): decided by decideUse, on a post of the character's own, carrying its end. */
+  function useCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Answer<Act> {
+    const bad = request({ action: 'useCard', card, character, target, config, message });
+    if (bad) return bad;
+    const on = acts.get(target);
+    if (!on) return refuse('there is no such post', 'target');
+    const rules = instance.cards.find((c) => c.key === card)!;
+    const text = (publicAct(on).currentPayload as { body?: unknown }).body;
+    const decided = decideUse(rules, settings, { act: on.id, kind: on.kind as CardTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effectsOn(target), config, message);
+    if (!decided.ok) return refuse(decided.why, 'config');
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    if (on.character !== character) return refuse(`${rules.name} is used on your own post`);
+    const account = me()!;
+    if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
+    const short = covers(account, decided.value.price);
+    if (short) return short;
+    account.cards[card]! -= 1;
+    const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card).length + 1;
+    const at = stamp ?? now();
+    const written = write({ character, kind: 'card', thread: on.thread, target, payload: { card, layer, message: decided.value.message, config: decided.value.config, ...(rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}) } });
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
@@ -981,7 +1073,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     cardsOnMany(ids, limit) {
       const wanted = new Set(ids);
-      return [...acts.values()].filter((a) => a.kind === 'card' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct);
+      return [...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct);
     },
     effectStates(plays) {
       const out: Record<Id, EffectState> = {};
@@ -1027,7 +1119,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     saveEffect,
     buyCard: lossy(buyCard),
     playCard: lossy(playCard),
-    cardsOn: (act, limit) => [...acts.values()].filter((a) => a.kind === 'card' && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct),
+    setCard: lossy(setCard),
+    useCard: lossy(useCard),
+    myFaceDown: (sets) => {
+      const account = me()?.id;
+      return Object.fromEntries(sets.filter((s) => faceDown.get(s)?.account === account).map((s) => [s, faceDown.get(s)!.card]));
+    },
+    cardsOn: (act, limit) => [...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct),
     characters: (ids) => ids.map((id) => characters.get(id)).filter((c): c is CharRec => c !== undefined && c.debutedAt !== null).map(publicCharacter),
     characterCounts(id) {
       const c = characters.get(id);

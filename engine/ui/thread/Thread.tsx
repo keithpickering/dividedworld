@@ -153,6 +153,9 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       /* Every play on the page's posts in one read; a play takes no number, so it is found through its post. */
       const posts = acts.filter((a) => a.kind === 'post').map((a) => a.id);
       const played = await readPlays(api, plays, posts, effects);
+      /* The reader's own card backs among them, by set: drawn under the back on their screen alone. */
+      const sets = played.filter((a) => a.kind === 'set').map((a) => a.id);
+      if (sets.length > 0) plays.setFaces(await api.myFaceDown(sets).catch(() => ({})));
       const ids = [...acts.map((a) => a.id), ...played.map((a) => a.id)];
       const [counted, own, spun] = await Promise.all([
         api.tallies(ids),
@@ -346,6 +349,15 @@ function ThreadView({ thread }: { readonly thread: Id }) {
         /* A card play is a tag on its post, never a place in the thread: it is added to the post it names, wherever that post is, once its caster is known. */
         if (a.kind === 'card') {
           void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); });
+          return;
+        }
+        /* A card set face down is a back on its post; a spring reveals the back in its place, moving no mark (the card mechanic's design). */
+        if (a.kind === 'set' || a.kind === 'spring') {
+          void ensurePeople([a.character]).then(() => {
+            plays.add([a]);
+            if (a.kind === 'set') return api.myFaceDown([a.id]).then((faces) => { plays.setFaces(faces); }, () => {});
+            return undefined;
+          });
           return;
         }
         const f = feedRef.current;

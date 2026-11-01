@@ -356,7 +356,7 @@ describe('reads and their rows', () => {
     expect(spun.map((t) => t.originActId)).toEqual([A]);
     const cards = await h.api.cardsOn(A, 21);
     const p = h.to('acts_public')[0]?.url.searchParams;
-    expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order')]).toEqual(['eq.card', `eq.${A}`, 'created_at.asc']);
+    expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order')]).toEqual(['in.(card,set,spring)', `eq.${A}`, 'created_at.asc']);
     expect(cards.map((c) => c.kind)).toEqual(['card']);
     expect(await h.api.spunFromMany(['x),y'], 5)).toEqual([]);
     expect(await h.api.cardsOn('x),y', 5)).toEqual([]);
@@ -368,7 +368,7 @@ describe('reads and their rows', () => {
     const plays = await h.api.cardsOnMany([A, C, A, 'x),y'], 60);
     expect(h.to('acts_public')).toHaveLength(1);
     const p = h.to('acts_public')[0]?.url.searchParams;
-    expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order'), p?.get('limit')]).toEqual(['eq.card', `in.(${A},${C})`, 'created_at.asc', '60']);
+    expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order'), p?.get('limit')]).toEqual(['in.(card,set,spring)', `in.(${A},${C})`, 'created_at.asc', '60']);
     expect(plays.map((c) => [c.kind, c.seq, c.targetActId])).toEqual([['card', null, A], ['card', null, C]]);
     expect(await h.api.cardsOnMany([], 5)).toEqual([]);
     expect(await h.api.cardsOnMany(['x),y'], 5)).toEqual([]);

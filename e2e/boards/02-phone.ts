@@ -7,7 +7,7 @@
  *
  * The hand is the cards part's (the glass build plan, Part 3): its heading with the count, the three
  * cards, and the Vending Machine link. Left out until the play does (cards Task 3): the armed card
- * (the board's second, named "Whoops!, Salty postcard, armed"; the build's second Whoops! is not armed,
+ * (the board's second, named "Whoops!, Salty, Cast, common postcard, armed"; the build's second Whoops! is not armed,
  * so the board's third, the one plain Whoops!, is the build's second), the line about it, which says
  * the card is armed, and "Play Whoops! here" on #42. The thread is not compared here:
  * the board draws #42 alone under the title, and the build's thread holds the posts of its page
@@ -34,8 +34,8 @@ const manifest: BoardManifest = {
     { id: 'hand-head', role: 'heading', name: 'Hand · 3', within: 'hand' },
     { id: 'hand-close', role: 'button', name: 'Close the hand', within: 'hand' },
     /* The cards, each a button by its name. A card's parts are pictures and words said once by its name, so its box is compared and not its type. */
-    { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', within: 'hand', type: false },
-    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', within: 'hand', buildNth: 1, type: false },
+    { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet, Cast, common postcard', within: 'hand', type: false },
+    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty, Cast, common postcard', within: 'hand', buildNth: 1, type: false },
     /* The link's place follows the line above it, whose words are the armed card's (cards Task 3), so only where it starts is compared. */
     { id: 'hand-vending', role: 'link', name: 'Vending Machine', within: 'hand', box: 'position' },
     { id: 'hud', role: 'region', name: 'Game HUD', type: false },

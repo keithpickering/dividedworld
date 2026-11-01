@@ -2,7 +2,10 @@
 import { describe, expect, test } from 'vitest';
 import type { CardRules } from '../../rules/cards.ts';
 import type { Settings } from '../../rules/types.ts';
-import { alignmentTag, faceOf, facesOf, orbs, priceOf, withCardEconomy } from './faces.ts';
+import { render } from '@testing-library/react';
+import { RARITIES } from '../../rules/cards.ts';
+import { alignmentTag, faceOf, facesOf, gemOf, orbs, priceOf, withCardEconomy } from './faces.ts';
+import { cardLabel, Postcard } from './Postcard.tsx';
 import type { CardUi } from './types.ts';
 
 const ok = { ok: true as const, value: undefined };
@@ -48,5 +51,26 @@ describe('the economy a screen prices with', () => {
     expect(withCardEconomy(settings, { 'b.price': 300 }).economy).toEqual({ 'a.price': 100, 'b.price': 300 });
     expect(withCardEconomy(settings, { 'a.price': 'cheap', 'b.price': Number.NaN, 'c.step': 5 }).economy).toEqual({ 'a.price': 100, 'b.price': 250, 'c.step': 5 });
     expect(faceOf(longer, ui, withCardEconomy(settings, { 'b.price': 300 })).price).toBe(300);
+  });
+});
+
+/* Rarity and play on a card's face (docs/plans/2026-11-01-card-plays-plan.md, Task 7): a corner gem shaped by rarity, and the play's word, neither by color alone. */
+describe('a card\'s rarity and play on its face', () => {
+  const sweet: CardRules = { ...plain, name: 'Sweetie' };
+  test('the face carries the rarity and the play, and the postcard\'s name says both in words', () => {
+    const set = { ...sweet, key: 'snare', name: 'Snare', rarity: 'uncommon' as const, play: 'set' as const };
+    const face = faceOf(set, undefined, settings);
+    expect([face.rarity, face.play]).toEqual(['uncommon', 'set']);
+    expect(cardLabel(face, 'fan')).toBe('Snare, Sweet, Set, uncommon postcard');
+    expect(cardLabel(faceOf(sweet, undefined, settings), 'fan')).toBe('Sweetie, Sweet, Cast, common postcard');
+  });
+
+  test('the gem has a text name, and a shape for each rarity', () => {
+    render(<Postcard face={faceOf({ ...sweet, rarity: 'rare' }, undefined, settings)} size="sheet" />);
+    const gem = document.querySelector('[data-kb-rarity]')!;
+    expect(gem.getAttribute('data-kb-rarity')).toBe('rare');
+    expect(gem.getAttribute('title')).toBe('Rare');
+    expect(document.querySelector('.kb-postcard-play')?.textContent).toBe('Cast');
+    expect(new Set(RARITIES.map((r) => gemOf(r))).size).toBe(4);
   });
 });

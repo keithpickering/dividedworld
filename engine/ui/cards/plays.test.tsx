@@ -6,7 +6,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
-import { createPlays, defaultView, effectCards, holdsEffects, inPlayOrder, playOf } from './plays.ts';
+import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, inPlayOrder, playOf } from './plays.ts';
 import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -257,5 +257,47 @@ describe('the default view', () => {
   });
   test('falls back to the card\'s name where there is nothing to say it with', () => {
     expect(defaultView(rules, undefined).state).toBe('Whoops!');
+  });
+});
+
+/* The card mechanic's plays (docs/plans/2026-11-01-card-plays-plan.md, Task 7): a card back, a spring that reveals it in place, a
+   caught play and a Use's end, as the store keeps them. */
+describe('card backs, springs and catches', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const base = (id: string, kind: Act['kind'], payload: Record<string, unknown>, target = 'p1'): Act =>
+    ({ id, kind, character: 'c1', thread: 't', targetActId: target, seq: null, createdAt: at, payload, currentPayload: payload, editedAt: null, shownEditedAt: null });
+
+  test('a set Act is a card back: the engine\'s own kind, naming no card', () => {
+    const play = playOf(base('s1', 'set', {}))!;
+    expect([play.card, play.faceDown, play.revealed]).toEqual([CARD_BACK, true, undefined]);
+  });
+
+  test('a spring reveals the back in place: the same play, the same billing, the card it was', () => {
+    const plays = createPlays();
+    plays.add([base('k1', 'card', { card: 'whoops', layer: 1 }), base('s1', 'set', {})]);
+    plays.setBilling('p1', ['s1', 'k1']);
+    plays.add([base('sp', 'spring', { card: 'snare', trigger: 'cast', outcome: { do: 'payout' }, set: 's1', by: 'k2', caught: 'k2' })]);
+    const got = plays.get('p1');
+    expect(got.billed.map((p) => [p.id, p.card, p.revealed?.card])).toEqual([['s1', CARD_BACK, 'snare'], ['k1', 'whoops', undefined]]);
+    expect(got.billed[0]!.revealed?.spring).toBe('sp');
+  });
+
+  test('a spring that arrives before its back keeps it, and a back that arrives after is revealed', () => {
+    const plays = createPlays();
+    plays.add([base('sp', 'spring', { card: 'snare', trigger: 'cast', outcome: { do: 'nullify' }, set: 's1' })]);
+    plays.add([base('s1', 'set', {})]);
+    expect(plays.get('p1').plays[0]!.revealed?.card).toBe('snare');
+  });
+
+  test('a caught play names the set that caught it, and a Use its end', () => {
+    expect(playOf(base('k1', 'card', { card: 'whoops', caught: 's1' }))!.caught).toBe('s1');
+    expect(playOf(base('u1', 'card', { card: 'shield', layer: 1, ends: '2026-11-06T10:00:00.000Z' }))!.ends).toBe('2026-11-06T10:00:00.000Z');
+  });
+
+  test('the setter\'s own card is kept for their screen alone, beside the back', () => {
+    const plays = createPlays();
+    plays.add([base('s1', 'set', {})]);
+    plays.setFaces({ s1: 'bluffy' });
+    expect(plays.get('p1').faces).toEqual({ s1: 'bluffy' });
   });
 });

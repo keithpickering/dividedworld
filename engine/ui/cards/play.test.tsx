@@ -101,7 +101,7 @@ const drawer = () => screen.getByRole('region', { name: 'Your hand' });
 const here = (seq: number) => within(post(seq)).queryByRole('button', { name: `Play Whoops! on post ${seq}` });
 const arm = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(handButton());
-  await user.click(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })[0]!);
+  await user.click(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })[0]!);
 };
 
 beforeEach(() => {
@@ -124,8 +124,8 @@ describe('the post offers no "Play card"', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('button', { name: 'Play card' })).toBeNull();
     if (handButton().getAttribute('aria-expanded') !== 'true') await user.click(handButton());
-    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(2);
-    expect(within(drawer()).getByRole('button', { name: 'Stick Around, Sweet postcard' })).toBeInTheDocument();
+    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(2);
+    expect(within(drawer()).getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' })).toBeInTheDocument();
   });
 });
 
@@ -193,9 +193,9 @@ describe('arming a card', () => {
     expect(here(3)).toBeInTheDocument();
     expect(here(4)).toBeNull();
     /* The armed card says so in its name and carries its tag; the other copy does not. */
-    const armed = within(drawer()).getByRole('button', { name: 'Whoops!, Salty postcard, armed: pick a post' });
+    const armed = within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, armed: pick a post' });
     expect(armed.closest('li')).toHaveTextContent('Armed · pick a post');
-    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(1);
+    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(1);
   });
 
   test('the button belongs to its post: its name is the card\'s and the post\'s number', async () => {
@@ -215,13 +215,13 @@ describe('arming a card', () => {
     await user.keyboard('{Escape}');
     expect(here(2)).toBeNull();
     expect(handButton()).toHaveAttribute('aria-expanded', 'true');
-    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(2);
+    expect(within(drawer()).getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(2);
     /* A second Esc is the hand's own. */
     await user.keyboard('{Escape}');
     expect(handButton()).toHaveAttribute('aria-expanded', 'false');
     await arm(user);
     expect(here(2)).toBeInTheDocument();
-    await user.click(within(drawer()).getByRole('button', { name: 'Whoops!, Salty postcard, armed: pick a post' }));
+    await user.click(within(drawer()).getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, armed: pick a post' }));
     expect(here(2)).toBeNull();
   });
 
@@ -357,7 +357,7 @@ describe('the play form', () => {
     const saying = cards.map((c) => (c.key === 'whoops' ? { ...c, describe: (st: Instance['settings']) => `Splats a post for ${(st.economy['whoops.price']! / 100).toFixed(2)}.` } : c));
     await open(w, saying);
     await user.click(handButton());
-    expect(within(drawer()).getAllByRole('button', { name: /^Whoops!, Salty postcard/u })[0]).toHaveAccessibleDescription('Splats a post for 1.50.');
+    expect(within(drawer()).getAllByRole('button', { name: /^Whoops!, Salty, Cast, common postcard/u })[0]).toHaveAccessibleDescription('Splats a post for 1.50.');
   });
 
   /* #86: the server prices with the economy row an admin tunes; the form shows that price, not the compiled one. */

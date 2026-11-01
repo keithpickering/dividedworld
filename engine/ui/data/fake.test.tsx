@@ -1470,3 +1470,58 @@ describe('presence', () => {
     await expect(fake.here({ kind: 'thread', thread: 'nowhere' }, null)).rejects.toThrow('there is no such thread');
   });
 });
+
+describe('a card set face down, a ward and a trap, as the server holds them', () => {
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+  const cast = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
+  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } }, canApply: () => ok(undefined) };
+  const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, canApply: () => ok(undefined) };
+  const world: Instance = { ...instance, cards: [cast, snare, shield], settings: { ...settings, economy: { 'x.price': 100 } } };
+  function setup() {
+    const fake = createFake({ instance: world });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+    const bos = fake.seed.post(thread, boFace, 'Bo here.');
+    fake.seed.cards(ana, { snare: 1, shield: 1 });
+    fake.seed.cards(bo, { blot: 2, snare: 1 });
+    fake.signInAs(ana);
+    return { fake, ana, bo, anaFace, boFace, opener, bos };
+  }
+
+  test('a Set goes on the setter\'s own post, as a back that names no card, read by the setter alone', async () => {
+    const { fake, ana, bo, anaFace, opener, bos } = setup();
+    expect((await fake.setCard('snare', anaFace, bos, {})).ok).toBe(false);
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    expect([set.kind, set.payload]).toEqual(['set', {}]);
+    expect((await fake.cardsOn(opener, 8)).map((a) => [a.kind, a.payload])).toEqual([['set', {}]]);
+    expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'snare' });
+    fake.signInAs(bo);
+    expect(await fake.myFaceDown([set.id])).toEqual({});
+    void ana;
+  });
+
+  test('a trap catches the next cast, which is spent, and the spring reveals it', async () => {
+    const { fake, bo, anaFace, boFace, opener } = setup();
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    fake.signInAs(bo);
+    const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
+    expect(caught.payload.caught).toBe(set.id);
+    const on = await fake.cardsOn(opener, 8);
+    expect(on.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'snare', set: set.id, caught: caught.id });
+    expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
+    expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBeUndefined();
+  });
+
+  test('a ward on the user\'s own post turns a cast away in its words', async () => {
+    const { fake, bo, anaFace, boFace, opener, bos } = setup();
+    expect((await fake.useCard('shield', anaFace, bos, {}, '')).ok).toBe(false);
+    const used = must(await fake.useCard('shield', anaFace, opener, {}, ''));
+    expect(typeof used.payload.ends).toBe('string');
+    fake.signInAs(bo);
+    expect(await fake.playCard('blot', boFace, opener, {}, '')).toEqual(refused('this post\'s Shield turns away cards up to uncommon', 'config'));
+  });
+});

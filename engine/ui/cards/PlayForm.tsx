@@ -25,7 +25,7 @@
  * offer to play again, in so many words ("Play again anyway").
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
-import { casterMessage, MESSAGE_MOST } from '../../rules/cards.ts';
+import { casterMessage, MESSAGE_MOST, playOf } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { Overlay } from '../glass/Overlay.tsx';
@@ -91,22 +91,27 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
 
   const rules = instance.cards.find((c) => c.key === card);
   const cardUi = ui.cards.find((c) => c.key === card);
+  /* How the card is played (the card mechanic's design, section 1), and for a trap that strikes, the card it lays: its settings are that card's. */
+  const how = rules ? playOf(rules) : 'cast';
+  const struck = rules?.trap?.outcome.do === 'strike' ? rules.trap.outcome.card : null;
+  const configUi = struck ? ui.cards.find((c) => c.key === struck) : cardUi;
+  const configRules = struck ? instance.cards.find((c) => c.key === struck) : rules;
   const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced) : null), [rules, cardUi, priced]);
   const hud = player.hudCharacter;
   const wallet = player.wallet;
 
   /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. */
   const carried = usePlays(target.plays, post.id).plays;
-  const lands = rules ? landing(rules, post, carried) : { ok: false as const, why: 'there is no such card' };
+  const lands = rules ? landing(rules, post, carried, { cards: instance.cards, setLasts: instance.settings.setLasts }) : { ok: false as const, why: 'there is no such card' };
   const price = useMemo(() => {
     if (!rules) return 0;
     try {
-      const checked = rules.validateConfig(config);
+      const checked = (configRules ?? rules).validateConfig(config);
       return rules.playPrice(priced, targetOf(post), checked.ok ? checked.value : config ?? {});
     } catch {
       return 0;
     }
-  }, [rules, priced, post, config]);
+  }, [rules, configRules, priced, post, config]);
 
   if (!rules || !face) return null;
   const length = lengthOf(post);
@@ -151,10 +156,11 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     let looked = true;
     try { await read(); } catch { looked = false; }
     if (accountNow.current !== account) return;
-    const found = target.plays.get(post.id).plays.find((p) => !before.has(p.id) && p.card === card && p.caster === character);
+    /* A Set comes back as a card back, which names no card: the new back by this character is it. */
+    const found = target.plays.get(post.id).plays.find((p) => !before.has(p.id) && (how === 'set' ? p.faceDown === true : p.card === card) && p.caster === character);
     if (found) { onPlayed(); return; }
     setAgain(true);
-    setRefusal(`${words === null ? 'No answer came back.' : plainRefusal(words)} ${looked ? 'Your play is not on the post yet.' : 'The post could not be checked for it.'} Press “Play again anyway” to play it again.`);
+    setRefusal(`${words === null ? 'No answer came back.' : plainRefusal(words)} ${looked ? 'Your play is not on the post yet.' : 'The post could not be checked for it.'} Press “${how === 'set' ? 'Set' : how === 'use' ? 'Use' : 'Play'} again anyway” to ${how === 'set' ? 'set' : how === 'use' ? 'use' : 'play'} it again.`);
   };
 
   const submit = async (e?: FormEvent) => {
@@ -167,7 +173,11 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     setRefusal(null);
     try {
       let answer;
-      try { answer = await api.playCard(card, hud.id, post.id, config ?? {}, message); } catch { await look(null, before, hud.id); return; }
+      try {
+        answer = how === 'set' ? await api.setCard(card, hud.id, post.id, config ?? {})
+          : how === 'use' ? await api.useCard(card, hud.id, post.id, config ?? {}, message)
+          : await api.playCard(card, hud.id, post.id, config ?? {}, message);
+      } catch { await look(null, before, hud.id); return; }
       if (accountNow.current !== account) return;
       if (answer.ok) await landed(answer.value);
       else if (answer.uncertain) await look(answer.error, before, hud.id);
@@ -181,14 +191,15 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     }
   };
 
-  const Config = cardUi?.ConfigForm;
+  const Config = configUi?.ConfigForm;
+  const verb = how === 'set' ? 'Set' : how === 'use' ? 'Use' : 'Play';
   const surcharge = cardUi?.surcharge?.(priced) ?? 'This post';
   const hint = `${id}-hint`;
 
   return (
     <Overlay
       title={face.name}
-      kicker={<span className="kb-calm">Play a card</span>}
+      kicker={<span className="kb-calm">{how === 'set' ? 'Set a card face down' : how === 'use' ? 'Use a card' : 'Play a card'}</span>}
       surface="play"
       className="kb-play-dialog"
       onClose={onClose}
@@ -200,8 +211,10 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
             On <Link to={target.to} onClick={onClose}>{target.author}'s post #{post.seq}</Link> in “{target.title}”, {length} {length === 1 ? 'character' : 'characters'} long.
           </p>
           {ownBoth && <p className="kb-play-both kb-calm">You play both. It costs the same; your log will say so.</p>}
+          {how === 'set' && <p className="kb-play-both kb-calm">Everyone sees a card back on your post, the same as any card set face down; only you see which card it is.{struck && configRules ? ` If it springs, it lays ${configRules.name} with these settings.` : ''}</p>}
           {Config && <div className="kb-calm"><Config config={config} onChange={setConfig} post={post} id={id} /></div>}
-          <div className="kb-play-message">
+          {/* A Set's Act says nothing, so it carries no message: a Bluff's and a trap's are alike. */}
+          {how !== 'set' && <div className="kb-play-message">
             <label htmlFor={`${id}-message`} className="kb-play-label kb-calm">Your message</label>
             <textarea id={`${id}-message`} className="kb-play-input" rows={3} value={message} aria-describedby={hint} onChange={(e) => change(e.target.value)} />
             <div className="kb-play-count kb-calm">
@@ -210,7 +223,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
               <span>{`${[...message].length} / ${MESSAGE_MOST}`}</span>
               <span className="kb-visually-hidden" aria-live="polite" data-kb-count-said>{countSaid.words}{countSaid.words && countSaid.n % 2 === 0 ? '\u00a0' : ''}</span>
             </div>
-          </div>
+          </div>}
           <div className="kb-play-sum">
             <dl className="kb-play-cost kb-calm">
               <div><dt>Card</dt><dd>Paid</dd></div>
@@ -226,13 +239,13 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
             <p className="kb-play-fine kb-calm" role="status" aria-label="Cost">{shortWords || (!lands.ok ? plainRefusal(lands.why) : '')}</p>
           </div>
           <p className="kb-play-fine kb-calm">
-            Playing is a public Act{hud ? ` under ${hud.name}'s name` : ''}. Only solid Aura is spent; the ghost doesn't count.
+            {verb === 'Play' ? 'Playing' : verb === 'Set' ? 'Setting' : 'Using'} is a public Act{hud ? ` under ${hud.name}'s name` : ''}. Only solid Aura is spent; the ghost doesn't count.
           </p>
         </div>
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         <div className="kb-play-foot">
           <button type="submit" className="kb-play-go kb-glass-skew" disabled={blocked}>
-            <span className="kb-glass-upright">{again ? 'Play again anyway' : hud ? `Play as ${hud.name}` : 'Play'}</span>
+            <span className="kb-glass-upright">{again ? `${verb} again anyway` : hud ? `${verb} as ${hud.name}` : verb}</span>
           </button>
           <button type="button" className="kb-play-cancel kb-glass-skew" onClick={onClose}><span className="kb-glass-upright">Cancel</span></button>
         </div>

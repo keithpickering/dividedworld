@@ -44,3 +44,32 @@ describe('how long a post is', () => {
     expect(lengthOf(post(undefined))).toBe(0);
   });
 });
+
+/* The card mechanic (docs/plans/2026-11-01-card-plays-plan.md, Task 7): a Set lands where no back is live, a cast where no live ward
+   covers it, and a caught play holds no place. */
+describe('wards, backs and catches, as a screen offers a card', () => {
+  const setLasts = { unit: 'day' as const, count: 7 };
+  const at = new Date().toISOString();
+  const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('kb:card-back', 1), id: 'back', faceDown: true, playedAt: at, ...over });
+  const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', ward: true, lasts: setLasts, priceKey: 'x', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e) => landsOnPost({ key: 'shield' }, t, e) };
+  const snare: CardRules = { ...shield, key: 'snare', name: 'Snare', play: 'set', ward: undefined, lasts: undefined, trap: { trigger: { on: 'cast' }, outcome: { do: 'nullify' } }, canApply: () => ({ ok: true, value: undefined }) };
+  const blot: CardRules = { ...shield, key: 'blot', name: 'Blot', rarity: 'common', play: undefined, ward: undefined, lasts: undefined, canApply: (t, e) => landsOnPost({ key: 'blot' }, t, e) };
+  const cards = [shield, snare, blot];
+  const ward = (ends: string): CardPlay => ({ ...play('shield', 1), ends });
+
+  test('a Set is offered where no card back is live, and a sprung or ended back is none', () => {
+    expect(landing(snare, post('hi'), [], { cards, setLasts }).ok).toBe(true);
+    expect(landing(snare, post('hi'), [back()], { cards, setLasts })).toEqual({ ok: false, why: 'this post already holds a card face down' });
+    expect(landing(snare, post('hi'), [back({ revealed: { card: 'snare', spring: 's', at } })], { cards, setLasts }).ok).toBe(true);
+    expect(landing(snare, post('hi'), [back({ playedAt: '2020-01-01T00:00:00Z' })], { cards, setLasts }).ok).toBe(true);
+  });
+
+  test('a cast is not offered where a live ward turns it away, and is where the ward has ended', () => {
+    expect(landing(blot, post('hi'), [ward('2999-01-01T00:00:00Z')], { cards, setLasts })).toEqual({ ok: false, why: 'this post\'s Shield turns away cards up to uncommon' });
+    expect(landing(blot, post('hi'), [ward('2020-01-01T00:00:00Z')], { cards, setLasts }).ok).toBe(true);
+  });
+
+  test('a caught play holds no place in its card\'s stack', () => {
+    expect(landing(blot, post('hi'), [{ ...play('blot', 1), caught: 'back' }], { cards, setLasts }).ok).toBe(true);
+  });
+});

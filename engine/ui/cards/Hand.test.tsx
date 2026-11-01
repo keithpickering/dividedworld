@@ -6,7 +6,7 @@ import type { CardFace } from './faces.ts';
 
 const face = (key: string, name: string, alignment: 'sweet' | 'salty'): CardFace => ({
   key, name, alignment, tag: alignment === 'sweet' ? 'Sweet' : 'Salty', price: 100, extra: 0, stack: 1,
-  art: { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, tagline: '', summary: `${name} in a sentence.`, describe: `${name}, in plain words.`,
+  art: { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, tagline: '', summary: `${name} in a sentence.`, describe: `${name}, in plain words.`, rarity: 'common', play: 'cast',
 });
 const stick = face('stick', 'Stick Around', 'sweet');
 const whoops = face('whoops', 'Whoops!', 'salty');
@@ -33,21 +33,21 @@ describe('the faces a hand draws', () => {
 describe('the hand', () => {
   test('each copy is a button by the card\'s name and alignment, with its rules in plain words as its description', () => {
     hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 2 }]);
-    expect(screen.getByRole('button', { name: 'Stick Around, Sweet postcard' })).toHaveAccessibleDescription('Stick Around, in plain words.');
-    expect(screen.getAllByRole('button', { name: 'Whoops!, Salty postcard' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' })).toHaveAccessibleDescription('Stick Around, in plain words.');
+    expect(screen.getAllByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toHaveLength(2);
     expect(screen.getByRole('heading', { name: 'Hand · 3' })).toBeInTheDocument();
   });
 
   test('a kind held more than twice says how many in the name of its last face', () => {
     hand([{ card: 'whoops', held: 5 }]);
-    expect(screen.getByRole('button', { name: 'Whoops!, Salty postcard' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Whoops!, Salty postcard, 5 in hand' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, 5 in hand' })).toBeInTheDocument();
   });
 
   test('pressing a card shows what it does in the sheet\'s line, and the Vending Machine is a link', () => {
     hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 1 }]);
     expect(screen.getByText('Stick Around.', { selector: 'b' }).closest('p')).toHaveTextContent('Stick Around in a sentence.');
-    fireEvent.click(screen.getByRole('button', { name: 'Whoops!, Salty postcard' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard' }));
     expect(screen.getByText('Whoops!.', { selector: 'b' }).closest('p')).toHaveTextContent('Whoops! in a sentence.');
     expect(screen.getByRole('link', { name: 'Vending Machine' })).toHaveAttribute('href', '/vending');
   });
@@ -55,9 +55,9 @@ describe('the hand', () => {
   test('an armed card says so in its name and in the line, and pressing a card is the caller\'s to answer', () => {
     const onPick = vi.fn();
     hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 2 }], { armed: 'whoops', onPick });
-    const armed = screen.getByRole('button', { name: 'Whoops!, Salty postcard, armed: pick a post' });
+    const armed = screen.getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, armed: pick a post' });
     expect(armed).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Stick Around, Sweet postcard' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Stick Around, Sweet, Cast, common postcard' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByText('+ mark').closest('p')).toHaveTextContent('Whoops! is armed. Every post it can land on now shows a dashed + mark beside its date, named Play Whoops! on that post. Press it to play Whoops! there.');
     fireEvent.click(armed);
     expect(onPick).toHaveBeenCalledWith(whoops);
@@ -66,7 +66,7 @@ describe('the hand', () => {
   test('the armed card carries its floating tag, and no other card does', () => {
     hand([{ card: 'stick', held: 1 }, { card: 'whoops', held: 2 }], { armed: 'whoops', onPick: () => {} });
     expect(screen.getAllByText('Armed · pick a post')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: 'Whoops!, Salty postcard, armed: pick a post' }).closest('li')).toHaveTextContent('Armed · pick a post');
+    expect(screen.getByRole('button', { name: 'Whoops!, Salty, Cast, common postcard, armed: pick a post' }).closest('li')).toHaveTextContent('Armed · pick a post');
   });
 
   test('an empty hand says so and where cards are bought, and Close is named for what it does', () => {
@@ -84,7 +84,7 @@ describe('a postcard button\'s name (Label in Name)', () => {
     hand([{ card: 'stick', held: 1 }], { faces: [line, whoops] });
     const button = screen.getByRole('button', { name: /^Stick Around/ });
     const shown = (button.textContent ?? '').replace(/\s+/g, ' ').trim();
-    expect(shown).toBe('Stick Around Sweet Hold a reader on a post.');
+    expect(shown).toBe('Stick Around Sweet Cast Hold a reader on a post.');
     expect(button.getAttribute('aria-label')!.replace(/[^\w ]/g, ' ').replace(/\s+/g, ' ')).toContain(shown.replace(/[^\w ]/g, ' ').replace(/\s+/g, ' '));
   });
 });
