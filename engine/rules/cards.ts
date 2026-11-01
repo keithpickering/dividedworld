@@ -262,10 +262,6 @@ export function casterMessage(message: unknown): Verdict<string> {
   return ok(said);
 }
 
-/**
- * What every card holds to unless it says otherwise: it lands on a post, and a post carries at
- * most its stack of it (one unless the card says more) that are still up, each its own play.
- */
 /** A span in milliseconds, a month as 30 days, as Postgres compares intervals. */
 export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'day' ? 86_400_000 : s.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
 
