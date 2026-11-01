@@ -17,6 +17,7 @@ import type { Act, Board, Character, Id, PinnedThread, ThreadSummary } from '../
 import { useUntil } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
+import { useReachShown } from '../cards/PlayActions.tsx';
 import { createPlays, effectCards, livePlays, playOf, readAbove, readEffects, type Plays } from '../cards/plays.ts';
 import { createMine, type Mine } from '../reactions/mine.ts';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
@@ -197,16 +198,17 @@ function BoardBanner({ board, plays, tallies, mine, nameOf, heading, onSpin }: {
   readonly heading: React.RefObject<HTMLHeadingElement | null>; readonly onSpin: (origin: SpinOrigin) => void;
 }) {
   const to = `/b/${board.slug}`;
+  const shown = useReachShown(plays, board.id, 'board');
   return (
       <div className="kb-board-banner">
         <h1 ref={heading} tabIndex={-1} className="kb-heading kb-board-title">{board.name}</h1>
-        <span className="kb-board-banner-marks">
+        {shown && <span className="kb-board-banner-marks">
           <PostMarks
             post={board.id} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
             reachAt={{ reach: 'board', target: board.id, name: board.name, fromPost: null, thread: null, board: null, title: board.name, to, plays, know: async () => {}, focusBack: () => heading.current }}
             onSpin={(play, label, opener) => onSpin({ id: play.id, label, opener })}
           />
-        </span>
+        </span>}
       </div>
   );
 }

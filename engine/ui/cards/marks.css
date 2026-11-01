@@ -297,10 +297,10 @@
 }
 
 /*
- * Marks beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 4): a character's on its postbit under its name, a thread's
+ * Marks beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 4): a character's over its postbit's top corner, a thread's
  * beside its title in the head, a board's beside its name in the banner, and a pin's beside its thread's title on the board's list.
- * Each strip starts where its words end, rather than at the far edge as a post's date row has it, and its row keeps the strip's height
- * whether it holds marks or none, so arming a card or a play landing moves nothing.
+ * Each strip starts where its words end, rather than at the far edge as a post's date row has it. A host draws its strip only while a
+ * play or an armed card concerns its target (useReachShown), so a postbit, a head and a banner no card concerns are as they were.
  */
 .kb-postbit-marks,
 .kb-thread-head-marks,
@@ -310,13 +310,11 @@
   position: relative;
   min-height: 1.9rem;
 }
-.kb-postbit-marks > .kb-marks-anchor,
 .kb-thread-head-marks > .kb-marks-anchor,
 .kb-board-banner-marks > .kb-marks-anchor,
 .kb-thread-pin-mark > .kb-marks-anchor {
   margin-inline-start: 0;
 }
-.kb-postbit-marks .kb-marks,
 .kb-thread-head-marks .kb-marks,
 .kb-board-banner-marks .kb-marks,
 .kb-thread-pin-mark .kb-marks {
@@ -324,12 +322,34 @@
   left: 0;
   top: 0.1rem;
 }
-.kb-postbit-marks {
-  margin-block: 0.15rem;
+/*
+ * A postbit's strip is laid over the postbit's top corner, out of its flow, as a post's strip is over its date row: arming a character
+ * card or a play landing on the character never moves a post (PlayActions.tsx). The name keeps clear of one mark.
+ */
+.kb-postbit:has(.kb-postbit-marks) {
+  position: relative;
+}
+.kb-postbit:has(.kb-postbit-marks) .kb-postbit-name {
+  padding-inline-end: 2.2rem;
+}
+.kb-postbit .kb-postbit-marks {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-height: 0;
+}
+.kb-postbit-marks > .kb-marks-anchor {
+  margin-inline-start: auto;
+}
+.kb-postbit-marks .kb-marks {
+  left: auto;
+  right: 0;
 }
 .kb-thread-head-marks {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   align-self: center;
+  /* As tall as the title's line already is: a thread card armed adds the strip beside the title, never a taller head. */
+  min-height: 0;
 }
 .kb-board-banner {
   display: flex;
@@ -338,7 +358,8 @@
   gap: 0.2em 1em;
 }
 .kb-board-banner-marks {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  min-height: 0;
 }
 .kb-thread-pin-mark {
   display: inline-flex;

@@ -57,13 +57,16 @@ const manifest: BoardManifest = {
        visible words are the machine's printing, the instance's art (the postcard's face and a code the stylesheet writes out),
        and the name a reader gets is an aria-label with no text node behind it. */
     /* The card mechanic (docs/plans/2026-11-01-card-plays-plan.md, Tasks 7 and 8) departs from the board twice: a slot's name says
-       its card's rarity and play after its price, and the instance's three new cards stock B1, B2 and C1, which the board drew sealed. */
-    { id: 'slot-a1', role: 'button', name: 'Buy Stick Around, 1.00 orb', buildName: 'Buy Stick Around, 1.00 orb, common Cast', type: false },
-    { id: 'slot-a2', role: 'button', name: 'Buy Whoops!, 1.00 orb, selected', buildName: 'Buy Whoops!, 1.00 orb, common Cast, selected', type: false },
-    { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Trap Card, 1.50 orbs, uncommon Set', type: false },
-    { id: 'slot-b2', role: 'img', name: 'Empty slot B2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Force Field, 1.50 orbs, uncommon Use', type: false },
-    { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Bluff, 0.25 orbs, common Set', type: false },
-    { id: 'slot-c2', role: 'img', name: 'Empty slot C2, waiting for a future postcard', type: false },
+       its card's rarity and play after its price, and the instance's three new cards stock B1, B2 and C1, which the board drew sealed.
+       Its Part 2 (docs/plans/2026-11-01-card-reach-plan.md, Task 7) departs once more: Glitter Bomb stocks C2, and Main Event a fourth
+       row the board does not draw, so the machine holds four rows of shorter slots in the same body. So no slot's box is compared (`box: 'none'`);
+       its name and role still are, and they say which card stocks it. */
+    { id: 'slot-a1', role: 'button', name: 'Buy Stick Around, 1.00 orb', buildName: 'Buy Stick Around, 1.00 orb, common Cast', type: false, box: 'none' },
+    { id: 'slot-a2', role: 'button', name: 'Buy Whoops!, 1.00 orb, selected', buildName: 'Buy Whoops!, 1.00 orb, common Cast, selected', type: false, box: 'none' },
+    { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Trap Card, 1.50 orbs, uncommon Set', type: false, box: 'none' },
+    { id: 'slot-b2', role: 'img', name: 'Empty slot B2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Force Field, 1.50 orbs, uncommon Use', type: false, box: 'none' },
+    { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Bluff, 0.25 orbs, common Set', type: false, box: 'none' },
+    { id: 'slot-c2', role: 'img', name: 'Empty slot C2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Glitter Bomb, 1.50 orbs, uncommon Cast', type: false, box: 'none' },
 
     /* The control panel: the price display, the buy button and the note under it. The display's lit words are the machine's
        printing (`data-kb-art`) and the text a reader gets is visually hidden, so its box is compared and its type is not. */

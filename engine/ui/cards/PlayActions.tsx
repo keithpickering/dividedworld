@@ -131,3 +131,17 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
 }
 
 const effect = (p: { readonly id: Id; readonly card: string; readonly ends?: string }) => ({ card: p.card, act: p.id, ...(p.ends ? { ends: p.ends } : {}) });
+
+/**
+ * Whether a target beyond a post has a strip to draw: a play on it, or an armed card that reaches it. With neither, its host draws no
+ * strip at all, so a postbit, a thread's head and a banner are as they were until a card concerns them (the board matches hold).
+ */
+export function useReachShown(plays: Plays, target: Id | null, reach: BeyondPost): boolean {
+  const { instance } = useKayfa();
+  const play = usePlay();
+  const here = usePlays(plays, target ?? '');
+  if (target === null) return false;
+  if (here.plays.some((p) => p.reach === reach)) return true;
+  const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
+  return rules !== undefined && reachesOf(rules).includes(reach);
+}
