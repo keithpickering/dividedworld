@@ -249,7 +249,7 @@ function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
     const on = (trap.trigger as { on?: unknown } | undefined)?.on;
     if (!TRIGGERS.includes(on as never)) out.push(`${who} springs on ${JSON.stringify(on)}; a trap springs on ${TRIGGERS.join(', ')}`);
     else if (on === 'visit') out.push(`${who} springs on a visit, which is not wired until the staff build adds Mod Bot visits`);
-    else if (on === 'reaction' && !QUADRANTS.includes((trap.trigger as { quadrant?: never }).quadrant!)) out.push(`${who} springs on a reaction of no quadrant; it names one of ${QUADRANTS.join(', ')}`);
+    else if (on === 'reaction' && !QUADRANTS.includes((trap.trigger as { quadrant?: never }).quadrant!)) out.push(`${who} springs on a reaction of ${JSON.stringify((trap.trigger as { quadrant?: unknown }).quadrant)}, which is no quadrant; it names one of ${QUADRANTS.join(', ')}`);
     const outcome = trap.outcome as { do?: unknown; card?: unknown } | undefined;
     if (!OUTCOMES.includes(outcome?.do as never)) out.push(`${who} does ${JSON.stringify(outcome?.do)} when it springs; a trap does ${OUTCOMES.join(', ')}`);
     else if (outcome!.do === 'payout' && on !== 'cast' && TRIGGERS.includes(on as never)) out.push(`${who} pays out on a ${String(on)}; it pays out only on a cast, since only a cast is paid for`);

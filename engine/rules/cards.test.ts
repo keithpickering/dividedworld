@@ -27,6 +27,15 @@ test('the rarities are in order, and atOrBelow reads that order', () => {
   assert.equal(atOrBelow('uncommon', 'uncommon'), true);
   assert.equal(atOrBelow('rare', 'uncommon'), false);
   assert.equal(atOrBelow('legendary', 'common'), false);
+  // A rarity that is not one of the four is below nothing and covers nothing.
+  assert.equal(atOrBelow('mythic' as never, 'legendary'), false);
+  assert.equal(atOrBelow('common', 'mythic' as never), false);
+});
+
+test('a ward that came in with a malformed end still holds, and one whose card is not named is called a ward', () => {
+  const ward: CardEffect = { card: 'shield', act: 'w', ward: 'uncommon', ends: 'not a time' };
+  assert.equal(decidePlay(plain, settings, post, [ward], {}, '').ok, false);
+  assert.deepEqual(decidePlay(plain, settings, post, [{ card: null, act: 'w', ward: 'uncommon' }], {}, ''), { ok: false, why: 'this post\'s ward turns away cards up to uncommon' });
 });
 
 test('a live ward turns away a cast at or below its rarity, before the card\'s own rules, in the same words for everyone', () => {
@@ -59,14 +68,14 @@ test('decideUse uses a Use and nothing else, and a ward does not stop a Use', ()
 });
 
 test('decideSet sets a Set, one face-down card to a post', () => {
-  assert.match((decideSet(plain, settings, post, [], {}) as { why: string }).why, /cast/);
+  assert.match((decideSet(plain, settings, post, [], {}, []) as { why: string }).why, /cast/);
   const back: CardEffect = { card: null, act: 's', faceDown: true, ends: soon };
-  assert.deepEqual(decideSet(snare, settings, post, [back], {}), { ok: false, why: 'this post already holds a card face down' });
-  assert.equal(decideSet(snare, settings, post, [{ ...back, ends: gone }], {}).ok, true);
-  assert.equal(decideSet(bluff, settings, post, [], {}).ok, true);
+  assert.deepEqual(decideSet(snare, settings, post, [back], {}, []), { ok: false, why: 'this post already holds a card face down' });
+  assert.equal(decideSet(snare, settings, post, [{ ...back, ends: gone }], {}, []).ok, true);
+  assert.equal(decideSet(bluff, settings, post, [], {}, []).ok, true);
   // A ward never blocks a Set.
-  assert.equal(decideSet(snare, settings, post, [{ card: 'shield', act: 'w', ward: 'legendary', ends: soon }], {}).ok, true);
-  assert.match((decideSet(snare, settings, { ...post, kind: 'spin' }, [], {}) as { why: string }).why, /post/);
+  assert.equal(decideSet(snare, settings, post, [{ card: 'shield', act: 'w', ward: 'legendary', ends: soon }], {}, []).ok, true);
+  assert.match((decideSet(snare, settings, { ...post, kind: 'spin' }, [], {}, []) as { why: string }).why, /post/);
 });
 
 test('a strike\'s configuration is checked by the struck card\'s own rules', () => {

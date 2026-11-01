@@ -539,7 +539,7 @@ test('a trap is a Set card\'s, and a ward and a time up are a Use card\'s', () =
 
 test('a trap springs on a trigger in the list and does an outcome in the list', () => {
   assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'sneeze' }, outcome: { do: 'nullify' } } })).join('\n'), /card "splat" springs on "sneeze"/);
-  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'reaction', quadrant: 'sideways' }, outcome: { do: 'nullify' } } })).join('\n'), /card "splat" springs on a reaction of no quadrant/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'reaction', quadrant: 'sideways' }, outcome: { do: 'nullify' } } })).join('\n'), /card "splat" springs on a reaction of "sideways", which is no quadrant/);
   assert.deepEqual(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'reaction', quadrant: 'boredNegative' }, outcome: { do: 'nullify' } } })), []);
   assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'reflect' } } })).join('\n'), /card "splat" does "reflect"/);
 });

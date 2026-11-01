@@ -36,8 +36,11 @@ export interface CardEffect {
 /** How rare a card is, commonest first. It bounds what a trap catches and what a ward turns away. */
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'legendary';
 export const RARITIES: readonly Rarity[] = Object.freeze(['common', 'uncommon', 'rare', 'legendary']);
-/** Whether rarity `a` is at or below rarity `b`. */
-export const atOrBelow = (a: Rarity, b: Rarity): boolean => RARITIES.indexOf(a) <= RARITIES.indexOf(b);
+/** Whether rarity `a` is at or below rarity `b`; never, where either is not one of the four. */
+export const atOrBelow = (a: Rarity, b: Rarity): boolean => {
+  const [i, j] = [RARITIES.indexOf(a), RARITIES.indexOf(b)];
+  return i >= 0 && j >= 0 && i <= j;
+};
 
 /**
  * The one way a card is played (the card mechanic's design, section 1): cast on a target, used on
@@ -68,9 +71,16 @@ export const TRIGGERS: readonly Trigger['on'][] = Object.freeze(['cast', 'reacti
 export type Outcome = { readonly do: 'nullify' } | { readonly do: 'payout' } | { readonly do: 'strike'; readonly card: string };
 export const OUTCOMES: readonly Outcome['do'][] = Object.freeze(['nullify', 'payout', 'strike']);
 
-/** Whether an effect is still up: it has no end, or its end is after `now`. */
-export const isLive = (effect: Pick<CardEffect, 'ends'>, now: Date = new Date()): boolean =>
-  effect.ends === undefined || Date.parse(effect.ends) > now.getTime();
+/**
+ * Whether an effect is still up: it has no end, or its end is after `now`. An end that is no time is
+ * read as still up, so a ward or a card back that came in malformed holds rather than lapsing; the
+ * server, which wrote the end, decides again.
+ */
+export const isLive = (effect: Pick<CardEffect, 'ends'>, now: Date = new Date()): boolean => {
+  if (effect.ends === undefined) return true;
+  const ends = Date.parse(effect.ends);
+  return Number.isNaN(ends) || ends > now.getTime();
+};
 
 /** A ward's refusal, the same for every caster, since the ward is face up; play_card says it in the same words. */
 export const wardWords = (wardName: string, rarity: Rarity): string => `this post's ${wardName} turns away cards up to ${rarity}`;
@@ -109,7 +119,10 @@ export interface CardRules<Config = unknown> {
   readonly stack?: number;
   /** Whether each play is drawn from a seed the server chooses (a splat different every time), stored on its Act. */
   readonly seeded?: boolean;
-  /** What playing it on this target costs from the wallet, on top of the base price already paid. */
+  /**
+   * What playing it on this target costs from the wallet, on top of the base price already paid. A
+   * trap that strikes is given the struck card's configuration, which is what it carries.
+   */
   playPrice(settings: Settings, target: CardTarget, config: Config): Hundredths;
   canApply(target: CardTarget, effectsOnTarget: readonly CardEffect[]): Verdict;
   /** Checks a caster's configuration and returns it in the card's own shape. */
@@ -188,10 +201,10 @@ export function decideUse(rules: CardRules, settings: Settings, target: CardTarg
  * A Set card set face down on a post: refused on a post that already holds a live face-down card.
  * A trap that strikes carries the struck card's configuration, which that card's own rules check,
  * so `cards` holds the instance's cards to find it; the configuration returned is the struck card's
- * in its own shape, or the Set card's own for any other. A ward never blocks a Set, and a Set
+ * in its own shape, or the Set card's own for any other, and is what the Set card's playPrice is given. A ward never blocks a Set, and a Set
  * carries no message, since its Act says nothing about its card.
  */
-export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[] = [], now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown }> {
+export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown }> {
   if (playOf(rules) !== 'set') return wrongPlay(rules);
   if (target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
