@@ -100,6 +100,7 @@ describe('the plays above a page', () => {
     await user.click(within(lens).getByRole('button', { name: '1 play · Gloomba' }));
     expect(within(lens).getByRole('button', { name: 'React' })).toBeInTheDocument();
     expect(lens).toHaveTextContent('Shine.');
+    expect(lens).toHaveTextContent(/Ends by itself on /u);
   });
 
   test('a thread\'s live play is a mark on the thread\'s head', async () => {
@@ -135,6 +136,8 @@ describe('a character card armed', () => {
     expect(dialog).toHaveTextContent('On Spritey');
     await user.click(within(dialog).getByRole('button', { name: 'Play as Pipewrench' }));
     await waitFor(() => expect(within(postbit(5)).getByRole('button', { name: /^Sparkle, 1 play\b.*Opens the cards on this character\./u })).toBeInTheDocument());
+    /* The ghost is gone with the play, so focus goes back to the post it was played from. */
+    await waitFor(() => expect(document.activeElement).toBe(post(3)));
   });
 });
 

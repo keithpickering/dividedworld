@@ -21,6 +21,13 @@ import forceFieldFace from './cards/force-field.svg?url';
 import forceFieldMark from './cards/force-field-mark.svg?url';
 import bluffFace from './cards/bluff.svg?url';
 import bluffMark from './cards/bluff-mark.svg?url';
+import glitterBombFace from './cards/glitter-bomb.svg?url';
+import glitterBombMark from './cards/glitter-bomb-mark.svg?url';
+import mainEventFace from './cards/main-event.svg?url';
+import mainEventMark from './cards/main-event-mark.svg?url';
+import { GlitterBombEffect } from './glitter-bomb/Effect.tsx';
+import { glitterBomb } from '../cards/glitter-bomb.ts';
+import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 
 /** A span in words: "a week", "3 days". */
@@ -101,5 +108,24 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: 'Set face down on your post. Looks like a trap, and does nothing.',
     describe: (settings: Settings) =>
       `A Pepperoni card, common, set face down on one of your own posts. Everyone sees a card back there, the same as a Trap Card's. It does nothing, and ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} with nothing revealed. It costs ${orbs(settings.economy['bluff.price'] ?? 0)} to buy, and nothing more to set.`,
+  },
+  /*
+   * The first cards beyond a post (docs/plans/2026-11-01-card-mechanic-design.md, section 8). Glitter Bomb is Pepperoni's color, as
+   * Bluff is; Main Event is Sweet's, as Force Field is.
+   */
+  {
+    key: 'glitter-bomb',
+    Effect: GlitterBombEffect,
+    art: { color: '#d24a2c', ink: '#1a0602', image: glitterBombFace, mark: glitterBombMark, tagline: 'Make a character sparkle.' },
+    summary: `Cast on a character. Every post of theirs sparkles for ${spanWords(glitterBomb.lasts!)}.`,
+    describe: (settings: Settings) =>
+      `A Pepperoni card, ${glitterBomb.rarity}, cast on a character from any of their posts. For ${spanWords(glitterBomb.lasts!)}, every post of that character sparkles, wherever it is, and then it stops by itself. It falls on that mask alone. It costs ${orbs(settings.economy['glitterBomb.price'] ?? 0)} to buy, and nothing more to play.`,
+  },
+  {
+    key: 'main-event',
+    art: { color: '#2ee6ff', ink: '#03141a', image: mainEventFace, mark: mainEventMark, tagline: 'Pin a thread to the top of its board.' },
+    summary: `Cast on a thread. Pins it to the top of its board for ${spanWords(mainEvent.lasts!)}.`,
+    describe: (settings: Settings) =>
+      `A Sweet card, ${mainEvent.rarity}, cast on a thread from its title. For ${spanWords(mainEvent.lasts!)}, the thread is pinned above the first page of its board's list, and then it drops back to its place by itself. It takes no other thread's place on the page. It costs ${orbs(settings.economy['mainEvent.price'] ?? 0)} to buy, and nothing more to play.`,
   },
 ] satisfies CardUi[]);

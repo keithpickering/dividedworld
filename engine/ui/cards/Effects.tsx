@@ -107,14 +107,16 @@ const beyondSave: EffectProps['save'] = async () => ({ ok: false, error: 'a card
  * The time, redrawn when the soonest of these plays' ends passes, so a play beyond a post stops drawing at its end without a reread
  * (its way out). Nothing is scheduled while none ends ahead.
  */
+const TIMER_MOST = 2 ** 31 - 1;
 export function useUntil(plays: readonly CardPlay[]): number {
   const [now, setNow] = useState(() => Date.now());
   const next = nextEnd(plays, now);
   useEffect(() => {
     if (next === null) return;
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, next - Date.now()) + 1);
+    /* A timer's delay is held under 2^31 ms; a later end is waited for in steps, each re-arming at the time it wakes to. */
+    const timer = setTimeout(() => setNow(Date.now()), Math.min(TIMER_MOST, Math.max(0, next - Date.now()) + 1));
     return () => clearTimeout(timer);
-  }, [next]);
+  }, [next, now]);
   return now;
 }
 

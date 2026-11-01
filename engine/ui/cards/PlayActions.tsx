@@ -84,6 +84,8 @@ export interface ReachAt {
   readonly to: string;
   readonly plays: Plays;
   readonly know: (characters: readonly (Id | null)[]) => Promise<void>;
+  /** Where focus goes when the form closes: the post's article, the thread's title, the board's title; the ghost itself may be gone. */
+  readonly focusBack: () => HTMLElement | null;
 }
 
 /** What a ghost beyond a post is named: "Play Glitter on Spritey", "Use a Ward on Spritey". */
@@ -113,7 +115,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
   if (!landingOn(rules, goal, livePlays(here.plays), { cards: instance.cards, setLasts: instance.settings.setLasts, above }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy));
-  const target: PlayTarget = { post: at.from, reach: { reach: at.reach, target: at.target, name: at.name, above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know };
+  const target: PlayTarget = { post: at.from, reach: { reach: at.reach, target: at.target, name: at.name, above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (
     <button
       type="button" className="kb-mark kb-ghost-mark" aria-label={reachGhostName(rules.name, how, at.name)} data-kb-card={rules.key} data-kb-alignment={rules.alignment} data-kb-reach={at.reach}

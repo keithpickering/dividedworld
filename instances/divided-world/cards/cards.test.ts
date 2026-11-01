@@ -16,7 +16,7 @@ import type { CardTarget } from '../../../engine/rules/cards.ts';
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -175,3 +175,28 @@ test('Bluff\'s and Trap Card\'s Set requests are the same but for the card key, 
   assert.deepEqual(decideSet(by('trap-card'), settings, target, [], {}, cards), decideSet(by('bluff'), settings, target, [], {}, cards));
 });
 const by = (key: string) => cards.find((c) => c.key === key)!;
+
+/* Cards beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 7). */
+test('Glitter Bomb is an uncommon Pepperoni Cast on a character, for a week; Main Event a rare Sweet Cast on a thread, for a day, that pins', async () => {
+  const { glitterBomb } = await import('./glitter-bomb.ts');
+  const { mainEvent } = await import('./main-event.ts');
+  assert.deepEqual([glitterBomb.rarity, glitterBomb.alignment, glitterBomb.play ?? 'cast', glitterBomb.reaches, glitterBomb.lasts], ['uncommon', 'pepperoni', 'cast', ['character'], { unit: 'day', count: 7 }]);
+  assert.deepEqual([mainEvent.rarity, mainEvent.alignment, mainEvent.play ?? 'cast', mainEvent.reaches, mainEvent.lasts, mainEvent.pins], ['rare', 'sweet', 'cast', ['thread'], { unit: 'day', count: 1 }, true]);
+  assert.equal(basePrice(glitterBomb, settings), 150);
+  assert.equal(basePrice(mainEvent, settings), 300);
+  const character = { reach: 'character' as const, character: 'c1' };
+  assert.equal(glitterBomb.canApply(character, []).ok, true);
+  assert.deepEqual(glitterBomb.canApply(post(10), []), { ok: false, why: 'this card lands on a character' });
+  assert.deepEqual(glitterBomb.canApply(character, [{ card: 'glitter-bomb', act: 'g', reach: 'character', ends: new Date(Date.now() + 1e6).toISOString() }]), { ok: false, why: 'this character already carries that card' });
+  assert.equal(mainEvent.canApply({ reach: 'thread', thread: 't1' }, []).ok, true);
+  assert.deepEqual(mainEvent.canApply(post(10), []), { ok: false, why: 'this card lands on a thread' });
+  assert.equal(glitterBomb.playPrice(settings, character, {}), 0);
+  assert.equal(mainEvent.playPrice(settings, { reach: 'thread', thread: 't1' }, {}), 0);
+  assert.ok(cards.some((c) => c.key === 'glitter-bomb') && cards.some((c) => c.key === 'main-event'));
+});
+
+test('the instance, with its cards beyond a post, has no problems, and its reach settings are the design\'s', () => {
+  assert.deepEqual(instanceProblems(instance), []);
+  assert.deepEqual(settings.reachRarity, { character: 'uncommon', thread: 'rare', board: 'legendary' });
+  assert.deepEqual(settings.reachLasts, { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } });
+});

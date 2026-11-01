@@ -122,6 +122,8 @@ export const defaults: Settings = deepFreeze<Settings>({
     'trapCard.price': 150,
     'forceField.price': 150,
     'bluff.price': 25,
+    'glitterBomb.price': 150,
+    'mainEvent.price': 300,
     /** 1.00 to buy, plus 0.25 per 500 characters of the target when played, at most 3.00 in all. */
     'whoops.price': 100,
     'whoops.perLength': 25,

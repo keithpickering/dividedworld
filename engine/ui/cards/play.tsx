@@ -37,6 +37,8 @@ export interface PlayTarget {
    * "“Glitter everywhere”", "General"), and the live plays above it, which the card's rules see.
    */
   readonly reach?: { readonly reach: BeyondPost; readonly target: Id; readonly name: string; readonly above?: EffectsAbove };
+  /** Where focus goes when the form closes, for a target the form cannot find by its post's number (a thread's head, a board's banner). */
+  readonly focusBack?: () => HTMLElement | null;
   /** The thread's title. */
   readonly title: string;
   /** The post's author's name, as the thread knows it. */

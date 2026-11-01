@@ -175,7 +175,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     const found = target.plays.get(home).plays.find((p) => !before.has(p.id) && (how === 'set' ? p.faceDown === true : p.card === card) && p.caster === character);
     if (found) { onPlayed(); return; }
     setAgain(true);
-    setRefusal(`${words === null ? 'No answer came back.' : plainRefusal(words)} ${looked ? 'Your play is not on the post yet.' : 'The post could not be checked for it.'} Press “${how === 'set' ? 'Set' : how === 'use' ? 'Use' : 'Play'} again anyway” to ${how === 'set' ? 'set' : how === 'use' ? 'use' : 'play'} it again.`);
+    setRefusal(`${words === null ? 'No answer came back.' : plainRefusal(words)} ${looked ? `Your play is not on the ${beyond?.reach ?? 'post'} yet.` : `The ${beyond?.reach ?? 'post'} could not be checked for it.`} Press “${how === 'set' ? 'Set' : how === 'use' ? 'Use' : 'Play'} again anyway” to ${how === 'set' ? 'set' : how === 'use' ? 'use' : 'play'} it again.`);
   };
 
   const submit = async (e?: FormEvent) => {
@@ -221,7 +221,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
       surface="play"
       className="kb-play-dialog"
       onClose={onClose}
-      returnFocusTo={() => (post && !beyond ? document.getElementById(`post-${post.seq}`) : null)}
+      returnFocusTo={() => target.focusBack?.() ?? (post ? document.getElementById(`post-${post.seq}`) : null)}
     >
       <form className="kb-play" data-kb-alignment={face.alignment} style={{ '--kb-card-color': face.art.color } as React.CSSProperties} onSubmit={(e) => void submit(e)} noValidate>
         <div className="kb-play-fields">

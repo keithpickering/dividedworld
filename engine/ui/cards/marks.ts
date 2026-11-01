@@ -77,5 +77,8 @@ export function wardWords(card: string, rarity: Rarity, ends: string | undefined
   return { state: `Turns away cards up to ${rarity}.`, ...(ends !== undefined ? { ends: `Ends on ${utcDate(ends)}.` } : {}) };
 }
 
+/** When a play beyond a post ends, as its Lens line says it: on its timer, by itself (its way out). */
+export const endsWords = (ends: string): string => `Ends by itself on ${utcDate(ends)}.`;
+
 /** A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). */
 export const caughtWords = (trap: string | null): string => `Caught by ${trap ? article(trap) : 'a trap'}. It did nothing, and its card is spent.`;

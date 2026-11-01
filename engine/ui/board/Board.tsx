@@ -59,6 +59,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
   /* A play's Spin, from the banner's Lens or a pin's: its form opens under the banner. */
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   const drafts = useSpinDrafts();
+  useEffect(() => setSpinOrigin(null), [slug]);
   const { query } = useLocation();
   const signedIn = useSignedIn(api);
   const asked = Number.parseInt(query.get('page') ?? '1', 10);
@@ -202,7 +203,7 @@ function BoardBanner({ board, plays, tallies, mine, nameOf, heading, onSpin }: {
         <span className="kb-board-banner-marks">
           <PostMarks
             post={board.id} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
-            reachAt={{ reach: 'board', target: board.id, name: board.name, from: null, thread: null, board: null, title: board.name, to, plays, know: async () => {} }}
+            reachAt={{ reach: 'board', target: board.id, name: board.name, from: null, thread: null, board: null, title: board.name, to, plays, know: async () => {}, focusBack: () => heading.current }}
             onSpin={(play, label, opener) => onSpin({ id: play.id, label, opener })}
           />
         </span>

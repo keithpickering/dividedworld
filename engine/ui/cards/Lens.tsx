@@ -38,10 +38,10 @@ import { Link } from '../router.tsx';
 import { spunCount, useSpunInto } from '../spin/spun.ts';
 import { when } from '../thread/lines.tsx';
 import type { Tallies } from '../thread/tallies.ts';
-import { inkOf, useNarrow } from './Effects.tsx';
+import { inkOf, useNarrow, useUntil } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { backWords, caughtWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
+import { backWords, caughtWords, endsWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
 import { defaultView, inPlayOrder, isBack, livePlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import './lens.css';
@@ -178,6 +178,12 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
       const latest = [...live].sort((a, b) => Date.parse(b.ends ?? '') - Date.parse(a.ends ?? ''))[0]!;
       const ward = wardWords(rules.name, rules.rarity, latest.ends);
       return { ...base, state: ward.state, ...(ward.ends ? { ends: ward.ends } : {}), notes: caught };
+    }
+    /* A play beyond a post ends on its timer: its line says when, the latest of the kind's (each is drawn until its own). */
+    const timed = live.filter((p) => p.ends !== undefined);
+    if (timed.length > 0) {
+      const latest = [...timed].sort((a, b) => Date.parse(b.ends!) - Date.parse(a.ends!))[0]!;
+      return { ...base, ends: endsWords(latest.ends!), notes: caught };
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
   }, [instance.cards, instance.settings.setLasts, ui.cards, kind, economy, here, nameOf]);
@@ -319,7 +325,8 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const here = usePlays(plays, post);
   const narrow = useNarrow();
   const host = useLensHost();
-  const billed = livePlays(shownPlays(here.billed, instance.settings.setLasts));
+  const now = useUntil(here.billed);
+  const billed = livePlays(shownPlays(here.billed, instance.settings.setLasts), now);
   const kinds = kindsOf(billed);
   const card = kinds.includes(open.card) ? open.card : null;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
