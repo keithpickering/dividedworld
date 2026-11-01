@@ -109,6 +109,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),
+  demandCheckMinutes: whole(1, 'minutes', 1440),
+  demandChecksPerTick: whole(1, 'moves', 1000),
   modelTiers: (v) => {
     const shape = 'an object naming a model id for "strong" and for "light"';
     if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;

@@ -73,11 +73,16 @@ create unique index acts_one_move_end on acts (target_act_id) where kind = 'move
 create index acts_moves on acts (character, created_at desc, id desc) where kind = 'move';
 
 -- The moves in force: every landed move with no move_end, kept by the trigger below.
+-- `checked_at` is when the tick last read this move's demand progress (null: never). Derived state, written in place by the tick (0047) so
+-- the demand checks are paced and a busy instance's tick stays short; a rebuild leaves it null, which only means "check soon".
 create table open_moves (
   move_act uuid primary key references acts (id),
-  landed_at timestamptz not null
+  landed_at timestamptz not null,
+  checked_at timestamptz
 );
 create index open_moves_landed on open_moves (landed_at desc, move_act);
+-- The tick checks the demands least recently checked first (0047), a few a minute; this index hands them over in that order.
+create index open_moves_checked on open_moves (checked_at nulls first, move_act);
 alter table open_moves enable row level security;
 revoke all on open_moves from public, anon, authenticated;
 
@@ -253,7 +258,10 @@ grant execute on function end_move(uuid, text, text) to service_role;
 -- ---------------------------------------------------------------------------- the queue ----
 
 -- A move the meeting chose, waiting to land. This is a queue entry, not an Act: `held_at`, `held_by` and `landed_act` are
--- written in place, once each, and nothing else about the row changes. A held move never lands and a player never sees it.
+-- written in place, once each, and nothing else about the row changes, but for `failed_at` and `failure`: when the tick last
+-- could not land the row and why, in the error's own words, overwritten by a later failure (the latest is the useful one) and left
+-- as it was when the row lands. The admin queue (Task 11, admin_queue) should show a waiting row's failed_at and failure, so an
+-- admin can see a row that cannot land and hold it; a failing row stays due and the tick tries it again every minute. A held move never lands and a player never sees it.
 -- `staff` is whose move it is (the tick posts it as that Boss; the plan's column list omitted it). `why` is the Boss's own
 -- one-line reason, its words, for the admin queue only (Task 11's RPC): no client grant.
 create table queued_moves (
@@ -270,6 +278,9 @@ create table queued_moves (
   held_at timestamptz,
   held_by uuid references accounts (id),
   landed_act uuid references acts (id),
+  failed_at timestamptz,
+  failure text check (failure is null or char_length(failure) <= 500),
+  check ((failed_at is null) = (failure is null)),
   check (expires_at is null or expires_at > go_live_at),
   check ((held_at is null) = (held_by is null)),
   check (held_at is null or landed_act is null)
@@ -281,7 +292,7 @@ alter table queued_moves enable row level security;
 revoke all on queued_moves from public, anon, authenticated;
 
 -- A queued move names a demand the catalog holds and says whether it is structural as the catalog does, so a row the tick can
--- never land (and would meet every minute) is refused at the meeting. Once written it moves only to held or to landed.
+-- never land (and would meet every minute) is refused at the meeting. Once written it moves only to held or to landed (and records the tick's failure to land it).
 create function queued_moves_guard() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
@@ -290,6 +301,9 @@ begin
   elsif tg_op = 'INSERT' then
     if new.demand is not null and not exists (select 1 from demand_kinds d where d.key = new.demand ->> 'kind') then
       raise exception 'there is no demand kind "%"', coalesce(new.demand ->> 'kind', '') using errcode = '23514';
+    end if;
+    if new.demand is not null and demand_params_problem(new.demand) is not null then
+      raise exception 'the demand''s params are malformed at %', demand_params_problem(new.demand) using errcode = '23514';
     end if;
     if not exists (select 1 from move_kinds k where k.key = new.kind) then
       raise exception 'there is no move kind "%"', new.kind using errcode = '23514';

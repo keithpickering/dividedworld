@@ -121,6 +121,7 @@ declare
   later bigint := pg_temp.q('Waiting Way');
   landed uuid;
   met uuid;
+  stale uuid;
   q jsonb;
   g uuid := (select id from boards where slug = 'general');
 begin
@@ -130,6 +131,15 @@ begin
   met := (write_staff_act('aq-boss', 'move', (select value #>> '{}' from settings where key = 'systemAnnouncements')::uuid, null,
     jsonb_build_object('kind', 'renameBoard', 'body', 'Landed.', 'params', jsonb_build_object('board', g, 'name', 'Met Manor', 'premise', 'p', 'description', 'd'))) ->> 'id')::uuid;
   perform end_move(met, 'met', 'demand');
+  -- A move that ended more than 30 days ago (its move_end backdated, as the old hold above is): in no group of the last 30 days.
+  stale := (write_staff_act('aq-boss', 'move', (select value #>> '{}' from settings where key = 'systemAnnouncements')::uuid, null,
+    jsonb_build_object('kind', 'renameBoard', 'body', 'Landed.', 'params', jsonb_build_object('board', g, 'name', 'Stale Steppe', 'premise', 'p', 'description', 'd'))) ->> 'id')::uuid;
+  perform set_config('kayfabb.move_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  select null, 'move_end', a.thread, a.id, jsonb_build_object('why', 'expired', 'by', 'expiry'), now() - interval '40 days' from acts a where a.id = stale;
+  perform set_config('kayfabb.move_end_writer', '', true);
+  -- The tick records a row it could not land (0047); the queue shows it, so an admin can hold it.
+  update queued_moves set failed_at = now(), failure = 'it did not land' where id = later;
   perform tests.become(admin);
   q := admin_queue();
   perform tests.unbecome();
@@ -141,7 +151,7 @@ begin
      or q #>> '{waiting,0,params,name}' is distinct from 'Waiting Way' or q #>> '{waiting,0,demand,kind}' is distinct from 'postsOnBoard'
      or (q #>> '{waiting,0,goLiveAt}')::timestamptz is distinct from (select go_live_at from queued_moves where id = later)
      or (q #>> '{waiting,0,expiresAt}')::timestamptz is distinct from (select expires_at from queued_moves where id = later)
-     or q #>> '{waiting,0,boardName}' is distinct from 'Due Dune' then
+     or q #>> '{waiting,0,boardName}' is distinct from 'Due Dune' or q #>> '{waiting,0,failure}' is distinct from 'it did not land' or (q #>> '{waiting,0,failedAt}') is null then
     raise exception 'the waiting move reads %', q -> 'waiting' -> 0;
   end if;
   -- In force: the two landed moves, newest first, the due one with its progress.
@@ -160,6 +170,7 @@ begin
      or not exists (select 1 from jsonb_array_elements(q -> 'ended') j where j ->> 'how' = 'met' and j ->> 'act' = met::text and j ->> 'by' = 'demand' and j ->> 'at' is not null) then
     raise exception 'ended reads %', q -> 'ended';
   end if;
+  if exists (select 1 from jsonb_array_elements(q -> 'ended') j where j ->> 'act' = stale::text) then raise exception 'a move that ended 40 days ago is in the last 30 days'; end if;
   if q::text like '%held_by%' or q::text like '%' || admin::text || '%' then raise exception 'the admin queue names which admin held a move'; end if;
 end $$;
 

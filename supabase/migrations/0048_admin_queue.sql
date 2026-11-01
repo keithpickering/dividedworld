@@ -28,96 +28,7 @@
 create index acts_move_ends on acts (created_at desc, id desc) where kind = 'move_end';
 create index queued_moves_held on queued_moves (held_at desc, id desc) where held_at is not null;
 
--- ------------------------------------------------------------------- saying a move's end ----
-
--- The Boss says a move has ended, in the move's own thread, as a post in the stock line for it (`moveMet`, `moveExpired`,
--- `moveReversed`). The move is ended whether or not the line is posted: the move_end is the record, the line is color, so a failure
--- is a warning and never an error. The tick and the admin's reversal both say an end this way, and only the call that wrote the
--- move_end calls it.
-create function say_move_end(move_act uuid, why text) returns void
-language plpgsql security definer set search_path = public, pg_temp as $$
-declare
-  m record;
-begin
-  select a.thread, a.payload, c.staff into m from acts a join characters c on c.id = a.character where a.id = move_act and a.kind = 'move';
-  perform write_staff_act(m.staff, 'post', m.thread, null, jsonb_build_object('body',
-    system_line(case why when 'met' then 'moveMet' when 'reversed' then 'moveReversed' else 'moveExpired' end, m.payload ->> 'kind', m.payload -> 'params', m.staff)));
-exception when others then
-  raise warning 'say_move_end: the end of move % was not said: % (%)', move_act, sqlerrm, sqlstate;
-end $$;
-revoke execute on function say_move_end(uuid, text) from public, anon, authenticated;
-grant execute on function say_move_end(uuid, text) to service_role;
-
--- system_tick (0047), saying its ends through say_move_end. Everything else as 0047 wrote it.
-create or replace function system_tick() returns jsonb
-language plpgsql security definer set search_path = public, pg_temp as $$
-declare
-  enabled boolean := coalesce((select s.value = 'true'::jsonb from settings s where s.key = 'systemEnabled'), false);
-  ann uuid := (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements');
-  due record;
-  inforce record;
-  written uuid;
-  why text;
-  ended_by text;
-  progress jsonb;
-  expires timestamptz;
-  did_end boolean;
-  landed integer := 0;
-  met integer := 0;
-  expired integer := 0;
-  failed integer := 0;
-begin
-  if not pg_try_advisory_xact_lock(hashtext('kayfabb.system_tick')) then return jsonb_build_object('skipped', true); end if;
-
-  -- 1. Landing: only while The System is on, and only where there is a thread to say it in.
-  if enabled and ann is not null then
-    for due in
-      select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at from queued_moves q where q.landed_act is null and q.held_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked
-    loop
-      begin
-        written := (write_staff_act(due.staff, 'move', ann, null,
-          jsonb_build_object('kind', due.kind, 'params', due.params, 'body', system_line('moveLanded', due.kind, due.params, due.staff))
-          || case when due.demand is not null then jsonb_build_object('demand', due.demand) else '{}'::jsonb end
-          || case when due.expires_at is not null then jsonb_build_object('expires_at', due.expires_at) else '{}'::jsonb end) ->> 'id')::uuid;
-        update queued_moves set landed_act = written where id = due.id;
-        landed := landed + 1;
-      exception when others then
-        failed := failed + 1;
-        raise warning 'system_tick: queued move % did not land: % (%)', due.id, sqlerrm, sqlstate;
-      end;
-    end loop;
-  end if;
-
-  -- 2. Ending: whatever the switch says. Expiry is a comparison; progress is read only for a move not yet expired.
-  for inforce in
-    select o.move_act, a.character, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act order by o.landed_at, o.move_act
-  loop
-    why := null; did_end := false;
-    begin
-      expires := (inforce.payload ->> 'expires_at')::timestamptz;
-      if expires is not null and expires <= now() then
-        why := 'expired'; ended_by := 'expiry';
-      else
-        progress := demand_progress_or_error(inforce.move_act);
-        if coalesce((progress ->> 'met')::boolean, false) then why := 'met'; ended_by := 'demand'; end if;
-      end if;
-      if why is not null then
-        did_end := (end_move(inforce.move_act, why, ended_by) ->> 'ended')::boolean;
-        if did_end then
-          if why = 'met' then met := met + 1; else expired := expired + 1; end if;
-        end if;
-      end if;
-    exception when others then
-      failed := failed + 1;
-      why := null;
-      raise warning 'system_tick: move % did not end: % (%)', inforce.move_act, sqlerrm, sqlstate;
-    end;
-    -- The Boss says it. The move is ended whether or not the line is posted.
-    if why is not null and did_end then perform say_move_end(inforce.move_act, why); end if;
-  end loop;
-
-  return jsonb_build_object('landed', landed, 'met', met, 'expired', expired, 'failed', failed);
-end $$;
+-- say_move_end, which reverse_move below calls as the tick does, is 0047's (the tick and the reversal say an end the same way).
 
 -- ------------------------------------------------------------------------ hold and reverse ----
 
@@ -165,7 +76,8 @@ do $$ begin execute format('grant execute on function demand_progress_or_error(u
 -- What the admin screen shows, as {cap, waiting, inForce, ended, more: {waiting, inForce, ended}}. Each group holds at most `cap` rows
 -- (`more` says a group was cut). The Boss's `why` is its own words and an admin may read it; held_by is not returned.
 --   waiting   queued, not landed, not held, soonest first: {id, staff, boss, kind, params, demand, why, goLiveAt, expiresAt, structural,
---             boardName} where boardName is a renameBoard's board as it is called now (else null).
+--             boardName, failedAt, failure} where boardName is a renameBoard's board as it is called now (else null), and failedAt and
+--             failure say the tick could not land the row and why (else null; the row stays due, so an admin who sees them holds it).
 --   inForce   landed with no move_end, newest first: {act, id, staff, boss, kind, params, demand, why, landedAt, expiresAt, progress}.
 --   ended     the last 30 days, newest first: ended moves {how: met | expired | reversed, by, at, act, ...} and held moves {how: held, at,
 --             act: null, ...}, with the move's kind, params, demand and why.
@@ -185,6 +97,7 @@ begin
     select row_number() over (order by q.go_live_at, q.id) as n,
            jsonb_build_object('id', q.id, 'staff', q.staff, 'boss', (select c.name from characters c where c.staff = q.staff), 'kind', q.kind,
              'params', q.params, 'demand', q.demand, 'why', q.why, 'goLiveAt', q.go_live_at, 'expiresAt', q.expires_at, 'structural', q.structural,
+             'failedAt', q.failed_at, 'failure', q.failure,
              'boardName', case when q.kind = 'renameBoard' and lower(q.params ->> 'board') ~ uuid_re
                                then (select b.name from boards_now b where b.id = (q.params ->> 'board')::uuid) end) as j
     from queued_moves q where q.landed_act is null and q.held_at is null

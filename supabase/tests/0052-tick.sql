@@ -2,7 +2,9 @@
 -- design, sections 2, 3 and 7). system_tick() lands each queued move whose time has come (not held, while The System is on), as its
 -- own staff member, with the stock line for it; and ends each landed move whose demand is met or whose expiry has passed, whatever
 -- the switch says. It runs again and again, so each of those happens once. It costs what the moves due and the moves in force cost,
--- never what the history of moves does. The poison of the two reads: a plan that walks the moves already landed.
+-- never what the history of moves does. The poison of the two reads: a plan that walks the moves already landed. The tick checks
+-- a move's expiry every minute, but its demand only every demandCheckMinutes and for at most demandChecksPerTick moves a minute,
+-- oldest check first, within a time budget; a move that cannot land is recorded on its row and never stops the rest.
 
 -- ---- A seed with the instance's words in it: the stock lines, the move words, the announcements thread ----
 do $$
@@ -44,6 +46,19 @@ begin
   if system_line('bossArrival', 'renameBoard', jsonb_build_object('board', g, 'name', 'Toast Palace'), 'tk-boss') is distinct from 'Tick Boss on General for the renaming of a board to "Toast Palace".' then
     raise exception 'a stock line filled to %', system_line('bossArrival', 'renameBoard', jsonb_build_object('board', g, 'name', 'Toast Palace'), 'tk-boss');
   end if;
+  -- Words a model supplied are put in once and never read as tokens: a board named {boss}, {premise} or {board} shows as typed.
+  if system_line('bossArrival', 'renameBoard', jsonb_build_object('board', g, 'name', '{boss}', 'premise', 'Secret'), 'tk-boss') is distinct from 'Tick Boss on General for the renaming of a board to "{boss}".' then
+    raise exception 'a name {boss} was filled: %', system_line('bossArrival', 'renameBoard', jsonb_build_object('board', g, 'name', '{boss}', 'premise', 'Secret'), 'tk-boss');
+  end if;
+  if system_line('moveLanded', 'renameBoard', jsonb_build_object('board', g, 'name', '{premise}', 'premise', 'Secret'), 'tk-boss') is distinct from 'It is done: the renaming of a board to "{premise}".' then
+    raise exception 'a name {premise} was filled: %', system_line('moveLanded', 'renameBoard', jsonb_build_object('board', g, 'name', '{premise}', 'premise', 'Secret'), 'tk-boss');
+  end if;
+  if system_line('bossArrival', 'renameBoard', jsonb_build_object('board', g, 'name', '{board} {move}'), 'tk-boss') is distinct from 'Tick Boss on General for the renaming of a board to "{board} {move}".' then
+    raise exception 'a name {board} {move} was filled: %', system_line('bossArrival', 'renameBoard', jsonb_build_object('board', g, 'name', '{board} {move}'), 'tk-boss');
+  end if;
+  -- A move kind with no plain words falls back to "a move", never the raw key; a line the instance lacks leaves the plain words alone.
+  if system_line('moveLanded', 'lockThread', '{}'::jsonb, 'tk-boss') is distinct from 'It is done: a move.' then raise exception 'a move with no words read %', system_line('moveLanded', 'lockThread', '{}'::jsonb, 'tk-boss'); end if;
+  if system_line('noSuchLine', 'lockThread', '{}'::jsonb, 'tk-boss') is distinct from 'a move' then raise exception 'a missing line and missing words read %', system_line('noSuchLine', 'lockThread', '{}'::jsonb, 'tk-boss'); end if;
 end $$;
 
 -- A landed move's Act, written as a landed move is; its demand may be any the catalogs hold.
@@ -54,14 +69,17 @@ begin
       'params', jsonb_build_object('board', (select id from boards where slug = 'general'), 'name', new_name, 'premise', 'The subject of ' || new_name, 'description', 'About ' || new_name),
       'demand', demand, 'expires_at', expires))) ->> 'id')::uuid;
 end $$;
-create function pg_temp.queued(new_name text, go_live timestamptz, held boolean default false) returns bigint language plpgsql as $$
+-- A player's post lands the demands of one post; a tick otherwise skips a move checked a moment ago, so a test that expects the next
+-- tick to see a new post says its moves are due for a check.
+create function pg_temp.recheck() returns void language sql as $$ update open_moves set checked_at = null $$;
+create function pg_temp.queued(new_name text, go_live timestamptz, held boolean default false, boss text default 'tk-boss') returns bigint language plpgsql as $$
 declare
   m bigint;
   q bigint;
 begin
   insert into meetings (started_at, slot, finished_at, outcome) values (now(), clock_timestamp(), now(), 'ok') returning id into m;
   insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, held_at, held_by)
-  values (m, 'tk-boss', 'renameBoard',
+  values (m, boss, 'renameBoard',
     jsonb_build_object('board', (select id from boards where slug = 'general'), 'name', new_name, 'premise', 'The subject of ' || new_name, 'description', 'About ' || new_name),
     jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', (select id from boards where slug = 'general'), 'count', 5)),
     'because', go_live, go_live + interval '3 days', true,
@@ -80,7 +98,7 @@ declare
   ran jsonb;
 begin
   ran := system_tick();
-  if (ran ->> 'landed')::integer is distinct from 1 then raise exception 'the first tick landed % moves: %', ran ->> 'landed', ran; end if;
+  if (ran ->> 'landed')::integer is distinct from 1 or (ran ->> 'failed')::integer is distinct from 0 then raise exception 'the first tick landed % moves: %', ran ->> 'landed', ran; end if;
   act := (select landed_act from queued_moves where id = due);
   if act is null then raise exception 'a due move did not land'; end if;
   -- It is the Boss's move Act in the announcements thread, its body the stock line with its tokens filled, its params and expiry as queued.
@@ -124,10 +142,11 @@ begin
   if (select e.payload ->> 'why' || '/' || (e.payload ->> 'by') from acts e where e.kind = 'move_end' and e.target_act_id = mv_old) is distinct from 'expired/expiry' then raise exception 'a move past its expiry did not end expired'; end if;
   -- A player posts on the board after the move landed: the demand of one post is met, the one of nine is not.
   perform tests.post(pc, th, 'Hello there.', now() + interval '1 minute');
+  perform pg_temp.recheck();
   ran := system_tick();
   if (select e.payload ->> 'why' || '/' || (e.payload ->> 'by') from acts e where e.kind = 'move_end' and e.target_act_id = mv_met) is distinct from 'met/demand' then raise exception 'a met demand did not end its move met'; end if;
   if exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id in (mv_open, mv_never)) then raise exception 'a move whose demand is not met, or that has none, ended'; end if;
-  if (ran ->> 'met')::integer is distinct from 1 or (ran ->> 'expired')::integer is distinct from 0 then raise exception 'the tick counted %', ran; end if;
+  if (ran ->> 'met')::integer is distinct from 1 or (ran ->> 'expired')::integer is distinct from 0 or (ran ->> 'failed')::integer is distinct from 0 then raise exception 'the tick counted %', ran; end if;
   -- The Boss says it in the announcements thread, in the stock line for it, once.
   if (select count(*) from acts a where a.kind = 'post' and a.thread = ann and a.payload ->> 'body' = 'Met: the renaming of a board to "Met Manor".') is distinct from 1::bigint then raise exception 'the Boss did not say the demand was met once'; end if;
   if (select count(*) from acts a where a.kind = 'post' and a.thread = ann and a.payload ->> 'body' = 'Expired: the renaming of a board to "Old Orchard".') is distinct from 1::bigint then raise exception 'the Boss did not say the move expired once'; end if;
@@ -150,6 +169,7 @@ begin
   mv_met := pg_temp.landed('Returned Realm', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', g, 'count', 1)), now() + interval '2 days');
   if (select name from boards_now where slug = 'general') is distinct from 'Returned Realm' then raise exception 'the rename is not in force'; end if;
   perform tests.post((select id from characters where name = 'Tk Player'), (select id from threads where title = 'Tk thread'), 'Again.', now() + interval '2 minutes');
+  perform pg_temp.recheck();
   perform system_tick();
   if (select payload ->> 'why' from acts where kind = 'move_end' and target_act_id = mv_met) is distinct from 'met' then raise exception 'the met demand did not end the move'; end if;
   if (select name from boards_now where slug = 'general') is distinct from 'General' then raise exception 'the old name did not return when the demand was met'; end if;
@@ -166,13 +186,16 @@ declare
 begin
   perform tests.post((select id from characters where name = 'Tk Player'), (select id from threads where title = 'Tk thread'), 'More.', now() + interval '3 minutes');
   update settings set value = 'false' where key = 'systemEnabled';
+  perform pg_temp.recheck();
   ran := system_tick();
-  if (select landed_act from queued_moves where id = due) is not null or (ran ->> 'landed')::integer is distinct from 0 then raise exception 'a move landed with The System off'; end if;
+  if (select landed_act from queued_moves where id = due) is not null or (ran ->> 'landed')::integer is distinct from 0 or (ran ->> 'failed')::integer is distinct from 0 then raise exception 'a move landed with The System off: %', ran; end if;
   if (select count(*) from acts e where e.kind = 'move_end' and e.target_act_id in (mv_old, mv_met)) is distinct from 2::bigint then raise exception 'moves in force did not end with The System off'; end if;
   -- Switched on again, the move that waited lands: nothing was stranded.
+  -- (Every due structural row lands at once when The System comes back, as intended: the admin queue shows such rows as waiting, and an
+  -- admin holds the ones they do not want before switching The System back on.)
   update settings set value = 'true' where key = 'systemEnabled';
-  perform system_tick();
-  if (select landed_act from queued_moves where id = due) is null then raise exception 'the waiting move did not land when The System came back'; end if;
+  ran := system_tick();
+  if (select landed_act from queued_moves where id = due) is null or (ran ->> 'failed')::integer is distinct from 0 then raise exception 'the waiting move did not land when The System came back: %', ran; end if;
 end $$;
 
 -- ---- A move whose progress errors does not stop another ending, and it still expires ----
@@ -190,20 +213,127 @@ begin
   perform end_move(bad, 'reversed', 'test');
 end $$;
 
--- ---- The tick's two reads use their indexes, whatever the history ----
+-- ---- Demand checks are paced: at most demandChecksPerTick a tick, oldest first; a move checked lately waits demandCheckMinutes; expiry ignores both ----
+do $$
+declare
+  g uuid := (select id from boards where slug = 'general');
+  pc uuid := (select id from characters where name = 'Tk Player');
+  th uuid := (select id from threads where title = 'Tk thread');
+  met uuid[] := '{}';
+  one uuid;
+  ran jsonb;
+  ended integer;
+begin
+  perform end_move(o.move_act, 'reversed', 'test') from open_moves o;
+  insert into settings (key, value) values ('demandChecksPerTick', '2'), ('demandCheckMinutes', '5') on conflict (key) do update set value = excluded.value;
+  -- Five moves whose one-post demand a later post meets: with two checks a tick, one tick ends two, the next two more, the last one.
+  for i in 1..5 loop met := met || pg_temp.landed('Pace ' || i, jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', g, 'count', 1)), now() + interval '2 days'); end loop;
+  perform tests.post(pc, th, 'Pacing.', now() + interval '10 minutes');
+  ran := system_tick();
+  ended := (select count(*) from acts e where e.kind = 'move_end' and e.target_act_id = any (met));
+  if ended <> 2 or (ran ->> 'met')::integer <> 2 or (ran ->> 'checked')::integer <> 2 then raise exception 'one tick with a cap of 2 ended % of five met moves: %', ended, ran; end if;
+  ran := system_tick();
+  if (select count(*) from acts e where e.kind = 'move_end' and e.target_act_id = any (met)) is distinct from 4::bigint or (ran ->> 'met')::integer <> 2 then raise exception 'the next tick did not end two more: %', ran; end if;
+  ran := system_tick();
+  if (select count(*) from acts e where e.kind = 'move_end' and e.target_act_id = any (met)) is distinct from 5::bigint or (ran ->> 'failed')::integer <> 0 then raise exception 'the third tick did not end the last: %', ran; end if;
+
+  -- A move checked a minute ago is not checked again until demandCheckMinutes have passed: its demand is met in between and it still waits.
+  update settings set value = '40' where key = 'demandChecksPerTick';
+  one := pg_temp.landed('Patient Pier', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', g, 'count', 1)), now() + interval '2 days');
+  update open_moves set checked_at = now() - interval '1 minute' where move_act = one;
+  ran := system_tick();
+  if exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = one) or (ran ->> 'checked')::integer <> 0 then raise exception 'a move checked a minute ago was checked again: %', ran; end if;
+  update open_moves set checked_at = now() - interval '5 minutes' where move_act = one;
+  ran := system_tick();
+  if (select e.payload ->> 'why' from acts e where e.kind = 'move_end' and e.target_act_id = one) is distinct from 'met' or (ran ->> 'checked')::integer <> 1 then raise exception 'a move checked five minutes ago was not checked: %', ran; end if;
+
+  -- Expiry is checked for every move in force each tick, whatever the cap: three expired moves end in a tick that may check one demand.
+  update settings set value = '1' where key = 'demandChecksPerTick';
+  for i in 1..3 loop perform pg_temp.landed('Lapsed ' || i, null, now() - interval '1 minute'); end loop;
+  perform pg_temp.landed('Unmet Umbra', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', g, 'count', 99)), now() + interval '2 days');
+  perform pg_temp.landed('Unmet Umbra Two', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', g, 'count', 99)), now() + interval '2 days');
+  ran := system_tick();
+  if (ran ->> 'expired')::integer <> 3 or (ran ->> 'checked')::integer <> 1 then raise exception 'expiry was held to the demand cap: %', ran; end if;
+
+  -- A tick past its time budget stops checking demands and carries on next minute; expiry still ends moves.
+  update settings set value = '40' where key = 'demandChecksPerTick';
+  perform pg_temp.landed('Budget Barn', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', g, 'count', 1)), now() + interval '2 days');
+  perform pg_temp.landed('Budget Brook', null, now() - interval '1 minute');
+  perform pg_temp.recheck();
+  perform set_config('kayfabb.tick_budget_seconds', '0', true);
+  ran := system_tick();
+  perform set_config('kayfabb.tick_budget_seconds', '', true);
+  if (ran ->> 'checked')::integer <> 0 or (ran ->> 'expired')::integer <> 1 or (ran ->> 'budget')::boolean is not true then raise exception 'a tick out of time checked demands: %', ran; end if;
+  ran := system_tick();
+  if (ran ->> 'met')::integer < 1 or (ran ->> 'budget')::boolean is not false then raise exception 'the next minute did not carry on: %', ran; end if;
+  perform end_move(o.move_act, 'reversed', 'test') from open_moves o;
+  update settings set value = '40' where key = 'demandChecksPerTick';
+end $$;
+
+-- ---- A queued move that cannot land is recorded on its row and never stops the next; it stays due until an admin holds it ----
+do $$
+declare
+  bad bigint;
+  good bigint;
+  ran jsonb;
+  at1 timestamptz;
+begin
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Tk Retired Boss', 'tk-boss-retired', 'boss', now());
+  update characters set retired_at = now() where staff = 'tk-boss-retired';
+  bad := pg_temp.queued('Bad Boss Bay', now() - interval '2 hours', false, 'tk-boss-retired');
+  good := pg_temp.queued('Good Boss Bay', now() - interval '1 hour');
+  ran := system_tick();
+  if (ran ->> 'landed')::integer <> 1 or (ran ->> 'failed')::integer <> 1 then raise exception 'the tick counted %', ran; end if;
+  if (select landed_act from queued_moves where id = good) is null then raise exception 'a failing row stopped the good one landing'; end if;
+  if (select landed_act from queued_moves where id = bad) is not null or (select held_at from queued_moves where id = bad) is not null then raise exception 'the failing row landed or was held'; end if;
+  if (select failed_at is null or failure is null or failure !~ 'retired' from queued_moves where id = bad) then raise exception 'the failure was not recorded: %', (select failure from queued_moves where id = bad); end if;
+  if (select failed_at from queued_moves where id = good) is not null then raise exception 'a landed row records a failure'; end if;
+  -- It stays due, and a later failure overwrites the earlier one.
+  update queued_moves set failure = 'stale' where id = bad;
+  ran := system_tick();
+  if (ran ->> 'failed')::integer <> 1 or (select failure from queued_moves where id = bad) !~ 'retired' then raise exception 'the failing row was not tried again: %', ran; end if;
+  -- An admin holds it: the way out. The tick leaves it alone.
+  update queued_moves set held_at = now(), held_by = tests.account('tk-admin-bad') where id = bad;
+  ran := system_tick();
+  if (ran ->> 'failed')::integer <> 0 then raise exception 'a held row still failed: %', ran; end if;
+  perform end_move(landed_act, 'reversed', 'test') from queued_moves where id = good;
+end $$;
+
+-- ---- No announcements thread: the tick says so, lands nothing, and still ends ----
+do $$
+declare
+  was jsonb := (select value from settings where key = 'systemAnnouncements');
+  due bigint;
+  ran jsonb;
+begin
+  due := pg_temp.queued('Nowhere Nook', now() - interval '1 hour');
+  delete from settings where key = 'systemAnnouncements';
+  ran := system_tick();
+  insert into settings (key, value) values ('systemAnnouncements', was);
+  if (ran ->> 'noThread')::boolean is not true or (ran ->> 'landed')::integer <> 0 then raise exception 'a tick with no thread said %', ran; end if;
+  if (select landed_act from queued_moves where id = due) is not null then raise exception 'a move landed with nowhere to say it'; end if;
+  ran := system_tick();
+  if (ran ->> 'noThread')::boolean is not false or (select landed_act from queued_moves where id = due) is null then raise exception 'the move did not land once the thread was back: %', ran; end if;
+  perform end_move(landed_act, 'reversed', 'test') from queued_moves where id = due;
+end $$;
+
+-- ---- The tick's reads use their indexes, whatever the history ----
 do $$
 declare
   src text := regexp_replace((select prosrc from pg_proc where proname = 'system_tick' and pronamespace = 'public'::regnamespace), '\s+', ' ', 'g');
   due text := 'select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at from queued_moves q where q.landed_act is null and q.held_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked';
   open_ text := 'select o.move_act, a.character, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act order by o.landed_at, o.move_act';
+  demand_ text := 'select o.move_act, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act where jsonb_typeof(a.payload -> ''demand'') = ''object'' and (o.checked_at is null or o.checked_at <= now() - check_every) order by o.checked_at nulls first, o.move_act limit cap';
   m bigint;
   act uuid;
   plan text;
   line text;
+  ran jsonb;
 begin
   -- The reads below are the function's own, word for word, or the plans prove nothing about it.
   if position(due in src) = 0 then raise exception 'the due read in this test is not the tick''s'; end if;
   if position(open_ in src) = 0 then raise exception 'the open-moves read in this test is not the tick''s'; end if;
+  if position(demand_ in src) = 0 then raise exception 'the demand-check read in this test is not the tick''s'; end if;
   -- A deep history: landed and ended moves, which neither read may touch.
   insert into meetings (started_at, slot, finished_at, outcome) values (now(), clock_timestamp(), now(), 'ok') returning id into m;
   for i in 1..300 loop
@@ -213,6 +343,8 @@ begin
     values (m, 'tk-boss', 'renameBoard', '{}'::jsonb, 'w', now() - interval '9 days', now() + interval '1 day', true, act);
   end loop;
   analyze queued_moves, open_moves, acts;
+  -- With sequential scans switched off, the plans below can only be built from the indexes. That proves an index exists that matches each
+  -- read's predicate and order; it does not prove the planner picks it on a given day's statistics.
   set local enable_seqscan = off;
   plan := '';
   for line in execute 'explain ' || replace(due, ' for update skip locked', '') loop plan := plan || line || E'\n'; end loop;
@@ -223,6 +355,13 @@ begin
   if plan !~ 'open_moves' then raise exception 'the open-moves read does not start from open_moves: %', plan; end if;
   if plan !~ 'acts_pkey' then raise exception 'the open-moves read does not probe the acts by their key: %', plan; end if;
   if plan ~ 'Seq Scan' then raise exception 'the open-moves read walks a table: %', plan; end if;
-  -- And the tick over that history still does what it does.
-  perform system_tick();
+  plan := '';
+  for line in execute 'explain ' || replace(replace(replace(demand_, 'check_every', '''5 minutes''::interval'), ' limit cap', ' limit 40'), 'now() - ', 'now() - ') loop plan := plan || line || E'\n'; end loop;
+  if plan !~ 'open_moves_checked' then raise exception 'the demand-check read does not use open_moves_checked: %', plan; end if;
+  if plan ~ 'Seq Scan' then raise exception 'the demand-check read walks a table: %', plan; end if;
+  -- And the tick over that history lands nothing and ends nothing: the moves in force are the ones before it, and nothing here is due.
+  ran := system_tick();
+  if (ran ->> 'landed')::integer <> 0 or (ran ->> 'met')::integer <> 0 or (ran ->> 'expired')::integer <> 0 or (ran ->> 'failed')::integer <> 0 then
+    raise exception 'the tick over a deep history did something: %', ran;
+  end if;
 end $$;

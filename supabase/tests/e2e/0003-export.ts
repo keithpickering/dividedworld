@@ -141,7 +141,7 @@ test('an instance exported and imported into a fresh database is the same instan
         'params', jsonb_build_object('board', gen, 'name', 'Exported Palace', 'premise', 'p', 'description', 'd'),
         'demand', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)))) ->> 'id')::uuid;
       insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act)
-      select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', '{"kind": "postsOnBoard", "params": {"count": 2}}', 'Because the toast was cold.',
+      select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
              now() - interval '1 day', now() + interval '2 days', true, kept from meetings m;
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));

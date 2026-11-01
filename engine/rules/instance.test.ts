@@ -48,6 +48,8 @@ const settings: Settings = {
   memoryRealWorld: 30,
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
+  demandCheckMinutes: 5,
+  demandChecksPerTick: 40,
   moveExpiryLeastHours: 24,
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
 };
@@ -445,7 +447,7 @@ test('the new settings are checked like the others', () => {
   assert.match(bad('meetingCron', 'daily'), /meetingCron/);
   assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
   assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
-  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours']) {
+  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
     assert.match(bad(k, -1), new RegExp(k), k);
     assert.match(bad(k, 1.5), new RegExp(k), k);
   }
@@ -455,6 +457,12 @@ test('the new settings are checked like the others', () => {
   }
   // The digest settings have a ceiling too: an admin setting cannot grow the meeting's prompt without bound.
   for (const [k, most] of [['digestThreads', DIGEST_MOST.threads], ['digestExcerpts', DIGEST_MOST.excerpts], ['digestExcerptChars', DIGEST_MOST.excerptChars]] as const) {
+    assert.match(bad(k, most + 1), new RegExp(k), k);
+    assert.deepEqual(settingsProblems({ ...settings, [k]: most }), [], `${k} may be its ceiling`);
+  }
+  // The tick's demand-check pacing: at least 1, and a ceiling so a setting cannot make the per-minute transaction unbounded.
+  for (const [k, most] of [['demandCheckMinutes', 1440], ['demandChecksPerTick', 1000]] as const) {
+    assert.match(bad(k, 0), new RegExp(k), k);
     assert.match(bad(k, most + 1), new RegExp(k), k);
     assert.deepEqual(settingsProblems({ ...settings, [k]: most }), [], `${k} may be its ceiling`);
   }

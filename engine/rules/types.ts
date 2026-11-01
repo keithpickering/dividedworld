@@ -142,6 +142,18 @@ export interface Settings {
   readonly moveExpiryMostDays: number;
   /** The fewest hours any move lasts before it may expire, so a player always has time to meet its demand. A starting point. */
   readonly moveExpiryLeastHours: number;
+  /**
+   * How often the tick looks at whether a move in force has had its demand met, in minutes. A player feels it as the delay between meeting a
+   * demand and the move ending: about this long, and longer when many moves are in force (see `demandChecksPerTick`). A move's expiry is
+   * checked every minute whatever this says. A starting point.
+   */
+  readonly demandCheckMinutes: number;
+  /**
+   * The most moves the tick checks the demand of in one minute, oldest check first, so the tick's one transaction stays short however many
+   * moves are in force. The rest wait for the next minute. A player feels it only when more moves are in force than this each
+   * `demandCheckMinutes` allow: a met demand then ends a few minutes later. A starting point.
+   */
+  readonly demandChecksPerTick: number;
   /** The model each tier of a call uses (the meeting runs on `strong`, small lines on `light`), as the provider names it. */
   readonly modelTiers: { readonly strong: string; readonly light: string };
 }

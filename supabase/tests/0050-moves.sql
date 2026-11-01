@@ -222,7 +222,7 @@ begin
   row_ := jsonb_build_object('board', general, 'name', 'Queued Palace', 'premise', 'p', 'description', 'd');
 
   insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
-  values (meeting, 'mv-boss', 'renameBoard', row_, '{"kind": "postsOnBoard", "params": {"count": 1}}', repeat('w', 200), at, at + interval '3 days', true) returning id into q;
+  values (meeting, 'mv-boss', 'renameBoard', row_, jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general, 'count', 1)), repeat('w', 200), at, at + interval '3 days', true) returning id into q;
   -- A reason over 200 characters; a demand outside the catalog; a flag that disagrees with the catalog; an expiry before the landing; an unknown move kind.
   begin insert into queued_moves (meeting, staff, kind, params, why, go_live_at, expires_at, structural) values (meeting, 'mv-boss', 'renameBoard', row_, repeat('w', 201), at, at + interval '1 day', true); raise exception 'a reason of 201 characters was queued';
   exception when check_violation then null; end;
@@ -237,7 +237,19 @@ begin
   begin insert into queued_moves (meeting, staff, kind, params, why, go_live_at, expires_at, structural) values (meeting, 'nobody', 'renameBoard', row_, 'w', at, at + interval '1 day', true); raise exception 'a move by no staff member was queued';
   exception when foreign_key_violation then null; end;
 
-  -- Only held_at, held_by and landed_act move, each once, and a held move is not a landed one.
+  -- A demand whose params cannot be checked is refused at the door, as a landed move's is: a row the tick could never land would fail every minute.
+  begin insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural) values (meeting, 'mv-boss', 'renameBoard', row_, '{"kind": "postsOnBoard", "params": {"count": 1}}', 'w', at, at + interval '1 day', true); raise exception 'a queued demand with no board was queued';
+  exception when check_violation then null; end;
+  begin insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural) values (meeting, 'mv-boss', 'renameBoard', row_, jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general, 'count', 0)), 'w', at, at + interval '1 day', true); raise exception 'a queued demand of zero posts was queued';
+  exception when check_violation then null; end;
+
+  -- Only held_at, held_by and landed_act move, each once, and a held move is not a landed one. The tick also writes the failure it met
+  -- landing a row (failed_at and failure, together), and nothing else.
+  begin update queued_moves set failed_at = now() where id = q; raise exception 'a failure was recorded with no reason';
+  exception when check_violation then null; end;
+  update queued_moves set failed_at = now(), failure = 'it did not land' where id = q;
+  update queued_moves set failed_at = now(), failure = 'it still did not land' where id = q;
+  if (select failure from queued_moves where id = q) is distinct from 'it still did not land' then raise exception 'a later failure did not overwrite the earlier one'; end if;
   begin update queued_moves set kind = 'lockThread' where id = q; raise exception 'a queued move''s kind was changed';
   exception when check_violation then null; end;
   begin update queued_moves set go_live_at = at - interval '1 day' where id = q; raise exception 'a queued move''s time was changed';

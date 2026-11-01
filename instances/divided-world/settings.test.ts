@@ -88,6 +88,8 @@ test('the system settings are the plan\'s numbers, and the System ships switched
   assert.equal(defaults.rosterRecentExcluded, 2);
   assert.equal(defaults.structuralHoldHours, 24);
   assert.equal(defaults.boardNameMaxLength, 60);
+  assert.equal(defaults.demandCheckMinutes, 5);
+  assert.equal(defaults.demandChecksPerTick, 40);
   assert.deepEqual(defaults.modelTiers, { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' });
   assert.ok(Object.isFrozen(defaults.phases) && Object.isFrozen(defaults.phases.reign) && Object.isFrozen(defaults.modelTiers));
 });

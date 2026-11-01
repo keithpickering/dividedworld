@@ -78,6 +78,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   moveExpiryMostDays: 42,
   /** A starting point: no move expires sooner than a day after it lands, so a player always has time to meet its demand. */
   moveExpiryLeastHours: 24,
+  /** A met demand ends its move within about five minutes (longer when more moves are in force than the cap below allows per minute). */
+  demandCheckMinutes: 5,
+  /** Forty demand checks a minute keeps the tick's one transaction short; an instance with more moves in force than that waits a little longer. */
+  demandChecksPerTick: 40,
   /** The meeting runs on the strong model, small lines on the light one; model ids as the claude-api skill listed them on 2026-10-31. */
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
   /** The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone. */
