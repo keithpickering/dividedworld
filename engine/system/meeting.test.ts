@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, namedCharacters, repairAnswer, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, inheritedText, namedCharacters, repairAnswer, type InheritedMove, type RepairContext } from './meeting.ts';
 import { phaseAt } from './phases.ts';
 
 const H = 3_600_000;
@@ -79,4 +79,32 @@ test('the characters a demand names are among those the meeting asks the databas
 
 test('every uuid a demand kind takes has a role the repair checks', () => {
   for (const d of DEMAND_KINDS) for (const name of d.uuids) assert.ok(DEMAND_ID_ROLES[name], `${d.key}.${name} has no role in DEMAND_ID_ROLES`);
+});
+
+test('a nomination is not a move the Boss may propose, and the prompt does not offer it as one', () => {
+  const r = repairAnswer({ ...answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), moves: [{ ...move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), kind: 'nameSuccessor', params: { boss: 'someone' } }] }, ctx());
+  assert.ok(r.ok);
+  assert.equal(r.moves.length, 0);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard)'), JSON.stringify(r.trims));
+});
+
+test('an inheritance answer must name a move the Boss was shown, when it was shown a list', () => {
+  const shown = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const unseen = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const raw = { ...answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), inherited: [{ move_act: shown.toUpperCase(), decision: 'keep' }, { move_act: unseen, decision: 'end' }] };
+  const r = repairAnswer(raw, { ...ctx(), inheritable: new Set([shown]) });
+  assert.ok(r.ok);
+  assert.deepEqual(r.inherited.map((x) => x.move_act), [shown.toUpperCase()]);
+  assert.ok(r.trims.some((t) => t.path === 'inherited[1].move_act' && t.predicate === 'inheritedMove'));
+  const none = repairAnswer(raw, { ...ctx(), inheritable: new Set() });
+  assert.ok(none.ok && none.inherited.length === 0);
+});
+
+test('the inheritance section is in plain words, says reviewing is free and what happens to an unanswered move, and is empty when nothing is due', () => {
+  const due: InheritedMove = { act: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', kind: 'renameBoard', params: { board: BOARD, name: 'Pie Place' }, landedAt: '2026-10-20T09:00:00Z', expiresAt: null, by: 'The Old Boss', boardName: 'General' };
+  const text = inheritedText([due], 1).join('\n');
+  assert.match(text, /Renamed General to Pie Place \(by The Old Boss, since 2026-10-20\)/);
+  assert.match(text, /Neither costs a move from your bank/);
+  assert.match(text, /1 day after the handover/);
+  assert.deepEqual(inheritedText([], 3), []);
 });

@@ -49,6 +49,8 @@ interface World {
   bank?: number;
   /** The season's end, relative to NOW. */
   endsIn?: number;
+  /** The moves the Boss inherits, as meeting_context() hands them over (absent: an older database that does not). */
+  inheritanceDue?: unknown[];
   memories?: Record<string, Memory>;
   closed?: boolean;
   open?: boolean;
@@ -72,7 +74,7 @@ function fakeDb(w: World = {}) {
           return { status: 'begun', meeting: state.meeting } as T;
         case 'fail_meeting': state.failed.push(args); state.closed = true; return { status: 'closed' } as T;
         case 'meeting_context':
-          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }] } as T;
+          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}) } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [{ id: ANN, name: 'Ann the Great', staff: false }] } as T;
         case 'staff_memory_latest': return (w.memories?.[String(args.staff)] ?? null) as T;
@@ -328,6 +330,41 @@ test('inheritance answers are repaired and carried, not acted on', async () => {
   const out = await run(d.db, fakeModels(answer([], { inherited: [{ move_act: act, decision: 'keep' }, { move_act: act, decision: 'end' }, { move_act: 'not-an-id', decision: 'end' }] })).models, quiet, SLOT, clock, noFeeds);
   assert.deepEqual(out.inherited, [{ move_act: act, decision: 'keep' }]);
   assert.equal(out.trims.filter((t: any) => t.path.startsWith('inherited[')).length, 2);
+});
+
+test('the moves a new Boss inherits are shown in plain words, and its keep and end answers reach the database; an answer naming a move it was not shown is dropped', async () => {
+  const kept = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const ended = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const unseen = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+  const due = [
+    { act: kept, kind: 'renameBoard', params: { board: BOARD, name: 'Pirate Puns Palace', premise: 'Puns.' }, landedAt: '2026-10-20T09:00:00.000Z', expiresAt: '2026-11-10T09:00:00.000Z', by: 'The Old Boss', boardName: 'Mario Fan Games' },
+    { act: ended, kind: 'renameBoard', params: { board: BOARD2, name: 'Pie Place', premise: 'Pie.' }, landedAt: '2026-10-21T09:00:00.000Z', expiresAt: null, by: 'The Old Boss', boardName: 'Off Topic' },
+  ];
+  const d = fakeDb({ inheritanceDue: due });
+  const m = fakeModels(answer([], { inherited: [{ move_act: kept, decision: 'keep' }, { move_act: ended, decision: 'end' }, { move_act: unseen, decision: 'keep' }] }));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  const text = m.chats[0]!.messages[0]!.content;
+  assert.match(text, /# Moves you inherited/);
+  assert.match(text, new RegExp(`${kept}: Renamed Mario Fan Games to Pirate Puns Palace \\(by The Old Boss, since 2026-10-20, runs out 2026-11-10\\)`));
+  assert.match(text, /Neither costs a move from your bank/);
+  assert.deepEqual(d.state.applied[0]!.payload.inherited, [{ move_act: kept, decision: 'keep' }, { move_act: ended, decision: 'end' }]);
+  assert.ok(out.trims.some((t: any) => t.path === 'inherited[2].move_act' && t.predicate === 'inheritedMove'), JSON.stringify(out.trims));
+  assert.equal(d.state.applied[0]!.payload.moves.length, 0, 'reviewing is no move');
+  // A meeting with nothing to review shows no such section.
+  const none = fakeDb({ inheritanceDue: [] });
+  const nm = fakeModels(answer());
+  await run(none.db, nm.models, quiet, SLOT, clock, noFeeds);
+  assert.doesNotMatch(nm.chats[0]!.messages[0]!.content, /Moves you inherited/);
+});
+
+test('a successor answer is carried to the database to be queued, and a moves-list nomination is not a move', async () => {
+  const late = fakeDb({ endsIn: 3 * DAY });
+  await run(late.db, fakeModels(answer([], { successor: { boss: OTHER_BOSS, why: 'Time for a change.' } })).models, quiet, SLOT, clock, noFeeds);
+  assert.deepEqual(late.state.applied[0]!.payload.successor, { boss: OTHER_BOSS, why: 'Time for a change.' });
+  assert.deepEqual(late.state.applied[0]!.payload.moves, []);
+  const early = fakeDb({ endsIn: 60 * DAY });
+  await run(early.db, fakeModels(answer([], { successor: { boss: OTHER_BOSS, why: 'x' } })).models, quiet, SLOT, clock, noFeeds);
+  assert.equal(early.state.applied[0]!.payload.successor, null);
 });
 
 test('a new Boss reads no memory, unless its persona inherits another Boss\'s', async () => {

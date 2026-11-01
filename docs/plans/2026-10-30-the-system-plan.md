@@ -407,6 +407,17 @@ and a forgotten one ends with `superseded`; reviewing costs no bank); `supabase/
 unless it `inheritsMemoryOf` another; `supabase/tests/e2e/0013-handover.ts` (a season rolls over, the nominated Boss
 arrives, the old rename is kept by its review and its next rename is the new Boss's).
 
+**Built (Task 12b), where this text was silent:** the migration is `supabase/migrations/0050_succession.sql`, the SQL test `supabase/tests/0055-succession.sql`
+and the end-to-end test `supabase/tests/e2e/0013-handover.ts`. A nomination costs the Boss no move from its bank (the meeting queues it from
+the answer's `successor`, beside the moves and not among them); it lands like any structural move and is spent at the handover with a
+`move_end` of why `spent` (by `handover`), and `spent` joins `superseded` among the reasons. The roster's order is the seed's (`bossRoster`,
+written by `seed_instance`); the rotation counts the season that just ended among the `rosterRecentExcluded` and, where every Boss is
+excluded, drops that exclusion and keeps only the outgoing Boss out. A Boss arriving gets a bank row of zero as of the handover, so a Boss
+returning does not collect the weeks it was away. What the handover did is recorded in `season_handovers` (no client reads it); a failure of
+the succession falls back to the rotation, and of the rotation to the outgoing Boss, and neither stops the reveal or the new season. The
+tick also ends a nomination in force whose Boss is no longer the season's (`spent`). Before this task a rolled-over season had no Boss at
+all; `0047-staff.sql` now clears the Boss itself where it tests a season with none.
+
 ### Task 13. Turning it on
 
 - Divided World's `settings.ts` sets `systemEnabled` to true only once Task 12 is merged; the playtest profile keeps it

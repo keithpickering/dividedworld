@@ -4,8 +4,10 @@
  * list is not a move (the meeting drops it and records it). The catalog is seeded into `move_kinds` by `seed_instance`
  * (supabase/functions/_shared/seed.ts reads it), so SQL and TypeScript read one list ("Two lists that must agree are one list").
  *
- * Part 1 holds one move, `renameBoard`. It is structural (design, section 7): it waits in the admin queue about a day before it
- * lands and lands unless an admin holds it. A move is an Act, and what a board is called now is computed from the Acts
+ * Part 1 holds two moves. `renameBoard` is structural (design, section 7): it waits in the admin queue about a day before it
+ * lands and lands unless an admin holds it. `nameSuccessor` (the handover, Task 12b) is the Boss's pick of the next Boss: structural
+ * too, so it waits the same way, with no demand and no expiry; the meeting queues it from the answer's `successor`, never from
+ * `moves`, and it is spent at the handover. A move is an Act, and what a board is called now is computed from the Acts
  * (the `boards_now` view, supabase/migrations/0045_moves.sql), so ending a move brings the old name back with nothing
  * rewritten.
  *
@@ -31,8 +33,12 @@ export type MoveParts = readonly (string | BoardRef)[];
 
 export interface MoveKind {
   readonly key: string;
-  /** A structural move reshapes a board and waits in the admin queue before it lands. */
+  /** A structural move reshapes a board, or names a successor, and waits in the admin queue before it lands. */
   readonly structural: boolean;
+  /** Whether the move shapes a board, so a new Boss reviews it when it inherits it (the inheritance review). */
+  readonly shapesBoard: boolean;
+  /** Whether the Boss may propose it among its `moves`. A move that is not is queued by the meeting from another answer. */
+  readonly askable: boolean;
   /** The label drawn on the glass for the move's Act, in capitals. */
   readonly label: string;
   /** The params' shape and string bounds. The ceilings here are outer ones; the meeting holds the tighter settings (`boardNameMaxLength`). */
@@ -49,7 +55,7 @@ export interface MoveKind {
   /**
    * The move as one short plain sentence for a staff member's moderation log and for the admin queue: "Renamed General to Pointless
    * Toast Palace" once it has landed, "Rename General to Pointless Toast Palace" while it waits (`plan`). `was` is the name the board
-   * had before the move, when the screen knows it.
+   * had before the move, when the screen knows it; for a move that names a Boss, it is that Boss's name, when the screen knows it.
    */
   readonly parts: (params: Readonly<Record<string, unknown>>, was: string | null, tense: 'done' | 'plan') => MoveParts;
 }
@@ -59,6 +65,8 @@ const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 export const RENAME_BOARD: MoveKind = {
   key: 'renameBoard',
   structural: true,
+  shapesBoard: true,
+  askable: true,
   label: 'THE SYSTEM RENAMED THIS BOARD',
   params: {
     type: 'object',
@@ -75,7 +83,24 @@ export const RENAME_BOARD: MoveKind = {
   parts: (p, was, tense) => [tense === 'plan' ? 'Rename ' : 'Renamed ', { board: text(p['board']), name: was ?? 'a board' }, ' to ', { board: text(p['board']), name: text(p['name']) }],
 };
 
-export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD];
+/** The Boss names the one who will follow it. `boss` is a key of the instance's roster; the meeting checks it, the database checks it again. */
+export const NAME_SUCCESSOR: MoveKind = {
+  key: 'nameSuccessor',
+  structural: true,
+  shapesBoard: false,
+  askable: false,
+  label: 'THE SYSTEM NAMED ITS SUCCESSOR',
+  params: { type: 'object', fields: { boss: { type: 'string', minLength: 1, maxLength: 80 } } },
+  uuids: [],
+  plain: 'the naming of a successor',
+  template: () => 'The System named the Boss who will follow this one.',
+  parts: (p, was, tense) => [tense === 'plan' ? 'Name ' : 'Named ', was ?? text(p['boss']), ' as the next Boss'],
+};
+
+export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD, NAME_SUCCESSOR];
+
+/** The moves the Boss may propose among its `moves`: the catalog less the ones another answer queues. */
+export const ASKABLE_MOVE_KINDS: readonly MoveKind[] = MOVE_KINDS.filter((k) => k.askable);
 
 export function moveKind(key: string): MoveKind | undefined {
   return MOVE_KINDS.find((k) => k.key === key);

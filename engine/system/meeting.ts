@@ -18,15 +18,17 @@
  * a model's free text is shown, never acted on, so nothing in it becomes a different move. Moves past the bank are cut from
  * the end. Times are clamped into what the settings allow.
  *
- * `successor` and `inherited` are the handover's (Task 12b) and are repaired here and carried in the result; their effects
- * are the handover's. A successor named before the meltdown's last week is dropped and recorded.
+ * `successor` and `inherited` are the handover's (Task 12b) and are repaired here and carried in the result; the database acts
+ * on them (apply_meeting, 0050): a successor is queued as a structural move, and each inherited move is kept or ended. A
+ * successor named before the meltdown's last week is dropped and recorded; an inheritance answer naming a move the meeting was
+ * not shown is too. `inheritedText` is what the Boss is shown to answer them.
  *
  * Pure: nothing here reads a clock or a database; the caller passes `now`.
  */
 import type { BossPersona, Settings, SystemContent } from '../rules/types.ts';
 import { DEMAND_KINDS, demandProblems } from './demands.ts';
 import { MEMORY_RULE, repairMemory, type Memory } from './memory.ts';
-import { MOVE_KINDS, UUID, moveKind, moveParamsProblems } from './moves.ts';
+import { ASKABLE_MOVE_KINDS, UUID, moveKind, moveParamsProblems } from './moves.ts';
 import type { PhaseAt } from './phases.ts';
 import { repair, type Rule, type Trim } from './validate.ts';
 
@@ -64,7 +66,7 @@ function looseFields(rules: readonly Rule[], leave: readonly string[] = []): Rec
 /** The fields a model fills for a move: the kind's params less `description`, which the old voice writes. */
 const MODEL_LEAVES = ['description'];
 
-const paramsRule = (): Rule => ({ type: 'object', fields: looseFields(MOVE_KINDS.map((k) => k.params), MODEL_LEAVES) });
+const paramsRule = (): Rule => ({ type: 'object', fields: looseFields(ASKABLE_MOVE_KINDS.map((k) => k.params), MODEL_LEAVES) });
 const demandRule = (): Rule => ({
   type: 'object',
   fields: { kind: { type: 'string', maxLength: 60 }, params: { type: 'object', fields: looseFields(DEMAND_KINDS.map((d) => d.params)) } },
@@ -154,7 +156,7 @@ export interface PromptFacts {
 export function meetingSystemPrompt(f: PromptFacts): string {
   const whole = Math.floor(f.bank);
   const { settings: s, phase } = f;
-  const kinds = MOVE_KINDS.map(
+  const kinds = ASKABLE_MOVE_KINDS.map(
     (k) => `- ${k.key}: ${k.label.toLowerCase()}. params: ${fieldsOf(k.params, MODEL_LEAVES)}.${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
   );
   const demands = DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
@@ -187,6 +189,37 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       : ['Do not answer with a successor.']),
     'Answer only in the structure you are asked for.',
   ].join('\n\n');
+}
+
+/** A move the Boss inherits, as the meeting reads it from the database. */
+export interface InheritedMove {
+  readonly act: string;
+  readonly kind: string;
+  readonly params: Readonly<Record<string, unknown>>;
+  readonly landedAt: string;
+  readonly expiresAt: string | null;
+  /** The Boss that wrote it, by name. */
+  readonly by: string;
+  /** The board's own name, before any rename (null if the move names no board). */
+  readonly boardName: string | null;
+}
+
+const words = (m: InheritedMove): string =>
+  moveKind(m.kind)?.parts(m.params, m.boardName, 'done').map((p) => (typeof p === 'string' ? p : p.name)).join('') ?? `A move of kind ${m.kind}`;
+
+/**
+ * "Moves you inherited": the moves of an earlier Boss still in force that shape a board, in the engine's plain words, for the Boss
+ * to keep or end at no cost to its bank. The Boss answers in `inherited` with each move's id; an unanswered move ends on its own a few
+ * days after the handover (`graceDays`), so the section says so. Empty when there is nothing to review.
+ */
+export function inheritedText(due: readonly InheritedMove[], graceDays: number): string[] {
+  if (due.length === 0) return [];
+  const day = (iso: string): string => iso.slice(0, 10);
+  return [
+    '# Moves you inherited',
+    `You took over from another Boss. These moves of theirs are still in force. Answer each in "inherited" as {move_act, decision}: "keep" makes it yours (its expiry does not change) and "end" sets it aside. Neither costs a move from your bank. Any you leave unanswered ends by itself ${graceDays} day${graceDays === 1 ? '' : 's'} after the handover.`,
+    ...due.slice(0, INHERITED_MOST).map((m) => `- ${m.act}: ${oneLine(words(m), 200)} (by ${oneLine(m.by, 64)}, since ${day(m.landedAt)}${m.expiresAt ? `, runs out ${day(m.expiresAt)}` : ''})`),
+  ];
 }
 
 export interface ReferenceIds {
@@ -262,6 +295,8 @@ export interface RepairContext {
   /** Whether a character is debuted and public now, from `public_characters`. */
   readonly isPublic: (character: string) => boolean;
   readonly successorAllowed: boolean;
+  /** The moves the Boss inherits and was shown (`meeting_context().inheritanceDue`), when it was shown any: an answer naming another is dropped. Omitted: any move is accepted here and the database holds the line. */
+  readonly inheritable?: ReadonlySet<string>;
 }
 
 export interface RepairedAnswer {
@@ -335,7 +370,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
   (a['moves'] as Record<string, unknown>[]).forEach((m, i) => {
     const path = `moves[${i}]`;
     const kind = moveKind(String(m['kind']));
-    if (!kind) return drop(`${path}.kind`, `oneOf(${MOVE_KINDS.map((k) => k.key).join(', ')})`);
+    if (!kind || !kind.askable) return drop(`${path}.kind`, `oneOf(${ASKABLE_MOVE_KINDS.map((k) => k.key).join(', ')})`);
     const demand = demandProblems(m['demand'], s.reactionCap);
     if (!demand.ok) return drop(`${path}.${demand.path}`, demand.predicate);
     // A demand names things that exist: a board of the meeting's list, a thread the model was given, a character public now.
@@ -392,6 +427,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
   ((a['inherited'] ?? []) as Record<string, unknown>[]).forEach((e, i) => {
     const act = String(e['move_act']);
     if (!UUID.test(act)) return drop(`inherited[${i}].move_act`, 'isUuid');
+    if (c.inheritable && !c.inheritable.has(act.toLowerCase())) return drop(`inherited[${i}].move_act`, 'inheritedMove');
     if (inherited.some((x) => x.move_act === act)) return drop(`inherited[${i}]`, 'uniqueMove');
     inherited.push({ move_act: act, decision: e['decision'] as 'keep' | 'end' });
   });

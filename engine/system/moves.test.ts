@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MOVE_KINDS, moveKind, moveParamsProblems } from './moves.ts';
+import { ASKABLE_MOVE_KINDS, MOVE_KINDS, moveKind, moveParamsProblems } from './moves.ts';
 
 const board = '11111111-1111-4111-8111-111111111111';
 const rename = { board, name: 'Pointless Toast Palace', premise: 'Toast, and only toast.', description: 'A 2003 board index.' };
 
 test('the catalog holds renameBoard, structural, with a long plain label', () => {
-  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true]]);
+  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true]]);
+  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard'], 'a successor is named in its own answer, never among the moves');
+  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false]);
   assert.equal(moveKind('renameBoard')?.label, 'THE SYSTEM RENAMED THIS BOARD');
   assert.equal(moveKind('shout'), undefined);
 });
@@ -51,4 +53,13 @@ test('a move reads as one short plain sentence in pieces, with the boards it nam
   assert.deepEqual(parts(rename, 'General', 'done'), ['Renamed ', { board, name: 'General' }, ' to ', { board, name: 'Pointless Toast Palace' }]);
   assert.deepEqual(parts(rename, 'General', 'plan'), ['Rename ', { board, name: 'General' }, ' to ', { board, name: 'Pointless Toast Palace' }]);
   assert.deepEqual(parts(rename, null, 'done')[1], { board, name: 'a board' });
+});
+
+test('a successor move names a roster key and reads as one short plain sentence', () => {
+  const k = moveKind('nameSuccessor')!;
+  assert.ok(moveParamsProblems('nameSuccessor', { boss: 'grumble' }).ok);
+  assert.equal(moveParamsProblems('nameSuccessor', {}).ok, false);
+  assert.equal(moveParamsProblems('nameSuccessor', { boss: '' }).ok, false);
+  assert.deepEqual(k.parts({ boss: 'grumble' }, 'Grumble', 'plan'), ['Name ', 'Grumble', ' as the next Boss']);
+  assert.deepEqual(k.parts({ boss: 'grumble' }, null, 'done'), ['Named ', 'grumble', ' as the next Boss']);
 });

@@ -29,6 +29,11 @@ export const stockLines: StockLines = Object.freeze({
     'It turns out {move} was a mistake. The System stands by it, and it is also over.',
     'Management has intervened: {move} is reversed. The System would like a word with Management.',
   ]),
+  moveSuperseded: Object.freeze([
+    'A new era has begun, and {move} has been filed under things the last Boss did. It is over.',
+    'The new Boss has looked at {move} and decided it was somebody else\'s idea. It is set aside.',
+    'Regime change: {move} did not survive the handover. The System sends its regards.',
+  ]),
   bossFarewell: Object.freeze([
     '{boss} is leaving the building. Please stop clapping.',
     'This season belonged to {boss}. {boss} regrets nothing and will say so at length.',

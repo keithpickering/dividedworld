@@ -40,7 +40,7 @@ export function instanceSeed(instance: Instance) {
       announcementsTitle: instance.system.announcementsTitle,
       // The engine's catalogs of moves and demands (0045), so SQL and TypeScript read one list. This file is the composition
       // root: the engine names no instance, and the SQL names no kind of its own.
-      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural })),
+      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard })),
       demands: DEMAND_KINDS.map((d) => ({ key: d.key })),
     },
   };

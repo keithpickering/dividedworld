@@ -36,11 +36,13 @@ import {
   MEETING_RULE,
   REFERENCE_MOST,
   SUCCESSOR_WINDOW_MS,
+  inheritedText,
   meetingSystemPrompt,
   namedCharacters,
   referenceText,
   repairAnswer,
   ruleSchema,
+  type InheritedMove,
   type PlannedMove,
 } from '../../../engine/system/meeting.ts';
 import type { Models } from '../../../engine/system/model.ts';
@@ -83,6 +85,8 @@ interface Context {
   /** The slot of the last meeting that closed ok or failed: where this window starts. Null before the first. */
   readonly lastSlot: string | null;
   readonly boards: readonly { readonly id: string; readonly name: string }[];
+  /** The moves of an earlier Boss, still in force and shaping a board, that this Boss has neither kept nor ended (0050); absent from an older database. */
+  readonly inheritanceDue?: readonly InheritedMove[];
 }
 
 /** How long one feed may take: outside material is a garnish, not a dependency. */
@@ -157,6 +161,7 @@ export async function runMeeting(
 
     const { titles, skipped } = await readFeeds(tuned.system.feeds, fetchFeed);
 
+    const due = context.inheritanceDue ?? [];
     const successorAllowed = phase.phase === 'meltdown' && now >= context.season.endsAt - SUCCESSOR_WINDOW_MS;
     const system = meetingSystemPrompt({
       boss,
@@ -170,6 +175,7 @@ export async function runMeeting(
     const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);
     const message = [
       renderDigest(digest, memory, titles),
+      ...(due.length ? ['', ...inheritedText(due, settings.inheritanceGraceDays)] : []),
       ...(notes.length ? ['', ...notes] : []),
       '',
       referenceText({
@@ -218,6 +224,7 @@ export async function runMeeting(
       threads: new Set(digest.threads.slice(0, REFERENCE_MOST.threads).map((t) => t.thread)),
       isPublic: (id) => publicNow.has(id),
       successorAllowed,
+      inheritable: context.inheritanceDue ? new Set(due.map((m) => m.act.toLowerCase())) : undefined,
     });
     if (!repaired.ok) {
       const error = `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`;
@@ -251,6 +258,9 @@ export async function runMeeting(
           expires_in_hours: m.expiresInHours,
           why: m.why,
         })),
+        // The handover's two answers (the database acts on them: a nomination is queued, each inherited move kept or ended, none at the bank's cost).
+        successor: repaired.successor,
+        inherited: repaired.inherited,
         // The database computes the bank itself, in the transaction, from these numbers, so a delayed apply debits the true balance.
         weekly_moves: phase.numbers.weeklyMoves,
         bank_cap: phase.numbers.bankCap,

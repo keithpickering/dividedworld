@@ -43,10 +43,10 @@ test('the seed carries the roster as staff characters, Bosses and bots, and the 
   for (const b of [...bosses, ...modBots]) assert.ok(!bytes.includes(b.persona.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
 });
 
-test('the seed carries the engine\'s catalogs of moves (with whether each is structural) and demands', () => {
+test('the seed carries the engine\'s catalogs of moves (with whether each is structural and shapes a board) and demands', () => {
   const { moves, demands } = instanceSeed(instance).system;
-  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural })));
-  assert.deepEqual(moves, [{ key: 'renameBoard', structural: true }]);
+  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard })));
+  assert.deepEqual(moves, [{ key: 'renameBoard', structural: true, shapesBoard: true }, { key: 'nameSuccessor', structural: true, shapesBoard: false }]);
   assert.deepEqual(demands.map((d) => d.key), DEMAND_KINDS.map((d) => d.key));
   assert.ok(demands.length >= 5);
 });
