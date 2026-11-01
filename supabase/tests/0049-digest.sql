@@ -6,9 +6,10 @@ do $$
 declare
   t text;
   c text;
-  a uuid; b uuid; boss uuid; acct_a uuid; acct_b uuid;
+  a uuid; b uuid; cc uuid; boss uuid; acct_a uuid; acct_b uuid; acct_c uuid;
   t1 uuid; t2 uuid; t3 uuid; t4 uuid;
-  pa uuid; pb uuid; pboss uuid; pquote uuid;
+  pa uuid; pb uuid; pboss uuid; pquote uuid; pboss_prev uuid; pboss_old uuid; pedit uuid;
+  fns text;
   d jsonb;
   denied boolean;
   bad text;
@@ -37,6 +38,20 @@ begin
   select string_agg(relname, ', ') into bad from pg_class
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and has_table_privilege('kayfabb_digest', oid, 'insert,update,delete,truncate,references,trigger');
   if bad is not null then raise exception 'the digest role writes %', bad; end if;
+  -- The role's reach, whole: it cannot create in the schema (the owner change takes the grant and gives it back), no client
+  -- role can become it, and the functions it may execute are exactly the five reviewed here: a new grant fails this.
+  if has_schema_privilege('kayfabb_digest', 'public', 'create') then raise exception 'the digest role can create in public'; end if;
+  foreach t in array array['anon', 'authenticated', 'service_role'] loop
+    if pg_has_role(t, 'kayfabb_digest', 'member') then raise exception '% is a member of the digest role', t; end if;
+  end loop;
+  select string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text) into fns from pg_proc p
+  where p.pronamespace = 'public'::regnamespace and has_function_privilege('kayfabb_digest', p.oid, 'execute')
+    and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e');
+  if fns is distinct from (select string_agg(x, ', ' order by x) from unnest(array[
+      'setting(text)', 'span_interval(jsonb)', 'standings_season()', 'current_boss()',
+      'system_digest(timestamp with time zone,timestamp with time zone)']) x) then
+    raise exception 'the functions the digest role may execute are not the reviewed five: %', fns;
+  end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;
 
   if (select r.rolname from pg_proc p join pg_roles r on r.oid = p.proowner where p.oid = 'system_digest(timestamptz, timestamptz)'::regprocedure) is distinct from 'kayfabb_digest' then
@@ -85,8 +100,8 @@ begin
   -- ------------------------------------------------------------------------------- the digest ----
   insert into settings (key, value) values ('digestThreads', '3'), ('digestExcerpts', '2'), ('digestExcerptChars', '10')
   on conflict (key) do update set value = excluded.value;
-  acct_a := tests.account('digest-a'); acct_b := tests.account('digest-b');
-  a := tests.character(acct_a, 'Digest A'); b := tests.character(acct_b, 'Digest B');
+  acct_a := tests.account('digest-a'); acct_b := tests.account('digest-b'); acct_c := tests.account('digest-c');
+  a := tests.character(acct_a, 'Digest A'); b := tests.character(acct_b, 'Digest B'); cc := tests.character(acct_c, 'Digest C');
   insert into characters (name, staff, staff_kind, debuted_at) values ('Digest Boss', 'digest-boss', 'boss', now()) returning id into boss;
   update seasons set boss = 'digest-boss' where ends_at is null;
 
@@ -106,23 +121,36 @@ begin
   pquote := tests.act(b, 'post', t1, '{"body": "quoting"}', pa, base);
   perform set_config('kayfabb.staff_writer', 'on', true);
   pboss := tests.post(boss, t1, 'The Boss speaks.', base);
+  -- The Boss's earlier Acts, in the quiet thread so t1's count stays put: one in the window before (it is read), one before that (it is not).
+  pboss_prev := tests.post(boss, t4, 'Last window.', base - interval '2 hours');
+  pboss_old := tests.post(boss, t4, 'Long ago.', base - interval '4 hours');
   perform set_config('kayfabb.staff_writer', '', true);
+  insert into reaction_tallies (act, kind, count) values (pboss_prev, 'wow', 2), (pboss_old, 'wow', 9);
+  -- Quotes, in t1: b quotes a three times in all (one above), a quotes the Boss twice, c quotes a and b once each, and a
+  -- quotes itself three times, which would top the list if a self-quote counted. Four pairs are listed worth keeping; the cap is two.
+  perform tests.act(b, 'post', t1, '{"body": "q"}', pa, base); perform tests.act(b, 'post', t1, '{"body": "q"}', pa, base);
+  perform tests.act(a, 'post', t1, '{"body": "q"}', pboss, base); perform tests.act(a, 'post', t1, '{"body": "q"}', pboss, base);
+  perform tests.act(cc, 'post', t1, '{"body": "q"}', pa, base); perform tests.act(cc, 'post', t1, '{"body": "q"}', pb, base);
+  perform tests.act(a, 'post', t1, '{"body": "q"}', pa, base); perform tests.act(a, 'post', t1, '{"body": "q"}', pa, base); perform tests.act(a, 'post', t1, '{"body": "q"}', pa, base);
+  -- A post edited after it was written: the excerpt shows the edit.
+  pedit := tests.act(a, 'edit', t2, '{"body": "Edited!"}', pa, base + interval '1 minute');
   insert into reaction_tallies (act, kind, count) values (pboss, 'wow', 4), (pboss, 'meh', 1);
   insert into settlements (starts_at, ends_at, season) select base - interval '30 minutes', base - interval '10 minutes', id from seasons where ends_at is null;
   update standings set amount = 1000000 where character = a;
   update standings set amount = 2000000 where character = b;
+  -- c stands at 0: three characters stand, the cap is two.
 
   perform tests.become_service();
   d := system_digest(base - interval '1 hour', base + interval '1 hour');
   perform tests.unbecome();
 
   if jsonb_array_length(d -> 'threads') > 3 or jsonb_array_length(d -> 'threads') <> 3 then raise exception 'the thread list is not capped at digestThreads: %', d -> 'threads'; end if;
-  -- t1 has 5 posts (heat 2.5 an hour over the 2-hour window), t2 and t3 have 2 each, t4 one: t2 splits its reactions, so it outranks t3.
+  -- t1 has 14 posts (heat 7 an hour over the 2-hour window), t2 and t3 have 2 each, t4 one: t2 splits its reactions, so it outranks t3.
   if (select array_agg((e ->> 'thread')::uuid order by o) from jsonb_array_elements(d -> 'threads') with ordinality x(e, o)) is distinct from array[t1, t2, t3] then
     raise exception 'threads are ordered %', d -> 'threads';
   end if;
-  if (d #>> '{threads,0,heat}')::numeric <> 2.5 then raise exception 'heat is posts an hour: %', d #> '{threads,0}'; end if;
-  if (d #>> '{threads,0,length}')::integer <> 5 then raise exception 'length is the thread''s posts: %', d #> '{threads,0}'; end if;
+  if (d #>> '{threads,0,heat}')::numeric <> 7 then raise exception 'heat is posts an hour: %', d #> '{threads,0}'; end if;
+  if (d #>> '{threads,0,length}')::integer <> 14 then raise exception 'length is the thread''s posts: %', d #> '{threads,0}'; end if;
   if (d #>> '{threads,1,controversy}')::numeric <> 0.5 or (d #>> '{threads,2,controversy}')::numeric <> 0 then raise exception 'controversy is %, %', d #>> '{threads,1,controversy}', d #>> '{threads,2,controversy}'; end if;
   if d -> 'moves' is distinct from '[]'::jsonb then raise exception 'moves are not empty: %', d -> 'moves'; end if;
 
@@ -134,18 +162,29 @@ begin
      is distinct from (select array_agg(x order by x) from unnest(array[pa, (select x.id from acts x where x.thread = t3 and x.seq = 1)]) x) then
     raise exception 'the first excerpt is not the most reacted: %', d -> 'excerpts';
   end if;
-  -- Quotes: b quotes a, once.
-  if d -> 'quotes' is distinct from jsonb_build_array(jsonb_build_object('from', b, 'to', a, 'count', 1)) then raise exception 'quotes are %', d -> 'quotes'; end if;
+  -- The edited post's excerpt shows the edit, not the first text.
+  if (select e ->> 'text' from jsonb_array_elements(d -> 'excerpts') e where (e ->> 'act')::uuid = pa) is distinct from 'Edited!' then raise exception 'an edited post''s excerpt is %', d -> 'excerpts'; end if;
+  -- Quotes: capped at two, the most quoted first (b quotes a three times, a quotes the Boss twice); a's quotes of itself are not listed.
+  if d -> 'quotes' is distinct from jsonb_build_array(jsonb_build_object('from', b, 'to', a, 'count', 3), jsonb_build_object('from', a, 'to', boss, 'count', 2)) then raise exception 'quotes are %', d -> 'quotes'; end if;
   -- The Boss's own Act, and its public tally.
-  if jsonb_array_length(d -> 'bossReactions') <> 1 or (d #>> '{bossReactions,0,total}')::integer <> 5 or (d #>> '{bossReactions,0,tally,wow}')::integer <> 4 then
+  if jsonb_array_length(d -> 'bossReactions') <> 2 or (d #>> '{bossReactions,0,total}')::integer <> 5 or (d #>> '{bossReactions,0,tally,wow}')::integer <> 4 then
     raise exception 'reactions to the Boss are %', d -> 'bossReactions';
+  end if;
+  -- The window before is read too (the Boss's post two hours back, 2 reactions), and the one before that is not (9).
+  if (d #>> '{bossReactions,1,act}')::uuid <> pboss_prev or (d #>> '{bossReactions,1,total}')::integer <> 2 or exists (select 1 from jsonb_array_elements(d -> 'bossReactions') e where (e ->> 'act')::uuid = pboss_old) then
+    raise exception 'the Boss''s earlier reactions are %', d -> 'bossReactions';
   end if;
   -- Standings moved: a settlement fell in the window, so the public standings top, best first.
   if (d #>> '{standings,0,character}')::uuid <> b or (d #>> '{standings,0,amount}')::integer <> 2000000 or jsonb_array_length(d -> 'standings') <> 2 then raise exception 'standings are %', d -> 'standings'; end if;
-  -- The characters named, public ones only.
-  if not (select bool_and(e ->> 'name' is not null) from jsonb_array_elements(d -> 'characters') e)
-     or not exists (select 1 from jsonb_array_elements(d -> 'characters') e where (e ->> 'id')::uuid = a)
-     or not exists (select 1 from jsonb_array_elements(d -> 'characters') e where (e ->> 'id')::uuid = b) then
+  -- The standings are capped at two: c, standing at 0, is the third and is left out.
+  if jsonb_array_length(d -> 'standings') <> 2 or exists (select 1 from jsonb_array_elements(d -> 'standings') e where (e ->> 'character')::uuid = cc) then raise exception 'the standings are not capped: %', d -> 'standings'; end if;
+  -- The characters named are exactly those the lists name: a and b (standings, excerpts, quotes) and the Boss (quoted), flagged staff;
+  -- c is named by no listed row, so it is not here.
+  if (select array_agg((e ->> 'id')::uuid order by (e ->> 'id')::uuid) from jsonb_array_elements(d -> 'characters') e)
+       is distinct from (select array_agg(x order by x) from unnest(array[a, b, boss]) x)
+     or not (select bool_and(e ->> 'name' is not null) from jsonb_array_elements(d -> 'characters') e)
+     or (select (e ->> 'staff')::boolean from jsonb_array_elements(d -> 'characters') e where (e ->> 'id')::uuid = boss) is distinct from true
+     or exists (select 1 from jsonb_array_elements(d -> 'characters') e where (e ->> 'id')::uuid <> boss and (e ->> 'staff')::boolean) then
     raise exception 'characters are %', d -> 'characters';
   end if;
   -- No settlement in the window: no standings.

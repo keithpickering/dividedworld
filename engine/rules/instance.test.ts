@@ -5,6 +5,7 @@ import type { Instance, ModBotPersona, Settings, SystemContent } from './types.t
 import { PHASE_CAPS } from '../system/phases.ts';
 import { DUTIES } from '../system/duties.ts';
 import { STOCK_LINE_KEYS } from '../system/stock.ts';
+import { DIGEST_MOST } from '../system/digest.ts';
 
 const settings: Settings = {
   walletCap: 600,
@@ -438,6 +439,11 @@ test('the new settings are checked like the others', () => {
   for (const k of ['memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld']) {
     assert.match(bad(k, 0), new RegExp(k), k);
     assert.match(bad(k, 2.5), new RegExp(k), k);
+  }
+  // The digest settings have a ceiling too: an admin setting cannot grow the meeting's prompt without bound.
+  for (const [k, most] of [['digestThreads', DIGEST_MOST.threads], ['digestExcerpts', DIGEST_MOST.excerpts], ['digestExcerptChars', DIGEST_MOST.excerptChars]] as const) {
+    assert.match(bad(k, most + 1), new RegExp(k), k);
+    assert.deepEqual(settingsProblems({ ...settings, [k]: most }), [], `${k} may be its ceiling`);
   }
   assert.match(bad('modelTiers', { strong: 'a' }), /modelTiers/);
   assert.match(bad('modelTiers', { strong: 'a', light: '' }), /modelTiers/);

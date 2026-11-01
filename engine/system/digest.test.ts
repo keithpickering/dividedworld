@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CLIPS, renderDigest, type Digest } from './digest.ts';
+import { CLIPS, DIGEST_MOST, renderDigest, type Digest } from './digest.ts';
 import type { Memory } from './memory.ts';
 
 const id = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -55,32 +55,52 @@ test('a character the digest does not list is "someone", never an id', () => {
   assert.ok(!text.includes(id(2)));
 });
 
-// The largest caps the instance allows and every field at its longest: the rendered length has a ceiling.
-test('the rendered length is bounded by the caps at their largest', () => {
-  const THREADS = 10;
-  const EXCERPTS = 8;
-  const CHARS = 280;
-  const FEED = 30;
+// The ceilings the renderer owns, every field at its longest and every list over-long: the rendered length has a
+// ceiling computed from the constants, whatever a digest hands it.
+test('the rendered length is bounded by the ceilings, whatever the digest holds', () => {
+  const { threads: T, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
+  const OVER = 3;
   const long = (n: number): string => 'x'.repeat(n);
-  const names = Array.from({ length: 3 * EXCERPTS + 1 }, (_, i) => ({ id: id(100 + i), name: long(200), staff: false }));
+  const names = Array.from({ length: 4 * (E + OVER) }, (_, i) => ({ id: id(1000 + i), name: long(500), staff: false }));
+  const lists = (n: number) => Array.from({ length: n }, (_, i) => i);
   const digest: Digest = {
     since: '2026-10-30T00:00:00.000000+00:00',
     until: '2026-10-31T00:00:00.000000+00:00',
-    threads: Array.from({ length: THREADS }, (_, i) => ({ thread: id(i), title: long(500), board: long(500), posts: 99999999, heat: 99999999.99, controversy: 0.7499, length: 99999999 })),
-    standings: Array.from({ length: EXCERPTS }, (_, i) => ({ rank: i + 1, character: names[i]!.id, amount: 2000000000 })),
-    moves: [],
-    quotes: Array.from({ length: EXCERPTS }, (_, i) => ({ from: names[i]!.id, to: names[i + 1]!.id, count: 99999999 })),
-    bossReactions: Array.from({ length: EXCERPTS }, (_, i) => ({ act: id(i), thread: id(i), total: 99999999, tally: Object.fromEntries(Array.from({ length: 12 }, (_, k) => [long(CLIPS.kind) + k, 99999999])) })),
-    excerpts: Array.from({ length: EXCERPTS }, (_, i) => ({ act: id(i), thread: id(i), character: names[i]!.id, reactions: 99999999, text: long(CHARS) })),
+    threads: lists(T + OVER).map((i) => ({ thread: id(i), title: long(5000), board: long(5000), posts: 99999999, heat: 99999999.99, controversy: 0.7499, length: 99999999 })),
+    standings: lists(E + OVER).map((i) => ({ rank: i + 1, character: names[i]!.id, amount: 2000000000 })),
+    moves: lists(E + OVER).map((i) => ({ move: long(5000), i })),
+    quotes: lists(E + OVER).map((i) => ({ from: names[i]!.id, to: names[i + 1]!.id, count: 99999999 })),
+    bossReactions: lists(E + OVER).map((i) => ({ act: id(i), thread: id(i), total: 99999999, tally: Object.fromEntries(lists(12).map((k) => [long(100) + k, 99999999])) })),
+    excerpts: lists(E + OVER).map((i) => ({ act: id(i), thread: id(i), character: names[i]!.id, reactions: 99999999, text: long(5 * C) })),
     characters: names,
   };
-  const text = renderDigest(digest, null, Array.from({ length: FEED }, () => long(1000)));
-  // threads: ~(120 + 60 + 120) a line; excerpts: 280 + 64 + 40; the rest and the feed's 200 a line, with generous headers.
-  const bound = 2500 + THREADS * 330 + EXCERPTS * (350 + 140 + 140 + 440 + 120) + FEED * 210;
+  const text = renderDigest(digest, null, lists(F + OVER).map(() => long(5000)));
+  // A line's fixed words and numbers fit in 200; every free string counts at its clip.
+  const LINE = 200;
+  const bound =
+    2000 + // headings, the window, the empty-section sentences
+    T * (CLIPS.title + CLIPS.board + LINE) +
+    E * (CLIPS.name + LINE) + // standings
+    E * (CLIPS.move + LINE) + // moves
+    E * (2 * CLIPS.name + LINE) + // quotes
+    E * (CLIPS.tallyKinds * (CLIPS.kind + LINE) + LINE) + // reactions to the Boss
+    E * (CLIPS.name + C + LINE) + // top posts
+    F * (CLIPS.feedItem + LINE);
   assert.ok(text.length <= bound, `${text.length} > ${bound}`);
-  assert.ok(text.length < 30000, `${text.length} is not small`);
+  // And the lists really stop at their ceilings: one past each is not shown.
+  const lines = (heading: string): number => {
+    const body = text.split(`## ${heading}\n`)[1]!.split('\n\n')[0]!;
+    return body.split('\n').length;
+  };
+  assert.equal(lines('Hot threads'), T);
+  assert.equal(lines('Standings'), E);
+  assert.equal(lines('Moves'), E);
+  assert.equal(lines('Quotes between characters'), E);
+  assert.equal(lines('Reactions to your own posts'), E);
+  assert.equal(lines('Top posts'), E);
+  assert.equal(lines('Outside'), F);
+  assert.ok(text.split('\n').every((l) => !l.includes('x'.repeat(C + 1))), 'an excerpt is clipped to the excerpt maximum');
   // Longer free text does not make it longer: the clips hold.
-  const longer = renderDigest({ ...digest, threads: digest.threads.map((t) => ({ ...t, title: long(5000) })) }, null, []);
-  const same = renderDigest(digest, null, []);
-  assert.equal(longer.length, same.length);
+  const longer = renderDigest({ ...digest, threads: digest.threads.map((t) => ({ ...t, title: long(50000) })) }, null, []);
+  assert.equal(longer.length, renderDigest(digest, null, []).length);
 });

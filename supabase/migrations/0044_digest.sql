@@ -12,19 +12,19 @@
 --   acts_public, characters_public   every Act and every debuted character, as any signed-in player sees them
 --   reaction_tallies, reaction_kinds how many of each kind an Act drew (never who), and the kinds' quadrants
 --   boards, thread_list              the board and thread names and counters players see
---   settlements, current_standings   the settled standings, as the standings screen shows them
+--   settlements, standings           the settled standings, read by the columns the standings screen shows (character, season, amount, name)
 --   staff_profile_now                a Boss's in-character profile, public by design
--- Four of those are tables with row-level security (reaction_tallies, reaction_kinds, boards, settlements): the
+-- Five of those are tables with row-level security (reaction_tallies, reaction_kinds, boards, settlements, standings): the
 -- role gets a policy of its own on each, since a role that is neither a client nor the owner has none. Nothing
 -- is granted on characters, class_history, reactions, accounts, ledger, staff_memory, meetings, move_bank or any
--- my_* view. thread_list, current_standings and staff_profile_now run as their owner and carry public columns only.
+-- my_* view. thread_list and staff_profile_now run as their owner and carry public columns only.
 --
 -- Cost on a busy instance. A meeting runs a few times a week and reads the window's posts once: the cost is
 -- the posts made in the window (the acts_created index, plus one latest-edit probe each), the tallies on them
 -- (primary key on act), and the Boss's own Acts of two windows (acts_character). Every list is cut by a
 -- setting before it is returned, so the digest's size does not grow with the instance, only the meeting's read does,
 -- and that grows with the window, not with the instance's history. The standings are read only when a settlement
--- landed in the window, as a sort of the season's rows once; that is the one cost that grows with characters.
+-- landed in the window, and then as the first rows of an index scan up to the cap: nothing in the digest sorts the season.
 
 -- ------------------------------------------------------------------------------------- the role ----
 
@@ -49,12 +49,14 @@ grant usage on schema public to kayfabb_digest;
 revoke all on all tables in schema public from kayfabb_digest;
 
 grant select on acts_public, characters_public, reaction_tallies, reaction_kinds, boards, thread_list,
-                settlements, current_standings, staff_profile_now to kayfabb_digest;
+                settlements, staff_profile_now to kayfabb_digest;
+grant select (character, season, amount, name) on standings to kayfabb_digest;
 
 create policy digest_reads on reaction_tallies for select to kayfabb_digest using (true);
 create policy digest_reads on reaction_kinds for select to kayfabb_digest using (true);
 create policy digest_reads on boards for select to kayfabb_digest using (true);
 create policy digest_reads on settlements for select to kayfabb_digest using (true);
+create policy digest_reads on standings for select to kayfabb_digest using (true);
 
 -- The functions the digest calls: its caps, the season's Boss, the season the standings read, and the grace
 -- acts_public's view applies. Each is security definer or reads nothing, and says nothing a player cannot see.
@@ -122,13 +124,21 @@ begin
     order by h.posts desc, coalesce(1 - s.biggest::numeric / nullif(s.total, 0), 0) desc, tl.id
     limit threads_cap
   ),
+  -- Order and cut first, number after. The order is the standings screen's, amount then name (then the character, for
+  -- a tie of both), so the top rows come off standings_season_amount (season, amount desc, name; 0030) already in order
+  -- and stop at the cap: the season's rows are never sorted, only the few of a tie are. The rank is numbered over the cut.
+  -- A row that is not a public character is skipped inside the cut, so the cap is still full.
   stand as (
-    select row_number() over (order by cs.standing desc, cs.character) as rank, cs.character, cs.standing as amount
-    from current_standings cs
-    where exists (select 1 from settlements x where x.ends_at > since and x.ends_at <= until)
-      and exists (select 1 from characters_public cp where cp.id = cs.character)
-    order by cs.standing desc, cs.character
-    limit short_cap
+    select row_number() over (order by top.amount desc, top.name, top.character) as rank, top.character, top.amount
+    from (
+      select s.character, s.amount, s.name
+      from standings s
+      where s.season = standings_season()
+        and exists (select 1 from settlements x where x.ends_at > since and x.ends_at <= until)
+        and exists (select 1 from characters_public cp where cp.id = s.character)
+      order by s.amount desc, s.name, s.character
+      limit short_cap
+    ) top
   ),
   quoted as (
     select w.character as q_from, tgt.character as q_to, count(*) as n

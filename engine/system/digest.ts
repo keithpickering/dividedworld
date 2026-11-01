@@ -3,9 +3,11 @@
  * returned, laid out as plain text with the Boss's own memory and the outside feed beside it. The SQL digest is built by
  * a role that can read public relations only, so nothing here can name who owns a mask, a class, or who reacted.
  *
- * The text's length is bounded by the digest's caps (digestThreads, digestExcerpts, digestExcerptChars, which cut the
- * lists in SQL) and by the fixed clips below, which cut every free string a player or a feed wrote. It does not grow
- * with the instance. The test renders a digest at the largest caps with every field at its longest and asserts a bound.
+ * The text's length is bounded here, not by trust in the caller: the settings that cut the lists in SQL (digestThreads,
+ * digestExcerpts, digestExcerptChars) have ceilings (DIGEST_MOST) that their validators enforce, and the renderer
+ * slices every list to those ceilings and clips every free string a player or a feed wrote (CLIPS). It does not grow
+ * with the instance or with a setting. The test renders over-long input at the ceilings and asserts a bound computed
+ * from these constants.
  *
  * Pure: it reads its arguments and nothing else.
  */
@@ -78,12 +80,22 @@ export interface Digest {
   readonly characters: readonly DigestCharacter[];
 }
 
+/**
+ * The ceilings on what a digest holds, for every instance: the settings digestThreads, digestExcerpts and
+ * digestExcerptChars may not exceed the first three (engine/rules/instance.ts), and the renderer slices to them
+ * whatever it is handed. `feed` is the outside feed's items, which the caller caps but the renderer does not trust.
+ */
+export const DIGEST_MOST = { threads: 25, excerpts: 20, excerptChars: 1000, feed: 30 } as const;
+
 /** The clips on strings the digest and the feed carry. Thread titles are at most 120 in SQL. */
 export const CLIPS = {
   title: 120,
   board: 60,
   name: 64,
   kind: 24,
+  /** Reaction kinds shown on one of the Boss's posts, most reacted first. */
+  tallyKinds: 32,
+  move: 400,
   feedItem: 200,
   memoryNote: 300,
   memoryItem: 120,
@@ -107,7 +119,8 @@ function memoryText(memory: Memory | null, names: (id: string) => string): strin
  * `feed` is the outside feed's item titles, already capped by the caller.
  */
 export function renderDigest(digest: Digest, memory: Memory | null, feed: readonly string[]): string {
-  const known = new Map(digest.characters.map((c) => [c.id, clip(line(c.name), CLIPS.name)]));
+  const { threads: T, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
+  const known = new Map(digest.characters.slice(0, 4 * E).map((c) => [c.id, clip(line(c.name), CLIPS.name)]));
   const name = (id: string): string => known.get(id) ?? 'someone';
   const out: string[] = [];
   const section = (title: string, rows: readonly string[], none: string): void => {
@@ -120,7 +133,7 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   section('What you remember', memoryText(memory, name), '');
   section(
     'Hot threads',
-    digest.threads.map(
+    digest.threads.slice(0, T).map(
       (t, i) =>
         `${i + 1}. "${clip(line(t.title), CLIPS.title)}" on ${clip(line(t.board), CLIPS.board)}: ${t.posts} posts in the window (${t.heat} an hour), ${t.length} in all, controversy ${t.controversy}.`,
     ),
@@ -128,20 +141,22 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   );
   section(
     'Standings',
-    digest.standings.map((s) => `${s.rank}. ${name(s.character)}: ${s.amount}`),
+    digest.standings.slice(0, E).map((s) => `${s.rank}. ${name(s.character)}: ${s.amount}`),
     'No settlement landed in the window.',
   );
-  section('Moves', digest.moves.map((m) => clip(line(JSON.stringify(m)), 400)), 'No move landed in the window.');
+  section('Moves', digest.moves.slice(0, E).map((m) => clip(line(JSON.stringify(m)), CLIPS.move)), 'No move landed in the window.');
   section(
     'Quotes between characters',
-    digest.quotes.map((q) => `${name(q.from)} quoted ${name(q.to)} ${q.count} time${q.count === 1 ? '' : 's'}.`),
+    digest.quotes.slice(0, E).map((q) => `${name(q.from)} quoted ${name(q.to)} ${q.count} time${q.count === 1 ? '' : 's'}.`),
     'Nobody quoted anybody.',
   );
   section(
     'Reactions to your own posts',
-    digest.bossReactions.map(
+    digest.bossReactions.slice(0, E).map(
       (r) =>
         `${r.total} in all: ${Object.entries(r.tally)
+          .sort(([ka, a], [kb, b]) => b - a || (ka < kb ? -1 : ka > kb ? 1 : 0))
+          .slice(0, CLIPS.tallyKinds)
           .map(([kind, n]) => `${clip(kind, CLIPS.kind)} ${n}`)
           .join(', ')}.`,
     ),
@@ -149,9 +164,9 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   );
   section(
     'Top posts',
-    digest.excerpts.map((e) => `${name(e.character)} (${e.reactions} reactions): ${line(e.text)}`),
+    digest.excerpts.slice(0, E).map((e) => `${name(e.character)} (${e.reactions} reactions): ${clip(line(e.text), C)}`),
     'No post drew attention.',
   );
-  section('Outside', feed.map((f) => `- ${clip(line(f), CLIPS.feedItem)}`), 'Nothing from outside.');
+  section('Outside', feed.slice(0, F).map((f) => `- ${clip(line(f), CLIPS.feedItem)}`), 'Nothing from outside.');
   return out.join('\n');
 }

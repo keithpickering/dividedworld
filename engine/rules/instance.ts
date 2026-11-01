@@ -4,6 +4,7 @@
  */
 import { QUADRANTS } from './types.ts';
 import type { EconomyRead, Instance, Settings, QuizQuestion, Span, StaffSeed, SystemContent } from './types.ts';
+import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
@@ -67,7 +68,7 @@ function phasesRule(v: unknown): string | null {
   }
   return null;
 }
-const whole = (min: number, what: string) => (v: unknown): string | null => (isWhole(v, min) ? null : `a whole number of ${what}, at least ${min}`);
+const whole = (min: number, what: string, most?: number) => (v: unknown): string | null => (isWhole(v, min) && (most === undefined || v <= most) ? null : `a whole number of ${what}, at least ${min}${most === undefined ? '' : ` and at most ${most}`}`);
 
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
@@ -98,9 +99,9 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   rosterRecentExcluded: whole(0, 'Bosses'),
   structuralHoldHours: whole(1, 'hours'),
   microEventDailyCalls: whole(0, 'calls'),
-  digestThreads: whole(1, 'threads'),
-  digestExcerpts: whole(1, 'posts'),
-  digestExcerptChars: whole(1, 'characters'),
+  digestThreads: whole(1, 'threads', DIGEST_MOST.threads),
+  digestExcerpts: whole(1, 'posts', DIGEST_MOST.excerpts),
+  digestExcerptChars: whole(1, 'characters', DIGEST_MOST.excerptChars),
   memoryOpinions: whole(1, 'opinions'),
   memoryGrudges: whole(1, 'grudges'),
   memoryWheelhouse: whole(1, 'subjects'),
