@@ -493,7 +493,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
     async boards() {
       const [bs, counted] = await Promise.all([
-        list(() => client.from('boards').select('id,slug,name,description,is_system').order('created_at', { ascending: true })),
+        list(() => client.from('boards_now').select('id,slug,name,description,is_system').order('created_at', { ascending: true })),
         list(() => client.from('board_counts').select('board,threads')),
       ]);
       const threadCounts = new Map(counted.map((c) => [c['board'] as string, num(c['threads'])]));
@@ -506,7 +506,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       );
     },
     async board(slugOrId) {
-      const rows = await list(() => client.from('boards').select('id,slug,name,description,is_system').eq(idOk(slugOrId) ? 'id' : 'slug', slugOrId).limit(1));
+      const rows = await list(() => client.from('boards_now').select('id,slug,name,description,is_system').eq(idOk(slugOrId) ? 'id' : 'slug', slugOrId).limit(1));
       return rows[0] ? toBoard(rows[0]) : null;
     },
     async threads(board, page) {

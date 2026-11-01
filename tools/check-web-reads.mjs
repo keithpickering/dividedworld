@@ -58,7 +58,7 @@ const DATA_LAYER = /^web\/src\/data\//;
  */
 export const ALLOWED_READS = Object.freeze([
   // Public: what anyone could have watched.
-  'boards', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds',
+  'boards', 'boards_now', 'moves_log', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'settlements',
   'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',
   // A character's standing in the season the standings read, through standings_season() on the server. The

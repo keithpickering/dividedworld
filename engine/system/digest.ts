@@ -60,7 +60,12 @@ export interface DigestCharacter {
   readonly staff: boolean;
 }
 
-/** A landed move and its demand's progress; Task 8 of the system plan gives it a shape. */
+/**
+ * A move in force, or one that ended in the window, as `system_digest` lists it (supabase/migrations/0045_moves.sql):
+ * `{act, kind, params, demand, expiresAt, landedAt, progress: {done, of, met}, ended}`, where `ended` is null while the move is in
+ * force and `{why: met | expired | reversed, by, at}` after. Held generically: the renderer reads the fields it knows, defensively,
+ * and falls back to the row's JSON for one it does not, so a digest from a newer database still renders.
+ */
 export type DigestMove = Readonly<Record<string, unknown>>;
 
 export interface Digest {
@@ -104,6 +109,24 @@ export const CLIPS = {
 const clip = (s: string, n: number): string => (s.length <= n ? s : s.slice(0, n));
 const line = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
+const record = (v: unknown): Readonly<Record<string, unknown>> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+
+/** A move as one line: its state and how far its demand has come first, so the clip never cuts them, then what it did. */
+function moveLine(m: DigestMove): string {
+  if (typeof m['kind'] !== 'string') return line(JSON.stringify(m));
+  const ended = record(m['ended']);
+  const progress = record(m['progress']);
+  const demand = record(m['demand']);
+  const state = typeof ended['why'] === 'string' ? `ended ${clip(String(ended['why']), CLIPS.kind)} by ${clip(String(ended['by']), CLIPS.kind)}` : 'in force';
+  const way =
+    typeof demand['kind'] === 'string' && typeof progress['of'] === 'number'
+      ? `demand ${clip(String(demand['kind']), CLIPS.kind)} ${progress['done']} of ${progress['of']}${progress['met'] === true ? ', met' : ''}`
+      : 'no demand';
+  const name = record(m['params'])['name'];
+  const did = typeof name === 'string' ? ` renamed a board to "${clip(line(name), 80)}"` : '';
+  return `${clip(m['kind'], CLIPS.kind)}: ${state}; ${way};${did}`;
+}
+
 function memoryText(memory: Memory | null, names: (id: string) => string): string[] {
   if (memory === null) return ['You are new to this board. You have no memory yet; form one from what follows.'];
   const out = [`Your hobby: ${clip(line(memory.hobby.name), 80)} (since ${clip(memory.hobby.since, 40)}, from ${clip(line(memory.hobby.from), 120)}).`];
@@ -144,7 +167,7 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
     digest.standings.slice(0, E).map((s) => `${s.rank}. ${name(s.character)}: ${s.amount}`),
     'No settlement landed in the window.',
   );
-  section('Moves', digest.moves.slice(0, E).map((m) => clip(line(JSON.stringify(m)), CLIPS.move)), 'No move landed in the window.');
+  section('Moves', digest.moves.slice(0, E).map((m) => clip(moveLine(m), CLIPS.move)), 'No move is in force and none ended in the window.');
   section(
     'Quotes between characters',
     digest.quotes.slice(0, E).map((q) => `${name(q.from)} quoted ${name(q.to)} ${q.count} time${q.count === 1 ? '' : 's'}.`),

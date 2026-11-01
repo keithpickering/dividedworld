@@ -5,6 +5,8 @@
  * characters only; their prompts are read from the instance in code and never travel in the seed.
  */
 import type { Instance } from '../../../engine/rules/types.ts';
+import { MOVE_KINDS } from '../../../engine/system/moves.ts';
+import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 
 export function instanceSeed(instance: Instance) {
   return {
@@ -27,6 +29,10 @@ export function instanceSeed(instance: Instance) {
         ...instance.system.modBots.map((b) => ({ key: b.key, name: b.name, title: b.title, signature: b.signature, kind: 'bot' as const })),
       ],
       firstStaff: [...instance.system.firstStaff],
+      // The engine's catalogs of moves and demands (0045), so SQL and TypeScript read one list. This file is the composition
+      // root: the engine names no instance, and the SQL names no kind of its own.
+      moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural })),
+      demands: DEMAND_KINDS.map((d) => ({ key: d.key })),
     },
   };
 }

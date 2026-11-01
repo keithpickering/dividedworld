@@ -57,6 +57,15 @@ test('a character the digest does not list is "someone", never an id', () => {
 
 // The ceilings the renderer owns, every field at its longest and every list over-long: the rendered length has a
 // ceiling computed from the constants, whatever a digest hands it.
+test('a move in force and one that ended read as plain lines with their state and progress first', () => {
+  const inForce = { act: id(20), kind: 'renameBoard', params: { name: 'Pointless Toast Palace' }, demand: { kind: 'postsOnBoard' }, progress: { done: 7, of: 12, met: false }, ended: null };
+  const ended = { ...inForce, act: id(21), progress: { done: 12, of: 12, met: true }, ended: { why: 'reversed', by: 'admin', at: '2026-10-31T00:00:00Z' } };
+  const text = renderDigest({ ...small, moves: [inForce, ended] }, null, []);
+  assert.ok(text.includes('renameBoard: in force; demand postsOnBoard 7 of 12; renamed a board to "Pointless Toast Palace"'), text);
+  assert.ok(text.includes('renameBoard: ended reversed by admin; demand postsOnBoard 12 of 12, met; renamed a board to "Pointless Toast Palace"'), text);
+  assert.ok(renderDigest({ ...small, moves: [{ note: 'unknown shape' }] }, null, []).includes('{"note":"unknown shape"}'));
+});
+
 test('the rendered length is bounded by the ceilings, whatever the digest holds', () => {
   const { threads: T, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
   const OVER = 3;

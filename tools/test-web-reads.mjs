@@ -41,6 +41,9 @@ check('.from(\'characters\').select(\'owner\') fires', fires(`await client.from(
    server (standings_season(), read through current_standings). A read of the table is a second copy of that rule. */
 check('.from(\'standings\') fires, since it would choose a season of its own', fires(`client.from('standings').select('character,amount').eq('season', s);`).length === 1);
 check('.from(\'current_standings\') is clean', fires(`client.from('current_standings').select('character,standing').in('character', ids);`).length === 0);
+/* A board's name now, and a Boss's moves with how each ended, are computed from Acts anyone can read (0045); the queue and the catalogs behind them are not. */
+check('.from(\'boards_now\') and .from(\'moves_log\') are clean', fires(`client.from('boards_now').select('id,name'); client.from('moves_log').select('*').eq('staff', s);`).length === 0);
+for (const t of ['queued_moves', 'move_kinds', 'demand_kinds', 'open_moves']) check(`.from('${t}') fires`, fires(`client.from('${t}').select('*');`).length === 1);
 
 /* ---- every private table, and every way to name one ---- */
 for (const t of ['characters', 'class_history', 'reactions', 'ledger', 'wallet_events', 'wallets', 'pending_turns', 'effect_state_writes', 'settings', 'invites', 'thread_reads', 'acts', 'accounts', 'card_ledger', 'estimates']) {

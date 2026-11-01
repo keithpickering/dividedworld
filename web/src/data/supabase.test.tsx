@@ -160,17 +160,17 @@ describe('reads and their rows', () => {
     expect(await harness(() => rows([])).api.threads(C, { offset: 0, limit: 5 })).toEqual({ threads: [], total: 0 });
   });
 
-  it('reads one board by its slug, or by its id, as one row of boards', async () => {
+  it('reads one board by its slug, or by its id, as one row of boards_now, the name it is called now', async () => {
     const row = { id: C, slug: 'general', name: 'General', description: 'All', is_system: true };
     const h = harness(() => rows([row]));
     expect(await h.api.board('general')).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: true });
     expect(await h.api.board(C)).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: true });
-    const [bySlug, byId] = h.to('boards');
+    const [bySlug, byId] = h.to('boards_now');
     expect(bySlug?.url.searchParams.get('slug')).toBe('eq.general');
     expect(bySlug?.url.searchParams.get('id')).toBeNull();
     expect(byId?.url.searchParams.get('id')).toBe(`eq.${C}`);
     expect(byId?.url.searchParams.get('limit')).toBe('1');
-    expect(h.rest().every((r) => r.url.pathname.endsWith('/boards'))).toBe(true);
+    expect(h.rest().every((r) => r.url.pathname.endsWith('/boards_now'))).toBe(true);
     expect(await harness(() => rows([])).api.board('nowhere')).toBeNull();
   });
 
@@ -401,14 +401,14 @@ describe('reads and their rows', () => {
     ]);
   });
 
-  it('builds the board index from boards and thread_list', async () => {
+  it('builds the board index from boards_now (the names as Acts say them now) and thread_list', async () => {
     const h = harness((r) => {
-      if (r.url.pathname.endsWith('/boards')) return rows([{ id: C, slug: 'general', name: 'General', description: 'All', is_system: false, created_at: 'x' }]);
+      if (r.url.pathname.endsWith('/boards_now')) return rows([{ id: C, slug: 'general', name: 'General', description: 'All', is_system: false, created_at: 'x' }]);
       if (r.url.pathname.endsWith('/board_counts')) return rows([{ board: C, threads: 12 }]);
       return rows([THREAD_ROW]);
     });
     const [board] = await h.api.boards();
-    expect(h.to('boards')[0]?.url.searchParams.get('select')).toBe('id,slug,name,description,is_system');
+    expect(h.to('boards_now')[0]?.url.searchParams.get('select')).toBe('id,slug,name,description,is_system');
     expect(h.to('board_counts')[0]?.url.searchParams.get('select')).toBe('board,threads');
     expect(h.to('thread_list').every((r) => r.method === 'GET' && !(r.headers.get('prefer') ?? '').includes('count'))).toBe(true);
     expect(board).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: false, threadCount: 12, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T });

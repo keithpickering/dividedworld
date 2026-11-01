@@ -1,0 +1,31 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { MOVE_KINDS, moveKind, moveParamsProblems } from './moves.ts';
+
+const board = '11111111-1111-4111-8111-111111111111';
+const rename = { board, name: 'Pointless Toast Palace', premise: 'Toast, and only toast.', description: 'A 2003 board index.' };
+
+test('the catalog holds renameBoard, structural, with a long plain label', () => {
+  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true]]);
+  assert.equal(moveKind('renameBoard')?.label, 'THE SYSTEM RENAMED THIS BOARD');
+  assert.equal(moveKind('shout'), undefined);
+});
+
+test('renameBoard params are held to their shape; a string over its outer bound is trimmed and recorded, a missing field rejected', () => {
+  const ok = moveParamsProblems('renameBoard', rename);
+  assert.ok(ok.ok && ok.trims.length === 0);
+  const long = moveParamsProblems('renameBoard', { ...rename, name: 'x'.repeat(260) });
+  assert.ok(long.ok && long.trims.length === 1 && long.trims[0]?.path === 'name', JSON.stringify(long));
+  const missing = moveParamsProblems('renameBoard', { board, name: 'x', premise: 'y' });
+  assert.ok(!missing.ok && missing.path === 'description' && missing.predicate === 'required');
+  const notUuid = moveParamsProblems('renameBoard', { ...rename, board: 'x'.repeat(36) });
+  assert.ok(!notUuid.ok && notUuid.predicate === 'isUuid');
+  const unknown = moveParamsProblems('shout', {});
+  assert.ok(!unknown.ok && unknown.path === 'kind');
+});
+
+test('the log line reads in plain words with nothing unfilled', () => {
+  const words = moveKind('renameBoard')!.template(rename);
+  assert.equal(words, 'The System renamed a board to "Pointless Toast Palace". Its subject is now: Toast, and only toast.');
+  assert.doesNotMatch(words, /[{}]|undefined/);
+});

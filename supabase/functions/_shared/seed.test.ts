@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { instanceSeed } from './seed.ts';
 import { chooseInstance, instance } from './instance.ts';
+import { MOVE_KINDS } from '../../../engine/system/moves.ts';
+import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance);
@@ -35,6 +37,14 @@ test('the seed carries the roster as staff characters, Bosses and bots, and the 
   }
   const bytes = JSON.stringify(seed);
   for (const b of [...bosses, ...modBots]) assert.ok(!bytes.includes(b.persona.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
+});
+
+test('the seed carries the engine\'s catalogs of moves (with whether each is structural) and demands', () => {
+  const { moves, demands } = instanceSeed(instance).system;
+  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural })));
+  assert.deepEqual(moves, [{ key: 'renameBoard', structural: true }]);
+  assert.deepEqual(demands.map((d) => d.key), DEMAND_KINDS.map((d) => d.key));
+  assert.ok(demands.length >= 5);
 });
 
 test('the deployed instance is chosen by profile: the playtest\'s shorter season, or the defaults', () => {
