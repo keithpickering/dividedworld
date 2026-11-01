@@ -19,7 +19,8 @@ begin
     ('glint', 'Glint', 'pepperoni', 'glint.price', 'uncommon', 'cast', '{character}', interval '7 days'),
     ('marquee', 'Marquee', 'sweet', 'marquee.price', 'rare', 'cast', '{thread}', interval '1 day'),
     ('quake', 'Quake', 'salty', 'quake.price', 'legendary', 'cast', '{board}', interval '1 day'),
-    ('tremor', 'Tremor', 'salty', 'tremor.price', 'legendary', 'cast', '{board}', interval '3 days')
+    ('tremor', 'Tremor', 'salty', 'tremor.price', 'legendary', 'cast', '{board}', interval '3 days'),
+    ('selfie', 'Selfie', 'sweet', 'warder.price', 'uncommon', 'use', '{character}', interval '2 days')
   on conflict (key) do nothing;
 end $$;
 
@@ -152,6 +153,28 @@ begin
   if why is null then raise exception 'a row names one target'; end if;
 end $$;
 
+-- ---- A play ends at its card's time, cut to its reach's bound; a Use beyond a post goes on the caller's own character ----
+do $$
+declare
+  ann uuid := tests.account('reach-clamp'); bob uuid := tests.account('reach-clamp-b');
+  pipe uuid := tests.character(ann, 'Clamp Pipe'); hoo uuid := tests.character(bob, 'Clamp Hoo');
+  t uuid := tests.thread('Clamp'); mine uuid; theirs uuid; brd uuid; pl jsonb; why text;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.announcements();
+  mine := tests.post(pipe, t, 'Mine.');
+  theirs := tests.post(hoo, t, 'Theirs.');
+  insert into boards (slug, name) values ('clamp-board', 'Clamp Board') returning id into brd;
+  perform pg_temp.hand(ann, 'tremor', 'selfie', 'selfie');
+  -- Tremor lasts 3 days; a board effect lasts at most a day (reachLasts.board).
+  pl := play_card(ann, 'tremor', pipe, brd, '{}', 0, '', 'board');
+  if (select ends_at from play_reach where play = (pl ->> 'id')::uuid) is distinct from now() + interval '1 day' then raise exception 'a play ends at least(lasts, reachLasts)'; end if;
+  why := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', ann, 'selfie', pipe, hoo, '{}', '', 'character', theirs));
+  if why is distinct from 'Selfie is used on your own character' then raise exception 'a Use on another''s character, said %', why; end if;
+  pl := play_card(ann, 'selfie', pipe, pipe, '{}', 0, '', 'character', mine);
+  if (select ends_at from play_reach where play = (pl ->> 'id')::uuid) is distinct from now() + interval '2 days' then raise exception 'a Use beyond a post ends at its own time'; end if;
+end $$;
+
 -- ---- A play beyond a post on a staff character lands ----
 do $$
 declare
@@ -206,7 +229,7 @@ declare
   ann uuid := tests.account('above-ann'); bob uuid := tests.account('above-bob'); cy uuid := tests.account('above-cy');
   pipe uuid := tests.character(ann, 'Above Pipe'); hoo uuid := tests.character(bob, 'Above Hoo'); zed uuid := tests.character(cy, 'Above Zed');
   hoo2 uuid := tests.character(bob, 'Above Hoo Two');
-  t uuid := tests.thread('Above'); p uuid; ended uuid; got jsonb; plan text := ''; ln record;
+  t uuid := tests.thread('Above'); p uuid; ended uuid; got jsonb;
   general uuid := (select id from boards where slug = 'general');
 begin
   perform pg_temp.cards();

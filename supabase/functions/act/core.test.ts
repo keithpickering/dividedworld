@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, runAction } from './core.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
+import { landsOn } from '../../../engine/rules/cards.ts';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const recording = (answer: unknown = { id }) => {
@@ -60,26 +61,26 @@ const target = '22222222-2222-4222-8222-222222222222';
 const whoami = '33333333-3333-4333-8333-333333333333';
 
 test('a play asks the post, prices it by the card\'s own rules, and is written by the service for the caller', async () => {
-  const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 1200, effects: [] }, play_card: { id: 'k', kind: 'card' } });
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 1200, effects: [] }, play_card: { id: 'k', kind: 'card' } });
   const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'Red', seed: 7 }, message: ' Clean that up. ' });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 200, body: { id: 'k', kind: 'card' } });
   assert.deepEqual(calls, [
     `player:whoami:{}`,
     `service:instance_settings:{}`,
-    `player:card_target:{"target":"${target}"}`,
+    `player:card_target_reach:{"reach":"post","target":"${target}"}`,
     `service:play_card:${JSON.stringify({ card: 'whoops', through: id, target, config: { color: 'red' }, message: 'Clean that up.', who: whoami, price: 50 })}`,
   ]);
 });
 
 test('a play whose message is too long is refused by its field, and never written', async () => {
-  const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [] } });
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, effects: [] } });
   const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, message: 'x'.repeat(201) });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'message', error: 'the message is at most 200 characters' } });
   assert.ok(!calls.some((c) => c.startsWith('service:play_card:')), calls.join('\n'));
 });
 
 test('a play its card refuses is never written by the service', async () => {
-  const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [1, 2, 3].map((i) => ({ card: 'whoops', act: `k${i}` })) } });
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, effects: [1, 2, 3].map((i) => ({ card: 'whoops', act: `k${i}` })) } });
   const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } });
   assert.equal(out.status, 400);
   assert.match(String((out.body as { error: string }).error), /already/);
@@ -94,7 +95,7 @@ test('a purchase is the service\'s, for whoever the session is', async () => {
 
 test('a card is sold and played at the prices the settings rows hold', async () => {
   const { dbs, calls } = pair({ instance_settings: { economy: { ...instance.settings.economy, 'whoops.price': 150, 'whoops.perLength': 50 } }, whoami, buy_card: { card: 'whoops', balance: 0 },
-    card_target: { act: target, kind: 'post', length: 1000, effects: [] }, play_card: { id: 'k' } });
+    card_target_reach: { act: target, kind: 'post', length: 1000, effects: [] }, play_card: { id: 'k' } });
   await runAction(dbs, instance, { action: 'buyCard', card: 'whoops' });
   assert.ok(calls.includes(`service:buy_card:${JSON.stringify({ card: 'whoops', price: 150, who: whoami })}`), calls.join('\n'));
   await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } });
@@ -139,7 +140,7 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'spin', origin: id, character: id, title: 't', body: '' }, { spin: { thread: { id: thread, board }, act: { id: 's', thread } } },
       [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 's', thread } }]],
     [{ action: 'playCard', card: 'whoops', character: id, target: id, config: { color: 'red' } },
-      { whoami: id, card_target: { act: id, kind: 'post', length: 10, effects: [] }, play_card: { id: 'c', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread } }]],
+      { whoami: id, card_target_reach: { act: id, kind: 'post', length: 10, effects: [] }, play_card: { id: 'c', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread } }]],
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread: null, tally: {} } }, []],
     // A drop announced is The System's tally of one, sent now, with the Turns thread it opened; a
     // waiting or silent character is its player's alone.
@@ -178,7 +179,7 @@ test('a refused or failed action sends nothing live', async () => {
 });
 
 test('only the reads and the writes that find their own earlier effect are safe to repeat after a lost answer', () => {
-  for (const fn of ['whoami', 'card_target', 'card_of_play', 'open_account', 'instance_settings']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
+  for (const fn of ['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'open_account', 'instance_settings']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
   // A save repeated after a newer one landed would bring back the older strokes.
   for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'react', 'turn', 'withdraw_turn', 'buy_card', 'play_card', 'create_character', 'set_debut', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
 });
@@ -213,7 +214,7 @@ const setAct = { id: 'k', kind: 'set', thread: 'th', payload: {} };
 
 test('a Set is decided by its card\'s rules and written by set_card; its answer and its broadcast carry no card key', async () => {
   for (const card of ['test-snare', 'test-bluffy']) {
-    const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [] }, set_card: setAct });
+    const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, effects: [] }, set_card: setAct });
     const out = await runAction(dbs, tested, { action: 'setCard', card, character: id, target, config: card === 'test-snare' ? { ink: 'red' } : {} });
     assert.equal(out.status, 200, JSON.stringify(out.body));
     assert.ok(calls.some((c) => c.startsWith('service:set_card:') && c.includes(`"card":"${card}"`) && c.includes('"price":0')), calls.join('\n'));
@@ -224,14 +225,14 @@ test('a Set is decided by its card\'s rules and written by set_card; its answer 
 });
 
 test('a strike\'s configuration is checked by the struck card\'s rules before SQL', async () => {
-  const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [] } });
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, effects: [] } });
   const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-snare', character: id, target, config: { ink: 'blue' } });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'the ink is red' } });
   assert.ok(!calls.some((c) => c.startsWith('service:set_card:')), calls.join('\n'));
 });
 
 test('a second card back on a post is refused before SQL, as anyone would see it', async () => {
-  const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [{ card: null, act: 'b', faceDown: true, ends: new Date(Date.now() + 1e6).toISOString() }] } });
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, effects: [{ card: null, act: 'b', faceDown: true, ends: new Date(Date.now() + 1e6).toISOString() }] } });
   const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-bluffy', character: id, target });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'this post already holds a card face down' } });
   assert.ok(!calls.some((c) => c.startsWith('service:set_card:')), calls.join('\n'));
@@ -239,14 +240,14 @@ test('a second card back on a post is refused before SQL, as anyone would see it
 
 test('a Use on a post under someone else\'s character is refused by SQL and answered in its words', async () => {
   const refusal = new DatabaseError('play_card: Test Shield is used on your own post', '42501', 403, 'Test Shield is used on your own post', REFUSAL_HINT);
-  const answers: Record<string, unknown> = { whoami, card_target: { act: target, kind: 'post', length: 10, effects: [] } };
+  const answers: Record<string, unknown> = { whoami, card_target_reach: { act: target, kind: 'post', length: 10, effects: [] } };
   const make = (): Db => ({ rpc: async <T>(fn: string) => { if (fn === 'play_card') throw refusal; return (fn === 'instance_settings' ? { economy: instance.settings.economy } : answers[fn]) as T; } });
   const out = await runAction({ player: make(), service: make() }, tested, { action: 'useCard', card: 'test-shield', character: id, target });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 403, body: { error: 'Test Shield is used on your own post', code: '42501' } });
 });
 
 test('a card is played the way it is played: a Set card is not cast, and a Cast card is not used', async () => {
-  const { dbs } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [] } });
+  const { dbs } = pair({ whoami, card_target_reach: { act: target, kind: 'post', length: 10, effects: [] } });
   const cast = await runAction(dbs, tested, { action: 'playCard', card: 'test-bluffy', character: id, target });
   assert.deepEqual(cast.body, { field: 'config', error: 'Test Bluffy is set face down on your own post' });
   const used = await runAction(dbs, tested, { action: 'useCard', card: 'test-inky', character: id, target, config: { ink: 'red' } });
@@ -254,7 +255,7 @@ test('a card is played the way it is played: a Set card is not cast, and a Cast 
 });
 
 test('a cast under a ward is refused in the ward card\'s name', async () => {
-  const { dbs } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [{ card: 'test-shield', act: 'w', ward: 'uncommon' }] } });
+  const { dbs } = pair({ whoami, card_target_reach: { act: target, kind: 'post', length: 10, effects: [{ card: 'test-shield', act: 'w', ward: 'uncommon' }] } });
   const out = await runAction(dbs, tested, { action: 'playCard', card: 'test-inky', character: id, target, config: { ink: 'red' } });
   assert.deepEqual(out.body, { field: 'config', error: 'this post\'s Test Shield turns away cards up to uncommon' });
 });
@@ -269,7 +270,7 @@ test('a spring, and a strike\'s card, go out live as Acts of their own', async (
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread, tally: { fire: 1 }, sprung: spring } },
       [{ topic: `thread:${thread}`, event: 'tally', payload: { act: id, tally: { fire: 1 } } }, { topic: `thread:${thread}`, event: 'act', payload: spring }]],
     [{ action: 'playCard', card: 'whoops', character: id, target: id, config: { color: 'red' } },
-      { whoami: id, card_target: { act: id, kind: 'post', length: 10, effects: [] }, play_card: { id: 'c', thread, sprung: spring } },
+      { whoami: id, card_target_reach: { act: id, kind: 'post', length: 10, effects: [] }, play_card: { id: 'c', thread, sprung: spring } },
       [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread } }, { topic: `thread:${thread}`, event: 'act', payload: spring }]],
   ];
   for (const [request, answers, broadcasts] of cases) {
@@ -278,4 +279,38 @@ test('a spring, and a strike\'s card, go out live as Acts of their own', async (
     assert.equal(out.status, 200, JSON.stringify(request));
     assert.deepEqual(out.broadcasts ?? [], broadcasts, JSON.stringify(request));
   }
+});
+
+// A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3): the engine's test card, beside the instance's.
+const sparkle = { ...instance.cards.find((c) => c.key === 'stick-around')!, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, play: 'cast' as const,
+  reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 }, priceKey: 'stickAround.price',
+  canApply: (t: Parameters<typeof landsOn>[1], e: Parameters<typeof landsOn>[2]) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e) };
+const reaching = { ...instance, cards: [...instance.cards, sparkle] };
+
+test('a play beyond a post reads its target by card_target_reach, and its rules see the effects above it', async () => {
+  const post = '44444444-4444-4444-8444-444444444444';
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'character', character: target, effects: [], above: { thread: [], board: [] } }, play_card: { id: 'k', kind: 'card' } });
+  const out = await runAction(dbs, reaching, { action: 'playCard', card: 'sparkle', character: id, reach: 'character', target, post });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.ok(calls.includes(`player:card_target_reach:${JSON.stringify({ reach: 'character', target, from_post: post })}`), calls.join('\n'));
+  assert.ok(calls.some((c) => c.startsWith('service:play_card:') && c.includes('"reach":"character"') && c.includes(`"from_post":"${post}"`)), calls.join('\n'));
+  // A second on the same character is the card's own rules to refuse, before SQL.
+  const live = { card: 'sparkle', act: 'g', reach: 'character', ends: new Date(Date.now() + 1e6).toISOString() };
+  const again = pair({ whoami, card_target_reach: { reach: 'character', character: target, effects: [live], above: {} } });
+  const refused = await runAction(again.dbs, reaching, { action: 'playCard', card: 'sparkle', character: id, reach: 'character', target, post });
+  assert.deepEqual({ status: refused.status, body: refused.body }, { status: 400, body: { field: 'config', error: 'this character already carries that card' } });
+  assert.ok(!again.calls.some((c) => c.startsWith('service:play_card:')), again.calls.join('\n'));
+});
+
+test('a request with a reach the card lacks is refused before SQL is asked anything', async () => {
+  const { dbs, calls } = pair({ whoami });
+  const out = await runAction(dbs, reaching, { action: 'playCard', card: 'whoops', character: id, reach: 'character', target, post: target, config: { color: 'red' } });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'reach', error: 'this card lands on a post' } });
+  assert.deepEqual(calls, []);
+});
+
+test('a target card_target_reach does not find is refused in its reach\'s words', async () => {
+  const { dbs } = pair({ whoami, card_target_reach: null });
+  const out = await runAction(dbs, reaching, { action: 'playCard', card: 'sparkle', character: id, reach: 'character', target, post: target });
+  assert.deepEqual(out.body, { field: 'target', error: 'there is no such character' });
 });

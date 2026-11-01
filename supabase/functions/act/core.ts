@@ -13,7 +13,7 @@
  * PostgREST's detail, which can quote a row, nor a constraint's or a table's name.
  */
 import { decide } from '../../../engine/rules/actions.ts';
-import { basePrice, casterMessage, decidePlay, decideSet, decideUse, type CardEffect, type PostTarget } from '../../../engine/rules/cards.ts';
+import { basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type CardEffect, type CardTarget, type EffectsAbove, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, postgrest, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -92,7 +92,7 @@ const live = (rpc: string, answer: unknown): Broadcast[] =>
  * change). Every other write is sent once; a saved effect's state among them, since a save
  * repeated after a newer one landed would bring the older strokes back.
  */
-const REPEATABLE = new Set(['whoami', 'card_target', 'card_of_play', 'open_account', 'instance_settings']);
+const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'open_account', 'instance_settings']);
 export const SAFE_TO_REPEAT = (fn: string): boolean => REPEATABLE.has(fn);
 
 /** The act function's two connections: as the player, and as the service; each sends a write once. */
@@ -122,14 +122,19 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     const tuned = decision.rpc === 'buy_card' || decision.needsTarget ? await withDatabaseSettings(instance, dbs.service) : instance;
     if (decision.rpc === 'buy_card') args = { ...args, price: basePrice(tuned.cards.find((c) => c.key === decision.args.card)!, tuned.settings) };
     if (decision.needsTarget) {
-      const read = await dbs.player.rpc<(Omit<PostTarget, 'reach'> & { effects: CardEffect[] }) | null>('card_target', { target: decision.args.target });
-      if (!read) return refused('target', 'there is no such post');
-      // An act from before 0055 names no reach; every play read here is on a post.
-      const target = { ...read, reach: 'post' as const };
+      // The target as its rules see it (card_target_reach, 0055): a post, a character, a thread or a board, with its own effects and
+      // the live ones above it, which a card's canApply sees too (effectsOnTarget).
+      const reach = (decision.args.reach ?? 'post') as Reach;
+      const read = await dbs.player.rpc<(CardTarget & { effects: CardEffect[]; above?: EffectsAbove }) | null>('card_target_reach',
+        { reach, target: decision.args.target, ...(decision.args.from_post ? { from_post: decision.args.from_post } : {}) });
+      if (!read) return refused('target', `there is no such ${reach}`);
+      const { effects: own, above = {}, ...said } = read;
+      const target = { reach, ...said } as CardTarget;
+      const effects = effectsOnTarget(target, own ?? [], above);
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
       if (decision.play === 'set') {
         // A strike's configuration is the struck card's, checked by that card's own rules.
-        const set = decideSet(rules, tuned.settings, target, target.effects, decision.args.config, tuned.cards);
+        const set = decideSet(rules, tuned.settings, target, effects, decision.args.config, tuned.cards);
         if (!set.ok) return refused('config', set.why);
         args = { ...args, config: set.value.config, price: set.value.price };
       } else {
@@ -137,8 +142,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         if (!said.ok) return refused('message', said.why);
         const nameOf = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
         const play = decision.play === 'use'
-          ? decideUse(rules, tuned.settings, target, target.effects, decision.args.config, said.value)
-          : decidePlay(rules, tuned.settings, target, target.effects, decision.args.config, said.value, { nameOf });
+          ? decideUse(rules, tuned.settings, target, effects, decision.args.config, said.value)
+          : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf });
         if (!play.ok) return refused('config', play.why);
         args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
       }

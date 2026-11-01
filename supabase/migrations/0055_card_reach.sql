@@ -33,7 +33,8 @@ language sql immutable set search_path = public, pg_temp as $$
     and cardinality(reaches) = (select count(distinct r) from unnest(reaches) r)
 $$;
 
--- Where a card lands, a post unless it says, and whether a thread play of it pins its thread (Main Event's kind, Task 5). A card
+-- Where a card lands, a post unless it says, and whether a thread play of it pins its thread (Main Event's kind; pinned_threads
+-- below reads it, added here so the column and its seed land once). A card
 -- beyond a post ends at its time (lasts), which is now a Use's or a card's that reaches beyond a post; a Set lands on a post alone.
 alter table card_kinds
   add column reaches text[] not null default '{post}',
