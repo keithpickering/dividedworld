@@ -45,7 +45,11 @@ export const TRIM_LIST_BY = 2;
 function capLength(text: string, most: number): string {
   const cut = text.slice(0, most);
   const last = cut.charCodeAt(cut.length - 1);
-  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+  if (!(last >= 0xd800 && last <= 0xdbff)) return cut;
+  // Half an emoji is refused by Postgres, so the pair goes whole: dropped where text stays
+  // before it, kept (one unit over the bound) where dropping it would leave nothing, since a
+  // string that had text is never trimmed to empty.
+  return cut.length > 1 ? cut.slice(0, -1) : text.slice(0, most + 1);
 }
 
 type Step = { ok: true; value: unknown } | { ok: false; path: string; predicate: string };

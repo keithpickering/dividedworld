@@ -5,8 +5,8 @@
  *
  * It reports the counts the response itself carries: the OpenAI `usage` block, or where a server
  * names them otherwise, llama.cpp's `tokens_evaluated` / `tokens_predicted` and
- * text-generation-inference's `details.generated_tokens`. Where it carries none the ledger records
- * 0 tokens, never a guess ("Cost is a column"): the self-hosted endpoint is priced per GPU second,
+ * text-generation-inference's `details.generated_tokens`. Where it carries none the count is left
+ * unreported and the ledger records null, never a guess and never a zero ("Cost is a column"): the self-hosted endpoint is priced per GPU second,
  * so tokens are not the price basis. `gpuSeconds` is the wall time of the attempt. The tier is `self-hosted` and the model is `self-hosted`, the key of the explicit
  * zero in prices.ts, whatever name the server calls its model.
  */
@@ -36,8 +36,8 @@ export async function complete(request: CompletionRequest, baseUrl: string, apiK
     text,
     model: 'self-hosted',
     usage: {
-      inputTokens: reported?.prompt_tokens ?? answer?.tokens_evaluated ?? 0,
-      outputTokens: reported?.completion_tokens ?? answer?.tokens_predicted ?? answer?.details?.generated_tokens ?? 0,
+      inputTokens: reported?.prompt_tokens ?? answer?.tokens_evaluated,
+      outputTokens: reported?.completion_tokens ?? answer?.tokens_predicted ?? answer?.details?.generated_tokens,
       gpuSeconds: (wire.now() - started) / 1000,
       serviceTier: 'self-hosted',
     },

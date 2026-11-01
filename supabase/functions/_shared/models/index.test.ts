@@ -97,8 +97,8 @@ test('a completions server that reports no usage gets GPU seconds from wall time
   assert.equal(new Headers(f.calls[0]?.init.headers).has('authorization'), false);
   assert.equal(f.calls[0]?.url, 'https://old.example/v1/completions');
   assert.equal(r.usage.gpuSeconds, 2.5);
-  assert.equal(r.usage.outputTokens, 0);
-  assert.equal(r.usage.inputTokens, 0);
+  assert.equal(r.usage.outputTokens, undefined);
+  assert.equal(r.usage.inputTokens, undefined);
   assert.equal(r.costMicrodollars, 0);
   await assert.rejects(models(() => undefined, noRecord, { fetch: f.fetch }).complete({ duty: 'standingOrderLine', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 4 }), /SYSTEM_COMPLETIONS_URL/);
 });
@@ -272,8 +272,8 @@ test('a completions server that reports no usage block records no tokens, never 
   const none = ledger();
   await models(env, none.record, { fetch: fake([json({ choices: [{ text: 'Four words right here' }] })]).fetch, sleep: async () => {} })
     .complete({ duty: 'standingOrderLine', prompt: 'a b c', temperature: 1, topP: 1, stop: [], maxTokens: 40 });
-  assert.equal(none.rows[0]?.inputTokens, 0);
-  assert.equal(none.rows[0]?.outputTokens, 0);
+  assert.equal(none.rows[0]?.inputTokens, null);
+  assert.equal(none.rows[0]?.outputTokens, null);
   const llama = ledger();
   await models(env, llama.record, { fetch: fake([json({ choices: [{ text: 'Fine.' }], tokens_evaluated: 21, tokens_predicted: 9 })]).fetch, sleep: async () => {} })
     .complete({ duty: 'standingOrderLine', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 40 });
@@ -283,5 +283,5 @@ test('a completions server that reports no usage block records no tokens, never 
   await models(env, tgi.record, { fetch: fake([json({ choices: [{ text: 'Fine.' }], details: { generated_tokens: 5 } })]).fetch, sleep: async () => {} })
     .complete({ duty: 'standingOrderLine', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 40 });
   assert.equal(tgi.rows[0]?.outputTokens, 5);
-  assert.equal(tgi.rows[0]?.inputTokens, 0);
+  assert.equal(tgi.rows[0]?.inputTokens, null);
 });

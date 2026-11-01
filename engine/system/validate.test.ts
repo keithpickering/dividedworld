@@ -95,3 +95,8 @@ test('a trim never leaves half an emoji, and records the length it really left',
   assert.deepEqual(c, { ok: true, text: 'a', trims: [{ path: '', predicate: 'maxLength(2)', before: 4, after: 1 }] });
   assert.deepEqual(repair('a😀b', { type: 'string', maxLength: 3 }), { ok: true, value: 'a😀', trims: [{ path: '', predicate: 'maxLength(3)', before: 4, after: 3 }] });
 });
+
+test('a trim never empties a string that had text: an emoji at the cut is kept whole rather than dropped to nothing', () => {
+  assert.deepEqual(repair('😀b', { type: 'string', maxLength: 1, minLength: 1 }), { ok: true, value: '😀', trims: [{ path: '', predicate: 'maxLength(1)', before: 3, after: 2 }] });
+  assert.deepEqual(cutCompletion('😀b', [], 1), { ok: true, text: '😀', trims: [{ path: '', predicate: 'maxLength(1)', before: 3, after: 2 }] });
+});
