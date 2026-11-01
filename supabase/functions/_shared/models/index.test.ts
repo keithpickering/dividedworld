@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AnswerRejected, models } from './index.ts';
+import { AnswerRejected, models as modelsFor } from './index.ts';
+import type { ModelOptions } from './index.ts';
 import { PRICES } from './prices.ts';
 import { ProviderRefusal, TransportFailure } from './transport.ts';
 
@@ -26,6 +27,9 @@ function fake(replies: Reply[]) {
 const secrets: Record<string, string> = { ANTHROPIC_API_KEY: 'sk-test', SYSTEM_COMPLETIONS_URL: 'https://old.example', SYSTEM_COMPLETIONS_KEY: 'ck-test' };
 const env = (name: string) => secrets[name];
 const noRecord = async () => {};
+/** The tiers the instance's `modelTiers` setting would hand over. */
+const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
+const models = (e: typeof env, record: Parameters<typeof modelsFor>[1], options: Partial<ModelOptions> = {}) => modelsFor(e, record, { tiers, ...options });
 const chat = { duty: 'microEvent', tier: 'light', system: 'You are the Director.', messages: [{ role: 'user', content: 'Go.' }], schema: { type: 'object' }, maxTokens: 300 } as const;
 
 test('chat asks the Messages API for structured output, with the key in a header and no sampling parameters', async () => {
@@ -50,12 +54,12 @@ test('chat asks the Messages API for structured output, with the key in a header
   assert.deepEqual(r.usage, { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, serviceTier: 'standard' });
 });
 
-test('the strong tier asks for the strong model; a tier\'s model is an environment setting', async () => {
+test('the strong tier asks for the strong model; a tier\'s model is what the settings\' tiers say', async () => {
   const f = fake([message('{}', {}, { model: 'claude-opus-5-5' })]);
   await models(env, noRecord, { fetch: f.fetch, sleep: async () => {} }).chat({ ...chat, tier: 'strong' });
   assert.equal(JSON.parse(String(f.calls[0]?.init.body)).model, 'claude-opus-5-5');
   const g = fake([message('{}', {}, { model: 'claude-sonnet-5-5' })]);
-  await models((n) => (n === 'SYSTEM_MODEL_LIGHT' ? 'claude-sonnet-5-5' : env(n)), noRecord, { fetch: g.fetch, sleep: async () => {} }).chat(chat);
+  await models(env, noRecord, { fetch: g.fetch, sleep: async () => {}, tiers: { ...tiers, light: 'claude-sonnet-5-5' } }).chat(chat);
   assert.equal(JSON.parse(String(g.calls[0]?.init.body)).model, 'claude-sonnet-5-5');
 });
 

@@ -1,0 +1,47 @@
+/**
+ * Stock lines: what The System says at each standing order when a model call is out of budget
+ * or fails (design, section 2), so cost never grows without bound and nothing stalls. In the
+ * board's world, so they may bluff; they carry no fact the glass does not show plainly. Each key
+ * may use only the tokens the engine gives it (engine/system/stock.ts): `{move}` a move's plain
+ * name, `{boss}` a Boss's name, `{board}` a board's name. Several lines a key, so one is not
+ * heard every time.
+ */
+import type { StockLines } from '../../../engine/rules/types.ts';
+
+export const stockLines: StockLines = Object.freeze({
+  moveLanded: Object.freeze([
+    'It is done: {move}. The System has spoken and does not take questions.',
+    'Effective immediately: {move}. Please remain calm and keep posting.',
+    'The System has decided on {move}. The System feels good about it.',
+  ]),
+  moveMet: Object.freeze([
+    'You did it. {move} is over. The System is not proud, it is merely satisfied.',
+    'The demand was met and {move} is lifted. Do not let it go to your heads.',
+    'Fine. {move} ends here. Well performed. Do not get used to it.',
+  ]),
+  moveExpired: Object.freeze([
+    'Nobody did anything, so {move} has run its course. The System is not disappointed. It is a little disappointed.',
+    'Time is up: {move} is over. The System was going to do something about that, and now it will not.',
+    '{move} has expired. The System has already moved on to something it will like more.',
+  ]),
+  moveReversed: Object.freeze([
+    'A higher power has stepped in and {move} is undone. The System has been overruled and would like that noted.',
+    'It turns out {move} was a mistake. The System stands by it, and it is also over.',
+    'Management has intervened: {move} is reversed. The System would like a word with Management.',
+  ]),
+  bossFarewell: Object.freeze([
+    '{boss} is leaving the building. Please stop clapping.',
+    'This season belonged to {boss}. {boss} regrets nothing and will say so at length.',
+    '{boss} has cleared out the desk. The stapler, it is said, was not returned.',
+  ]),
+  bossArrival: Object.freeze([
+    '{boss} is your Boss now. Nobody asked you, and nobody will.',
+    'Make way for {boss}, who has read the file on every one of you and found it thin.',
+    '{boss} has taken the seat. The seat is warm. Nobody wants to talk about why.',
+  ]),
+  boardDescription: Object.freeze([
+    'Welcome to {board}! Posts go here. Posts also go elsewhere. The System has decided this is the better one.',
+    '{board}: a board. Please be nice, or at least be interesting.',
+    'The System was told to describe {board} and has chosen to give you a feeling instead.',
+  ]),
+});

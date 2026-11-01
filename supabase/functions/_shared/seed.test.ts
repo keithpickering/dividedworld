@@ -22,6 +22,21 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.equal(seed.reactions.length, 16);
 });
 
+test('the seed carries the roster as staff characters, Bosses and bots, and the bots on staff at first, and no prompt', () => {
+  const seed = instanceSeed(instance);
+  const { bosses, modBots, firstStaff } = instance.system;
+  assert.deepEqual(seed.system.staff.filter((s) => s.kind === 'boss').map((s) => s.key), bosses.map((b) => b.key));
+  assert.deepEqual(seed.system.staff.filter((s) => s.kind === 'bot').map((s) => s.key), modBots.map((b) => b.key));
+  assert.equal(seed.system.staff.length, bosses.length + modBots.length);
+  assert.deepEqual(seed.system.firstStaff, [...firstStaff]);
+  for (const s of seed.system.staff) {
+    assert.deepEqual(Object.keys(s).sort(), ['key', 'kind', 'name', 'signature', 'title']);
+    assert.ok(s.title.length <= 40 && s.signature.length <= 500, 'the SQL cuts these in silence; instanceProblems holds them');
+  }
+  const bytes = JSON.stringify(seed);
+  for (const b of [...bosses, ...modBots]) assert.ok(!bytes.includes(b.persona.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
+});
+
 test('the deployed instance is chosen by profile: the playtest\'s shorter season, or the defaults', () => {
   assert.deepEqual(chooseInstance('playtest').settings.turnCooldown, { unit: 'day', count: 7 });
   assert.deepEqual(chooseInstance(undefined).settings.turnCooldown, { unit: 'day', count: 30 });

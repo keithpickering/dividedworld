@@ -1,7 +1,8 @@
 /**
  * The instance's vocabulary and numbers, in the shape seed_instance()
  * (supabase/migrations/0004_schedule.sql) writes: how an instance's classes, reactions, cards,
- * settings and boards arrive in a database whose SQL names none of them.
+ * settings and boards arrive in a database whose SQL names none of them. Staff arrive as a roster of
+ * characters only; their prompts are read from the instance in code and never travel in the seed.
  */
 import type { Instance } from '../../../engine/rules/types.ts';
 
@@ -18,5 +19,14 @@ export function instanceSeed(instance: Instance) {
     })),
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
     pipStyles: instance.pipStyles.map((p) => ({ key: p.key, name: p.name, full: p.full, empty: p.empty })),
+    // The roster as characters (0042): a Boss or a Mod Bot, once each, with the profile its title and signature give. The
+    // prompts stay in the instance module; the meeting reads them in code (chooseInstance), so they are not seeded.
+    system: {
+      staff: [
+        ...instance.system.bosses.map((b) => ({ key: b.key, name: b.name, title: b.title, signature: b.signature, kind: 'boss' as const })),
+        ...instance.system.modBots.map((b) => ({ key: b.key, name: b.name, title: b.title, signature: b.signature, kind: 'bot' as const })),
+      ],
+      firstStaff: [...instance.system.firstStaff],
+    },
   };
 }

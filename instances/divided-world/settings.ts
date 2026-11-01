@@ -36,6 +36,42 @@ export const defaults: Settings = deepFreeze<Settings>({
   postsPerPage: 20,
   /** HOT: ten replies in the last 7 days. */
   hotReplies: 10,
+  /** Switched off: The System holds no meeting and lands no move until Task 13 of its plan turns it on, after the screens that show a move's way out exist. */
+  systemEnabled: false,
+  /** Daily, at 09:23 UTC, an hour after the settlement, so the Boss's digest holds the newest standings. */
+  meetingCron: '23 9 * * *',
+  /**
+   * The ramp of a season: a gentle two-week honeymoon, a long reign, a three-week meltdown. Starting points
+   * the season review replaces with what the cast does. A move's longest run grows with the phase: a week in
+   * the honeymoon, four in the reign, six in the meltdown.
+   */
+  phases: {
+    honeymoon: { days: 14, weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 },
+    reign: { weeklyMoves: 5, bankCap: 10, moveExpiryMostDays: 28 },
+    meltdown: { days: 21, weeklyMoves: 8, bankCap: 14, moveExpiryMostDays: 42 },
+  },
+  /** An outgoing Boss's moves stay in force three days while the new Boss reviews them. */
+  inheritanceGraceDays: 3,
+  /** The two most recent Bosses sit out the draw for the next one, so a Boss does not come straight back. */
+  rosterRecentExcluded: 2,
+  /** A move that reshapes a board waits a day for an admin to hold it. */
+  structuralHoldHours: 24,
+  /** A starting point: twenty in-character lines a day from the light model; past it, stock lines stand in. */
+  microEventDailyCalls: 20,
+  /** A starting point: the Boss's digest holds the ten hottest threads. */
+  digestThreads: 10,
+  /** A starting point: the digest quotes the eight top posts. */
+  digestExcerpts: 8,
+  /** A starting point: each quoted post is cut to 280 characters. */
+  digestExcerptChars: 280,
+  /** A board's name is at most 60 characters, whoever proposes it. */
+  boardNameMaxLength: 60,
+  /** A starting point: no move runs longer than six weeks. */
+  moveExpiryMostDays: 42,
+  /** A starting point: no move expires sooner than a day after it lands, so a player always has time to meet its demand. */
+  moveExpiryLeastHours: 24,
+  /** The meeting runs on the strong model, small lines on the light one; model ids as the claude-api skill listed them on 2026-10-31. */
+  modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
   /** The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone. */
   cardSettings: { 'whoops.clean': 95 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */

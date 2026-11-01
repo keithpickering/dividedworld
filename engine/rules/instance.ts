@@ -3,8 +3,17 @@
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
 import { QUADRANTS } from './types.ts';
-import type { EconomyRead, Instance, Settings, Span } from './types.ts';
+import type { EconomyRead, Instance, Settings, QuizQuestion, Span, StaffSeed, SystemContent } from './types.ts';
+import { DUTIES } from '../system/duties.ts';
+import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
+import { STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
 import { INT4_MAX } from './cards.ts';
+
+/**
+ * What a Mod Bot's bribe may cost, in hundredths of an orb, for every bot in every instance: dear enough to be a
+ * choice, cheap enough that a character can pay it from a wallet.
+ */
+export const BRIBE_BOUNDS = { least: 25, most: 500 } as const;
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
 /** A grace may be minutes long (editGrace); nothing else is. */
@@ -44,6 +53,22 @@ function namedNumbers(v: unknown): string | null {
   return bad.length ? `an object of named numbers, and ${bad.map((k) => `"${k}"`).join(', ')} is not a number` : null;
 }
 
+/** The phases setting: each phase holds its numbers as whole numbers, at least 1. */
+function phasesRule(v: unknown): string | null {
+  const shape = 'an object of honeymoon, reign and meltdown, each holding its numbers (honeymoon and meltdown also their days) as whole numbers, at least 1';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const given = v as Record<string, Record<string, unknown> | undefined>;
+  for (const p of PHASES) {
+    const phase = given[p];
+    if (typeof phase !== 'object' || phase === null || Array.isArray(phase)) return `${shape}; "${p}" is missing`;
+    for (const key of PHASE_KEYS[p]) if (!isWhole(phase[key], 1)) return `${shape}; "${p}.${key}" is not`;
+    const extra = Object.keys(phase).filter((k) => !(PHASE_KEYS[p] as readonly string[]).includes(k));
+    if (extra.length) return `${shape}; "${p}.${extra[0]}" is not a number a phase holds`;
+  }
+  return null;
+}
+const whole = (min: number, what: string) => (v: unknown): string | null => (isWhole(v, min) ? null : `a whole number of ${what}, at least ${min}`);
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -66,6 +91,25 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   hotReplies: (v) => (isWhole(v, 1) ? null : 'a whole number of replies, at least 1'),
   economy: namedNumbers,
   cardSettings: namedNumbers,
+  systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
+  phases: phasesRule,
+  inheritanceGraceDays: whole(0, 'days'),
+  rosterRecentExcluded: whole(0, 'Bosses'),
+  structuralHoldHours: whole(1, 'hours'),
+  microEventDailyCalls: whole(0, 'calls'),
+  digestThreads: whole(1, 'threads'),
+  digestExcerpts: whole(1, 'posts'),
+  digestExcerptChars: whole(1, 'characters'),
+  boardNameMaxLength: whole(1, 'characters'),
+  moveExpiryMostDays: whole(1, 'days'),
+  moveExpiryLeastHours: whole(1, 'hours'),
+  modelTiers: (v) => {
+    const shape = 'an object naming a model id for "strong" and for "light"';
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+    const t = v as Record<string, unknown>;
+    return ['strong', 'light'].every((k) => typeof t[k] === 'string' && (t[k] as string).trim() !== '') ? null : shape;
+  },
 };
 
 export function settingsProblems(settings: Settings): string[] {
@@ -164,6 +208,97 @@ export function instanceProblems(instance: Instance): string[] {
         else if (max !== undefined && n > max) out.push(`${who} as ${n}; it must be at most ${max}`);
       }
     }
+  }
+  out.push(...systemProblems(instance));
+  return out;
+}
+
+/** The longest a Boss's or bot's title and signature may be: what the seed writes into a profile (0042 cuts them in silence). */
+export const STAFF_TITLE_MAX = 40;
+export const STAFF_SIGNATURE_MAX = 500;
+
+/** Checks of `instance.system`, the content The System reads, each a sentence naming what is wrong. */
+function systemProblems(instance: Instance): string[] {
+  const sys: SystemContent | undefined = instance.system;
+  if (typeof sys !== 'object' || sys === null) return ['the instance has no system content (system)'];
+  const out: string[] = [];
+  const bosses = Array.isArray(sys.bosses) ? sys.bosses : [];
+  const bots = Array.isArray(sys.modBots) ? sys.modBots : [];
+  if (!Array.isArray(sys.bosses) || !bosses.length) out.push('the instance has no Boss in its roster (system.bosses)');
+  if (!Array.isArray(sys.modBots) || !bots.length) out.push('the instance has no Mod Bot in its roster (system.modBots)');
+  const staff = (who: string, s: StaffSeed, persona: unknown) => {
+    for (const part of ['name', 'title', 'signature'] as const) if (typeof s[part] !== 'string' || s[part].trim() === '') out.push(`${who} "${s.key}" has no ${part}`);
+    if (typeof persona !== 'string' || persona.trim() === '') out.push(`${who} "${s.key}" has no persona`);
+    if (typeof s.title === 'string' && s.title.length > STAFF_TITLE_MAX) out.push(`${who} "${s.key}" has a title of ${s.title.length} characters; the seed keeps at most ${STAFF_TITLE_MAX} and cuts the rest in silence`);
+    if (typeof s.signature === 'string' && s.signature.length > STAFF_SIGNATURE_MAX) out.push(`${who} "${s.key}" has a signature of ${s.signature.length} characters; the seed keeps at most ${STAFF_SIGNATURE_MAX} and cuts the rest in silence`);
+  };
+  for (const k of duplicates(bosses, (b) => b.key)) out.push(`Boss key "${k}" is used twice`);
+  for (const k of duplicates(bots, (b) => b.key)) out.push(`Mod Bot key "${k}" is used twice`);
+  const bossKeys = new Set(bosses.map((b) => b.key));
+  const botKeys = new Set(bots.map((b) => b.key));
+  for (const k of bossKeys) if (botKeys.has(k)) out.push(`"${k}" is both a Boss and a Mod Bot; a staff key is one or the other`);
+  for (const b of bosses) {
+    staff('Boss', b, b.persona);
+    if (typeof b.startingHobby !== 'string' || b.startingHobby.trim() === '') out.push(`Boss "${b.key}" has no startingHobby`);
+    if (typeof b.temperament !== 'string' || b.temperament.trim() === '') out.push(`Boss "${b.key}" has no temperament`);
+    if (b.inheritsMemoryOf !== undefined && (b.inheritsMemoryOf === b.key || !bossKeys.has(b.inheritsMemoryOf))) out.push(`Boss "${b.key}" inherits the memory of "${b.inheritsMemoryOf}", who is not another Boss in the roster`);
+    for (const p of PHASES) {
+      const given = b.phases?.[p] as Record<string, unknown> | undefined;
+      for (const key of Object.keys(given ?? {})) {
+        const n = given![key];
+        const cap = (PHASE_CAPS[p] as unknown as Record<string, number>)[key];
+        if (cap === undefined) out.push(`Boss "${b.key}" overrides ${p} ${key}, which is not a number that phase holds`);
+        else if (!isWhole(n, 1) || n > cap) out.push(`Boss "${b.key}" overrides ${p} ${key} as ${JSON.stringify(n)}; it must be a whole number from 1 to ${cap} (the engine's cap)`);
+      }
+    }
+  }
+  for (const b of bots) {
+    staff('Mod Bot', b, b.persona);
+    const w = b.weakness;
+    const who = `Mod Bot "${b.key}"`;
+    if (w?.kind === 'quiz') {
+      if (!Array.isArray(w.questions) || !w.questions.length) out.push(`${who} has a quiz with no question; a quiz needs at least one question`);
+      else w.questions.forEach((q: QuizQuestion, i: number) => {
+        const at = `${who}'s quiz question ${i + 1}`;
+        if (!Array.isArray(q.choices) || q.choices.length < 2) out.push(`${at} has fewer than two choices; it needs at least two choices`);
+        else if (new Set(q.choices).size !== q.choices.length) out.push(`${at} lists a choice twice`);
+        if (!Array.isArray(q.choices) || !q.choices.includes(q.answer)) out.push(`${at} has the answer ${JSON.stringify(q.answer)}, which is not one of its choices`);
+      });
+    } else if (w?.kind === 'bribe') {
+      if (!isWhole(w.price, BRIBE_BOUNDS.least) || w.price > BRIBE_BOUNDS.most) out.push(`${who} has a bribe with a price of ${JSON.stringify(w.price)}; a price is a whole number of hundredths from ${BRIBE_BOUNDS.least} to ${BRIBE_BOUNDS.most}`);
+      else if (typeof instance.settings?.walletCap === 'number' && w.price > instance.settings.walletCap) out.push(`${who} has a bribe priced at ${w.price}, more than a wallet holds (walletCap ${instance.settings.walletCap}); no one could pay it`);
+    } else if (w?.kind !== 'distraction') out.push(`${who} has no weakness: a quiz, a bribe or a distraction`);
+    if (b.voice !== 'chat' && b.voice !== 'oldVoice') out.push(`${who} has the voice ${JSON.stringify(b.voice)}; a voice is "chat" or "oldVoice"`);
+    const v = b.strictness?.visitHours;
+    if (!v || !isWhole(v.least, 1) || !isWhole(v.most, 1) || v.least > v.most) out.push(`${who} has visit hours that are not a whole least and most, the least at least 1 and no more than the most`);
+  }
+  if (bosses.length && !bossKeys.has(sys.firstBoss)) out.push(`firstBoss "${sys.firstBoss}" is not a Boss in the roster`);
+  if (!Array.isArray(sys.firstStaff) || !sys.firstStaff.length) out.push('firstStaff names no Mod Bot; at least one bot is on staff from the start');
+  else for (const k of sys.firstStaff) if (!botKeys.has(k)) out.push(`firstStaff names "${k}", which is not a Mod Bot in the roster`);
+  const duties = sys.duties ?? ({} as SystemContent['duties']);
+  for (const d of DUTIES) {
+    const who = duties[d];
+    if (typeof who !== 'string' || who === '') out.push(`duty "${d}" is assigned to no one`);
+    else if (who !== 'boss' && who !== 'beat' && who !== 'filer' && !bossKeys.has(who) && !botKeys.has(who)) out.push(`duty "${d}" is assigned to "${who}", who is not "boss", "beat", "filer" or a staff member in the roster`);
+  }
+  for (const key of Object.keys(duties)) if (!(DUTIES as readonly string[]).includes(key)) out.push(`the duties name "${key}", which is not a duty`);
+  for (const key of STOCK_LINE_KEYS) {
+    const lines = sys.stockLines?.[key];
+    if (!Array.isArray(lines) || !lines.length || lines.some((l) => typeof l !== 'string' || l.trim() === '')) { out.push(`stock line "${key}" is missing; every standing order needs at least one line`); continue; }
+    for (const line of lines) {
+      for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) {
+        if (!STOCK_LINE_TOKENS[key].includes(token!)) out.push(`stock line "${key}" uses {${token}}, which that line is never given (it may use ${STOCK_LINE_TOKENS[key].map((t) => `{${t}}`).join(', ')})`);
+      }
+    }
+  }
+  for (const key of Object.keys(sys.stockLines ?? {})) if (!(STOCK_LINE_KEYS as readonly string[]).includes(key)) out.push(`stock line "${key}" is for no standing order`);
+  for (const key of ['nameStyle', 'oldVoice'] as const) if (typeof sys[key] !== 'function') out.push(`system.${key} is not a function`);
+  for (const key of ['feeds', 'realWorld', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);
+  // The settings that bound a move: a phase's longest move cannot outrun the longest any move may run.
+  const set = instance.settings;
+  if (set && settingsProblems(set).length === 0) {
+    for (const p of PHASES) if (set.phases[p].moveExpiryMostDays > set.moveExpiryMostDays) out.push(`phase "${p}" lets a move run ${set.phases[p].moveExpiryMostDays} days (moveExpiryMostDays), more than the ${set.moveExpiryMostDays} days any move may run`);
+    if (set.moveExpiryLeastHours > set.moveExpiryMostDays * 24) out.push(`moveExpiryLeastHours is ${set.moveExpiryLeastHours}, more than the ${set.moveExpiryMostDays * 24} hours of moveExpiryMostDays`);
   }
   return out;
 }

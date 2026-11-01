@@ -9,12 +9,12 @@ test('every duty has a mode and a default tier', () => {
 });
 
 test('staffFor returns the staff key the instance assigns the duty', () => {
-  const instance = { system: { duties: { meeting: 'director', appeal: 'bot' } } };
-  assert.equal(staffFor('meeting', instance), 'director');
-  assert.equal(staffFor('appeal', instance), 'bot');
+  const instance = { system: { duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat' } as const } };
+  assert.equal(staffFor('meeting', instance), 'boss');
+  assert.equal(staffFor('appeal', instance), 'beat');
 });
 
 test('staffFor throws, naming the duty, for one the instance leaves unassigned', () => {
-  assert.throws(() => staffFor('renameJudge', { system: { duties: { meeting: 'director' } } }), /renameJudge/);
+  assert.throws(() => staffFor('renameJudge', { system: { duties: { meeting: 'boss' } } } as never), /renameJudge/);
   assert.throws(() => staffFor('meeting', {}), /meeting/);
 });

@@ -10,6 +10,9 @@
  * are epoch milliseconds.
  */
 import type { CardRules } from './cards.ts';
+import type { StockLineKey } from '../system/stock.ts';
+import type { Duty } from '../system/duties.ts';
+import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
 
 /** Where a reaction sits on the two axes the classes read: how excited, how positive. */
 export type Quadrant = 'excitedPositive' | 'excitedNegative' | 'calmPositive' | 'boredNegative';
@@ -98,6 +101,41 @@ export interface Settings {
    * and cards that name them do, so an override or a settings row retunes them without a deploy.
    */
   readonly economy: Readonly<Record<string, number>>;
+  /**
+   * Whether The System runs at all. While false it holds no meeting and lands no move, and nothing it would
+   * do is seen by a player. An instance turns it on only once the screens that show a move's way out exist.
+   */
+  readonly systemEnabled: boolean;
+  /** When the Boss's meeting runs, as a five-field cron expression in UTC: daily by default, an hour after the settlement so the digest holds the newest standings. */
+  readonly meetingCron: string;
+  /**
+   * The three phases of a season (the Boss's ramp): how long the honeymoon and the meltdown last, and in each phase
+   * how many moves the Boss earns a week, how many it can bank, and the longest a move of that phase may run. A
+   * player feels it as a Boss that starts gentle, settles into its reign and finishes loud.
+   */
+  readonly phases: PhaseSettings;
+  /** Days after a handover that an outgoing Boss's moves stay in force while the new Boss reviews them. */
+  readonly inheritanceGraceDays: number;
+  /** How many of the most recent Bosses are left out of the draw when the outgoing Boss's successor is chosen, so a Boss does not come straight back. */
+  readonly rosterRecentExcluded: number;
+  /** Hours a move that reshapes a board waits in the admin queue before it lands, in which an admin can hold it. */
+  readonly structuralHoldHours: number;
+  /** The most model calls a day that fill in small in-character lines; past it, stock lines stand in, so cost never grows with activity. A starting point. */
+  readonly microEventDailyCalls: number;
+  /** How many threads the Boss's digest of public play holds. A starting point. */
+  readonly digestThreads: number;
+  /** How many top posts the digest quotes. A starting point. */
+  readonly digestExcerpts: number;
+  /** How many characters of a post the digest quotes. A starting point. */
+  readonly digestExcerptChars: number;
+  /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
+  readonly boardNameMaxLength: number;
+  /** The most days any move may last, whatever its phase allows. A starting point. */
+  readonly moveExpiryMostDays: number;
+  /** The fewest hours any move lasts before it may expire, so a player always has time to meet its demand. A starting point. */
+  readonly moveExpiryLeastHours: number;
+  /** The model each tier of a call uses (the meeting runs on `strong`, small lines on `light`), as the provider names it. */
+  readonly modelTiers: { readonly strong: string; readonly light: string };
 }
 
 /**
@@ -372,6 +410,95 @@ export interface StaffSeed {
   readonly signature: string;
 }
 
+/* ----------------------------------------------------------------- The System's content ---- */
+
+/** The standing orders' stock lines: what The System says when a model call is out of budget or fails. */
+export type StockLines = Readonly<Record<StockLineKey, readonly string[]>>;
+
+/** A Boss in the instance's roster: a staff character, and the persona that plays it for a season. */
+export interface BossPersona extends StaffSeed {
+  /** The system prompt that makes the model this Boss, built on the instance's shared premise. */
+  readonly persona: string;
+  /** What it is into on its first day. */
+  readonly startingHobby: string;
+  /** A line of temperament, for an admin reading the roster and for the meeting to be told. */
+  readonly temperament: string;
+  /** For a reinvention: the key of the Boss whose memory this persona picks up. */
+  readonly inheritsMemoryOf?: string;
+  /** This Boss's own phase numbers, clamped into the engine's caps (`PHASE_CAPS`). */
+  readonly phases?: PhaseOverrides;
+}
+
+/** One dumb multiple-choice question a Mod Bot asks of whoever tries to talk it down. */
+export interface QuizQuestion {
+  readonly question: string;
+  readonly choices: readonly string[];
+  /** The right choice; one of `choices`. */
+  readonly answer: string;
+}
+
+/** How a Mod Bot's visit can be intercepted: a quiz, a bribe (in hundredths of an orb), or a distraction. */
+export type Weakness =
+  | { readonly kind: 'quiz'; readonly questions: readonly QuizQuestion[] }
+  | { readonly kind: 'bribe'; readonly price: Hundredths }
+  | { readonly kind: 'distraction' };
+
+/** A Mod Bot in the instance's roster: standing staff that outlasts Bosses. */
+export interface ModBotPersona extends StaffSeed {
+  readonly persona: string;
+  /** The kinds of board it likes to patrol. */
+  readonly beats: readonly string[];
+  /** The predicate keys it lobbies for. */
+  readonly petRules: readonly string[];
+  /** How long its visits run, in hours, and which bands it pushes for. */
+  readonly strictness: { readonly visitHours: { readonly least: number; readonly most: number }; readonly bands: readonly string[] };
+  readonly weakness: Weakness;
+  /** `chat` for the chat model, `oldVoice` for the old completion model. */
+  readonly voice: 'chat' | 'oldVoice';
+  /** What persuades it on appeal, a line for its appeal prompt. */
+  readonly persuadedBy: string;
+}
+
+/** Who does a duty: the season's Boss, the bot on the board's beat, the bot that filed, or a staff member by key. */
+export type DutyAssignee = 'boss' | 'beat' | 'filer' | (string & {});
+
+/** What the old voice is given for a board's description, and what it is told to stop at. */
+export interface OldVoiceFrame {
+  readonly prompt: string;
+  readonly stop: readonly string[];
+}
+
+/** A feed an instance lets The System read for outside material: plain code fetches it; no model searches the web. */
+export interface FeedSource {
+  readonly name: string;
+  readonly url: string;
+}
+
+/**
+ * Everything The System needs from an instance: its Bosses and Mod Bots, who does each duty, the lines it falls back
+ * on, what it reads from outside, what it leaves alone, and the shape of a board's name. The engine names this
+ * interface and never an instance's persona.
+ */
+export interface SystemContent {
+  readonly bosses: readonly BossPersona[];
+  /** The key of the first season's Boss. */
+  readonly firstBoss: string;
+  readonly modBots: readonly ModBotPersona[];
+  /** The keys of the bots on staff when the instance is seeded. */
+  readonly firstStaff: readonly string[];
+  readonly duties: Readonly<Record<Duty, DutyAssignee>>;
+  readonly stockLines: StockLines;
+  readonly feeds: readonly FeedSource[];
+  /** Subjects never amplified (politics, real tragedies); a starting list admins edit. */
+  readonly realWorld: readonly string[];
+  /** Material the community likes, a starting list The System learns more of. */
+  readonly wheelhouse: readonly string[];
+  /** The completion prompt for a board's description, and where it stops. */
+  oldVoice(input: { readonly name: string; readonly premise: string }): OldVoiceFrame;
+  /** Problems with a board name The System proposes; empty when it is in style. */
+  nameStyle(name: string): string[];
+}
+
 export interface Instance {
   readonly key: string;
   readonly name: string;
@@ -383,4 +510,5 @@ export interface Instance {
   readonly boards: readonly BoardSeed[];
   readonly ranks: readonly Rank[];
   readonly pipStyles: readonly PipStyle[];
+  readonly system: SystemContent;
 }

@@ -15,8 +15,8 @@
  * thrown one's `cause`.
  *
  * Secrets come through `env`, an accessor passed in, and are never printed or put in an error.
- * A tier's model is an environment value for now (SYSTEM_MODEL_STRONG, SYSTEM_MODEL_LIGHT); the
- * instance setting that replaces it arrives with the system's settings.
+ * A tier's model comes from the caller, which passes the instance's `modelTiers` setting; nothing
+ * here names a model id as a default, so the setting is the one place a tier's model is chosen.
  */
 import type { CallContext, ChatRequest, CompletionRequest, ModelResult, Models, Tier, Usage } from '../../../../engine/system/model.ts';
 import { cutCompletion, repair } from '../../../../engine/system/validate.ts';
@@ -32,6 +32,8 @@ import type { Wire } from './transport.ts';
 export type Env = (name: string) => string | undefined;
 
 export interface ModelOptions {
+  /** The model each tier asks for, as the provider names it: the instance's `modelTiers` setting. */
+  readonly tiers: Readonly<Record<Tier, string>>;
   readonly fetch?: typeof globalThis.fetch;
   readonly sleep?: (ms: number) => Promise<void>;
   /** How long one attempt may take before it counts as never answered. */
@@ -41,7 +43,6 @@ export interface ModelOptions {
   readonly prices?: Readonly<Record<string, PriceTable>>;
 }
 
-const DEFAULT_MODELS: Record<Tier, string> = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
 /** At most this many retries after the first attempt. */
 export const MAX_RETRIES = 3;
 
@@ -69,7 +70,7 @@ interface Call {
   predicate: string | null;
 }
 
-export function models(env: Env, record: RecordModelCall, options: ModelOptions = {}): Models {
+export function models(env: Env, record: RecordModelCall, options: ModelOptions): Models {
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const wire: Wire = { fetch: options.fetch ?? globalThis.fetch, timeoutMs: options.timeoutMs ?? 60_000, now: options.now ?? Date.now };
   const tables = (provider: string): PriceTable | undefined => options.prices?.[provider] ?? (PRICES as Record<string, PriceTable>)[provider];
@@ -130,7 +131,7 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions 
 
   return {
     chat(request: ChatRequest): Promise<ModelResult<unknown>> {
-      const model = env(request.tier === 'strong' ? 'SYSTEM_MODEL_STRONG' : 'SYSTEM_MODEL_LIGHT') ?? DEFAULT_MODELS[request.tier];
+      const model = options.tiers[request.tier];
       return ledgered(request, { provider: 'anthropic', model }, async (call) => {
         const key = env('ANTHROPIC_API_KEY');
         if (!key) throw new Error('ANTHROPIC_API_KEY is not set');

@@ -12,13 +12,14 @@ import { createFake, type Fake } from './data/fake.ts';
 import type { ScreenSettings } from './data/api.ts';
 import { PlayerProvider } from './player.tsx';
 import { RouterProvider } from './router.tsx';
+import { systemSettings, testSystem } from '../rules/test-system.ts';
 
 const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 },
-  postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, cardSettings: {}, economy: { 'whoops.price': 100 },
+  postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, cardSettings: {}, economy: { 'whoops.price': 100 }, ...systemSettings,
 };
 
 const earn = () => [];
@@ -37,6 +38,7 @@ export const testInstance: Instance = {
     { key: 'tea', emoji: 'E', quadrant: 'calmPositive' }, { key: 'zzz', emoji: 'Z', quadrant: 'boredNegative' },
   ],
   settings,
+  system: testSystem,
   boards: [
     { slug: 'general', name: 'General', description: 'Anything.' },
     { slug: 'off-topic', name: 'Off Topic', description: 'Elsewhere.' },
