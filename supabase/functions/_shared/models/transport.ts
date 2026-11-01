@@ -16,6 +16,15 @@ export class TransportFailure extends Error {
   }
 }
 
+/** A 2xx whose body is not JSON. The provider answered (and may have billed), so it is never retried. */
+export class NotJson extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export class ProviderRefusal extends Error {
   readonly status: number;
   constructor(message: string, status: number) {
@@ -45,7 +54,7 @@ export async function postJson(url: string, headers: Record<string, string>, bod
     const text = await response.text().catch(() => '');
     if (response.status >= 500 || response.status === 429) throw new TransportFailure(`HTTP ${response.status}`, response.status);
     if (!response.ok) throw new ProviderRefusal(`HTTP ${response.status} ${text.slice(0, 200)}`, response.status);
-    try { return JSON.parse(text); } catch { throw new TransportFailure('an answer that is not JSON', response.status); }
+    try { return JSON.parse(text); } catch { throw new NotJson('an answer that is not JSON', response.status); }
   } finally {
     clearTimeout(timer);
   }

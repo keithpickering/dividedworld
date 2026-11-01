@@ -81,3 +81,17 @@ test('a completion over its length is capped and the cap recorded; only empty ou
   assert.deepEqual(cutCompletion('  \n  ', [], 40), { ok: false, predicate: 'nonEmpty' });
   assert.deepEqual(cutCompletion('END tail', ['END'], 40), { ok: false, predicate: 'nonEmpty' });
 });
+
+test('a completion that begins with a newline is cut after the leading whitespace, and only output empty after that is rejected', () => {
+  assert.deepEqual(cutCompletion('\nThe Director sighs.', [], 100), { ok: true, text: 'The Director sighs.', trims: [] });
+  assert.deepEqual(cutCompletion(' \n\nThe Director\nMore', ['\n\n'], 100), { ok: true, text: 'The Director', trims: [] });
+  assert.deepEqual(cutCompletion(' \n\t\n', [], 100), { ok: false, predicate: 'nonEmpty' });
+});
+
+test('a trim never leaves half an emoji, and records the length it really left', () => {
+  const r = repair('a😀b', { type: 'string', maxLength: 2 });
+  assert.deepEqual(r, { ok: true, value: 'a', trims: [{ path: '', predicate: 'maxLength(2)', before: 4, after: 1 }] });
+  const c = cutCompletion('a😀b', [], 2);
+  assert.deepEqual(c, { ok: true, text: 'a', trims: [{ path: '', predicate: 'maxLength(2)', before: 4, after: 1 }] });
+  assert.deepEqual(repair('a😀b', { type: 'string', maxLength: 3 }), { ok: true, value: 'a😀', trims: [{ path: '', predicate: 'maxLength(3)', before: 4, after: 3 }] });
+});

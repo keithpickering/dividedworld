@@ -26,7 +26,7 @@ import { complete as completeOverHttp } from './completions.ts';
 import { PRICES, price } from './prices.ts';
 import type { PriceTable } from './prices.ts';
 import type { ModelCallRow, RecordModelCall } from './ledger.ts';
-import { TransportFailure } from './transport.ts';
+import { NotJson, TransportFailure } from './transport.ts';
 import type { Wire } from './transport.ts';
 
 export type Env = (name: string) => string | undefined;
@@ -80,6 +80,8 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions 
       try {
         return await attempt();
       } catch (e) {
+        // A 2xx that is not JSON was answered (and may be billed): a rejection, never a second attempt.
+        if (e instanceof NotJson) throw new AnswerRejected(e.message, 'validJson');
         if (!(e instanceof TransportFailure) || call.retries >= MAX_RETRIES) throw e;
         await sleep(250 * 2 ** call.retries);
         call.retries++;

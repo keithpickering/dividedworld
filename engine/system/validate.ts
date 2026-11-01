@@ -41,6 +41,13 @@ export type Repaired =
 /** How far over its bound a list may be and still be trimmed; past it the model did not mean the bound. */
 export const TRIM_LIST_BY = 2;
 
+/** The first `most` UTF-16 units, dropping a high surrogate the cut would leave alone (Postgres jsonb refuses it). */
+function capLength(text: string, most: number): string {
+  const cut = text.slice(0, most);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
 type Step = { ok: true; value: unknown } | { ok: false; path: string; predicate: string };
 
 export function repair(value: unknown, rule: Rule): Repaired {
@@ -56,7 +63,7 @@ function walk(value: unknown, rule: Rule, path: string, trims: Trim[]): Step {
       if (typeof value !== 'string') return no('isString');
       if (rule.minLength !== undefined && value.length < rule.minLength) return no(`atLeast(${rule.minLength})`);
       if (rule.maxLength !== undefined && value.length > rule.maxLength) {
-        const cut = value.slice(0, rule.maxLength);
+        const cut = capLength(value, rule.maxLength);
         trims.push({ path, predicate: `maxLength(${rule.maxLength})`, before: value.length, after: cut.length });
         return { ok: true, value: cut };
       }
@@ -110,18 +117,21 @@ export type Cut =
 
 /** Cuts at the first stop sequence or newline, whichever comes first, trims space, caps at `most`; only nothing is rejected. */
 export function cutCompletion(text: string, stop: readonly string[], most: number): Cut {
-  let end = text.length;
+  // A raw completion often begins with a newline; leading whitespace is dropped before looking for the cut.
+  const body = text.trimStart();
+  let end = body.length;
   for (const s of [...stop, '\n']) {
     if (s === '') continue;
-    const at = text.indexOf(s);
+    const at = body.indexOf(s);
     if (at !== -1 && at < end) end = at;
   }
-  let cut = text.slice(0, end).trim();
+  let cut = body.slice(0, end).trim();
   if (cut === '') return { ok: false, predicate: 'nonEmpty' };
   const trims: Trim[] = [];
   if (cut.length > most) {
-    trims.push({ path: '', predicate: `maxLength(${most})`, before: cut.length, after: most });
-    cut = cut.slice(0, most);
+    const before = cut.length;
+    cut = capLength(cut, most);
+    trims.push({ path: '', predicate: `maxLength(${most})`, before, after: cut.length });
   }
   return { ok: true, text: cut, trims };
 }
