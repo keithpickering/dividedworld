@@ -140,3 +140,14 @@
   margin-top: 0.8em;
   padding-top: 0.3em;
 }
+
+/* A staff character's badge (StaffBadge.tsx): the board's ink reversed, in capitals. */
+.kb-staff-badge {
+  display: inline-block;
+  padding: 0 0.4em;
+  background: var(--kb-fg);
+  color: var(--kb-bg);
+  font: bold var(--kb-size-fine) / 1.6 var(--kb-font-body);
+  letter-spacing: 0.1em;
+  vertical-align: middle;
+}

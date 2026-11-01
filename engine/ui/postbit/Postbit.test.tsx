@@ -152,3 +152,28 @@ describe('dates', () => {
     expect(screen.getByRole('group')).toHaveTextContent('Posts: 212');
   });
 });
+
+describe('a staff character\'s postbit', () => {
+  test('a Boss wears an ADMINISTRATOR badge and its title, and shows no rank, pips or class (a staff character is not scored)', () => {
+    show(person({ standing: null }, { name: 'The Director', title: 'Head of Board Operations', staff: 'director', staffKind: 'boss' }));
+    const bit = screen.getByRole('group', { name: 'About The Director' });
+    expect(within(bit).getByText('ADMINISTRATOR')).toBeInTheDocument();
+    expect(bit).toHaveTextContent('Head of Board Operations');
+    expect(bit).toHaveTextContent('Posts: 212');
+    expect(within(bit).queryByRole('img', { name: /^Rank / })).toBeNull();
+    expect(bit.querySelector('.kb-postbit-rank')).toBeNull();
+  });
+
+  test('a Mod Bot wears MODERATOR', () => {
+    show(person({}, { name: 'Hall Monitor', staff: 'hall-monitor', staffKind: 'bot' }));
+    const bit = screen.getByRole('group', { name: 'About Hall Monitor' });
+    expect(within(bit).getByText('MODERATOR')).toBeInTheDocument();
+    expect(within(bit).queryByText('ADMINISTRATOR')).toBeNull();
+  });
+
+  test('an ordinary character wears no badge', () => {
+    show(person());
+    expect(screen.queryByText('ADMINISTRATOR')).toBeNull();
+    expect(screen.queryByText('MODERATOR')).toBeNull();
+  });
+});

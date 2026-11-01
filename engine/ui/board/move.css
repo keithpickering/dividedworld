@@ -1,0 +1,129 @@
+/*
+ * A move in force (MoveNotice.tsx; docs/research/2026-10-30-the-system/mock-s1-move-notice.html C): the Boss's notice in the board's
+ * 2003 box, and on its corner the Act's label in glass: a skewed tile in the glass's neon, the long label first and a plain
+ * segment after it, divided by a rule. Every color is a board or glass token.
+ */
+.kb-move-notice {
+  position: relative;
+  box-sizing: border-box;
+  margin: 1.8em 0 0.8em;
+  padding: 1.4em 0.8% 0.5em;
+  border: 1px solid var(--kb-rule);
+  background: var(--kb-bg);
+}
+
+.kb-move-from {
+  margin: 0;
+}
+
+.kb-move-reactions {
+  margin: 0.4em 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  font-size: var(--kb-size-fine);
+}
+
+.kb-move-tag {
+  position: absolute;
+  top: -1.1rem;
+  right: 0.8rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: stretch;
+  max-width: calc(100% - 1.6rem);
+  flex-wrap: wrap;
+  transform: skewX(var(--kb-glass-skew));
+  border: 1px solid var(--kb-glass-neon);
+  background: var(--kb-glass-ground);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--kb-glass-neon) 65%, transparent);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  line-height: 1.1;
+}
+
+.kb-move-label,
+.kb-move-way {
+  display: inline-block;
+  box-sizing: border-box;
+  padding: 3px 12px;
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+  letter-spacing: 1px;
+}
+
+.kb-move-label {
+  padding-left: 14px;
+  font-style: italic;
+  font-weight: 800;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-move-way {
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--kb-glass-neon) 50%, transparent);
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text-hi);
+  cursor: pointer;
+}
+
+.kb-move-way:hover {
+  background: color-mix(in srgb, var(--kb-glass-neon) 22%, transparent);
+}
+
+.kb-move-way:focus-visible {
+  outline: 3px solid var(--kb-focus);
+  outline-offset: 2px;
+}
+
+/* The tag standing on a post in a thread: the same tile, at the right of the post's own box. */
+.kb-act[data-kb-kind='move'] {
+  position: relative;
+}
+
+/* ---- the overlay (portaled to the body, so nothing here is under .kb-board) ---- */
+
+.kb-move-overlay {
+  width: min(100%, 560px);
+}
+
+.kb-move-detail h3 {
+  margin: 1em 0 0.2em;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-move-detail p {
+  margin: 0.3em 0;
+  font-size: var(--kb-glass-size-body);
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-move-bar {
+  position: relative;
+  height: 12px;
+  margin: 0.6em 0;
+  border: 1px solid var(--kb-glass-neon);
+  background: var(--kb-glass-field-2);
+}
+
+.kb-move-bar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--kb-glass-neon);
+}
+
+.kb-move-detail .kb-move-plain {
+  margin-top: 1em;
+  color: var(--kb-glass-text);
+  font-style: italic;
+}

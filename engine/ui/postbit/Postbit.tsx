@@ -17,6 +17,7 @@ import { rankIndex } from '../../rules/ranks.ts';
 import { monthYear, shortDate } from './dates.ts';
 import { Link } from '../router.tsx';
 import type { Statement } from './reveals.ts';
+import { StaffBadge } from './StaffBadge.tsx';
 import './postbit.css';
 
 /** A character and what a postbit shows beside it, gathered once for a page of posts. */
@@ -73,16 +74,20 @@ export const Postbit = memo(function Postbit({ person, layout }: { readonly pers
       <Avatar character={c} layout={layout} />
       <div className="kb-postbit-text">
         <span className="kb-postbit-name"><Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link></span>
+        {c.staff && <StaffBadge character={c} />}
         {c.title && <span className="kb-postbit-title kb-small kb-muted">{c.title}</span>}
-        <span className="kb-postbit-rank">
-          <span className="kb-postbit-rank-name" aria-hidden={instance.ranks.length > 0 || undefined}>{rank}</span>
-          {instance.ranks.length > 0 && <Pips ranks={instance.ranks.length} index={index} name={rank} style={pipImages} />}
-        </span>
+        {/* A staff character is not scored: no rank, no pips, and no class to reveal. */}
+        {!c.staff && (
+          <span className="kb-postbit-rank">
+            <span className="kb-postbit-rank-name" aria-hidden={instance.ranks.length > 0 || undefined}>{rank}</span>
+            {instance.ranks.length > 0 && <Pips ranks={instance.ranks.length} index={index} name={rank} style={pipImages} />}
+          </span>
+        )}
         <span className="kb-postbit-counts kb-small kb-muted">
           <span>Posts: {person.posts}</span>
           {joined && <span>Joined {joined}</span>}
         </span>
-        {person.revealed && (
+        {!c.staff && person.revealed && (
           <span className="kb-postbit-class kb-small">
             <span>Revealed: {className(person.revealed.class)} ({shortDate(person.revealed.at)})</span>
             {person.turnedAt && <span>Has Turned since ({shortDate(person.turnedAt)})</span>}

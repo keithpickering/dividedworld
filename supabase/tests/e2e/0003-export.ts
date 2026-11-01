@@ -85,6 +85,7 @@ test('an instance exported and imported into a fresh database is the same instan
       t uuid := tests.thread('Exported thread');
       p uuid := tests.post(a, t, 'Carried across, with a backslash \\ and a tab' || chr(9) || 'and a line' || chr(10) || 'break.');
       play uuid;
+      moved uuid; ended uuid; kept uuid; gen uuid := (select id from boards order by created_at, slug limit 1);
     begin
       perform tests.post(b, t, 'A reply, counted on the thread and on its author');
       insert into reactions (act, reactor_account, reactor_character, kind, slot) values (p, bob, b, 'up', 1);
@@ -120,6 +121,31 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 10 from ledger;
       -- The first settlement made with its shares kept (0037): every one here.
       insert into ledger_shares_kept (from_settlement) values (1);
+      -- A model call in the ledger (0042): the instance's own bookkeeping, carried across with the rest.
+      -- A meeting, the Boss's memory and profile from it, and its move bank (0044); the call above names the meeting.
+      insert into meetings (started_at, slot, finished_at, outcome, bank_before, bank_after, record) values (now() - interval '1 minute', now() - interval '1 minute', now(), 'ok', 1, 0, '{"trims": []}');
+      perform record_model_call(jsonb_build_object('duty', 'meeting', 'staff', 'director', 'provider', 'anthropic', 'model', 'claude-opus-5-5', 'service_tier', 'standard', 'input_tokens', 1200, 'output_tokens', 300, 'cost_microdollars', 10800, 'outcome', 'rejected', 'predicate', 'atMost(6)', 'trims', '[{"path": "moves", "predicate": "atMost(6)", "before": 7, "after": 6}]'::jsonb, 'retries', 1, 'meeting', (select max(id) from meetings)));
+      -- A Boss and a Mod Bot (0043): characters with no owner, the bot on staff, the Boss named by the season and writing an Act.
+      insert into characters (name, staff, staff_kind, debuted_at) values ('Exported Boss', 'exp-boss', 'boss', now()), ('Exported Bot', 'exp-bot', 'bot', now());
+      insert into staff_changes (staff, on_staff) values ('exp-bot', true);
+      update seasons set boss = 'exp-boss' where ends_at is null;
+      insert into staff_memory (staff, meeting, body) select 'exp-boss', max(id), '{"opinions": [], "grudges": []}' from meetings;
+      insert into staff_profiles (staff, meeting, interests, favorites, mood, signature) select 'exp-boss', max(id), '{pie}', array[a], 'smug', 'It is decided.' from meetings;
+      insert into move_bank (staff, balance, as_of) values ('exp-boss', 3.5, now());
+      perform write_staff_act('exp-boss', 'post', t, null, '{"body": "Carried across, with no account behind it."}');
+      -- The moves it can make and the demands it can set (0046, seeded as the engine lists them), a rename ended and one in force with
+      -- its queue entry, so that the catalogs, the queue and the moves in force are carried across with the Acts that name them.
+      insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;
+      insert into demand_kinds (key) values ('postsOnBoard') on conflict (key) do nothing;
+      moved := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
+        'params', jsonb_build_object('board', gen, 'name', 'Exported Old Palace', 'premise', 'p', 'description', 'd'))) ->> 'id')::uuid;
+      ended := (end_move(moved, 'expired', 'tick') ->> 'act')::uuid;
+      kept := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
+        'params', jsonb_build_object('board', gen, 'name', 'Exported Palace', 'premise', 'p', 'description', 'd'),
+        'demand', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)))) ->> 'id')::uuid;
+      insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act)
+      select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
+             now() - interval '1 day', now() + interval '2 days', true, kept from meetings m;
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
     end $$;
@@ -307,8 +333,8 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.equal(behind, '', `identity columns behind their rows: ${behind}`);
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
-    // settlement's and the view count's.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-settle,kayfabb-view-counts');
+    // settlement's, the view count's and the Boss's meeting.
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-meet,kayfabb-settle,kayfabb-system-tick,kayfabb-view-counts');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);

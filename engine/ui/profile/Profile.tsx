@@ -19,6 +19,8 @@ import { rankIndex } from '../../rules/ranks.ts';
 import { dayAndTime, figure } from '../characters/format.ts';
 import { Ago, SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
+import { Avatar } from './Avatar.tsx';
+import { StaffProfile } from './Staff.tsx';
 import { monthYear, shortDate } from '../postbit/dates.ts';
 import { reveals } from '../postbit/reveals.ts';
 import { Link } from '../router.tsx';
@@ -45,16 +47,8 @@ export function ProfileScreen({ id }: { readonly id: Id }) {
   if (!signedIn) return <div className="kb-profile"><SignInPrompt /></div>;
   if (found.status === 'failed') return <div className="kb-profile"><p className="kb-notice" data-kb-tone="refusal">The profile could not be loaded. Reload the page to try again.</p></div>;
   if (found.status === 'missing') return <NotFound />;
-  return <Profile character={found.character} />;
-}
-
-function Avatar({ character }: { readonly character: Character }) {
-  const src = character.avatarPortrait ?? character.avatarSquare;
-  return (
-    <span className="kb-profile-avatar" aria-hidden="true">
-      {src ? <img src={src} alt="" decoding="async" /> : <span className="kb-profile-none">{character.name.slice(0, 1)}</span>}
-    </span>
-  );
+  /* A Boss or a Mod Bot is a profile of its own kind: no standing, no class, no season record; its moderation log instead. */
+  return found.character.staff ? <StaffProfile character={found.character} /> : <Profile character={found.character} />;
 }
 
 function Profile({ character: c }: { readonly character: Character }) {

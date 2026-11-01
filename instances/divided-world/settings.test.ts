@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { settingsProblems } from '../../engine/rules/instance.ts';
+import { instanceProblems, settingsProblems } from '../../engine/rules/instance.ts';
+import { instance, playtestInstance } from './index.ts';
 import { defaults, playtest, playtestOverrides } from './settings.ts';
 import { reactions } from './reactions.ts';
 import { QUADRANTS } from '../../engine/rules/types.ts';
@@ -77,4 +78,33 @@ test('every reaction key is unique, plain, and has a quadrant', () => {
     assert.match(r.key, /^[a-z][a-z0-9-]*$/, `${r.key} is a plain key, safe in SQL and a URL`);
     assert.ok(QUADRANTS.includes(r.quadrant), `${r.key} has a quadrant`);
   }
+});
+
+test('the system settings are the plan\'s numbers, and the System ships switched off', () => {
+  assert.equal(defaults.systemEnabled, false);
+  assert.match(defaults.meetingCron, /^\d+ \d+ \* \* \*$/, 'daily');
+  assert.notEqual(defaults.meetingCron, defaults.settlementCron);
+  assert.deepEqual(defaults.phases.honeymoon, { days: 14, weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 });
+  assert.deepEqual(defaults.phases.reign, { weeklyMoves: 5, bankCap: 10, moveExpiryMostDays: 28 });
+  assert.deepEqual(defaults.phases.meltdown, { days: 21, weeklyMoves: 8, bankCap: 14, moveExpiryMostDays: 42 });
+  assert.equal(defaults.inheritanceGraceDays, 3);
+  assert.equal(defaults.rosterRecentExcluded, 2);
+  assert.equal(defaults.structuralHoldHours, 24);
+  assert.equal(defaults.boardNameMaxLength, 60);
+  assert.equal(defaults.demandCheckMinutes, 5);
+  assert.equal(defaults.demandChecksPerTick, 40);
+  assert.deepEqual(defaults.modelTiers, { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' });
+  assert.ok(Object.isFrozen(defaults.phases) && Object.isFrozen(defaults.phases.reign) && Object.isFrozen(defaults.modelTiers));
+});
+
+test('the new settings validate, in the defaults and the playtest, and reject what is out of range', () => {
+  assert.deepEqual(settingsProblems(defaults), []);
+  assert.deepEqual(settingsProblems(playtest), []);
+  assert.match(settingsProblems({ ...defaults, boardNameMaxLength: 0 }).join(), /boardNameMaxLength/);
+  assert.match(settingsProblems({ ...defaults, modelTiers: { strong: '', light: 'x' } }).join(), /modelTiers/);
+});
+
+test('Divided World\'s whole instance has no problems', () => {
+  assert.deepEqual(instanceProblems(instance), []);
+  assert.deepEqual(instanceProblems(playtestInstance), []);
 });

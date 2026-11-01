@@ -76,3 +76,40 @@
 .kb-record-kind[aria-current] {
   font-weight: bold;
 }
+
+/* A staff character's profile (Staff.tsx): the card and its moderation log side by side, one column on a phone. */
+.kb-staff-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em 2%;
+  align-items: flex-start;
+}
+
+.kb-staff-card {
+  flex: 1 1 22em;
+  min-width: 0;
+}
+
+.kb-staff-log {
+  flex: 1 1 22em;
+  min-width: 0;
+}
+
+.kb-staff-log .kb-heading {
+  margin-top: 0;
+}
+
+.kb-staff-table th {
+  width: 8.5em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.kb-modlog {
+  width: 100%;
+}
+
+.kb-modlog td:first-child {
+  width: 4.5em;
+  white-space: nowrap;
+}

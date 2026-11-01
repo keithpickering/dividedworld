@@ -5,6 +5,8 @@ import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
 import { useLocation } from '../router.tsx';
 import { BoardScreen } from './Board.tsx';
+import { seedMoves } from './move-world.ts';
+import { testInstance } from '../test-world.tsx';
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 9, 20, 12);
@@ -338,6 +340,36 @@ describe('accessible names', () => {
     expect(within(table).getAllByRole('row')[1]).toHaveAttribute('role', 'row');
     expect(within(table).getAllByRole('cell').length).toBeGreaterThan(0);
     expect(within(table).getAllByRole('cell')[0]).toHaveAttribute('role', 'cell');
+  });
+});
+
+describe('a move in force on the board', () => {
+  const withMoves = (fake: Fake) => seedMoves(fake, testInstance);
+
+  test('the board reads its name and description from the move in force, and shows the notice under the description', async () => {
+    const { seeded } = renderInWorld(<BoardScreen slug="general" />, { seed: withMoves });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Pointless Toast Palace' })).toBeInTheDocument();
+    expect(screen.getByText('Welcome to the Pointless Toast Palace. Please butter responsibly.')).toBeInTheDocument();
+    const notice = await screen.findByRole('region', { name: 'Announcement from The Director' });
+    expect(notice).toHaveTextContent('THE SYSTEM RENAMED THIS BOARD');
+    expect(within(notice).getByRole('button', { name: /^WAY OUT: 5 OF 12 POSTERS/u })).toBeInTheDocument();
+    expect(within(notice).getByRole('list', { name: 'Reactions' }).querySelectorAll('li')).toHaveLength(3);
+    expect(seeded.inForce).toBeTruthy();
+  });
+
+  test('a board whose moves have all ended has its own name back and no notice', async () => {
+    renderInWorld(<BoardScreen slug="off-topic" />, { seed: withMoves });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Off Topic' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /^Announcement from/u })).toBeNull();
+  });
+
+  test('the old name returns the moment the move ends, and the notice goes with it', async () => {
+    const fake = buildWorld();
+    const w = withMoves(fake);
+    fake.seed.endMove(w.inForce, { why: 'reversed', by: 'admin' });
+    renderIn(fake, <BoardScreen slug="general" />, { path: '/b/general' });
+    expect(await screen.findByRole('heading', { level: 1, name: 'General' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /^Announcement from/u })).toBeNull();
   });
 });
 

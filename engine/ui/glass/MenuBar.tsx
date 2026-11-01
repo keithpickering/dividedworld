@@ -6,6 +6,9 @@
  * Back are empty, hidden elements the stylesheet writes into (`data-kb-key`), so the link's name and
  * text are its words alone.
  *
+ * An admin's bar has one more tab at the end, Admin, which opens the queue of The System's moves (engine/ui/admin/Queue.tsx); a player's
+ * has none, and nothing about it is drawn or reserved for them.
+ *
  * Esc anywhere on a glass page goes back, as the Back link does, unless something else has
  * answered it first (an overlay, which closes and leaves the page; a control that handled it), it
  * was typed into a text field, where Esc belongs to the field, or it is a held key's repeat or the
@@ -21,8 +24,9 @@
  * the current page's tab is scrolled into view as a page opens; with reduced motion it is there at
  * once. Back stays out of the strip, so no tab ever slides under it.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motionReduced } from '../appearance.ts';
+import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { backHref, boardPlace, useBackToBoard } from './back.ts';
@@ -40,8 +44,20 @@ const TABS: readonly Tab[] = [
   { label: 'Settings', to: GLASS_NAV.settings, current: (p) => p === '/settings' || p === '/invites' },
 ];
 
+/** The admin queue's tab, after the others, shown only to an admin (the server decides who is one; a refused or failed ask shows no tab). */
+const ADMIN: Tab = { label: 'Admin', to: GLASS_NAV.admin, current: (p) => p === GLASS_NAV.admin || p.startsWith('/admin/') };
+
 export function MenuBar() {
+  const { api } = useKayfa();
   const { session } = usePlayer();
+  const [admin, setAdmin] = useState(false);
+  useEffect(() => {
+    setAdmin(false);
+    if (!session.signedIn) return;
+    let live = true;
+    void api.isAdmin().then((a) => { if (live) setAdmin(a); }, () => { /* no tab */ });
+    return () => { live = false; };
+  }, [api, session.signedIn, session.account]);
   const { path } = useLocation();
   const back = useBackToBoard();
   const list = useRef<HTMLUListElement>(null);
@@ -59,7 +75,7 @@ export function MenuBar() {
   useEffect(() => {
     const current = list.current?.querySelector('[aria-current="page"]');
     current?.scrollIntoView?.({ inline: 'nearest', block: 'nearest', behavior: motionReduced() ? 'auto' : 'smooth' });
-  }, [path, session.signedIn]);
+  }, [path, session.signedIn, admin]);
 
   return (
     <nav className="kb-glass-menu" aria-label="Menu">
@@ -78,7 +94,7 @@ export function MenuBar() {
         </Link>
         {session.signedIn && (
           <ul ref={list} className="kb-glass-menu-list">
-            {TABS.map((t) => (
+            {(admin ? [...TABS, ADMIN] : TABS).map((t) => (
               <li key={t.label}>
                 <Link to={t.to} className="kb-glass-menu-tab kb-glass-skew" aria-current={t.current(path) ? 'page' : undefined}><span className="kb-glass-upright">{t.label}</span></Link>
               </li>

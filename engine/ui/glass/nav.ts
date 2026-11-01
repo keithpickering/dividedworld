@@ -9,6 +9,8 @@ export interface GlassNav {
   readonly log: string;
   readonly settings: string;
   readonly vending: string;
+  /** The admin queue, whose tab only an admin sees. */
+  readonly admin: string;
 }
 
 export const GLASS_NAV: GlassNav = {
@@ -17,4 +19,5 @@ export const GLASS_NAV: GlassNav = {
   rankings: '/rankings',
   log: '/log',
   settings: '/settings',
+  admin: '/admin/queue',
 };

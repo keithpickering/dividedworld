@@ -22,9 +22,11 @@ import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { basePrice, casterMessage, decidePlay, type CardTarget } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from './api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX } from './api.ts';
+import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
+  AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
   DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
@@ -86,6 +88,29 @@ export interface Seed {
   /** A tally Act in a thread of The System's board that announces a Turn of a character. */
   announceTurn(character: Id, thread: Id, options?: { was?: string; since?: string; at?: number }): Id;
   avatar(character: Id, urls: { square?: string; portrait?: string }): void;
+  /** A tally on an Act as if that many others had reacted, kind by kind: no one's reaction (no account or character stands behind it), only the counts every reader sees. */
+  tally(act: Id, counts: Readonly<Record<string, number>>): void;
+  /** A staff character (a Boss or a Mod Bot): debuted, owned by no player, with no class; it acts only through the seed below. */
+  staff(key: string, name: string, kind: 'boss' | 'bot', options?: { title?: string; signature?: string; at?: number; debuted?: boolean }): Id;
+  /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
+  staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
+  /** A staff character's post in a thread of The System's board, as the Boss posts there. */
+  staffPost(staff: Id, thread: Id, body: string, options?: { at?: number }): Id;
+  /**
+   * A landed move: the Boss's `move` Act in a thread of The System's board (the first thread there is used, or one is made), as the
+   * tick writes it. A rename takes the board's slug; the demand's board is the same board unless the demand names another.
+   */
+  move(staff: string, move: SeedMove): Id;
+  /** A move's end, as end_move writes it: the board's old name returns. */
+  endMove(act: Id, end: { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by?: string; at?: number }): Id;
+  /** The new Boss keeps a move of an earlier Boss after a handover (a `move_keep` Act): the move's log row says who keeps it. */
+  keepMove(act: Id, staff: string, options?: { at?: number }): Id;
+  /** A move the Boss chose that waits in the admin queue; returns its queue id. */
+  queueMove(staff: string, move: SeedMove & { goLiveAt: number; why?: string; failure?: { at: number; text: string } }): number;
+  /** A nomination of a successor waiting in the admin queue (`boss` is a roster key); returns its queue id. */
+  queueSuccessor(staff: string, boss: string, options: { goLiveAt: number; why?: string }): number;
+  /** An admin's hold on a queued move, dated `at`: it never lands. */
+  holdQueued(id: number, at?: number): void;
   /**
    * A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action).
    * With `paid`, its player's card ledger records the play at that price and the wallet pays it, as `play_card` does (a wallet event
@@ -107,6 +132,23 @@ export interface SeedLine {
   readonly reason: string;
   readonly amount: number;
   readonly shares?: readonly { readonly act: Id; readonly quadrant?: LogShare['quadrant']; readonly amount: number }[];
+}
+
+/** A rename a seed lands or queues: the board by slug, its new name, subject and description, and the demand it carries. */
+export interface SeedMove {
+  readonly board: string;
+  readonly name: string;
+  readonly premise?: string;
+  readonly description?: string;
+  /** The Boss's stock line. */
+  readonly body?: string;
+  /** A kind and its params; a `board` slug in the params becomes the board's id. Omitted: the move asks nothing. */
+  readonly demand?: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> };
+  /** Epoch milliseconds. */
+  readonly at?: number;
+  readonly expiresAt?: number;
+  /** The tick has not counted its demand yet: its progress carries no count and no time (the server's `{checkedAt: null}`). */
+  readonly uncounted?: boolean;
 }
 
 interface SeedAct {
@@ -152,6 +194,8 @@ interface CharRec {
   portrait: string | null;
   squareFrame: Frame | null;
   portraitFrame: Frame | null;
+  /** Set for a staff character. */
+  staff?: { readonly key: string; readonly kind: 'boss' | 'bot' };
 }
 interface ActRec {
   readonly id: Id;
@@ -219,6 +263,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const byEmail = new Map<string, Id>();
   const characters = new Map<Id, CharRec>();
   const acts = new Map<Id, ActRec>();
+  /** Moves whose demand the tick has not counted (SeedMove.uncounted). */
+  const uncounted = new Set<Id>();
   const threads = new Map<Id, ThreadRec>();
   const reactions: { act: Id; account: Id; character: Id; kind: string }[] = [];
   const invites: InviteRec[] = [];
@@ -230,7 +276,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const seasons: Season[] = [{ id: 1, number: 1, startsAt: iso(START), endsAt: null, turnsThread: null, revealAct: null }];
   let lastSettled: number | null = null;
   let nextSettlement: number | null = null;
-  const boards: Board[] = options.instance.boards.map((b) => ({ id: uuid(), slug: b.slug, name: b.name, description: b.description, isSystem: b.system === true }));
+  const boards: Board[] = options.instance.boards.map((b) => ({ id: uuid(), slug: b.slug, name: b.name, description: b.description, isSystem: b.system === true, moveAct: null }));
+  /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
+  const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
+  const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
+  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; heldAt: number | null; landed: Id | null; replacedAt?: number }
+  const queue: QueueRec[] = [];
+  /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
+  const moveKeeps = new Map<Id, string>();
   const playersBoard = boards.find((b) => !b.isSystem);
 
   let session: { email: string | null; account: Id | null } = { email: null, account: null };
@@ -312,8 +365,74 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
       portraitFrame: c.portraitFrame, pipStyle: c.pipStyle,
       joined: `${iso(c.debutedAt!).slice(0, 7)}-01`,
+      ...(c.staff ? { staff: c.staff.key, staffKind: c.staff.kind } : {}),
     };
   }
+
+  /* ---------------------------------------------------------------------- moves ---- */
+  /** The moves in force, newest first: a landed `move` Act with no end. */
+  const inForce = () => [...acts.values()].filter((a) => a.kind === 'move' && !moveEnds.has(a.id)).sort((a, b) => b.at - a.at || b.order - a.order);
+  /** A board as it is called now: its latest rename in force, else its own row (boards_now). */
+  function boardNow(b: Board): Board {
+    const m = inForce().find((a) => a.payload['kind'] === 'renameBoard' && (a.payload['params'] as Record<string, unknown>)['board'] === b.id);
+    if (!m) return b;
+    const p = m.payload['params'] as Record<string, unknown>;
+    return { ...b, name: String(p['name']), description: String(p['description'] ?? b.description), moveAct: m.id };
+  }
+
+  /** A seeded rename's params and demand as a move Act carries them: boards by id. */
+  const moveParams = (m: SeedMove) => ({
+    board: boards.find((b) => b.slug === m.board)?.id ?? m.board, name: m.name, premise: m.premise ?? `The subject of ${m.name}`, description: m.description ?? `About ${m.name}`,
+  });
+  const moveDemand = (m: SeedMove): Demand | null => {
+    if (!m.demand) return null;
+    const named = m.demand.params['board'];
+    return { kind: m.demand.kind, params: { ...m.demand.params, ...(typeof named === 'string' ? { board: boards.find((b) => b.slug === named)?.id ?? named } : {}) } };
+  };
+  /** The first thread of The System's board, made when there is none: where the Boss's moves are written. */
+  function announcements(): Id {
+    const board = boards.find((b) => b.isSystem);
+    if (!board) throw new Error('the instance has no System board');
+    const found = [...threads.values()].find((t) => t.board === board.id);
+    return found ? found.id : openThread(board.id, 'Announcements', null).id;
+  }
+  const staffId = (key: string): Id => {
+    const c = [...characters.values()].find((x) => x.staff?.key === key);
+    if (!c) throw new Error(`no staff member ${key}`);
+    return c.id;
+  };
+
+  /**
+   * `move_progress`, as demand_progress counts it: characters, posts and tallies after the landing, never a staff character's, never players.
+   * The server stores the tick's count and says when it was counted; the fake counts as it is asked and says it counted just now, unless
+   * the seed said the move was never counted (`uncounted`).
+   */
+  function progressOf(move: ActRec): { done?: number; of?: number; met?: boolean; checkedAt: string | null } {
+    if (uncounted.has(move.id)) return { checkedAt: null };
+    return { ...countOf(move), checkedAt: iso(now()) };
+  }
+  function countOf(move: ActRec): { done: number; of: number; met: boolean } {
+    const demand = toDemand(move.payload['demand']);
+    if (!demand) return { done: 0, of: 0, met: false };
+    const p = demand.params;
+    const after = [...acts.values()].filter((a) => a.kind === 'post' && a.at > move.at && a.character !== null && !characters.get(a.character)?.staff);
+    const onBoard = (a: ActRec) => threads.get(a.thread)?.board === p['board'];
+    const count = (n: number) => Math.max(1, Math.trunc(Number(n)));
+    switch (demand.kind) {
+      case 'postsOnBoard': { const of = count(p['count'] as number); const have = after.filter(onBoard).length; return { done: Math.min(have, of), of, met: have >= of }; }
+      case 'distinctCharactersOnBoard': { const of = count(p['count'] as number); const have = new Set(after.filter(onBoard).map((a) => a.character)).size; return { done: Math.min(have, of), of, met: have >= of }; }
+      case 'quadrantOnBoard': {
+        const of = count(p['count'] as number);
+        const have = after.filter(onBoard).reduce((sum, a) => sum + Object.entries(tallyOf(a.id)).reduce((n, [kind, c]) => n + (instance.reactions.find((r) => r.key === kind)?.quadrant === p['quadrant'] ? c : 0), 0), 0);
+        return { done: Math.min(have, of), of, met: have >= of };
+      }
+      case 'characterPostsInThread': { const have = after.some((a) => a.thread === p['thread'] && a.character === p['character']) ? 1 : 0; return { done: have, of: 1, met: have === 1 }; }
+      /* The fake does not count quotes: a crossQuote reads as not begun. */
+      default: return { done: 0, of: 2, met: false };
+    }
+  }
+
+  const demandOf = (id: Id): Demand | null => toDemand(acts.get(id)?.payload['demand']);
 
   const tallyOf = (act: Id): Tally => {
     const counts: Record<string, number> = {};
@@ -731,9 +850,112 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     boards: () => boards.map((b): BoardSummary => {
       const mine = [...threads.values()].filter((t) => t.board === b.id).map(summary);
       const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
-      return { ...b, threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null };
+      return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null };
     }),
-    board: (slugOrId) => boards.find((b) => b.slug === slugOrId || b.id === slugOrId) ?? null,
+    board(slugOrId) {
+      const found = boards.find((b) => b.slug === slugOrId || b.id === slugOrId);
+      return found ? boardNow(found) : null;
+    },
+    boardNames: () => boards.map((b): BoardName => ({ id: b.id, slug: b.slug, name: boardNow(b).name, was: b.name })),
+    moveNotice(id) {
+      const a = acts.get(id);
+      if (!a || a.kind !== 'move') return null;
+      return buildMoveNotice(publicAct(a), tallyOf(id), progressOf(a));
+    },
+    movesLog(staff, before) {
+      const who = [...characters.values()].find((c) => c.staff?.key === staff);
+      const mine = !who ? [] : [...acts.values()].filter((a) => a.kind === 'move' && a.character === who.id)
+        .sort((x, y) => y.at - x.at || (y.id < x.id ? -1 : y.id > x.id ? 1 : 0));
+      const after = before ? mine.filter((a) => a.at < Date.parse(before.at) || (a.at === Date.parse(before.at) && a.id < before.act)) : mine;
+      const page = after.slice(0, MOVES_LOG_PAGE);
+      const rows = page.map((a): MoveLogRow => {
+        const end = moveEnds.get(a.id);
+        return {
+          act: a.id, kind: String(a.payload['kind'] ?? ''), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(a.id),
+          expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null, at: iso(a.at), thread: a.thread,
+          end: end ? { why: end.why, by: end.by, at: iso(end.at) } : null, keptBy: moveKeeps.get(a.id) ?? null,
+        };
+      });
+      const last = page.at(-1);
+      const older: MovesCursor | null = after.length > MOVES_LOG_PAGE && last ? { at: iso(last.at), act: last.id } : null;
+      return { rows, older } satisfies MovesLog;
+    },
+    staffProfile(staff) {
+      const latest = staffProfiles.filter((p) => p.key === staff).sort((a, b) => b.at - a.at).at(0);
+      return latest ? ({ staff, at: iso(latest.at), interests: latest.interests, favorites: latest.favorites, mood: latest.mood, signature: latest.signature } satisfies StaffProfile) : null;
+    },
+    adminQueue() {
+      if (!me()?.admin) throw new Error('only an admin reads the queue');
+      const nameOf = (staff: string | null) => (staff === null ? null : [...characters.values()].find((c) => c.staff?.key === staff)?.name ?? null);
+      const paramsOf = moveParams;
+      const demandFor = moveDemand;
+      const waiting = queue.filter((q) => q.landed === null && q.heldAt === null).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
+        id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
+        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt),
+      }) : ({
+        id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
+        expiresAt: q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: true, boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
+        failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null,
+      }));
+      const rowOf = (a: ActRec) => {
+        const q = queue.find((x) => x.landed === a.id);
+        const who = a.character ? characters.get(a.character) : undefined;
+        return { q, staff: who?.staff?.key ?? null, boss: who?.name ?? null };
+      };
+      const live = inForce().map((a): MoveInForce => {
+        const { q, staff, boss } = rowOf(a);
+        return {
+          act: a.id, id: q?.id ?? null, staff, boss, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(a.id),
+          why: q?.why ?? null, landedAt: iso(a.at), expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null, progress: toProgress(progressOf(a)),
+        };
+      });
+      const since = now() - 30 * DAY;
+      const ended: MoveEnded[] = [
+        ...[...moveEnds.entries()].filter(([, e]) => e.at >= since).map(([id, e]): MoveEnded => {
+          const a = acts.get(id)!;
+          const { q, staff, boss } = rowOf(a);
+          return { how: e.why, by: e.by, at: iso(e.at), act: id, id: q?.id ?? null, staff, boss, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(id), why: q?.why ?? null, landedAt: iso(a.at) };
+        }),
+        ...queue.filter((q) => q.heldAt !== null && q.heldAt >= since).map((q): MoveEnded => ({
+          how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
+        })),
+      ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+      return { cap: 100, waiting, inForce: live, ended, more: { waiting: false, inForce: false, ended: false },
+        roster: [...characters.values()].filter((c) => c.staff?.kind === 'boss' && c.retiredAt === null && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
+    },
+    holdMove(id) {
+      if (!me()?.admin) return refuse('only an admin holds a move');
+      const q = queue.find((x) => x.id === id);
+      if (!q) return refuse('there is no such queued move');
+      if (q.landed !== null) return refuse('that move has already landed; reverse it instead');
+      if (q.heldAt !== null) return refuse('that move is already held');
+      q.heldAt = now();
+      return ok({ id, heldAt: iso(q.heldAt) });
+    },
+    replaceSuccessor(id, boss) {
+      if (!me()?.admin) return refuse('only an admin replaces a successor');
+      const q = queue.find((x) => x.id === id);
+      if (!q) return refuse('there is no such queued move');
+      if (q.successor === undefined) return refuse('that move names no successor');
+      if (q.landed !== null) return refuse('that nomination has already landed; reverse it instead');
+      if (q.heldAt !== null) return refuse('that nomination is held');
+      const roster = [...characters.values()].filter((c) => c.staff?.kind === 'boss' && c.retiredAt === null && c.debutedAt !== null);
+      if (!roster.some((c) => c.staff?.key === boss)) return refuse('that is not a Boss of the roster');
+      if (boss === q.staff) return refuse('a Boss cannot succeed itself');
+      q.successor = boss;
+      q.replacedAt = now();
+      return ok({ id, boss });
+    },
+    bosses: () => [...characters.values()].filter((c) => c.staff?.kind === 'boss').map((c) => ({ staff: c.staff!.key, name: c.name })),
+    reverseMove(act) {
+      if (!me()?.admin) return refuse('only an admin reverses a move');
+      const a = acts.get(act);
+      if (!a || a.kind !== 'move') return refuse('that is not a move');
+      if (moveEnds.has(act)) return refuse('that move has already ended');
+      moveEnds.set(act, { why: 'reversed', by: 'admin', at: now() });
+      const end = write({ character: null, kind: 'move_end', thread: a.thread, target: act, payload: { why: 'reversed', by: 'admin' } });
+      return ok({ act, endedBy: end.id });
+    },
     threads(board, page) {
       const all = [...threads.values()].filter((t) => t.board === board).map(summary)
         .sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id));
@@ -1203,6 +1425,72 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o.was !== undefined) turned.was = o.was;
       if (o.since !== undefined) turned.since = o.since;
       return systemAct(thread, { at: o.at, kind: 'tally', payload: { turns: [turned] } }, '').id;
+    },
+    tally(act, counts) {
+      if (!acts.has(act)) throw new Error(`no such Act ${act}`);
+      for (const [kind, n] of Object.entries(counts)) for (let i = 0; i < n; i++) reactions.push({ act, account: '', character: '', kind });
+    },
+    staff(key, name, kind, o) {
+      if ([...characters.values()].some((c) => c.staff?.key === key)) throw new Error(`staff member ${key} exists`);
+      const at = o?.at ?? now();
+      const c: CharRec = {
+        id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
+        title: o?.title ?? '', signature: o?.signature ?? '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+        square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key, kind },
+      };
+      characters.set(c.id, c);
+      return c.id;
+    },
+    staffProfile(key, p) {
+      staffId(key);
+      staffProfiles.push({ key, at: p.at ?? now(), interests: [...(p.interests ?? [])], favorites: [...(p.favorites ?? [])], mood: p.mood ?? '', signature: p.signature ?? '' });
+    },
+    staffPost(staff, thread, body, o) {
+      systemBoard(thread);
+      if (!characters.get(staff)?.staff) throw new Error('only a staff character posts as The System\'s Boss');
+      return write({ character: staff, kind: 'post', thread, payload: { body }, at: o?.at }).id;
+    },
+    move(staff, m) {
+      const at = m.at ?? now();
+      const boss = staffId(staff);
+      const demand = moveDemand(m);
+      const id = write({
+        character: boss, kind: 'move', thread: announcements(),
+        payload: { kind: 'renameBoard', body: m.body ?? 'The System has spoken.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
+      }).id;
+      if (m.uncounted) uncounted.add(id);
+      return id;
+    },
+    endMove(act, end) {
+      const a = acts.get(act);
+      if (!a || a.kind !== 'move') throw new Error(`no such move ${act}`);
+      if (moveEnds.has(act)) throw new Error('that move has ended');
+      const at = end.at ?? now();
+      moveEnds.set(act, { why: end.why, by: end.by ?? (end.why === 'reversed' ? 'admin' : end.why === 'superseded' ? 'boss' : end.why === 'spent' ? 'handover' : 'tick'), at });
+      return write({ character: null, kind: 'move_end', thread: a.thread, target: act, payload: { why: end.why, by: end.by ?? (end.why === 'reversed' ? 'admin' : end.why === 'superseded' ? 'boss' : end.why === 'spent' ? 'handover' : 'tick') }, at }).id;
+    },
+    queueSuccessor(staff, boss, o) {
+      staffId(staff);
+      const rec: QueueRec = { id: queue.length + 1, staff, successor: boss, move: { board: '', name: '' }, why: o.why ?? 'it has the stamina', goLiveAt: o.goLiveAt, failure: null, heldAt: null, landed: null };
+      queue.push(rec);
+      return rec.id;
+    },
+    keepMove(act, staff, o) {
+      const a = acts.get(act);
+      if (!a || a.kind !== 'move') throw new Error(`no such move ${act}`);
+      moveKeeps.set(act, staff);
+      return write({ character: staffId(staff), kind: 'move_keep', thread: a.thread, target: act, payload: {}, at: o?.at }).id;
+    },
+    queueMove(staff, m) {
+      staffId(staff);
+      const rec: QueueRec = { id: queue.length + 1, staff, move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, heldAt: null, landed: null };
+      queue.push(rec);
+      return rec.id;
+    },
+    holdQueued(id, at) {
+      const q = queue.find((x) => x.id === id);
+      if (!q) throw new Error(`no queued move ${id}`);
+      q.heldAt = at ?? now();
     },
     avatar(character, urls) {
       const c = characters.get(character)!;

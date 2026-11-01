@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { renderInWorld } from '../test-world.tsx';
+import { renderInWorld, testInstance } from '../test-world.tsx';
+import { seedMoves } from '../board/move-world.ts';
 import { IndexScreen } from './Index.tsx';
 
 const T0 = Date.UTC(2026, 9, 20, 12);
@@ -55,6 +56,18 @@ describe('the index table keeps its roles in the phone layout', () => {
     const row = (await screen.findByRole('link', { name: 'General' })).closest('tr')!;
     expect(row).toHaveAttribute('role', 'row');
     expect(row.querySelector('td')).toHaveAttribute('role', 'cell');
+  });
+});
+
+describe('a board a move has renamed', () => {
+  test('is listed by the name and description of the move in force, at the same address, and by its own again when the move ends', async () => {
+    const { fake, seeded } = renderInWorld(<IndexScreen />, { seed: (f) => seedMoves(f, testInstance) });
+    const renamed = await screen.findByRole('link', { name: 'Pointless Toast Palace' });
+    expect(renamed).toHaveAttribute('href', '/b/general');
+    expect(renamed.closest('tr')).toHaveTextContent('Welcome to the Pointless Toast Palace. Please butter responsibly.');
+    expect(screen.queryByRole('link', { name: 'General' })).toBeNull();
+    fake.seed.endMove(seeded.inForce, { why: 'reversed', by: 'admin' });
+    expect((await fake.boards()).find((b) => b.slug === 'general')?.name).toBe('General');
   });
 });
 

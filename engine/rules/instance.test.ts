@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
-import type { Instance, Settings } from './types.ts';
+import { BRIBE_BOUNDS, deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
+import type { Instance, ModBotPersona, Settings, SystemContent } from './types.ts';
+import { PHASE_CAPS } from '../system/phases.ts';
+import { DUTIES } from '../system/duties.ts';
+import { STOCK_LINE_KEYS } from '../system/stock.ts';
+import { DIGEST_MOST } from '../system/digest.ts';
 
 const settings: Settings = {
   walletCap: 600,
@@ -27,6 +31,53 @@ const settings: Settings = {
   presenceWindow: { unit: 'minute', count: 5 },
   presenceNames: 15,
   presencePollSeconds: 30,
+  systemEnabled: false,
+  meetingCron: '23 9 * * *',
+  phases: {
+    honeymoon: { days: 14, weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 },
+    reign: { weeklyMoves: 5, bankCap: 10, moveExpiryMostDays: 28 },
+    meltdown: { days: 21, weeklyMoves: 8, bankCap: 14, moveExpiryMostDays: 42 },
+  },
+  inheritanceGraceDays: 3,
+  rosterRecentExcluded: 2,
+  structuralHoldHours: 24,
+  microEventDailyCalls: 20,
+  digestThreads: 10,
+  digestExcerpts: 8,
+  digestExcerptChars: 280,
+  memoryOpinions: 40,
+  memoryGrudges: 20,
+  memoryWheelhouse: 30,
+  memoryRealWorld: 30,
+  boardNameMaxLength: 60,
+  moveExpiryMostDays: 42,
+  demandCheckMinutes: 5,
+  demandChecksPerTick: 40,
+  moveExpiryLeastHours: 24,
+  modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
+};
+
+const bot: ModBotPersona = {
+  key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', persona: 'You are a bot.', beats: ['general'], petRules: ['noBump'],
+  strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
+  weakness: { kind: 'quiz', questions: [{ question: 'Which is a number?', choices: ['one', 'cat'], answer: 'one' }] },
+  voice: 'chat', persuadedBy: 'Pedantry.',
+};
+
+const system: SystemContent = {
+  bosses: [{ key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', persona: 'You are a boss.', startingHobby: 'tomatoes', temperament: 'petty' }],
+  firstBoss: 'boss-a',
+  modBots: [bot],
+  firstStaff: ['bot-a'],
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat' },
+  stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
+  feeds: [],
+  realWorld: ['politics'],
+  wheelhouse: ['games'],
+  oldVoice: ({ name }) => ({ prompt: `Board: ${name}\nDescription:`, stop: ['\n'] }),
+  nameStyle: () => [],
+  nameStyleBrief: 'any name',
+  announcementsTitle: 'Announcements',
 };
 
 const good: Instance = {
@@ -43,6 +94,7 @@ const good: Instance = {
   ranks: [{ name: 'Rookie', from: 0 }, { name: 'Regular', from: 100 }, { name: 'Legend', from: 1000 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'pip-full.svg', empty: 'pip-empty.svg' }],
   copy: { turnsThreadTitle: 'Season {season}: Turns', revealTitle: 'Season {season}: The Reveal', revealBody: 'All of it.' },
+  system,
 };
 
 test('a whole instance has no problems', () => {
@@ -264,6 +316,183 @@ test('an instance says The System\'s words, each title naming its season', () =>
   assert.match(instanceProblems({ ...good, copy: { ...good.copy, revealBody: ' ' } }).join('\n'), /no copy for revealBody/);
   assert.match(instanceProblems({ ...good, copy: { ...good.copy, revealTitle: 'The Reveal' } }).join('\n'), /revealTitle does not say which season/);
   assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for turnsThreadTitle/);
+});
+
+/* ------------------------------------------------------------------------ The System's content ---- */
+
+const withSystem = (change: Partial<SystemContent>): Instance => ({ ...good, system: { ...system, ...change } });
+const withBot = (change: Partial<ModBotPersona>): Instance => withSystem({ modBots: [{ ...bot, ...change }] });
+const said = (i: Instance) => instanceProblems(i).join('\n');
+
+test('a duty assigned to a staff key that does not exist is a problem; a key that does, and the beat and the filer, are not', () => {
+  assert.match(said(withSystem({ duties: { ...system.duties, appeal: 'ghost' } })), /duty "appeal".*"ghost"/);
+  assert.deepEqual(instanceProblems(withSystem({ duties: { ...system.duties, appeal: 'bot-a', renameJudge: 'filer' } })), []);
+  assert.deepEqual(instanceProblems(withSystem({ duties: { ...system.duties, meeting: 'boss-a' } })), [], 'a Boss\'s key is a staff key too');
+});
+
+test('a duty left unassigned is a problem, one for each', () => {
+  const { appeal: _a, ...rest } = system.duties;
+  assert.match(said(withSystem({ duties: rest as SystemContent['duties'] })), /duty "appeal" is assigned to no one/);
+  assert.equal(DUTIES.length, 5);
+});
+
+test('a standing order with no stock line is a problem, and so is one with an empty list', () => {
+  const { moveExpired: _x, ...rest } = system.stockLines;
+  assert.match(said(withSystem({ stockLines: rest as SystemContent['stockLines'] })), /stock line "moveExpired"/);
+  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: [] } })), /stock line "moveMet"/);
+  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: ['  '] } })), /stock line "moveMet"/);
+});
+
+test('a stock line naming a token its key does not offer is a problem', () => {
+  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: ['Well done, {boss}.'] } })), /stock line "moveMet".*\{boss\}/);
+  assert.deepEqual(instanceProblems(withSystem({ stockLines: { ...system.stockLines, moveMet: ['The {move} is over.'] } })), []);
+});
+
+test('firstBoss must be in the roster, and the roster must hold a Boss', () => {
+  assert.match(said(withSystem({ firstBoss: 'nobody' })), /firstBoss "nobody"/);
+  assert.match(said(withSystem({ bosses: [], firstBoss: 'boss-a' })), /no Boss/);
+});
+
+test('a feed is read over https: a plain http or malformed address is a problem naming the feed', () => {
+  assert.equal(said(withSystem({ feeds: [{ name: 'Site', url: 'https://example.com/feed.xml' }] })), '');
+  assert.match(said(withSystem({ feeds: [{ name: 'Old Site', url: 'http://example.com/feed.xml' }] })), /feed "Old Site".*https/);
+  assert.match(said(withSystem({ feeds: [{ name: 'Odd', url: 'not a url' }] })), /feed "Odd".*https/);
+});
+
+test('firstStaff must hold at least one key', () => {
+  assert.match(said(withSystem({ firstStaff: [] })), /firstStaff.*at least one/);
+});
+
+test('every firstStaff key must be a Mod Bot, and a Boss\'s key is not', () => {
+  assert.match(said(withSystem({ firstStaff: ['bot-a', 'ghost'] })), /firstStaff.*"ghost"/);
+  assert.match(said(withSystem({ firstStaff: ['bot-a', 'boss-a'] })), /firstStaff.*"boss-a"/);
+});
+
+test('a key shared by a Boss and a bot is a problem, and so is one used twice in a roster', () => {
+  assert.match(said(withBot({ key: 'boss-a' })), /"boss-a" is both a Boss and a Mod Bot/);
+  assert.match(said(withSystem({ bosses: [system.bosses[0]!, system.bosses[0]!] })), /Boss key "boss-a" is used twice/);
+  assert.match(said(withSystem({ modBots: [bot, bot] })), /Mod Bot key "bot-a" is used twice/);
+});
+
+test('a quiz needs a question, and each question\'s answer must be one of its choices', () => {
+  const quiz = (questions: readonly { question: string; choices: readonly string[]; answer: string }[]) => withBot({ weakness: { kind: 'quiz', questions } });
+  assert.match(said(quiz([{ question: 'Q?', choices: ['a', 'b'], answer: 'c' }])), /quiz.*"c".*not one of its choices/);
+  assert.match(said(quiz([])), /quiz.*at least one question/);
+  assert.match(said(quiz([{ question: 'Q?', choices: ['a'], answer: 'a' }])), /quiz.*at least two choices/);
+  assert.match(said(quiz([{ question: 'Q?', choices: ['a', 'a'], answer: 'a' }])), /quiz.*twice/);
+  assert.deepEqual(instanceProblems(quiz([{ question: 'Q?', choices: ['a', 'b'], answer: 'b' }])), []);
+});
+
+test('a bribe\'s price must be inside the engine\'s bounds and something the wallet can hold', () => {
+  const bribe = (price: number) => withBot({ weakness: { kind: 'bribe', price } });
+  assert.match(said(bribe(BRIBE_BOUNDS.least - 1)), /bribe.*price/);
+  assert.match(said(bribe(BRIBE_BOUNDS.most + 1)), /bribe.*price/);
+  assert.match(said(bribe(1.5)), /bribe.*price/);
+  assert.deepEqual(instanceProblems(bribe(BRIBE_BOUNDS.least)), []);
+  assert.deepEqual(instanceProblems({ ...bribe(BRIBE_BOUNDS.most), settings: { ...settings, walletCap: BRIBE_BOUNDS.most } }), []);
+  assert.match(said({ ...bribe(BRIBE_BOUNDS.most), settings: { ...settings, walletCap: BRIBE_BOUNDS.most - 1 } }), /wallet/);
+});
+
+test('a distraction needs nothing more', () => {
+  assert.deepEqual(instanceProblems(withBot({ weakness: { kind: 'distraction' } })), []);
+});
+
+test('a Boss\'s phase override past a cap is a problem, naming the number; one inside is not', () => {
+  const boss = (phases: NonNullable<SystemContent['bosses'][number]['phases']>) => withSystem({ bosses: [{ ...system.bosses[0]!, phases }] });
+  assert.match(said(boss({ reign: { weeklyMoves: PHASE_CAPS.reign.weeklyMoves + 1 } })), /Boss "boss-a".*reign.*weeklyMoves/);
+  assert.match(said(boss({ reign: { bankCap: 0 } })), /Boss "boss-a".*reign.*bankCap/);
+  assert.deepEqual(instanceProblems(boss({ reign: { weeklyMoves: PHASE_CAPS.reign.weeklyMoves }, honeymoon: { days: 7 } })), []);
+});
+
+test('a Boss that inherits the memory of a Boss that is not in the roster, or of itself, is a problem', () => {
+  const boss = (inheritsMemoryOf: string) => withSystem({ bosses: [{ ...system.bosses[0]!, inheritsMemoryOf }] });
+  assert.match(said(boss('ghost')), /"boss-a" inherits the memory of "ghost"/);
+  assert.match(said(boss('boss-a')), /"boss-a" inherits the memory of "boss-a"/);
+});
+
+test('a title over 40 characters or a signature over 500 is a problem, for a Boss and for a bot (the seed cuts them in silence)', () => {
+  assert.match(said(withSystem({ bosses: [{ ...system.bosses[0]!, title: 'x'.repeat(41) }] })), /Boss "boss-a".*title.*41.*at most 40/);
+  assert.match(said(withSystem({ bosses: [{ ...system.bosses[0]!, signature: 'x'.repeat(501) }] })), /Boss "boss-a".*signature.*501.*at most 500/);
+  assert.match(said(withBot({ title: 'x'.repeat(41) })), /Mod Bot "bot-a".*title/);
+  assert.match(said(withBot({ signature: 'x'.repeat(501) })), /Mod Bot "bot-a".*signature/);
+  assert.deepEqual(instanceProblems(withBot({ title: 'x'.repeat(40), signature: 'x'.repeat(500) })), []);
+});
+
+test('a staff member needs a name, a title and a persona', () => {
+  assert.match(said(withBot({ name: ' ' })), /Mod Bot "bot-a" has no name/);
+  assert.match(said(withBot({ persona: '' })), /Mod Bot "bot-a" has no persona/);
+  assert.match(said(withSystem({ bosses: [{ ...system.bosses[0]!, title: '' }] })), /Boss "boss-a" has no title/);
+});
+
+test('the name style must also be said in words for the meeting\'s prompt', () => {
+  assert.match(said(withSystem({ nameStyleBrief: ' ' })), /nameStyleBrief/);
+  assert.match(said(withSystem({ announcementsTitle: ' ' })), /announcementsTitle/);
+});
+
+test('nameStyle must be a function', () => {
+  assert.match(said(withSystem({ nameStyle: 'PPP' as never })), /nameStyle/);
+  assert.match(said(withSystem({ oldVoice: undefined as never })), /oldVoice/);
+});
+
+test('no system content at all is a problem, not a crash', () => {
+  assert.match(said({ ...good, system: undefined as never }), /no system content/);
+});
+
+test('a phase\'s longest move may not outrun the setting for any move, and the least cannot exceed the most', () => {
+  const phased = (change: object) => ({ ...good, settings: { ...settings, ...change } }) as Instance;
+  assert.match(said(phased({ moveExpiryMostDays: 10 })), /phase "meltdown".*moveExpiryMostDays/);
+  assert.match(said(phased({ moveExpiryLeastHours: 24 * 42 + 1 })), /moveExpiryLeastHours/);
+});
+
+test('the new settings are checked like the others', () => {
+  const bad = (k: string, v: unknown) => settingsProblems({ ...settings, [k]: v } as unknown as Settings).join('\n');
+  assert.match(bad('systemEnabled', 'yes'), /systemEnabled/);
+  assert.match(bad('meetingCron', 'daily'), /meetingCron/);
+  assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
+  assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
+  for (const k of ['inheritanceGraceDays', 'rosterRecentExcluded', 'structuralHoldHours', 'microEventDailyCalls', 'digestThreads', 'digestExcerpts', 'digestExcerptChars', 'memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld', 'boardNameMaxLength', 'moveExpiryMostDays', 'moveExpiryLeastHours', 'demandCheckMinutes', 'demandChecksPerTick']) {
+    assert.match(bad(k, -1), new RegExp(k), k);
+    assert.match(bad(k, 1.5), new RegExp(k), k);
+  }
+  for (const k of ['memoryOpinions', 'memoryGrudges', 'memoryWheelhouse', 'memoryRealWorld']) {
+    assert.match(bad(k, 0), new RegExp(k), k);
+    assert.match(bad(k, 2.5), new RegExp(k), k);
+  }
+  // The digest settings have a ceiling too: an admin setting cannot grow the meeting's prompt without bound.
+  for (const [k, most] of [['digestThreads', DIGEST_MOST.threads], ['digestExcerpts', DIGEST_MOST.excerpts], ['digestExcerptChars', DIGEST_MOST.excerptChars]] as const) {
+    assert.match(bad(k, most + 1), new RegExp(k), k);
+    assert.deepEqual(settingsProblems({ ...settings, [k]: most }), [], `${k} may be its ceiling`);
+  }
+  // The tick's demand-check pacing: at least 1, and a ceiling so a setting cannot make the per-minute transaction unbounded.
+  for (const [k, most] of [['demandCheckMinutes', 1440], ['demandChecksPerTick', 1000]] as const) {
+    assert.match(bad(k, 0), new RegExp(k), k);
+    assert.match(bad(k, most + 1), new RegExp(k), k);
+    assert.deepEqual(settingsProblems({ ...settings, [k]: most }), [], `${k} may be its ceiling`);
+  }
+  assert.match(bad('modelTiers', { strong: 'a' }), /modelTiers/);
+  assert.match(bad('modelTiers', { strong: 'a', light: '' }), /modelTiers/);
+  assert.deepEqual(settingsProblems({ ...settings, microEventDailyCalls: 0, rosterRecentExcluded: 0, inheritanceGraceDays: 0 }), [], 'zero is allowed where it means none');
+});
+
+test('a bot voice that is neither chat nor oldVoice is a problem', () => {
+  assert.match(said(withBot({ voice: 'shout' as never })), /Mod Bot "bot-a" has the voice "shout"/);
+});
+
+test('visit hours with the least above the most, or below 1, are a problem', () => {
+  assert.match(said(withBot({ strictness: { ...bot.strictness, visitHours: { least: 13, most: 12 } } })), /Mod Bot "bot-a" has visit hours/);
+  assert.match(said(withBot({ strictness: { ...bot.strictness, visitHours: { least: 0, most: 12 } } })), /Mod Bot "bot-a" has visit hours/);
+});
+
+test('a bot with no weakness is a problem', () => {
+  assert.match(said(withBot({ weakness: undefined as never })), /Mod Bot "bot-a" has no weakness/);
+});
+
+test('duties naming a key that is not a duty are a problem', () => {
+  assert.match(said(withSystem({ duties: { ...system.duties, bogus: 'boss' } as never })), /the duties name "bogus", which is not a duty/);
+});
+
+test('a stock line for no standing order is a problem', () => {
+  assert.match(said(withSystem({ stockLines: { ...system.stockLines, bogus: ['A line.'] } as never })), /stock line "bogus" is for no standing order/);
 });
 
 test('presence: a window that may count minutes, a most of names, and a poll between 10 and 300 seconds', () => {
