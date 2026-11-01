@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import type { KayfaApi, ScreenSettings } from '../../engine/ui/data/api.ts';
 import { applyAppearance } from '../../engine/ui/appearance.ts';
 import { KayfaProvider } from '../../engine/ui/context.tsx';
+import { QueueScreen } from '../../engine/ui/admin/Queue.tsx';
 import { BoardScreen } from '../../engine/ui/board/Board.tsx';
 import { AccountGate } from '../../engine/ui/account/OpenAccount.tsx';
 import { SettingsScreen } from '../../engine/ui/account/Settings.tsx';
@@ -41,6 +42,7 @@ const ROUTES: readonly Route[] = [
   { path: '/standings', render: () => <StandingsScreen /> },
   { path: '/rankings', render: () => <RankingsScreen /> },
   { path: '/vending', render: () => <Vending /> },
+  { path: '/admin/queue', render: () => <QueueScreen /> },
   { path: '/log', render: () => <LogScreen /> },
   { path: '/log/settlement', render: () => <SettlementScreen /> },
   { path: '/c/:id', render: ({ id }) => <ProfileScreen id={id!} /> },
@@ -68,6 +70,7 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/register': 'account',
   '/rankings': 'rankings',
   '/vending': 'vending',
+  '/admin/queue': 'settings',
   '/log': 'log',
   '/log/settlement': 'settlement',
 };

@@ -7,6 +7,7 @@ import { instanceUi } from '../../instances/divided-world/ui/index.ts';
 import { App, NO_MENU } from './App.tsx';
 import { startLoad } from '../../engine/ui/log/Settlement.tsx';
 import { seedDemo } from './demo.ts';
+import { seedMoves } from '../../engine/ui/board/move-world.ts';
 import { fallbackSettings } from './data/settings.ts';
 
 beforeEach(() => { localStorage.clear(); window.history.pushState(null, '', '/'); });
@@ -348,3 +349,22 @@ for (const path of NO_MENU) {
     }, 15_000);
   }
 }
+
+test('the admin queue is a glass page at /admin/queue, with the ADMIN tab on the menu, for an admin', async () => {
+  window.history.pushState(null, '', '/admin/queue');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedMoves(fake, instance, { signIn: 'admin' });
+  render(<App api={fake} />);
+  expect(await screen.findByRole('heading', { level: 1, name: 'The System\'s moves' })).toBeInTheDocument();
+  expect(await within(screen.getByRole('navigation', { name: 'Menu' })).findByRole('link', { name: 'Admin' })).toHaveAttribute('aria-current', 'page');
+  expect(await screen.findByRole('region', { name: /^Waiting to land/u })).toBeInTheDocument();
+});
+
+test('a player has no ADMIN tab and is told the queue is for admins', async () => {
+  window.history.pushState(null, '', '/admin/queue');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  seedMoves(fake, instance, { signIn: 'player' });
+  render(<App api={fake} />);
+  expect(await screen.findByText('The admin queue is for admins.')).toBeInTheDocument();
+  expect(within(screen.getByRole('navigation', { name: 'Menu' })).queryByRole('link', { name: 'Admin' })).toBeNull();
+});

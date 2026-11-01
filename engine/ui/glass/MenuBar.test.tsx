@@ -172,3 +172,24 @@ describe('from the Task 1.4 reviews', () => {
     await waitFor(() => expect(seen.at(-1)).toEqual({ el: mine, opts: { inline: 'nearest', block: 'nearest', behavior: 'auto' } }));
   });
 });
+
+describe('the ADMIN tab', () => {
+  test('is not on a player\'s menu, and is the last tab on an admin\'s, going to the queue and marked current there', async () => {
+    const { unmount } = renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
+    await within(bar()).findByRole('link', { name: 'Settings' });
+    await waitFor(() => expect(tabs()).toEqual(['Back to the board', 'Vending Machine', 'My characters', 'Rankings', 'My log', 'Settings']));
+    expect(within(bar()).queryByRole('link', { name: 'Admin' })).toBeNull();
+    unmount();
+    renderInWorld(<MenuBar />, { path: '/admin/queue', seed: (fake) => fake.signInAs(fake.seed.account('boss', { admin: true })) });
+    const admin = await within(bar()).findByRole('link', { name: 'Admin' });
+    expect(admin).toHaveAttribute('href', '/admin/queue');
+    expect(admin).toHaveAttribute('aria-current', 'page');
+    expect(tabs()).toEqual(['Back to the board', 'Vending Machine', 'My characters', 'Rankings', 'My log', 'Settings', 'Admin']);
+  });
+
+  test('is not there signed out, where the bar holds Back alone', async () => {
+    renderInWorld(<MenuBar />, { path: '/sign-in' });
+    await within(bar()).findByRole('link', { name: 'Back to the board' });
+    expect(tabs()).toEqual(['Back to the board']);
+  });
+});
