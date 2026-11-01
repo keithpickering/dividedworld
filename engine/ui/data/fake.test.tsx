@@ -1351,6 +1351,39 @@ describe('presence', () => {
     expect(ids(box)).toEqual([anaFace, anaHeel]);
     expect(box.others).toBe(1);
   });
+  test('the index is longest online first; a thread, longest there first', async () => {
+    const { fake, ana, bo, anaFace, boFace, thread } = world();
+    const other = fake.seed.thread('general', boFace, 'Other', 'x').thread;
+    await fake.here({ kind: 'thread', thread: other }, anaFace);
+    fake.clock.advance(1000);
+    fake.signInAs(bo);
+    await fake.here({ kind: 'thread', thread }, boFace);
+    fake.clock.advance(1000);
+    fake.signInAs(ana);
+    expect(ids(await fake.here({ kind: 'thread', thread }, anaFace))).toEqual([boFace, anaFace]);
+    expect(ids(await fake.here({ kind: 'index' }, null))).toEqual([anaFace, boFace]);
+  });
+  test('a mask polled exactly the window ago is still listed, and gone a moment later', async () => {
+    const { fake, anaFace, thread } = world();
+    await fake.here({ kind: 'thread', thread }, anaFace);
+    fake.clock.advance(5 * MINUTE);
+    expect(ids(await fake.here({ kind: 'thread', thread }, null))).toEqual([anaFace]);
+    fake.clock.advance(1);
+    expect(ids(await fake.here({ kind: 'thread', thread }, null))).toEqual([]);
+  });
+  test('a retired mask\'s poll writes nothing and answers; a waiting mask\'s is refused; a mask shown again is listed from its next poll', async () => {
+    const { fake, ana, anaFace, anaHeel, thread } = world();
+    const waiting = fake.seed.character(ana, 'Ana Later', 'face', { debuted: false });
+    const retired = fake.seed.character(ana, 'Ana Gone', 'face', { retired: true });
+    expect(await fake.here({ kind: 'thread', thread }, retired)).toEqual({ names: [], others: 0 });
+    await expect(fake.here({ kind: 'thread', thread }, waiting)).rejects.toThrow('that character debuts at the next settlement');
+    await fake.here({ kind: 'thread', thread }, anaHeel);
+    await fake.setPresenceHidden(anaFace, true);
+    await fake.setPresenceHidden(anaFace, false);
+    expect(ids(await fake.here({ kind: 'thread', thread }, null))).toEqual([anaHeel]);
+    fake.clock.advance(1000);
+    expect(ids(await fake.here({ kind: 'thread', thread }, anaFace))).toEqual([anaHeel, anaFace]);
+  });
   test('a poll through a mask not yours, or of no thread, is refused', async () => {
     const { fake, boFace, thread } = world();
     await expect(fake.here({ kind: 'thread', thread }, boFace)).rejects.toThrow('you do not play that character');

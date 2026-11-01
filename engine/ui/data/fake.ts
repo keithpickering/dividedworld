@@ -943,7 +943,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const c = presenceMask(character);
       if (isRefusal(c)) return c;
       c.presenceHidden = hidden;
-      if (hidden) presence.delete(c.id);
+      /* Either way its row goes, as set_presence_hidden (0041) removes it: shown again, it is listed from its next poll. */
+      presence.delete(c.id);
       return ok(hidden);
     },
     preferences: () => me()?.prefs ?? DEFAULT_PREFERENCES,

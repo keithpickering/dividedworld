@@ -92,6 +92,14 @@ begin
   if not (pg_temp.names(box) @> array[a1, a2, b1]) then raise exception 'a board''s box counts its threads: %', box; end if;
   if pg_temp.names(here('board', other_board, null)) <> '{}' then raise exception 'another board''s box lists nobody'; end if;
   if not (pg_temp.names(here('index', null, null)) @> array[a1, a2, b1]) then raise exception 'the index lists everyone online'; end if;
+  -- The index orders by how long each has been online, not by where it is now.
+  perform tests.unbecome();
+  update presence set online_since = now() - interval '4 minutes', place_since = now() where character = b1;
+  update presence set online_since = now() - interval '3 minutes', place_since = now() - interval '9 minutes' where character = a1;
+  update presence set online_since = now() - interval '2 minutes', place_since = now() - interval '8 minutes' where character = a2;
+  perform tests.become(bob);
+  if pg_temp.names(here('index', null, null)) is distinct from array[b1, a1, a2] then raise exception 'the index is longest online first: %', here('index', null, null); end if;
+  if pg_temp.names(here('thread', t, null)) is distinct from array[a1, a2, b1] then raise exception 'a thread is longest there first: %', here('thread', t, null); end if;
   -- On another board's page, b1 is in that board's box, no longer in the thread's, and still in the index's.
   perform here('board', other_board, b1);
   if pg_temp.names(here('board', other_board, null)) is distinct from array[b1] then raise exception 'a board''s own page'; end if;
@@ -130,12 +138,11 @@ begin
   values (a1, 'thread', t, (select board from threads where id = t), now(), now(), now());
   perform tests.become(bob);
   if pg_temp.names(here('thread', t, b1)) @> array[a1] then raise exception 'a hidden mask was listed'; end if;
-  perform tests.unbecome();
-  delete from presence where character = a1;
-  -- Shown again, it is listed on its next poll.
+  -- Shown again, a row that raced the hide is gone, and it is listed from its next poll.
   perform tests.become(ann);
   perform set_presence_hidden(a1, false);
   if (select presence_hidden from my_characters where id = a1) then raise exception 'shown again'; end if;
+  if pg_temp.names(here('thread', t, null)) @> array[a1] then raise exception 'a mask shown again was listed before its next poll'; end if;
   if not (pg_temp.names(here('thread', t, a1)) @> array[a1]) then raise exception 'a mask shown again is listed on its next poll'; end if;
 
   -- Retired: its poll writes nothing and answers, and it is listed nowhere, even with a fresh row.
@@ -155,6 +162,17 @@ begin
   perform tests.become(ann);
   perform set_presence_hidden(a2, true);
   perform tests.unbecome();
+end $$;
+
+-- presenceWindow is a span that may count minutes, held by the database as editGrace is.
+do $$
+begin
+  if pg_temp.refusal($q$update settings set value = '{"unit": "second", "count": 90}' where key = 'presenceWindow'$q$) is distinct from '23514' then
+    raise exception 'a window in seconds was taken';
+  end if;
+  if pg_temp.refusal($q$update settings set value = '{"unit": "minute", "count": 0}' where key = 'presenceWindow'$q$) is distinct from '23514' then
+    raise exception 'a window of no minutes was taken';
+  end if;
 end $$;
 
 -- A visitor can call neither, and no client reads either table.

@@ -25,6 +25,13 @@
 -- from their own session's state, never from the server. There is no count of hidden masks. A mask
 -- waiting to debut, or retired, is listed nowhere.
 --
+-- The cost: each poll is one upsert of one row and one read of its box. A thread's box reads its place's rows
+-- by (place, seen_at), a board's by (board, seen_at), and the index's every row inside the window by seen_at:
+-- the index box's read grows with everyone online, a count over an index range and a top-presenceNames sort,
+-- which at a busy instance's few thousand online is a few thousand index entries per index poll, accepted over
+-- a cached summary that would show an arrival late. A poll moves seen_at, which the index box reads by, so no
+-- poll's update is a HOT one; a row is small and one per character, so the churn is bounded by who is online.
+--
 -- Ways out: a listed mask ages out presenceWindow after its last poll, or its player hides it at once;
 -- a hidden mask's switch is its player's, in My characters, any time.
 
@@ -150,7 +157,10 @@ begin
     insert into presence_hidden (character) values (in_character) on conflict do nothing;
     delete from presence where character = in_character;
   else
+    -- A poll that raced the hide may have written a row after it; it was never listed while hidden, and is
+    -- removed now, so a mask shown again is listed only from its own next poll, at the place it is then.
     delete from presence_hidden where character = in_character;
+    delete from presence where character = in_character;
   end if;
   return jsonb_build_object('character', in_character, 'hidden', hidden);
 end $$;
