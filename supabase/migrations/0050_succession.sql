@@ -43,8 +43,12 @@ alter table acts drop constraint acts_move_end_payload;
 alter table acts add constraint acts_move_end_payload check (kind <> 'move_end' or (
   payload ->> 'why' in ('met', 'expired', 'reversed', 'superseded', 'spent')
   and jsonb_typeof(payload -> 'by') = 'string' and char_length(payload ->> 'by') between 1 and 40) is true);
--- A Boss keeps a move once.
-create unique index acts_one_move_keep on acts (target_act_id, character) where kind = 'move_keep';
+-- No uniqueness on a keep. A keep is an Act, and a move changes hands: A wrote it, B kept it, A returned and kept it, and when B
+-- returns the move is due for B again, so B writes a second keep of it. A unique (move, Boss) index would raise there and fail the whole
+-- meeting. What a per-(move, Boss) index would guard is already guarded: acts_well_formed refuses a keep by the Boss that already owns
+-- the move (move_owner), so one Boss cannot keep one move twice running, in a meeting or at one instant; inheritance_due drops a move
+-- once it is the Boss's own, so one meeting keeps it once; and a retried apply_meeting is idempotent per meeting. The latest keep names
+-- the owner.
 
 -- The owner of a move: the staff member that wrote it, or the latest Boss that kept it. Null for what is not a move.
 create function move_owner(move_act uuid) returns text

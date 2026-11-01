@@ -260,7 +260,7 @@ begin
   if (select kept_by from moves_log where id = m1) is distinct from new_boss then raise exception 'the log does not say who kept the move'; end if;
   if (select ended_why from moves_log where id = m2) is distinct from 'superseded' then raise exception 'the log does not say the move was set aside'; end if;
 
-  -- A keep is the season's Boss's, of a move in force that is not already its own, once.
+  -- A keep is the season's Boss's, of a move in force that is not already its own.
   denied := false; begin perform write_staff_act(new_boss, 'move_keep', pg_temp.ann(), m1, '{}'); exception when sqlstate '55000' then denied := true; end;
   if not denied then raise exception 'a Boss kept its own move'; end if;
   denied := false; begin perform write_staff_act(new_boss, 'move_keep', pg_temp.ann(), m2, '{}'); exception when sqlstate '55000' then denied := true; end;
@@ -310,6 +310,65 @@ begin
     values (pg_temp.meeting(), new_boss, 'nameSuccessor', '{"boss": "su-b"}', null, 'x', now(), now() + interval '1 day', true);
   exception when check_violation then denied := true; end;
   if not denied then raise exception 'a nomination was queued with an expiry'; end if;
+end $$;
+
+-- ---- A Boss can keep a move again: A wrote it, B kept it, A returned and kept it, and B returns and keeps it ----
+create function pg_temp.hand_to(next_boss text) returns void language plpgsql as $$
+declare
+  n bigint;
+begin
+  n := pg_temp.queue_nomination(pg_temp.boss(), next_boss);
+  update queued_moves set landed_act = pg_temp.land(pg_temp.boss(), 'nameSuccessor', jsonb_build_object('boss', next_boss), now() - interval '1 hour') where id = n;
+  perform pg_temp.roll();
+  if pg_temp.boss() is distinct from next_boss then raise exception 'the nominated Boss % did not arrive: %', next_boss, pg_temp.boss(); end if;
+end $$;
+-- A keep written in the past, as a Boss's meeting would have in its day (a transaction has one now(), so the order needs its own times).
+create function pg_temp.keep_at(boss text, move uuid, at timestamptz) returns void language plpgsql as $$
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  values ((select c.id from characters c where c.staff = boss), 'move_keep', pg_temp.ann(), move, '{}', at);
+  perform set_config('kayfabb.staff_writer', '', true);
+end $$;
+do $$
+declare
+  a text := pg_temp.boss();
+  b text := case when pg_temp.boss() = 'su-c' then 'su-d' else 'su-c' end;
+  m uuid;
+  meet bigint;
+  mt meetings%rowtype;
+  log moves_log%rowtype;
+begin
+  m := pg_temp.rename(a, 'Round Trip', now() - interval '56 days');
+  insert into move_bank (staff, balance, as_of) values (a, 2, now()), (b, 2, now()) on conflict (staff) do update set balance = 2, as_of = now();
+  -- A wrote it; B comes and keeps it; A comes back and keeps it.
+  perform pg_temp.hand_to(b);
+  perform pg_temp.keep_at(b, m, now() - interval '3 days');
+  if move_owner(m) is distinct from b then raise exception 'the first keeper does not own the move'; end if;
+  perform pg_temp.hand_to(a);
+  perform pg_temp.keep_at(a, m, now() - interval '2 days');
+  if move_owner(m) is distinct from a then raise exception 'the returning writer does not own the move'; end if;
+  -- B returns: the move is due for B again, and B keeps it a second time.
+  perform pg_temp.hand_to(b);
+  if not exists (select 1 from inheritance_due(b) d where d.act = m) then raise exception 'the move is not due for the returning Boss'; end if;
+  meet := (begin_meeting(clock_timestamp()) ->> 'meeting')::bigint;
+  perform apply_meeting(meet, pg_temp.payload(jsonb_build_array(jsonb_build_object('move_act', m, 'decision', 'keep'))));
+  select * into mt from meetings where id = meet;
+  if mt.outcome is distinct from 'ok' then raise exception 'the meeting of the Boss keeping a move a second time did not close ok: %', mt.outcome; end if;
+  if mt.record -> 'handover' is distinct from jsonb_build_object('kept', 1, 'ended', 0, 'skipped', 0, 'nominated', false) then raise exception 'the second keep was recorded as %', mt.record -> 'handover'; end if;
+  if (select count(*) from acts k join characters c on c.id = k.character where k.kind = 'move_keep' and k.target_act_id = m and c.staff = b) is distinct from 2::bigint then raise exception 'the Boss does not have two keeps of the move'; end if;
+  if move_owner(m) is distinct from b then raise exception 'the Boss that kept the move last does not own it: %', move_owner(m); end if;
+  -- The log shows the latest keeper, and when.
+  select * into log from moves_log where id = m;
+  if log.kept_by is distinct from b or log.kept_at is distinct from (select max(k.created_at) from acts k where k.kind = 'move_keep' and k.target_act_id = m) then
+    raise exception 'the log does not show the latest keeper: %', to_jsonb(log);
+  end if;
+  if log.staff is distinct from a then raise exception 'the log lost the move''s writer'; end if;
+  -- Still once at a time: the owner cannot keep it again, and a retried meeting writes nothing more.
+  begin perform write_staff_act(b, 'move_keep', pg_temp.ann(), m, '{}'); raise exception 'a Boss kept its own move again';
+  exception when sqlstate '55000' then null; end;
+  perform apply_meeting(meet, pg_temp.payload(jsonb_build_array(jsonb_build_object('move_act', m, 'decision', 'keep'))));
+  if (select count(*) from acts k where k.kind = 'move_keep' and k.target_act_id = m) is distinct from 3::bigint then raise exception 'a retried meeting wrote a keep again'; end if;
 end $$;
 
 -- ---- A succession that fails still opens the season and shows the reveal ----
