@@ -508,6 +508,8 @@ begin
   update card_kinds set rarity = 'legendary' where key = 'blot';
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}}]}')$s$);
   if why is distinct from 'card "seedling" strikes with "blot", which is rarer than the trap (common)' then raise exception 'a strike of a rarer card in the table seeded: %', why; end if;
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": "seven"}}]}')$s$);
+  if why is distinct from 'card "seedling" lasts {"unit": "day", "count": "seven"}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'a time up of no number seeded: %', why; end if;
   -- An invite's lifetime is still a span of days or more (0020), beside setLasts.
   why := pg_temp.refusal($s$insert into settings (key, value) values ('inviteLifetime', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);
   if why is distinct from 'inviteLifetime is a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'an invite lifetime in minutes: %', why; end if;

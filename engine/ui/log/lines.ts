@@ -30,7 +30,7 @@ export type Segment = string | { readonly text: string; readonly href: string };
 
 export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'played' | 'onMine' | 'saved'
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
-  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck';
+  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'wardEnded';
 
 /** One row of the log. */
 export interface LogRow {
@@ -284,7 +284,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
 
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, wardEnded: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -346,6 +346,15 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       });
       return;
     }
+    /* A Use with a time up says when it ended, once that time has passed (the design's section 10: "a timed end"). */
+    const ends = typeof play?.payload.ends === 'string' ? play.payload.ends : null;
+    if (ends && Date.parse(ends) <= Date.now()) {
+      rows.push({
+        key: `wardEnded:${e.act}`, kind: 'wardEnded', at: ends, what: `${cardName(e.card)} ended`,
+        details: [`${cardName(e.card)} on `, link ?? 'your post', ' ended.'],
+        aura: 0, wallet: null, characters: caster ? [caster] : [],
+      });
+    }
     rows.push({
       key: `played:${e.act ?? i}`, kind: 'played', at: e.at, what: `You played ${cardName(e.card)}`,
       details: [
@@ -358,6 +367,8 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   for (const p of data.log.playsOnMine) {
     const play = data.acts.get(p.play);
     const post = data.acts.get(p.post);
+    /* A play a trap caught did nothing: the spring's own line (setEndRows) says what it caught. */
+    if (play && typeof play.payload.caught === 'string') continue;
     /* A trap's strike on the player's post: the trap is public once it has sprung, and so is the post it was set on. */
     const spring = typeof play?.payload.spring === 'string' ? data.acts.get(play.payload.spring) : undefined;
     if (spring) {

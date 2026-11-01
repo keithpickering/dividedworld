@@ -184,3 +184,27 @@ describe('cards set face down, traps and catches', () => {
     expect(all).not.toMatch(/account|player|owner|reacted/iu);
   });
 });
+
+describe('a caught play and a ward\'s end, in the setter\'s and the user\'s logs', () => {
+  const w: Words = { ...words, instance: { ...testInstance, cards: [...testInstance.cards, { ...testInstance.cards[0]!, key: 'shield', name: 'Shield', play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 } }] } };
+  const act = (id: string, kind: Act['kind'], character: string | null, over: Partial<Act> = {}): Act =>
+    ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: '2026-10-30T10:00:00.000Z', payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
+  const mine = [char('p', 'Pipewrench', 'heel')];
+  const text = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+
+  test('a play a trap caught on the player\'s post is no "played on your post" line: the spring\'s line says it', () => {
+    const post = act('post3', 'post', 'p', { seq: 3 });
+    const caught = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', caught: 'set1' } });
+    const log = { ...empty, playsOnMine: [{ play: 'k1', post: 'post3', at: '2026-10-30T10:00:00.000Z' }] };
+    expect(logRows(data({ log, mine, acts: new Map([post, caught].map((a) => [a.id, a])) }), w, 600, null)).toEqual([]);
+  });
+
+  test('a ward the player used says when it ended', () => {
+    const post = act('post3', 'post', 'p', { seq: 3 });
+    const ward = act('u1', 'card', 'p', { targetActId: 'post3', payload: { card: 'shield', ends: '2026-10-31T10:00:00.000Z' } });
+    const log = { ...empty, cards: [{ card: 'shield', kind: 'played' as const, act: 'u1', price: 0, at: '2026-10-24T10:00:00.000Z' }] };
+    const rows = logRows(data({ log, mine, acts: new Map([post, ward].map((a) => [a.id, a])) }), w, 600, null);
+    expect(rows.map((r) => [r.kind, r.at])).toEqual([['wardEnded', '2026-10-31T10:00:00.000Z'], ['played', '2026-10-24T10:00:00.000Z']]);
+    expect(text(rows[0]!)).toBe('Shield on your post #3 ended.');
+  });
+});

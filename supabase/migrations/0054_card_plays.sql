@@ -84,9 +84,11 @@ language sql stable set search_path = public, pg_temp as $$
       case when coalesce((c.e ->> 'ward') = 'true', false) and c.play <> 'use' then format('card "%s" is a ward, and only a Use card is', c.key) end,
       case when coalesce((c.e ->> 'ward') = 'true', false) and c.play = 'use' and not c.e ? 'lasts' then format('card "%s" is a ward with no time up (lasts); a ward ends at its time', c.key) end,
       case when c.e ? 'lasts' and c.play <> 'use' then format('card "%s" has a time up (lasts), and only a Use card does', c.key) end,
-      case when c.e ? 'lasts' and not (jsonb_typeof(c.e -> 'lasts') = 'object' and c.e #>> '{lasts,unit}' in ('day', 'week', 'month')
-             and jsonb_typeof(c.e #> '{lasts,count}') = 'number' and (c.e #>> '{lasts,count}')::numeric between 1 and 1000
-             and (c.e #>> '{lasts,count}')::numeric = trunc((c.e #>> '{lasts,count}')::numeric)) is true
+      -- The count is read as a number only once it is one: AND does not promise to read its sides in order.
+      case when c.e ? 'lasts' and not coalesce(jsonb_typeof(c.e -> 'lasts') = 'object' and c.e #>> '{lasts,unit}' in ('day', 'week', 'month')
+             and case when jsonb_typeof(c.e #> '{lasts,count}') = 'number'
+                      then (c.e #>> '{lasts,count}')::numeric between 1 and 1000 and (c.e #>> '{lasts,count}')::numeric = trunc((c.e #>> '{lasts,count}')::numeric)
+                      else false end, false)
            then format('card "%s" lasts %s; it must be a span: a unit of day, week or month and a whole count from 1 to 1000', c.key, c.e -> 'lasts') end,
       case when c.trap is not null and c.trigger_on is distinct from 'visit' and c.trigger_on not in ('cast', 'reaction', 'reply', 'quote') is not false
            then format('card "%s" springs on %s; a trap springs on cast, reaction, reply, quote, visit', c.key, coalesce(to_jsonb(c.trigger_on)::text, 'null')) end,
@@ -315,6 +317,7 @@ declare
   sprung uuid;
   struck_play uuid;
   layer integer;
+  up integer;
 begin
   select f.* into fd from face_down f
   where f.post = spring_traps.post and f.ends_at > now()
@@ -334,10 +337,13 @@ begin
   if exists (select 1 from characters c where c.id = setter_character and (c.retired_at is not null or c.debuted_at is null)) then return null; end if;
   if outcome = 'strike' then
     select * into struck from card_kinds k where k.key = kind_of.trap #>> '{outcome,card}';
-    -- A strike that cannot land leaves the trap set: its target already carries its stack of the card.
-    select count(*) + 1 into layer from acts k
-    where k.kind = 'card' and k.target_act_id = by_act and k.payload ->> 'card' = struck.key and not (k.payload ? 'caught');
-    if struck.key is null or by_act is null or layer > struck.stack
+    -- A strike that cannot land leaves the trap set: its target already carries its stack of the card, counted as play_card counts
+    -- it (the plays still up), with the layer going on from the last one taken.
+    select count(*) filter (where k.payload ->> 'ends' is null or (k.payload ->> 'ends')::timestamptz > now()),
+           greatest(coalesce(max((k.payload ->> 'layer')::integer), 0), count(*)) + 1
+      into up, layer
+    from acts k where k.kind = 'card' and k.target_act_id = by_act and k.payload ->> 'card' = struck.key and not (k.payload ? 'caught');
+    if struck.key is null or by_act is null or up >= struck.stack
        or (select a.kind from acts a where a.id = by_act) is distinct from 'post' then return null; end if;
   end if;
   insert into acts (character, kind, thread, target_act_id, payload)
