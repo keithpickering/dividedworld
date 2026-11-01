@@ -161,12 +161,12 @@ test.describe('the ghost mark and the edge', () => {
 /*
  * The Lens's type is the glass's at its smallest step, so the post's own 12px words are never out-shouted (the design's section 2): it is
  * 340px wide, its body is the label step (20px, 18px of ink in the glass's face), its names the display face's smallest step, and a kit
- * tile is a 36px target, not a slab. Each row carries its play's ink as a left bar, and its note stands above its caster.
+ * tile is a 36px target, not a slab. Each row is a plate of its own with its play's ink in its corner, and its note stands above its caster.
  */
 test.describe('the Lens\'s size and rows at 1920', () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
 
-  test('is 340px wide in the label step, with 36px tiles, ink bars on its rows and each note above its caster', async ({ page }) => {
+  test('is 340px wide in the label step, with 36px tiles, its rows apart as plates in their inks, and each note above its caster', async ({ page }) => {
     await page.goto('/?fixture=boards&story=boards-01-lens--lens-author-whoops-who');
     const lens = page.getByRole('dialog', { name: 'Cards on this post' });
     await expect(lens).toBeVisible();
@@ -175,8 +175,11 @@ test.describe('the Lens\'s size and rows at 1920', () => {
     for (const h of await lens.locator('.kb-kit-tile').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))) expect(h).toBeLessThanOrEqual(40);
     const rows = lens.locator('.kb-lens-row');
     await expect(rows).toHaveCount(3);
-    const bars = await rows.evaluateAll((els) => els.map((el) => getComputedStyle(el).borderLeftColor));
-    expect(new Set(bars).size, 'each layer\'s ink is its own bar').toBe(3);
+    const corners = await rows.evaluateAll((els) => els.map((el) => getComputedStyle(el, '::before').backgroundColor));
+    expect(new Set(corners).size, 'each layer\'s ink is its own plate\'s corner').toBe(3);
+    /* Each play is a plate of its own, apart from the next. */
+    const boxes = await rows.evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
+    for (let i = 1; i < boxes.length; i++) expect(boxes[i]!.top - boxes[i - 1]!.bottom, 'a gap between plates').toBeGreaterThanOrEqual(8);
     for (const y of await rows.evaluateAll((els) => els.map((el) => [el.querySelector('.kb-lens-note')!.getBoundingClientRect().top, el.querySelector('.kb-lens-by')!.getBoundingClientRect().top]))) expect(y[0]).toBeLessThan(y[1]!);
   });
 
