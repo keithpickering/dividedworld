@@ -243,4 +243,3 @@ export function landsOnPost(rules: Pick<CardRules, 'key' | 'stack'>, target: Car
 export function color(value: unknown): string | null {
   return typeof value === 'string' ? safeColor(value.trim()) : null;
 }
-

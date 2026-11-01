@@ -34,6 +34,8 @@ test('a live ward turns away a cast at or below its rarity, before the card\'s o
   // canApply would refuse a second plain; the ward's words come first.
   const refused = decidePlay(plain, settings, post, [ward, { card: 'plain', act: 'q' }], {}, '', { nameOf: names });
   assert.deepEqual(refused, { ok: false, why: 'this post\'s Test Shield turns away cards up to uncommon' });
+  const same = decidePlay({ ...plain, rarity: 'uncommon' }, settings, post, [ward], {}, '', { nameOf: names });
+  assert.equal(same.ok, false, 'a card of the ward\'s own rarity is turned away');
   const rarer = decidePlay(grand, settings, post, [ward], {}, '', { nameOf: names });
   assert.equal(rarer.ok, true);
 });

@@ -252,6 +252,8 @@ function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
     else if (on === 'reaction' && !QUADRANTS.includes((trap.trigger as { quadrant?: never }).quadrant!)) out.push(`${who} springs on a reaction of no quadrant; it names one of ${QUADRANTS.join(', ')}`);
     const outcome = trap.outcome as { do?: unknown; card?: unknown } | undefined;
     if (!OUTCOMES.includes(outcome?.do as never)) out.push(`${who} does ${JSON.stringify(outcome?.do)} when it springs; a trap does ${OUTCOMES.join(', ')}`);
+    else if (outcome!.do === 'payout' && on !== 'cast' && TRIGGERS.includes(on as never)) out.push(`${who} pays out on a ${String(on)}; it pays out only on a cast, since only a cast is paid for`);
+    else if (outcome!.do === 'strike' && (on === 'cast' || on === 'reaction')) out.push(`${who} strikes on a ${on}; a strike lays its card on a reply or a quote, until cards reach characters`);
     else if (outcome!.do === 'strike') {
       const struck = cards.find((k) => k.key === outcome!.card);
       if (!struck) out.push(`${who} strikes with ${JSON.stringify(outcome!.card)}, which the instance does not have`);

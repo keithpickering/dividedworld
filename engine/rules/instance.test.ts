@@ -531,6 +531,7 @@ test('a trap is a Set card\'s, and a ward and a time up are a Use card\'s', () =
   assert.match(instanceProblems(withCards({ play: 'use', trap })).join('\n'), /card "splat" has a trap, and only a Set card does/);
   assert.deepEqual(instanceProblems(withCards({ play: 'use', ward: true, lasts: { unit: 'day', count: 7 } })), []);
   assert.match(instanceProblems(withCards({ ward: true })).join('\n'), /card "splat" is a ward, and only a Use card is/);
+  assert.match(instanceProblems(withCards({ play: 'use', ward: 'yes' })).join('\n'), /card "splat" is a ward of "yes"; a ward is true or left out/);
   assert.match(instanceProblems(withCards({ play: 'set', lasts: { unit: 'day', count: 7 } })).join('\n'), /card "splat" has a time up \(lasts\), and only a Use card does/);
   assert.match(instanceProblems(withCards({ play: 'use', lasts: { unit: 'hour', count: 7 } })).join('\n'), /card "splat" lasts .*; it must be a span/);
   assert.match(instanceProblems(withCards({ play: 'deal' })).join('\n'), /card "splat" is played "deal"; a card is cast, used, set or kept/);
@@ -539,7 +540,7 @@ test('a trap is a Set card\'s, and a ward and a time up are a Use card\'s', () =
 test('a trap springs on a trigger in the list and does an outcome in the list', () => {
   assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'sneeze' }, outcome: { do: 'nullify' } } })).join('\n'), /card "splat" springs on "sneeze"/);
   assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'reaction', quadrant: 'sideways' }, outcome: { do: 'nullify' } } })).join('\n'), /card "splat" springs on a reaction of no quadrant/);
-  assert.deepEqual(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'reaction', quadrant: 'boredNegative' }, outcome: { do: 'payout' } } })), []);
+  assert.deepEqual(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'reaction', quadrant: 'boredNegative' }, outcome: { do: 'nullify' } } })), []);
   assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'reflect' } } })).join('\n'), /card "splat" does "reflect"/);
 });
 
@@ -565,4 +566,13 @@ test('every Set lasts the same span, setLasts', () => {
   for (const bad of [{ unit: 'minute', count: 5 }, { unit: 'day', count: 0 }, 7]) {
     assert.match(settingsProblems({ ...settings, setLasts: bad as never }).join('\n'), /setting "setLasts"/, JSON.stringify(bad));
   }
+});
+
+test('in this part, Nullify springs on any trigger, Pay out only on a cast, and Strike only on a reply or a quote', () => {
+  const trap = (on: string, outcome: Record<string, unknown>) => withCards({ play: 'set', trap: { trigger: { on, quadrant: 'boredNegative' }, outcome } }, { key: 'blot' });
+  for (const on of ['cast', 'reaction', 'reply', 'quote']) assert.deepEqual(instanceProblems(trap(on, { do: 'nullify' })), [], on);
+  assert.deepEqual(instanceProblems(trap('cast', { do: 'payout' })), []);
+  for (const on of ['reaction', 'reply', 'quote']) assert.match(instanceProblems(trap(on, { do: 'payout' })).join('\n'), /card "splat" pays out on a \w+; it pays out only on a cast, since only a cast is paid for/, on);
+  for (const on of ['reply', 'quote']) assert.deepEqual(instanceProblems(trap(on, { do: 'strike', card: 'blot' })), [], on);
+  for (const on of ['cast', 'reaction']) assert.match(instanceProblems(trap(on, { do: 'strike', card: 'blot' })).join('\n'), /card "splat" strikes on a \w+; a strike lays its card on a reply or a quote, until cards reach characters/, on);
 });
