@@ -604,6 +604,10 @@ test('a card beyond a post ends at its time, and no later than its reach\'s boun
   assert.match(instanceProblems(withCards({ rarity: 'legendary', reaches: ['thread', 'board'], lasts: { unit: 'week', count: 1 } })).join('\n'), /card "splat" lasts 1 week, longer than a thread effect may \(reachLasts\.thread, 1 day\)/);
 });
 
+test('a Cast on a post alone has no time up', () => {
+  assert.match(instanceProblems(withCards({ reaches: ['post'], lasts: { unit: 'day', count: 1 } })).join('\n'), /card "splat" has a time up \(lasts\), and only a Use card or a card reaching beyond a post does/);
+});
+
 test('a Set lands on a post alone', () => {
   assert.match(instanceProblems(withCards({ rarity: 'legendary', play: 'set', reaches: ['post', 'board'], lasts: { unit: 'day', count: 1 } })).join('\n'), /card "splat" is set face down, and a Set lands only on a post/);
 });

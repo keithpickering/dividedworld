@@ -287,12 +287,12 @@ const spanWords = (s: Span): string => `${s.count} ${s.unit}${s.count === 1 ? ''
 function reachProblems(c: CardRules, settings: Settings): string[] {
   if (c.reaches === undefined) return [];
   const who = `card "${c.key}"`;
-  const reaches = c.reaches as readonly unknown[];
+  const reaches: readonly unknown[] = c.reaches;
   if (!Array.isArray(reaches) || !reaches.length || reaches.some((r) => !REACHES.includes(r as never)) || new Set(reaches).size !== reaches.length) {
     return [`${who} reaches ${JSON.stringify(c.reaches)}; a card reaches a list of post, character, thread or board, each once`];
   }
   const out: string[] = [];
-  const beyond = c.reaches.filter((r) => r !== 'post') as (typeof BEYOND_POST)[number][];
+  const beyond = BEYOND_POST.filter((r) => c.reaches!.includes(r));
   if ((c.play ?? 'cast') === 'set' && beyond.length) out.push(`${who} is set face down, and a Set lands only on a post`);
   if (beyond.length && c.lasts === undefined) out.push(`${who} reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time`);
   const least = settings?.reachRarity;

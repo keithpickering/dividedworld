@@ -83,17 +83,17 @@ describe('where a card beyond a post is offered', () => {
     key, name: key, alignment: 'pepperoni', rarity: 'legendary', reaches, lasts, priceKey: 'x', playPrice: () => 0,
     validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e) => landsOn({ key, reaches }, t, e),
   });
-  const glitter = reaching('glitter', ['character']);
+  const sparkle = reaching('sparkle', ['character']);
   const quake = reaching('quake', ['board']);
-  const cards = [glitter, quake];
+  const cards = [sparkle, quake];
   const soon = new Date(Date.now() + 3_600_000).toISOString();
   const on = (card: string, ends: string): CardPlay => ({ ...play(card, 1), ends });
 
   test('a character card on a character, never on a post', () => {
-    expect(landingOn(glitter, { reach: 'character', character: 'c1' }, [], { cards, setLasts }).ok).toBe(true);
-    expect(landing(glitter, post('hi'), [], { cards, setLasts })).toEqual({ ok: false, why: 'this card lands on a character' });
-    expect(landingOn(glitter, { reach: 'character', character: 'c1' }, [on('glitter', soon)], { cards, setLasts })).toEqual({ ok: false, why: 'this character already carries that card' });
-    expect(landingOn(glitter, { reach: 'character', character: 'c1' }, [on('glitter', '2020-01-01T00:00:00Z')], { cards, setLasts }).ok).toBe(true);
+    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [], { cards, setLasts }).ok).toBe(true);
+    expect(landing(sparkle, post('hi'), [], { cards, setLasts })).toEqual({ ok: false, why: 'this card lands on a character' });
+    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [on('sparkle', soon)], { cards, setLasts })).toEqual({ ok: false, why: 'this character already carries that card' });
+    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [on('sparkle', '2020-01-01T00:00:00Z')], { cards, setLasts }).ok).toBe(true);
   });
 
   test('a board card where no board card is live', () => {

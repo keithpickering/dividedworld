@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, atOrBelow, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -104,22 +104,22 @@ const reaching = (key: string, reaches: CardRules['reaches'], stack?: number): C
 test('a card lands only on a reach it lists, a post unless it says', () => {
   assert.equal(landsOn({ key: 'plain' }, post, []).ok, true);
   assert.deepEqual(landsOn({ key: 'plain' }, character, []), { ok: false, why: 'this card lands on a post' });
-  const glitter = { key: 'glitter', reaches: ['character'] as const };
-  assert.equal(landsOn(glitter, character, []).ok, true);
-  assert.deepEqual(landsOn(glitter, post, []), { ok: false, why: 'this card lands on a character' });
+  const sparkle = { key: 'sparkle', reaches: ['character'] as const };
+  assert.equal(landsOn(sparkle, character, []).ok, true);
+  assert.deepEqual(landsOn(sparkle, post, []), { ok: false, why: 'this card lands on a character' });
   assert.deepEqual(landsOn({ key: 'both', reaches: ['character', 'thread'] }, board, []), { ok: false, why: 'this card lands on a character or a thread' });
   // An Act that is no post is still no post, whatever the card reaches.
   assert.deepEqual(landsOn({ key: 'plain' }, { ...post, kind: 'spin' } as CardTarget, []), { ok: false, why: 'a card lands on a post' });
 });
 
 test('a target\'s stack counts only the effects on that same target, never those above it', () => {
-  const glitter = reaching('glitter', ['character', 'post']);
-  // The author's Glitter is above the post, not on it, so the post can still take one.
-  const onAuthor: CardEffect = { card: 'glitter', act: 'g1', reach: 'character', ends: soon };
-  assert.equal(glitter.canApply(post, [onAuthor]).ok, true);
-  assert.deepEqual(glitter.canApply(character, [onAuthor]), { ok: false, why: 'this character already carries that card' });
-  assert.equal(glitter.canApply(character, [{ ...onAuthor, ends: gone }]).ok, true, 'an ended effect holds no place');
-  assert.deepEqual(glitter.canApply(post, [{ card: 'glitter', act: 'g2' }]), { ok: false, why: 'this post already carries that card' });
+  const sparkle = reaching('sparkle', ['character', 'post']);
+  // The author's Sparkle is above the post, not on it, so the post can still take one.
+  const onAuthor: CardEffect = { card: 'sparkle', act: 'g1', reach: 'character', ends: soon };
+  assert.equal(sparkle.canApply(post, [onAuthor]).ok, true);
+  assert.deepEqual(sparkle.canApply(character, [onAuthor]), { ok: false, why: 'this character already carries that card' });
+  assert.equal(sparkle.canApply(character, [{ ...onAuthor, ends: gone }]).ok, true, 'an ended effect holds no place');
+  assert.deepEqual(sparkle.canApply(post, [{ card: 'sparkle', act: 'g2' }]), { ok: false, why: 'this post already carries that card' });
 });
 
 test('a board carries one board card at a time, refused until it ends', () => {
@@ -149,4 +149,31 @@ test('a ward turns away casts on its own target only, never one on a target besi
 
 test('a card is set face down on a post alone', () => {
   assert.match((decideSet(snare, settings, character, [], {}, []) as { why: string }).why, /set face down on a post/);
+});
+
+test('a span is read as Postgres compares intervals: a month as 30 days', () => {
+  assert.equal(spanMs({ unit: 'month', count: 1 }), spanMs({ unit: 'day', count: 30 }));
+  assert.ok(spanMs({ unit: 'month', count: 1 }) < spanMs({ unit: 'day', count: 31 }));
+  assert.equal(spanMs({ unit: 'week', count: 1 }), spanMs({ unit: 'day', count: 7 }));
+  assert.equal(spanMs({ unit: 'minute', count: 90 }), 90 * 60_000);
+});
+
+test('a board card with a malformed end, or none, is still refused, saying it holds until it ends', () => {
+  const quake = reaching('quake', ['board']);
+  assert.equal(refusalTime('garbage'), 'it ends');
+  assert.deepEqual(quake.canApply(board, [{ card: 'tremor', act: 'b0', reach: 'board', ends: 'garbage' }]), { ok: false, why: 'this board already carries a board card until it ends' });
+  assert.deepEqual(quake.canApply(board, [{ card: 'tremor', act: 'b0', reach: 'board' }]), { ok: false, why: 'this board already carries a board card until it ends' });
+});
+
+test('a stack beyond a post is said of its own target', () => {
+  const two = reaching('sparkle', ['character'], 2);
+  const on = (act: string): CardEffect => ({ card: 'sparkle', act, reach: 'character', ends: soon });
+  assert.equal(two.canApply(character, [on('a')]).ok, true);
+  assert.deepEqual(two.canApply(character, [on('a'), on('b')]), { ok: false, why: 'this character already carries 2 of that card, the most it takes' });
+});
+
+test('a ward on a character turns away a cast on that character', () => {
+  const ward: CardEffect = { card: 'shield', act: 'w', ward: 'legendary', ends: soon, reach: 'character' };
+  const onCharacter = reaching('sparkle', ['character']);
+  assert.deepEqual(decidePlay(onCharacter, settings, character, [ward], {}, '', { nameOf: names }), { ok: false, why: 'this character\'s Test Shield turns away cards up to legendary' });
 });

@@ -101,7 +101,7 @@ export const isLive = (effect: Pick<CardEffect, 'ends'>, now: Date = new Date())
 };
 
 /** A ward's refusal, the same for every caster, since the ward is face up; play_card says it in the same words. */
-export const wardWords = (wardName: string, rarity: Rarity): string => `this post's ${wardName} turns away cards up to ${rarity}`;
+export const wardWords = (wardName: string, rarity: Rarity, reach: Reach = 'post'): string => `this ${reach}'s ${wardName} turns away cards up to ${rarity}`;
 
 /** How each play is said in a refusal of the wrong one. */
 const PLAYED: Record<Play, string> = {
@@ -207,7 +207,7 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   if (playOf(rules) !== 'cast') return wrongPlay(rules);
   const now = context.now ?? new Date();
   const ward = effects.find((e) => e.ward !== undefined && (e.reach ?? 'post') === target.reach && isLive(e, now) && atOrBelow(rules.rarity, e.ward));
-  if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.ward!));
+  if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.ward!, target.reach));
   return decided(rules, settings, target, effects, config, message);
 }
 
@@ -309,7 +309,7 @@ export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>, tar
   // An ended effect holds no place (play_card counts the same way).
   const here = effects.filter((e) => (e.reach ?? 'post') === target.reach && isLive(e, now));
   if (target.reach === 'board') {
-    const held = here.find((e) => !e.faceDown);
+    const held = here[0];
     if (held) return refuse(`this board already carries a board card until ${held.ends ? refusalTime(held.ends) : 'it ends'}`);
   }
   const stack = rules.stack ?? 1;
