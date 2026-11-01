@@ -155,8 +155,11 @@ grant select (id, staff, kind, params, demand, why, go_live_at, expires_at, stru
 -- system_digest (0045), the moves list also carrying the moves admins held in the window (the system plan, Task 11). Everything else as
 -- 0045 wrote it. Each move in the list now says `state`: inForce, ended or held. An ended move that an admin reversed shows
 -- `ended.why = reversed` (by admin); a held move was never an Act, so it is `{act: null, kind, params, demand, expiresAt, landedAt: null,
--- progress: null, ended: null, state: held, heldAt, why}`, `why` the Boss's own words for it. In force first, then ended, then held, each newest
--- first, the whole list capped at digestExcerpts. The function stays the digest role's: the owner, the privileges and the grants are kept.
+-- progress: null, ended: null, state: held, heldAt, why}`, `why` the Boss's own words for it. The list is capped at digestExcerpts, and
+-- what the admins did comes first so that the cap cannot cut it: the holds and the reversals, then the moves in force, then the moves
+-- that were met or expired, each newest first. An admin's act is rare and the Director's only word of it is this list, while the moves
+-- in force are in every digest until they end; so in a window where more moves are in force than the cap, the in force ones are
+-- what is cut, and a hold or a reversal is never lost to a later window. The function stays the digest role's: the owner, the privileges and the grants are kept.
 create or replace function system_digest(since timestamptz, until timestamptz) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -243,9 +246,9 @@ begin
     limit short_cap
   ),
   -- The moves in force (open_moves: a handful of rows, whatever the instance's history) and those whose end fell in the window,
-  -- each capped; in force first, then by landing, newest first. An end after the window is not the digest's yet.
+  -- each capped (the reversals first, so a met move's end cannot crowd one out); the merge below orders and caps them again. An end after the window is not the digest's yet.
   open_m as (
-    select a.id as act, a.created_at as landed_at, a.payload, null::jsonb as ended, 0 as grp, 'inForce'::text as state, a.created_at as sort_at, null::timestamptz as held_at, null::text as why
+    select a.id as act, a.created_at as landed_at, a.payload, null::jsonb as ended, 1 as grp, 'inForce'::text as state, a.created_at as sort_at, null::timestamptz as held_at, null::text as why
     from open_moves o join acts_public a on a.id = o.move_act
     where a.created_at < until
     order by a.created_at desc, a.id
@@ -253,17 +256,18 @@ begin
   ),
   ended_m as (
     select a.id as act, a.created_at as landed_at, a.payload,
-           jsonb_build_object('why', e.payload ->> 'why', 'by', e.payload ->> 'by', 'at', e.created_at) as ended, 1 as grp, 'ended'::text as state, e.created_at as sort_at, null::timestamptz as held_at, null::text as why
+           jsonb_build_object('why', e.payload ->> 'why', 'by', e.payload ->> 'by', 'at', e.created_at) as ended,
+           case when e.payload ->> 'by' = 'admin' then 0 else 2 end as grp, 'ended'::text as state, e.created_at as sort_at, null::timestamptz as held_at, null::text as why
     from acts_public e join acts_public a on a.id = e.target_act_id
     where e.kind = 'move_end' and e.created_at >= since and e.created_at < until
-    order by e.created_at desc, e.id
+    order by (e.payload ->> 'by' = 'admin') desc, e.created_at desc, e.id
     limit short_cap
   ),
   -- A move an admin held in the window never landed, so it has no Act: its row in the queue (the columns the digest role may read).
   held_m as (
     select null::uuid as act, null::timestamptz as landed_at,
            jsonb_build_object('kind', q.kind, 'params', q.params, 'demand', q.demand, 'expires_at', q.expires_at) as payload,
-           null::jsonb as ended, 2 as grp, 'held'::text as state, q.held_at as sort_at, q.held_at, q.why
+           null::jsonb as ended, 0 as grp, 'held'::text as state, q.held_at as sort_at, q.held_at, q.why
     from queued_moves q
     where q.held_at >= since and q.held_at < until
     order by q.held_at desc, q.id

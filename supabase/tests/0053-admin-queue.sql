@@ -122,6 +122,7 @@ declare
   landed uuid;
   met uuid;
   stale uuid;
+  older uuid;
   q jsonb;
   g uuid := (select id from boards where slug = 'general');
 begin
@@ -138,6 +139,13 @@ begin
   insert into acts (character, kind, thread, target_act_id, payload, created_at)
   select null, 'move_end', a.thread, a.id, jsonb_build_object('why', 'expired', 'by', 'expiry'), now() - interval '40 days' from acts a where a.id = stale;
   perform set_config('kayfabb.move_end_writer', '', true);
+  -- A move in force that landed two hours ago (on a board of no one's, so the rename above stays the one in force), for the order of the group.
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, payload, created_at)
+  values ((select id from characters where staff = 'aq-boss'), 'move', (select value #>> '{}' from settings where key = 'systemAnnouncements')::uuid,
+    jsonb_build_object('kind', 'renameBoard', 'body', 'Landed.', 'params', jsonb_build_object('board', gen_random_uuid(), 'name', 'Older Oak', 'premise', 'p', 'description', 'd')),
+    now() - interval '2 hours') returning id into older;
+  perform set_config('kayfabb.staff_writer', '', true);
   -- The tick records a row it could not land (0047); the queue shows it, so an admin can hold it.
   update queued_moves set failed_at = now(), failure = 'it did not land' where id = later;
   perform tests.become(admin);
@@ -154,9 +162,9 @@ begin
      or q #>> '{waiting,0,boardName}' is distinct from 'Due Dune' or q #>> '{waiting,0,failure}' is distinct from 'it did not land' or (q #>> '{waiting,0,failedAt}') is null then
     raise exception 'the waiting move reads %', q -> 'waiting' -> 0;
   end if;
-  -- In force: the two landed moves, newest first, the due one with its progress.
-  if (select array_agg(j ->> 'act') from jsonb_array_elements(q -> 'inForce') j) is distinct from array[met::text, landed::text] and (select array_agg(j ->> 'act') from jsonb_array_elements(q -> 'inForce') j) is distinct from array[landed::text] then
-    raise exception 'in force holds %', (select array_agg(j ->> 'act') from jsonb_array_elements(q -> 'inForce') j);
+  -- In force: the move that landed now and an older one, newest first, the due one with its progress; the met one is not here.
+  if (select array_agg(j ->> 'act' order by o) from jsonb_array_elements(q -> 'inForce') with ordinality as t(j, o)) is distinct from array[landed::text, older::text] then
+    raise exception 'in force holds %', (select array_agg(j ->> 'act' order by o) from jsonb_array_elements(q -> 'inForce') with ordinality as t(j, o));
   end if;
   if exists (select 1 from jsonb_array_elements(q -> 'inForce') j where j ->> 'act' = met::text) then raise exception 'a move with an end is in force'; end if;
   if q #>> '{inForce,0,act}' is distinct from landed::text or q #>> '{inForce,0,progress,of}' is distinct from '5' or q #>> '{inForce,0,progress,done}' is distinct from '0'
@@ -172,6 +180,27 @@ begin
   end if;
   if exists (select 1 from jsonb_array_elements(q -> 'ended') j where j ->> 'act' = stale::text) then raise exception 'a move that ended 40 days ago is in the last 30 days'; end if;
   if q::text like '%held_by%' or q::text like '%' || admin::text || '%' then raise exception 'the admin queue names which admin held a move'; end if;
+end $$;
+
+-- ---- A group is cut at the cap and says so: 101 waiting rows give 100, and `more` says one was left out (a throwaway: undone below) ----
+do $$
+declare
+  admin uuid := (select id from auth.users where email = 'aq-admin@test.invalid');
+  i integer;
+  q jsonb;
+begin
+  for i in 1..100 loop
+    perform pg_temp.queued('Bulk ' || lpad(i::text, 3, '0'), now() + interval '2 hours' + i * interval '1 minute');
+  end loop;
+  perform tests.become(admin); q := admin_queue(); perform tests.unbecome();
+  if (select count(*) from queued_moves where landed_act is null and held_at is null) is distinct from 101::bigint then raise exception 'the throwaway queue is not 101 rows'; end if;
+  if jsonb_array_length(q -> 'waiting') is distinct from 100 or (q -> 'more' ->> 'waiting')::boolean is distinct from true then
+    raise exception 'waiting holds % of 101 and more.waiting is %', jsonb_array_length(q -> 'waiting'), q -> 'more' -> 'waiting';
+  end if;
+  if q #>> '{waiting,99,params,name}' is distinct from 'Bulk 099' then raise exception 'the cut kept the wrong rows: the last is %', q #>> '{waiting,99,params,name}'; end if;
+  if (q -> 'more' ->> 'inForce')::boolean or (q -> 'more' ->> 'ended')::boolean then raise exception 'a group that was not cut says it was: %', q -> 'more'; end if;
+  raise exception 'throwaway' using errcode = 'P9999';
+exception when sqlstate 'P9999' then null;
 end $$;
 
 -- ---- An admin reverses a landed rename: the old name returns, the move ends reversed by an admin, the Boss says so once ----
@@ -241,4 +270,28 @@ begin
   perform tests.become(player);
   begin perform 1 from queued_moves; raise exception 'a player read queued_moves'; exception when insufficient_privilege then null; end;
   perform tests.unbecome();
+end $$;
+
+-- ---- A hold is never crowded out of the digest: more moves in force than digestExcerpts, and a hold is still listed ----
+do $$
+declare
+  admin uuid := (select id from auth.users where email = 'aq-admin@test.invalid');
+  ann uuid := (select value #>> '{}' from settings where key = 'systemAnnouncements')::uuid;
+  g uuid := (select id from boards where slug = 'general');
+  fresh bigint;
+  i integer;
+  d jsonb;
+begin
+  insert into settings (key, value) values ('digestThreads', '3'), ('digestExcerpts', '2'), ('digestExcerptChars', '50') on conflict (key) do update set value = excluded.value;
+  for i in 1..3 loop
+    perform write_staff_act('aq-boss', 'move', ann, null,
+      jsonb_build_object('kind', 'renameBoard', 'body', 'Landed.', 'params', jsonb_build_object('board', g, 'name', 'Crowd ' || i, 'premise', 'p', 'description', 'd')));
+  end loop;
+  fresh := pg_temp.queued('Fresh Fold', now() + interval '1 hour');
+  perform tests.become(admin); perform hold_move(fresh); perform tests.unbecome();
+  d := system_digest(now() - interval '1 hour', now() + interval '1 hour');
+  if jsonb_array_length(d -> 'moves') > 2 then raise exception 'the digest holds more moves than digestExcerpts: %', d -> 'moves'; end if;
+  if not exists (select 1 from jsonb_array_elements(d -> 'moves') m where m ->> 'state' = 'held') then
+    raise exception 'three moves in force crowded the hold out of a digest capped at 2: %', d -> 'moves';
+  end if;
 end $$;
