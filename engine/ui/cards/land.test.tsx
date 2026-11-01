@@ -4,14 +4,14 @@
  * posts to offer a card on and which cards to offer a post.
  */
 import { describe, expect, test } from 'vitest';
-import { landsOnPost, type CardRules } from '../../rules/cards.ts';
+import { landsOn, type CardRules } from '../../rules/cards.ts';
 import type { Act } from '../data/api.ts';
-import { landing, lengthOf } from './land.ts';
+import { landing, landingOn, lengthOf } from './land.ts';
 import type { CardPlay } from './types.ts';
 
 const rules = (key: string, stack?: number): Pick<CardRules, 'key' | 'stack' | 'canApply'> => {
   const own = { key, ...(stack === undefined ? {} : { stack }) };
-  return { ...own, canApply: (target, effects) => landsOnPost(own, target, effects) };
+  return { ...own, canApply: (target, effects) => landsOn(own, target, effects) };
 };
 const post = (body: unknown, kind: Act['kind'] = 'post'): Act => ({
   id: 'p1', character: 'c1', kind, thread: 't1', targetActId: null, seq: 1, createdAt: '2026-10-29T21:00:00Z',
@@ -51,9 +51,9 @@ describe('wards, backs and catches, as a screen offers a card', () => {
   const setLasts = { unit: 'day' as const, count: 7 };
   const at = new Date().toISOString();
   const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('kb:card-back', 1), id: 'back', faceDown: true, playedAt: at, ...over });
-  const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', ward: true, lasts: setLasts, priceKey: 'x', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e) => landsOnPost({ key: 'shield' }, t, e) };
+  const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', ward: true, lasts: setLasts, priceKey: 'x', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e) => landsOn({ key: 'shield' }, t, e) };
   const snare: CardRules = { ...shield, key: 'snare', name: 'Snare', play: 'set', ward: undefined, lasts: undefined, trap: { trigger: { on: 'cast' }, outcome: { do: 'nullify' } }, canApply: () => ({ ok: true, value: undefined }) };
-  const blot: CardRules = { ...shield, key: 'blot', name: 'Blot', rarity: 'common', play: undefined, ward: undefined, lasts: undefined, canApply: (t, e) => landsOnPost({ key: 'blot' }, t, e) };
+  const blot: CardRules = { ...shield, key: 'blot', name: 'Blot', rarity: 'common', play: undefined, ward: undefined, lasts: undefined, canApply: (t, e) => landsOn({ key: 'blot' }, t, e) };
   const cards = [shield, snare, blot];
   const ward = (ends: string): CardPlay => ({ ...play('shield', 1), ends });
 
@@ -71,5 +71,33 @@ describe('wards, backs and catches, as a screen offers a card', () => {
 
   test('a caught play holds no place in its card\'s stack', () => {
     expect(landing(blot, post('hi'), [{ ...play('blot', 1), caught: 'back' }], { cards, setLasts }).ok).toBe(true);
+  });
+});
+
+/* Reach (docs/plans/2026-11-01-card-reach-plan.md, Task 1): a card beyond a post is offered on the targets its reaches list, its
+   stack counts that target's plays alone, and a board takes one board card at a time. */
+describe('where a card beyond a post is offered', () => {
+  const setLasts = { unit: 'day' as const, count: 7 };
+  const lasts = { unit: 'day' as const, count: 1 };
+  const reaching = (key: string, reaches: CardRules['reaches']): CardRules => ({
+    key, name: key, alignment: 'pepperoni', rarity: 'legendary', reaches, lasts, priceKey: 'x', playPrice: () => 0,
+    validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e) => landsOn({ key, reaches }, t, e),
+  });
+  const glitter = reaching('glitter', ['character']);
+  const quake = reaching('quake', ['board']);
+  const cards = [glitter, quake];
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  const on = (card: string, ends: string): CardPlay => ({ ...play(card, 1), ends });
+
+  test('a character card on a character, never on a post', () => {
+    expect(landingOn(glitter, { reach: 'character', character: 'c1' }, [], { cards, setLasts }).ok).toBe(true);
+    expect(landing(glitter, post('hi'), [], { cards, setLasts })).toEqual({ ok: false, why: 'this card lands on a character' });
+    expect(landingOn(glitter, { reach: 'character', character: 'c1' }, [on('glitter', soon)], { cards, setLasts })).toEqual({ ok: false, why: 'this character already carries that card' });
+    expect(landingOn(glitter, { reach: 'character', character: 'c1' }, [on('glitter', '2020-01-01T00:00:00Z')], { cards, setLasts }).ok).toBe(true);
+  });
+
+  test('a board card where no board card is live', () => {
+    expect(landingOn(quake, { reach: 'board', board: 'b1' }, [on('other', '2099-03-04T05:06:07Z')], { cards, setLasts })).toEqual({ ok: false, why: 'this board already carries a board card until 2099-03-04 05:06 UTC' });
+    expect(landingOn(quake, { reach: 'board', board: 'b1' }, [], { cards, setLasts }).ok).toBe(true);
   });
 });

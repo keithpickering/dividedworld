@@ -13,7 +13,7 @@ import { instanceProblems, withOverrides } from '../../../engine/rules/instance.
 import { defaults as settings } from '../settings.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
 
-const post = (length: number): CardTarget => ({ act: 'p1', kind: 'post', length });
+const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length });
 
 test('the instance sells its cards at their prices', () => {
   assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25]]);
@@ -73,7 +73,7 @@ test('a card lands on a post up to its stack: Stick Around once, Whoops! three t
   assert.deepEqual(whoops.canApply(post(10), w(3)), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
   assert.equal(whoops.canApply(post(10), [...w(2), { card: 'stick-around', act: 's' }]).ok, true, 'another card is not counted');
   assert.deepEqual(stickAround.canApply(post(10), [{ card: 'stick-around', act: 's' }]), { ok: false, why: 'this post already carries that card' });
-  assert.equal(stickAround.canApply({ act: 'p1', kind: 'edit', length: 10 }, []).ok, false);
+  assert.equal(stickAround.canApply({ reach: 'post', act: 'p1', kind: 'edit', length: 10 }, []).ok, false);
   assert.equal(whoops.stack, 3);
   assert.equal(whoops.seeded, true, 'each splat is drawn from a seed the server chooses');
   assert.equal(stickAround.stack ?? 1, 1);
@@ -171,7 +171,7 @@ test('Bluff\'s and Trap Card\'s Set requests are the same but for the card key, 
   assert.ok(trap.ok && bluff.ok);
   assert.deepEqual({ ...trap, args: { ...trap.args, card: null } }, { ...bluff, args: { ...bluff.args, card: null } });
   assert.equal(trap.ok && trap.asService, true, 'written by the service, so the key reaches SQL and no client');
-  const target = { act: 'p', kind: 'post' as const, length: 10 };
+  const target = { reach: 'post' as const, act: 'p', kind: 'post' as const, length: 10 };
   assert.deepEqual(decideSet(by('trap-card'), settings, target, [], {}, cards), decideSet(by('bluff'), settings, target, [], {}, cards));
 });
 const by = (key: string) => cards.find((c) => c.key === key)!;

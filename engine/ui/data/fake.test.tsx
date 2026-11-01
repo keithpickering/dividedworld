@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
+import type { CardTarget } from '../../rules/cards.ts';
 import type { Act, Refusal, Tally } from './api.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 import { LOG_ROWS, micros } from './log-page.ts';
@@ -15,7 +16,7 @@ const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
-  invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 },
+  invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
   postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, cardSettings: {}, economy: {}, ...systemSettings,
 };
 
@@ -913,8 +914,8 @@ describe('the Vending Machine and a card play, refused as the server refuses the
   /* One salty card at 1.00, and a long post costs 0.50 more: the rules the server prices a play by (engine/rules/cards.ts). */
   const splat = {
     key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', stack: 2,
-    playPrice: (_s: Settings, t: { length: number }) => (t.length > 20 ? 50 : 0),
-    canApply: (t: { kind: string }, on: readonly { card: string | null }[]) => (t.kind !== 'post' ? refused2('a card lands on a post') : on.length >= 2 ? refused2('this post already carries 2 of that card, the most it takes') : { ok: true as const, value: undefined }),
+    playPrice: (_s: Settings, t: CardTarget) => (t.reach === 'post' && t.length > 20 ? 50 : 0),
+    canApply: (t: CardTarget, on: readonly { card: string | null }[]) => (t.reach !== 'post' || t.kind !== 'post' ? refused2('a card lands on a post') : on.length >= 2 ? refused2('this post already carries 2 of that card, the most it takes') : { ok: true as const, value: undefined }),
     validateConfig: (c: unknown) => ([undefined, 'red'].includes((c as { color?: unknown } | undefined)?.color as string | undefined) ? { ok: true as const, value: c ?? {} } : refused2('the ink is red')),
   };
   const refused2 = (why: string) => ({ ok: false as const, why });
@@ -1107,7 +1108,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
   /* One salty card at 1.00 that costs 0.50 more on a long post, as the Vending Machine's tests above price it. */
   const splat = {
     key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', stack: 2,
-    playPrice: (_s: Settings, t: { length: number }) => (t.length > 20 ? 50 : 0),
+    playPrice: (_s: Settings, t: CardTarget) => (t.reach === 'post' && t.length > 20 ? 50 : 0),
     canApply: () => ({ ok: true as const, value: undefined }),
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };

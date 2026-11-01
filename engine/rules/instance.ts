@@ -8,7 +8,7 @@ import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
-import { INT4_MAX, OUTCOMES, PLAYS, RARITIES, TRIGGERS, atOrBelow } from './cards.ts';
+import { BEYOND_POST, INT4_MAX, OUTCOMES, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
 
 /**
@@ -71,6 +71,16 @@ function phasesRule(v: unknown): string | null {
 }
 const whole = (min: number, what: string, most?: number) => (v: unknown): string | null => (isWhole(v, min) && (most === undefined || v <= most) ? null : `a whole number of ${what}, at least ${min}${most === undefined ? '' : ` and at most ${most}`}`);
 
+/** A setting that gives each reach beyond a post (character, thread, board) one value, and nothing else. */
+function perReach(holds: (v: unknown) => boolean, shape: string) {
+  return (v: unknown): string | null => {
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+    const given = v as Record<string, unknown>;
+    const keys = Object.keys(given);
+    return keys.length === BEYOND_POST.length && BEYOND_POST.every((r) => r in given && holds(given[r])) ? null : shape;
+  };
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -96,6 +106,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   // At least 10, so no instance is polled into load; at most 300, so the window still means something.
   presencePollSeconds: (v) => (isWhole(v, 10) && (v as number) <= 300 ? null : 'a whole number of seconds from 10 to 300'),
   setLasts: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
+  reachRarity: perReach((r) => RARITIES.includes(r as never), 'an object giving character, thread and board each a rarity (common, uncommon, rare or legendary)'),
+  reachLasts: perReach((r) => isSpan(r), 'an object giving character, thread and board each a span: a unit of day, week or month and a whole count from 1 to 1000'),
   economy: namedNumbers,
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
@@ -162,7 +174,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
-    out.push(...playProblems(c, instance.cards));
+    out.push(...playProblems(c, instance.cards), ...reachProblems(c, instance.settings));
   }
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
@@ -243,7 +255,8 @@ function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
   if (c.ward !== undefined && play !== 'use') out.push(`${who} is a ward, and only a Use card is`);
   if (c.ward !== undefined && c.ward !== true) out.push(`${who} is a ward of ${JSON.stringify(c.ward)}; a ward is true or left out`);
   if (c.ward === true && play === 'use' && c.lasts === undefined) out.push(`${who} is a ward with no time up (lasts); a ward ends at its time`);
-  if (c.lasts !== undefined && play !== 'use') out.push(`${who} has a time up (lasts), and only a Use card does`);
+  const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
+  if (c.lasts !== undefined && play !== 'use' && !beyond) out.push(`${who} has a time up (lasts), and only a Use card or a card reaching beyond a post does`);
   if (c.lasts !== undefined && !isSpan(c.lasts)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000`);
   const trap = c.trap;
   if (trap !== undefined) {
@@ -259,6 +272,37 @@ function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
       const struck = cards.find((k) => k.key === outcome!.card);
       if (!struck) out.push(`${who} strikes with ${JSON.stringify(outcome!.card)}, which the instance does not have`);
       else if (RARITIES.includes(struck.rarity) && RARITIES.includes(c.rarity) && !atOrBelow(struck.rarity, c.rarity)) out.push(`${who} strikes with "${struck.key}", which is ${struck.rarity}, rarer than the trap (${c.rarity})`);
+    }
+  }
+  return out;
+}
+
+const spanWords = (s: Span): string => `${s.count} ${s.unit}${s.count === 1 ? '' : 's'}`;
+
+/**
+ * A card's reaches (the card mechanic's design, section 7), each refused naming the card: a list of the four reaches, each once;
+ * none beyond its rarity's (`reachRarity`); a time up for every card beyond a post, at most its reach's bound (`reachLasts`); and
+ * a Set on a post alone. seed_instance (supabase/migrations/0055_card_reach.sql) holds the same.
+ */
+function reachProblems(c: CardRules, settings: Settings): string[] {
+  if (c.reaches === undefined) return [];
+  const who = `card "${c.key}"`;
+  const reaches = c.reaches as readonly unknown[];
+  if (!Array.isArray(reaches) || !reaches.length || reaches.some((r) => !REACHES.includes(r as never)) || new Set(reaches).size !== reaches.length) {
+    return [`${who} reaches ${JSON.stringify(c.reaches)}; a card reaches a list of post, character, thread or board, each once`];
+  }
+  const out: string[] = [];
+  const beyond = c.reaches.filter((r) => r !== 'post') as (typeof BEYOND_POST)[number][];
+  if ((c.play ?? 'cast') === 'set' && beyond.length) out.push(`${who} is set face down, and a Set lands only on a post`);
+  if (beyond.length && c.lasts === undefined) out.push(`${who} reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time`);
+  const least = settings?.reachRarity;
+  const longest = settings?.reachLasts;
+  for (const r of beyond) {
+    const floor = least?.[r];
+    if (RARITIES.includes(floor) && RARITIES.includes(c.rarity) && !atOrBelow(floor, c.rarity)) out.push(`${who} reaches a ${r}, which takes a card of ${floor} or rarer; it is ${c.rarity}`);
+    const bound = longest?.[r];
+    if (c.lasts !== undefined && isSpan(c.lasts) && bound !== undefined && isSpan(bound) && spanMs(c.lasts) > spanMs(bound)) {
+      out.push(`${who} lasts ${spanWords(c.lasts)}, longer than a ${r} effect may (reachLasts.${r}, ${spanWords(bound)})`);
     }
   }
   return out;

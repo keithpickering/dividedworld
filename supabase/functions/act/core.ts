@@ -13,7 +13,7 @@
  * PostgREST's detail, which can quote a row, nor a constraint's or a table's name.
  */
 import { decide } from '../../../engine/rules/actions.ts';
-import { basePrice, casterMessage, decidePlay, decideSet, decideUse, type CardEffect, type CardTarget } from '../../../engine/rules/cards.ts';
+import { basePrice, casterMessage, decidePlay, decideSet, decideUse, type CardEffect, type PostTarget } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, postgrest, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -122,8 +122,10 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     const tuned = decision.rpc === 'buy_card' || decision.needsTarget ? await withDatabaseSettings(instance, dbs.service) : instance;
     if (decision.rpc === 'buy_card') args = { ...args, price: basePrice(tuned.cards.find((c) => c.key === decision.args.card)!, tuned.settings) };
     if (decision.needsTarget) {
-      const target = await dbs.player.rpc<(CardTarget & { effects: CardEffect[] }) | null>('card_target', { target: decision.args.target });
-      if (!target) return refused('target', 'there is no such post');
+      const read = await dbs.player.rpc<(Omit<PostTarget, 'reach'> & { effects: CardEffect[] }) | null>('card_target', { target: decision.args.target });
+      if (!read) return refused('target', 'there is no such post');
+      // An act from before 0055 names no reach; every play read here is on a post.
+      const target = { ...read, reach: 'post' as const };
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
       if (decision.play === 'set') {
         // A strike's configuration is the struck card's, checked by that card's own rules.

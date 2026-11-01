@@ -56,6 +56,8 @@ const settings: Settings = {
   moveExpiryLeastHours: 24,
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
   setLasts: { unit: 'day', count: 7 },
+  reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
+  reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
 };
 
 const bot: ModBotPersona = {
@@ -533,7 +535,7 @@ test('a trap is a Set card\'s, and a ward and a time up are a Use card\'s', () =
   assert.match(instanceProblems(withCards({ ward: true })).join('\n'), /card "splat" is a ward, and only a Use card is/);
   assert.match(instanceProblems(withCards({ play: 'use', ward: 'yes' })).join('\n'), /card "splat" is a ward of "yes"; a ward is true or left out/);
   assert.match(instanceProblems(withCards({ play: 'use', ward: true })).join('\n'), /card "splat" is a ward with no time up \(lasts\); a ward ends at its time/);
-  assert.match(instanceProblems(withCards({ play: 'set', lasts: { unit: 'day', count: 7 } })).join('\n'), /card "splat" has a time up \(lasts\), and only a Use card does/);
+  assert.match(instanceProblems(withCards({ play: 'set', lasts: { unit: 'day', count: 7 } })).join('\n'), /card "splat" has a time up \(lasts\), and only a Use card or a card reaching beyond a post does/);
   assert.match(instanceProblems(withCards({ play: 'use', lasts: { unit: 'hour', count: 7 } })).join('\n'), /card "splat" lasts .*; it must be a span/);
   assert.match(instanceProblems(withCards({ play: 'deal' })).join('\n'), /card "splat" is played "deal"; a card is cast, used, set or kept/);
 });
@@ -576,4 +578,44 @@ test('in this part, Nullify springs on any trigger, Pay out only on a cast, and 
   for (const on of ['reaction', 'reply', 'quote']) assert.match(instanceProblems(trap(on, { do: 'payout' })).join('\n'), /card "splat" pays out on a \w+; it pays out only on a cast, since only a cast is paid for/, on);
   for (const on of ['reply', 'quote']) assert.deepEqual(instanceProblems(trap(on, { do: 'strike', card: 'blot' })), [], on);
   for (const on of ['cast', 'reaction']) assert.match(instanceProblems(trap(on, { do: 'strike', card: 'blot' })).join('\n'), /card "splat" strikes on a \w+; a strike lays its card on a reply or a quote, until cards reach characters/, on);
+});
+
+// Reach (docs/plans/2026-11-01-card-reach-plan.md, Task 1): each refused, naming the card.
+test('a card reaches no further than its rarity allows', () => {
+  const lasts = { unit: 'day', count: 1 };
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['character'], lasts })), []);
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'legendary', reaches: ['post', 'board'], lasts })), []);
+  assert.match(instanceProblems(withCards({ rarity: 'common', reaches: ['character'], lasts })).join('\n'), /card "splat" reaches a character, which takes a card of uncommon or rarer; it is common/);
+  assert.match(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['post', 'thread'], lasts })).join('\n'), /card "splat" reaches a thread, which takes a card of rare or rarer; it is uncommon/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', reaches: ['board'], lasts })).join('\n'), /card "splat" reaches a board, which takes a card of legendary or rarer; it is rare/);
+});
+
+test('a card\'s reaches are a list of a post, a character, a thread or a board', () => {
+  for (const bad of [[], ['room'], 'post', ['post', 'post']]) {
+    assert.match(instanceProblems(withCards({ reaches: bad })).join('\n'), /card "splat" reaches .*; a card reaches a list of post, character, thread or board, each once/, JSON.stringify(bad));
+  }
+  assert.deepEqual(instanceProblems(withCards({ reaches: ['post'] })), []);
+});
+
+test('a card beyond a post ends at its time, and no later than its reach\'s bound', () => {
+  assert.match(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['character'] })).join('\n'), /card "splat" reaches beyond a post with no time up \(lasts\); every effect beyond a post ends at its time/);
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'week', count: 1 } })), []);
+  assert.match(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'day', count: 8 } })).join('\n'), /card "splat" lasts 8 days, longer than a character effect may \(reachLasts\.character, 7 days\)/);
+  assert.match(instanceProblems(withCards({ rarity: 'legendary', reaches: ['thread', 'board'], lasts: { unit: 'week', count: 1 } })).join('\n'), /card "splat" lasts 1 week, longer than a thread effect may \(reachLasts\.thread, 1 day\)/);
+});
+
+test('a Set lands on a post alone', () => {
+  assert.match(instanceProblems(withCards({ rarity: 'legendary', play: 'set', reaches: ['post', 'board'], lasts: { unit: 'day', count: 1 } })).join('\n'), /card "splat" is set face down, and a Set lands only on a post/);
+});
+
+test('each reach\'s least rarity and longest time are settings', () => {
+  const { reachRarity: _r, reachLasts: _l, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "reachRarity" is missing/);
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "reachLasts" is missing/);
+  for (const bad of [{ character: 'uncommon', thread: 'rare' }, { character: 'mythic', thread: 'rare', board: 'legendary' }, ['rare'], 'rare', { character: 'uncommon', thread: 'rare', board: 'legendary', room: 'rare' }]) {
+    assert.match(settingsProblems({ ...settings, reachRarity: bad as never }).join('\n'), /setting "reachRarity" .*; it must be an object giving character, thread and board each a rarity/, JSON.stringify(bad));
+  }
+  for (const bad of [{ character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 } }, { character: { unit: 'minute', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, 7]) {
+    assert.match(settingsProblems({ ...settings, reachLasts: bad as never }).join('\n'), /setting "reachLasts" .*; it must be an object giving character, thread and board each a span/, JSON.stringify(bad));
+  }
 });

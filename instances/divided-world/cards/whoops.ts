@@ -17,7 +17,7 @@
  * there can be fits the database's bound on it (effect_state, supabase/migrations/0006_cards.sql),
  * which cards.test.ts measures as Postgres writes it.
  */
-import { basePrice, color, economyOf, landsOnPost, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import { basePrice, color, economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 
 export const STROKES = { most: 200, points: 500, totalPoints: 12_000, widest: 64, deepest: 64 } as const;
 const thousandth = (n: number) => Math.round(n * 1000) / 1000;
@@ -35,10 +35,11 @@ export const whoops: CardRules<{ color: string }> = {
   /** A layer counts as washed clean at this share of it, in whole percent (the effect's, read by the screens). */
   screenReads: [{ key: 'whoops.clean', whole: true, min: 1, max: 100 }],
   reads: [{ key: 'whoops.perLength', whole: true, min: 0 }, { key: 'whoops.lengthStep', whole: true, min: 1 }, { key: 'whoops.mostInAll', whole: true, min: 1 }],
-  playPrice: (settings, target) =>
+  // Whoops! lands on a post alone, so a target that is none is priced nothing; landsOn refuses it first.
+  playPrice: (settings, target) => target.reach !== 'post' ? 0 :
     Math.max(0, Math.min(economyOf(settings, 'whoops.perLength') * Math.floor(target.length / economyOf(settings, 'whoops.lengthStep')),
       economyOf(settings, 'whoops.mostInAll') - basePrice(whoops, settings))),
-  canApply: (target, effects) => landsOnPost(whoops, target, effects),
+  canApply: (target, effects) => landsOn(whoops, target, effects),
   // Only the ink is the caster's: anything else sent (a seed among them) is not kept.
   validateConfig: (config) => {
     const ink = color(typeof config === 'object' && config !== null ? (config as { color?: unknown }).color : undefined);

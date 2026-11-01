@@ -8,7 +8,7 @@
  * follows them from a phone to a desktop; breaking free lasts the visit, and is not kept
  * (the screens' design, sections 6 and 10).
  */
-import { landsOnPost, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import { landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 
 const DEFAULT_SENTENCE = 'I legally certify that I have read this post in full and thought about it contemplatively';
 const MOST = 200;
@@ -20,7 +20,7 @@ export const stickAround: CardRules<{ sentence: string }> = {
   rarity: 'common',
   priceKey: 'stickAround.price',
   playPrice: () => 0,
-  canApply: (target, effects) => landsOnPost(stickAround, target, effects),
+  canApply: (target, effects) => landsOn(stickAround, target, effects),
   validateConfig: (config) => {
     const given = typeof config === 'object' && config !== null ? (config as { sentence?: unknown }).sentence : undefined;
     if (given === undefined) return ok({ sentence: DEFAULT_SENTENCE });

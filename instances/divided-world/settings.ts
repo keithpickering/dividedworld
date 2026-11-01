@@ -90,6 +90,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   presencePollSeconds: 30,
   /** A card set face down stays set a week if nothing springs it (the card mechanic's design, section 3). */
   setLasts: { unit: 'day', count: 7 },
+  /** A card reaches a character from uncommon, a thread from rare and a board only as a legendary (the card mechanic's design, section 7). */
+  reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
+  /** A character effect lasts at most a week; a thread's and a board's at most a day. */
+  reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
   /** The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone. */
   cardSettings: { 'whoops.clean': 95 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */

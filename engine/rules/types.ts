@@ -9,7 +9,7 @@
  * Aura is an integer count of hundredths of an orb wherever it is stored or returned. Times
  * are epoch milliseconds.
  */
-import type { CardRules } from './cards.ts';
+import type { BeyondPost, CardRules, Rarity } from './cards.ts';
 import type { StockLineKey } from '../system/stock.ts';
 import type { Duty } from '../system/duties.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
@@ -106,6 +106,13 @@ export interface Settings {
    * back's end says nothing about which card it is (the card mechanic's design, section 3).
    */
   readonly setLasts: Span;
+  /**
+   * The least rarity a card must be to reach beyond a post, per reach (the card mechanic's design, section 7): a card reaching
+   * further than its rarity allows is refused at seeding (instanceProblems, seed_instance).
+   */
+  readonly reachRarity: Readonly<Record<BeyondPost, Rarity>>;
+  /** The longest a play beyond a post lasts, per reach: a card's own `lasts` is at most this, and every such effect ends on its timer. */
+  readonly reachLasts: Readonly<Record<BeyondPost, Span>>;
   /**
    * The numbers a card gives the screens, each named by the instance ("whoops.clean"): a card's effect
    * decides something on the client (how much of a layer counts as washed clean), so the number is one the

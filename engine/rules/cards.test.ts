@@ -1,22 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, atOrBelow, decidePlay, decideSet, decideUse, landsOnPost, ok, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, atOrBelow, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
 const base = { alignment: 'salty' as const, priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
-const cast = (key: string, rarity: CardRules['rarity']): CardRules => ({ ...base, key, name: `Test ${key}`, rarity, canApply: (t, e) => landsOnPost({ key }, t, e) });
+const cast = (key: string, rarity: CardRules['rarity']): CardRules => ({ ...base, key, name: `Test ${key}`, rarity, canApply: (t, e) => landsOn({ key }, t, e) });
 const plain = cast('plain', 'common');
 const grand = cast('grand', 'legendary');
-const shield: CardRules = { ...base, key: 'shield', name: 'Test Shield', rarity: 'uncommon', play: 'use', ward: true, lasts: { unit: 'day', count: 7 }, canApply: (t, e) => landsOnPost({ key: 'shield' }, t, e) };
+const shield: CardRules = { ...base, key: 'shield', name: 'Test Shield', rarity: 'uncommon', play: 'use', ward: true, lasts: { unit: 'day', count: 7 }, canApply: (t, e) => landsOn({ key: 'shield' }, t, e) };
 const snare: CardRules = { ...base, key: 'snare', name: 'Test Snare', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'payout' } }, canApply: () => ok(undefined) };
 const pick = (c: unknown) => (typeof c === 'object' && c !== null && (c as { ink?: unknown }).ink === 'red' ? ok({ ink: 'red' }) : refuse('the ink is red'));
-const inky: CardRules = { ...base, key: 'inky', name: 'Test Inky', rarity: 'common', canApply: (t, e) => landsOnPost({ key: 'inky' }, t, e), validateConfig: pick };
+const inky: CardRules = { ...base, key: 'inky', name: 'Test Inky', rarity: 'common', canApply: (t, e) => landsOn({ key: 'inky' }, t, e), validateConfig: pick };
 const striker: CardRules = { ...base, key: 'striker', name: 'Test Striker', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'reply' }, outcome: { do: 'strike', card: 'inky' } }, canApply: () => ok(undefined) };
 const bluff: CardRules = { ...base, key: 'bluffy', name: 'Test Bluffy', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
 
 const settings = {} as Settings;
-const post: CardTarget = { act: 'p', kind: 'post', length: 10 };
+const post: CardTarget = { reach: 'post', act: 'p', kind: 'post', length: 10 };
 const soon = new Date(Date.now() + 86_400_000).toISOString();
 const gone = new Date(Date.now() - 1000).toISOString();
 const names = (key: string) => ({ shield: 'Test Shield' } as Record<string, string>)[key] ?? key;
@@ -89,4 +89,64 @@ test('a post\'s stack counts the plays still up: an ended Use holds no place', (
   const ended: CardEffect = { card: 'shield', act: 'w', ward: 'uncommon', ends: gone };
   assert.equal(decideUse(shield, settings, post, [ended], {}, '').ok, true);
   assert.equal(decideUse(shield, settings, post, [{ ...ended, ends: soon }], {}, '').ok, false);
+});
+
+// Reach (the card mechanic's design, section 7): a card lands only where its reaches say, its stack counts the effects on that
+// same target, and a board carries one board card at a time.
+const character: CardTarget = { reach: 'character', character: 'c1' };
+const thread: CardTarget = { reach: 'thread', thread: 't1' };
+const board: CardTarget = { reach: 'board', board: 'b1' };
+const reaching = (key: string, reaches: CardRules['reaches'], stack?: number): CardRules => ({
+  ...base, key, name: `Test ${key}`, rarity: 'legendary', reaches, lasts: { unit: 'day', count: 1 }, ...(stack ? { stack } : {}),
+  canApply: (t, e) => landsOn({ key, reaches, stack }, t, e),
+});
+
+test('a card lands only on a reach it lists, a post unless it says', () => {
+  assert.equal(landsOn({ key: 'plain' }, post, []).ok, true);
+  assert.deepEqual(landsOn({ key: 'plain' }, character, []), { ok: false, why: 'this card lands on a post' });
+  const glitter = { key: 'glitter', reaches: ['character'] as const };
+  assert.equal(landsOn(glitter, character, []).ok, true);
+  assert.deepEqual(landsOn(glitter, post, []), { ok: false, why: 'this card lands on a character' });
+  assert.deepEqual(landsOn({ key: 'both', reaches: ['character', 'thread'] }, board, []), { ok: false, why: 'this card lands on a character or a thread' });
+  // An Act that is no post is still no post, whatever the card reaches.
+  assert.deepEqual(landsOn({ key: 'plain' }, { ...post, kind: 'spin' } as CardTarget, []), { ok: false, why: 'a card lands on a post' });
+});
+
+test('a target\'s stack counts only the effects on that same target, never those above it', () => {
+  const glitter = reaching('glitter', ['character', 'post']);
+  // The author's Glitter is above the post, not on it, so the post can still take one.
+  const onAuthor: CardEffect = { card: 'glitter', act: 'g1', reach: 'character', ends: soon };
+  assert.equal(glitter.canApply(post, [onAuthor]).ok, true);
+  assert.deepEqual(glitter.canApply(character, [onAuthor]), { ok: false, why: 'this character already carries that card' });
+  assert.equal(glitter.canApply(character, [{ ...onAuthor, ends: gone }]).ok, true, 'an ended effect holds no place');
+  assert.deepEqual(glitter.canApply(post, [{ card: 'glitter', act: 'g2' }]), { ok: false, why: 'this post already carries that card' });
+});
+
+test('a board carries one board card at a time, refused until it ends', () => {
+  const quake = reaching('quake', ['board']);
+  const other = reaching('tremor', ['board']);
+  const live: CardEffect = { card: 'tremor', act: 'b0', reach: 'board', ends: '2099-03-04T05:06:07.000Z' };
+  assert.deepEqual(quake.canApply(board, [live]), { ok: false, why: 'this board already carries a board card until 2099-03-04 05:06 UTC' });
+  assert.equal(quake.canApply(board, [{ ...live, ends: gone }]).ok, true);
+  assert.equal(other.canApply(board, []).ok, true);
+});
+
+test('a target\'s effects are those above it, board then thread then character, then its own; live ones only above it', () => {
+  const at = (act: string, ends?: string): CardEffect => ({ card: 'k', act, ...(ends ? { ends } : {}) });
+  const above = { board: [at('b', soon)], thread: [at('t', soon), at('t-gone', gone)], character: [at('c', soon)] };
+  const own = [at('p')];
+  assert.deepEqual(effectsOnTarget(post, own, above).map((e) => [e.act, e.reach ?? 'post']), [['b', 'board'], ['t', 'thread'], ['c', 'character'], ['p', 'post']]);
+  assert.deepEqual(effectsOnTarget(character, [at('c')], above).map((e) => e.act), ['b', 't', 'c']);
+  assert.deepEqual(effectsOnTarget(thread, [at('t')], above).map((e) => e.act), ['b', 't']);
+  assert.deepEqual(effectsOnTarget(board, [at('b')], above).map((e) => e.act), ['b']);
+});
+
+test('a ward turns away casts on its own target only, never one on a target beside it', () => {
+  const ward: CardEffect = { card: 'shield', act: 'w', ward: 'legendary', ends: soon, reach: 'character' };
+  // A ward on the author is above the post, not on it.
+  assert.equal(decidePlay(plain, settings, post, [ward], {}, '').ok, true);
+});
+
+test('a card is set face down on a post alone', () => {
+  assert.match((decideSet(snare, settings, character, [], {}, []) as { why: string }).why, /set face down on a post/);
 });

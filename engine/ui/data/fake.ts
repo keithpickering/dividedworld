@@ -20,7 +20,7 @@
  */
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
-import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, type CardEffect, type CardTarget } from '../../rules/cards.ts';
+import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, type CardEffect, type PostTarget } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
@@ -661,7 +661,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
-    const decided = decidePlay(rules, settings, { act: on.id, kind: on.kind as CardTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effects, config, message, { nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
+    const decided = decidePlay(rules, settings, { reach: 'post', act: on.id, kind: on.kind as PostTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effects, config, message, { nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
     if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -726,7 +726,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideSet(rules, settings, { act: on.id, kind: on.kind as CardTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effectsOn(target), config, instance.cards);
+    const decided = decideSet(rules, settings, { reach: 'post', act: on.id, kind: on.kind as PostTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effectsOn(target), config, instance.cards);
     if (!decided.ok) return refuse(decided.why, 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -752,7 +752,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideUse(rules, settings, { act: on.id, kind: on.kind as CardTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effectsOn(target), config, message);
+    const decided = decideUse(rules, settings, { reach: 'post', act: on.id, kind: on.kind as PostTarget['kind'], length: typeof text === 'string' ? [...text].length : 0 }, effectsOn(target), config, message);
     if (!decided.ok) return refuse(decided.why, 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
