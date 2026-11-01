@@ -347,6 +347,12 @@ test('firstBoss must be in the roster, and the roster must hold a Boss', () => {
   assert.match(said(withSystem({ bosses: [], firstBoss: 'boss-a' })), /no Boss/);
 });
 
+test('a feed is read over https: a plain http or malformed address is a problem naming the feed', () => {
+  assert.equal(said(withSystem({ feeds: [{ name: 'Site', url: 'https://example.com/feed.xml' }] })), '');
+  assert.match(said(withSystem({ feeds: [{ name: 'Old Site', url: 'http://example.com/feed.xml' }] })), /feed "Old Site".*https/);
+  assert.match(said(withSystem({ feeds: [{ name: 'Odd', url: 'not a url' }] })), /feed "Odd".*https/);
+});
+
 test('firstStaff must hold at least one key', () => {
   assert.match(said(withSystem({ firstStaff: [] })), /firstStaff.*at least one/);
 });

@@ -232,6 +232,18 @@ export interface Profile {
   readonly signature: string;
 }
 
+/**
+ * What each uuid param of a demand names. The demand catalog (demands.ts) lists its uuid params by name; a name added there
+ * without a role here is red in meeting.test.ts ("Two lists that must agree are one list").
+ */
+export const DEMAND_ID_ROLES: Readonly<Record<string, 'board' | 'thread' | 'character'>> = {
+  board: 'board',
+  thread: 'thread',
+  character: 'character',
+  a: 'character',
+  b: 'character',
+};
+
 export interface RepairContext {
   readonly settings: Settings;
   readonly system: Pick<SystemContent, 'nameStyle' | 'bosses'>;
@@ -244,6 +256,8 @@ export interface RepairContext {
   readonly now: number;
   /** The ids of the boards that exist and are not The System's own. */
   readonly boards: ReadonlySet<string>;
+  /** The ids of the threads the model was given (the digest's), which a demand may name. */
+  readonly threads: ReadonlySet<string>;
   /** Whether a character is debuted and public now, from `public_characters`. */
   readonly isPublic: (character: string) => boolean;
   readonly successorAllowed: boolean;
@@ -272,7 +286,14 @@ export function namedCharacters(raw: unknown): string[] {
   }
   const fav = record(a['profile'])['favorites'];
   if (Array.isArray(fav)) for (const f of fav) if (typeof f === 'string') ids.add(f);
-  return [...ids].filter((id) => UUID.test(id));
+  // A demand's characters are checked as public too.
+  if (Array.isArray(a['moves'])) {
+    for (const m of a['moves']) {
+      const params = record(record(record(m)['demand'])['params']);
+      for (const [name, role] of Object.entries(DEMAND_ID_ROLES)) if (role === 'character' && typeof params[name] === 'string') ids.add(params[name] as string);
+    }
+  }
+  return [...ids].filter((id) => UUID.test(id)).map((id) => id.toLowerCase());
 }
 
 export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
@@ -316,6 +337,14 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     if (!kind) return drop(`${path}.kind`, `oneOf(${MOVE_KINDS.map((k) => k.key).join(', ')})`);
     const demand = demandProblems(m['demand'], s.reactionCap);
     if (!demand.ok) return drop(`${path}.${demand.path}`, demand.predicate);
+    // A demand names things that exist: a board of the meeting's list, a thread the model was given, a character public now.
+    const named = (demand.value as { params: Record<string, unknown> }).params;
+    for (const [name, role] of Object.entries(DEMAND_ID_ROLES)) {
+      if (!(name in named)) continue;
+      const id = String(named[name]);
+      const bad = role === 'board' ? (c.boards.has(id) ? null : 'isBoard') : role === 'thread' ? (c.threads.has(id) ? null : 'isThread') : c.isPublic(id) ? null : 'publicCharacter';
+      if (bad) return drop(`${path}.demand.params.${name}`, bad);
+    }
     // The kind's shape, with a stand-in for the description the old voice writes later.
     const params = moveParamsProblems(kind.key, { ...record(m['params']), description: '-' });
     if (!params.ok) return drop(`${path}.params.${params.path}`, params.predicate);

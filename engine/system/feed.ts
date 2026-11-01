@@ -22,14 +22,63 @@ function decode(text: string): string {
     });
 }
 
+/** The next `<name` at or after `from` whose name ends there (a space, `>` or `/` follows), or -1. */
+function nextOpen(low: string, name: string, from: number): number {
+  for (let i = low.indexOf(`<${name}`, from); i !== -1; i = low.indexOf(`<${name}`, i + 1)) {
+    if (/[\s>/]/.test(low[i + name.length + 1] ?? '')) return i;
+  }
+  return -1;
+}
+
+/** The index of the `</name\s*>` at or after `from`, and the index just past it; null when there is none. */
+function nextClose(low: string, name: string, from: number): [number, number] | null {
+  for (let i = low.indexOf(`</${name}`, from); i !== -1; i = low.indexOf(`</${name}`, i + 1)) {
+    let j = i + name.length + 2;
+    while (j < low.length && /\s/.test(low[j]!)) j++;
+    if (low[j] === '>') return [i, j + 1];
+  }
+  return null;
+}
+
+/** The text of the first `<title>` between `from` and `to`, or null; also by indexOf, so a body of unclosed titles is read once. */
+function innerTitle(low: string, xml: string, from: number, to: number): string | null {
+  const open = nextOpen(low, 'title', from);
+  if (open === -1 || open >= to) return null;
+  const end = low.indexOf('>', open);
+  if (end === -1 || end >= to) return null;
+  const close = nextClose(low, 'title', end + 1);
+  return close && close[1] <= to ? xml.slice(end + 1, close[0]) : null;
+}
+
 export function feedTitles(xml: string, limit: number, most = 200): string[] {
   const out: string[] = [];
-  // Items, or entries, in document order; a title is the first <title> inside one.
-  const item = /<(item|entry)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
-  for (let m: RegExpExecArray | null; out.length < limit && (m = item.exec(xml)); ) {
-    const t = /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(m[2]!);
-    if (!t) continue;
-    const inner = t[1]!.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_w, c: string) => c.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
+  // A linear scan, not a pattern: a feed of unclosed tags must not cost more than its length. Names are matched on an
+  // ASCII-lowered copy, which keeps every index the same.
+  const low = xml.replace(/[A-Z]/g, (c) => c.toLowerCase());
+  const names = ['item', 'entry'] as const;
+  const next: number[] = [-2, -2];
+  let pos = 0;
+  while (out.length < limit) {
+    // The next opening tag of either name, in document order; each name's position is looked for again only once passed.
+    let which = -1;
+    for (let k = 0; k < 2; k++) {
+      if (next[k]! !== -1 && next[k]! < pos) next[k] = nextOpen(low, names[k]!, pos);
+      if (next[k]! === -2) next[k] = nextOpen(low, names[k]!, pos);
+      if (next[k]! !== -1 && (which === -1 || next[k]! < next[which]!)) which = k;
+    }
+    if (which === -1) break;
+    const name = names[which]!;
+    const open = next[which]!;
+    const tagEnd = low.indexOf('>', open);
+    if (tagEnd === -1) break;
+    const close = nextClose(low, name, tagEnd + 1);
+    // An opening tag with no close after it has no close for any later one of its name either.
+    if (!close) break;
+    pos = close[1];
+    // A title is the first <title> inside the item or entry.
+    const t = innerTitle(low, xml, tagEnd + 1, close[0]);
+    if (t === null) continue;
+    const inner = t.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_w, c: string) => c.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
     const title = decode(inner.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
     if (title !== '') out.push(title.length > most ? title.slice(0, most) : title);
   }

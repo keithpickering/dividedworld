@@ -20,3 +20,17 @@ test('Atom entries are read, the list and each title are capped, and a title tha
   assert.deepEqual(feedTitles('not xml at all', 5), []);
   assert.deepEqual(feedTitles('<item><title>&#0;&#xD800;</title></item>', 5), []);
 });
+
+test('a feed of unclosed tags is read in linear time and yields nothing', () => {
+  const xml = '<item>'.repeat(60000);
+  const started = performance.now();
+  assert.deepEqual(feedTitles(xml, 10), []);
+  assert.ok(performance.now() - started < 200, `took ${performance.now() - started} ms`);
+});
+
+test('an item of unclosed titles is read in linear time too', () => {
+  const xml = `<item>${'<title>'.repeat(60000)}</item>`;
+  const started = performance.now();
+  assert.deepEqual(feedTitles(xml, 10), []);
+  assert.ok(performance.now() - started < 200);
+});

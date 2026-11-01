@@ -28,6 +28,9 @@ declare
   who text;
   q record;
   mt meetings%rowtype;
+  hidden uuid;
+  pl jsonb;
+  m8 bigint; m9 bigint;
 begin
   select id into general from boards where slug = 'general';
   insert into characters (name, staff, staff_kind, debuted_at) values ('Mt Boss', 'mt-boss', 'boss', now()), ('Mt Other', 'mt-other', 'boss', now());
@@ -60,6 +63,7 @@ begin
     raise exception 'a refused apply left something behind';
   end if;
 
+  -- (The first apply of a Boss with no bank row is checked below, with mt-other.)
   -- apply: two moves from a bank of three; the first asked for an hour from now, which a structural move's hold raises.
   insert into move_bank (staff, balance, as_of) values ('mt-boss', 3, now());
   r := apply_meeting(m1, pg_temp.payload('mt-boss', jsonb_build_array(
@@ -162,6 +166,33 @@ begin
   begin truncate meetings cascade; exception when sqlstate 'P0001' then denied := true; end;
   if not denied then raise exception 'meetings was truncated'; end if;
 
+  -- A favorite, an opinion and a grudge in the memory name debuted public characters only; the database keeps the filter whatever the caller sent.
+  insert into characters (name, staff, staff_kind) values ('Mt Hidden', 'mt-hidden', 'bot');
+  select id into hidden from characters where staff = 'mt-hidden';
+  m8 := (begin_meeting(slot1 + interval '20 days') ->> 'meeting')::bigint;
+  pl := pg_temp.payload('mt-boss', '[]', 'filtered');
+  pl := jsonb_set(pl, '{profile,favorites}', jsonb_build_array(boss_char, hidden, boss_char));
+  pl := jsonb_set(pl, '{memory,opinions}', jsonb_build_array(jsonb_build_object('character', boss_char, 'score', 2, 'note', 'fine'), jsonb_build_object('character', hidden, 'score', 5, 'note', 'secret')));
+  pl := jsonb_set(pl, '{memory,grudges}', jsonb_build_array(jsonb_build_object('character', hidden, 'score', -5, 'note', 'secret')));
+  perform apply_meeting(m8, pl);
+  if (select favorites from staff_profiles where meeting = m8) is distinct from array[boss_char] then raise exception 'a favorite who is not public was written: %', (select favorites from staff_profiles where meeting = m8); end if;
+  if (select jsonb_array_length(body -> 'opinions') from staff_memory where meeting = m8) is distinct from 1 or (select jsonb_array_length(body -> 'grudges') from staff_memory where meeting = m8) is distinct from 0 then
+    raise exception 'an opinion or grudge naming a character who is not public was written: %', (select body from staff_memory where meeting = m8);
+  end if;
+
+  -- A structural hold that is not set is an error, not a hold of zero: unset raises, and so does a JSON null (which would drop the hold in silence).
+  m9 := (begin_meeting(slot1 + interval '21 days') ->> 'meeting')::bigint;
+  update settings set value = 'null' where key = 'structuralHoldHours';
+  denied := false;
+  begin perform apply_meeting(m9, pg_temp.payload('mt-boss', '[]', 'no hold')); exception when sqlstate '22023' then denied := true; end;
+  if not denied then raise exception 'a meeting was applied with a null structuralHoldHours'; end if;
+  delete from settings where key = 'structuralHoldHours';
+  denied := false;
+  begin perform apply_meeting(m9, pg_temp.payload('mt-boss', '[]', 'no hold')); exception when sqlstate 'P0002' then denied := true; end;
+  if not denied then raise exception 'a meeting was applied with no structuralHoldHours'; end if;
+  insert into settings (key, value) values ('structuralHoldHours', '24');
+  perform fail_meeting(m9, 'failed', 'x');
+
   -- Clients cannot call any of it; the service role can.
   foreach who in array array['anon', 'authenticated'] loop
     perform set_config('role', who, true);
@@ -192,6 +223,11 @@ begin
     perform tests.unbecome();
   end loop;
   perform set_config('role', 'service_role', true);
+  denied := false;
+  begin perform close_meeting(m1, 'failed', 'x', null, null, '{}'); exception when insufficient_privilege then denied := true; end;
+  if not denied then raise exception 'the service role can close a meeting directly'; end if;
+  perform tests.unbecome();
+  perform set_config('role', 'service_role', true);
   perform begin_meeting(slot1 + interval '8 days');
   perform meeting_context();
   perform tests.unbecome();
@@ -204,6 +240,15 @@ begin
   perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('staff', '[]'::jsonb, 'firstStaff', '[]'::jsonb, 'firstBoss', 'mt-boss')));
   if current_boss() is distinct from 'mt-other' then raise exception 'a reseed changed a season''s Boss'; end if;
+
+  -- A Boss with no bank row gets one at its first successful apply: the bank was empty, so nothing could be spent, and the row holds zero as of now.
+  if exists (select 1 from move_bank where staff = 'mt-other') then raise exception 'the test expects mt-other to have no bank row'; end if;
+  m9 := (begin_meeting(slot1 + interval '22 days') ->> 'meeting')::bigint;
+  r := apply_meeting(m9, pg_temp.payload('mt-other', '[]'));
+  if (select balance from move_bank where staff = 'mt-other') is distinct from 0::numeric or (select now() - as_of from move_bank where staff = 'mt-other') > interval '1 minute' then
+    raise exception 'a Boss with no bank row did not get one: %', (select to_jsonb(b) from move_bank b where staff = 'mt-other');
+  end if;
+  if (select bank_before || ',' || bank_after from meetings where id = m9) is distinct from '0,0' then raise exception 'the closed row of the first apply: %', (select to_jsonb(x) from meetings x where id = m9); end if;
 
   -- The schedule is the settings trigger's: a meetingCron write reschedules.
   if (select count(*) from pg_trigger where tgname = 'settings_reschedule_meeting' and not tgisinternal) is distinct from 1::bigint then raise exception 'meetingCron does not reschedule the meeting'; end if;

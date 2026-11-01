@@ -6,11 +6,14 @@
 --
 --   begin_meeting(slot)      opens the row for the scheduled minute the cron fired for (`slot`, unique: as settle's `until`), or
 --                            says the slot was already met (its row is closed), or hands back the row of a run that began and
---                            never closed (a crash), so a retry reuses it. It also closes, as `failed`, any earlier row that
---                            was never closed, so a crash counts toward the consecutive failures.
+--                            never closed, so a retry reuses it. A run that throws closes its own row `failed` with the error
+--                            (best effort, in meet/core.ts) and rethrows, so `resumed` follows only a run whose close failed too
+--                            (or that was killed). It also closes, as `failed`, any earlier row that was never closed, so even
+--                            that counts toward the consecutive failures.
 --   apply_meeting(m, body)   one transaction, under an advisory lock on the meeting: refuses a closed meeting (`already applied`),
 --                            else writes the Boss's memory and profile versions, queues the moves, debits the bank and closes
---                            the row `ok`. A retry therefore cannot queue a move twice.
+--                            the row `ok`. A retry therefore cannot queue a move twice. Favorites, opinions and grudges name
+--                            debuted public characters only: the others are filtered out here, whatever the caller sent.
 --   fail_meeting(m, how, e)  closes the row `failed`, `rejected` or `off` with nothing else written.
 --
 -- A closed row never changes. The guard on `meetings` allows exactly one update to an open row: it sets finished_at, outcome,
@@ -71,7 +74,7 @@ alter table meetings enable always trigger meetings_no_update;
 
 -- --------------------------------------------------------------------------------- the writes ----
 
--- Closes an open meeting. Internal: begin_meeting, apply_meeting and fail_meeting call it, and nothing else.
+-- Closes an open meeting. Internal: begin_meeting, apply_meeting and fail_meeting call it, and nothing else: no role can execute it.
 create function close_meeting(m bigint, how text, why text, bank_was numeric, bank_is numeric, rec jsonb) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -83,7 +86,18 @@ begin
     record = rec, consecutive_failures = case how when 'ok' then 0 when 'off' then coalesce(prior, 0) else coalesce(prior, 0) + 1 end
   where id = m;
 end $$;
-revoke execute on function close_meeting(bigint, text, text, numeric, numeric, jsonb) from public, anon, authenticated;
+revoke execute on function close_meeting(bigint, text, text, numeric, numeric, jsonb) from public, anon, authenticated, service_role;
+
+-- The entries of a memory list ({character, ...}) whose character is debuted and public now, in order; anything else is dropped.
+create function public_entries(list jsonb) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(jsonb_agg(t.e order by t.ord), '[]')
+  from jsonb_array_elements(case when jsonb_typeof(list) = 'array' then list else '[]'::jsonb end) with ordinality t(e, ord)
+  where jsonb_typeof(t.e) = 'object'
+    and (t.e ->> 'character') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    and (t.e ->> 'character')::uuid in (select c.id from characters_public c)
+$$;
+revoke execute on function public_entries(jsonb) from public, anon, authenticated, service_role;
 
 create function begin_meeting(slot timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -141,6 +155,7 @@ declare
   bal numeric;
   spent integer := jsonb_array_length(coalesce(payload -> 'moves', '[]'));
   hold interval := ((setting('structuralHoldHours')) #>> '{}')::numeric * interval '1 hour';
+  memory jsonb := payload -> 'memory';
   mv jsonb;
   kind_row move_kinds%rowtype;
   live timestamptz;
@@ -155,17 +170,23 @@ begin
   if boss is null or boss is distinct from current_boss() then
     raise exception 'a meeting is the open season''s Boss''s; % is not (%)', boss, current_boss() using errcode = '22023';
   end if;
+  if hold is null then raise exception 'a meeting needs structuralHoldHours, which this instance does not set' using errcode = '22023'; end if;
   bal := bank_now(boss, (payload ->> 'weekly_moves')::numeric, (payload ->> 'bank_cap')::numeric);
   if bal is null then raise exception 'a meeting names the phase''s weekly_moves and bank_cap' using errcode = '22023'; end if;
   if spent > floor(bal) then
     raise exception 'the moves cost % and the bank holds %', spent, bal using errcode = '23514';
   end if;
 
-  insert into staff_memory (staff, meeting, body) values (boss, apply_meeting.meeting, payload -> 'memory');
+  -- Only debuted public characters are named: the engine checks this too, and the database keeps it whatever the caller sent.
+  if jsonb_typeof(memory) = 'object' then
+    memory := jsonb_set(jsonb_set(memory, '{opinions}', public_entries(memory -> 'opinions')), '{grudges}', public_entries(memory -> 'grudges'));
+  end if;
+  insert into staff_memory (staff, meeting, body) values (boss, apply_meeting.meeting, memory);
   insert into staff_profiles (staff, meeting, interests, favorites, mood, signature)
   values (boss, apply_meeting.meeting,
     array(select jsonb_array_elements_text(coalesce(payload -> 'profile' -> 'interests', '[]'))),
-    array(select (jsonb_array_elements_text(coalesce(payload -> 'profile' -> 'favorites', '[]')))::uuid),
+    array(select f.id from (select t.f::uuid as id, min(t.ord) as ord from jsonb_array_elements_text(coalesce(payload -> 'profile' -> 'favorites', '[]')) with ordinality t(f, ord) group by 1) f
+      where f.id in (select c.id from characters_public c) order by f.ord),
     coalesce(payload -> 'profile' ->> 'mood', ''), coalesce(payload -> 'profile' ->> 'signature', ''));
 
   for mv in select value from jsonb_array_elements(coalesce(payload -> 'moves', '[]')) loop

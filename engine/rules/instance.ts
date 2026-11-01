@@ -300,6 +300,14 @@ function systemProblems(instance: Instance): string[] {
   for (const key of ['nameStyle', 'oldVoice'] as const) if (typeof sys[key] !== 'function') out.push(`system.${key} is not a function`);
   if (typeof sys.nameStyleBrief !== 'string' || sys.nameStyleBrief.trim() === '') out.push('system.nameStyleBrief is empty; the meeting\'s prompt needs the name style in words');
   for (const key of ['feeds', 'realWorld', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);
+  // A feed is fetched by the meeting: only over https, so nothing in between reads or rewrites what the Boss is told.
+  if (Array.isArray(sys.feeds)) {
+    for (const f of sys.feeds) {
+      let https = false;
+      try { https = new URL(String(f?.url)).protocol === 'https:'; } catch { /* not a URL */ }
+      if (!https) out.push(`feed "${String(f?.name)}" is not an https address`);
+    }
+  }
   // The settings that bound a move: a phase's longest move cannot outrun the longest any move may run.
   const set = instance.settings;
   if (set && settingsProblems(set).length === 0) {

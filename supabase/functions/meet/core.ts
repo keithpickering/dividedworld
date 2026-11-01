@@ -12,8 +12,9 @@
  *
  * **A failure is a closed row, not a lost run.** A model that fails or whose answer cannot be repaired closes the meeting `failed`
  * or `rejected` with the error; memory, profile, moves and the bank stay as they were (the ledger already holds the call). A
- * database error is thrown and the row stays open: the next run of the slot resumes it, and a row never closed is closed `failed`
- * by the next slot's `begin_meeting`. A model's transport failures are retried inside `models()`, on the request itself; this
+ * database error is thrown after the row is closed `failed` with its error (best effort) and rethrown, so the error survives
+ * on the row; only when that close fails too is the row left open, and then the next run of the slot resumes it (`resumed`) and
+ * a row never closed is closed `failed` by the next slot's `begin_meeting`. A model's transport failures are retried inside `models()`, on the request itself; this
  * file never retries a whole meeting ("Three unrelated timeouts are not a poison pill").
  *
  * **The window.** The digest runs from where the previous meeting's window ended (its slot) to this slot, so no play falls
@@ -213,6 +214,8 @@ export async function runMeeting(
       bank,
       now,
       boards: new Set(context.boards.map((b) => b.id)),
+      // The threads the model was shown (the reference list is bounded), the only ones a demand may name.
+      threads: new Set(digest.threads.slice(0, REFERENCE_MOST.threads).map((t) => t.thread)),
       isPublic: (id) => publicNow.has(id),
       successorAllowed,
     });

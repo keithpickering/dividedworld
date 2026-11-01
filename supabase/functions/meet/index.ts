@@ -27,9 +27,10 @@ Deno.serve(async (request) => {
     if (outcome.status === 'failed' || outcome.status === 'rejected') console.warn('meeting closed without effect', slot, outcome.status, outcome.error);
     return json(200, outcome);
   } catch (e) {
-    // The details go to the function's log; the answer says only that it failed, and for which slot. The row stays open, so the
-    // next run of the slot resumes it, and the next slot closes it failed.
+    // The details go to the function's log; the answer says only that it failed, and for which slot. runMeeting has closed the
+    // row `failed` with the error (best effort) before it rethrew; only if that close failed too is the row left open, for the
+    // next run of the slot to resume or the next slot to close failed.
     console.error('meet failed', slot, e instanceof Error ? e.message : 'unknown');
-    return json(500, { error: 'the meeting failed; its row stays open for the next run', slot });
+    return json(500, { error: 'the meeting failed and was closed as failed', slot });
   }
 });

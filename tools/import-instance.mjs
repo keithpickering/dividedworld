@@ -128,6 +128,7 @@ async function load(db, dir, manifest) {
   set local session_replication_role = origin;
   select schedule_settlement() where exists (select 1 from settings where key = 'settlementCron');
   select schedule_view_counts() where exists (select 1 from settings where key = 'viewCountCron');
+  select schedule_meeting() where exists (select 1 from settings where key = 'meetingCron');
   commit;\n`);
   if (!exited) child.stdin.end();
   const code = await done;
