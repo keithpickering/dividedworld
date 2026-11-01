@@ -10,9 +10,9 @@ import { Vending } from './Vending.tsx';
 
 /* Two cards at 1.00; the salty one costs up to 2.00 more on a long post, never more than 3.00 in all. */
 const ok = { ok: true as const, value: undefined };
-const stick: CardRules = { key: 'stick', name: 'Stick Around', alignment: 'sweet', priceKey: 'stick.price', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
+const stick: CardRules = { key: 'stick', name: 'Stick Around', alignment: 'sweet', rarity: 'common', priceKey: 'stick.price', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
 const whoops: CardRules = {
-  key: 'whoops', name: 'Whoops!', alignment: 'salty', priceKey: 'whoops.price', stack: 3,
+  key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', stack: 3,
   playPrice: (_s, t) => Math.min(200, Math.floor(t.length / 5)), canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }),
 };
 const shop: Instance = { ...testInstance, cards: [stick, whoops], settings: { ...testInstance.settings, economy: { 'stick.price': 100, 'whoops.price': 100 } } };

@@ -88,6 +88,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   presenceWindow: { unit: 'minute', count: 5 },
   presenceNames: 15,
   presencePollSeconds: 30,
+  /** A card set face down stays set a week if nothing springs it (the card mechanic's design, section 3). */
+  setLasts: { unit: 'day', count: 7 },
   /** The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone. */
   cardSettings: { 'whoops.clean': 95 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */

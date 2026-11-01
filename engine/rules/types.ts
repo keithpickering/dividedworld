@@ -102,6 +102,11 @@ export interface Settings {
    */
   readonly presencePollSeconds: number;
   /**
+   * How long a card set face down stays set if nothing springs it: the same for every Set card, so a
+   * back's end says nothing about which card it is (the card mechanic's design, section 3).
+   */
+  readonly setLasts: Span;
+  /**
    * The numbers a card gives the screens, each named by the instance ("whoops.clean"): a card's effect
    * decides something on the client (how much of a layer counts as washed clean), so the number is one the
    * screens read (`screen_settings`), which the economy never is. The engine checks each is a number; the

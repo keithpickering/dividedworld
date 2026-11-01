@@ -195,7 +195,7 @@ test('an instance missing the Technician\'s age, or holding it at 0 or 2.5, is r
 
 /* ---- through the settlement ---- */
 /* A Salty card of the test's own, so these cases need no card of the instance's. */
-const world = { ...instance, cards: [{ key: 'whoops', name: 'Whoops!', alignment: 'salty' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] };
+const world = { ...instance, cards: [{ key: 'whoops', name: 'Whoops!', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] };
 const H = 3_600_000;
 function board(lurkerClass = 'lurker'): SettlementInput {
   return {

@@ -27,7 +27,7 @@ const instance: Instance = {
   system: testSystem,
   name: 'Test World',
   classes: [fan, quiet],
-  cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
+  cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', rarity: 'common', priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
   reactions: [
     { key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' },
     { key: 'heart', emoji: '❤️', quadrant: 'excitedPositive' },
@@ -36,7 +36,7 @@ const instance: Instance = {
     { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },
   ],
   settings: {
-    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30,
+    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 },
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120, postsPerPage: 20, hotReplies: 10, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
   ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
@@ -346,7 +346,7 @@ test('a reaction to one of The System\'s own Acts settles and moves nobody\'s Au
 });
 
 test('two Sweet cards from one player on one post pay what one would: each vote counts once, for the earlier card', () => {
-  const sweet = (key: string) => ({ key, name: key, alignment: 'sweet' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const sweet = (key: string) => ({ key, name: key, alignment: 'sweet' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
   const { rules, inputs } = recorder();
   const world = { ...withClasses(rules), cards: [...instance.cards, sweet('sugar'), sweet('honey')] };
   const b = base();

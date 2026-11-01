@@ -28,6 +28,7 @@ export const whoops: CardRules<{ color: string }> = {
   key: 'whoops',
   name: 'Whoops!',
   alignment: 'salty',
+  rarity: 'common',
   priceKey: 'whoops.price',
   stack: 3,
   seeded: true,

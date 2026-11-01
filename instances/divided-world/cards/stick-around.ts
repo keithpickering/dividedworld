@@ -17,6 +17,7 @@ export const stickAround: CardRules<{ sentence: string }> = {
   key: 'stick-around',
   name: 'Stick Around',
   alignment: 'sweet',
+  rarity: 'common',
   priceKey: 'stickAround.price',
   playPrice: () => 0,
   canApply: (target, effects) => landsOnPost(stickAround, target, effects),

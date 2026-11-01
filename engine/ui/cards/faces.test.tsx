@@ -7,8 +7,8 @@ import type { CardUi } from './types.ts';
 
 const ok = { ok: true as const, value: undefined };
 const settings = { economy: { 'a.price': 100, 'b.price': 250 } } as unknown as Settings;
-const plain: CardRules = { key: 'a', name: 'A card', alignment: 'sweet', priceKey: 'a.price', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
-const longer: CardRules = { ...plain, key: 'b', name: 'B card', alignment: 'salty', priceKey: 'b.price', stack: 3, playPrice: (_s, t) => Math.min(200, t.length) };
+const plain: CardRules = { key: 'a', name: 'A card', alignment: 'sweet', rarity: 'common', priceKey: 'a.price', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
+const longer: CardRules = { ...plain, key: 'b', name: 'B card', alignment: 'salty', rarity: 'common', priceKey: 'b.price', stack: 3, playPrice: (_s, t) => Math.min(200, t.length) };
 const ui: CardUi = { key: 'b', art: { color: '#f00', ink: '#000', tagline: 'Short.' }, summary: 'One sentence.', describe: () => 'In full.' };
 
 describe('what every screen knows of a card', () => {

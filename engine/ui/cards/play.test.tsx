@@ -25,7 +25,7 @@ import type { CardUi, ConfigFormProps } from './types.ts';
 const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'stick.price': 100 };
 
 const whoopsRules: CardRules<{ color: string }> = {
-  key: 'whoops', name: 'Whoops!', alignment: 'salty', priceKey: 'whoops.price', stack: 3, reads: ['whoops.perLength', 'whoops.lengthStep'],
+  key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', stack: 3, reads: ['whoops.perLength', 'whoops.lengthStep'],
   playPrice: (settings, target) => settings.economy['whoops.perLength']! * Math.floor(target.length / settings.economy['whoops.lengthStep']!),
   canApply: (target, effects) => landsOnPost(whoopsRules, target, effects),
   validateConfig: (config) => {
@@ -34,7 +34,7 @@ const whoopsRules: CardRules<{ color: string }> = {
   },
 };
 const stickRules: CardRules = {
-  key: 'stick-around', name: 'Stick Around', alignment: 'sweet', priceKey: 'stick.price',
+  key: 'stick-around', name: 'Stick Around', alignment: 'sweet', rarity: 'common', priceKey: 'stick.price',
   playPrice: () => 0,
   canApply: (target, effects) => landsOnPost({ key: 'stick-around' }, target, effects),
   validateConfig: (config) => ok(config),

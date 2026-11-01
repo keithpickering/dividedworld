@@ -8,7 +8,8 @@ import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
-import { INT4_MAX } from './cards.ts';
+import { INT4_MAX, OUTCOMES, PLAYS, RARITIES, TRIGGERS, atOrBelow } from './cards.ts';
+import type { CardRules } from './cards.ts';
 
 /**
  * What a Mod Bot's bribe may cost, in hundredths of an orb, for every bot in every instance: dear enough to be a
@@ -94,6 +95,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   presenceNames: (v) => (isWhole(v, 1) ? null : 'a whole number of names, at least 1'),
   // At least 10, so no instance is polled into load; at most 300, so the window still means something.
   presencePollSeconds: (v) => (isWhole(v, 10) && (v as number) <= 300 ? null : 'a whole number of seconds from 10 to 300'),
+  setLasts: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
   economy: namedNumbers,
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
@@ -160,6 +162,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
+    out.push(...playProblems(c, instance.cards));
   }
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
@@ -221,6 +224,40 @@ export function instanceProblems(instance: Instance): string[] {
     }
   }
   out.push(...systemProblems(instance));
+  return out;
+}
+
+/**
+ * A card's rarity, play, trap and ward, each refused naming the card (the card mechanic's design,
+ * sections 1 to 5). seed_instance (supabase/migrations/0054_card_plays.sql) holds the same pairings.
+ */
+function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
+  const out: string[] = [];
+  const who = `card "${c.key}"`;
+  if (c.rarity === undefined) out.push(`${who} has no rarity; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
+  else if (!RARITIES.includes(c.rarity)) out.push(`${who} has the rarity ${JSON.stringify(c.rarity)}; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
+  const play = c.play ?? 'cast';
+  if (!PLAYS.includes(play)) out.push(`${who} is played ${JSON.stringify(play)}; a card is cast, used, set or kept`);
+  if (play === 'keep') out.push(`${who} is kept, and Keep is not built until it is designed`);
+  if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a Set card does`);
+  if (c.ward !== undefined && play !== 'use') out.push(`${who} is a ward, and only a Use card is`);
+  if (c.ward !== undefined && c.ward !== true) out.push(`${who} is a ward of ${JSON.stringify(c.ward)}; a ward is true or left out`);
+  if (c.lasts !== undefined && play !== 'use') out.push(`${who} has a time up (lasts), and only a Use card does`);
+  if (c.lasts !== undefined && !isSpan(c.lasts)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000`);
+  const trap = c.trap;
+  if (trap !== undefined) {
+    const on = (trap.trigger as { on?: unknown } | undefined)?.on;
+    if (!TRIGGERS.includes(on as never)) out.push(`${who} springs on ${JSON.stringify(on)}; a trap springs on ${TRIGGERS.join(', ')}`);
+    else if (on === 'visit') out.push(`${who} springs on a visit, which is not wired until the staff build adds Mod Bot visits`);
+    else if (on === 'reaction' && !QUADRANTS.includes((trap.trigger as { quadrant?: never }).quadrant!)) out.push(`${who} springs on a reaction of no quadrant; it names one of ${QUADRANTS.join(', ')}`);
+    const outcome = trap.outcome as { do?: unknown; card?: unknown } | undefined;
+    if (!OUTCOMES.includes(outcome?.do as never)) out.push(`${who} does ${JSON.stringify(outcome?.do)} when it springs; a trap does ${OUTCOMES.join(', ')}`);
+    else if (outcome!.do === 'strike') {
+      const struck = cards.find((k) => k.key === outcome!.card);
+      if (!struck) out.push(`${who} strikes with ${JSON.stringify(outcome!.card)}, which the instance does not have`);
+      else if (RARITIES.includes(struck.rarity) && RARITIES.includes(c.rarity) && !atOrBelow(struck.rarity, c.rarity)) out.push(`${who} strikes with "${struck.key}", which is ${struck.rarity}, rarer than the trap (${c.rarity})`);
+    }
+  }
   return out;
 }
 
