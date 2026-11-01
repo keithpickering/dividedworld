@@ -7,15 +7,16 @@ import { stickAround } from './stick-around.ts';
 import { STROKES, whoops } from './whoops.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { basePrice, decidePlay } from '../../../engine/rules/cards.ts';
+import { basePrice, decidePlay, decideSet } from '../../../engine/rules/cards.ts';
+import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
 
 const post = (length: number): CardTarget => ({ act: 'p1', kind: 'post', length });
 
-test('the instance sells the two cards, Sweet and Salty, at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100]]);
+test('the instance sells its cards at their prices', () => {
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -145,3 +146,32 @@ test('a stroke\'s points and width are kept to a thousandth', () => {
 test('Stick Around holds no state to save', () => {
   assert.equal(stickAround.validateState, undefined);
 });
+
+/* The card mechanic's first cards (docs/plans/2026-11-01-card-plays-plan.md, Task 8): Trap Card, Force Field and Bluff. */
+test('the instance sells Trap Card, Force Field and Bluff, each with its rarity and play, and stays whole', () => {
+  const by = (key: string) => cards.find((c) => c.key === key)!;
+  assert.deepEqual(['trap-card', 'force-field', 'bluff', 'whoops', 'stick-around'].map((k) => [k, by(k).rarity, by(k).play ?? 'cast', by(k).alignment, basePrice(by(k), settings)]), [
+    ['trap-card', 'uncommon', 'set', 'salty', 150],
+    ['force-field', 'uncommon', 'use', 'sweet', 150],
+    ['bluff', 'common', 'set', 'pepperoni', 25],
+    ['whoops', 'common', 'cast', 'salty', 100],
+    ['stick-around', 'common', 'cast', 'sweet', 100],
+  ]);
+  assert.deepEqual(by('trap-card').trap, { trigger: { on: 'cast' }, outcome: { do: 'payout' } });
+  assert.equal(by('bluff').trap, undefined, 'a Set card with no trap is a bluff');
+  assert.deepEqual([by('force-field').ward, by('force-field').lasts], [true, { unit: 'day', count: 7 }]);
+  assert.deepEqual(settings.setLasts, { unit: 'day', count: 7 });
+  assert.deepEqual(instanceProblems(instance), []);
+});
+
+test('Bluff\'s and Trap Card\'s Set requests are the same but for the card key, which never leaves the service', () => {
+  const decided = (card: string) => decide({ action: 'setCard', card, character: '11111111-1111-4111-8111-111111111111', target: '22222222-2222-4222-8222-222222222222' }, instance);
+  const trap = decided('trap-card');
+  const bluff = decided('bluff');
+  assert.ok(trap.ok && bluff.ok);
+  assert.deepEqual({ ...trap, args: { ...trap.args, card: null } }, { ...bluff, args: { ...bluff.args, card: null } });
+  assert.equal(trap.ok && trap.asService, true, 'written by the service, so the key reaches SQL and no client');
+  const target = { act: 'p', kind: 'post' as const, length: 10 };
+  assert.deepEqual(decideSet(by('trap-card'), settings, target, [], {}, cards), decideSet(by('bluff'), settings, target, [], {}, cards));
+});
+const by = (key: string) => cards.find((c) => c.key === key)!;
