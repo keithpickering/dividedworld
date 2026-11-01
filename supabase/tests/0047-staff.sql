@@ -367,3 +367,53 @@ begin
   perform tests.unbecome();
   if (select retired_at from characters where id = boss) is not null then raise exception 'a retired staff character was not restored'; end if;
 end $$;
+
+-- ---- staff_now reads an index, not every character ----
+do $$
+declare
+  plan text;
+  line text;
+begin
+  if not exists (select 1 from pg_indexes where tablename = 'characters' and indexname = 'characters_staff'
+                 and indexdef ilike '%(staff)%' and indexdef ilike '%where%staff is not null%') then
+    raise exception 'characters_staff should be a partial index on characters (staff) where staff is not null';
+  end if;
+  if not (select indpred is not null from pg_index where indexrelid = 'characters_staff'::regclass) then
+    raise exception 'characters_staff should be partial';
+  end if;
+  -- The fixture is tiny, so the planner would prefer a scan whatever the index; switching sequential scans off
+  -- (for this transaction only) asks whether the view's predicate can use the index at all.
+  set local enable_seqscan = off;
+  for line in execute 'explain select * from staff_now' loop plan := coalesce(plan, '') || line || E'\n'; end loop;
+  set local enable_seqscan = on;
+  if plan ~* 'Seq Scan on characters' then raise exception 'staff_now scans characters: %', plan; end if;
+end $$;
+
+-- ---- A staff character's card on a player's post is in that player's log ----
+do $$
+declare
+  ann uuid := tests.account('staff-log');
+  mask uuid := tests.character(ann, 'Staff Log Mask');
+  t uuid := tests.thread('Staff log');
+  mine uuid;
+  n bigint;
+begin
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Log Bot', 'log-bot', 'bot', now());
+  mine := tests.post(mask, t, 'A post the bot plays a card on.');
+  perform tests.become_service();
+  perform write_staff_act('log-bot', 'card', t, mine, '{"card": "sweetie"}');
+  perform tests.unbecome();
+  perform tests.become(ann);
+  select count(*) into n from my_posts_played_on where post = mine;
+  perform tests.unbecome();
+  if n is distinct from 1::bigint then raise exception 'a staff character''s card on Ann''s post should be in her log, read % rows', n; end if;
+end $$;
+
+-- ---- A seed takes the seed lock before it writes a hire ----
+-- A concurrent pair of seeds is not practical in this suite, so the test reads the function's definition.
+do $$
+begin
+  if pg_get_functiondef('seed_instance(jsonb)'::regprocedure) !~ 'pg_advisory_xact_lock\(hashtext\(''kayfabb\.seed_instance''\)\)' then
+    raise exception 'seed_instance should take the advisory lock kayfabb.seed_instance';
+  end if;
+end $$;

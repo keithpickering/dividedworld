@@ -83,13 +83,30 @@ revoke execute on function staff_changes_append_only(), staff_changes_only_bots(
 
 -- The Mod Bots on staff now: each one's latest row, where it says on staff, and when that row was written.
 -- Public, as a Boss's name is: the staff are known to be staff.
+-- The partial index staff_now (and every staff lookup) reads: the staff are a handful of rows among all characters.
+create index characters_staff on characters (staff) where staff is not null;
 create view staff_now as
   select c.staff, c.staff_kind as kind, l.at as since
   from characters c
   cross join lateral (select s.on_staff, s.at from staff_changes s where s.staff = c.staff order by s.id desc limit 1) l
-  where c.staff_kind = 'bot' and l.on_staff;
+  where c.staff is not null and c.staff_kind = 'bot' and l.on_staff;
 revoke all on staff_now from public, anon, authenticated;
 grant select on staff_now to anon, authenticated;
+
+-- my_posts_played_on (0037), with one comparison changed: a staff character has no owner, so `by_whom.owner <> auth.uid()`
+-- is null for its card and the play dropped out of the post's author's log. `is distinct from` keeps it; a play through
+-- the caller's own character is still left out. Everything else, and the grants, as 0037 wrote them.
+create or replace view my_posts_played_on as
+  select k.id as play, k.target_act_id as post, k.created_at as at, e.saved_at
+  from acts k
+  join acts p on p.id = k.target_act_id
+  join characters c on c.id = p.character
+  join characters by_whom on by_whom.id = k.character
+  left join effect_state e on e.play = k.id
+  where k.kind = 'card' and c.owner = auth.uid() and by_whom.owner is distinct from auth.uid();
+
+revoke all on my_posts_played_on from anon, public;
+grant select on my_posts_played_on to authenticated;
 
 -- ---------------------------------------------------------------------- acts by staff ----
 
@@ -508,6 +525,9 @@ declare
   flagged text;
   unknown text;
 begin
+  -- Two seeds at once would each find no hire row and both write one into append-only staff_changes. An advisory
+  -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
+  perform pg_advisory_xact_lock(hashtext('kayfabb.seed_instance'));
   select count(*), min(e ->> 'slug') into flags, flagged
   from jsonb_array_elements(coalesce(payload -> 'boards', '[]')) e where coalesce((e ->> 'system')::boolean, false);
   if flags > 1 then raise exception 'a seed flags one board as The System''s, not %', flags using errcode = '22023'; end if;
