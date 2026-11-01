@@ -102,6 +102,14 @@ const played = (r: Fields, instance: Instance, play: 'cast' | 'use'): Fields => 
   return { card: key, through, target, config: r.config ?? {}, message: r.message ?? '', ...reached(r, instance, key, play) };
 };
 
+/** A Set's arguments: the card, the character and the post, with no message; refused for any reach but a post's. */
+const setArgs = (r: Fields, instance: Instance): Fields => {
+  const key = card(r, instance);
+  const args = { card: key, through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {} };
+  reached(r, instance, key, 'set');
+  return args;
+};
+
 type Decided = Omit<Extract<Decision, { ok: true }>, 'ok'>;
 
 /**
@@ -193,7 +201,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   // A Set carries no message: its Act says nothing, so a Bluff's and a trap's are alike.
   setCard: (r, instance) => ({
     rpc: 'set_card',
-    args: (() => { const key = card(r, instance); const a = { card: key, through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {} }; reached(r, instance, key, 'set'); return a; })(),
+    args: setArgs(r, instance),
     asService: true,
     needsTarget: true,
     play: 'set',

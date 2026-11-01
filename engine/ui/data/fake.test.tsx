@@ -1559,6 +1559,43 @@ describe('a card beyond a post, and the effects above a page', () => {
     expect(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('this character already carries that card', 'config'));
   });
 
+  test('a character play is played from that character\'s own post, and is no play on the post it sits on', async () => {
+    const { fake, anaFace, boFace, boOther, opener } = world();
+    expect(await fake.playCard('sparkle', anaFace, boOther, {}, '', 'character', opener)).toEqual(refused('a card on a character is played from one of its posts'));
+    must(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener));
+    expect(await fake.playCard('sparkle', anaFace, opener, {}, '')).toMatchObject({ field: 'reach' });
+    /* The post's own plays are unchanged: the character play takes no layer there. */
+    const shopBoth: Instance = { ...shop, cards: [{ ...sparkle, reaches: ['character', 'post'], canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'sparkle', reaches: ['character', 'post'] }, t, e) }] };
+    const both = createFake({ instance: shopBoth });
+    const a = both.seed.account('a'); const b = both.seed.account('b');
+    const af = both.seed.character(a, 'A Face', 'face'); const bf = both.seed.character(b, 'B Face', 'face');
+    const { act } = both.seed.thread('general', bf, 'Hi', 'Opener');
+    both.seed.wallet(a, 500); both.seed.cards(a, { sparkle: 2 }); both.signInAs(a);
+    must(await both.playCard('sparkle', af, bf, {}, '', 'character', act));
+    expect(must(await both.playCard('sparkle', af, act, {}, ''))).toMatchObject({ payload: { layer: 1 } });
+  });
+
+  test('a Use beyond a post goes on the caller\'s own character, and a board play in The System\'s announcements thread, on no post', async () => {
+    const selfie = { ...sparkle, key: 'selfie', name: 'Selfie', play: 'use' as const, canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'selfie', reaches: ['character'] }, t, e) };
+    const quake = { ...sparkle, key: 'quake', name: 'Quake', rarity: 'legendary' as const, reaches: ['board' as const], lasts: { unit: 'day' as const, count: 3 }, canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'quake', reaches: ['board'] }, t, e) };
+    /* On the wall clock: a card's own rules (landsOn) read the time as the server does, so a live board card is live to them. */
+    const fake = createFake({ instance: { ...shop, cards: [selfie, quake], settings: { ...shop.settings, economy: { 'sparkle.price': 100 } } }, now: () => Date.now() });
+    const ana = fake.seed.account('ana'); const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face'); const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    const { act: mine } = fake.seed.thread('general', anaFace, 'Mine', 'My post');
+    fake.seed.wallet(ana, 500); fake.seed.cards(ana, { selfie: 2, quake: 2 }); fake.signInAs(ana);
+    expect(await fake.useCard('selfie', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('Selfie is used on your own character'));
+    must(await fake.useCard('selfie', anaFace, anaFace, {}, '', 'character', mine));
+    const board = (await fake.thread(thread))!.board;
+    const shook = must(await fake.playCard('quake', anaFace, board, {}, '', 'board'));
+    expect(shook.targetActId).toBeNull();
+    expect((await fake.thread(shook.thread))!.board).not.toBe(board);
+    /* Three days, cut to the board's day. */
+    expect(Date.parse(String(shook.payload.ends)) - Date.parse(shook.createdAt)).toBe(86_400_000);
+    expect((await fake.playCard('quake', anaFace, board, {}, '', 'board')).ok).toBe(false);
+  });
+
   test('effectsAbove answers the live plays on the characters, the thread and the board asked, and nothing on another mask', async () => {
     const { fake, anaFace, boFace, boOther, thread, opener } = world();
     const live = must(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener));
