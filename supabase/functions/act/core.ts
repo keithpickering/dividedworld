@@ -13,7 +13,7 @@
  * PostgREST's detail, which can quote a row, nor a constraint's or a table's name.
  */
 import { decide } from '../../../engine/rules/actions.ts';
-import { basePrice, casterMessage, decidePlay, type CardEffect, type CardTarget } from '../../../engine/rules/cards.ts';
+import { basePrice, casterMessage, decidePlay, decideSet, decideUse, type CardEffect, type CardTarget } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, postgrest, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -28,6 +28,18 @@ export interface ActionAnswer {
 
 type Row = Record<string, unknown>;
 const act = (a: unknown): Broadcast[] => (a && typeof a === 'object' && (a as Row).thread ? [{ topic: `thread:${(a as Row).thread}`, event: 'act', payload: a }] : []);
+/**
+ * A write that sprang a trap answers with the spring (`sprung`, 0054_card_plays.sql), and a strike's card play under it
+ * (`struck`): each goes out as an Act of its own, after the write's own, so a reader sees the back revealed in place. The
+ * spring is public; it carries no amount and no account.
+ */
+const withSprung = (a: Row, own: Broadcast[]): Broadcast[] => {
+  const sprung = a.sprung as Row | undefined;
+  if (!sprung || typeof sprung !== 'object') return own;
+  const { struck, ...spring } = sprung;
+  return [...own, ...act(spring), ...act(struck)];
+};
+const without = (a: Row, key: string): Row => { const { [key]: _gone, ...rest } = a; return rest; };
 const thread = (t: unknown): Broadcast[] => (t && typeof t === 'object' && (t as Row).board ? [{ topic: `board:${(t as Row).board}`, event: 'thread', payload: t }] : []);
 
 const announcement = (a: Row): Broadcast[] => {
@@ -48,16 +60,18 @@ const announcement = (a: Row): Broadcast[] => {
  * saved_at wins.
  */
 const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
-  post: (a) => act(a),
+  post: (a) => withSprung(a, act(without(a, 'sprung'))),
   edit_post: (a) => act(a),
-  play_card: (a) => act(a),
+  play_card: (a) => withSprung(a, act(without(a, 'sprung'))),
+  // A card back: the set Act names no card, so neither does what is sent.
+  set_card: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
   spin: (a) => [...thread(a.thread), ...act(a.act)],
   unmask: (a) => act(a),
   // A Turn waits for the settlement, whose tally is sent from there (settle/core.ts).
   turn: () => [],
   withdraw_turn: () => [],
-  react: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
+  react: (a) => withSprung(a, a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   buy_card: () => [],
   // A player's own: a character appears on the next load of who is here, and an invite or an
@@ -111,11 +125,21 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       const target = await dbs.player.rpc<(CardTarget & { effects: CardEffect[] }) | null>('card_target', { target: decision.args.target });
       if (!target) return refused('target', 'there is no such post');
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
-      const said = casterMessage(decision.args.message);
-      if (!said.ok) return refused('message', said.why);
-      const play = decidePlay(rules, tuned.settings, target, target.effects, decision.args.config, said.value);
-      if (!play.ok) return refused('config', play.why);
-      args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
+      if (decision.play === 'set') {
+        // A strike's configuration is the struck card's, checked by that card's own rules.
+        const set = decideSet(rules, tuned.settings, target, target.effects, decision.args.config, tuned.cards);
+        if (!set.ok) return refused('config', set.why);
+        args = { ...args, config: set.value.config, price: set.value.price };
+      } else {
+        const said = casterMessage(decision.args.message);
+        if (!said.ok) return refused('message', said.why);
+        const nameOf = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
+        const play = decision.play === 'use'
+          ? decideUse(rules, tuned.settings, target, target.effects, decision.args.config, said.value)
+          : decidePlay(rules, tuned.settings, target, target.effects, decision.args.config, said.value, { nameOf });
+        if (!play.ok) return refused('config', play.why);
+        args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
+      }
     }
     if (decision.needsCardOfPlay) {
       const key = await dbs.player.rpc<string | null>('card_of_play', { play: decision.args.on_play });

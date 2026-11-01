@@ -19,7 +19,7 @@ begin
   update settings set value = value || '{"alpha.weight": 7, "blot.perLength": 3, "blot.lengthStep": 400}' where key = 'economy';
   perform seed_instance(jsonb_build_object(
     'settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb,
-    'cards', jsonb_build_array(jsonb_build_object('key', 'blot', 'name', 'Blot', 'alignment', 'salty', 'priceSetting', 'blot.price', 'stack', 3, 'seeded', true,
+    'cards', jsonb_build_array(jsonb_build_object('key', 'blot', 'name', 'Blot', 'alignment', 'salty', 'priceSetting', 'blot.price', 'rarity', 'common', 'stack', 3, 'seeded', true,
       'reads', jsonb_build_array('blot.perLength', 'blot.lengthStep')))));
   if (select reads from card_kinds where key = 'blot') is distinct from array['blot.perLength', 'blot.lengthStep'] then
     raise exception 'seed_instance did not record what the card reads: %', (select reads from card_kinds where key = 'blot');

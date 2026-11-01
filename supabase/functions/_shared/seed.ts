@@ -23,6 +23,9 @@ export function instanceSeed(instance: Instance) {
     cards: instance.cards.map((c) => ({
       key: c.key, name: c.name, alignment: c.alignment, priceSetting: c.priceKey, stack: c.stack ?? 1, seeded: c.seeded === true,
       reads: (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)),
+      // How it is played and how rare it is, and a Set card's trap, a Use card's ward and time up (0054), which seed_instance
+      // checks as instanceProblems does. A trap or a time up left out travels as none.
+      rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, ward: c.ward === true, lasts: c.lasts,
     })),
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
     pipStyles: instance.pipStyles.map((p) => ({ key: p.key, name: p.name, full: p.full, empty: p.empty })),

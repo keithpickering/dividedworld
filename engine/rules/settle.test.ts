@@ -906,3 +906,63 @@ test('a reaction on a card carries the card\'s own time', () => {
   assert.equal(got[0]!.actKind, 'card');
   assert.equal(got[0]!.actAt, cardAt);
 });
+
+/* Cards on a staff post and a trap's spring (docs/plans/2026-11-01-card-plays-plan.md, Task 5). "outdraw" earns 20 for a card
+   that drew more than its target and loses 20 for one that drew less, naming the card; "fan" and "quiet" are as above. */
+const outdraw: ClassRules = {
+  key: 'outdraw',
+  name: 'Outdraw',
+  earn: (input) => input.cardsPlayed.flatMap((c): Earning[] =>
+    c.votes > c.targetVotes ? [{ reason: 'outdraw.won', amount: 20, act: c.act }] : c.votes < c.targetVotes ? [{ reason: 'outdraw.lost', amount: -20, act: c.act }] : []),
+};
+const staffWorld: Instance = { ...instance, classes: [...instance.classes, outdraw] };
+function staffBoard(cardVoters: string[], postVoters: string[]): SettlementInput {
+  const voters = ['bob', 'cat', 'dee'];
+  return {
+    window: { id: 'w1', from: FROM, to: TO },
+    characters: [
+      { id: 'ann-out', player: 'ann', classes: [{ class: 'outdraw', from: 0 }] },
+      ...voters.map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+    // The staff post is no character's in the input: it is an unscored target, its author marked staff.
+    acts: [{ id: 'k1', character: 'ann-out', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'boss-post', card: 'splat' }],
+    unscoredTargets: [{ id: 'boss-post', kind: 'post', at: FROM + 1 * H, thread: 't1', staff: true }],
+    reactions: [
+      ...cardVoters.map((p, i) => react('k1', p, `${p}-1`, 'fire', FROM + (3 + i) * H)),
+      ...postVoters.map((p, i) => react('boss-post', p, `${p}-1`, 'fire', FROM + (3 + i) * H)),
+    ],
+  };
+}
+
+test('a card on a staff post earns its caster by class, judged against the post\'s reactions, and the post pays nobody', () => {
+  const won = settle(staffBoard(['bob', 'cat'], ['dee']), staffWorld);
+  assert.equal(amountOf(won, 'ann-out', 'outdraw.won'), 20, 'two players drew to the card, one to the staff post');
+  assert.deepEqual(won.entries.filter((e) => e.character === 'boss-post' || e.reason.startsWith('quiet.')).map((e) => e.reason), [], 'the staff post pays nobody, and its reactors are paid nothing for reacting');
+  const lost = settle(staffBoard(['bob'], ['cat', 'dee']), staffWorld);
+  assert.equal(amountOf(lost, 'ann-out', 'outdraw.lost'), -20, 'outdrawn by the staff post');
+  const played = (() => { seen.length = 0; return settle(staffBoard(['bob'], ['cat', 'dee']), { ...staffWorld, classes: [{ ...outdraw, earn: (i, s) => { seen.push(i); return outdraw.earn(i, s); } }, quiet, fan] }); })();
+  assert.ok(played);
+  const card = seen.flatMap((s) => s.cardsPlayed).find((c) => c.act === 'k1')!;
+  assert.deepEqual([card.onOthers, card.votes, card.targetVotes, card.targetAfter.excitedPositive], [true, 1, 2, 2], 'the staff post is someone else\'s, its votes counted once each');
+  assert.ok(!seen.some((s) => s.cardsLanded.length), 'a card on a staff post lands on no character');
+});
+
+test('a spring settles as a play of its trap card on the trapped post: its reactions pay its setter by class', () => {
+  seen.length = 0;
+  const b = base();
+  const input: SettlementInput = {
+    ...b,
+    characters: [...b.characters, { id: 'ann-out', player: 'ann', classes: [{ class: 'outdraw', from: 0 }] }],
+    acts: [...b.acts, post('own', 'ann-out', FROM + 1 * H), { id: 'sp', character: 'ann-out', kind: 'spring', at: FROM + 2 * H, thread: 't1', target: 'own', card: 'splat' }],
+    reactions: [...b.reactions, react('sp', 'bob', 'bob-1', 'fire', FROM + 3 * H), react('sp', 'cat', 'cat-1', 'fire', FROM + 3 * H)],
+  };
+  const r = settle(input, { ...staffWorld, classes: [{ ...outdraw, earn: (i, s) => { seen.push(i); return outdraw.earn(i, s); } }, quiet, fan] });
+  assert.equal(amountOf(r, 'ann-out', 'outdraw.won'), 20, 'the spring drew two players, the trapped post none');
+  const played = seen.filter((s) => s.character === 'ann-out').flatMap((s) => s.cardsPlayed);
+  assert.deepEqual(played.map((c) => [c.act, c.card, c.alignment, c.target, c.onOthers]), [['sp', 'splat', 'salty', 'own', false]]);
+});
+
+test('a settlement with no staff target and no spring is as it was', () => {
+  const b = base();
+  assert.deepEqual(settle({ ...b, unscoredTargets: [] }, instance), settle(b, instance));
+});

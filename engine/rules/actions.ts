@@ -13,14 +13,15 @@
  * the two never disagree on an emoji.
  */
 import type { Instance } from './types.ts';
-import { basePrice, casterMessage } from './cards.ts';
+import { basePrice, casterMessage, type Play } from './cards.ts';
 
 /**
  * A decided action. Most are written as the player, whose session the database reads. A card's
  * are written by the service for the caller (`asService`), since a play's price and
  * configuration are its card's own rules, which SQL cannot run: the caller adds `who`, and for a
  * play reads the post first (`needsTarget`) for the card to price, and for saved state reads
- * which card was played (`needsCardOfPlay`) for it to check.
+ * which card was played (`needsCardOfPlay`) for it to check. A play names how it is played
+ * (`play`), so the caller decides it by that play's rules (engine/rules/cards.ts).
  */
 export type Decision =
   | {
@@ -30,6 +31,7 @@ export type Decision =
     readonly asService?: true;
     readonly needsTarget?: true;
     readonly needsCardOfPlay?: true;
+    readonly play?: Exclude<Play, 'keep'>;
   }
   | { readonly ok: false; readonly field: string; readonly why: string };
 
@@ -152,6 +154,23 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     args: { card: card(r, instance), through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {}, message: r.message ?? '' },
     asService: true,
     needsTarget: true,
+    play: 'cast',
+  }),
+  // A Use is a play on the caller's own post, written as a cast is; SQL holds whose post it is.
+  useCard: (r, instance) => ({
+    rpc: 'play_card',
+    args: { card: card(r, instance), through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {}, message: r.message ?? '' },
+    asService: true,
+    needsTarget: true,
+    play: 'use',
+  }),
+  // A Set carries no message: its Act says nothing, so a Bluff's and a trap's are alike.
+  setCard: (r, instance) => ({
+    rpc: 'set_card',
+    args: { card: card(r, instance), through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {} },
+    asService: true,
+    needsTarget: true,
+    play: 'set',
   }),
   createCharacter: (r, instance) => {
     const kind = r.class;

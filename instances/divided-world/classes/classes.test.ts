@@ -466,3 +466,37 @@ test('a Face\'s reveal drawing a cheer pays the Face\'s cheer; a Lurker\'s revea
   assert.deepEqual(r.entries.filter((e) => e.character === 'fa').map((e) => [e.reason, e.amount]), [['face.cheered', settings.vote]]);
   assert.deepEqual(r.entries.filter((e) => e.character === 'lu' && e.reason === 'lurker.postedTooMuch'), []);
 });
+
+/* A card on a staff post earns its caster by class (#122; docs/plans/2026-11-01-card-plays-plan.md, Task 5): the Boss's post is
+   the target it is judged against, and the Boss earns nothing. */
+function onTheBoss(card: { by: string; card: string }, cardVoters: string[], postVoters: string[]): SettlementInput {
+  const voters = ['v1', 'v2', 'v3'];
+  return {
+    window: { id: 'w', from: 0, to: 24 * H },
+    characters: [
+      { id: 'he', player: 'ph', classes: [{ class: 'heel', from: -1 }] },
+      { id: 'fa', player: 'pf', classes: [{ class: 'face', from: -1 }] },
+      ...voters.map((v) => ({ id: v, player: `p-${v}`, classes: [{ class: 'jabroni', from: -1 }] })),
+    ],
+    acts: [{ id: 'k1', character: card.by, kind: 'card', at: 2 * H, thread: 't', target: 'boss-post', card: card.card }],
+    unscoredTargets: [{ id: 'boss-post', kind: 'post', at: 1 * H, thread: 't', staff: true }],
+    reactions: [
+      ...cardVoters.map((v, i) => ({ act: 'k1', player: `p-${v}`, character: v, kind: 'zzz', at: (3 + i) * H })),
+      ...postVoters.map((v, i) => ({ act: 'boss-post', player: `p-${v}`, character: v, kind: 'zzz', at: (3 + i) * H })),
+    ],
+  };
+}
+
+test('a Heel\'s Salty card that draws more than a Boss\'s post earns the Heel\'s +0.20, and the Boss earns nothing', () => {
+  const r = settle(onTheBoss({ by: 'he', card: 'whoops' }, ['v1', 'v2'], ['v3']), world);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'heel.stoleThunder').map((e) => [e.character, e.amount]), [['he', 20]]);
+  assert.ok(r.entries.every((e) => ['he', 'fa', 'v1', 'v2', 'v3'].includes(e.character)), 'no entry for the Boss or its post');
+  assert.equal(settle(onTheBoss({ by: 'he', card: 'whoops' }, ['v1'], ['v2', 'v3']), world).entries.filter((e) => e.reason === 'heel.stoleThunder').length, 0, 'outdrawn by the Boss\'s post, it steals nothing');
+});
+
+test('a Face\'s Sweet card that draws more than a Boss\'s post pays the Face\'s −0.20', () => {
+  const sweet = { ...world, cards: [...world.cards, { ...world.cards[0]!, key: 'stick-around', name: 'Stick Around', alignment: 'sweet' as const }] };
+  const r = settle(onTheBoss({ by: 'fa', card: 'stick-around' }, ['v1', 'v2'], ['v3']), sweet);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'face.stoleThunder').map((e) => [e.character, e.amount]), [['fa', -20]]);
+  assert.equal(settle(onTheBoss({ by: 'fa', card: 'stick-around' }, ['v1'], ['v2', 'v3']), sweet).entries.filter((e) => e.reason === 'face.stoleThunder').length, 0, 'outdrawn by the Boss\'s post, it pays nothing');
+});

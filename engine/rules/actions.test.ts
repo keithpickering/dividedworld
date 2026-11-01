@@ -81,10 +81,24 @@ test('a card is bought at the Vending Machine\'s price, by the service, for the 
 
 test('a play names the card, the character, the post and the caster\'s configuration; its price waits on the post', () => {
   assert.deepEqual(decide({ action: 'playCard', card: 'splat', character: id, target: other, config: { color: 'red' } }, instance),
-    { ok: true, rpc: 'play_card', args: { card: 'splat', through: id, target: other, config: { color: 'red' }, message: '' }, asService: true, needsTarget: true });
+    { ok: true, rpc: 'play_card', args: { card: 'splat', through: id, target: other, config: { color: 'red' }, message: '' }, asService: true, needsTarget: true, play: 'cast' });
   assert.equal((decide({ action: 'playCard', card: 'splat', character: id, target: other, message: 'Take that.' }, instance) as unknown as { args: { message: unknown } }).args.message, 'Take that.', 'the caster\'s message travels to the card\'s rules');
   assert.match(refusal({ action: 'playCard', card: 'nothing', character: id, target: other }) ?? '', /^card:/);
   assert.match(refusal({ action: 'playCard', card: 'splat', character: id, target: 'x' }) ?? '', /^target:/);
+});
+
+test('a Set names the card, the character, the post and the configuration, and carries no message; a Use is a play on the caller\'s own post', () => {
+  assert.deepEqual(decide({ action: 'setCard', card: 'splat', character: id, target: other, config: { ink: 'red' } }, instance),
+    { ok: true, rpc: 'set_card', args: { card: 'splat', through: id, target: other, config: { ink: 'red' } }, asService: true, needsTarget: true, play: 'set' });
+  assert.deepEqual(decide({ action: 'setCard', card: 'splat', character: id, target: other }, instance),
+    { ok: true, rpc: 'set_card', args: { card: 'splat', through: id, target: other, config: {} }, asService: true, needsTarget: true, play: 'set' });
+  assert.deepEqual(decide({ action: 'useCard', card: 'splat', character: id, target: other, message: 'Mine.' }, instance),
+    { ok: true, rpc: 'play_card', args: { card: 'splat', through: id, target: other, config: {}, message: 'Mine.' }, asService: true, needsTarget: true, play: 'use' });
+  for (const action of ['setCard', 'useCard']) {
+    assert.match(refusal({ action, card: 'nothing', character: id, target: other }) ?? '', /^card:/, action);
+    assert.match(refusal({ action, card: 'splat', character: 'x', target: other }) ?? '', /^character:/, action);
+    assert.match(refusal({ action, card: 'splat', character: id, target: 'x' }) ?? '', /^target:/, action);
+  }
 });
 
 test('saving an effect\'s state names the play, the character and the state', () => {

@@ -16,7 +16,7 @@ declare
                            'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
                            'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
-                           'staff_now', 'staff_profile_now', 'boards_now', 'moves_log'];
+                           'staff_now', 'staff_profile_now', 'boards_now', 'moves_log', 'face_down', 'my_face_down', 'my_caught'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text)', 'post(uuid,uuid,text,uuid)',
                            'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text)', 'create_character(text,text,text,text)', 'set_debut(uuid,text,text)',
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer)', 'meet_card(text)', 'forget_cards_met()', 'set_profile(uuid,text,text,text)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',

@@ -200,3 +200,82 @@ test('the act function\'s connections send a post once after a 504, and a read a
   await assert.rejects(dbs.service.rpc('whoami', {}));
   assert.equal(seen.length, 4);
 });
+
+// Engine test cards beside the instance's own, so a Set and a Use are decided without naming an instance's cards.
+const ok = <T>(value: T) => ({ ok: true as const, value });
+const base = { alignment: 'salty' as const, playPrice: () => 0, canApply: () => ok(undefined) };
+const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as const, priceKey: 'whoops.price', validateConfig: (c: unknown) => ((c as { ink?: unknown })?.ink === 'red' ? ok({ ink: 'red' }) : { ok: false as const, why: 'the ink is red' }) };
+const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'test-inky' } }, validateConfig: (c: unknown) => ok(c) };
+const bluffy = { ...base, key: 'test-bluffy', name: 'Test Bluffy', rarity: 'common' as const, priceKey: 'whoops.price', play: 'set' as const, validateConfig: (c: unknown) => ok(c) };
+const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'use' as const, ward: true as const, validateConfig: (c: unknown) => ok(c) };
+const tested = { ...instance, cards: [...instance.cards, inky, snare, bluffy, shield] };
+const setAct = { id: 'k', kind: 'set', thread: 'th', payload: {} };
+
+test('a Set is decided by its card\'s rules and written by set_card; its answer and its broadcast carry no card key', async () => {
+  for (const card of ['test-snare', 'test-bluffy']) {
+    const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [] }, set_card: setAct });
+    const out = await runAction(dbs, tested, { action: 'setCard', card, character: id, target, config: card === 'test-snare' ? { ink: 'red' } : {} });
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    assert.ok(calls.some((c) => c.startsWith('service:set_card:') && c.includes(`"card":"${card}"`) && c.includes('"price":0')), calls.join('\n'));
+    assert.doesNotMatch(JSON.stringify(out.body), /test-/, 'the answer names no card');
+    assert.deepEqual(out.broadcasts, [{ topic: 'thread:th', event: 'act', payload: setAct }]);
+    assert.doesNotMatch(JSON.stringify(out.broadcasts), /test-/, 'the broadcast names no card');
+  }
+});
+
+test('a strike\'s configuration is checked by the struck card\'s rules before SQL', async () => {
+  const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [] } });
+  const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-snare', character: id, target, config: { ink: 'blue' } });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'the ink is red' } });
+  assert.ok(!calls.some((c) => c.startsWith('service:set_card:')), calls.join('\n'));
+});
+
+test('a second card back on a post is refused before SQL, as anyone would see it', async () => {
+  const { dbs, calls } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [{ card: null, act: 'b', faceDown: true, ends: new Date(Date.now() + 1e6).toISOString() }] } });
+  const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-bluffy', character: id, target });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'this post already holds a card face down' } });
+  assert.ok(!calls.some((c) => c.startsWith('service:set_card:')), calls.join('\n'));
+});
+
+test('a Use on a post under someone else\'s character is refused by SQL and answered in its words', async () => {
+  const refusal = new DatabaseError('play_card: Test Shield is used on your own post', '42501', 403, 'Test Shield is used on your own post', REFUSAL_HINT);
+  const answers: Record<string, unknown> = { whoami, card_target: { act: target, kind: 'post', length: 10, effects: [] } };
+  const make = (): Db => ({ rpc: async <T>(fn: string) => { if (fn === 'play_card') throw refusal; return (fn === 'instance_settings' ? { economy: instance.settings.economy } : answers[fn]) as T; } });
+  const out = await runAction({ player: make(), service: make() }, tested, { action: 'useCard', card: 'test-shield', character: id, target });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 403, body: { error: 'Test Shield is used on your own post', code: '42501' } });
+});
+
+test('a card is played the way it is played: a Set card is not cast, and a Cast card is not used', async () => {
+  const { dbs } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [] } });
+  const cast = await runAction(dbs, tested, { action: 'playCard', card: 'test-bluffy', character: id, target });
+  assert.deepEqual(cast.body, { field: 'config', error: 'Test Bluffy is set face down on your own post' });
+  const used = await runAction(dbs, tested, { action: 'useCard', card: 'test-inky', character: id, target, config: { ink: 'red' } });
+  assert.deepEqual(used.body, { field: 'config', error: 'Test Inky is cast' });
+});
+
+test('a cast under a ward is refused in the ward card\'s name', async () => {
+  const { dbs } = pair({ whoami, card_target: { act: target, kind: 'post', length: 10, effects: [{ card: 'test-shield', act: 'w', ward: 'uncommon' }] } });
+  const out = await runAction(dbs, tested, { action: 'playCard', card: 'test-inky', character: id, target, config: { ink: 'red' } });
+  assert.deepEqual(out.body, { field: 'config', error: 'this post\'s Test Shield turns away cards up to uncommon' });
+});
+
+test('a spring, and a strike\'s card, go out live as Acts of their own', async () => {
+  const thread = '44444444-4444-4444-8444-444444444444';
+  const spring = { id: 's', kind: 'spring', thread, payload: { card: 'test-snare' } };
+  const struck = { id: 'k', kind: 'card', thread };
+  const cases: [unknown, Record<string, unknown>, unknown][] = [
+    [{ action: 'post', thread: id, character: id, body: 'x' }, { post: { id: 'a', thread, sprung: { ...spring, struck } } },
+      [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }, { topic: `thread:${thread}`, event: 'act', payload: spring }, { topic: `thread:${thread}`, event: 'act', payload: struck }]],
+    [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread, tally: { fire: 1 }, sprung: spring } },
+      [{ topic: `thread:${thread}`, event: 'tally', payload: { act: id, tally: { fire: 1 } } }, { topic: `thread:${thread}`, event: 'act', payload: spring }]],
+    [{ action: 'playCard', card: 'whoops', character: id, target: id, config: { color: 'red' } },
+      { whoami: id, card_target: { act: id, kind: 'post', length: 10, effects: [] }, play_card: { id: 'c', thread, sprung: spring } },
+      [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread } }, { topic: `thread:${thread}`, event: 'act', payload: spring }]],
+  ];
+  for (const [request, answers, broadcasts] of cases) {
+    const { dbs } = pair(answers);
+    const out = await runAction(dbs, tested, request);
+    assert.equal(out.status, 200, JSON.stringify(request));
+    assert.deepEqual(out.broadcasts ?? [], broadcasts, JSON.stringify(request));
+  }
+});

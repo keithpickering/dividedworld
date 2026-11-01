@@ -28,6 +28,10 @@
  *   this settlement, over every reaction up to the window's end, without that player's own vote,
  *   so nobody's call is proven by itself; a tie is no direction. Reactions after the settlement
  *   do not reach back: a window is settled once.
+ * - A trap's spring is settled as a play of its trap card on the trapped post, under the card's
+ *   alignment; a caught play settles as the play it is.
+ * - A card on a staff post is judged against the post's own reactions (`unscoredTargets`), which
+ *   count as for any Act; the post and its reactors are paid nothing for it (#122).
  * - A card "outdraws" its target when it drew more votes in the window than the target did.
  *   A vote total is the shares, unhalved: the halving prices a character's further Acts to the
  *   character, and a card and its target are judged on how many players each drew.
@@ -41,7 +45,7 @@
 import { payVotes, shareVotes, type PaidVote } from './votes.ts';
 import type {
   Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
-  LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread,
+  LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, UnscoredTarget,
 } from './types.ts';
 import { QUADRANTS } from './types.ts';
 
@@ -131,6 +135,9 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
 
   /* ---- the input, checked and in a canonical order; nothing at or after the window's end ---- */
   const systemActs = new Set(input.systemActs ?? []);
+  const unscored = new Map<string, UnscoredTarget>((input.unscoredTargets ?? []).map((t) => [t.id, t]));
+  /** A card's play or a trap's spring: each is a play of its card on its target. */
+  const isPlay = (a: InputAct) => a.kind === 'card' || a.kind === 'spring';
   const characters = new Map<string, InputCharacter>();
   for (const c of [...input.characters].sort((a, b) => cmp(a.id, b.id))) {
     for (const k of c.classes) if (!classOf.has(k.class)) throw new Error(`settle: character ${c.id} holds class "${k.class}", which the instance does not have`);
@@ -145,7 +152,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   const acts = new Map<string, InputAct>();
   for (const a of [...input.acts].filter((a) => a.at < window.to).sort((a, b) => a.at - b.at || cmp(a.id, b.id))) {
     playerOf(a.character);
-    if (a.kind === 'card' && a.at >= window.from && (!a.card || !alignmentOf.has(a.card))) throw new Error(`settle: card Act ${a.id} plays "${a.card}", which the instance does not have`);
+    if (isPlay(a) && a.at >= window.from && (!a.card || !alignmentOf.has(a.card))) throw new Error(`settle: ${a.kind} Act ${a.id} plays "${a.card}", which the instance does not have`);
     acts.set(a.id, a);
   }
   const actOf = (id: string) => {
@@ -153,7 +160,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     if (!a) throw new Error(`settle: Act ${id} is not in the input`);
     return a;
   };
-  const reactions = [...input.reactions]
+  const checked = [...input.reactions]
     /* A reaction to one of The System's own Acts (a tally, the reveal) is no character's to be
        paid for, and moves nobody's Aura, the reactor's included: no class is given it. */
     .filter((r) => r.at < window.to && !systemActs.has(r.act))
@@ -163,19 +170,29 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       if (!quadrant) throw new Error(`settle: reaction kind "${r.kind}" is not one the instance has`);
       if (playerOf(r.character) !== r.player) throw new Error(`settle: reaction by ${r.character} names a player who does not own it`);
       return { ...r, quadrant };
-    })
+    });
+  /* With the shared vote off, each reaction votes alone: its voter is the reaction, and who
+     left it (`owner`) is read only to keep a caster's own votes off their card's count. */
+  const voter = <R extends { player: string }>(r: R, i: number) => (sharedVote ? { ...r, owner: r.player } : { ...r, owner: r.player, player: `${r.player}\u0000${i}` });
+  const reactions = checked
+    .filter((r) => !unscored.has(r.act))
     /* A player's reactions to their own characters are never counted, whichever character left them. */
     .filter((r) => r.player !== playerOf(actOf(r.act).character))
-    /* With the shared vote off, each reaction votes alone: its voter is the reaction, and who
-       left it (`owner`) is read only to keep a caster's own votes off their card's count. */
-    .map((r, i) => (sharedVote ? { ...r, owner: r.player } : { ...r, owner: r.player, player: `${r.player}\u0000${i}` }));
+    .map(voter);
+  /* The reactions on a staff post a card landed on: counted, as any Act's are, only to judge the card against it.
+     Nobody owns the post, so no reaction there is anyone's own. */
+  const unscoredReactions = checked.filter((r) => unscored.has(r.act)).map(voter);
 
   /* ---- votes ---- */
   const shared = shareVotes(reactions);
   const inWindow = (at: number) => at >= window.from && at < window.to;
-  const { votes: windowVotes, paid } = payVotes(reactions, window, sharedVote ? input.paid ?? [] : [], actOf, halving);
+  const { votes: windowVotes, paid: paidOnActs } = payVotes(reactions, window, sharedVote ? input.paid ?? [] : [], actOf, halving);
+  /* A staff post's votes are its own author's alone to halve across: each post stands for an author of its own. */
+  const unscoredOf = (id: string) => ({ character: `\u0000staff\u0000${id}`, at: unscored.get(id)!.at });
+  const { votes: unscoredVotes, paid: paidOnStaff } = payVotes(unscoredReactions, window, sharedVote ? input.paid ?? [] : [], unscoredOf, halving);
+  const paid = [...paidOnActs, ...paidOnStaff];
   const votesOn = new Map<string, number>();
-  for (const v of windowVotes) votesOn.set(v.act, (votesOn.get(v.act) ?? 0) + v.share);
+  for (const v of [...windowVotes, ...unscoredVotes]) votesOn.set(v.act, (votesOn.get(v.act) ?? 0) + v.share);
 
   /* Each Act's reactors by first reaction, each player's shares there and the mask that says
      each, and the Act's lean: one pass over the reactions, which are in time order. */
@@ -261,7 +278,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     return out;
   };
   const windowActsBy = group(windowActs, (a) => a.character);
-  const windowVotesOn = group(windowVotes, (v) => v.act);
+  const windowVotesOn = group([...windowVotes, ...unscoredVotes], (v) => v.act);
   const postsIn = group([...acts.values()].filter((a) => a.kind === 'post'), (a) => a.thread);
   const received = new Map<string, ReceivedReaction[]>();
   for (const v of windowVotes) {
@@ -283,13 +300,15 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
      reads the owner's answer 3. A card whose kind the instance has since retired has no
      alignment, and holds nothing. Built once; the acts are already in time order. */
   const holder = new Map<string, string>();
-  for (const c of [...acts.values()].filter((a) => a.kind === 'card' && a.target && a.card && alignmentOf.has(a.card)).sort((x, y) => x.at - y.at || cmp(x.id, y.id))) {
+  for (const c of [...acts.values()].filter((a) => isPlay(a) && a.target && a.card && alignmentOf.has(a.card)).sort((x, y) => x.at - y.at || cmp(x.id, y.id))) {
     const k = `${c.target}\u0000${playerOf(c.character)}\u0000${alignmentOf.get(c.card!)}`;
     if (!holder.has(k)) holder.set(k, c.id);
   }
-  for (const a of windowActs.filter((a) => a.kind === 'card')) {
-    if (!a.target) throw new Error(`settle: card Act ${a.id} has no target`);
-    const target = actOf(a.target);
+  for (const a of windowActs.filter(isPlay)) {
+    if (!a.target) throw new Error(`settle: ${a.kind} Act ${a.id} has no target`);
+    // A staff post is another's, and nobody's to land on.
+    const staffTarget = unscored.get(a.target);
+    const target = staffTarget ? { id: staffTarget.id, character: null } : actOf(a.target);
     const player = playerOf(a.character);
     const after: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
     // Each vote after the card counts once per player and alignment: for the earliest of that
@@ -297,13 +316,13 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     // Sweet cards pay what one would (the owner's answer 3, on #4).
     for (const v of windowVotesOn.get(target.id) ?? []) if (v.at > a.at && v.owner !== player && holder.get(`${target.id}\u0000${player}\u0000${alignmentOf.get(a.card!)}`) === a.id) after[v.quadrant] += v.share;
     const alignment = alignmentOf.get(a.card!)!;
-    const onOthers = playerOf(target.character) !== player;
+    const onOthers = target.character === null || playerOf(target.character) !== player;
     const list = played.get(a.character) ?? [];
     // Sums of share differences, tidied as the leaning is, so float dust never decides an outdraw.
     for (const q of QUADRANTS) after[q] = tidy(after[q]);
     list.push({ act: a.id, card: a.card!, alignment, at: a.at, target: target.id, onOthers, votes: tidy(votesOn.get(a.id) ?? 0), targetVotes: tidy(votesOn.get(target.id) ?? 0), targetAfter: after });
     played.set(a.character, list);
-    if (onOthers) {
+    if (onOthers && target.character !== null) {
       const on = landed.get(target.character) ?? [];
       on.push({ act: a.id, card: a.card!, alignment, at: a.at, on: target.id });
       landed.set(target.character, on);
