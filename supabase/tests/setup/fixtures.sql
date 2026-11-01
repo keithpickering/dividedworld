@@ -30,6 +30,8 @@ insert into settings (key, value) values
   ('presenceNames', '15'),
   ('presencePollSeconds', '30'),
   ('setLasts', '{"unit": "day", "count": 7}'),
+  ('reachRarity', '{"character": "uncommon", "thread": "rare", "board": "legendary"}'),
+  ('reachLasts', '{"character": {"unit": "day", "count": 7}, "thread": {"unit": "day", "count": 1}, "board": {"unit": "day", "count": 1}}'),
   ('cardSettings', '{"whoops.clean": 95}'),
   ('economy', '{"sweetie.price": 100, "splat.price": 100, "blot.price": 100}'),
   ('copy', '{"turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
