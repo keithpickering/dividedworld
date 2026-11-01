@@ -128,11 +128,11 @@ revoke all on move_bank from public, anon, authenticated;
 -- Boss's own overrides of its phases live in the instance's TypeScript content, which SQL cannot see. A Boss with
 -- no row (one arriving at a handover) starts at zero; the first meeting writes the row.
 create function bank_now(staff text, weekly_moves numeric, bank_cap numeric) returns numeric
-language sql stable security definer set search_path = public, pg_temp as $$
-  select coalesce(
+language sql stable strict security definer set search_path = public, pg_temp as $$
+  select greatest(0, coalesce(
     (select least(bank_cap, b.balance + weekly_moves * greatest(extract(epoch from now() - b.as_of), 0) / 604800)
      from move_bank b where b.staff = bank_now.staff),
-    0)
+    0))
 $$;
 revoke execute on function bank_now(text, numeric, numeric) from public, anon, authenticated;
 grant execute on function bank_now(text, numeric, numeric) to service_role;

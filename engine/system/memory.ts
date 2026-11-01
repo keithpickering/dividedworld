@@ -93,21 +93,34 @@ export function repairMemory(raw: unknown, isPublic: (character: string) => bool
 
   // An opinion: its score rounded and clamped, and a character not public dropped. A trim's `before` and
   // `after` are the score for a clamp, and 1 and 0 for a drop.
+  // A character named twice keeps its first entry; the later ones are dropped before the cap.
   const opinions: Opinion[] = [];
+  const opined = new Set<string>();
   given.opinions.forEach((o, i) => {
     const path = `opinions[${i}]`;
     if (!isPublic(o.character)) {
       trims.push({ path, predicate: 'publicCharacter', before: 1, after: 0 });
       return;
     }
+    if (opined.has(o.character)) {
+      trims.push({ path, predicate: 'uniqueCharacter', before: 1, after: 0 });
+      return;
+    }
+    opined.add(o.character);
     const score = Math.min(SCORE_MAX, Math.max(SCORE_MIN, Math.round(o.score)));
     if (score !== o.score) trims.push({ path: `${path}.score`, predicate: `between(${SCORE_MIN}, ${SCORE_MAX})`, before: o.score, after: score });
     opinions.push({ character: o.character, score, note: o.note });
   });
   const grudges: Grudge[] = [];
+  const grudged = new Set<string>();
   given.grudges.forEach((g, i) => {
-    if (isPublic(g.character)) grudges.push(g);
-    else trims.push({ path: `grudges[${i}]`, predicate: 'publicCharacter', before: 1, after: 0 });
+    const path = `grudges[${i}]`;
+    if (!isPublic(g.character)) trims.push({ path, predicate: 'publicCharacter', before: 1, after: 0 });
+    else if (grudged.has(g.character)) trims.push({ path, predicate: 'uniqueCharacter', before: 1, after: 0 });
+    else {
+      grudged.add(g.character);
+      grudges.push(g);
+    }
   });
 
   const cap = <T,>(path: string, list: readonly T[], max: number): readonly T[] => {

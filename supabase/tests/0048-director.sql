@@ -102,6 +102,34 @@ begin
   if bank_now('dir-boss', 5, 10) is distinct from 3::numeric then raise exception 'a bank does not accrue backwards'; end if;
   if (select balance from move_bank where staff = 'dir-boss') is distinct from 3::numeric then raise exception 'bank_now wrote the bank'; end if;
 
+  -- A null argument is a null bank, not a full or an uncapped one; a negative rate never goes below zero.
+  if bank_now('dir-boss', null, 10) is not null then raise exception 'a null weekly_moves returned a bank'; end if;
+  if bank_now('dir-boss', 5, null) is not null then raise exception 'a null bank_cap returned a bank'; end if;
+  if bank_now('dir-boss', 5, 10) is null then raise exception 'bank_now with all arguments returned null'; end if;
+  update move_bank set balance = 1, as_of = now() - interval '7 days' where staff = 'dir-boss';
+  bank := bank_now('dir-boss', -5, 10);
+  if bank is distinct from 0::numeric then raise exception 'a negative weekly_moves went below zero: %', bank; end if;
+
+  -- The append-only tables refuse an edit even in replica mode, as a restore with triggers disabled runs.
+  perform set_config('session_replication_role', 'replica', true);
+  foreach t in array array['meetings', 'staff_memory', 'staff_profiles'] loop
+    denied := false;
+    begin execute format('update %I set %I = %I', t, case t when 'meetings' then 'started_at' else 'staff' end, case t when 'meetings' then 'started_at' else 'staff' end); exception when raise_exception then denied := true; end;
+    if not denied then perform set_config('session_replication_role', 'origin', true); raise exception '% was updated in replica mode', t; end if;
+    denied := false;
+    begin execute format('delete from %I', t); exception when raise_exception then denied := true; end;
+    if not denied then perform set_config('session_replication_role', 'origin', true); raise exception '% was deleted from in replica mode', t; end if;
+    denied := false;
+    begin execute format('truncate %s', case t when 'meetings' then 'meetings, model_calls, staff_memory, staff_profiles' else t end); exception when raise_exception then denied := true; end;
+    if not denied then perform set_config('session_replication_role', 'origin', true); raise exception '% was truncated in replica mode', t; end if;
+  end loop;
+  perform set_config('session_replication_role', 'origin', true);
+  -- Meetings are referenced by other tables, so its truncate cannot be tried alone; its triggers are checked as well.
+  if (select count(*) from pg_trigger where tgname in ('meetings_no_update', 'meetings_no_truncate', 'staff_memory_no_update',
+    'staff_memory_no_truncate', 'staff_profiles_no_update', 'staff_profiles_no_truncate') and tgenabled = 'A') is distinct from 6 then
+    raise exception 'an append-only trigger is not enabled always';
+  end if;
+
   -- model_calls.meeting names a real meeting.
   perform record_model_call(jsonb_build_object('duty', 'meeting', 'staff', 'dir-boss', 'provider', 'anthropic', 'model', 'claude-opus-5-5',
     'cost_microdollars', 1, 'outcome', 'failed', 'meeting', m2));

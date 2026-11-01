@@ -59,8 +59,8 @@ test('an opinion of a character the digest did not name is kept while that chara
 });
 
 test('a list over its cap keeps the first N and records the trim', () => {
-  const many = Array.from({ length: 45 }, (_, i) => ({ character: 'a', score: 1, note: String(i) }));
-  const r = repairMemory({ ...base, opinions: many, wheelhouse: ['1', '2', '3'] }, (id) => id === 'a', { ...caps, memoryWheelhouse: 2 });
+  const many = Array.from({ length: 45 }, (_, i) => ({ character: `c${i}`, score: 1, note: String(i) }));
+  const r = repairMemory({ ...base, opinions: many, wheelhouse: ['1', '2', '3'] }, () => true, { ...caps, memoryWheelhouse: 2 });
   assert.ok(r.ok);
   assert.equal(r.memory.opinions.length, 40);
   assert.equal(r.memory.opinions[39]?.note, '39');
@@ -68,5 +68,20 @@ test('a list over its cap keeps the first N and records the trim', () => {
   assert.deepEqual(r.trims, [
     { path: 'opinions', predicate: 'atMost(40)', before: 45, after: 40 },
     { path: 'wheelhouse', predicate: 'atMost(2)', before: 3, after: 2 },
+  ]);
+});
+
+test('a character named twice in a list keeps its first entry and the drop is recorded', () => {
+  const r = repairMemory({
+    ...base,
+    opinions: [{ character: 'a', score: 3, note: 'first' }, { character: 'b', score: 1, note: '' }, { character: 'a', score: -2, note: 'second' }],
+    grudges: [{ character: 'c', note: 'one' }, { character: 'c', note: 'two' }],
+  }, (id) => pub.has(id), caps);
+  assert.ok(r.ok);
+  assert.deepEqual(r.memory.opinions.map((o) => [o.character, o.score]), [['a', 3], ['b', 1]]);
+  assert.deepEqual(r.memory.grudges.map((g) => g.note), ['one']);
+  assert.deepEqual(r.trims, [
+    { path: 'opinions[2]', predicate: 'uniqueCharacter', before: 1, after: 0 },
+    { path: 'grudges[1]', predicate: 'uniqueCharacter', before: 1, after: 0 },
   ]);
 });
