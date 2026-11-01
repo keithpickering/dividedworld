@@ -338,6 +338,8 @@ declare
   got text;
 begin
   insert into characters (name, staff, staff_kind, debuted_at) values ('Season Boss', 'season-boss', 'boss', now());
+  -- (The season an earlier block rolled over was seated with a Boss by the handover, 0050; this one is a season opened before any Boss existed.)
+  update seasons set boss = null where ends_at is null;
   perform tests.become_service();
   if current_boss() is not null then raise exception 'a season with no Boss has one: %', current_boss(); end if;
   perform tests.unbecome();
