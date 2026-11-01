@@ -148,6 +148,8 @@ begin
   perform set_config('kayfabb.staff_writer', '', true);
   -- The tick records a row it could not land (0047); the queue shows it, so an admin can hold it.
   update queued_moves set failed_at = now(), failure = 'it did not land' where id = later;
+  -- A post on the board after the tick counted the move: the queue shows the tick's stored count (0052), not a live one.
+  perform tests.post(tests.character(tests.account('aq-poster'), 'Queue Poster'), tests.thread('Queue thread'), 'after the count', now() + interval '1 second');
   perform tests.become(admin);
   q := admin_queue();
   perform tests.unbecome();
@@ -172,6 +174,12 @@ begin
      or q #>> '{inForce,0,demand,kind}' is distinct from 'postsOnBoard' or q #>> '{inForce,0,landedAt}' is null or q #>> '{inForce,0,expiresAt}' is null then
     raise exception 'the move in force reads %', q -> 'inForce' -> 0;
   end if;
+  -- Its progress is the one the tick stored: 0 of 5 (a live count would say 1, the post above), counted when the tick ran. A move that asks
+  -- nothing was never counted: no number, and no time.
+  if q #>> '{inForce,0,progress,checkedAt}' is null or (q #>> '{inForce,0,progress,checkedAt}')::timestamptz is distinct from (select checked_at from open_moves where move_act = landed) then
+    raise exception 'the move in force was counted at %', q #>> '{inForce,0,progress,checkedAt}';
+  end if;
+  if q #> '{inForce,1,progress}' is distinct from '{"checkedAt": null}'::jsonb then raise exception 'a move never counted reads %', q #> '{inForce,1,progress}'; end if;
   -- Ended: the held one and the met one; the hold of 40 days ago is gone from the window.
   if jsonb_array_length(q -> 'ended') is distinct from 2 then raise exception 'ended holds % moves: %', jsonb_array_length(q -> 'ended'), q -> 'ended'; end if;
   if not exists (select 1 from jsonb_array_elements(q -> 'ended') j where j ->> 'how' = 'held' and j ->> 'id' = held::text and j ->> 'act' is null and j ->> 'why' = 'because Held Hall' and j #>> '{params,name}' = 'Held Hall')

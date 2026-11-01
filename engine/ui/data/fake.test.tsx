@@ -1337,8 +1337,17 @@ describe('moves, a staff member and the admin queue', () => {
     const { fake, move } = world();
     const notice = await fake.moveNotice(move);
     expect(notice?.reactions).toEqual([{ kind: 'fire', count: 4 }, { kind: 'tomato', count: 3 }, { kind: 'zzz', count: 2 }]);
-    expect(notice?.progress).toEqual({ done: 0, of: 2, met: false });
+    expect(notice?.progress).toEqual({ done: 0, of: 2, met: false, checkedAt: new Date(fake.clock.now()).toISOString() });
     expect(await fake.moveNotice('no-such-act')).toBeNull();
+  });
+
+  test('a move the tick has not counted has no count and no time, in its notice and in the queue', async () => {
+    const { fake, admin } = world();
+    const general = 'general';
+    const fresh = fake.seed.move('director', { board: general, name: 'Uncounted Hall', demand: { kind: 'postsOnBoard', params: { board: general, count: 3 } }, uncounted: true });
+    expect((await fake.moveNotice(fresh))?.progress).toEqual({ done: 0, of: 0, met: false, checkedAt: null });
+    fake.signInAs(admin);
+    expect((await fake.adminQueue()).inForce.find((m) => m.act === fresh)?.progress).toEqual({ done: 0, of: 0, met: false, checkedAt: null });
   });
 
   test('the Director is a staff character in the public projection, and a player\'s character is not', async () => {

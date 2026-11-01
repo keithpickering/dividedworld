@@ -76,6 +76,16 @@ describe('the admin queue', () => {
     expect(bar).toHaveAttribute('aria-valuemax', '12');
   });
 
+  test('a move in force says when its count was made, and one the tick has not counted says so, with no number', async () => {
+    open({ build: (fake, w) => { fake.seed.move('director', { board: w.second, name: 'Fresh Hall', uncounted: true, demand: { kind: 'postsOnBoard', params: { board: w.second, count: 3 } } }); } });
+    const live = await group(/^In force/u);
+    expect(live).toHaveTextContent(/5 of 12, counted [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2} [AP]M/u);
+    const fresh = within(live).getAllByRole('article').find((a) => a.textContent?.includes('Fresh Hall'))!;
+    expect(fresh).toHaveTextContent('Not counted yet.');
+    expect(fresh).not.toHaveTextContent(/\d+ of \d+/u);
+    expect(within(fresh).queryByRole('progressbar')).toBeNull();
+  });
+
   test('the ended group, opened, says how each ended in plain words: met, expired, reversed and held', async () => {
     open();
     const ended = (await group(/^Ended/u)).querySelector('details')!;

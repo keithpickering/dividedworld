@@ -12,10 +12,12 @@
  * The segment is a button. Its overlay is the glass's (engine/ui/glass/Overlay.tsx, the board's modal layer underneath): focus moves
  * into it as it opens, Tab is held inside, Escape and Close shut it, and focus goes back to the segment.
  *
- * Cost: a board page reads this once, for the board's one move in force (boards_now.move_act): the Act, its tally and its progress.
+ * Cost: a board page reads this once, for the board's one move in force (boards_now.move_act): the Act, its tally and its progress. The
+ * progress is the count the tick stored (a primary-key probe, whatever the board holds), so the overlay says when it was counted, and says
+ * plainly when the tick has not counted the demand yet, with no number.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { demandKind, demandWords } from '../../system/demands.ts';
+import { demandAsk, demandKind, demandWords } from '../../system/demands.ts';
 import { moveKind } from '../../system/moves.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { dayAndTime } from '../characters/format.ts';
@@ -124,13 +126,15 @@ function MoveDetail({ loaded, onClose, returnFocusTo }: { readonly loaded: Loade
         <h3>The way out</h3>
         {demand === null
           ? <p>It asks nothing of the board.</p>
-          : known && demand ? <p>{readProgress ? demandWords(demand, readProgress) : demandWords(demand, { done: 0, of: 0 })}</p> : <p>It asks for something this page has no words for.</p>}
+          : known && demand ? <p>{readProgress ? demandWords(demand, readProgress) : demandAsk(demand)}</p> : <p>It asks for something this page has no words for.</p>}
         {readProgress && (
           <div className="kb-move-bar" role="progressbar" aria-label="Progress toward the way out" aria-valuemin={0} aria-valuemax={readProgress.of} aria-valuenow={readProgress.done} aria-valuetext={`${readProgress.done} of ${readProgress.of} ${unit}`}>
             <i style={{ width: `${Math.round((100 * readProgress.done) / readProgress.of)}%` }} />
           </div>
         )}
         {progress?.error && <p>Its progress could not be counted just now.</p>}
+        {known && progress !== null && progress.checkedAt === null && <p>It has not been counted yet.</p>}
+        {known && progress !== null && progress.checkedAt !== null && !progress.error && <p className="kb-move-counted">Counted {dayAndTime(progress.checkedAt)}.</p>}
         {notice.expiresAt && <p>{demand === null ? 'It' : 'If that does not happen, it'} ends on {shortDate(notice.expiresAt)}.</p>}
         <p>An admin can reverse it at any time.</p>
         <p className="kb-move-plain">This panel is plain. The announcement on the board is in character and may bluff.</p>

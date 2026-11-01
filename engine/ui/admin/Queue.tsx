@@ -18,11 +18,11 @@
  * a hold cannot be taken back, and a refusal comes back in the server's words in the dialog. Either way the queue is read again, so
  * a stale row never stays. Focus then goes to the heading of the group the move left, since its button is gone.
  *
- * Cost: one read, capped on the server (100 a group, `more` says a group was cut), with the in-force moves' progress each bounded by
- * the move's expiry.
+ * Cost: one read, capped on the server (100 a group, `more` says a group was cut), with the in-force moves' progress read from what the
+ * tick stored (so each says when it was counted, or that it has not been) and none counted by the read itself.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { demandKind, demandWords } from '../../system/demands.ts';
+import { demandAsk, demandKind, demandWords } from '../../system/demands.ts';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { demandNeeds } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
@@ -225,13 +225,14 @@ function InForce({ rows, more, boards, bosses, onReverse }: { readonly rows: rea
             <div className="kb-queue-body">
               <h3 className="kb-queue-sentence"><MoveSentence kind={m.kind} params={m.params} boards={boards} bosses={bosses} tense="done" /></h3>
               {m.demand === null && <p>{demandNeeds(null, m.kind)}</p>}
-              {m.demand !== null && (known ? <p>{demandWords(m.demand, ok ? m.progress : { done: 0, of: 0 })}</p> : <p>It asks for something this page has no words for.</p>)}
+              {m.demand !== null && (known ? <p>{(ok ? demandWords(m.demand, m.progress) : demandAsk(m.demand))}</p> : <p>It asks for something this page has no words for.</p>)}
               {ok && (
                 <div className="kb-queue-bar" role="progressbar" aria-label="Progress toward the way out" aria-valuemin={0} aria-valuemax={m.progress.of} aria-valuenow={m.progress.done} aria-valuetext={`${m.progress.done} of ${m.progress.of}`}>
                   <i style={{ width: `${Math.round((100 * m.progress.done) / m.progress.of)}%` }} />
                 </div>
               )}
-              {ok && <p className="kb-queue-time">{m.progress.done} of {m.progress.of}</p>}
+              {ok && m.progress.checkedAt !== null && <p className="kb-queue-time">{m.progress.done} of {m.progress.of}, counted {dayAndTime(m.progress.checkedAt)}</p>}
+              {m.demand !== null && m.progress.checkedAt === null && <p className="kb-queue-time">Not counted yet.</p>}
               {m.why && <p className="kb-queue-quote">Why, in {m.boss ?? 'the Boss'}&apos;s words: “{m.why}”</p>}
             </div>
             <div className="kb-queue-act">

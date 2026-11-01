@@ -147,6 +147,8 @@ export interface SeedMove {
   /** Epoch milliseconds. */
   readonly at?: number;
   readonly expiresAt?: number;
+  /** The tick has not counted its demand yet: its progress carries no count and no time (the server's `{checkedAt: null}`). */
+  readonly uncounted?: boolean;
 }
 
 interface SeedAct {
@@ -258,6 +260,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const byEmail = new Map<string, Id>();
   const characters = new Map<Id, CharRec>();
   const acts = new Map<Id, ActRec>();
+  /** Moves whose demand the tick has not counted (SeedMove.uncounted). */
+  const uncounted = new Set<Id>();
   const threads = new Map<Id, ThreadRec>();
   const reactions: { act: Id; account: Id; character: Id; kind: string }[] = [];
   const invites: InviteRec[] = [];
@@ -393,8 +397,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return c.id;
   };
 
-  /** `move_progress`, as demand_progress counts it: characters, posts and tallies after the landing, never a staff character's, never players. */
-  function progressOf(move: ActRec): { done: number; of: number; met: boolean } {
+  /**
+   * `move_progress`, as demand_progress counts it: characters, posts and tallies after the landing, never a staff character's, never players.
+   * The server stores the tick's count and says when it was counted; the fake counts as it is asked and says it counted just now, unless
+   * the seed said the move was never counted (`uncounted`).
+   */
+  function progressOf(move: ActRec): { done?: number; of?: number; met?: boolean; checkedAt: string | null } {
+    if (uncounted.has(move.id)) return { checkedAt: null };
+    return { ...countOf(move), checkedAt: iso(now()) };
+  }
+  function countOf(move: ActRec): { done: number; of: number; met: boolean } {
     const demand = toDemand(move.payload['demand']);
     if (!demand) return { done: 0, of: 0, met: false };
     const p = demand.params;
@@ -1381,10 +1393,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const at = m.at ?? now();
       const boss = staffId(staff);
       const demand = moveDemand(m);
-      return write({
+      const id = write({
         character: boss, kind: 'move', thread: announcements(),
         payload: { kind: 'renameBoard', body: m.body ?? 'The System has spoken.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
       }).id;
+      if (m.uncounted) uncounted.add(id);
+      return id;
     },
     endMove(act, end) {
       const a = acts.get(act);

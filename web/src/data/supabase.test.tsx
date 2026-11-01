@@ -1141,11 +1141,11 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/acts_public')) return rows([MOVE_ROW]);
       if (r.url.pathname.endsWith('/reaction_tallies')) return rows([{ kind: 'fire', count: 9 }, { kind: 'zzz', count: 1 }, { kind: 'tea', count: 3 }, { kind: 'tomato', count: 6 }]);
-      if (r.url.pathname.endsWith('/rpc/move_progress')) return json({ done: 7, of: 12, met: false });
+      if (r.url.pathname.endsWith('/rpc/move_progress')) return json({ done: 7, of: 12, met: false, checkedAt: '2026-11-01T14:05:00+00:00' });
       return json({}, 404);
     });
     const notice = await h.api.moveNotice(A);
-    expect(notice).toMatchObject({ act: A, kind: 'renameBoard', body: 'Toast now.', demand: { kind: 'distinctCharactersOnBoard' }, progress: { done: 7, of: 12, met: false }, expiresAt: '2026-11-13T12:00:00+00:00' });
+    expect(notice).toMatchObject({ act: A, kind: 'renameBoard', body: 'Toast now.', demand: { kind: 'distinctCharactersOnBoard' }, progress: { done: 7, of: 12, met: false, checkedAt: '2026-11-01T14:05:00+00:00' }, expiresAt: '2026-11-13T12:00:00+00:00' });
     expect(notice?.reactions).toEqual([{ kind: 'fire', count: 9 }, { kind: 'tomato', count: 6 }, { kind: 'tea', count: 3 }]);
     expect(h.to('rpc/move_progress')[0]?.body).toEqual({ move_act: A });
     expect(await harness(() => rows([])).api.moveNotice(A)).toBeNull();
@@ -1157,7 +1157,16 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
       if (r.url.pathname.endsWith('/rpc/move_progress')) return json({ message: 'down' }, 400);
       return rows([]);
     });
-    expect((await h.api.moveNotice(A))?.progress).toEqual({ done: 0, of: 0, met: false });
+    expect((await h.api.moveNotice(A))?.progress).toEqual({ done: 0, of: 0, met: false, checkedAt: null });
+  });
+
+  it('shows a move the tick has not counted yet with no count and no time, as the server answers it', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/move_progress')) return json({ checkedAt: null });
+      if (r.url.pathname.endsWith('/acts_public')) return rows([MOVE_ROW]);
+      return rows([]);
+    });
+    expect((await h.api.moveNotice(A))?.progress).toEqual({ done: 0, of: 0, met: false, checkedAt: null });
   });
 
   it('pages a staff member\'s moves by keyset: newest first by time then Act, one row more than a page to know there is an older one', async () => {
@@ -1194,7 +1203,7 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     const queue = {
       cap: 100,
       waiting: [{ id: 4, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: { board: C, name: 'Toast' }, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Toast.', goLiveAt: '2026-10-31T14:10:00+00:00', expiresAt: '2026-11-14T00:00:00+00:00', structural: true, boardName: 'General', failedAt: '2026-10-31T14:11:00+00:00', failure: 'it did not land' }],
-      inForce: [{ act: A, id: 3, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Why.', landedAt: '2026-10-30T12:00:00+00:00', expiresAt: '2026-11-13T12:00:00+00:00', progress: { done: 2, of: 5, met: false } }],
+      inForce: [{ act: A, id: 3, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Why.', landedAt: '2026-10-30T12:00:00+00:00', expiresAt: '2026-11-13T12:00:00+00:00', progress: { done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' } }],
       ended: [{ how: 'held', by: 'admin', at: '2026-10-30T10:00:00+00:00', act: null, id: 2, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: 'x', landedAt: null }, { how: 'met', by: 'tick', at: '2026-10-29T10:00:00+00:00', act: B, id: 1, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: null, landedAt: '2026-10-28T10:00:00+00:00' }],
       more: { waiting: false, inForce: false, ended: true },
       roster: [{ staff: 'the-clerk', name: 'The Clerk' }, { staff: 7, name: 'bad' }],
@@ -1207,7 +1216,7 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     });
     const q = await h.api.adminQueue();
     expect(q.waiting[0]).toMatchObject({ id: 4, boss: 'The Director', boardName: 'General', failure: 'it did not land', failedAt: '2026-10-31T14:11:00+00:00', demand: { kind: 'postsOnBoard' } });
-    expect(q.inForce[0]?.progress).toEqual({ done: 2, of: 5, met: false });
+    expect(q.inForce[0]?.progress).toEqual({ done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' });
     expect(q.ended.map((e) => e.how)).toEqual(['held', 'met']);
     expect(q.more).toEqual({ waiting: false, inForce: false, ended: true });
     expect(q.roster).toEqual([{ staff: 'the-clerk', name: 'The Clerk' }]);

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, test } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { testInstance, buildWorld, renderIn } from '../test-world.tsx';
+import { dayAndTime } from '../characters/format.ts';
 import { MoveNotice } from './MoveNotice.tsx';
 import { seedMoves, type MoveWorld } from './move-world.ts';
 
@@ -112,6 +113,33 @@ describe('the overlay that opens from the way out', () => {
     expect(dialog).toHaveTextContent(/If that does not happen, it ends on [A-Z][a-z]{2} \d{1,2}/u);
     expect(dialog).toHaveTextContent('An admin can reverse it at any time.');
     expect(dialog).toHaveTextContent('The announcement on the board is in character and may bluff.');
+  });
+
+  test('says when the tick counted the demand, in the reader\'s own time', async () => {
+    const { fake } = open();
+    await userEvent.click(await segment());
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent(`Counted ${dayAndTime(new Date(fake.clock.now()).toISOString())}.`);
+    expect(dialog).toHaveTextContent('5 of 12 so far.');
+  });
+
+  test('a demand the tick has not counted yet says so, plainly, and shows no number and no bar', async () => {
+    const fake = buildWorld();
+    const w = seedMoves(fake, testInstance);
+    const fresh = fake.seed.move('director', {
+      board: w.general, name: 'Fresh Hall', at: fake.clock.now() - 1000, uncounted: true,
+      demand: { kind: 'distinctCharactersOnBoard', params: { board: w.general, count: 12 } }, expiresAt: Date.UTC(2026, 10, 13, 12),
+    });
+    renderIn(fake, <MoveNotice act={fresh} />, { path: '/' });
+    const way = await segment();
+    expect(way).toHaveTextContent('WAY OUT: DETAILS');
+    expect(way.textContent).not.toMatch(/\d+ OF \d+/u);
+    await userEvent.click(way);
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('It has not been counted yet.');
+    expect(dialog).not.toHaveTextContent(/\d+ of \d+/u);
+    expect(dialog).not.toHaveTextContent('Counted');
+    expect(within(dialog).queryByRole('progressbar')).toBeNull();
   });
 
   test('opens with Space as well', async () => {

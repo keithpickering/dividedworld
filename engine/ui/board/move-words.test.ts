@@ -12,10 +12,12 @@ test('the long label comes from the move kind\'s catalog entry, and an unknown k
 });
 
 test('the way out says the count and what is counted, in the singular for one, and never guesses at a demand it cannot read', () => {
-  assert.equal(wayOut(demand, { done: 7, of: 12, met: false }, null), 'WAY OUT: 7 OF 12 POSTERS');
-  assert.equal(wayOut({ kind: 'characterPostsInThread', params: {} }, { done: 0, of: 1, met: false }, null), 'WAY OUT: 0 OF 1 POST');
-  assert.equal(wayOut(demand, { done: 0, of: 0, met: false, error: '22023' }, null), 'WAY OUT: DETAILS');
-  assert.equal(wayOut({ kind: 'shout', params: {} }, { done: 1, of: 2, met: false }, null), 'WAY OUT: DETAILS');
+  assert.equal(wayOut(demand, { done: 7, of: 12, met: false, checkedAt: '2026-11-01T14:05:00+00:00' }, null), 'WAY OUT: 7 OF 12 POSTERS');
+  assert.equal(wayOut({ kind: 'characterPostsInThread', params: {} }, { done: 0, of: 1, met: false, checkedAt: '2026-11-01T14:05:00+00:00' }, null), 'WAY OUT: 0 OF 1 POST');
+  assert.equal(wayOut(demand, { done: 0, of: 0, met: false, error: '22023', checkedAt: '2026-11-01T14:05:00+00:00' }, null), 'WAY OUT: DETAILS');
+  assert.equal(wayOut({ kind: 'shout', params: {} }, { done: 1, of: 2, met: false, checkedAt: '2026-11-01T14:05:00+00:00' }, null), 'WAY OUT: DETAILS');
+  // A demand the tick has not counted yet shows no number.
+  assert.equal(wayOut(demand, { done: 0, of: 0, met: false, checkedAt: null }, null), 'WAY OUT: DETAILS');
   assert.equal(wayOut(null, null, local(10, 13)), 'WAY OUT: RUNS OUT NOV 13');
   assert.equal(wayOut(null, null, null), 'WAY OUT: DETAILS');
 });

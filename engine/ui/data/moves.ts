@@ -14,11 +14,15 @@ export function toDemand(v: unknown): Demand | null {
   return { kind: v['kind'], params: isObject(v['params']) ? v['params'] : {} };
 }
 
-/** A progress as `move_progress` answers it; anything that is not one is "0 of 0, not met", which a screen shows without a count. */
+/**
+ * A progress as `move_progress` answers it: the tick's stored count and when it was counted. Anything that is not one, and a move the
+ * tick has not counted yet (no `checkedAt`), is "0 of 0, not met, never counted", which a screen shows without a number.
+ */
 export function toProgress(v: unknown): DemandProgress {
-  if (!isObject(v)) return { done: 0, of: 0, met: false };
+  const checkedAt = isObject(v) && typeof v['checkedAt'] === 'string' && !Number.isNaN(Date.parse(v['checkedAt'])) ? v['checkedAt'] : null;
+  if (!isObject(v) || checkedAt === null) return { done: 0, of: 0, met: false, checkedAt: null };
   const error = typeof v['error'] === 'string' ? v['error'] : undefined;
-  return { done: whole(v['done']), of: whole(v['of']), met: v['met'] === true, ...(error === undefined ? {} : { error }) };
+  return { done: whole(v['done']), of: whole(v['of']), met: v['met'] === true, checkedAt, ...(error === undefined ? {} : { error }) };
 }
 
 /** The kinds with the most reactions, most first (ties by kind, so the order is the same everywhere), at most `limit`. */

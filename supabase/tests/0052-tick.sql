@@ -210,6 +210,8 @@ begin
   if exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = bad) then raise exception 'a move whose progress errors was ended by the demand'; end if;
   if (select e.payload ->> 'why' from acts e where e.kind = 'move_end' and e.target_act_id = good) is distinct from 'expired' then raise exception 'one bad move stopped another from ending'; end if;
   if (select e.payload ->> 'why' from acts e where e.kind = 'move_end' and e.target_act_id = bad_old) is distinct from 'expired' then raise exception 'a move whose progress errors did not expire'; end if;
+  -- What the tick read is stored on the move's row (0052), the evaluator's error form included, so a board shows it as it shows any count.
+  if (select progress ->> 'error' from open_moves where move_act = bad) is null then raise exception 'the tick did not store the error form of a count that failed: %', (select progress from open_moves where move_act = bad); end if;
   perform end_move(bad, 'reversed', 'test');
 end $$;
 

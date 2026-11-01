@@ -246,11 +246,17 @@ export interface Demand {
   readonly params: Readonly<Record<string, unknown>>;
 }
 
-/** How far a move's demand has come (move_progress). `error` is set when the demand could not be read, in which case the count is 0 of 0. */
+/**
+ * How far a move's demand had come when the tick last counted it (move_progress, admin_queue): the tick stores its count on the move, so
+ * a page read costs nothing in the board's size, and the count may be minutes old. `checkedAt` is when it was counted, and null when it
+ * has not been counted yet, in which case the numbers are 0 of 0 and a screen shows none. `error` is set when the demand could not be
+ * read, in which case the count is 0 of 0 too.
+ */
 export interface DemandProgress {
   readonly done: number;
   readonly of: number;
   readonly met: boolean;
+  readonly checkedAt: string | null;
   readonly error?: string;
 }
 
