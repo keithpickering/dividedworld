@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Character, KayfaApi, MyCharacter } from '../data/api.ts';
@@ -451,5 +451,18 @@ describe('from the Task 1.4 reviews', () => {
     await userEvent.keyboard('{Enter}');
     expect(hand).toHaveAttribute('aria-expanded', 'false');
     expect(hand).toHaveFocus();
+  });
+});
+
+describe('the HUD\'s hidden mark', () => {
+  test('shows for a hidden HUD mask, in words a screen reader reads, and not for a shown one', async () => {
+    setup(true, [{ ...mine('a', 'Pipewrench'), presenceHidden: true }]);
+    const tag = await screen.findByText('Hidden');
+    expect(tag.closest('.kb-hud-who')).not.toBeNull();
+    expect(screen.getByText('hidden from online lists')).toBeInTheDocument();
+    cleanup();
+    setup(true, [mine('a', 'Pipewrench')]);
+    await screen.findByText('Pipewrench', { selector: '.kb-hud-name' });
+    expect(screen.queryByText('Hidden')).toBeNull();
   });
 });

@@ -245,6 +245,12 @@ export function Hud() {
                     </Link>
                     <span className="kb-hud-who">
                       <span className="kb-hud-name kb-glass-display">{hud.name}</span>
+                      {hud.presenceHidden && (
+                        <span className="kb-hud-hidden kb-glass-skew-tag">
+                          <span aria-hidden="true">Hidden</span>
+                          <span className="kb-visually-hidden">hidden from online lists</span>
+                        </span>
+                      )}
                       <span className="kb-hud-class-line">
                         <span className="kb-hud-class kb-glass-skew-tag" style={{ '--kb-hud-class-fill': `var(--kb-glass-class-${hud.class}-fill)`, '--kb-hud-class-ink': `var(--kb-glass-class-${hud.class}-ink)` } as CSSProperties}>
                           {className}

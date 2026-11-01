@@ -278,6 +278,19 @@
   color: var(--kb-hud-class-ink);
 }
 
+.kb-hud-hidden {
+  display: inline-block;
+  margin-inline-start: 8px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  color: var(--kb-glass-text-2);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
 .kb-hud-secret {
   display: inline-flex;
   align-items: center;
