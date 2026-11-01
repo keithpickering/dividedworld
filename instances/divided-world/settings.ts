@@ -88,6 +88,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   presenceWindow: { unit: 'minute', count: 5 },
   presenceNames: 15,
   presencePollSeconds: 30,
+  /** A card set face down stays set a week if nothing springs it (the card mechanic's design, section 3). */
+  setLasts: { unit: 'day', count: 7 },
   /** The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone. */
   cardSettings: { 'whoops.clean': 95 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
@@ -112,6 +114,10 @@ export const defaults: Settings = deepFreeze<Settings>({
     /** How many whole days old a Technician's post is when a calm-positive vote on it first pays Evergreen. */
     'technician.evergreenDays': 3,
     'stickAround.price': 100,
+    /** The card mechanic's first plays, at starting numbers the season review replaces: a Trap Card and a Force Field 1.50, a Bluff 0.25. */
+    'trapCard.price': 150,
+    'forceField.price': 150,
+    'bluff.price': 25,
     /** 1.00 to buy, plus 0.25 per 500 characters of the target when played, at most 3.00 in all. */
     'whoops.price': 100,
     'whoops.perLength': 25,

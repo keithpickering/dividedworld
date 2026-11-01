@@ -41,6 +41,8 @@ const SESSION = { access_token: JWT, refresh_token: 'refresh-1', expires_in: 360
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 const C = '33333333-3333-4333-8333-333333333333';
+const SET = '55555555-5555-4555-8555-555555555555';
+const SPRING = '66666666-6666-4666-8666-666666666666';
 const T = '44444444-4444-4444-8444-444444444444';
 
 interface Rec {
@@ -354,7 +356,7 @@ describe('reads and their rows', () => {
     expect(spun.map((t) => t.originActId)).toEqual([A]);
     const cards = await h.api.cardsOn(A, 21);
     const p = h.to('acts_public')[0]?.url.searchParams;
-    expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order')]).toEqual(['eq.card', `eq.${A}`, 'created_at.asc']);
+    expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order')]).toEqual(['in.(card,set,spring)', `eq.${A}`, 'created_at.asc']);
     expect(cards.map((c) => c.kind)).toEqual(['card']);
     expect(await h.api.spunFromMany(['x),y'], 5)).toEqual([]);
     expect(await h.api.cardsOn('x),y', 5)).toEqual([]);
@@ -366,7 +368,7 @@ describe('reads and their rows', () => {
     const plays = await h.api.cardsOnMany([A, C, A, 'x),y'], 60);
     expect(h.to('acts_public')).toHaveLength(1);
     const p = h.to('acts_public')[0]?.url.searchParams;
-    expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order'), p?.get('limit')]).toEqual(['eq.card', `in.(${A},${C})`, 'created_at.asc', '60']);
+    expect([p?.get('kind'), p?.get('target_act_id'), p?.get('order'), p?.get('limit')]).toEqual(['in.(card,set,spring)', `in.(${A},${C})`, 'created_at.asc', '60']);
     expect(plays.map((c) => [c.kind, c.seq, c.targetActId])).toEqual([['card', null, A], ['card', null, C]]);
     expect(await h.api.cardsOnMany([], 5)).toEqual([]);
     expect(await h.api.cardsOnMany(['x),y'], 5)).toEqual([]);
@@ -1003,6 +1005,8 @@ describe('the log', () => {
           ? rows([{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }])
           : rows([{ play: C, post: A, at: '2026-10-29T21:16:00+00:00' }]);
       }
+      if (name === 'my_face_down') return rows([{ play: SET, card: 'bluffy', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
+      if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, bought_price: 100, at: '2026-10-29T19:00:00+00:00' }]);
       return undefined;
     });
   }
@@ -1022,6 +1026,8 @@ describe('the log', () => {
       cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }],
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00' }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
+      setEnds: [{ play: SET, card: 'bluffy', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
+      caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, boughtPrice: 100, at: '2026-10-29T19:00:00+00:00' }],
       before: null,
     });
     const [ledger] = h.to('my_ledger');
@@ -1039,6 +1045,10 @@ describe('the log', () => {
     expect(plays?.url.searchParams.get('order')).toBe('at.desc');
     expect(saves?.url.searchParams.get('order')).toBe('saved_at.desc');
     expect(saves?.url.searchParams.get('saved_at')).toBe('not.is.null');
+    const [ends] = h.to('my_face_down');
+    expect([ends?.url.searchParams.get('order'), ends?.url.searchParams.get('ended_at'), ends?.url.searchParams.get('limit')]).toEqual(['ended_at.desc', 'not.is.null', '200']);
+    const [caught] = h.to('my_caught');
+    expect([caught?.url.searchParams.get('order'), caught?.url.searchParams.get('limit')]).toEqual(['at.desc', '200']);
     expect(h.rest().every((r) => r.method === 'GET' && (r.headers.get('prefer') ?? '').indexOf('count') === -1)).toBe(true);
   });
 
@@ -1052,6 +1062,8 @@ describe('the log', () => {
     const [plays, saves] = h.to('my_posts_played_on');
     expect(plays?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);
+    expect(h.to('my_face_down')[0]?.url.searchParams.getAll('ended_at')).toEqual(['not.is.null', `lte.${before}`]);
+    expect(h.to('my_caught')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
   });
 
   /* #89 F2: a settlement made before its shares were kept says so, and the log says it plainly rather than "no post". */

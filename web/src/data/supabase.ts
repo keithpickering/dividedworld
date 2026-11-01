@@ -35,7 +35,7 @@ import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/m
 import { MOVES_LOG_PAGE } from '../../../engine/ui/data/api.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
@@ -58,6 +58,8 @@ const REFUSAL_HINT = 'kayfabb.refusal';
 const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
 const NOT_READ = 'that could not be read right now; try again';
+/** The Acts that are layers on a post, read through it: a card play, a card set face down, and the spring that reveals one (0054). */
+const LAYER_KINDS = ['card', 'set', 'spring'];
 /** PostgREST answers at most this many rows to one request unless told fewer; every list read here asks for fewer, ordered. */
 const ROW_CAP = 1000;
 const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
@@ -675,13 +677,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async cardsOn(actId, limit) {
       if (!idOk(actId)) return [];
-      const rows = await list(() => client.from('acts_public').select('*').eq('kind', 'card').eq('target_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
+      /* A post's plays, its card backs and their springs (0054): each is a layer on the post, read through it. */
+      const rows = await list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).eq('target_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
       return rows.map(toAct);
     },
     async cardsOnMany(actIds, limit) {
       const wanted = [...new Set(actIds)].filter(idOk);
       if (wanted.length === 0) return [];
-      const rows = await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card').in('target_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
+      const rows = await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).in('target_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
       return merged(rows, 'created_at', 'id', rowLimit(limit)).map(toAct);
     },
     async effectStates(plays) {
@@ -704,6 +707,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* The price is the card's rules' and the Edge Function's (it reads the settings rows as they stand), so a purchase sends the card alone. */
     buyCard: (card) => act({ action: 'buyCard', card }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
     playCard: (card, character, target, config, message) => act({ action: 'playCard', card, character, target, config, message }, toAct),
+    setCard: (card, character, target, config) => act({ action: 'setCard', card, character, target, config }, toAct),
+    useCard: (card, character, target, config, message) => act({ action: 'useCard', card, character, target, config, message }, toAct),
+    async myFaceDown(sets) {
+      if (sets.length === 0) return {};
+      const rows = await byChunks([...new Set(sets)], (part) => list(() => client.from('my_face_down').select('play,card').in('play', part)));
+      return Object.fromEntries(rows.map((r) => [r['play'], r['card']]));
+    },
     saveEffect: (play, character, state) => act({ action: 'saveEffect', character, play, state }, (r) => ({ play: r['play'], savedAt: r['saved_at'] })),
     characters,
     async characterCounts(id): Promise<CharacterCounts> {
@@ -872,13 +882,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
           return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
         };
-        const [ledgerRows, walletRows, cardRows, playRows, saveRows] = await Promise.all([
+        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, caughtRows] = await Promise.all([
           rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept'), 'ends_at',
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
           rows(() => client.from('my_card_ledger').select('card,kind,act,price,at'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
           rows(() => client.from('my_posts_played_on').select('play,post,at'), 'at', (q) => q, ['play']),
           rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
+          /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
+          rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
+          rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
         ]);
         const ledger = ledgerRows.map((r): LedgerRow => ({
           settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
@@ -905,6 +918,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           cards: cardRows.map((r): CardEvent => ({ card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'] })),
           playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'] })),
           saves: saveRows.map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
+          setEnds: endRows.map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'] })),
+          caught: caughtRows.map((r): CaughtPlay => ({
+            play: r['play'], card: r['card'], post: r['post'], trap: r['trap'], spring: r['spring'], price: num(r['price']),
+            boughtPrice: r['bought_price'] === null || r['bought_price'] === undefined ? null : num(r['bought_price']), at: r['at'],
+          })),
         };
       }, before ?? null);
     },

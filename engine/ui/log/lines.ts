@@ -28,7 +28,9 @@ import type { InstanceUi } from '../types.ts';
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
 
-export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'played' | 'onMine' | 'saved';
+export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'played' | 'onMine' | 'saved'
+  /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
+  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'wardEnded';
 
 /** One row of the log. */
 export interface LogRow {
@@ -282,7 +284,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
 
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, wardEnded: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -324,6 +326,35 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const link = post ? actLink(post, data, words, caster ?? undefined) : null;
     const ownOther = mine(post?.character) && post?.character !== caster;
     const paid = take((w) => w.kind === 'play' && w.ref === e.act);
+    /* A card set face down: its card is the setter's own row, said only to them. */
+    if (play?.kind === 'set') {
+      rows.push({
+        key: `set:${e.act}`, kind: 'set', at: e.at, what: `You set ${cardName(e.card)} face down`,
+        details: [`${cardName(e.card)} set face down on `, link ?? 'your post', '. It springs once, or ends by itself.'],
+        aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: caster ? [caster] : [],
+      });
+      return;
+    }
+    /* A play a trap caught: the caster's whole cost, the machine's and the post's, and that nothing came back. */
+    const catchOf = data.log.caught.find((c) => c.play === e.act);
+    if (catchOf) {
+      const cost = catchOf.boughtPrice === null ? plain(e.price) : `${plain(catchOf.boughtPrice)} and ${plain(e.price)}`;
+      rows.push({
+        key: `caught:${e.act}`, kind: 'caught', at: e.at, what: `Your ${cardName(e.card)} was caught`,
+        details: [`Your ${cardName(e.card)} on `, link ?? 'a post', ` was caught by ${withArticle(cardName(catchOf.trap))}; it cost ${cost}, and nothing came back.`],
+        aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: caster ? [caster] : [],
+      });
+      return;
+    }
+    /* A Use with a time up says when it ended, once that time has passed (the design's section 10: "a timed end"). */
+    const ends = typeof play?.payload.ends === 'string' ? play.payload.ends : null;
+    if (ends && Date.parse(ends) <= Date.now()) {
+      rows.push({
+        key: `wardEnded:${e.act}`, kind: 'wardEnded', at: ends, what: `${cardName(e.card)} ended`,
+        details: [`${cardName(e.card)} on `, link ?? 'your post', ' ended.'],
+        aura: 0, wallet: null, characters: caster ? [caster] : [],
+      });
+    }
     rows.push({
       key: `played:${e.act ?? i}`, kind: 'played', at: e.at, what: `You played ${cardName(e.card)}`,
       details: [
@@ -336,6 +367,20 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   for (const p of data.log.playsOnMine) {
     const play = data.acts.get(p.play);
     const post = data.acts.get(p.post);
+    /* A play a trap caught did nothing: the spring's own line (setEndRows) says what it caught. */
+    if (play && typeof play.payload.caught === 'string') continue;
+    /* A trap's strike on the player's post: the trap is public once it has sprung, and so is the post it was set on. */
+    const spring = typeof play?.payload.spring === 'string' ? data.acts.get(play.payload.spring) : undefined;
+    if (spring) {
+      const trapped = spring.targetActId ? data.acts.get(spring.targetActId) : undefined;
+      rows.push({
+        key: `struck:${p.play}`, kind: 'struck', at: p.at, what: 'A trap struck your post',
+        details: [`${withArticle(cardName(spring.payload.card)).replace(/^a/u, 'A')} on `, (trapped && actLink(trapped, data, words)) ?? 'a post',
+          ` laid ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', '.'],
+        aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
+      });
+      continue;
+    }
     const message = typeof play?.payload.message === 'string' && play.payload.message.trim() !== '' ? play.payload.message.trim() : null;
     rows.push({
       key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: 'A card on your post',
@@ -352,6 +397,52 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       key: `saved:${s.play}`, kind: 'saved', at: s.savedAt, what: said.what,
       details: [`${nameOf(play?.character, 'Someone')}'s ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `. ${said.said}`],
       aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
+    });
+  }
+  rows.push(...setEndRows(data, words, take));
+  return rows;
+}
+
+const TRIGGERED: Readonly<Record<string, string>> = { cast: 'a cast', reaction: 'a reaction', reply: 'a reply', quote: 'a quote', visit: 'a visit' };
+
+/**
+ * The end of each card the player set face down: a spring (what it caught, what it laid, what it paid), or its time with nothing
+ * springing it. A payout's line says what reached the wallet, from the player's own wallet event for the spring.
+ */
+function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) => boolean) => WalletEvent | undefined): LogRow[] {
+  const cardName = (key: unknown) => words.instance.cards.find((c) => c.key === key)?.name ?? 'a card';
+  const nameOf = (id: Id | null | undefined) => (id ? data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? 'someone' : 'someone');
+  const rows: LogRow[] = [];
+  for (const e of data.log.setEnds) {
+    const post = data.acts.get(e.post);
+    const own = post?.character ?? undefined;
+    const on = (post && actLink(post, data, words, own)) ?? 'your post';
+    const characters = own ? [own] : [];
+    const spring = e.spring ? data.acts.get(e.spring) : undefined;
+    if (!e.spring) {
+      rows.push({ key: `setEnded:${e.play}`, kind: 'setEnded', at: e.endedAt, what: `${cardName(e.card)} ended`, details: [`${cardName(e.card)} on `, on, ' ended; nothing sprang it.'], aura: 0, wallet: null, characters });
+      continue;
+    }
+    const outcome = (spring?.payload.outcome as { do?: string } | undefined)?.do;
+    const caught = typeof spring?.payload.caught === 'string' ? data.acts.get(spring.payload.caught) : undefined;
+    const by = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
+    if (caught) {
+      const paid = outcome === 'payout' ? take((w) => w.kind === 'trap' && w.ref === e.spring) : undefined;
+      rows.push({
+        key: `sprung:${e.play}`, kind: paid ? 'payout' : 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
+        details: [`${cardName(e.card)} caught ${nameOf(caught.character)}'s ${cardName(caught.payload.card)} on `, on, paid ? `; ${signed(paid.change)} to your wallet.` : '.'],
+        aura: paid?.change ?? 0, wallet: paid?.balanceAfter ?? null, characters,
+      });
+      continue;
+    }
+    const struck = outcome === 'strike' ? (spring?.payload.outcome as { card?: string }).card : undefined;
+    const trigger = TRIGGERED[String(spring?.payload.trigger)] ?? 'something';
+    rows.push({
+      key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
+      details: struck
+        ? [`${cardName(e.card)} on `, on, ` sprang on ${trigger}, and laid ${cardName(struck)} on `, (by && actLink(by, data, words)) ?? 'the post that sprang it', '.']
+        : [`${cardName(e.card)} on `, on, ` sprang on ${trigger}.`],
+      aura: 0, wallet: null, characters,
     });
   }
   return rows;
@@ -390,5 +481,23 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const c of log.cards) if (c.act) ids.add(c.act);
   for (const p of log.playsOnMine) { ids.add(p.play); ids.add(p.post); }
   for (const s of log.saves) { ids.add(s.play); ids.add(s.post); }
+  for (const e of log.setEnds) { ids.add(e.post); if (e.spring) ids.add(e.spring); }
+  for (const c of log.caught) { ids.add(c.play); ids.add(c.post); }
   return [...ids];
+}
+
+/**
+ * The Acts the Acts already read lead to, for their lines: the post a card play or a spring landed on, the spring a strike's card
+ * came from, and what a spring caught or was sprung by. Read in rounds until none is new (two at most: a spring, then its catch's post).
+ */
+export function actsFollowed(acts: ReadonlyMap<Id, Act>): Id[] {
+  const ids = new Set<Id>();
+  for (const a of acts.values()) {
+    if ((a.kind === 'card' || a.kind === 'spring' || a.kind === 'set') && a.targetActId) ids.add(a.targetActId);
+    for (const key of ['spring', 'caught', 'by'] as const) {
+      const v = a.payload[key];
+      if (typeof v === 'string' && (a.kind === 'spring' || (a.kind === 'card' && key === 'spring'))) ids.add(v);
+    }
+  }
+  return [...ids].filter((id) => !acts.has(id));
 }

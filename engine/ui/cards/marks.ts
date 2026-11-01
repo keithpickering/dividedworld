@@ -4,6 +4,8 @@
  * screen so the order and the names are tested under plain node.
  */
 import type { Tally } from '../data/api.ts';
+import type { Rarity } from '../../rules/cards.ts';
+import type { Span } from '../../rules/types.ts';
 import type { CardPlay } from './types.ts';
 
 /** The most marks a strip draws on a desktop, before the "+N" mark. */
@@ -47,3 +49,33 @@ export function markName(m: { readonly card: string; readonly plays: number; rea
 
 /** The "+N" mark's name: it begins with its visible text, so a voice command for what is seen finds it. */
 export const moreName = (hidden: number): string => `+${hidden} more ${hidden === 1 ? 'card' : 'cards'} played on this post`;
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Nov 5": a day in UTC, as the log says its days. */
+export const utcDate = (iso: string): string => { const d = new Date(iso); return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`; };
+const DAY = 86_400_000;
+const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
+const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}`;
+
+/**
+ * A card back's words (the card mechanic's design, section 3): who set it and when, and when it ends; the same for every card face
+ * down, so a reader cannot tell a trap from a Bluff. Once it has sprung, the card is public, and its name is said. `setLasts` is the
+ * instance's, the same for every Set, so the end it gives names no card either. `cardName` is asked only of a back that sprang.
+ */
+export function backWords(back: CardPlay, setter: string, setLasts: Span, cardName: (key: string) => string): { readonly name: string; readonly state: string; readonly ends: string } {
+  if (back.revealed) {
+    const card = cardName(back.revealed.card);
+    return { name: `${card}, set face down by ${setter}`, state: `${article(card).replace(/^a/u, 'A')} set face down by ${setter} sprang on ${utcDate(back.revealed.at)}.`, ends: 'It has sprung, and ended.' };
+  }
+  const ends = new Date(Date.parse(back.playedAt) + spanMs(setLasts)).toISOString();
+  return { name: `A card set face down by ${setter}`, state: `A card set face down by ${setter}, on ${utcDate(back.playedAt)}.`, ends: `Ends by itself on ${utcDate(ends)}, unless it springs first.` };
+}
+
+/** A ward's words: what it turns away, and when it ends (or ended). */
+export function wardWords(card: string, rarity: Rarity, ends: string | undefined, now: Date = new Date()): { readonly state: string; readonly ends?: string } {
+  if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: `${card} has ended; it turns nothing away.`, ends: `Ended on ${utcDate(ends)}.` };
+  return { state: `Turns away cards up to ${rarity}.`, ...(ends !== undefined ? { ends: `Ends on ${utcDate(ends)}.` } : {}) };
+}
+
+/** A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). */
+export const caughtWords = (trap: string | null): string => `Caught by ${trap ? article(trap) : 'a trap'}. It did nothing, and its card is spent.`;

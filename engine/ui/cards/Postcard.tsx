@@ -13,7 +13,7 @@
  * the rendered type measurement as the machine's other printing is). `armed` is the state a play waits in, and pulses unless motion is reduced.
  */
 import type { CSSProperties, ElementType, HTMLAttributes, Ref } from 'react';
-import { priceOf, type CardFace } from './faces.ts';
+import { gemOf, playWord, priceOf, rarityName, type CardFace } from './faces.ts';
 import './postcard.css';
 
 /** Where the card is drawn: its size and which parts of the face it holds. */
@@ -39,8 +39,10 @@ export interface PostcardProps extends Omit<HTMLAttributes<HTMLElement>, 'childr
  * tagline, so its name holds it too.
  */
 export function cardLabel(face: CardFace, size: PostcardSize): string {
-  const shown = size === 'fan' && face.tagline ? `${face.name}, ${face.tag}. ${face.tagline}` : `${face.name}, ${face.tag}`;
-  return `${shown} postcard`;
+  /* The play's word is drawn after the tag, and the gem's rarity is its title: both said in words, after what is drawn before them. */
+  const said = `${face.name}, ${face.tag}, ${playWord(face.play)}`;
+  const shown = size === 'fan' && face.tagline ? `${said}. ${face.tagline}` : said;
+  return `${shown}, ${face.rarity} postcard`;
 }
 
 export function Postcard({ face, size, as: As = 'span', armed = false, className, style, ...rest }: PostcardProps) {
@@ -66,6 +68,14 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
       <span className="kb-postcard-name" aria-hidden="true">{face.name}</span>
       {' '}
       {size !== 'slot' && <span className="kb-postcard-tag" aria-hidden="true">{face.tag}</span>}
+      {' '}
+      {/* How it is played, in its word, and how rare it is, as a gem whose shape says it (the card mechanic's design, sections 1 and 2). */}
+      {/* In a slot the word is drawn by CSS from its attribute: the slot's button is named by its own words (Vending.tsx), which say the play after the price. */}
+      {size === 'slot'
+        ? <span className="kb-postcard-play" aria-hidden="true" data-kb-word={playWord(face.play)} />
+        : <span className="kb-postcard-play" aria-hidden="true">{playWord(face.play)}</span>}
+      {' '}
+      <span className="kb-postcard-gem" aria-hidden="true" data-kb-rarity={face.rarity} data-kb-gem={gemOf(face.rarity)} title={rarityName(face.rarity)} />
       {' '}
       {size === 'sheet' && (
         <span className="kb-postcard-price kb-num" aria-hidden="true"><span className="kb-postcard-orb" />{priceOf(face)}</span>

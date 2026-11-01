@@ -128,7 +128,7 @@ export interface ThreadSummary {
   readonly originSeq: number | null;
 }
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep';
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring';
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -563,17 +563,17 @@ export interface LogSettlement {
   readonly lines: readonly LogLine[];
 }
 
-/** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play. */
+/** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout. */
 export interface WalletEvent {
   readonly settlement: number | null;
-  readonly kind: 'settlement' | 'purchase' | 'play';
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;
   /** What the floor held back of a settlement's debit. */
   readonly floored: number;
   readonly balanceAfter: number;
-  /** A play's Act; null for a settlement and a purchase. */
+  /** A play's Act, or a trap's spring for its payout; null for a settlement and a purchase. */
   readonly ref: Id | null;
   readonly at: string;
 }
@@ -603,6 +603,32 @@ export interface EffectSaved {
 }
 
 /**
+ * The end of a card the player set face down (`my_face_down`): it sprang (`spring`, a public Act by then), or its time came with
+ * nothing springing it. Which card it was is the player's own row; nobody else reads it.
+ */
+export interface FaceDownEnd {
+  /** The set Act. */
+  readonly play: Id;
+  readonly card: string;
+  readonly post: Id;
+  readonly spring: Id | null;
+  readonly endedAt: string;
+}
+
+/** A play of the player's a trap caught (`my_caught`): its card, its post, the trap's card and spring, what the play cost and what the card cost at the machine. */
+export interface CaughtPlay {
+  readonly play: Id;
+  readonly card: string;
+  readonly post: Id;
+  readonly trap: string;
+  readonly spring: Id;
+  readonly price: number;
+  /** What the player paid for the card at the machine, the latest purchase of it before the play; null where none is on record. */
+  readonly boughtPrice: number | null;
+  readonly at: string;
+}
+
+/**
  * A page of the player's own log, newest first: everything at or before the page's cursor and after
  * `before`, which is where the next page starts (null at the log's start). Each source is read a page
  * at a time, so a long-played account reads a page and never its history.
@@ -613,6 +639,10 @@ export interface Log {
   readonly cards: readonly CardEvent[];
   readonly playsOnMine: readonly PlayOnMine[];
   readonly saves: readonly EffectSaved[];
+  /** The player's cards set face down that sprang or ended, by when. */
+  readonly setEnds: readonly FaceDownEnd[];
+  /** The player's plays a trap caught, by when each was played. */
+  readonly caught: readonly CaughtPlay[];
   /** The next page's cursor: pass it to `log` for what is older. Null when nothing older is left. */
   readonly before: string | null;
 }
@@ -830,6 +860,15 @@ export interface KayfaApi {
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.
    */
   playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Promise<Answer<Act>>;
+  /**
+   * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
+   * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
+   */
+  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>): Promise<Answer<Act>>;
+  /** Use a card the player holds on a post of the character's own (a ward), as a play is: its Act comes back, with its end. */
+  useCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Promise<Answer<Act>>;
+  /** Which card each of the player's own card backs among these sets is (`my_face_down`), by set; another's back is absent. */
+  myFaceDown(sets: readonly Id[]): Promise<Readonly<Record<Id, string>>>;
   /** Release the player from a play's effect, for good and on every device; the player's own, and said again it is the same. */
   releaseEffect(play: Id): Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
   /** Save the state of a play's effect, as the character that wrote the post it landed on (no one else may); the card's rules bound what it holds. */

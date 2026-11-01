@@ -26,7 +26,7 @@ const manifest: BoardManifest = {
   board: '07-vending',
   size: { width: 1440, height: 1080 },
   build: { moment: '07-vending' },
-  press: [{ role: 'button', name: 'Buy Whoops!, 1.00 orb' }],
+  press: [{ role: 'button', name: 'Buy Whoops!, 1.00 orb, common Cast' }],
   landmarks: [
     /* The menu bar every glass page shares, the Vending Machine current. */
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
@@ -56,11 +56,13 @@ const manifest: BoardManifest = {
     /* The slots: the two cards, A2 picked, and the four sealed. Their box is compared; their type is not, because a slot's
        visible words are the machine's printing, the instance's art (the postcard's face and a code the stylesheet writes out),
        and the name a reader gets is an aria-label with no text node behind it. */
-    { id: 'slot-a1', role: 'button', name: 'Buy Stick Around, 1.00 orb', type: false },
-    { id: 'slot-a2', role: 'button', name: 'Buy Whoops!, 1.00 orb, selected', type: false },
-    { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', type: false },
-    { id: 'slot-b2', role: 'img', name: 'Empty slot B2, waiting for a future postcard', type: false },
-    { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', type: false },
+    /* The card mechanic (docs/plans/2026-11-01-card-plays-plan.md, Tasks 7 and 8) departs from the board twice: a slot's name says
+       its card's rarity and play after its price, and the instance's three new cards stock B1, B2 and C1, which the board drew sealed. */
+    { id: 'slot-a1', role: 'button', name: 'Buy Stick Around, 1.00 orb', buildName: 'Buy Stick Around, 1.00 orb, common Cast', type: false },
+    { id: 'slot-a2', role: 'button', name: 'Buy Whoops!, 1.00 orb, selected', buildName: 'Buy Whoops!, 1.00 orb, common Cast, selected', type: false },
+    { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Trap Card, 1.50 orbs, uncommon Set', type: false },
+    { id: 'slot-b2', role: 'img', name: 'Empty slot B2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Force Field, 1.50 orbs, uncommon Use', type: false },
+    { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Bluff, 0.25 orbs, common Set', type: false },
     { id: 'slot-c2', role: 'img', name: 'Empty slot C2, waiting for a future postcard', type: false },
 
     /* The control panel: the price display, the buy button and the note under it. The display's lit words are the machine's
@@ -72,7 +74,7 @@ const manifest: BoardManifest = {
     /* The line about the empty slots, near them. The board's "In the machine" list is not built: the owner's answer on #75 took it
        out at every width (it grows with every card added), and each card's slot carries an info button instead. The sealed
        slots' line stays, so it is compared by size: it stands where the build puts it, in the third column's place. */
-    { id: 'list-empty', role: 'text', name: '4 slots empty', box: 'size' },
+    { id: 'list-empty', role: 'text', name: '4 slots empty', buildName: '1 slot empty', box: 'size' },
     { id: 'list-empty-says', role: 'text', name: 'More postcards arrive in later seasons.', box: 'size' },
   ],
 };

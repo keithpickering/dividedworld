@@ -15,7 +15,7 @@ const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
-  invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30,
+  invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 },
   postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, cardSettings: {}, economy: {}, ...systemSettings,
 };
 
@@ -912,9 +912,9 @@ describe('what a list row shows', () => {
 describe('the Vending Machine and a card play, refused as the server refuses them', () => {
   /* One salty card at 1.00, and a long post costs 0.50 more: the rules the server prices a play by (engine/rules/cards.ts). */
   const splat = {
-    key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', stack: 2,
+    key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', stack: 2,
     playPrice: (_s: Settings, t: { length: number }) => (t.length > 20 ? 50 : 0),
-    canApply: (t: { kind: string }, on: readonly { card: string }[]) => (t.kind !== 'post' ? refused2('a card lands on a post') : on.length >= 2 ? refused2('this post already carries 2 of that card, the most it takes') : { ok: true as const, value: undefined }),
+    canApply: (t: { kind: string }, on: readonly { card: string | null }[]) => (t.kind !== 'post' ? refused2('a card lands on a post') : on.length >= 2 ? refused2('this post already carries 2 of that card, the most it takes') : { ok: true as const, value: undefined }),
     validateConfig: (c: unknown) => ([undefined, 'red'].includes((c as { color?: unknown } | undefined)?.color as string | undefined) ? { ok: true as const, value: c ?? {} } : refused2('the ink is red')),
   };
   const refused2 = (why: string) => ({ ok: false as const, why });
@@ -1106,13 +1106,13 @@ describe('the season a screen names', () => {
 describe('the player\'s own log: the ledger with its shares, the wallet\'s events and the cards', () => {
   /* One salty card at 1.00 that costs 0.50 more on a long post, as the Vending Machine's tests above price it. */
   const splat = {
-    key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', stack: 2,
+    key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', stack: 2,
     playPrice: (_s: Settings, t: { length: number }) => (t.length > 20 ? 50 : 0),
     canApply: () => ({ ok: true as const, value: undefined }),
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
-  const empty = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], before: null };
+  const empty = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], caught: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -1468,5 +1468,60 @@ describe('presence', () => {
     const { fake, boFace, thread } = world();
     await expect(fake.here({ kind: 'thread', thread }, boFace)).rejects.toThrow('you do not play that character');
     await expect(fake.here({ kind: 'thread', thread: 'nowhere' }, null)).rejects.toThrow('there is no such thread');
+  });
+});
+
+describe('a card set face down, a ward and a trap, as the server holds them', () => {
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+  const cast = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
+  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } }, canApply: () => ok(undefined) };
+  const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, canApply: () => ok(undefined) };
+  const world: Instance = { ...instance, cards: [cast, snare, shield], settings: { ...settings, economy: { 'x.price': 100 } } };
+  function setup() {
+    const fake = createFake({ instance: world });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+    const bos = fake.seed.post(thread, boFace, 'Bo here.');
+    fake.seed.cards(ana, { snare: 1, shield: 1 });
+    fake.seed.cards(bo, { blot: 2, snare: 1 });
+    fake.signInAs(ana);
+    return { fake, ana, bo, anaFace, boFace, opener, bos };
+  }
+
+  test('a Set goes on the setter\'s own post, as a back that names no card, read by the setter alone', async () => {
+    const { fake, ana, bo, anaFace, opener, bos } = setup();
+    expect((await fake.setCard('snare', anaFace, bos, {})).ok).toBe(false);
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    expect([set.kind, set.payload]).toEqual(['set', {}]);
+    expect((await fake.cardsOn(opener, 8)).map((a) => [a.kind, a.payload])).toEqual([['set', {}]]);
+    expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'snare' });
+    fake.signInAs(bo);
+    expect(await fake.myFaceDown([set.id])).toEqual({});
+    void ana;
+  });
+
+  test('a trap catches the next cast, which is spent, and the spring reveals it', async () => {
+    const { fake, bo, anaFace, boFace, opener } = setup();
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    fake.signInAs(bo);
+    const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
+    expect(caught.payload.caught).toBe(set.id);
+    const on = await fake.cardsOn(opener, 8);
+    expect(on.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'snare', set: set.id, caught: caught.id });
+    expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
+    expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBeUndefined();
+  });
+
+  test('a ward on the user\'s own post turns a cast away in its words', async () => {
+    const { fake, bo, anaFace, boFace, opener, bos } = setup();
+    expect((await fake.useCard('shield', anaFace, bos, {}, '')).ok).toBe(false);
+    const used = must(await fake.useCard('shield', anaFace, opener, {}, ''));
+    expect(typeof used.payload.ends).toBe('string');
+    fake.signInAs(bo);
+    expect(await fake.playCard('blot', boFace, opener, {}, '')).toEqual(refused('this post\'s Shield turns away cards up to uncommon', 'config'));
   });
 });

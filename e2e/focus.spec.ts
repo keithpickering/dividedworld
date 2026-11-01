@@ -366,7 +366,7 @@ test('the Vending Machine\'s Buy, a chamfered button, shows its focus ring insid
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/?fixture=boards&moment=07-vending');
   /* The board's state: Whoops! picked by its slot, then the machine's own Buy, the chamfered one. */
-  await page.getByRole('button', { name: 'Buy Whoops!, 1.00 orb' }).click({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }).click({ timeout: 10_000 });
   const buy = page.locator('.kb-vending-buy');
   await expect(buy).toBeEnabled();
   expect(await ringShows(page, buy)).toBe(true);

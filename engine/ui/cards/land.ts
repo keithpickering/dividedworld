@@ -5,7 +5,8 @@
  * the screen and the server agree because they ask the same function. The server decides again at
  * the play (`decidePlay`), whatever this said.
  */
-import type { CardRules, CardTarget, Verdict } from '../../rules/cards.ts';
+import { decidePlay, decideSet, decideUse, playOf as playOfRules, type CardEffect, type CardRules, type CardTarget, type Verdict } from '../../rules/cards.ts';
+import type { Span } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
 
@@ -20,7 +21,38 @@ export function targetOf(post: Act): CardTarget {
   return { act: post.id, kind: post.kind as CardTarget['kind'], length: lengthOf(post) };
 }
 
-/** Whether `rules`' card lands on `post`, which already carries `plays` (every card's, in any order); the refusal says why in the rules' words. */
-export function landing(rules: Pick<CardRules, 'canApply'>, post: Act, plays: readonly CardPlay[]): Verdict {
-  return rules.canApply(targetOf(post), plays.map((p) => ({ card: p.card, act: p.id })));
+/** What the post carries as its rules see it (card_target, 0054): a play not caught, with a ward's rarity and a Use's end; a card back naming no card, ended where it sprang or its time passed. */
+export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'ward' | 'rarity'>[], setLasts: Span): CardEffect[] {
+  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
+  return plays.filter((p) => !p.caught).map((p): CardEffect => {
+    if (p.faceDown) return { card: null, act: p.id, faceDown: true, ends: p.revealed?.at ?? new Date(Date.parse(p.playedAt) + span).toISOString() };
+    const ward = cards.find((c) => c.key === p.card);
+    return { card: p.card, act: p.id, ...(ward?.ward ? { ward: ward.rarity } : {}), ...(p.ends ? { ends: p.ends } : {}) };
+  });
+}
+
+/** What `landing` reads beyond the card: the instance's cards (a ward's rarity and name, a strike's card) and how long a Set lasts. */
+export interface LandingContext {
+  readonly cards: readonly CardRules[];
+  readonly setLasts: Span;
+}
+
+/**
+ * Whether `rules`' card lands on `post`, which already carries `plays` (every card's, in any order); the refusal says why in the rules'
+ * words. Given the instance's cards, it is the rules' own decision for the card's play (decidePlay, decideUse, decideSet) on its default
+ * settings, so a cast a live ward turns away and a Set on a post holding a live back are not offered; that the post is the reader's own
+ * is the caller's to ask. With no context, it is the card's `canApply` alone.
+ */
+export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>, post: Act, plays: readonly CardPlay[], context?: LandingContext): Verdict {
+  if (!context || !rules.key || !rules.rarity) return rules.canApply(targetOf(post), plays.filter((p) => !p.caught).map((p) => ({ card: p.card, act: p.id })));
+  const full = rules as CardRules;
+  const effects = effectsOf(plays, context.cards, context.setLasts);
+  const nameOf = (key: string) => context.cards.find((c) => c.key === key)?.name ?? key;
+  /* Only where the card lands is asked here: its settings are the form's, so the card's own refusal of none is set aside. */
+  const lenient: CardRules = { ...full, validateConfig: (c) => ({ ok: true, value: c }), playPrice: () => 0 };
+  const play = playOfRules(full);
+  const decided = play === 'set' ? decideSet({ ...lenient, trap: undefined }, {} as never, targetOf(post), effects, {}, context.cards)
+    : play === 'use' ? decideUse(lenient, {} as never, targetOf(post), effects, {}, '')
+    : decidePlay(lenient, {} as never, targetOf(post), effects, {}, '', { nameOf });
+  return decided.ok ? { ok: true, value: undefined } : decided;
 }

@@ -53,16 +53,18 @@ export function PostEffects({ plays, post, place, marks = null, nameOf, children
     return released;
   }, [api, plays]);
 
-  if (here.plays.length === 0) return <>{children}</>;
+  /* A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). */
+  const acting = here.plays.filter((p) => !p.caught && !p.faceDown);
+  if (acting.length === 0) return <>{children}</>;
   /* The cards in the order each was first played: the first is innermost. */
-  const played = [...new Set(here.plays.map((p) => p.card))];
+  const played = [...new Set(acting.map((p) => p.card))];
   const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
   const keys = [...played.filter((k) => !takes(k)), ...played.filter(takes)];
   let wrapped = children;
   for (const key of keys) {
     const card = ui.cards.find((c) => c.key === key);
     if (!card?.Effect) continue;
-    const mine = here.plays.filter((p) => p.card === key);
+    const mine = acting.filter((p) => p.card === key);
     const Effect = card.Effect;
     wrapped = (
       <BoundEffect

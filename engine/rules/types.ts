@@ -102,6 +102,11 @@ export interface Settings {
    */
   readonly presencePollSeconds: number;
   /**
+   * How long a card set face down stays set if nothing springs it: the same for every Set card, so a
+   * back's end says nothing about which card it is (the card mechanic's design, section 3).
+   */
+  readonly setLasts: Span;
+  /**
    * The numbers a card gives the screens, each named by the instance ("whoops.clean"): a card's effect
    * decides something on the client (how much of a layer counts as washed clean), so the number is one the
    * screens read (`screen_settings`), which the economy never is. The engine checks each is a number; the
@@ -176,7 +181,8 @@ export interface Settings {
  * (supabase/migrations/0027_unmask.sql): an Act of its character like a card, whose reactions are
  * scored and which counts in the halving, and no post.
  */
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'unmask';
+/** A set is a card set face down, naming no card; a spring is a trap sprung, naming it (supabase/migrations/0054_card_plays.sql). */
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'unmask' | 'set' | 'spring';
 
 /**
  * A board the instance starts with. Exactly one is The System's (`system`): only The System posts
@@ -205,6 +211,15 @@ export interface InputAct {
   readonly thread: string;
   readonly target?: string;
   readonly card?: string;
+}
+
+/** A staff post a card landed on: its author is staff, so it is named but never settled. */
+export interface UnscoredTarget {
+  readonly id: string;
+  readonly kind: ActKind;
+  readonly at: number;
+  readonly thread: string;
+  readonly staff: true;
 }
 
 /**
@@ -244,6 +259,12 @@ export interface SettlementInput {
    * someone else's Act; a player may react to one, and that reaction moves nobody's Aura.
    */
   readonly systemActs?: readonly string[];
+  /**
+   * The staff posts a window's card landed on (#122): no character's in the input, so nobody's to pay, but each with its
+   * reactions as for any Act, so a card on one is judged against how many players the post drew. Its reactors are paid
+   * nothing for reacting there, as for any of The System's Acts.
+   */
+  readonly unscoredTargets?: readonly UnscoredTarget[];
   /**
    * What earlier windows paid for each player's vote on each Act this window's reactions touch
    * (engine/rules/votes.ts's payVotes): its weight, and each quadrant's share at it.

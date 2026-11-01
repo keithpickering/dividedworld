@@ -55,6 +55,7 @@ const settings: Settings = {
   demandChecksPerTick: 40,
   moveExpiryLeastHours: 24,
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
+  setLasts: { unit: 'day', count: 7 },
 };
 
 const bot: ModBotPersona = {
@@ -111,7 +112,7 @@ test('exactly one board is The System\'s, and at least one is not', () => {
 });
 
 test('a card\'s stack is a whole number, at least 1', () => {
-  const card = (stack: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', stack, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  const card = (stack: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', stack, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
   assert.deepEqual(instanceProblems(card(3)), []);
   assert.deepEqual(instanceProblems(card(undefined)), []);
   for (const bad of [0, 1.5, '3', -1]) assert.match(instanceProblems(card(bad)).join('\n'), /card "splat" stacks .*; a stack is a whole number, at least 1/, String(bad));
@@ -143,7 +144,7 @@ test('the numbers a card gives the screens are an object of named numbers, like 
 });
 
 test('a number a card reads for the screens is one the settings hold, within the card\'s bounds', () => {
-  const card = (screenReads: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', screenReads, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  const card = (screenReads: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', screenReads, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
   const reads = [{ key: 'splat.clean', whole: true, min: 1, max: 100 }];
   assert.deepEqual(instanceProblems(card(reads)), []);
   assert.match(instanceProblems(card([{ key: 'splat.other' }])).join('\n'), /card "splat" reads card setting "splat\.other", which the settings do not hold/);
@@ -260,7 +261,7 @@ test('a number a class reads can carry its bounds, and a price is a whole number
   const bounded = { ...good, classes: [{ key: 'a', name: 'A', reads: [{ key: 'a.bonus', whole: true, min: 6 }], earn: () => [] }] };
   assert.match(instanceProblems(bounded).join('\n'), /class "a" reads economy "a\.bonus" as 5; it must be at least 6/);
   assert.match(instanceProblems({ ...bounded, settings: { ...settings, economy: { ...settings.economy, 'a.bonus': 6.5 } } }).join('\n'), /a whole number/);
-  const card = { key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const card = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
   // A price above what a wallet holds is a card nobody can buy, the Vending Machine's to refuse at
   // the purchase, never a reason to stop every settlement.
   assert.deepEqual(instanceProblems({ ...good, cards: [card], settings: { ...settings, economy: { ...settings.economy, 'splat.price': 700 } } }), []);
@@ -283,7 +284,7 @@ test('an override of one economy number keeps the others', () => {
 test('a class or card reading an economy number the settings lack is a problem', () => {
   const reads = { ...good, classes: [{ key: 'a', name: 'A', reads: ['a.bonus', 'a.missing'], earn: () => [] }] };
   assert.match(instanceProblems(reads).join('\n'), /class "a" reads economy "a\.missing"/);
-  const card = { key: 'splat', name: 'Splat', alignment: 'salty' as const, priceKey: 'splat.cost', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const card = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.cost', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
   assert.match(instanceProblems({ ...good, cards: [card] }).join('\n'), /card "splat" is priced by economy "splat\.cost"/);
   assert.deepEqual(instanceProblems({ ...good, cards: [{ ...card, priceKey: 'splat.price' }] }), []);
 });
@@ -510,4 +511,69 @@ test('presence: a window that may count minutes, a most of names, and a poll bet
   }
   assert.deepEqual(settingsProblems({ ...settings, presenceWindow: { unit: 'day', count: 1 } }), []);
   assert.match(settingsProblems({ ...settings, presenceWindow: { unit: 'second', count: 300 } } as unknown as Settings).join('\n'), /presenceWindow/);
+});
+
+// The card mechanic's pairings (docs/plans/2026-11-01-card-plays-plan.md, Task 1): each refused, naming the card.
+const testCard = (over: Record<string, unknown>) => ({ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...over });
+const withCards = (...cards: Record<string, unknown>[]) => ({ ...good, cards: cards.map(testCard) }) as unknown as Instance;
+
+test('a card carries one of the four rarities', () => {
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'legendary' })), []);
+  assert.match(instanceProblems(withCards({ rarity: undefined })).join('\n'), /card "splat" has no rarity/);
+  assert.match(instanceProblems(withCards({ rarity: 'mythic' })).join('\n'), /card "splat" has the rarity "mythic"; a rarity is common, uncommon, rare or legendary/);
+});
+
+test('a trap is a Set card\'s, and a ward and a time up are a Use card\'s', () => {
+  const trap = { trigger: { on: 'cast' }, outcome: { do: 'nullify' } };
+  assert.deepEqual(instanceProblems(withCards({ play: 'set', trap })), []);
+  assert.deepEqual(instanceProblems(withCards({ play: 'set' })), [], 'a Set card with no trap is a bluff');
+  assert.match(instanceProblems(withCards({ trap })).join('\n'), /card "splat" has a trap, and only a Set card does/);
+  assert.match(instanceProblems(withCards({ play: 'use', trap })).join('\n'), /card "splat" has a trap, and only a Set card does/);
+  assert.deepEqual(instanceProblems(withCards({ play: 'use', ward: true, lasts: { unit: 'day', count: 7 } })), []);
+  assert.match(instanceProblems(withCards({ ward: true })).join('\n'), /card "splat" is a ward, and only a Use card is/);
+  assert.match(instanceProblems(withCards({ play: 'use', ward: 'yes' })).join('\n'), /card "splat" is a ward of "yes"; a ward is true or left out/);
+  assert.match(instanceProblems(withCards({ play: 'use', ward: true })).join('\n'), /card "splat" is a ward with no time up \(lasts\); a ward ends at its time/);
+  assert.match(instanceProblems(withCards({ play: 'set', lasts: { unit: 'day', count: 7 } })).join('\n'), /card "splat" has a time up \(lasts\), and only a Use card does/);
+  assert.match(instanceProblems(withCards({ play: 'use', lasts: { unit: 'hour', count: 7 } })).join('\n'), /card "splat" lasts .*; it must be a span/);
+  assert.match(instanceProblems(withCards({ play: 'deal' })).join('\n'), /card "splat" is played "deal"; a card is cast, used, set or kept/);
+});
+
+test('a trap springs on a trigger in the list and does an outcome in the list', () => {
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'sneeze' }, outcome: { do: 'nullify' } } })).join('\n'), /card "splat" springs on "sneeze"/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'reaction', quadrant: 'sideways' }, outcome: { do: 'nullify' } } })).join('\n'), /card "splat" springs on a reaction of "sideways", which is no quadrant/);
+  assert.deepEqual(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'reaction', quadrant: 'boredNegative' }, outcome: { do: 'nullify' } } })), []);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'reflect' } } })).join('\n'), /card "splat" does "reflect"/);
+});
+
+test('a strike names a card the instance has, at or below the trap\'s rarity', () => {
+  const striker = (card: string) => ({ key: 'striker', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'reply' }, outcome: { do: 'strike', card } } });
+  assert.deepEqual(instanceProblems(withCards(striker('splat'), {})), []);
+  assert.deepEqual(instanceProblems(withCards(striker('splat'), { rarity: 'uncommon' })), []);
+  assert.match(instanceProblems(withCards(striker('nothing'))).join('\n'), /card "striker" strikes with "nothing", which the instance does not have/);
+  assert.match(instanceProblems(withCards(striker('splat'), { key: 'splat', rarity: 'rare' })).join('\n'), /card "striker" strikes with "splat", which is rare, rarer than the trap \(uncommon\)/);
+});
+
+test('no card springs on a visit, until the staff build wires visits', () => {
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' }, outcome: { do: 'nullify' } } })).join('\n'), /card "splat" springs on a visit, which is not wired until the staff build adds Mod Bot visits/);
+});
+
+test('no card is a Keep, until Keep is designed', () => {
+  assert.match(instanceProblems(withCards({ play: 'keep' })).join('\n'), /card "splat" is kept, and Keep is not built until it is designed/);
+});
+
+test('every Set lasts the same span, setLasts', () => {
+  const { setLasts: _gone, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "setLasts" is missing/);
+  for (const bad of [{ unit: 'minute', count: 5 }, { unit: 'day', count: 0 }, 7]) {
+    assert.match(settingsProblems({ ...settings, setLasts: bad as never }).join('\n'), /setting "setLasts"/, JSON.stringify(bad));
+  }
+});
+
+test('in this part, Nullify springs on any trigger, Pay out only on a cast, and Strike only on a reply or a quote', () => {
+  const trap = (on: string, outcome: Record<string, unknown>) => withCards({ play: 'set', trap: { trigger: { on, quadrant: 'boredNegative' }, outcome } }, { key: 'blot' });
+  for (const on of ['cast', 'reaction', 'reply', 'quote']) assert.deepEqual(instanceProblems(trap(on, { do: 'nullify' })), [], on);
+  assert.deepEqual(instanceProblems(trap('cast', { do: 'payout' })), []);
+  for (const on of ['reaction', 'reply', 'quote']) assert.match(instanceProblems(trap(on, { do: 'payout' })).join('\n'), /card "splat" pays out on a \w+; it pays out only on a cast, since only a cast is paid for/, on);
+  for (const on of ['reply', 'quote']) assert.deepEqual(instanceProblems(trap(on, { do: 'strike', card: 'blot' })), [], on);
+  for (const on of ['cast', 'reaction']) assert.match(instanceProblems(trap(on, { do: 'strike', card: 'blot' })).join('\n'), /card "splat" strikes on a \w+; a strike lays its card on a reply or a quote, until cards reach characters/, on);
 });

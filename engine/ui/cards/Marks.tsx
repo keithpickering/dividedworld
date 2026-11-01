@@ -30,8 +30,8 @@ import { inkOf, useNarrow } from './Effects.tsx';
 import { Callout, useCallout } from './Callout.tsx';
 import { Lens, useLensFor, useLensHost, useLensStore, useResolvedView } from './Lens.tsx';
 import { GhostMark } from './PlayActions.tsx';
-import { MARKS_NARROW, MARKS_WIDE, kindsOf, markName, moreName, sumOf } from './marks.ts';
-import { inPlayOrder, usePlays, type Plays } from './plays.ts';
+import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
+import { inPlayOrder, isBack, shownPlays, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 import './marks.css';
 
@@ -72,17 +72,29 @@ interface MarkProps {
   /** A Lens is open on this post (on any of its kinds): the callout stands aside while it is, and returns when it closes, unless met. */
   readonly lensOpen: boolean;
   readonly onOpen: Open;
+  /** A character's name, for a card back's (who set it). */
+  readonly nameOf?: (character: Id | null) => string;
 }
 
-const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen }: MarkProps) {
+const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf }: MarkProps) {
   const { instance, ui } = useKayfa();
-  const rules = instance.cards.find((c) => c.key === kind);
-  const cardUi = ui.cards.find((c) => c.key === kind);
-  const view = useResolvedView(store, post, kind);
+  const back = isBack(kind);
+  /* A card back that sprang shows the card it was, in its place: no mark moves (the card mechanic's design, section 4). */
+  const revealed = back ? plays.find((p) => p.revealed)?.revealed?.card : undefined;
+  const shownKind = revealed ?? kind;
+  const rules = instance.cards.find((c) => c.key === shownKind);
+  const cardUi = ui.cards.find((c) => c.key === shownKind);
+  const view = useResolvedView(store, post, kind, nameOf);
   const more = useOutdrawing(tallies, plays, postTotal, compare);
-  const name = rules?.name ?? kind;
-  const art = cardUi?.art;
+  /* On the setter's own screen alone, the card under their own back (`my_face_down`): read as a string, so another kind's change wakes nothing here. */
+  const subscribeFaces = useCallback((l: () => void) => store.subscribe(post, l), [store, post]);
+  const face = useSyncExternalStore(subscribeFaces, () => (back ? plays.map((p) => store.get(post).faces[p.id]).find((f) => f !== undefined) ?? '' : ''));
+  const ownFace = back && !revealed && face !== '' ? face : undefined;
+  const ownArt = ownFace ? ui.cards.find((c) => c.key === ownFace)?.art : undefined;
+  const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', instance.settings.setLasts, (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
+  const art = back && !revealed ? undefined : cardUi?.art;
   const icon = art?.mark ?? art?.image;
+  const caught = plays.every((p) => p.caught);
   /* The ink is the top-billed play's, where the card chooses one for it (`CardUi.tag` is given the kind's plays in play order). */
   const ordered = useMemo(() => [...plays].sort(inPlayOrder), [plays]);
   const ink = inkOf(ui, plays[0]!, ordered) ?? art?.color;
@@ -98,12 +110,14 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   return (
     <>
     <button
-      ref={button} type="button" className="kb-mark" data-kb-card={kind} data-kb-plays={plays.length} data-kb-alignment={rules?.alignment} data-kb-edge={progress === null ? undefined : 'true'}
-      aria-label={markName({ card: name, plays: plays.length, state: view.state, more, yours: view.yours })} aria-haspopup="dialog" aria-expanded={expanded} aria-describedby={callout ?? undefined}
+      ref={button} type="button" className="kb-mark" data-kb-card={kind} data-kb-plays={plays.length} data-kb-alignment={back && !revealed ? undefined : rules?.alignment} data-kb-edge={progress === null ? undefined : 'true'}
+      data-kb-back={back ? (revealed ? 'sprung' : 'down') : undefined} data-kb-caught={caught ? 'true' : undefined}
+      aria-label={markName({ card: name, plays: plays.length, state: back ? '' : view.state, more, yours: view.yours })} aria-haspopup="dialog" aria-expanded={expanded} aria-describedby={callout ?? undefined}
       style={style} onClick={(e) => onOpen(kind, e.currentTarget)}
     >
       <span className="kb-mark-in" aria-hidden="true">
-        {icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
+        {back && !revealed ? <span className="kb-card-back" /> : icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
+        {ownArt && (ownArt.mark ?? ownArt.image) && <img className="kb-mark-face" src={ownArt.mark ?? ownArt.image} alt="" draggable={false} data-kb-face={ownFace} />}
         {plays.length > 1 && <span className="kb-mark-count">×{plays.length}</span>}
       </span>
       {progress !== null && <span className="kb-mark-edge" aria-hidden="true" />}
@@ -159,10 +173,12 @@ export interface MarkStripProps {
   readonly ghost?: Act;
   /** Compare the plays' reactions with the post's for the corner sign; false where the post's tally is not read here (a card play's ORIGIN box, whose post is in another thread). */
   readonly compare?: boolean;
+  /** A character's name, for a card back's (who set it). */
+  readonly nameOf?: (character: Id | null) => string;
 }
 
 /** One mark per kind of card played on the post, "+N" for the kinds past the strip's room, and the ghost mark while an armed card can land here. */
-export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, compare = true }: MarkStripProps) {
+export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, compare = true, nameOf }: MarkStripProps) {
   const here = usePlays(plays, post);
   const narrow = useNarrow();
   /* A strip a takeover hosts (Stick Around's view) offers no ghost mark: its play form would open under the view. */
@@ -185,19 +201,22 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, co
     watch.observe(el);
     return () => watch.disconnect();
   }, []);
-  const byKind = useKindPlays(here.billed);
+  /* A card back whose time has passed with nothing springing it is gone, as the server drops it. */
+  const { instance } = useKayfa();
+  const billed = useMemo(() => shownPlays(here.billed, instance.settings.setLasts), [here.billed, instance.settings.setLasts]);
+  const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);
   latest.current = onOpen;
   const press = useCallback<Open>((kind, opener) => latest.current(kind, opener), []);
-  const kinds = kindsOf(here.billed);
+  const kinds = kindsOf(billed);
   const room = narrow ? MARKS_NARROW : MARKS_WIDE;
   const shown = kinds.length > room ? kinds.slice(0, room) : kinds;
   const hidden = kinds.slice(shown.length);
   return (
     <span className="kb-marks" ref={strip}>
       {shown.map((kind) => (
-        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} />
+        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} />
       ))}
       {hidden.length > 0 && <More hidden={hidden.length} first={hidden[0]!} expanded={open !== null && hidden.includes(open)} onOpen={press} />}
       {ghost && !hosted && <GhostMark act={ghost} />}
@@ -226,7 +245,7 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, compa
   const strip = useCallback(() => anchor.current, []);
   return (
     <span className="kb-marks-anchor" ref={anchor}>
-      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} compare={compare} open={open?.card ?? null} onOpen={onOpen} />
+      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} />
       {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} />}
     </span>
   );

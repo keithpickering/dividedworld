@@ -35,6 +35,14 @@ export interface CardPlay {
   readonly playedAt: string;
   /** The post it landed on. */
   readonly post: Id;
+  /** A card set face down (a set Act): its `card` is the engine's own back (`CARD_BACK`), the same for every card, and names none. */
+  readonly faceDown?: true;
+  /** A card back that sprang: the card it was and its spring, public from then. The back keeps its place among the marks. */
+  readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string };
+  /** A play a trap caught, by the set that caught it: it is spent and does nothing, so no effect is drawn for it. */
+  readonly caught?: Id;
+  /** When a Use's effect ends, as the server wrote it when it landed. */
+  readonly ends?: string;
 }
 
 /** Who the reader is to a post an effect wraps, on their own screen only (it is computed from the player's own characters, never sent). */

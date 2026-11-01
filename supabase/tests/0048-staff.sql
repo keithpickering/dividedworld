@@ -257,19 +257,25 @@ begin
   input := settlement_input(s, s + interval '1 day');
   if exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'character' = boss::text or x ->> 'id' in (decree::text, staff_reply::text)) then raise exception 'a staff character''s Act is in what earns: %', input -> 'acts'; end if;
   if exists (select 1 from jsonb_array_elements(input -> 'characters') x where x ->> 'id' = boss::text) then raise exception 'a staff character is among the settlement''s characters'; end if;
-  if not (input -> 'systemActs') @> to_jsonb(decree::text) then raise exception 'the staff Act is not named a System Act: %', input -> 'systemActs'; end if;
+  -- The decree is a card's target this window (0054, #122): named as an unscored target, not a System Act, so the card is judged against it.
+  if (input -> 'systemActs') @> to_jsonb(decree::text) then raise exception 'a staff post a card landed on is a System Act: %', input -> 'systemActs'; end if;
+  if not exists (select 1 from jsonb_array_elements(input -> 'unscoredTargets') x where x ->> 'id' = decree::text and (x ->> 'staff')::boolean) then raise exception 'the staff post a card landed on is not an unscored target: %', input -> 'unscoredTargets'; end if;
+  if not (input -> 'systemActs') @> to_jsonb(staff_reply::text) then raise exception 'a staff Act no card landed on is not named a System Act: %', input -> 'systemActs'; end if;
   if not exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'id' = own::text) then raise exception 'an ordinary Act should still be settled'; end if;
   if not exists (select 1 from jsonb_array_elements(input -> 'reactions') x where x ->> 'act' = decree::text) then raise exception 'the reaction to the decree should be in the input, for settle.ts to drop'; end if;
-  if exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'id' = card::text) then raise exception 'a card on a staff Act is in what earns (settle.ts could not find its target): %', input -> 'acts'; end if;
-  if not (input -> 'systemActs') @> to_jsonb(card::text) then raise exception 'a card on a staff Act is not named a System Act, so a reaction to it would be settled'; end if;
+  -- A card on a staff post earns its caster by class (0054, #122): it is in what earns, once, and is no System Act.
+  if (select count(*) from jsonb_array_elements(input -> 'acts') x where x ->> 'id' = card::text) is distinct from 1::bigint then raise exception 'a card on a staff post is not in what earns, once: %', input -> 'acts'; end if;
+  if (input -> 'systemActs') @> to_jsonb(card::text) then raise exception 'a card on a staff post is named a System Act'; end if;
   if not exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'id' = spin::text) then raise exception 'a spin from a staff Act should be settled (settle.ts reads it as from another)'; end if;
 
   -- The estimate reads the same, and hands the caller no reaction to an Act left out.
   est := estimate_input(bob, s + interval '1 day');
   if est is null then raise exception 'the estimate had no window'; end if;
-  if exists (select 1 from jsonb_array_elements(est -> 'acts') x where x ->> 'id' in (decree::text, card::text, staff_reply::text) or x ->> 'character' = boss::text) then raise exception 'the estimate settles a staff Act or a card on one: %', est -> 'acts'; end if;
-  if not (est -> 'systemActs') @> to_jsonb(decree::text) then raise exception 'the estimate does not name the staff Act a System Act: %', est -> 'systemActs'; end if;
-  if exists (select 1 from jsonb_array_elements(est -> 'reactions') x where x ->> 'act' = decree::text) then raise exception 'the estimate hands over reactions to a staff Act'; end if;
+  if exists (select 1 from jsonb_array_elements(est -> 'acts') x where x ->> 'id' in (decree::text, staff_reply::text) or x ->> 'character' = boss::text) then raise exception 'the estimate settles a staff Act: %', est -> 'acts'; end if;
+  -- Bob's card on the decree: in his estimate as in the settlement, judged against the decree's reactions, keyed as any other's.
+  if not exists (select 1 from jsonb_array_elements(est -> 'acts') x where x ->> 'id' = card::text) then raise exception 'the estimate leaves out a card on a staff post: %', est -> 'acts'; end if;
+  if not exists (select 1 from jsonb_array_elements(est -> 'unscoredTargets') x where x ->> 'id' = decree::text) then raise exception 'the estimate does not name the decree an unscored target: %', est; end if;
+  if exists (select 1 from jsonb_array_elements(est -> 'reactions') x where x ->> 'act' = staff_reply::text) then raise exception 'the estimate hands over reactions to a staff Act no card landed on'; end if;
   est := estimate_input(ann, s + interval '1 day');
   if exists (select 1 from jsonb_array_elements(est -> 'acts') x where x ->> 'id' = decree::text or x ->> 'character' = boss::text) then raise exception 'the estimate for the spinner settles a staff Act: %', est -> 'acts'; end if;
 

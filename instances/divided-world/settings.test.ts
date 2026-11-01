@@ -42,9 +42,14 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
     'jabroni.saltyLanded': 20,
     'technician.evergreen': 5, 'technician.evergreenDays': 3,
     'stickAround.price': 100,
+    'trapCard.price': 150, 'forceField.price': 150, 'bluff.price': 25,
     'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostInAll': 300,
   });
   assert.ok(Object.isFrozen(defaults.economy));
+});
+
+test('every card set face down stays set a week if nothing springs it', () => {
+  assert.deepEqual(defaults.setLasts, { unit: 'day', count: 7 });
 });
 
 test('the playtest overrides are separate values, not edits of the defaults', () => {

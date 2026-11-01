@@ -10,7 +10,7 @@
  * top of it, which says whether the price reads "1.00" or "1.00+" and how much more a long post
  * can cost. A card whose rules refuse the probe is shown at its base price alone.
  */
-import { basePrice, type CardRules } from '../../rules/cards.ts';
+import { basePrice, playOf, type CardRules, type Play, type Rarity } from '../../rules/cards.ts';
 import type { Alignment, Settings } from '../../rules/types.ts';
 import type { CardArt, CardUi } from './types.ts';
 
@@ -35,7 +35,19 @@ export interface CardFace {
   readonly summary: string;
   /** The card's rules in plain words. */
   readonly describe: string;
+  /** How rare it is: drawn as the corner gem, whose shape says it (never its color alone). */
+  readonly rarity: Rarity;
+  /** How it is played: its word on the face ("Set"). */
+  readonly play: Play;
 }
+
+/** The corner gem's shape for each rarity, so a rarity is told by its shape and its name, never by color alone. */
+const GEMS: Readonly<Record<Rarity, string>> = { common: '●', uncommon: '◆', rare: '★', legendary: '✦' };
+export const gemOf = (rarity: Rarity): string => GEMS[rarity] ?? GEMS.common;
+/** A rarity's name, as a gem's title says it: "Uncommon". */
+export const rarityName = (rarity: Rarity): string => rarity.charAt(0).toUpperCase() + rarity.slice(1);
+/** A play's word on a card's face: "Cast", "Use", "Set", "Keep". */
+export const playWord = (play: Play): string => play.charAt(0).toUpperCase() + play.slice(1);
 
 /** Hundredths of an orb as the screens say them: 100 is "1.00". */
 export const orbs = (hundredths: number): string => (hundredths / 100).toFixed(2);
@@ -80,6 +92,8 @@ export function faceOf(rules: CardRules, ui: CardUi | undefined, settings: Setti
     tagline: ui?.art.tagline ?? '',
     summary: ui?.summary ?? describe,
     describe,
+    rarity: rules.rarity,
+    play: playOf(rules),
   };
 }
 

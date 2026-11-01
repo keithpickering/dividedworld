@@ -57,8 +57,9 @@ function post(n: number, index: number, author: string, pips: number, rank: stri
  * (WCAG 2.5.3, cardLabel in engine/ui/cards/Postcard.tsx), so the build's name holds the tagline
  * between the tag and the word "postcard".
  */
-const STICK = 'Stick Around, Sweet. Hold a reader on a post. postcard';
-const WHOOPS = 'Whoops!, Salty. Splat a post in ink. postcard';
+const STICK = 'Stick Around, Sweet, Cast. Hold a reader on a post., common postcard';
+const WHOOPS = 'Whoops!, Salty, Cast. Splat a post in ink., common postcard';
+/* The card mechanic (docs/plans/2026-11-01-card-plays-plan.md, Task 7) adds each card's play and rarity to its name: a departure from the board. */
 
 const manifest: BoardManifest = {
   board: '01-main',

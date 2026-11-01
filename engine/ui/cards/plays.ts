@@ -13,15 +13,44 @@ import { useSyncExternalStore } from 'react';
 import type { Act, ActKind, EffectState, Id, KayfaApi } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
 import type { CardRules } from '../../rules/cards.ts';
-import type { Settings } from '../../rules/types.ts';
+import type { Settings, Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, KitControl } from './types.ts';
 
 /** More than any card stacks on one post; a page of posts asks for this many plays per post at most. */
 export const PLAYS_PER_POST = 8;
 
-/** A card play, from its card Act; null for any other Act, or a card Act with no card in it. */
+/**
+ * The kind every card set face down is drawn as: one back, the same for every card, so a trap and a Bluff look alike to everyone
+ * but their setter (the card mechanic's design, section 3). No instance's card key can be it: a key is lowercase words.
+ */
+export const CARD_BACK = 'kb:card-back';
+/**
+ * Whether a kind is a card back: a live one (`CARD_BACK`), or one that sprang, which is its own kind (`CARD_BACK` and its spring), so a
+ * back set later on the same post is never drawn or named as the card that sprang.
+ */
+export const isBack = (kind: string): boolean => kind === CARD_BACK || kind.startsWith(`${CARD_BACK}:`);
+const sprungKind = (spring: Id) => `${CARD_BACK}:${spring}`;
+
+/**
+ * The plays a post shows: all but a card back whose time has passed with nothing springing it, which is gone, as the server drops it
+ * (card_target). Its end is setLasts after it was set, the same for every card.
+ */
+export function shownPlays(plays: readonly CardPlay[], setLasts: Span, now: number = Date.now()): readonly CardPlay[] {
+  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
+  const shown = plays.filter((p) => !(p.faceDown && !p.revealed && Date.parse(p.playedAt) + span <= now));
+  return shown.length === plays.length ? plays : shown;
+}
+
+/**
+ * A card play, from its card Act or its set Act (a card back); null for any other Act, or a card Act with no card in it. A spring
+ * is no play of its own: `Plays.add` reveals the back it names.
+ */
 export function playOf(act: Act): CardPlay | null {
-  if (act.kind !== 'card' || act.targetActId === null || typeof act.payload.card !== 'string') return null;
+  if (act.targetActId === null) return null;
+  if (act.kind === 'set') {
+    return { id: act.id, card: CARD_BACK, layer: 1, caster: act.character, message: '', config: {}, playedAt: act.createdAt, post: act.targetActId, faceDown: true };
+  }
+  if (act.kind !== 'card' || typeof act.payload.card !== 'string') return null;
   const layer = act.payload.layer;
   const config = act.payload.config;
   return {
@@ -33,7 +62,15 @@ export function playOf(act: Act): CardPlay | null {
     config: typeof config === 'object' && config !== null && !Array.isArray(config) ? (config as Record<string, unknown>) : {},
     playedAt: act.createdAt,
     post: act.targetActId,
+    ...(typeof act.payload.caught === 'string' ? { caught: act.payload.caught } : {}),
+    ...(typeof act.payload.ends === 'string' ? { ends: act.payload.ends } : {}),
   };
+}
+
+/** What a spring Act reveals: the set it ends and the card that was face down. */
+function springOf(act: Act): { readonly set: Id; readonly card: string; readonly spring: Id; readonly at: string } | null {
+  if (act.kind !== 'spring' || typeof act.payload.set !== 'string' || typeof act.payload.card !== 'string') return null;
+  return { set: act.payload.set, card: act.payload.card, spring: act.id, at: act.createdAt };
 }
 
 /** Layer first, then when it was played, then its id: the order plays are laid over a post, the first innermost. */
@@ -50,9 +87,11 @@ export interface PostPlays {
   readonly released: ReadonlySet<Id>;
   /** How many times the post's page has been read (each `setBilling`): what the tags opened on it are closed by. */
   readonly read: number;
+  /** Which card each of the reader's own card backs on the post is, by set (`my_face_down`): on the setter's screen alone. */
+  readonly faces: Readonly<Record<Id, string>>;
 }
 
-const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>(), read: 0 });
+const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>(), read: 0, faces: Object.freeze({}) });
 
 const viewKey = (post: Id, card: string): string => `${post}\u0000${card}`;
 
@@ -102,6 +141,8 @@ export interface Plays {
   setStates(states: Readonly<Record<Id, EffectState>>): boolean;
   /** The reader released themselves from these plays. */
   setReleased(plays: readonly Id[]): boolean;
+  /** The reader's own card backs' cards, by set: drawn under the back on their screen alone, never sent. */
+  setFaces(faces: Readonly<Record<Id, string>>): boolean;
   /** The post's plays in billing order: as last set, then each play added since, in the order it arrived. */
   billing(post: Id): readonly Id[];
   /** Set the post's billing, when its page is read (a new read, even in the same order); a play it leaves out keeps its place after the ones it names. */
@@ -122,6 +163,9 @@ export function createPlays(): Plays {
   const postOf = new Map<Id, Id>();
   const states = new Map<Id, EffectState>();
   const released = new Set<Id>();
+  const faces = new Map<Id, string>();
+  /* A spring that arrived before the back it reveals, kept for when it does. */
+  const springs = new Map<Id, NonNullable<ReturnType<typeof springOf>>>();
   /* Each post's billing order, by play id: set by a read of its page, with a play that arrives later appended. */
   const order = new Map<Id, readonly Id[]>();
   /* Each card's view on a post, by `viewKey`: kept apart from the snapshots, so setting one never moves a snapshot or another card's view. */
@@ -150,6 +194,7 @@ export function createPlays(): Plays {
           states: Object.fromEntries(plays.filter((p) => states.has(p.id)).map((p) => [p.id, states.get(p.id)!])),
           released: new Set(plays.filter((p) => released.has(p.id)).map((p) => p.id)),
           read: reads.get(post) ?? 0,
+          faces: Object.fromEntries(plays.filter((p) => faces.has(p.id)).map((p) => [p.id, faces.get(p.id)!])),
         };
         snapshots.set(post, snap);
       }
@@ -158,8 +203,23 @@ export function createPlays(): Plays {
     add(acts) {
       const touched = new Set<Id>();
       for (const act of acts) {
-        const play = playOf(act);
-        if (!play) continue;
+        /* A spring reveals its back in place: the same play, keeping its place in the billing, so no mark moves. */
+        const sprung = springOf(act);
+        if (sprung) {
+          springs.set(sprung.set, sprung);
+          const post = postOf.get(sprung.set);
+          const own = post === undefined ? undefined : byPost.get(post);
+          const back = own?.get(sprung.set);
+          if (own && back && !back.revealed) {
+            own.set(back.id, { ...back, card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at } });
+            touched.add(back.post);
+          }
+          continue;
+        }
+        const found = playOf(act);
+        if (!found) continue;
+        const early = found.faceDown ? springs.get(found.id) : undefined;
+        const play = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at } } : found;
         const own = byPost.get(play.post) ?? new Map<Id, CardPlay>();
         if (own.has(play.id)) continue;
         own.set(play.id, play);
@@ -188,6 +248,17 @@ export function createPlays(): Plays {
       for (const play of plays) {
         if (released.has(play)) continue;
         released.add(play);
+        const post = postOf.get(play);
+        if (post !== undefined) touched.add(post);
+      }
+      changed(touched);
+      return touched.size > 0;
+    },
+    setFaces(next) {
+      const touched = new Set<Id>();
+      for (const [play, card] of Object.entries(next)) {
+        if (faces.get(play) === card) continue;
+        faces.set(play, card);
         const post = postOf.get(play);
         if (post !== undefined) touched.add(post);
       }
@@ -263,5 +334,5 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
  * default case draws the words in `PostEffects`) and the ORIGIN box both ask `holdsEffects`, so the kinds that wear an
  * effect, and so carry marks, are one list.
  */
-const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'tally', 'reveal', 'move', 'move_end', 'move_keep']);
+const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'spring']);
 export const holdsEffects = (kind: ActKind): boolean => !WITHOUT_EFFECTS.has(kind);

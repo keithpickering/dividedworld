@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { Act, EffectState, Id, KayfaApi, Log } from '../data/api.ts';
-import { actsNamed, type LogData } from './lines.ts';
+import { actsFollowed, actsNamed, type LogData } from './lines.ts';
 
 type State =
   | { readonly status: 'loading' }
@@ -26,6 +26,8 @@ export function mergeLogs(newer: Log, older: Log): Log {
     cards: [...newer.cards, ...older.cards],
     playsOnMine: [...newer.playsOnMine, ...older.playsOnMine],
     saves: [...newer.saves, ...older.saves],
+    setEnds: [...newer.setEnds, ...older.setEnds],
+    caught: [...newer.caught, ...older.caught],
     before: older.before,
   };
 }
@@ -65,9 +67,13 @@ async function around(api: KayfaApi, log: Log, before?: LogData): Promise<LogDat
     plays.length === 0 ? {} : orElse(api.effectStates(plays), {}),
   ]);
   for (const a of read) acts.set(a.id, a);
-  /* A card play names the post it landed on. */
-  const targets = [...acts.values()].filter((a) => a.kind === 'card' && a.targetActId && !acts.has(a.targetActId)).map((a) => a.targetActId!);
-  for (const a of targets.length === 0 ? [] : await api.actsById(targets)) acts.set(a.id, a);
+  /* A card play names the post it landed on; a strike's card its spring; a spring what it caught or was sprung by, and that play's
+     post. Two rounds reach each of them. */
+  for (let round = 0; round < 2; round++) {
+    const followed = actsFollowed(acts);
+    if (followed.length === 0) break;
+    for (const a of await api.actsById(followed)) acts.set(a.id, a);
+  }
   const names = new Map(own.names);
   const others = [...new Set([...acts.values()].map((a) => a.character).filter((c): c is Id => c !== null && !ids.includes(c) && !names.has(c)))];
   for (const part of await Promise.all(inChunks(others).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) names.set(c.id, c.name);

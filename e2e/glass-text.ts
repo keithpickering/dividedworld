@@ -358,7 +358,7 @@ export const BOARD = '.kb-preview-post, .kb-hand-board-post-bar, .kb-hand-board-
  * words in it a player needs (what a slot is and costs is said by its button's name), and so outside the
  * type measurement (docs/plans/2026-10-30-glass-to-the-boards-plan.md, section 7, board 07). A
  * postcard drawn at the slot size is art too (Postcard.tsx marks it so): the name printed on its
- * face is not measured, and the slot's button, named "Buy Stick Around, 1.00 orb", says it in words.
+ * face is not measured, and the slot's button, named "Buy Stick Around, 1.00 orb, common Cast", says it in words.
  * Postcards at the other sizes are glass and are read.
  */
 export const ART = '[data-kb-art]';
