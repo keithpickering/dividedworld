@@ -50,12 +50,13 @@ declare
   th uuid;
   th_other uuid;
   boss uuid := pg_temp.boss();
-  early uuid; late uuid; qa uuid; qb uuid; qc uuid;
+  early uuid; late uuid; qa uuid; qb uuid; qc uuid; qd uuid;
   posters uuid[] := '{}';
   p uuid;
   i integer;
   posts uuid;
   d3board uuid; th_d3 uuid; m_d3 uuid;
+  p3board uuid; th_p3a uuid; th_p3b uuid; m_p3 uuid;
   m_posts uuid; m_distinct uuid; m_thread uuid; m_cross uuid; m_quad uuid; m_expired uuid; m_reversed uuid;
   d jsonb;
   e jsonb;
@@ -71,6 +72,9 @@ begin
   insert into boards (slug, name, description) values ('dm-quad', 'Dm Quad', 'x') returning id into qboard;
   insert into boards (slug, name, description) values ('dm-d3', 'Dm D3', 'x') returning id into d3board;
   insert into threads (board, title) values (d3board, 'Dm d3 thread') returning id into th_d3;
+  insert into boards (slug, name, description) values ('dm-p3', 'Dm P3', 'x') returning id into p3board;
+  insert into threads (board, title) values (p3board, 'Dm p3 thread a') returning id into th_p3a;
+  insert into threads (board, title) values (p3board, 'Dm p3 thread b') returning id into th_p3b;
   insert into threads (board, title) values (dboard, 'Dm distinct thread') returning id into th_dist;
   insert into threads (board, title) values (qboard, 'Dm quad thread') returning id into th_quad;
 
@@ -109,6 +113,15 @@ begin
   perform tests.post(posters[7], th_d3, 'Fourth, before the tick noticed.', base - interval '3 hours 30 minutes');
   perform pg_temp.end_at(m_d3, 'met', base - interval '2 hours 50 minutes');
 
+  -- ---- Met postsOnBoard of 3 with four posters, across two threads, before the end: the demand counted the first three posts on the board,
+  -- and the fourth, posted before the tick noticed, is not credited. ----
+  m_p3 := pg_temp.move(p3board, 'Dm P3 Palace', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', p3board, 'count', 3)), base - interval '5 hours');
+  perform tests.post(posters[3], th_p3b, 'One.', base - interval '4 hours');
+  perform tests.post(posters[1], th_p3a, 'Two.', base - interval '3 hours 55 minutes');
+  perform tests.post(posters[2], th_p3b, 'Three: the demand is met here.', base - interval '3 hours 50 minutes');
+  perform tests.post(posters[4], th_p3a, 'Four, before the tick noticed.', base - interval '3 hours 40 minutes');
+  perform pg_temp.end_at(m_p3, 'met', base - interval '2 hours 40 minutes');
+
   -- ---- Met characterPostsInThread: the named character; crossQuote: the two; quadrantOnBoard: the authors whose tallies counted ----
   m_thread := pg_temp.move(hall, 'Dm Thread Palace', jsonb_build_object('kind', 'characterPostsInThread', 'params', jsonb_build_object('thread', th, 'character', posters[4])), base - interval '5 hours');
   perform pg_temp.end_at(m_thread, 'met', base - interval '90 minutes');
@@ -119,6 +132,9 @@ begin
   qb := tests.post(posters[8], th_quad, 'Not liked.', base - interval '3 hours');
   qc := tests.post(posters[9], th_quad, 'Liked more.', base - interval '3 hours' + interval '1 minute');
   insert into reaction_tallies (act, kind, count) values (qa, 'up', 1), (qb, 'boo', 4), (qc, 'up', 2);
+  -- A post after the end, with the biggest tally in the quadrant: not the move's.
+  qd := tests.post(posters[10], th_quad, 'Liked most, after the end.', base - interval '60 minutes');
+  insert into reaction_tallies (act, kind, count) values (qd, 'up', 9);
   perform pg_temp.end_at(m_quad, 'met', base - interval '70 minutes');
 
   -- ---- A move that expired, and one an admin reversed: nobody is credited ----
@@ -149,12 +165,17 @@ begin
     raise exception 'a met distinctCharactersOnBoard of 3 lists % (the first three characters to post, not the fourth who came before the tick noticed)', e -> 'metBy';
   end if;
 
+  e := (select m from jsonb_array_elements(d -> 'moves') m where (m ->> 'act')::uuid = m_p3);
+  if e -> 'metBy' is distinct from jsonb_build_array(posters[3]::text, posters[1]::text, posters[2]::text) then
+    raise exception 'a met postsOnBoard of 3 lists % (the first three posts on the board, not the fourth who came before the tick noticed)', e -> 'metBy';
+  end if;
+
   e := (select m from jsonb_array_elements(d -> 'moves') m where (m ->> 'act')::uuid = m_thread);
   if e -> 'metBy' is distinct from jsonb_build_array(posters[4]::text) then raise exception 'characterPostsInThread lists %', e -> 'metBy'; end if;
   e := (select m from jsonb_array_elements(d -> 'moves') m where (m ->> 'act')::uuid = m_cross);
   if e -> 'metBy' is distinct from jsonb_build_array(posters[5]::text, posters[6]::text) then raise exception 'crossQuote lists %', e -> 'metBy'; end if;
   e := (select m from jsonb_array_elements(d -> 'moves') m where (m ->> 'act')::uuid = m_quad);
-  if e -> 'metBy' is distinct from jsonb_build_array(posters[9]::text, posters[7]::text) then raise exception 'quadrantOnBoard lists % (the authors of the posts with tallies in the quadrant, the biggest first)', e -> 'metBy'; end if;
+  if e -> 'metBy' is distinct from jsonb_build_array(posters[9]::text, posters[7]::text) then raise exception 'quadrantOnBoard lists % (the authors of the posts with tallies in the quadrant, the biggest first, and not the post after the end)', e -> 'metBy'; end if;
 
   -- not met: nobody
   e := (select m from jsonb_array_elements(d -> 'moves') m where (m ->> 'act')::uuid = m_expired);

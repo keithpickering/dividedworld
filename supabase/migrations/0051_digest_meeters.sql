@@ -8,8 +8,14 @@
 -- new function, no new grant. Everything else is as 0048 wrote it; the function stays the digest role's, and `create or replace` keeps
 -- its owner, privileges and grants.
 --
--- Cost: it reads the posts of the board between a met move's landing and end, for the few moves (at most digestExcerpts) the digest
--- lists as met in the window; the evaluator read the same Acts to decide the demand, so a met move costs the digest what it cost the tick.
+-- Cost: only for the few moves (at most digestExcerpts) the digest lists as met in the window, and each reads what its demand counted and
+-- no more. postsOnBoard reads the Acts in time order from the landing, stopped at `count` matching posts (a limit on the acts_created
+-- index, as demand_progress stops at its `of`); distinctCharactersOnBoard walks the same order one step per character, stopped at the
+-- `count`th distinct one, so its read ends at that character's first post; characterPostsInThread reads that character's posts in that thread from the
+-- landing to the end (the acts_thread_posts index); crossQuote reads no Acts; quadrantOnBoard sums the tallies of every post on the board from the landing to the end, as
+-- demand_progress sums them. Neither board count reads the board's whole stretch or sorts it (measured at 50,000 posts on a board of 200
+-- threads: 139 ms and 114 ms before, 0.3 ms each after). On a board quieter than the rest of the instance the time-ordered read passes
+-- other boards' posts on its way to the board's `count`th, bounded by the move's window as the evaluator's is.
 
 create or replace function system_digest(since timestamptz, until timestamptz) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -148,38 +154,53 @@ begin
   -- public tallies counted, the most reacted first; for a post in a thread, the character named; for a crossQuote, the two. A staff
   -- character's Acts never count (the evaluator skips them) and are never listed. Only public relations, and never a reactor.
   met_credit as (
-    select r.act, r.character, min(r.created_at) as first_at, 0::bigint as weight
+    select p.act, p.character, min(p.created_at) as first_at, 0::bigint as weight
     from (
-      -- postsOnBoard: the posts demand_progress counted, the first `count` after the landing (oldest first, staff skipped). A post after the
-      -- count was reached, before the tick noticed, is not the move's.
-      select mm.act, a.character, a.created_at,
-             row_number() over (partition by mm.act order by a.created_at, a.id) as n
+      -- postsOnBoard: the posts demand_progress counted, the first `count` after the landing (oldest first, staff skipped), read as it
+      -- reads them: the Acts in time order from the landing, stopped at `count` matches (the acts_created index), so a busy board costs
+      -- `count` posts and not the board's whole stretch. A post after the count was reached, before the tick noticed, is not the move's.
+      select mm.act, x.character, x.created_at
       from met_m mm
-      join thread_list tl on tl.board = mm.board
-      join acts_public a on a.thread = tl.id
-      join characters_public c on c.id = a.character
-      where mm.dkind = 'postsOnBoard' and mm.cnt >= 1
-        and a.kind = 'post' and a.created_at > mm.landed_at and a.created_at <= mm.end_at and c.staff is null
-    ) r
-    join met_m mm on mm.act = r.act and r.n <= mm.cnt
-    group by r.act, r.character
-    union all
-    select f.act, f.character, f.first_at, 0::bigint
-    from (
-      -- distinctCharactersOnBoard: the first `count` distinct characters to post after the landing, in the order they first did.
-      select x.act, x.character, x.first_at, row_number() over (partition by x.act order by x.first_at, x.first_id) as n
-      from (
-        select mm.act, a.character, min(a.created_at) as first_at, (array_agg(a.id order by a.created_at, a.id))[1] as first_id
-        from met_m mm
-        join thread_list tl on tl.board = mm.board
-        join acts_public a on a.thread = tl.id
+      cross join lateral (
+        select a.character, a.created_at
+        from acts_public a
         join characters_public c on c.id = a.character
-        where mm.dkind = 'distinctCharactersOnBoard' and mm.cnt >= 1
+        where a.thread in (select tl.id from thread_list tl where tl.board = mm.board)
           and a.kind = 'post' and a.created_at > mm.landed_at and a.created_at <= mm.end_at and c.staff is null
-        group by mm.act, a.character
+        order by a.created_at, a.id
+        limit mm.cnt
       ) x
-    ) f
-    join met_m mm on mm.act = f.act and f.n <= mm.cnt
+      where mm.dkind = 'postsOnBoard' and mm.cnt >= 1
+    ) p
+    group by p.act, p.character
+    union all
+    -- distinctCharactersOnBoard: the first `count` distinct characters to post after the landing, in the order they first did. Each step
+    -- finds the next post, in time order from the previous step's, by a character not yet found; every post skipped on the way is by one
+    -- already found (or a staff character), so the steps are the characters' first posts in order, and the walk reads the Acts up to the
+    -- `count`th new character's first post and no further.
+    select w.act, w.character, w.created_at, 0::bigint
+    from (
+      with recursive walk(act, board, end_at, cnt, n, character, created_at, id, found) as (
+        select mm.act, mm.board, mm.end_at, mm.cnt, 0, null::uuid, mm.landed_at, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '{}'::uuid[]
+        from met_m mm
+        where mm.dkind = 'distinctCharactersOnBoard' and mm.cnt >= 1
+        union all
+        select w.act, w.board, w.end_at, w.cnt, w.n + 1, x.character, x.created_at, x.id, w.found || x.character
+        from walk w
+        cross join lateral (
+          select a.character, a.created_at, a.id
+          from acts_public a
+          join characters_public c on c.id = a.character
+          where a.thread in (select tl.id from thread_list tl where tl.board = w.board)
+            and a.kind = 'post' and a.created_at >= w.created_at and a.created_at <= w.end_at and (a.created_at, a.id) > (w.created_at, w.id)
+            and a.character <> all (w.found) and c.staff is null
+          order by a.created_at, a.id
+          limit 1
+        ) x
+        where w.n < w.cnt
+      )
+      select * from walk where n >= 1
+    ) w
     union all
     -- quadrantOnBoard: the public tally as it stands when the digest is built, not as of the move's end. A reaction after the end can raise
     -- it, and a public tally keeps no time per reaction (a reaction's time is private, and is never read here), so this credit may include
