@@ -6,16 +6,19 @@ import type { BoardName } from '../data/api.ts';
 import { Link } from '../router.tsx';
 import { moveParts } from './move-words.ts';
 
-export function MoveSentence({ kind, params, boards, tense, was }: {
+export function MoveSentence({ kind, params, boards, tense, was, bosses }: {
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   readonly boards: readonly BoardName[];
   readonly tense: 'done' | 'plan';
   /** The name the board had, where the caller knows it better than `boards` (a board renamed again since). */
   readonly was?: string | null;
+  /** The roster's Bosses, so a move that names one reads with its name and not its key. */
+  readonly bosses?: readonly { readonly staff: string; readonly name: string }[];
 }) {
   const named = boards.find((b) => b.id === params['board']);
-  const parts = moveParts(kind, params, was ?? named?.was ?? null, tense);
+  const boss = kind === 'nameSuccessor' ? bosses?.find((b) => b.staff === params['boss'])?.name : undefined;
+  const parts = moveParts(kind, params, was ?? boss ?? named?.was ?? null, tense);
   return (
     <>
       {parts.map((p, i) => {

@@ -124,7 +124,7 @@ export interface ThreadSummary {
   readonly originSeq: number | null;
 }
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end';
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep';
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -283,8 +283,8 @@ export const NOTICE_REACTIONS = 3;
 
 /** How a landed move ended (moves_log). */
 export interface MoveEnd {
-  readonly why: 'met' | 'expired' | 'reversed';
-  /** `tick` or `admin`. */
+  readonly why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent';
+  /** `tick`, `admin`, `boss` (the new Boss's review), `inheritance` (the review never came) or `handover`. */
   readonly by: string;
   readonly at: string;
 }
@@ -301,6 +301,8 @@ export interface MoveLogRow {
   readonly thread: Id;
   /** Null while it is in force. */
   readonly end: MoveEnd | null;
+  /** The staff key of the Boss that keeps it after a handover (a review's keep), or null. */
+  readonly keptBy: string | null;
 }
 
 /** Where the next page of a moderation log starts: the last row's time and Act, as the page was ordered by them. */
@@ -366,7 +368,7 @@ export interface MoveInForce {
 
 /** A move that ended, or was held and never landed, in the last 30 days (admin_queue). */
 export interface MoveEnded {
-  readonly how: 'met' | 'expired' | 'reversed' | 'held';
+  readonly how: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'held';
   readonly by: string | null;
   readonly at: string;
   /** Null for a held move, which was never an Act. */
@@ -651,6 +653,10 @@ export interface KayfaApi {
   holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */
   reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id }>>;
+  /** Puts another Boss of the roster in a waiting nomination's place (`id` is the queue row's). An admin's alone; a nomination that has landed or been held is refused. */
+  replaceSuccessor(id: number, boss: string): Promise<Answer<{ readonly id: number; readonly boss: string }>>;
+  /** The Bosses of the instance's roster, by staff key and name: public, as a Boss's name is. */
+  bosses(): Promise<readonly { readonly staff: string; readonly name: string }[]>;
 
   settings(): Promise<ScreenSettings>;
 

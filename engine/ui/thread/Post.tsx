@@ -23,7 +23,7 @@ import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
-import { LastEdited, MoveEndLine, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
+import { LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
 export { ThreadCtx, type ThreadContext };
@@ -45,6 +45,7 @@ function Body({ act, name, person, editing, onDone, marks }: { readonly marks: R
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
     case 'move_end': return <MoveEndLine act={act} />;
+    case 'move_keep': return <MoveKeepLine name={name} />;
     case 'move':
       /* The Boss's move: its stock line in its own voice, under the glass's label of the move, which the engine's catalog words and the Boss cannot change. */
       return (

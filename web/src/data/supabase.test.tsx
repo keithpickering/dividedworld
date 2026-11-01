@@ -1215,6 +1215,25 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(h.to('rpc/reverse_move')[0]?.body).toEqual({ move_act: A });
   });
 
+  it('reads the handover: a move set aside or used up at it, who keeps a move, the roster of Bosses, and replaces a nominated Boss through the admin function', async () => {
+    const mk = (i: number, why: string | null, kept: string | null) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, kind: 'renameBoard', params: {}, demand: null, expires_at: null, thread: T, at: '2026-10-30T12:00:00+00:00', ended_why: why, ended_by: why ? 'boss' : null, ended_at: why ? '2026-10-31T00:00:00+00:00' : null, kept_by: kept });
+    const log = await harness(() => rows([mk(1, 'superseded', null), mk(2, 'spent', null), mk(3, null, 'the-clerk'), mk(4, 'nonsense', null)])).api.movesLog('director');
+    expect(log.rows.map((r) => [r.end?.why ?? null, r.keptBy])).toEqual([['superseded', null], ['spent', null], [null, 'the-clerk'], [null, null]]);
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/replace_successor')) return json({ id: 4, boss: 'hype-man' });
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: A, name: 'Hype Man', staff: 'hype-man' }, { id: B, name: 'The Clerk', staff: 'the-clerk' }]);
+      return json({}, 404);
+    });
+    expect(h.to('moves_log')).toHaveLength(0);
+    expect(await h.api.bosses()).toEqual([{ staff: 'hype-man', name: 'Hype Man' }, { staff: 'the-clerk', name: 'The Clerk' }]);
+    const roster = h.to('characters_public')[0]!.url.searchParams;
+    expect([roster.get('staff_kind'), roster.get('select')]).toEqual(['eq.boss', 'id,name,staff']);
+    expect(await h.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: true, value: { id: 4, boss: 'hype-man' } });
+    expect(h.to('rpc/replace_successor')[0]?.body).toEqual({ id: 4, boss: 'hype-man' });
+    const refused = harness(() => json({ code: '55000', message: 'that nomination has already landed; reverse it instead', hint: 'kayfabb.refusal' }, 400));
+    expect(await refused.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: false, error: 'that nomination has already landed; reverse it instead' });
+  });
+
   it('passes an admin function\'s refusal through in the server\'s words, and throws a plain error when the queue cannot be read', async () => {
     const refused = harness(() => json({ code: '42501', message: 'only an admin holds a move', hint: 'kayfabb.refusal' }, 403));
     expect(await refused.api.holdMove(4)).toEqual({ ok: false, error: 'only an admin holds a move' });

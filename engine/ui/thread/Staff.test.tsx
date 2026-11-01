@@ -46,4 +46,20 @@ describe('the Boss on The System\'s board', () => {
     await waitFor(() => expect(screen.getAllByText('A move has ended: an admin reversed it.').length).toBeGreaterThan(0));
     await waitFor(() => expect(screen.getAllByText('A move has ended: its demand was met.').length).toBeGreaterThan(0));
   });
+
+  test('a handover\'s ends and keeps are plain lines too: set aside at the handover, used up, and a Boss keeping a move', async () => {
+    const { fake, w } = announcements();
+    fake.seed.staff('the-clerk', 'The Clerk', 'boss');
+    const set = fake.seed.move('director', { board: w.general, name: 'Set Aside Alley' });
+    fake.seed.endMove(set, { why: 'superseded', by: 'boss' });
+    const used = fake.seed.move('director', { board: w.general, name: 'Used Up Ave' });
+    fake.seed.endMove(used, { why: 'spent', by: 'handover' });
+    const kept = fake.seed.move('director', { board: w.general, name: 'Kept Kiosk Court' });
+    fake.seed.keepMove(kept, 'the-clerk');
+    const moveThread = (await fake.act(kept))!.thread;
+    renderIn(fake, <ThreadScreen thread={moveThread} />, { path: `/t/${moveThread}` });
+    await waitFor(() => expect(screen.getAllByText('A move has ended: it ended at the handover.').length).toBeGreaterThan(0));
+    expect(screen.getAllByText('A move has ended: it was used up at the handover.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('The Clerk kept a move of an earlier Boss. It is now its own.').length).toBeGreaterThan(0);
+  });
 });

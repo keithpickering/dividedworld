@@ -186,6 +186,25 @@
 
 .kb-queue-dialog { width: min(100%, 560px); }
 
+/* A nomination's other choice, under HOLD: a labeled list of the roster's Bosses and the REPLACE control. */
+.kb-queue-replace {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: var(--kb-glass-size-body);
+  color: var(--kb-glass-text-2);
+}
+
+.kb-queue-select {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--kb-glass-neon);
+  background: var(--kb-glass-panel-strong);
+  color: var(--kb-glass-text-hi);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+}
+
 .kb-queue-confirm-actions {
   display: flex;
   flex-wrap: wrap;

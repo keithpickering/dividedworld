@@ -25,9 +25,19 @@ export function wayOut(demand: Demand | null, progress: DemandProgress | null, e
   return 'WAY OUT: DETAILS';
 }
 
-/** How a landed move ended, in a few words for a moderation log: "in force", "undone: 12 posted", "ran out Oct 31", "reversed by an admin". */
-export function endedWords(end: MoveEnd | null, demand: Demand | null): string {
+/**
+ * How a landed move ended, in a few words for a moderation log: "in force", "undone: 12 posted", "ran out Oct 31", "reversed by an admin",
+ * "ended at the handover" (a new Boss set it aside, or its review never came). A move a later Boss keeps says so (`keptBy`, that Boss's name).
+ */
+export function endedWords(end: MoveEnd | null, demand: Demand | null, keptBy?: string | null): string {
+  const kept = keptBy ? `, kept by ${keptBy}` : '';
+  return `${endedBase(end, demand)}${kept}`;
+}
+
+function endedBase(end: MoveEnd | null, demand: Demand | null): string {
   if (end === null) return 'in force';
+  if (end.why === 'superseded') return 'ended at the handover';
+  if (end.why === 'spent') return 'used up at the handover';
   if (end.why === 'met') {
     const met = demand ? demandKind(demand.kind)?.met(demand.params) : undefined;
     return met ? `undone: ${met}` : 'undone: its demand was met';
@@ -42,4 +52,5 @@ export function moveParts(kind: string, params: Readonly<Record<string, unknown>
 }
 
 /** What a move asks, without progress: for a move that has not landed. */
-export const demandNeeds = (demand: Demand | null): string => (demand ? demandAsk(demand) : 'It asks nothing: it ends at its expiry, or when an admin reverses it.');
+export const demandNeeds = (demand: Demand | null, kind?: string): string =>
+  demand ? demandAsk(demand) : kind === 'nameSuccessor' ? 'It asks nothing: it ends at the handover, or when an admin reverses it.' : 'It asks nothing: it ends at its expiry, or when an admin reverses it.';

@@ -28,6 +28,17 @@ test('how a move ended reads in a few plain words', () => {
   assert.equal(endedWords({ why: 'reversed', by: 'admin', at: local(9, 31) }, demand), 'reversed by an admin');
 });
 
+test('a handover reads plainly: a move set aside or never reviewed ended at the handover, a nomination was used up, and a kept move says who keeps it', () => {
+  assert.equal(endedWords({ why: 'superseded', by: 'boss', at: local(9, 31) }, demand), 'ended at the handover');
+  assert.equal(endedWords({ why: 'superseded', by: 'inheritance', at: local(9, 31) }, null), 'ended at the handover');
+  assert.equal(endedWords({ why: 'spent', by: 'handover', at: local(9, 31) }, null), 'used up at the handover');
+  assert.equal(endedWords(null, demand, 'The Clerk'), 'in force, kept by The Clerk');
+  assert.equal(endedWords({ why: 'expired', by: 'tick', at: local(9, 31) }, demand, 'The Clerk'), 'ran out Oct 31, kept by The Clerk');
+  assert.equal(endedWords(null, demand, null), 'in force');
+  assert.deepEqual(moveParts('nameSuccessor', { boss: 'the-clerk' }, 'The Clerk', 'plan'), ['Name ', 'The Clerk', ' as the next Boss']);
+  assert.match(demandNeeds(null, 'nameSuccessor'), /ends at the handover/u);
+});
+
 test('a move is a sentence in pieces, and a move this build has no words for is named', () => {
   assert.deepEqual(moveParts('renameBoard', { board, name: 'Toast' }, 'General', 'done'), ['Renamed ', { board, name: 'General' }, ' to ', { board, name: 'Toast' }]);
   assert.match(String(moveParts('shout', {}, null, 'plan')[0]), /no words for \(shout\)/u);

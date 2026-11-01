@@ -154,3 +154,63 @@ describe('who may see it', () => {
     expect(screen.queryByRole('button', { name: /^Hold/u })).toBeNull();
   });
 });
+
+describe('a nomination of a successor', () => {
+  const nominate = (fake: ReturnType<typeof buildWorld>) => {
+    fake.seed.staff('the-clerk', 'The Clerk', 'boss', { title: 'Keeper of Forms' });
+    fake.seed.staff('hype-man', 'Hype Man', 'boss', { title: 'Hype' });
+    return fake.seed.queueSuccessor('director', 'the-clerk', { goLiveAt: fake.clock.now() + 20 * 3_600_000, why: 'It has the stamina.' });
+  };
+
+  test('waits like any structural move: the Boss named, the way it ends in plain words, the Boss\'s why quoted, and HOLD', async () => {
+    open({ build: (fake) => { nominate(fake); } });
+    const waiting = await group(/^Waiting to land/u);
+    expect(waiting).toHaveTextContent('Name The Clerk as the next Boss');
+    expect(waiting).toHaveTextContent('It asks nothing: it ends at the handover, or when an admin reverses it.');
+    expect(waiting).toHaveTextContent('the Boss it names takes the seat when the season rolls over');
+    expect(waiting).toHaveTextContent('Why, in The Director\'s words: “It has the stamina.”');
+    expect(within(waiting).getAllByRole('button', { name: /^Hold/u })).toHaveLength(2);
+    expect(within(waiting).getByRole('button', { name: 'Hold: the naming of a successor' })).toBeInTheDocument();
+  });
+
+  test('offers REPLACE with the roster\'s other Bosses only, never the Boss that wrote it nor the one it names; replacing changes the nomination and reads the queue again', async () => {
+    const { fake } = open({ build: (f) => { nominate(f); } });
+    const waiting = await group(/^Waiting to land/u);
+    const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' });
+    expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hype Man']);
+    const replace = within(waiting).getByRole('button', { name: 'Replace the nominated Boss' });
+    expect(replace).toBeDisabled();
+    await userEvent.selectOptions(choice, 'Hype Man');
+    expect(replace).toBeEnabled();
+    await userEvent.click(replace);
+    await waitFor(() => expect(waiting).toHaveTextContent('Name Hype Man as the next Boss'));
+    expect((await fake.adminQueue()).waiting.map((q) => q.params['boss'])).toContain('hype-man');
+    expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in its place' })).not.toBeNull();
+  });
+
+  test('a held nomination no longer waits, so it has no REPLACE', async () => {
+    open({ build: (fake) => { const id = nominate(fake); fake.seed.holdQueued(id); } });
+    const waiting = await group(/^Waiting to land/u);
+    expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in its place' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Replace the nominated Boss' })).toBeNull();
+  });
+
+  test('the ended group says how a nomination and an inherited move ended: used up at the handover, set aside by the new Boss, or never reviewed', async () => {
+    open({
+      build: (fake, w) => {
+        fake.seed.staff('the-clerk', 'The Clerk', 'boss');
+        const spent = fake.seed.move('director', { board: w.general, name: 'Nominee Row', at: fake.clock.now() - 3 * 86_400_000 });
+        fake.seed.endMove(spent, { why: 'spent', at: fake.clock.now() - 86_400_000 });
+        const aside = fake.seed.move('director', { board: w.general, name: 'Set Aside Alley', at: fake.clock.now() - 3 * 86_400_000 });
+        fake.seed.endMove(aside, { why: 'superseded', by: 'boss', at: fake.clock.now() - 80_000_000 });
+        const forgotten = fake.seed.move('director', { board: w.general, name: 'Forgotten Fen Place', at: fake.clock.now() - 3 * 86_400_000 });
+        fake.seed.endMove(forgotten, { why: 'superseded', by: 'inheritance', at: fake.clock.now() - 70_000_000 });
+      },
+    });
+    const ended = (await group(/^Ended/u)).querySelector('details')!;
+    await userEvent.click(ended.querySelector('summary')!);
+    expect(ended).toHaveTextContent('Used up at the handover.');
+    expect(ended).toHaveTextContent('Ended by the new Boss at the handover.');
+    expect(ended).toHaveTextContent('Ended at the handover: the new Boss did not review it in time.');
+  });
+});

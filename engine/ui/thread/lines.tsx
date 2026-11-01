@@ -76,8 +76,17 @@ export function UnmaskLine({ act, name }: { readonly act: Act; readonly name: st
 /** The plain record that a move is over, in the engine's words and never the Boss's (the log never lies): how it ended, by whom. */
 export function MoveEndLine({ act }: { readonly act: Act }) {
   const why = text(act.payload.why);
-  const how = why === 'met' ? 'its demand was met' : why === 'expired' ? 'it ran out' : text(act.payload.by) === 'admin' ? 'an admin reversed it' : 'it was reversed';
+  const how = why === 'met' ? 'its demand was met'
+    : why === 'expired' ? 'it ran out'
+    : why === 'superseded' ? 'it ended at the handover'
+    : why === 'spent' ? 'it was used up at the handover'
+    : text(act.payload.by) === 'admin' ? 'an admin reversed it' : 'it was reversed';
   return <p className="kb-act-line">A move has ended: {how}.</p>;
+}
+
+/** A Boss keeping a move of an earlier Boss after a handover: the plain record, in the engine's words. */
+export function MoveKeepLine({ name }: { readonly name: string }) {
+  return <p className="kb-act-line">{name} kept a move of an earlier Boss. It is now its own.</p>;
 }
 
 export { Debuts };

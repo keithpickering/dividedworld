@@ -102,9 +102,13 @@ export interface Seed {
    */
   move(staff: string, move: SeedMove): Id;
   /** A move's end, as end_move writes it: the board's old name returns. */
-  endMove(act: Id, end: { why: 'met' | 'expired' | 'reversed'; by?: string; at?: number }): Id;
+  endMove(act: Id, end: { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by?: string; at?: number }): Id;
+  /** The new Boss keeps a move of an earlier Boss after a handover (a `move_keep` Act): the move's log row says who keeps it. */
+  keepMove(act: Id, staff: string, options?: { at?: number }): Id;
   /** A move the Boss chose that waits in the admin queue; returns its queue id. */
   queueMove(staff: string, move: SeedMove & { goLiveAt: number; why?: string; failure?: { at: number; text: string } }): number;
+  /** A nomination of a successor waiting in the admin queue (`boss` is a roster key); returns its queue id. */
+  queueSuccessor(staff: string, boss: string, options: { goLiveAt: number; why?: string }): number;
   /** An admin's hold on a queued move, dated `at`: it never lands. */
   holdQueued(id: number, at?: number): void;
   /**
@@ -265,10 +269,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let nextSettlement: number | null = null;
   const boards: Board[] = options.instance.boards.map((b) => ({ id: uuid(), slug: b.slug, name: b.name, description: b.description, isSystem: b.system === true, moveAct: null }));
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
-  const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed'; by: string; at: number }>();
+  const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
-  interface QueueRec { id: number; staff: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; heldAt: number | null; landed: Id | null }
+  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; heldAt: number | null; landed: Id | null }
   const queue: QueueRec[] = [];
+  /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
+  const moveKeeps = new Map<Id, string>();
   const playersBoard = boards.find((b) => !b.isSystem);
 
   let session: { email: string | null; account: Id | null } = { email: null, account: null };
@@ -842,7 +848,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return {
           act: a.id, kind: String(a.payload['kind'] ?? ''), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(a.id),
           expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null, at: iso(a.at), thread: a.thread,
-          end: end ? { why: end.why, by: end.by, at: iso(end.at) } : null,
+          end: end ? { why: end.why, by: end.by, at: iso(end.at) } : null, keptBy: moveKeeps.get(a.id) ?? null,
         };
       });
       const last = page.at(-1);
@@ -858,7 +864,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const nameOf = (staff: string | null) => (staff === null ? null : [...characters.values()].find((c) => c.staff?.key === staff)?.name ?? null);
       const paramsOf = moveParams;
       const demandFor = moveDemand;
-      const waiting = queue.filter((q) => q.landed === null && q.heldAt === null).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => ({
+      const waiting = queue.filter((q) => q.landed === null && q.heldAt === null).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
+        id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
+        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null,
+      }) : ({
         id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: true, boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
         failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null,
@@ -897,6 +906,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       q.heldAt = now();
       return ok({ id, heldAt: iso(q.heldAt) });
     },
+    replaceSuccessor(id, boss) {
+      if (!me()?.admin) return refuse('only an admin replaces a successor');
+      const q = queue.find((x) => x.id === id);
+      if (!q) return refuse('there is no such queued move');
+      if (q.successor === undefined) return refuse('that move names no successor');
+      if (q.landed !== null) return refuse('that nomination has already landed; reverse it instead');
+      if (q.heldAt !== null) return refuse('that nomination is held');
+      const roster = [...characters.values()].filter((c) => c.staff?.kind === 'boss');
+      if (!roster.some((c) => c.staff?.key === boss)) return refuse('that is not a Boss of the roster');
+      if (boss === q.staff) return refuse('a Boss cannot succeed itself');
+      q.successor = boss;
+      return ok({ id, boss });
+    },
+    bosses: () => [...characters.values()].filter((c) => c.staff?.kind === 'boss').map((c) => ({ staff: c.staff!.key, name: c.name })),
     reverseMove(act) {
       if (!me()?.admin) return refuse('only an admin reverses a move');
       const a = acts.get(act);
@@ -1366,8 +1389,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!a || a.kind !== 'move') throw new Error(`no such move ${act}`);
       if (moveEnds.has(act)) throw new Error('that move has ended');
       const at = end.at ?? now();
-      moveEnds.set(act, { why: end.why, by: end.by ?? (end.why === 'reversed' ? 'admin' : 'tick'), at });
-      return write({ character: null, kind: 'move_end', thread: a.thread, target: act, payload: { why: end.why, by: end.by ?? (end.why === 'reversed' ? 'admin' : 'tick') }, at }).id;
+      moveEnds.set(act, { why: end.why, by: end.by ?? (end.why === 'reversed' ? 'admin' : end.why === 'superseded' ? 'boss' : end.why === 'spent' ? 'handover' : 'tick'), at });
+      return write({ character: null, kind: 'move_end', thread: a.thread, target: act, payload: { why: end.why, by: end.by ?? (end.why === 'reversed' ? 'admin' : end.why === 'superseded' ? 'boss' : end.why === 'spent' ? 'handover' : 'tick') }, at }).id;
+    },
+    queueSuccessor(staff, boss, o) {
+      staffId(staff);
+      const rec: QueueRec = { id: queue.length + 1, staff, successor: boss, move: { board: '', name: '' }, why: o.why ?? 'it has the stamina', goLiveAt: o.goLiveAt, failure: null, heldAt: null, landed: null };
+      queue.push(rec);
+      return rec.id;
+    },
+    keepMove(act, staff, o) {
+      const a = acts.get(act);
+      if (!a || a.kind !== 'move') throw new Error(`no such move ${act}`);
+      moveKeeps.set(act, staff);
+      return write({ character: staffId(staff), kind: 'move_keep', thread: a.thread, target: act, payload: {}, at: o?.at }).id;
     },
     queueMove(staff, m) {
       staffId(staff);

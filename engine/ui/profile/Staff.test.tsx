@@ -78,7 +78,6 @@ describe('a Boss\'s profile', () => {
     await waitFor(async () => expect(await rows()).toHaveLength(24));
     expect((await rows()).at(-1)).toHaveTextContent('Old Hall 19');
     expect(screen.queryByRole('button', { name: /^Older/u })).toBeNull();
-    expect(w.director).toBeTruthy();
     expect(fake).toBeTruthy();
   });
 });
@@ -105,4 +104,25 @@ describe('an ordinary character\'s profile', () => {
     expect(screen.queryByText('MODERATOR')).toBeNull();
     expect(screen.queryByText(/Moderation log/u)).toBeNull();
   });
+});
+
+describe('a Boss\'s log after a handover', () => {
+  const DAY = 86_400_000;
+  test('says who keeps a move it wrote, and that the others ended at the handover', async () => {
+    open('director', (fake, world) => {
+      fake.seed.staff('the-clerk', 'The Clerk', 'boss', { title: 'Keeper of Forms' });
+      fake.seed.keepMove(world.inForce, 'the-clerk', { at: fake.clock.now() - 3_600_000 });
+      const aside = fake.seed.move('director', { board: world.general, name: 'Set Aside Alley', at: fake.clock.now() - 2 * DAY });
+      fake.seed.endMove(aside, { why: 'superseded', by: 'boss', at: fake.clock.now() - DAY });
+      const forgotten = fake.seed.move('director', { board: world.second, name: 'Forgotten Fen Place', at: fake.clock.now() - 3 * DAY });
+      fake.seed.endMove(forgotten, { why: 'superseded', by: 'inheritance', at: fake.clock.now() - 2 * DAY });
+    });
+    await waitFor(async () => expect(await rows()).toHaveLength(6));
+    const all = await rows();
+    const byName = (name: string) => all.find((r) => within(r).queryByText(new RegExp(name, 'u')) !== null || r.textContent?.includes(name))!;
+    expect(within(byName('Pointless Toast Palace')).getAllByRole('cell').at(-1)).toHaveTextContent('in force, kept by The Clerk');
+    expect(within(byName('Set Aside Alley')).getAllByRole('cell').at(-1)).toHaveTextContent('ended at the handover');
+    expect(within(byName('Forgotten Fen Place')).getAllByRole('cell').at(-1)).toHaveTextContent('ended at the handover');
+  });
+
 });

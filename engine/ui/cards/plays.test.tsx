@@ -90,8 +90,8 @@ test('only the cards the instance draws an effect for have a state to read', () 
 });
 
 describe('the kinds of Act that hold a card\'s effect', () => {
-  test('are the ones drawn as words: not a card, an unmask, a tally, a reveal, a move or the end of one', () => {
-    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, tally: false, reveal: false, move: false, move_end: false };
+  test('are the ones drawn as words: not a card, an unmask, a tally, a reveal, a move, the end of one or a Boss keeping one', () => {
+    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false };
     for (const [kind, held] of Object.entries(kinds)) expect(holdsEffects(kind as ActKind), kind).toBe(held);
   });
 });

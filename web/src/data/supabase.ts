@@ -175,7 +175,7 @@ function toInForce(r: Row): MoveInForce {
 function toEnded(r: Row): MoveEnded {
   const how = r['how'];
   return {
-    how: how === 'met' || how === 'expired' || how === 'reversed' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
+    how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
     id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']),
   };
@@ -559,7 +559,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async movesLog(staff, before): Promise<MovesLog> {
       /* Newest first by (at, id), a page and one more row to know whether older ones remain; the keyset is the last row's, so a page turn reads a page. */
-      let q = client.from('moves_log').select('id,kind,params,demand,expires_at,thread,at,ended_why,ended_by,ended_at').eq('staff', staff);
+      let q = client.from('moves_log').select('id,kind,params,demand,expires_at,thread,at,ended_why,ended_by,ended_at,kept_by').eq('staff', staff);
       if (before && idOk(before.act)) q = q.or(`at.lt.${before.at},and(at.eq.${before.at},id.lt.${before.act})`);
       const rows = await list(() => q.order('at', { ascending: false }).order('id', { ascending: false }).limit(MOVES_LOG_PAGE + 1));
       const page = rows.slice(0, MOVES_LOG_PAGE);
@@ -567,9 +567,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return {
         rows: page.map((r): MoveLogRow => ({
           act: r['id'], kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']), expiresAt: orNull(r['expires_at']), at: r['at'], thread: r['thread'],
-          end: r['ended_why'] === 'met' || r['ended_why'] === 'expired' || r['ended_why'] === 'reversed'
+          end: r['ended_why'] === 'met' || r['ended_why'] === 'expired' || r['ended_why'] === 'reversed' || r['ended_why'] === 'superseded' || r['ended_why'] === 'spent'
             ? { why: r['ended_why'], by: String(r['ended_by'] ?? ''), at: String(r['ended_at'] ?? '') }
             : null,
+          keptBy: typeof r['kept_by'] === 'string' ? r['kept_by'] : null,
         })),
         older: rows.length > MOVES_LOG_PAGE && last ? { at: last['at'], act: last['id'] } : null,
       };
@@ -593,6 +594,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async holdMove(id) {
       const a = await rpcWrite(() => client.rpc('hold_move', { id }));
       return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? '') } } : a;
+    },
+    async replaceSuccessor(id, boss) {
+      const a = await rpcWrite(() => client.rpc('replace_successor', { id, boss }));
+      return a.ok ? { ok: true, value: { id: num(a.value['id']), boss: String(a.value['boss'] ?? '') } } : a;
+    },
+    async bosses() {
+      const rows = await list(() => client.from('characters_public').select('id,name,staff').eq('staff_kind', 'boss').order('name', { ascending: true }).limit(100));
+      return rows.flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : []));
     },
     async reverseMove(act) {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
