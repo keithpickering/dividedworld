@@ -292,7 +292,8 @@ export const refusalTime = (iso: string): string => {
   return Number.isNaN(at) ? 'it ends' : `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 };
 const ARTICLE: Record<Reach, string> = { post: 'a post', character: 'a character', thread: 'a thread', board: 'a board' };
-const listed = (reaches: readonly Reach[]): string => {
+/** A card's reaches as a refusal lists them: "a post", "a character or a thread". */
+export const listed = (reaches: readonly Reach[]): string => {
   const said = reaches.map((r) => ARTICLE[r] ?? String(r));
   return said.length < 2 ? said.join('') : `${said.slice(0, -1).join(', ')} or ${said.at(-1)}`;
 };

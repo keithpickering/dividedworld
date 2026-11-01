@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
-import type { CardTarget } from '../../rules/cards.ts';
+import { landsOn, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import type { Act, Refusal, Tally } from './api.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 import { LOG_ROWS, micros } from './log-page.ts';
@@ -1524,5 +1524,50 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(typeof used.payload.ends).toBe('string');
     fake.signInAs(bo);
     expect(await fake.playCard('blot', boFace, opener, {}, '')).toEqual(refused('this post\'s Shield turns away cards up to uncommon', 'config'));
+  });
+});
+
+/* Cards beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3): a play on a character, a thread or a board, and the live
+   plays above a page's posts read in one batch. */
+describe('a card beyond a post, and the effects above a page', () => {
+  const sparkle = {
+    key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, priceKey: 'sparkle.price', reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 },
+    playPrice: () => 0, validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
+    canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e),
+  };
+  const shop: Instance = { ...instance, cards: [sparkle], settings: { ...settings, economy: { 'sparkle.price': 100 } } };
+  function world() {
+    const fake = createFake({ instance: shop });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const boOther = fake.seed.character(bo, 'Bo Other', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    fake.seed.wallet(ana, 500);
+    fake.seed.cards(ana, { sparkle: 2 });
+    fake.signInAs(ana);
+    return { fake, anaFace, boFace, boOther, thread, opener };
+  }
+
+  test('a character play lands in its post\'s thread, on that post, naming its reach, its target and its end', async () => {
+    const { fake, anaFace, boFace, thread, opener } = world();
+    expect(await fake.playCard('sparkle', anaFace, opener, {}, '')).toMatchObject({ ok: false, field: 'reach', error: 'this card lands on a character' });
+    const played = must(await fake.playCard('sparkle', anaFace, boFace, {}, 'Shine.', 'character', opener));
+    expect(played).toMatchObject({ kind: 'card', thread, targetActId: opener, payload: { card: 'sparkle', reach: 'character', character: boFace, message: 'Shine.' } });
+    expect(Date.parse(String(played.payload.ends)) - Date.parse(played.createdAt)).toBe(7 * 86_400_000);
+    expect(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('this character already carries that card', 'config'));
+  });
+
+  test('effectsAbove answers the live plays on the characters, the thread and the board asked, and nothing on another mask', async () => {
+    const { fake, anaFace, boFace, boOther, thread, opener } = world();
+    const live = must(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener));
+    const board = (await fake.thread(thread))!.board;
+    const above = await fake.effectsAbove([boFace, boOther], thread, board);
+    expect(above).toEqual([{ play: live.id, reach: 'character', target: boFace, endsAt: live.payload.ends, act: live }]);
+    expect(await fake.effectsAbove([boOther], thread, board)).toEqual([]);
+    /* An ended play is gone without a reread of anything but the time. */
+    fake.clock.advance(7 * 86_400_000 + 1);
+    expect(await fake.effectsAbove([boFace], thread, board)).toEqual([]);
   });
 });

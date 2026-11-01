@@ -17,6 +17,7 @@
  * epoch milliseconds as the estimate function sends it.
  */
 import type { Quadrant, Span } from '../../rules/types.ts';
+import type { BeyondPost, Reach } from '../../rules/cards.ts';
 
 export type Id = string;
 
@@ -695,6 +696,15 @@ export interface BoardListener {
 
 /* ---------------------------------------------------------------- the api ---- */
 
+/** A live play beyond a post (effects_above, 0055_card_reach.sql): its Act, the reach and target it lands on, and when it ends. */
+export interface PlayAbove {
+  readonly play: Id;
+  readonly reach: BeyondPost;
+  readonly target: Id;
+  readonly endsAt: string;
+  readonly act: Act;
+}
+
 export interface KayfaApi {
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
@@ -761,6 +771,12 @@ export interface KayfaApi {
    * may have some.
    */
   cardsOnMany(acts: readonly Id[], limit: number): Promise<readonly Act[]>;
+  /**
+   * The live plays above a page's posts (effects_above, 0055): on any of these characters, on this thread and on this board, oldest
+   * first, in one batched read (a page asks once, however many posts it holds). Each play's Act sits where it was played; its `target`
+   * is the character, thread or board it lands on, and it is drawn there until `endsAt`. Public: nothing about who owns a character.
+   */
+  effectsAbove(characters: readonly Id[], thread: Id | null, board: Id | null): Promise<readonly PlayAbove[]>;
   /** The state each play's effect has saved (the post's author saves it), by play; a play that has saved none is absent. Any signed-in reader may read it. */
   effectStates(plays: readonly Id[]): Promise<Readonly<Record<Id, EffectState>>>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */
@@ -858,15 +874,17 @@ export interface KayfaApi {
   /**
    * Play a card the player holds on a post, as one of their characters: the card's own settings (`config`), the caster's message (plain
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.
+   * Beyond a post (`reach`), `target` is the character, the thread or the board, and a character play names the post whose postbit
+   * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql).
    */
-  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Promise<Answer<Act>>;
+  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
    */
   setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>): Promise<Answer<Act>>;
   /** Use a card the player holds on a post of the character's own (a ward), as a play is: its Act comes back, with its end. */
-  useCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Promise<Answer<Act>>;
+  useCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
   /** Which card each of the player's own card backs among these sets is (`my_face_down`), by set; another's back is absent. */
   myFaceDown(sets: readonly Id[]): Promise<Readonly<Record<Id, string>>>;
   /** Release the player from a play's effect, for good and on every device; the player's own, and said again it is the same. */

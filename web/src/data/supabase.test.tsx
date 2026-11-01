@@ -1168,6 +1168,27 @@ describe('reads by many ids', () => {
     ['reading', ['reading'], (api) => api.reading(ids)],
   ];
 
+  it('effectsAbove asks effects_above in chunks of characters, the thread and the board once, and joins the answer in order', async () => {
+    const asked: Record<string, unknown>[] = [];
+    const h = harness((r) => {
+      if (r.url.pathname !== `${REST}/rpc/effects_above`) return undefined;
+      const body = r.body as { characters: string[]; thread: string | null; board: string | null };
+      asked.push(body);
+      return json(body.characters.map((c, n) => ({ play: c, reach: 'character', target: c, ends_at: '2099-01-01T00:00:00+00:00',
+        act: { ...ACT_ROW, id: c, kind: 'card', created_at: `2026-10-01T10:${String(n % 60).padStart(2, '0')}:00+00:00` } }))
+        .concat(body.thread ? [{ play: 'th', reach: 'thread', target: body.thread, ends_at: '2099-01-01T00:00:00+00:00', act: { ...ACT_ROW, id: 'th', kind: 'card', created_at: '2026-10-01T09:59:00+00:00' } }] : []));
+    });
+    const above = await h.api.effectsAbove([...ids, ids[0]!], T, C);
+    expect(asked.length).toBe(5);
+    expect(asked.flatMap((a) => a['characters'] as string[]).sort()).toEqual([...ids].sort());
+    expect(asked.filter((a) => a['thread'] !== null)).toHaveLength(1);
+    expect(above).toHaveLength(451);
+    expect(above[0]).toMatchObject({ play: 'th', reach: 'thread', target: T, endsAt: '2099-01-01T00:00:00+00:00', act: { id: 'th', kind: 'card' } });
+    const times = above.map((p) => p.act.createdAt);
+    expect(times).toEqual([...times].sort());
+    expect(await h.api.effectsAbove([], null, null)).toEqual([]);
+  });
+
   it.each(reads)('%s reads by id in chunks, so no request carries an address too long for a proxy, and every id is read once', async (_name, tables, call) => {
     const h = byIdHarness();
     await call(h.api);

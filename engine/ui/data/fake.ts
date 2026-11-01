@@ -20,7 +20,7 @@
  */
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
-import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, type CardEffect, type PostTarget } from '../../rules/cards.ts';
+import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
@@ -653,9 +653,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
    * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
    */
-  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Answer<Act> {
-    const bad = request({ action: 'playCard', card, character, target, config, message });
+  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id): Answer<Act> {
+    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}) });
     if (bad) return bad;
+    if (reach !== 'post') return playBeyond('cast', card, character, target, config, message, reach, fromPost);
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
@@ -670,7 +671,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const short = covers(account, decided.value.price);
     if (short) return short;
     account.cards[card]! -= 1;
-    const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card && a.payload.caught === undefined).length + 1;
+    const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card && a.payload.caught === undefined && onPost(a)).length + 1;
     /* A live trap on a cast that is no rarer than it catches the play (spring_traps): the spring is written first, as the server writes it. */
     const trap = liveBack(target);
     const trapRules = trap ? instance.cards.find((c) => c.key === trap.card) : undefined;
@@ -707,7 +708,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const out: CardEffect[] = [];
     for (const a of acts.values()) {
       if (a.target !== target) continue;
-      if (a.kind === 'card' && a.payload.caught === undefined) {
+      if (a.kind === 'card' && a.payload.caught === undefined && onPost(a)) {
         const r = instance.cards.find((c) => c.key === a.payload.card);
         out.push({ card: String(a.payload.card), act: a.id, ...(r?.ward ? { ward: r.rarity } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}) });
       } else if (a.kind === 'set') {
@@ -716,6 +717,69 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }
     }
     return out;
+  }
+
+  /** A card Act that is a post's play, not one beyond a post that sits on the post it was played from (0055_card_reach.sql). */
+  const onPost = (a: ActRec): boolean => (a.payload.reach ?? 'post') === 'post';
+  /** The plays beyond a post (play_reach, 0055): each play's reach, its target and when it ends, never edited. */
+  const reachPlays = new Map<Id, { reach: BeyondPost; target: Id; endsAt: number }>();
+  /** The live plays on one target beyond a post, as effects (reach_effects, 0055). */
+  const reachEffects = (reach: BeyondPost, target: Id): CardEffect[] => [...reachPlays].filter(([, r]) => r.reach === reach && r.target === target && r.endsAt > now())
+    .map(([play, r]) => {
+      const rules = instance.cards.find((c) => c.key === acts.get(play)!.payload.card);
+      return { card: String(acts.get(play)!.payload.card), act: play, reach, ends: iso(r.endsAt), ...(rules?.ward ? { ward: rules.rarity } : {}) };
+    });
+  const boardOf = (thread: Id): Id => threads.get(thread)!.board;
+  /**
+   * `play_card` beyond a post (0055): the target is the character (played from one of its posts), the thread or the board; its rules
+   * see its own live plays and the ones above it; the Act sits in the post's thread, the thread, or The System's announcements thread,
+   * and its play_reach row ends at least(the card's lasts, reachLasts).
+   */
+  function playBeyond(play: 'cast' | 'use', card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: BeyondPost, fromPost: Id | undefined): Answer<Act> {
+    const rules = instance.cards.find((c) => c.key === card)!;
+    let thread: Id;
+    let on: Id | null;
+    let above: EffectsAbove;
+    if (reach === 'character') {
+      if (!characters.has(target)) return refuse('there is no such character', 'target');
+      const from = fromPost ? acts.get(fromPost) : undefined;
+      if (!from || from.kind !== 'post' || from.character !== target) return refuse('a card on a character is played from one of its posts');
+      thread = from.thread;
+      on = from.id;
+      above = { thread: reachEffects('thread', thread), board: reachEffects('board', boardOf(thread)) };
+    } else if (reach === 'thread') {
+      if (!threads.has(target)) return refuse('there is no such thread', 'target');
+      thread = target;
+      on = [...acts.values()].find((a) => a.thread === target && a.seq === 1)?.id ?? null;
+      if (!on) return refuse('that thread has no post yet');
+      above = { board: reachEffects('board', boardOf(target)) };
+    } else {
+      if (!boards.some((b) => b.id === target)) return refuse('there is no such board', 'target');
+      thread = announcements();
+      on = null;
+      above = {};
+    }
+    const at = stamp ?? now();
+    const goal = { reach, [reach]: target } as unknown as CardTarget;
+    const effects = effectsOnTarget(goal, reachEffects(reach, target), above, new Date(at));
+    const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at) });
+    if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    if (play === 'use' && reach === 'character' && target !== character) return refuse(`${rules.name} is used on your own character`);
+    const account = me()!;
+    if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
+    const short = covers(account, decided.value.price);
+    if (short) return short;
+    account.cards[card]! -= 1;
+    const bound = span(settings.reachLasts[reach]);
+    const endsAt = at + Math.min(rules.lasts ? span(rules.lasts) : bound, bound);
+    const written = write({ character, kind: 'card', thread, target: on, at, payload: { card, message: decided.value.message, config: decided.value.config, reach, [reach]: target, ends: iso(endsAt) } });
+    reachPlays.set(written.id, { reach, target, endsAt });
+    spend(account, decided.value.price, 'play', written.id);
+    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
+    sendAct(written);
+    return ok(publicAct(written));
   }
 
   /** set_card (0054): decided by the card's rules (decideSet), then the author, the hand and the post's one back are the database's. */
@@ -745,9 +809,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /** A Use (play_card, 0054): decided by decideUse, on a post of the character's own, carrying its end. */
-  function useCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string): Answer<Act> {
-    const bad = request({ action: 'useCard', card, character, target, config, message });
+  function useCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id): Answer<Act> {
+    const bad = request({ action: 'useCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}) });
     if (bad) return bad;
+    if (reach !== 'post') return playBeyond('use', card, character, target, config, message, reach, fromPost);
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
@@ -762,7 +827,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const short = covers(account, decided.value.price);
     if (short) return short;
     account.cards[card]! -= 1;
-    const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card).length + 1;
+    const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card && onPost(a)).length + 1;
     const at = stamp ?? now();
     const written = write({ character, kind: 'card', thread: on.thread, target, payload: { card, layer, message: decided.value.message, config: decided.value.config, ...(rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}) } });
     spend(account, decided.value.price, 'play', written.id);
@@ -1131,6 +1196,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     myFaceDown: (sets) => {
       const account = me()?.id;
       return Object.fromEntries(sets.filter((s) => faceDown.get(s)?.account === account).map((s) => [s, faceDown.get(s)!.card]));
+    },
+    effectsAbove: (chars, thread, board) => {
+      const wanted = new Set(chars);
+      return [...reachPlays].filter(([, r]) => r.endsAt > now() && (r.reach === 'character' ? wanted.has(r.target) : r.reach === 'thread' ? r.target === thread : r.target === board))
+        .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }))
+        .sort((a, b) => acts.get(a.play)!.at - acts.get(b.play)!.at || acts.get(a.play)!.order - acts.get(b.play)!.order);
     },
     cardsOn: (act, limit) => [...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit).map(publicAct),
     characters: (ids) => ids.map((id) => characters.get(id)).filter((c): c is CharRec => c !== undefined && c.debutedAt !== null).map(publicCharacter),

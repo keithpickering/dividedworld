@@ -36,7 +36,7 @@ import { MOVES_LOG_PAGE } from '../../../engine/ui/data/api.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
 
@@ -103,6 +103,10 @@ function toPreferences(r: Row): Preferences {
     cardsMet: Array.isArray(r['cards_met']) ? r['cards_met'].filter((k): k is string => typeof k === 'string') : d.cardsMet,
   };
 }
+
+/** Where a play beyond a post goes, as the act function reads it (engine/rules/actions.ts): nothing for a post's. */
+const beyond = (reach: string | undefined, fromPost: string | undefined): Record<string, unknown> =>
+  (reach && reach !== 'post' ? { reach, ...(fromPost ? { post: fromPost } : {}) } : {});
 
 function toAct(r: Row): Act {
   return {
@@ -687,6 +691,21 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const rows = await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).in('target_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
       return merged(rows, 'created_at', 'id', rowLimit(limit)).map(toAct);
     },
+    async effectsAbove(characters, thread, board) {
+      /* One request per chunk of characters, run together (effects_above holds at most 200 a call); the thread and the board are
+         asked once, in the first. The answers are joined oldest first, as one query would order them. */
+      const wanted = [...new Set(characters)].filter(idOk);
+      const at = { thread: thread && idOk(thread) ? thread : null, board: board && idOk(board) ? board : null };
+      if (wanted.length === 0 && !at.thread && !at.board) return [];
+      const parts = wanted.length ? chunks(wanted) : [[]];
+      const answers = await Promise.all(parts.map(async (part, n) => {
+        const r = await read(() => client.rpc('effects_above', { characters: part, thread: n === 0 ? at.thread : null, board: n === 0 ? at.board : null }));
+        return Array.isArray(r.data) ? (r.data as Row[]) : [];
+      }));
+      return answers.flat()
+        .map((x): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) }))
+        .sort((a, b) => (a.act.createdAt < b.act.createdAt ? -1 : a.act.createdAt > b.act.createdAt ? 1 : a.play < b.play ? -1 : a.play > b.play ? 1 : 0));
+    },
     async effectStates(plays) {
       const wanted = [...new Set(plays)].filter(idOk);
       const out: Record<Id, EffectState> = {};
@@ -706,9 +725,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     /* The price is the card's rules' and the Edge Function's (it reads the settings rows as they stand), so a purchase sends the card alone. */
     buyCard: (card) => act({ action: 'buyCard', card }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
-    playCard: (card, character, target, config, message) => act({ action: 'playCard', card, character, target, config, message }, toAct),
+    playCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     setCard: (card, character, target, config) => act({ action: 'setCard', card, character, target, config }, toAct),
-    useCard: (card, character, target, config, message) => act({ action: 'useCard', card, character, target, config, message }, toAct),
+    useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     async myFaceDown(sets) {
       if (sets.length === 0) return {};
       const rows = await byChunks([...new Set(sets)], (part) => list(() => client.from('my_face_down').select('play,card').in('play', part)));

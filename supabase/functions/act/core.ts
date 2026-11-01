@@ -129,7 +129,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         { reach, target: decision.args.target, ...(decision.args.from_post ? { from_post: decision.args.from_post } : {}) });
       if (!read) return refused('target', `there is no such ${reach}`);
       const { effects: own, above = {}, ...said } = read;
-      const target = { reach, ...said } as CardTarget;
+      const target = { ...said, reach } as CardTarget;
       const effects = effectsOnTarget(target, own ?? [], above);
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
       if (decision.play === 'set') {
