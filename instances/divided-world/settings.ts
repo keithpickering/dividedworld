@@ -64,6 +64,14 @@ export const defaults: Settings = deepFreeze<Settings>({
   digestExcerpts: 8,
   /** A starting point: each quoted post is cut to 280 characters. */
   digestExcerptChars: 280,
+  /** A starting point: a Boss remembers its forty strongest opinions of characters; the rest fade, which keeps its memory (read at every meeting) small. */
+  memoryOpinions: 40,
+  /** A starting point: a Boss holds at most twenty grudges at a time, most important first. */
+  memoryGrudges: 20,
+  /** A starting point: a Boss keeps thirty subjects it has learned the community likes. */
+  memoryWheelhouse: 30,
+  /** A starting point: a Boss leaves thirty real-world subjects alone. */
+  memoryRealWorld: 30,
   /** A board's name is at most 60 characters, whoever proposes it. */
   boardNameMaxLength: 60,
   /** A starting point: no move runs longer than six weeks. */

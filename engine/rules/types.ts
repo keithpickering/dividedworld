@@ -128,6 +128,14 @@ export interface Settings {
   readonly digestExcerpts: number;
   /** How many characters of a post the digest quotes. A starting point. */
   readonly digestExcerptChars: number;
+  /** The most opinions of characters a Boss's memory keeps; the Boss orders them most important first and the rest are cut. A starting point. */
+  readonly memoryOpinions: number;
+  /** The most grudges a Boss's memory keeps, most important first. A starting point. */
+  readonly memoryGrudges: number;
+  /** The most subjects in the userbase's wheelhouse a Boss's memory keeps, most important first. A starting point. */
+  readonly memoryWheelhouse: number;
+  /** The most real-world subjects a Boss's memory leaves alone, most important first. A starting point. */
+  readonly memoryRealWorld: number;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */

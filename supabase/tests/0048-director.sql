@@ -23,6 +23,14 @@ begin
   insert into staff_profiles (staff, meeting, at, interests, favorites, mood, signature) values ('dir-boss', m2, now(), array['wrestling', 'pie'], '{}', 'furious', 'second');
   insert into staff_profiles (staff, meeting, at, signature) values ('dir-other', m1, now(), 'other boss');
 
+  -- One version per staff member per meeting.
+  denied := false;
+  begin insert into staff_memory (staff, meeting, body) values ('dir-boss', m1, '{}'); exception when unique_violation then denied := true; end;
+  if not denied then raise exception 'staff_memory takes a second version for one staff member and meeting'; end if;
+  denied := false;
+  begin insert into staff_profiles (staff, meeting) values ('dir-boss', m1); exception when unique_violation then denied := true; end;
+  if not denied then raise exception 'staff_profiles takes a second version for one staff member and meeting'; end if;
+
   -- No client reads or writes the three tables or the bank.
   foreach who in array array['anon', 'authenticated'] loop
     perform set_config('role', who, true);

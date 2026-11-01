@@ -51,7 +51,9 @@ create table staff_memory (
   meeting bigint not null references meetings (id),
   at timestamptz not null default now(),
   -- engine/system/memory.ts's Memory.
-  body jsonb not null check (jsonb_typeof(body) = 'object')
+  body jsonb not null check (jsonb_typeof(body) = 'object'),
+  -- One version per meeting.
+  unique (staff, meeting)
 );
 -- The latest version per staff member.
 create index staff_memory_latest on staff_memory (staff, at desc, id desc);
@@ -70,7 +72,9 @@ create table staff_profiles (
   -- Character ids the Boss chose to name: public characters, so nothing private. No foreign key on an array.
   favorites uuid[] not null default '{}',
   mood text not null default '',
-  signature text not null default ''
+  signature text not null default '',
+  -- One version per meeting.
+  unique (staff, meeting)
 );
 create index staff_profiles_latest on staff_profiles (staff, at desc, id desc);
 create index staff_profiles_meeting on staff_profiles (meeting);

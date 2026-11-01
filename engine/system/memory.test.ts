@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { repairMemory, type Memory } from './memory.ts';
+import { repairMemory } from './memory.ts';
 
+const caps = { memoryOpinions: 40, memoryGrudges: 20, memoryWheelhouse: 30, memoryRealWorld: 30 };
 const pub = new Set(['a', 'b', 'c']);
 const base = {
   hobby: { name: 'tomatoes', since: '2026-10-30', from: 'a' },
@@ -12,7 +13,7 @@ const base = {
 };
 
 test('a memory in range is kept as given, with empty marks and no trims', () => {
-  const r = repairMemory(base, pub);
+  const r = repairMemory(base, (id) => pub.has(id), caps);
   assert.ok(r.ok);
   assert.deepEqual(r.memory.opinions, base.opinions);
   assert.deepEqual(r.memory.marks, []);
@@ -20,7 +21,7 @@ test('a memory in range is kept as given, with empty marks and no trims', () => 
 });
 
 test('a score out of range is clamped and recorded', () => {
-  const r = repairMemory({ ...base, opinions: [{ character: 'a', score: 9, note: '' }, { character: 'b', score: -7, note: '' }] }, pub);
+  const r = repairMemory({ ...base, opinions: [{ character: 'a', score: 9, note: '' }, { character: 'b', score: -7, note: '' }] }, (id) => pub.has(id), caps);
   assert.ok(r.ok);
   assert.deepEqual(r.memory.opinions.map((o) => o.score), [5, -5]);
   assert.deepEqual(r.trims, [
@@ -30,7 +31,7 @@ test('a score out of range is clamped and recorded', () => {
 });
 
 test('an opinion or a grudge naming a character that is not public is dropped and recorded', () => {
-  const r = repairMemory({ ...base, opinions: [{ character: 'a', score: 1, note: '' }, { character: 'secret', score: 4, note: '' }], grudges: [{ character: 'nobody', note: 'x' }, { character: 'c', note: 'y' }] }, pub);
+  const r = repairMemory({ ...base, opinions: [{ character: 'a', score: 1, note: '' }, { character: 'secret', score: 4, note: '' }], grudges: [{ character: 'nobody', note: 'x' }, { character: 'c', note: 'y' }] }, (id) => pub.has(id), caps);
   assert.ok(r.ok);
   assert.deepEqual(r.memory.opinions.map((o) => o.character), ['a']);
   assert.deepEqual(r.memory.grudges.map((g) => g.character), ['c']);
@@ -38,24 +39,34 @@ test('an opinion or a grudge naming a character that is not public is dropped an
 });
 
 test('a repair that cannot be made names the predicate that failed', () => {
-  const r = repairMemory({ ...base, hobby: undefined }, pub);
+  const r = repairMemory({ ...base, hobby: undefined }, (id) => pub.has(id), caps);
   assert.ok(!r.ok);
   assert.equal(r.path, 'hobby');
   assert.equal(r.predicate, 'required');
 });
 
-test('a returning Boss keeps an earlier opinion only while the character is still public', () => {
-  const previous: Memory = { ...(base as unknown as Memory), marks: [], opinions: [{ character: 'b', score: 2, note: 'old' }, { character: 'gone', score: -4, note: 'retired' }], grudges: [{ character: 'gone', note: 'old grudge' }, { character: 'c', note: 'kept' }] };
-  const r = repairMemory(base, pub, previous);
+test('an earlier opinion the new answer omits is not carried forward', () => {
+  const r = repairMemory({ ...base, opinions: [{ character: 'a', score: 3, note: 'funny' }], grudges: [] }, (id) => pub.has(id), caps);
   assert.ok(r.ok);
-  assert.deepEqual(r.memory.opinions.map((o) => o.character).sort(), ['a', 'b']);
-  assert.deepEqual(r.memory.grudges.map((g) => g.character), ['c']);
-  assert.deepEqual(r.trims.map((t) => t.path), ['previous.opinions[1]', 'previous.grudges[0]']);
+  assert.deepEqual(r.memory.opinions.map((o) => o.character), ['a']);
+  assert.deepEqual(r.memory.grudges, []);
 });
 
-test('the new answer wins over an earlier opinion of the same character', () => {
-  const previous: Memory = { ...(base as unknown as Memory), marks: [], opinions: [{ character: 'a', score: -2, note: 'old' }], grudges: [] };
-  const r = repairMemory(base, pub, previous);
+test('an opinion of a character the digest did not name is kept while that character is public now', () => {
+  const r = repairMemory({ ...base, opinions: [{ character: 'b', score: 2, note: 'old' }] }, (id) => id === 'b', caps);
   assert.ok(r.ok);
-  assert.deepEqual(r.memory.opinions, [{ character: 'a', score: 3, note: 'funny' }]);
+  assert.deepEqual(r.memory.opinions.map((o) => o.character), ['b']);
+});
+
+test('a list over its cap keeps the first N and records the trim', () => {
+  const many = Array.from({ length: 45 }, (_, i) => ({ character: 'a', score: 1, note: String(i) }));
+  const r = repairMemory({ ...base, opinions: many, wheelhouse: ['1', '2', '3'] }, (id) => id === 'a', { ...caps, memoryWheelhouse: 2 });
+  assert.ok(r.ok);
+  assert.equal(r.memory.opinions.length, 40);
+  assert.equal(r.memory.opinions[39]?.note, '39');
+  assert.deepEqual(r.memory.wheelhouse, ['1', '2']);
+  assert.deepEqual(r.trims, [
+    { path: 'opinions', predicate: 'atMost(40)', before: 45, after: 40 },
+    { path: 'wheelhouse', predicate: 'atMost(2)', before: 3, after: 2 },
+  ]);
 });

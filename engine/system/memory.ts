@@ -5,16 +5,25 @@
  * reaches a client; a new version is stored at every meeting (`staff_memory`, append-only).
  *
  * It is written by a model, so it is repaired the way every answer is (validate.ts): a bound
- * overshot by a little is trimmed and recorded. Two things are repaired here that the generic rules
- * cannot say: an opinion's score is clamped into -5..5, and a character the Boss names must be one
- * of `publicCharacters`, the debuted public characters the digest showed (never anything read from
- * a private fact: the Boss does not know who owns a mask, and its grudges land on masks). A name
- * that is not one is dropped and recorded.
+ * overshot by a little is trimmed and recorded. Three things are repaired here that the generic
+ * rules cannot say:
  *
- * A Boss that returns seasons later brings its earlier memory (`previous`). Its opinions and
- * grudges were read from public play, so they are kept, but only while the character is still
- * public; one that has since retired is dropped and recorded, and nothing is ever refreshed from
- * anything private. An earlier opinion the new answer restates is the new one.
+ * - An opinion's score is clamped into -5..5.
+ * - A character the answer names must satisfy `isPublic`, which the caller builds by looking up
+ *   every character id the answer names in `characters_public` (debuted and public now), so it is
+ *   not limited to the ones today's digest named: a returning Boss keeps an opinion of a character
+ *   it read in an earlier season, because the repair never drops one for being absent from the
+ *   digest. A name that is not public (retired, hidden, or never a character) is dropped and
+ *   recorded. Nothing private is read to keep or refresh an opinion: the Boss does not know who
+ *   owns a mask, and its grudges land on masks.
+ * - Memory is read at every meeting, so each list is capped by a setting (`memoryOpinions`,
+ *   `memoryGrudges`, `memoryWheelhouse`, `memoryRealWorld`). A list over its cap keeps its first
+ *   N entries (the prompt asks the model to order each list most important first) and records one
+ *   trim. That is trimming at any overshoot, never rejection: dropping the tail of a memory list
+ *   invents nothing.
+ *
+ * The answer is the whole new memory: the meeting reads the latest memory as input, so nothing
+ * omitted is merged back in from an earlier version.
  *
  * Pure: nothing is changed in place.
  */
@@ -63,12 +72,20 @@ export const MEMORY_RULE: Rule = {
   },
 };
 
+/** The settings that cap each list. */
+export interface MemoryCaps {
+  readonly memoryOpinions: number;
+  readonly memoryGrudges: number;
+  readonly memoryWheelhouse: number;
+  readonly memoryRealWorld: number;
+}
+
 export type RepairedMemory =
   | { readonly ok: true; readonly memory: Memory; readonly trims: readonly Trim[] }
   | { readonly ok: false; readonly path: string; readonly predicate: string; readonly trims: readonly Trim[] };
 
-/** The Boss's own answer, repaired; `previous` is its memory from an earlier season or meeting, if any. */
-export function repairMemory(raw: unknown, publicCharacters: ReadonlySet<string>, previous?: Memory): RepairedMemory {
+/** The Boss's own answer, repaired. */
+export function repairMemory(raw: unknown, isPublic: (character: string) => boolean, caps: MemoryCaps): RepairedMemory {
   const made: Repaired = repair(raw, MEMORY_RULE);
   if (!made.ok) return made;
   const trims: Trim[] = [...made.trims];
@@ -79,7 +96,7 @@ export function repairMemory(raw: unknown, publicCharacters: ReadonlySet<string>
   const opinions: Opinion[] = [];
   given.opinions.forEach((o, i) => {
     const path = `opinions[${i}]`;
-    if (!publicCharacters.has(o.character)) {
+    if (!isPublic(o.character)) {
       trims.push({ path, predicate: 'publicCharacter', before: 1, after: 0 });
       return;
     }
@@ -89,26 +106,25 @@ export function repairMemory(raw: unknown, publicCharacters: ReadonlySet<string>
   });
   const grudges: Grudge[] = [];
   given.grudges.forEach((g, i) => {
-    if (publicCharacters.has(g.character)) grudges.push(g);
+    if (isPublic(g.character)) grudges.push(g);
     else trims.push({ path: `grudges[${i}]`, predicate: 'publicCharacter', before: 1, after: 0 });
   });
 
-  // A returning Boss's earlier opinions and grudges, kept while the character is public and the new answer
-  // does not restate them.
-  if (previous) {
-    const said = new Set(opinions.map((o) => o.character));
-    previous.opinions.forEach((o, i) => {
-      if (said.has(o.character) || given.opinions.some((n) => n.character === o.character)) return;
-      if (publicCharacters.has(o.character)) opinions.push(o);
-      else trims.push({ path: `previous.opinions[${i}]`, predicate: 'publicCharacter', before: 1, after: 0 });
-    });
-    const grudged = new Set(given.grudges.map((g) => g.character));
-    previous.grudges.forEach((g, i) => {
-      if (grudged.has(g.character)) return;
-      if (publicCharacters.has(g.character)) grudges.push(g);
-      else trims.push({ path: `previous.grudges[${i}]`, predicate: 'publicCharacter', before: 1, after: 0 });
-    });
-  }
-
-  return { ok: true, memory: { ...given, opinions, grudges, marks: given.marks ?? [] }, trims };
+  const cap = <T,>(path: string, list: readonly T[], max: number): readonly T[] => {
+    if (list.length <= max) return list;
+    trims.push({ path, predicate: `atMost(${max})`, before: list.length, after: max });
+    return list.slice(0, max);
+  };
+  return {
+    ok: true,
+    memory: {
+      ...given,
+      opinions: cap('opinions', opinions, caps.memoryOpinions),
+      grudges: cap('grudges', grudges, caps.memoryGrudges),
+      wheelhouse: cap('wheelhouse', given.wheelhouse, caps.memoryWheelhouse),
+      realWorld: cap('realWorld', given.realWorld, caps.memoryRealWorld),
+      marks: given.marks ?? [],
+    },
+    trims,
+  };
 }
