@@ -18,10 +18,13 @@ begin
   insert into card_kinds (key, name, alignment, price_setting, rarity, play, reaches, lasts) values
     ('glint', 'Glint', 'pepperoni', 'glint.price', 'uncommon', 'cast', '{character}', interval '7 days'),
     ('marquee', 'Marquee', 'sweet', 'marquee.price', 'rare', 'cast', '{thread}', interval '1 day'),
+    ('banner', 'Banner', 'sweet', 'marquee.price', 'rare', 'cast', '{thread}', interval '1 day'),
     ('quake', 'Quake', 'salty', 'quake.price', 'legendary', 'cast', '{board}', interval '1 day'),
     ('tremor', 'Tremor', 'salty', 'tremor.price', 'legendary', 'cast', '{board}', interval '3 days'),
     ('selfie', 'Selfie', 'sweet', 'warder.price', 'uncommon', 'use', '{character}', interval '2 days')
   on conflict (key) do nothing;
+  -- Banner pins its thread to the top of its board's list (Task 5), as an instance's card may.
+  update card_kinds set pins = true where key = 'banner';
 end $$;
 
 create function pg_temp.hand(who uuid, variadic keys text[]) returns void language sql as $$
@@ -332,7 +335,7 @@ do $$
 declare
   ann uuid := tests.account('reach-settle'); bob uuid := tests.account('reach-settle-b'); cy uuid := tests.account('reach-settle-c');
   pipe uuid := tests.character(ann, 'Settle Pipe'); hoo uuid := tests.character(bob, 'Settle Hoo'); zed uuid := tests.character(cy, 'Settle Zed');
-  t uuid := tests.thread('Settle reach'); p uuid; pl jsonb; post_play jsonb; got jsonb; mine jsonb;
+  t uuid := tests.thread('Settle reach'); p uuid; pl jsonb; post_play jsonb; got jsonb; mine jsonb; old uuid; bot uuid; bot_post uuid;
 begin
   perform pg_temp.cards();
   -- Written before the window, so only something in the window could bring it into the input.
@@ -347,13 +350,71 @@ begin
   if mine ->> 'reach' is distinct from 'character' or mine ? 'target' then raise exception 'a character play is read with its reach and no target: %', mine; end if;
   -- The post the character play sits on is not its target, so nothing brings it in.
   if exists (select 1 from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = p::text) then raise exception 'the post a character play sits on is not its target: %', got -> 'acts'; end if;
-  mine := (select e from jsonb_array_elements(estimate_input(ann, now() + interval '1 minute') -> 'acts') e where e ->> 'id' = pl ->> 'id');
+  got := estimate_input(ann, now() + interval '1 minute');
+  mine := (select e from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = pl ->> 'id');
   if mine ->> 'reach' is distinct from 'character' or mine ? 'target' then raise exception 'the estimate reads it the same: %', mine; end if;
+  if exists (select 1 from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = p::text) then raise exception 'the estimate reads no post a character play sits on: %', got -> 'acts'; end if;
+  -- A play beyond a post from before the window, on the same post: a reaction to the post in the window does not bring it in as an
+  -- earlier card there, since it is no card on that post.
+  old := tests.act(pipe, 'card', t, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', hoo, 'ends', now() + interval '1 day'), p, now() - interval '30 hours');
+  insert into play_reach (play, reach, character, ends_at) values (old, 'character', hoo, now() + interval '1 day');
+  perform tests.become(cy);
+  perform react(p, zed, 'up');
+  perform tests.unbecome();
+  got := settlement_input(now() - interval '1 day', now() + interval '1 minute');
+  if exists (select 1 from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = old::text) then raise exception 'an earlier play beyond a post is no earlier card on the post a reaction touches'; end if;
+  -- A character play on a staff mask, from its post, makes that post no unscored target: the play has no target post.
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Settle Bot', 'settle-bot', 'bot', now()) returning id into bot;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  bot_post := tests.post(bot, t, 'Behave.', now() - interval '2 days');
+  perform set_config('kayfabb.staff_writer', '', true);
+  perform pg_temp.hand(ann, 'glint');
+  perform play_card(ann, 'glint', pipe, bot, '{}', 0, '', 'character', bot_post);
+  got := settlement_input(now() - interval '1 day', now() + interval '1 minute');
+  if exists (select 1 from jsonb_array_elements(got -> 'unscoredTargets') e where e ->> 'id' = bot_post::text) then raise exception 'a staff post a character play sits on is no unscored target'; end if;
+  if exists (select 1 from jsonb_array_elements(estimate_input(ann, now() + interval '1 minute') -> 'unscoredTargets') e where e ->> 'id' = bot_post::text) then raise exception 'nor in the estimate'; end if;
   -- A post play keeps its target and names no reach.
   post_play := play_card(ann, 'sweetie', pipe, p, '{}', 0, '');
   got := settlement_input(now() - interval '1 day', now() + interval '1 minute');
   select e into mine from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = post_play ->> 'id';
   if mine ->> 'target' is distinct from p::text or mine ? 'reach' then raise exception 'a post play keeps its target and names no reach: %', mine; end if;
+end $$;
+
+-- ---- pinned_threads: a board's threads with a live thread play whose card pins, in one probe of the board's live pins ----
+do $$
+declare
+  ann uuid := tests.account('pin-ann'); pipe uuid := tests.character(ann, 'Pin Pipe');
+  brd uuid; t1 uuid; t2 uuid; t3 uuid; got jsonb; plan text := ''; ln record; old uuid;
+begin
+  perform pg_temp.cards();
+  insert into boards (slug, name) values ('pin-board', 'Pin Board') returning id into brd;
+  insert into threads (board, title) values (brd, 'Pinned') returning id into t1;
+  insert into threads (board, title) values (brd, 'Marqueed') returning id into t2;
+  insert into threads (board, title) values (brd, 'Was pinned') returning id into t3;
+  perform tests.post(pipe, t1, 'One.'); perform tests.post(pipe, t2, 'Two.'); perform tests.post(pipe, t3, 'Three.');
+  perform pg_temp.hand(ann, 'banner', 'marquee');
+  perform play_card(ann, 'banner', pipe, t1, '{}', 0, 'Look here.', 'thread');
+  -- A thread card that does not pin is no pin.
+  perform play_card(ann, 'marquee', pipe, t2, '{}', 0, '', 'thread');
+  -- An ended pin, written as an old one would be.
+  old := tests.act(pipe, 'card', t3, jsonb_build_object('card', 'banner', 'reach', 'thread', 'thread', t3, 'ends', now() - interval '1 hour'),
+                   (select id from acts where thread = t3 and seq = 1), now() - interval '2 days');
+  insert into play_reach (play, reach, thread, pins_board, ends_at) values (old, 'thread', t3, brd, now() - interval '1 hour');
+  perform tests.become(ann);
+  got := (select jsonb_agg(to_jsonb(x)) from pinned_threads(brd) x);
+  perform tests.unbecome();
+  if jsonb_array_length(got) is distinct from 1 or got #>> '{0,thread,id}' <> t1::text or got #>> '{0,thread,title}' <> 'Pinned' then raise exception 'only the live pin: %', got; end if;
+  if got #>> '{0,act,payload,message}' <> 'Look here.' or got #> '{0,ends_at}' is null then raise exception 'a pin with its play and its end: %', got; end if;
+  perform tests.become_anon();
+  if pg_temp.refusal(format('select * from pinned_threads(%L)', brd)) is null then raise exception 'a visitor reads no plays through pinned_threads'; end if;
+  perform tests.unbecome();
+  -- Only a pinning card's thread play names a board to pin on, and only that board's.
+  if (select pins_board from play_reach r join acts k on k.id = r.play where k.payload ->> 'card' = 'marquee' and r.thread = t2) is not null then raise exception 'a card that does not pin pins nothing'; end if;
+  if pg_get_functiondef('pinned_threads(uuid)'::regprocedure) !~ 'r\.pins_board = pinned_threads\.board and r\.ends_at > now\(\)' then raise exception 'pinned_threads probes the board''s live pins'; end if;
+  set local enable_seqscan = off;
+  for ln in execute format($q$explain select r.play from play_reach r where r.pins_board = %L and r.ends_at > now()$q$, brd) loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  set local enable_seqscan = on;
+  if plan !~ '(Index (Only )?Scan using|Bitmap Index Scan on) play_reach_pins' then raise exception 'a board''s live pins are one index probe: %', plan; end if;
 end $$;
 
 -- ---- An instance from before 0055: every card is a post card, and every play reads as one ----

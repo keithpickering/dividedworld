@@ -168,12 +168,17 @@ create table play_reach (
   thread uuid references threads (id),
   board uuid references boards (id),
   ends_at timestamptz not null,
+  -- A thread play whose card pins (Main Event's kind): the thread's board, so the board's live pins are one index probe
+  -- (pinned_threads). Not a target: the play's target is its thread.
+  pins_board uuid references boards (id),
+  check (pins_board is null or reach = 'thread'),
   check ((character is not null)::integer + (thread is not null)::integer + (board is not null)::integer = 1),
   check ((reach = 'character') = (character is not null) and (reach = 'thread') = (thread is not null) and (reach = 'board') = (board is not null))
 );
 create index play_reach_character on play_reach (character, ends_at) where character is not null;
 create index play_reach_thread on play_reach (thread, ends_at) where thread is not null;
 create index play_reach_board on play_reach (board, ends_at) where board is not null;
+create index play_reach_pins on play_reach (pins_board, ends_at) where pins_board is not null;
 
 create function play_reach_append_only() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
@@ -328,9 +333,10 @@ begin
     raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505';
   end;
   if reach <> 'post' then
-    insert into play_reach (play, reach, character, thread, board, ends_at)
+    insert into play_reach (play, reach, character, thread, board, pins_board, ends_at)
     values (written, reach, case when reach = 'character' then target end, case when reach = 'thread' then target end,
-            case when reach = 'board' then target end, ends);
+            case when reach = 'board' then target end,
+            case when reach = 'thread' and kind_of.pins then (select t.board from threads t where t.id = target) end, ends);
   end if;
   -- After the Act, so the wallet's record names what the Aura went on.
   perform wallet_spend(who, price, 'play', written);
@@ -339,6 +345,21 @@ begin
 end $$;
 revoke execute on function play_card(uuid, text, uuid, uuid, jsonb, integer, text, text, uuid) from public, anon, authenticated;
 grant execute on function play_card(uuid, text, uuid, uuid, jsonb, integer, text, text, uuid) to service_role;
+
+-- -------------------------------------------------------------------------- pinned_threads ----
+
+-- A board's threads with a live thread play whose card pins (Main Event's kind, Task 5), each with the play's Act and its end,
+-- newest pin first: what the board's list draws above page 1's threads. One probe of play_reach_pins, reading only live rows, so its
+-- cost is the board's live pins, never its threads. Read by a signed-in player, as the Acts are. A pin ends with its play.
+create function pinned_threads(board uuid) returns table (thread jsonb, play uuid, ends_at timestamptz, act jsonb)
+language sql stable security definer set search_path = public, pg_temp as $$
+  select to_jsonb(t), r.play, r.ends_at, to_jsonb(a)
+  from play_reach r join thread_list t on t.id = r.thread join acts_public a on a.id = r.play
+  where r.pins_board = pinned_threads.board and r.ends_at > now()
+  order by a.created_at desc, a.id desc
+$$;
+revoke execute on function pinned_threads(uuid) from public, anon, authenticated;
+grant execute on function pinned_threads(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------- card_target ----
 
