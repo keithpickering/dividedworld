@@ -245,7 +245,8 @@ export const DEMAND_ID_ROLES: Readonly<Record<string, 'board' | 'thread' | 'char
 };
 
 export interface RepairContext {
-  readonly settings: Settings;
+  /** Only the settings the repair reads, so a caller (or a test) need not hold an instance's whole set. */
+  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays'>;
   readonly system: Pick<SystemContent, 'nameStyle' | 'bosses'>;
   /** The season's Boss. */
   readonly boss: string;

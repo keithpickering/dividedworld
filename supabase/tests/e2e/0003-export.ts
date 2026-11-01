@@ -331,7 +331,7 @@ test('an instance exported and imported into a fresh database is the same instan
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
     // settlement's, the view count's and the Boss's meeting.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-meet,kayfabb-settle,kayfabb-view-counts');
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-meet,kayfabb-settle,kayfabb-system-tick,kayfabb-view-counts');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);

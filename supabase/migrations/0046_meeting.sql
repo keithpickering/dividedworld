@@ -94,8 +94,10 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(jsonb_agg(t.e order by t.ord), '[]')
   from jsonb_array_elements(case when jsonb_typeof(list) = 'array' then list else '[]'::jsonb end) with ordinality t(e, ord)
   where jsonb_typeof(t.e) = 'object'
-    and (t.e ->> 'character') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-    and (t.e ->> 'character')::uuid in (select c.id from characters_public c)
+    -- The cast sits in a case, so it is evaluated only for text the pattern accepts: SQL does not promise to read an
+    -- and from left to right.
+    and case when (t.e ->> 'character') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+             then (t.e ->> 'character')::uuid in (select c.id from characters_public c) else false end
 $$;
 revoke execute on function public_entries(jsonb) from public, anon, authenticated, service_role;
 
@@ -185,7 +187,7 @@ begin
   insert into staff_profiles (staff, meeting, interests, favorites, mood, signature)
   values (boss, apply_meeting.meeting,
     array(select jsonb_array_elements_text(coalesce(payload -> 'profile' -> 'interests', '[]'))),
-    array(select f.id from (select t.f::uuid as id, min(t.ord) as ord from jsonb_array_elements_text(coalesce(payload -> 'profile' -> 'favorites', '[]')) with ordinality t(f, ord) group by 1) f
+    array(select f.id from (select case when t.f ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then t.f::uuid end as id, min(t.ord) as ord from jsonb_array_elements_text(coalesce(payload -> 'profile' -> 'favorites', '[]')) with ordinality t(f, ord) group by 1) f
       where f.id in (select c.id from characters_public c) order by f.ord),
     coalesce(payload -> 'profile' ->> 'mood', ''), coalesce(payload -> 'profile' ->> 'signature', ''));
 
@@ -234,8 +236,8 @@ create function public_characters(ids jsonb) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(jsonb_agg(c.id order by c.id), '[]')
   from characters_public c
-  where c.id in (select x::uuid from jsonb_array_elements_text(case when jsonb_typeof(ids) = 'array' then ids else '[]'::jsonb end) x
-                 where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+  where c.id in (select case when x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then x::uuid end
+                 from jsonb_array_elements_text(case when jsonb_typeof(ids) = 'array' then ids else '[]'::jsonb end) x)
 $$;
 
 revoke execute on function begin_meeting(timestamptz), fail_meeting(bigint, text, text, jsonb), apply_meeting(bigint, jsonb),

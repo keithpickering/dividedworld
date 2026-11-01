@@ -72,6 +72,7 @@ const system: SystemContent = {
   oldVoice: ({ name }) => ({ prompt: `Board: ${name}\nDescription:`, stop: ['\n'] }),
   nameStyle: () => [],
   nameStyleBrief: 'any name',
+  announcementsTitle: 'Announcements',
 };
 
 const good: Instance = {
@@ -420,6 +421,7 @@ test('a staff member needs a name, a title and a persona', () => {
 
 test('the name style must also be said in words for the meeting\'s prompt', () => {
   assert.match(said(withSystem({ nameStyleBrief: ' ' })), /nameStyleBrief/);
+  assert.match(said(withSystem({ announcementsTitle: ' ' })), /announcementsTitle/);
 });
 
 test('nameStyle must be a function', () => {

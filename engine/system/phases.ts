@@ -69,7 +69,7 @@ export interface PhaseAt {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export function phaseAt(season: SeasonSpan, now: number, settings: Settings, boss?: { readonly phases?: PhaseOverrides }): PhaseAt {
+export function phaseAt(season: SeasonSpan, now: number, settings: Pick<Settings, 'phases'>, boss?: { readonly phases?: PhaseOverrides }): PhaseAt {
   for (const field of ['startsAt', 'endsAt'] as const) {
     if (!Number.isFinite(season[field])) throw new Error(`phaseAt: season.${field} must be a finite number of epoch milliseconds, got ${String(season[field])}`);
   }

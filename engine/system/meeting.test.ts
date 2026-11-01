@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { instance } from '../../supabase/functions/_shared/instance.ts';
+import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
 import { DEMAND_ID_ROLES, namedCharacters, repairAnswer, type RepairContext } from './meeting.ts';
 import { phaseAt } from './phases.ts';
@@ -15,11 +15,14 @@ const ANN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const BOB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const HIDDEN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
+const settings = { ...systemSettings, reactionCap: 3 };
+
 const ctx = (): RepairContext => ({
-  settings: instance.settings,
-  system: instance.system,
-  boss: instance.system.firstBoss,
-  phase: phaseAt({ startsAt: NOW - 30 * 24 * H, endsAt: NOW + 60 * 24 * H }, NOW, instance.settings),
+  // The engine's own fixture, never an instance's content ("KayfaBB never knows which instance it runs").
+  settings: settings,
+  system: testSystem,
+  boss: testSystem.firstBoss,
+  phase: phaseAt({ startsAt: NOW - 30 * 24 * H, endsAt: NOW + 60 * 24 * H }, NOW, settings),
   bank: 5,
   now: NOW,
   boards: new Set([BOARD]),

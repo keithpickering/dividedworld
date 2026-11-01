@@ -171,7 +171,7 @@ begin
   select id into hidden from characters where staff = 'mt-hidden';
   m8 := (begin_meeting(slot1 + interval '20 days') ->> 'meeting')::bigint;
   pl := pg_temp.payload('mt-boss', '[]', 'filtered');
-  pl := jsonb_set(pl, '{profile,favorites}', jsonb_build_array(boss_char, hidden, boss_char));
+  pl := jsonb_set(pl, '{profile,favorites}', jsonb_build_array(boss_char, hidden, boss_char, 'not-a-uuid'));
   pl := jsonb_set(pl, '{memory,opinions}', jsonb_build_array(jsonb_build_object('character', boss_char, 'score', 2, 'note', 'fine'), jsonb_build_object('character', hidden, 'score', 5, 'note', 'secret')));
   pl := jsonb_set(pl, '{memory,grudges}', jsonb_build_array(jsonb_build_object('character', hidden, 'score', -5, 'note', 'secret')));
   perform apply_meeting(m8, pl);

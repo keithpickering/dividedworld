@@ -34,3 +34,13 @@ test('an item of unclosed titles is read in linear time too', () => {
   assert.deepEqual(feedTitles(xml, 10), []);
   assert.ok(performance.now() - started < 200);
 });
+
+test('many items without a title, or with an unclosed one, are read in linear time', () => {
+  for (const xml of ['<item></item>'.repeat(30000), '<item><title>x</item>'.repeat(19000), `${'<item></item>'.repeat(29000)}<item><title>Last</title></item>`]) {
+    const started = performance.now();
+    const titles = feedTitles(xml, 10);
+    const took = performance.now() - started;
+    assert.deepEqual(titles, xml.endsWith('<title>Last</title></item>') ? ['Last'] : []);
+    assert.ok(took < 200, `took ${took} ms`);
+  }
+});

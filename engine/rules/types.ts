@@ -491,8 +491,8 @@ export interface SystemContent {
   readonly bosses: readonly BossPersona[];
   /** The key of the first season's Boss. */
   readonly firstBoss: string;
-  /** The title of the one thread on The System's board where landed moves and their ends are written; the seed makes it once. Optional only until instanceProblems requires it (it is in a file another change holds). */
-  readonly announcementsTitle?: string;
+  /** The title of the one thread on The System's board where landed moves and their ends are written; the seed makes it once. */
+  readonly announcementsTitle: string;
   readonly modBots: readonly ModBotPersona[];
   /** The keys of the bots on staff when the instance is seeded. */
   readonly firstStaff: readonly string[];

@@ -40,14 +40,19 @@ function nextClose(low: string, name: string, from: number): [number, number] | 
   return null;
 }
 
-/** The text of the first `<title>` between `from` and `to`, or null; also by indexOf, so a body of unclosed titles is read once. */
+/**
+ * The text of the first `<title>` between `from` and `to`, or null. The search runs on the item's own slice, never past
+ * `to`: an indexOf over the whole document from inside every item is quadratic in the number of items, so a feed of
+ * many title-less items would cost seconds.
+ */
 function innerTitle(low: string, xml: string, from: number, to: number): string | null {
-  const open = nextOpen(low, 'title', from);
-  if (open === -1 || open >= to) return null;
-  const end = low.indexOf('>', open);
-  if (end === -1 || end >= to) return null;
-  const close = nextClose(low, 'title', end + 1);
-  return close && close[1] <= to ? xml.slice(end + 1, close[0]) : null;
+  const seg = low.slice(from, to);
+  const open = nextOpen(seg, 'title', 0);
+  if (open === -1) return null;
+  const end = seg.indexOf('>', open);
+  if (end === -1) return null;
+  const close = nextClose(seg, 'title', end + 1);
+  return close ? xml.slice(from + end + 1, from + close[0]) : null;
 }
 
 export function feedTitles(xml: string, limit: number, most = 200): string[] {
