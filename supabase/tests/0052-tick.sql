@@ -255,6 +255,32 @@ begin
   ran := system_tick();
   if (ran ->> 'expired')::integer <> 3 or (ran ->> 'checked')::integer <> 1 then raise exception 'expiry was held to the demand cap: %', ran; end if;
 
+  -- The checks rotate: each check is recorded on the move, so with a cap of one the next tick checks a different move,
+  -- never the same one again; the one checked longest ago (or never) goes first. Two unmet moves, the one with the
+  -- smaller id checked ten minutes ago and the other never: the never-checked one goes first, then the old one, and
+  -- both carry the time they were checked. An order by id instead would take the old one first.
+  perform end_move(o.move_act, 'reversed', 'test') from open_moves o;
+  update settings set value = '1' where key = 'demandChecksPerTick';
+  declare
+    x uuid := pg_temp.landed('Rota Ridge', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', g, 'count', 99)), now() + interval '2 days');
+    y uuid := pg_temp.landed('Rota Reef', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', g, 'count', 99)), now() + interval '2 days');
+    older uuid := least(x, y);
+    never uuid := greatest(x, y);
+  begin
+    update open_moves set checked_at = null where move_act in (x, y);
+    update open_moves set checked_at = now() - interval '10 minutes' where move_act = older;
+    ran := system_tick();
+    if (ran ->> 'checked')::integer <> 1 or (select checked_at from open_moves where move_act = never) is distinct from now() then
+      raise exception 'the first tick did not check the never-checked move first and record it: %', ran;
+    end if;
+    ran := system_tick();
+    if (ran ->> 'checked')::integer <> 1 or (select checked_at from open_moves where move_act = older) is distinct from now() then
+      raise exception 'the second tick did not move on to the move checked longest ago: %', ran;
+    end if;
+    ran := system_tick();
+    if (ran ->> 'checked')::integer <> 0 then raise exception 'a third tick checked a move it had just checked: %', ran; end if;
+  end;
+
   -- A tick past its time budget stops checking demands and carries on next minute; expiry still ends moves.
   update settings set value = '40' where key = 'demandChecksPerTick';
   perform pg_temp.landed('Budget Barn', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', g, 'count', 1)), now() + interval '2 days');
