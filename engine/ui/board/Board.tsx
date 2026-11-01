@@ -203,7 +203,7 @@ function BoardBanner({ board, plays, tallies, mine, nameOf, heading, onSpin }: {
         <span className="kb-board-banner-marks">
           <PostMarks
             post={board.id} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
-            reachAt={{ reach: 'board', target: board.id, name: board.name, from: null, thread: null, board: null, title: board.name, to, plays, know: async () => {}, focusBack: () => heading.current }}
+            reachAt={{ reach: 'board', target: board.id, name: board.name, fromPost: null, thread: null, board: null, title: board.name, to, plays, know: async () => {}, focusBack: () => heading.current }}
             onSpin={(play, label, opener) => onSpin({ id: play.id, label, opener })}
           />
         </span>

@@ -28,12 +28,12 @@ import type { CardUi } from './types.ts';
 
 type Scene = 'character' | 'still' | 'armed' | 'thread' | 'banner' | 'pinned';
 
-/** The engine's own board card, for the banner: legendary, a day, drawn as a plain mark in the house's gold. */
+/** The engine's own board card, for the banner: legendary, a day, drawn as a plain mark in the glass's neon. */
 const RUMBLE: CardRules = {
   key: 'kb-test-rumble', name: 'Rumble', alignment: 'salty', rarity: 'legendary', reaches: ['board'], lasts: { unit: 'day', count: 1 },
   priceKey: 'kb-test-rumble.price', playPrice: () => 0, validateConfig: (c) => ok(c), canApply: (t, e) => landsOn({ key: 'kb-test-rumble', reaches: ['board'] }, t, e),
 };
-const RUMBLE_UI: CardUi = { key: 'kb-test-rumble', art: { color: '#ffd23f', ink: '#1a1300', tagline: 'Shake a board.' }, describe: () => 'The engine\'s test board card.' };
+const RUMBLE_UI: CardUi = { key: 'kb-test-rumble', art: { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)', tagline: 'Shake a board.' }, describe: () => 'The engine\'s test board card.' };
 
 const DAY = 86_400_000;
 

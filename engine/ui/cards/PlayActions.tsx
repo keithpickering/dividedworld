@@ -74,7 +74,7 @@ export interface ReachAt {
   readonly target: Id;
   readonly name: string;
   /** The post whose postbit offers it: a character play's Act sits on it. */
-  readonly from: Act | null;
+  readonly fromPost: Act | null;
   /** The thread and the board above the target, whose live plays its card's rules see. */
   readonly thread: Id | null;
   readonly board: Id | null;
@@ -115,7 +115,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
   if (!landingOn(rules, goal, livePlays(here.plays), { cards: instance.cards, setLasts: instance.settings.setLasts, above }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy));
-  const target: PlayTarget = { post: at.from, reach: { reach: at.reach, target: at.target, name: at.name, above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
+  const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (
     <button
       type="button" className="kb-mark kb-ghost-mark" aria-label={reachGhostName(rules.name, how, at.name)} data-kb-card={rules.key} data-kb-alignment={rules.alignment} data-kb-reach={at.reach}

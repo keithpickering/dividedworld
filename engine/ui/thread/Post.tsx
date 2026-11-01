@@ -164,7 +164,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const characterMarks = useMemo(() => (act.kind === 'post' && act.character !== null
     ? <PostMarks
         post={act.character} plays={plays} compare={false} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine}
-        reachAt={{ reach: 'character', target: act.character, name, from: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
+        reachAt={{ reach: 'character', target: act.character, name, fromPost: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
         onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
       />
     : null), [act, plays, thread, seq, perPage, casterName, tallies, mine, name, summary.board, summary.title, know]);
@@ -217,7 +217,7 @@ export function ThreadHead({ pager }: { readonly pager: ReactNode }) {
         <span className="kb-thread-head-marks">
           <PostMarks
             post={thread} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
-            reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, from: null, thread: null, board: summary.board, title: summary.title, to, plays, know: know ?? (async () => {}), focusBack: () => title.current }}
+            reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, fromPost: null, thread: null, board: summary.board, title: summary.title, to, plays, know: know ?? (async () => {}), focusBack: () => title.current }}
             onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
           />
         </span>

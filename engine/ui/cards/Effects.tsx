@@ -64,15 +64,15 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   }, [api, plays]);
   /* The layers above the post, each its own reach's plays still live, redrawn at the soonest end (useUntil). */
   const above = [
-    { reach: 'board' as const, from: board === null ? [] : onBoard.plays, of: onBoard },
-    { reach: 'thread' as const, from: onThread.plays, of: onThread },
-    { reach: 'character' as const, from: post.character === null ? [] : onAuthor.plays, of: onAuthor },
-  ].map((l) => ({ ...l, from: l.from.filter((p) => p.reach === l.reach) }));
-  const now = useUntil(above.flatMap((l) => l.from));
+    { reach: 'board' as const, drawn: board === null ? [] : onBoard.plays, of: onBoard },
+    { reach: 'thread' as const, drawn: onThread.plays, of: onThread },
+    { reach: 'character' as const, drawn: post.character === null ? [] : onAuthor.plays, of: onAuthor },
+  ].map((l) => ({ ...l, drawn: l.drawn.filter((p) => p.reach === l.reach) }));
+  const now = useUntil(above.flatMap((l) => l.drawn));
 
   /* A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). */
   const layers = [
-    ...above.map((l) => ({ reach: l.reach as Reach, acting: livePlays(l.from, now), of: l.of })),
+    ...above.map((l) => ({ reach: l.reach as Reach, acting: livePlays(l.drawn, now), of: l.of })),
     { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.faceDown && !p.reach), of: here },
   ];
   if (layers.every((l) => l.acting.length === 0)) return <>{children}</>;
