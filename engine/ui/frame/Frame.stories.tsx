@@ -34,3 +34,9 @@ export const SignedOut: Story = { parameters: { world: () => {} } };
 export const NoCharacterYet: Story = {
   parameters: { world: ((fake) => { fake.signInAs(fake.seed.account('new-player')); }) satisfies World },
 };
+/* The HUD's mask hidden from the online lists (My characters' switch): its mark beside the class, or beside the mask on the phone. */
+const hiddenWorld: World = (fake, instance) => {
+  playerWorld(fake, instance);
+  void fake.myCharacters().then((mine) => { const first = mine[0]; if (first) void fake.setPresenceHidden(first.id, true); });
+};
+export const HiddenFromOnlineLists: Story = { parameters: { world: hiddenWorld } };

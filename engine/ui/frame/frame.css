@@ -910,9 +910,18 @@
   letter-spacing: 1.5px;
 }
 
-/* The Phone board sets the label at its face's own line, not the page's: the 124px glass holds both rows only so. */
+/*
+ * The Phone board sets the label at its face's own line, not the page's: the 124px glass holds both rows only so.
+ * It is an inline block, so a hidden mask's mark stands on its line and the select, a block, still takes the next.
+ */
 :where(:root[data-kb-layout='phone']) .kb-hud-swap-label {
-  display: block;
+  display: inline-block;
+  line-height: normal;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-swap .kb-hud-hidden {
+  margin-inline-start: 8px;
+  font-size: var(--kb-glass-size-phone-small);
   line-height: normal;
 }
 
