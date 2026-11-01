@@ -16,6 +16,7 @@ import { useKayfa } from '../context.tsx';
 import type { Board, Character, Id, ThreadSummary } from '../data/api.ts';
 import { Ago, Mini, SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
 import { Link, useLocation } from '../router.tsx';
+import { PresenceBox } from '../presence/PresenceBox.tsx';
 import { NewThread } from './NewThread.tsx';
 import './board.css';
 
@@ -134,6 +135,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
           {pager('bottom')}
         </>
       )}
+      <PresenceBox place={{ kind: 'board', board: board.id }} heading="Users browsing this board" />
     </div>
   );
 }

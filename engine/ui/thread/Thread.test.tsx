@@ -1461,3 +1461,12 @@ describe('the tally store keeps no empty sets', () => {
     expect(t.listening()).toBe(0);
   });
 });
+
+describe('who is browsing', () => {
+  test('the thread\'s foot holds "Users browsing this thread", listing the HUD\'s mask', async () => {
+    const w = world(2);
+    open(w);
+    const box = await screen.findByRole('region', { name: 'Users browsing this thread' });
+    expect(await within(box).findByRole('link', { name: 'Pipewrench' })).toHaveAttribute('href', `/c/${w.pipe}`);
+  });
+});

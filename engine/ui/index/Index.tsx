@@ -10,6 +10,8 @@ import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { BoardSummary, Character, Id } from '../data/api.ts';
 import { Ago, Mini, SignInPrompt, useSignedIn } from '../mini.tsx';
+import { spanWords } from '../characters/format.ts';
+import { PresenceBox } from '../presence/PresenceBox.tsx';
 import { Link } from '../router.tsx';
 import './index.css';
 
@@ -19,7 +21,7 @@ type State =
   | { readonly status: 'ready'; readonly boards: readonly BoardSummary[]; readonly characters: ReadonlyMap<Id, Character> };
 
 export function IndexScreen() {
-  const { api } = useKayfa();
+  const { api, settings } = useKayfa();
   const signedIn = useSignedIn(api);
   const [state, setState] = useState<State>({ status: 'loading' });
 
@@ -83,6 +85,7 @@ export function IndexScreen() {
           })}
         </tbody>
       </table>
+      <PresenceBox place={{ kind: 'index' }} heading="Who is online" note={`Characters active in the past ${spanWords(settings.presenceWindow)}`} />
     </div>
   );
 }
