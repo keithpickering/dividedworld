@@ -928,7 +928,7 @@ describe('the panel\'s online status', () => {
     const select = await status();
     expect(select).toHaveValue('shown');
     expect(screen.getByTestId('hud')).toHaveTextContent('Hidden: none');
-    expect(within(row('Pipewrench')).getByText(/Hidden: this character isn't listed in Who is online or Users browsing\. Only you see it there\./u)).toBeInTheDocument();
+    expect(within(row('Pipewrench')).getByText(/A hidden character isn't listed in Who is online or Users browsing\. Only you see it there\./u)).toBeInTheDocument();
     await userEvent.selectOptions(select, 'hidden');
     await waitFor(() => expect(hide).toHaveBeenCalledWith(w.pipe, true));
     await waitFor(() => expect(select).toHaveValue('hidden'));
@@ -946,5 +946,24 @@ describe('the panel\'s online status', () => {
     await userEvent.selectOptions(select, 'hidden');
     expect(await within(row('Pipewrench')).findByRole('alert')).toHaveTextContent('you do not play that character');
     expect(select).toHaveValue('shown');
+  });
+
+  test('keeps the keyboard on the select while it saves, shows the choice, and a second change made meanwhile is not sent', async () => {
+    const w = world();
+    let finish: () => void = () => {};
+    const real = w.fake.setPresenceHidden.bind(w.fake);
+    const hide = vi.spyOn(w.fake, 'setPresenceHidden').mockImplementation((...args) => new Promise((done) => { finish = () => done(real(...args)); }));
+    open(w);
+    await ready();
+    const select = await status();
+    await userEvent.selectOptions(select, 'hidden');
+    expect(select).toHaveValue('hidden');
+    expect(select).toHaveAttribute('aria-disabled', 'true');
+    expect(select).not.toBeDisabled();
+    await userEvent.selectOptions(select, 'shown');
+    expect(hide).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(); });
+    await waitFor(() => expect(select).not.toHaveAttribute('aria-disabled'));
+    expect(select).toHaveValue('hidden');
   });
 });

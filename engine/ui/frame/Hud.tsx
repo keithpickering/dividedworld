@@ -78,6 +78,13 @@ export function Hud() {
   const hudCalm = useSurfaceStyle('hud');
   const handCalm = useSurfaceStyle('hand');
   const hud = player.hudCharacter;
+  /* Hidden from the online lists (My characters' switch): a tag in plain words, beside the class on the Main board and the mask on the phone. */
+  const hiddenMark = hud?.presenceHidden ? (
+    <span className="kb-hud-hidden kb-glass-skew-tag">
+      <span aria-hidden="true">Hidden</span>
+      <span className="kb-visually-hidden">hidden from online lists</span>
+    </span>
+  ) : null;
   /* Whether the hand is open and which card is armed are the Frame's (cards/play.tsx): a post's own buttons read them too. */
   const play = usePlay();
   if (!play) throw new Error('the HUD is drawn inside the Frame');
@@ -245,12 +252,6 @@ export function Hud() {
                     </Link>
                     <span className="kb-hud-who">
                       <span className="kb-hud-name kb-glass-display">{hud.name}</span>
-                      {hud.presenceHidden && (
-                        <span className="kb-hud-hidden kb-glass-skew-tag">
-                          <span aria-hidden="true">Hidden</span>
-                          <span className="kb-visually-hidden">hidden from online lists</span>
-                        </span>
-                      )}
                       <span className="kb-hud-class-line">
                         <span className="kb-hud-class kb-glass-skew-tag" style={{ '--kb-hud-class-fill': `var(--kb-glass-class-${hud.class}-fill)`, '--kb-hud-class-ink': `var(--kb-glass-class-${hud.class}-ink)` } as CSSProperties}>
                           {className}
@@ -259,10 +260,13 @@ export function Hud() {
                           <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.5" rx="1" /><path d="M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5" /></svg>
                           Only you see this
                         </span>
+                        {wide && hiddenMark}
                       </span>
                     </span>
                     <span className="kb-hud-swap kb-calm">
                       <label htmlFor={selectId} className="kb-hud-swap-label">{wide ? 'Swap mask' : 'Posting as'}</label>
+                      {/* The phone's HUD has no name line: the mark stands by the mask it names. */}
+                      {!wide && hiddenMark}
                       <select id={selectId} className="kb-hud-select" value={hud.id} onChange={(e) => player.setHudCharacter(e.target.value)}>
                         {player.actingCharacters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>

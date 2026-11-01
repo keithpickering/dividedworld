@@ -188,7 +188,8 @@ export function Characters() {
     try {
       const answer = await api.setPresenceHidden(c.id, hidden);
       if (!answer.ok) { setProblem({ id: c.id, text: answer.error, pip: true }); return; }
-      await player.refresh();
+      /* Saved: the select and the HUD's mark follow the characters read again (a read that fails keeps them, and says so). */
+      try { await player.refresh(); } catch { setProblem({ id: c.id, text: 'Saved, but this page could not read it back. Reload to see it.', pip: true }); }
     } catch {
       setProblem({ id: c.id, text: 'That could not be sent. Check your connection and try again.', pip: true });
     } finally {
@@ -320,7 +321,7 @@ export function Characters() {
                 <option value="hidden">Hidden</option>
               </select>
             </label>
-            <p id={`presence-help-${c.id}`} className="kb-roster-line">Hidden: this character isn't listed in Who is online or Users browsing. Only you see it there.</p>
+            <p id={`presence-help-${c.id}`} className="kb-roster-line">A hidden character isn't listed in Who is online or Users browsing. Only you see it there.</p>
           </>
         )}
         {problem?.id === c.id && problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}

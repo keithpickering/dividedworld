@@ -458,11 +458,20 @@ describe('the HUD\'s hidden mark', () => {
   test('shows for a hidden HUD mask, in words a screen reader reads, and not for a shown one', async () => {
     setup(true, [{ ...mine('a', 'Pipewrench'), presenceHidden: true }]);
     const tag = await screen.findByText('Hidden');
-    expect(tag.closest('.kb-hud-who')).not.toBeNull();
+    expect(tag.closest('.kb-hud-class-line')).not.toBeNull();
+    expect(tag).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByText('hidden from online lists')).toBeInTheDocument();
     cleanup();
     setup(true, [mine('a', 'Pipewrench')]);
     await screen.findByText('Pipewrench', { selector: '.kb-hud-name' });
     expect(screen.queryByText('Hidden')).toBeNull();
+  });
+  test('on the phone, whose HUD has no name line, the mark stands beside the mask it names', async () => {
+    width(boardSwitch(testGlass) - 1);
+    setup(true, [{ ...mine('a', 'Pipewrench'), presenceHidden: true }]);
+    const select = await within(await hud()).findByRole('combobox', { name: 'Posting as' });
+    const tag = await screen.findByText('Hidden');
+    expect(tag.closest('.kb-hud-swap')).toBe(select.closest('.kb-hud-swap'));
+    expect(screen.getAllByText('hidden from online lists')).toHaveLength(1);
   });
 });
