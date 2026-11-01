@@ -93,7 +93,7 @@ const DAY = 86_400_000;
 const clip = (s: string, n: number): string => (s.length <= n ? s : s.slice(0, n));
 const said = (e: unknown): string => clip(e instanceof Error ? e.message : String(e), 500);
 
-/** Errors that are facts about the database or the ledger, never about the model: thrown at once, the row left open. */
+/** Errors that are facts about the database or the ledger, never about the model: thrown at once, after the row is closed failed. */
 const isInfrastructure = (e: unknown): boolean => e instanceof DatabaseError || e instanceof TransportError || e instanceof LedgerWriteFailed;
 
 export async function runMeeting(
@@ -114,157 +114,168 @@ export async function runMeeting(
   if (began.status === 'already met') return { status: 'already met', slot: slotIso, meeting: began.meeting };
   const meeting = began.meeting;
 
-  const close = async (outcome: 'failed' | 'rejected' | 'off', error: string | null, record: Record<string, unknown> = {}) => {
-    await db.rpc('fail_meeting', { meeting, outcome, error, record });
-  };
-
-  if (!settings.systemEnabled) {
-    await close('off', null);
-    return { status: 'off', meeting };
-  }
-
-  const context = await db.rpc<Context>('meeting_context', {});
-  const bossKey = context.boss;
-  if (!context.season || !bossKey) {
-    const error = context.season ? 'the open season has no Boss' : 'the instance has no open season';
-    await close('failed', error);
-    return { status: 'failed', meeting, error };
-  }
-  const boss = tuned.system.bosses.find((b) => b.key === bossKey);
-  if (!boss) {
-    const error = `the season's Boss "${bossKey}" is not in the instance's roster`;
-    await close('failed', error);
-    return { status: 'failed', meeting, error };
-  }
-
-  const now = clock();
-  const phase = phaseAt(context.season, now, settings, boss);
-
-  // The window: from where the last meeting's ended (the first meeting: the season's start, or a day back if the season is older).
-  const first = Math.max(context.season.startsAt, slotAt - DAY);
-  const sinceAt = Math.min(context.lastSlot ? Date.parse(context.lastSlot) : first, slotAt - 60_000);
-  const digest = await db.rpc<Digest>('system_digest', { since: new Date(sinceAt).toISOString(), until: slotIso });
-
-  // Its own latest memory; a Boss with none (a new one) reads nothing, or the memory of the Boss its persona inherits.
-  let memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: bossKey });
-  if (memory === null && boss.inheritsMemoryOf) memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: boss.inheritsMemoryOf });
-
-  const bank = await db.rpc<number>('bank_now', { staff: bossKey, weekly_moves: phase.numbers.weeklyMoves, bank_cap: phase.numbers.bankCap });
-
-  const { titles, skipped } = await readFeeds(tuned.system.feeds, fetchFeed);
-
-  const successorAllowed = phase.phase === 'meltdown' && now >= context.season.endsAt - SUCCESSOR_WINDOW_MS;
-  const system = meetingSystemPrompt({
-    boss,
-    system: tuned.system,
-    settings,
-    phase,
-    bank,
-    successorAllowed,
-    roster: tuned.system.bosses.map((b) => ({ key: b.key, name: b.name })),
-  });
-  const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);
-  const message = [
-    renderDigest(digest, memory, titles),
-    ...(notes.length ? ['', ...notes] : []),
-    '',
-    referenceText({
-      boards: context.boards,
-      threads: digest.threads.map((t) => ({ id: t.thread, title: t.title })),
-      characters: digest.characters.filter((c) => !c.staff).map((c) => ({ id: c.id, name: c.name })).slice(0, REFERENCE_MOST.characters),
-    }),
-    '',
-    'Hold your meeting.',
-  ].join('\n');
-
-  let raw: unknown;
+  // Past this point the row is open: whatever throws is written onto it (best effort) and thrown again, so the error survives the next slot's generic close.
   try {
-    const answered = await models.chat({
-      duty: 'meeting',
-      tier: DUTY_SPECS.meeting.tier,
-      staff: bossKey,
-      meeting,
-      system,
-      messages: [{ role: 'user', content: message }],
-      schema: ruleSchema(MEETING_RULE),
-      rules: MEETING_RULE,
-      maxTokens: 8_000,
+
+    const close = async (outcome: 'failed' | 'rejected' | 'off', error: string | null, record: Record<string, unknown> = {}) => {
+      await db.rpc('fail_meeting', { meeting, outcome, error, record });
+    };
+
+    if (!settings.systemEnabled) {
+      await close('off', null);
+      return { status: 'off', meeting };
+    }
+
+    const context = await db.rpc<Context>('meeting_context', {});
+    const bossKey = context.boss;
+    if (!context.season || !bossKey) {
+      const error = context.season ? 'the open season has no Boss' : 'the instance has no open season';
+      await close('failed', error);
+      return { status: 'failed', meeting, error };
+    }
+    const boss = tuned.system.bosses.find((b) => b.key === bossKey);
+    if (!boss) {
+      const error = `the season's Boss "${bossKey}" is not in the instance's roster`;
+      await close('failed', error);
+      return { status: 'failed', meeting, error };
+    }
+
+    const now = clock();
+    const phase = phaseAt(context.season, now, settings, boss);
+
+    // The window: from where the last meeting's ended (the first meeting: the season's start, or a day back if the season is older).
+    const first = Math.max(context.season.startsAt, slotAt - DAY);
+    const sinceAt = Math.min(context.lastSlot ? Date.parse(context.lastSlot) : first, slotAt - 60_000);
+    const digest = await db.rpc<Digest>('system_digest', { since: new Date(sinceAt).toISOString(), until: slotIso });
+
+    // Its own latest memory; a Boss with none (a new one) reads nothing, or the memory of the Boss its persona inherits.
+    let memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: bossKey });
+    if (memory === null && boss.inheritsMemoryOf) memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: boss.inheritsMemoryOf });
+
+    const bank = await db.rpc<number>('bank_now', { staff: bossKey, weekly_moves: phase.numbers.weeklyMoves, bank_cap: phase.numbers.bankCap });
+
+    const { titles, skipped } = await readFeeds(tuned.system.feeds, fetchFeed);
+
+    const successorAllowed = phase.phase === 'meltdown' && now >= context.season.endsAt - SUCCESSOR_WINDOW_MS;
+    const system = meetingSystemPrompt({
+      boss,
+      system: tuned.system,
+      settings,
+      phase,
+      bank,
+      successorAllowed,
+      roster: tuned.system.bosses.map((b) => ({ key: b.key, name: b.name })),
     });
-    raw = answered.value;
-  } catch (e) {
-    if (isInfrastructure(e)) throw e;
-    const outcome = e instanceof AnswerRejected ? 'rejected' : 'failed';
-    const error = said(e);
-    await close(outcome, error, { phase: phase.phase, feedsSkipped: skipped });
-    return { status: outcome, meeting, error };
-  }
+    const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);
+    const message = [
+      renderDigest(digest, memory, titles),
+      ...(notes.length ? ['', ...notes] : []),
+      '',
+      referenceText({
+        boards: context.boards,
+        threads: digest.threads.map((t) => ({ id: t.thread, title: t.title })),
+        characters: digest.characters.filter((c) => !c.staff).map((c) => ({ id: c.id, name: c.name })).slice(0, REFERENCE_MOST.characters),
+      }),
+      '',
+      'Hold your meeting.',
+    ].join('\n');
 
-  // The characters the answer names are checked against who is public now, not against today's digest.
-  const named = namedCharacters(raw);
-  const publicNow = new Set(named.length ? await db.rpc<string[]>('public_characters', { ids: named }) : []);
-  const repaired = repairAnswer(raw, {
-    settings,
-    system: tuned.system,
-    boss: bossKey,
-    phase,
-    bank,
-    now,
-    boards: new Set(context.boards.map((b) => b.id)),
-    isPublic: (id) => publicNow.has(id),
-    successorAllowed,
-  });
-  if (!repaired.ok) {
-    const error = `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`;
-    await close('rejected', error, { phase: phase.phase, trims: repaired.trims });
-    return { status: 'rejected', meeting, error };
-  }
+    let raw: unknown;
+    try {
+      const answered = await models.chat({
+        duty: 'meeting',
+        tier: DUTY_SPECS.meeting.tier,
+        staff: bossKey,
+        meeting,
+        system,
+        messages: [{ role: 'user', content: message }],
+        schema: ruleSchema(MEETING_RULE),
+        rules: MEETING_RULE,
+        maxTokens: 8_000,
+      });
+      raw = answered.value;
+    } catch (e) {
+      if (isInfrastructure(e)) throw e;
+      const outcome = e instanceof AnswerRejected ? 'rejected' : 'failed';
+      const error = said(e);
+      await close(outcome, error, { phase: phase.phase, feedsSkipped: skipped });
+      return { status: outcome, meeting, error };
+    }
 
-  const trims: Trim[] = [...repaired.trims];
-  const moves = await Promise.all(repaired.moves.map((m, i) => withDescription(models, tuned, m, i, bossKey, meeting, trims, notes)));
-
-  const record = {
-    phase: phase.phase,
-    clamps: phase.clamps,
-    trims,
-    notes,
-    feedsSkipped: skipped,
-    inherited: repaired.inherited,
-    successor: repaired.successor,
-  };
-  const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; bank_before?: number; bank_after?: number }>('apply_meeting', {
-    meeting,
-    payload: {
+    // The characters the answer names are checked against who is public now, not against today's digest.
+    const named = namedCharacters(raw);
+    const publicNow = new Set(named.length ? await db.rpc<string[]>('public_characters', { ids: named }) : []);
+    const repaired = repairAnswer(raw, {
+      settings,
+      system: tuned.system,
       boss: bossKey,
-      memory: repaired.memory,
-      profile: repaired.profile,
-      moves: moves.map((m) => ({
-        kind: m.kind,
-        params: m.params,
-        demand: m.demand,
-        go_live_at: new Date(m.goLiveAt).toISOString(),
-        expires_in_hours: m.expiresInHours,
-        why: m.why,
-      })),
-      // The database computes the bank itself, in the transaction, from these numbers, so a delayed apply debits the true balance.
-      weekly_moves: phase.numbers.weeklyMoves,
-      bank_cap: phase.numbers.bankCap,
-      record,
-    },
-  });
-  if (applied.status === 'already applied') return { status: 'already applied', meeting };
-  return {
-    status: 'ok',
-    meeting,
-    boss: bossKey,
-    phase: phase.phase,
-    queued: moves.length,
-    trims,
-    notes,
-    feedsSkipped: skipped,
-    inherited: repaired.inherited,
-    successor: repaired.successor,
-    ...(applied.bank_before !== undefined ? { bankBefore: applied.bank_before, bankAfter: applied.bank_after } : {}),
-  };
+      phase,
+      bank,
+      now,
+      boards: new Set(context.boards.map((b) => b.id)),
+      isPublic: (id) => publicNow.has(id),
+      successorAllowed,
+    });
+    if (!repaired.ok) {
+      const error = `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`;
+      await close('rejected', error, { phase: phase.phase, trims: repaired.trims });
+      return { status: 'rejected', meeting, error };
+    }
+
+    const trims: Trim[] = [...repaired.trims];
+    const moves = await Promise.all(repaired.moves.map((m, i) => withDescription(models, tuned, m, i, bossKey, meeting, trims, notes)));
+
+    const record = {
+      phase: phase.phase,
+      clamps: phase.clamps,
+      trims,
+      notes,
+      feedsSkipped: skipped,
+      inherited: repaired.inherited,
+      successor: repaired.successor,
+    };
+    const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; bank_before?: number; bank_after?: number }>('apply_meeting', {
+      meeting,
+      payload: {
+        boss: bossKey,
+        memory: repaired.memory,
+        profile: repaired.profile,
+        moves: moves.map((m) => ({
+          kind: m.kind,
+          params: m.params,
+          demand: m.demand,
+          go_live_at: new Date(m.goLiveAt).toISOString(),
+          expires_in_hours: m.expiresInHours,
+          why: m.why,
+        })),
+        // The database computes the bank itself, in the transaction, from these numbers, so a delayed apply debits the true balance.
+        weekly_moves: phase.numbers.weeklyMoves,
+        bank_cap: phase.numbers.bankCap,
+        record,
+      },
+    });
+    if (applied.status === 'already applied') return { status: 'already applied', meeting };
+    return {
+      status: 'ok',
+      meeting,
+      boss: bossKey,
+      phase: phase.phase,
+      queued: moves.length,
+      trims,
+      notes,
+      feedsSkipped: skipped,
+      inherited: repaired.inherited,
+      successor: repaired.successor,
+      ...(applied.bank_before !== undefined ? { bankBefore: applied.bank_before, bankAfter: applied.bank_after } : {}),
+    };
+  } catch (e) {
+    try {
+      await db.rpc('fail_meeting', { meeting, outcome: 'failed', error: said(e), record: {} });
+    } catch {
+      // The close failed too: the original error is the one that matters.
+    }
+    throw e;
+  }
 }
 
 /** A move with its params complete: a rename gets the old voice's description, or the instance's stock one when the voice cannot. */
@@ -325,7 +336,7 @@ async function readFeeds(feeds: Instance['system']['feeds'], fetchFeed: typeof g
           await response.body?.cancel();
           return { name: f.name, why: `HTTP ${response.status}` };
         }
-        return { name: f.name, titles: feedTitles(clip(await response.text(), FEED_BYTES), DIGEST_MOST.feed) };
+        return { name: f.name, titles: feedTitles(await readCapped(response, FEED_BYTES), DIGEST_MOST.feed) };
       } catch (e) {
         return { name: f.name, why: e instanceof Error && e.name === 'TimeoutError' ? 'timed out' : 'unreachable' };
       }
@@ -338,4 +349,26 @@ async function readFeeds(feeds: Instance['system']['feeds'], fetchFeed: typeof g
     for (const l of lists) if (i < l.length && titles.length < DIGEST_MOST.feed) titles.push(l[i]!);
   }
   return { titles, skipped };
+}
+
+/** A response's body read through its stream and stopped at `max` bytes (the rest cancelled), so a huge feed cannot fill memory. */
+async function readCapped(response: Response, max: number): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return clip(await response.text(), max);
+  const chunks: Uint8Array[] = [];
+  let have = 0;
+  try {
+    while (have < max) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(have + value.length > max ? value.subarray(0, max - have) : value);
+      have += chunks.at(-1)!.length;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  const all = new Uint8Array(have);
+  let at = 0;
+  for (const c of chunks) { all.set(c, at); at += c.length; }
+  return new TextDecoder().decode(all);
 }

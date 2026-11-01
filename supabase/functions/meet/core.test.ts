@@ -52,7 +52,7 @@ interface World {
   memories?: Record<string, Memory>;
   closed?: boolean;
   open?: boolean;
-  failOn?: string;
+  failOn?: string | string[];
   publicIds?: string[];
   boss?: string;
 }
@@ -62,7 +62,7 @@ function fakeDb(w: World = {}) {
   const db: Db = {
     async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
       calls.push({ fn, args });
-      if (w.failOn === fn) throw new DatabaseError(`${fn}: the connection dropped`, '08006', 500);
+      if ([w.failOn ?? []].flat().includes(fn)) throw new DatabaseError(`${fn}: the connection dropped`, '08006', 500);
       switch (fn) {
         case 'instance_settings': return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true } as T;
         case 'begin_meeting':
@@ -271,12 +271,29 @@ test('an answer the repair cannot save closes the meeting rejected', async () =>
 test('a database error is thrown, not swallowed, and so is an unrecorded model call', async () => {
   const d = fakeDb({ failOn: 'system_digest' });
   await assert.rejects(run(d.db, fakeModels(answer()).models, quiet, SLOT, clock, noFeeds), /connection dropped/);
-  assert.equal(d.state.failed.length, 0, 'the meeting is left open: the next run of the slot resumes it');
   const e = fakeDb();
   await assert.rejects(run(e.db, fakeModels(new LedgerWriteFailed('the ledger is down')).models, quiet, SLOT, clock, noFeeds), /ledger is down/);
-  assert.equal(e.state.failed.length, 0);
   const f = fakeDb({ failOn: 'apply_meeting' });
   await assert.rejects(run(f.db, fakeModels(answer()).models, quiet, SLOT, clock, noFeeds), /connection dropped/);
+});
+
+test('a meeting that throws after it begins closes its row failed with the real error, and the error is still thrown', async () => {
+  const d = fakeDb({ failOn: 'system_digest' });
+  await assert.rejects(run(d.db, fakeModels(answer()).models, quiet, SLOT, clock, noFeeds), /connection dropped/);
+  assert.deepEqual(d.state.failed.map((f) => [f.meeting, f.outcome]), [[7, 'failed']]);
+  assert.match(d.state.failed[0]!.error, /system_digest: the connection dropped/);
+  const e = fakeDb();
+  await assert.rejects(run(e.db, fakeModels(new LedgerWriteFailed('the ledger is down')).models, quiet, SLOT, clock, noFeeds), /ledger is down/);
+  assert.match(e.state.failed[0]!.error, /ledger is down/);
+  const f = fakeDb({ failOn: 'apply_meeting' });
+  await assert.rejects(run(f.db, fakeModels(answer()).models, quiet, SLOT, clock, noFeeds), /connection dropped/);
+  assert.match(f.state.failed[0]!.error, /apply_meeting/);
+});
+
+test('if closing the row fails too, the original error is the one thrown', async () => {
+  const d = fakeDb({ failOn: ['system_digest', 'fail_meeting'] });
+  await assert.rejects(run(d.db, fakeModels(answer()).models, quiet, SLOT, clock, noFeeds), /system_digest: the connection dropped/);
+  assert.equal(d.count('fail_meeting'), 1, 'the close was attempted');
 });
 
 test('a successor named before the meltdown\'s last week is dropped and recorded; in it, a roster Boss other than the outgoing one stands', async () => {
@@ -388,6 +405,26 @@ test('a feed that fails is skipped and noted; the others\' titles reach the prom
   assert.match(text, /Down Feed.*could not be read/s);
   assert.equal((text.match(/Headline \d+/g) ?? []).length, 30, 'capped at the digest\'s feed ceiling');
   assert.deepEqual(d.state.applied[0]!.payload.record.feedsSkipped.map((f: any) => f.name), ['Down Feed', 'Slow Feed']);
+});
+
+test('a feed body is read only to the byte cap, and the titles in what was read still parse', async () => {
+  const withFeed: Instance = { ...dividedWorld, system: { ...dividedWorld.system, feeds: [{ name: 'Huge Feed', url: 'https://huge.test/rss' }] } };
+  const enc = new TextEncoder();
+  const chunk = enc.encode(`<item><title>Big Headline</title></item>${' '.repeat(49_000)}`);
+  let pulled = 0;
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(c) { pulled++; if (pulled > 1000) c.close(); else c.enqueue(chunk); },
+    cancel() { cancelled = true; },
+  });
+  const fetcher = (async () => new Response(body, { status: 200 })) as unknown as typeof fetch;
+  const d = fakeDb();
+  const m = fakeModels(answer());
+  const out = await run(d.db, m.models, withFeed, SLOT, clock, fetcher);
+  assert.equal(out.status, 'ok');
+  assert.ok(pulled * chunk.length <= 400_000 + 2 * chunk.length, `pulled ${pulled} chunks of ${chunk.length}`);
+  assert.ok(cancelled, 'the rest of the body is cancelled');
+  assert.match(m.chats[0]!.messages[0]!.content, /Big Headline/);
 });
 
 test('memory and favorites name only public characters', async () => {
