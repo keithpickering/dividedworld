@@ -24,8 +24,8 @@ begin
   -- And nothing else but the month it debuted in: a creation time to the microsecond would show
   -- which masks were made in one sitting, which is to say whose (0030 adds the month, never the time).
   if (select string_agg(column_name::text, ',' order by ordinal_position) from information_schema.columns
-      where table_schema = 'public' and table_name = 'characters_public') is distinct from 'id,name,joined' then
-    raise exception 'characters_public shows more than a character''s id, name and month: %',
+      where table_schema = 'public' and table_name = 'characters_public') is distinct from 'id,name,joined,staff,staff_kind' then
+    raise exception 'characters_public shows more than a character''s id, name, month and staff key and kind: %',
       (select string_agg(column_name::text, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'characters_public');
   end if;
 

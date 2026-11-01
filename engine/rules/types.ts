@@ -361,6 +361,17 @@ export interface PipStyle {
   readonly empty: string;
 }
 
+/**
+ * A staff character an instance seeds (0042): a Boss or a Mod Bot, a character with no account behind it. The seed makes
+ * it once; `title` and `signature` are its profile's (a title of at most 40 characters, a signature of at most 500).
+ */
+export interface StaffSeed {
+  readonly key: string;
+  readonly name: string;
+  readonly title: string;
+  readonly signature: string;
+}
+
 export interface Instance {
   readonly key: string;
   readonly name: string;

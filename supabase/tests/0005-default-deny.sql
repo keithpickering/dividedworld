@@ -15,7 +15,8 @@ declare
                            'reading', 'my_reactions', 'thread_view_counts',
                            'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
-                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season'];
+                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
+                           'staff_now'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text)', 'post(uuid,uuid,text,uuid)',
                            'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text)', 'create_character(text,text,text,text)', 'set_debut(uuid,text,text)',
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer)', 'meet_card(text)', 'forget_cards_met()', 'set_profile(uuid,text,text,text)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',
@@ -27,8 +28,9 @@ begin
   loop bad := bad || format(E'\n  sequence %s', r.relname); end loop;
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind in ('r', 'v', 'm', 'p')
-             and (has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger') and not c.relname = 'screen_settings'
-                  -- screen_settings (0030) is the one view a visitor reads: the sign-up page must know whether the instance asks for an invite.
+             and (has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger') and not c.relname in ('screen_settings', 'staff_now')
+                  -- screen_settings (0030) is a view a visitor reads: the sign-up page must know whether the instance asks for an invite.
+                  -- staff_now (0042) is the other: the staff are known to be staff, signed in or not.
                   or has_table_privilege('anon', c.oid, 'insert,update,delete,truncate,references,trigger')
                   or (has_table_privilege('authenticated', c.oid, 'select,insert,update,delete,truncate,references,trigger') and not c.relname = any (readable))
                   or has_table_privilege('authenticated', c.oid, 'insert,update,delete,truncate,references,trigger'))
