@@ -1,5 +1,6 @@
 import { act, cleanup, screen, within } from '@testing-library/react';
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
+import type { PresencePlace } from '../data/api.ts';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { usePlayer } from '../player.tsx';
 import { buildWorld, renderIn } from '../test-world.tsx';
@@ -9,6 +10,12 @@ beforeEach(() => localStorage.clear());
 afterEach(() => vi.useRealTimers());
 
 const HEADING = 'Users browsing this thread';
+
+/** A box whose place moves from a thread to the index at a button's press. */
+function Mover({ thread }: { readonly thread: string }) {
+  const [place, setPlace] = useState<PresencePlace>({ kind: 'thread', thread });
+  return <><PresenceBox place={place} heading={HEADING} /><button type="button" onClick={() => setPlace({ kind: 'index' })}>Move</button></>;
+}
 
 /** A button that changes the HUD's mask, as the HUD's own switch does. */
 function HudSwitch({ to }: { readonly to: string }) {
@@ -180,5 +187,56 @@ describe('polling', () => {
     expect(box).toHaveTextContent('Pipewrench');
     await act(async () => { late.forEach((r) => r()); await vi.advanceTimersByTimeAsync(10); });
     expect(box).not.toHaveTextContent('Stale');
+  });
+
+  test('a page restored from the back-forward cache polls at once', async () => {
+    const { here } = await polling();
+    const before = here.mock.calls.length;
+    await act(async () => { window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true })); });
+    expect(here.mock.calls.length).toBe(before + 1);
+  });
+
+  test('mounted in a hidden tab, it sends nothing; unmounted, it stops', async () => {
+    const world = crowd(['Pipewrench']);
+    const here = vi.spyOn(world.fake, 'here');
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    vi.useFakeTimers();
+    const view = world.show(<PresenceBox place={{ kind: 'thread', thread: world.seeded.thread }} heading={HEADING} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(here).not.toHaveBeenCalled();
+    visibility.mockRestore();
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await settle();
+    const polled = here.mock.calls.length;
+    expect(polled).toBeGreaterThan(0);
+    view.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(here.mock.calls.length).toBe(polled);
+  });
+
+  test('signed out, it sends nothing', async () => {
+    const world = crowd(['Pipewrench']);
+    world.fake.signInAs(null);
+    const here = vi.spyOn(world.fake, 'here');
+    vi.useFakeTimers();
+    world.show(<PresenceBox place={{ kind: 'index' }} heading="Who is online" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(here).not.toHaveBeenCalled();
+    expect(screen.queryByRole('region', { name: 'Who is online' })).toBeNull();
+  });
+
+  test('a change of place shows nothing of the old place\'s answer while the new one is asked', async () => {
+    const world = crowd(['Pipewrench']);
+    const real = world.fake.here.bind(world.fake);
+    let hold = false;
+    vi.spyOn(world.fake, 'here').mockImplementation((place, through) => (hold ? new Promise(() => {}) : real(place, through)));
+    vi.useFakeTimers();
+    world.show(<Mover thread={world.seeded.thread} />);
+    await settle();
+    expect(screen.getByRole('region', { name: HEADING })).toHaveTextContent('Pipewrench');
+    hold = true;
+    await act(async () => { screen.getByRole('button', { name: 'Move' }).click(); });
+    await settle();
+    expect(screen.queryByRole('region', { name: HEADING })).toBeNull();
   });
 });

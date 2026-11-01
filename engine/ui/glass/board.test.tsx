@@ -95,7 +95,7 @@ const UI = path.join(here, '..');
  * named here.
  */
 const GLASS_FOLDERS = ['glass', 'frame', 'orbs', 'account', 'characters', 'profile-edit', 'rankings', 'log', 'reactions', 'cards', 'vending'];
-const BOARD_FOLDERS = ['bbcode', 'board', 'composer', 'index', 'postbit', 'profile', 'reveal', 'spin', 'standings', 'thread'];
+const BOARD_FOLDERS = ['bbcode', 'board', 'composer', 'index', 'postbit', 'presence', 'profile', 'reveal', 'spin', 'standings', 'thread'];
 const sheetsIn = (folder: string) => fs.readdirSync(path.join(UI, folder)).filter((f) => f.endsWith('.css')).map((f) => path.join(UI, folder, f));
 const SHEETS = GLASS_FOLDERS.flatMap(sheetsIn);
 const PHONE = ":where(:root[data-kb-layout='phone'])";

@@ -47,7 +47,7 @@ export function PresenceBox({ place, heading, note }: PresenceBoxProps) {
   return (
     <section className="kb-presence" aria-labelledby={id}>
       <h2 id={id} className="kb-presence-head">
-        {lead ? <><span className="kb-presence-wide">Users</span> <span className="kb-presence-rest">{lead[1]}</span></> : heading}
+        {lead ? <><span className="kb-presence-wide">{heading}</span><span className="kb-presence-narrow">{lead[1]![0]!.toUpperCase()}{lead[1]!.slice(1)}</span></> : heading}
       </h2>
       <p className="kb-presence-names">
         {items.length === 0 && others === 0 ? 'No characters right now.' : items.flatMap((item, i) => (i === 0 ? [item] : [', ', item]))}

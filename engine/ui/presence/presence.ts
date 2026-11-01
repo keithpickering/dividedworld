@@ -50,7 +50,7 @@ export function usePresence(place: PresencePlace | null): Presence | null {
         () => {
           if (!live) return;
           failures += 1;
-          if (failures >= FAILURES_TO_DROP) setHeld({ key, answer: null });
+          if (failures === FAILURES_TO_DROP) setHeld({ key, answer: null });
         },
       );
     };
@@ -65,13 +65,17 @@ export function usePresence(place: PresencePlace | null): Presence | null {
       timer = setInterval(poll, every);
     };
     const visibility = () => (document.visibilityState === 'visible' ? start() : stop());
+    /* A page restored from the back-forward cache may come back visible with no visibilitychange: it polls at once too. */
+    const restored = (e: PageTransitionEvent) => { if (e.persisted) start(); };
 
     start();
     document.addEventListener('visibilitychange', visibility);
+    window.addEventListener('pageshow', restored);
     return () => {
       live = false;
       stop();
       document.removeEventListener('visibilitychange', visibility);
+      window.removeEventListener('pageshow', restored);
     };
     // `place` is read through its key, so a new object for the same place does not restart the poll.
     // eslint-disable-next-line react-hooks/exhaustive-deps

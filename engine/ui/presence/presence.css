@@ -28,16 +28,16 @@
 }
 
 /* A phone (40em and under), as the mock: "Browsing this thread", and "(hidden)" alone. */
+.kb-presence-narrow {
+  display: none;
+}
+
 @media (max-width: 40em) {
   .kb-presence-wide {
     display: none;
   }
 
-  .kb-presence-rest {
-    display: inline-block;
-  }
-
-  .kb-presence-rest::first-letter {
-    text-transform: uppercase;
+  .kb-presence-narrow {
+    display: inline;
   }
 }
