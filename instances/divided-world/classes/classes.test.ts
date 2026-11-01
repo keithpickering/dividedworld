@@ -500,3 +500,24 @@ test('a Face\'s Sweet card that draws more than a Boss\'s post pays the Face\'s 
   assert.deepEqual(r.entries.filter((e) => e.reason === 'face.stoleThunder').map((e) => [e.character, e.amount]), [['fa', -20]]);
   assert.equal(settle(onTheBoss({ by: 'fa', card: 'stick-around' }, ['v1'], ['v2', 'v3']), sweet).entries.filter((e) => e.reason === 'face.stoleThunder').length, 0, 'outdrawn by the Boss\'s post, it pays nothing');
 });
+
+/* Cards beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 6): a Heel's Salty card on a character has no target post to
+   outdraw, so it earns no outdraw bonus, however its own reactions go; the same card on a post that it outdraws does. */
+test('a Heel\'s Salty character card earns no outdraw bonus', () => {
+  const heelCard = (over: Record<string, unknown>): SettlementInput => ({
+    window: { id: 'w', from: 0, to: 24 * H },
+    characters: [
+      { id: 'he', player: 'ph', classes: [{ class: 'heel', from: -1 }] },
+      { id: 'fa', player: 'pf', classes: [{ class: 'face', from: -1 }] },
+      { id: 'ja', player: 'pj', classes: [{ class: 'jabroni', from: -1 }] },
+    ],
+    acts: [
+      { id: 'p1', character: 'fa', kind: 'post', at: 1 * H, thread: 't' },
+      { id: 'k1', character: 'he', kind: 'card', at: 2 * H, thread: 't', card: 'whoops', ...over },
+    ],
+    reactions: [{ act: 'k1', player: 'pj', character: 'ja', kind: 'fire', at: 3 * H }],
+  });
+  const bonus = (s: ReturnType<typeof settle>) => s.entries.filter((e) => e.character === 'he' && e.reason === 'heel.stoleThunder').length;
+  assert.equal(bonus(settle(heelCard({ target: 'p1' }), world)), 1, 'on a post it outdraws, it earns the bonus');
+  assert.equal(bonus(settle(heelCard({ reach: 'character' }), world)), 0, 'on a character, nothing to outdraw');
+});

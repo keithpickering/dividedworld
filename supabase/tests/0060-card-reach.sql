@@ -327,6 +327,35 @@ begin
   end if;
 end $$;
 
+-- ---- The settlement reads a play beyond a post with its reach and no target, and as no card on the post it sits on ----
+do $$
+declare
+  ann uuid := tests.account('reach-settle'); bob uuid := tests.account('reach-settle-b'); cy uuid := tests.account('reach-settle-c');
+  pipe uuid := tests.character(ann, 'Settle Pipe'); hoo uuid := tests.character(bob, 'Settle Hoo'); zed uuid := tests.character(cy, 'Settle Zed');
+  t uuid := tests.thread('Settle reach'); p uuid; pl jsonb; post_play jsonb; got jsonb; mine jsonb;
+begin
+  perform pg_temp.cards();
+  -- Written before the window, so only something in the window could bring it into the input.
+  p := tests.post(hoo, t, 'Settle opener.', now() - interval '2 days');
+  perform pg_temp.hand(ann, 'glint', 'sweetie');
+  pl := play_card(ann, 'glint', pipe, hoo, '{}', 0, '', 'character', p);
+  perform tests.become(cy);
+  perform react((pl ->> 'id')::uuid, zed, 'up');
+  perform tests.unbecome();
+  got := settlement_input(now() - interval '1 day', now() + interval '1 minute');
+  select e into mine from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = pl ->> 'id';
+  if mine ->> 'reach' is distinct from 'character' or mine ? 'target' then raise exception 'a character play is read with its reach and no target: %', mine; end if;
+  -- The post the character play sits on is not its target, so nothing brings it in.
+  if exists (select 1 from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = p::text) then raise exception 'the post a character play sits on is not its target: %', got -> 'acts'; end if;
+  mine := (select e from jsonb_array_elements(estimate_input(ann, now() + interval '1 minute') -> 'acts') e where e ->> 'id' = pl ->> 'id');
+  if mine ->> 'reach' is distinct from 'character' or mine ? 'target' then raise exception 'the estimate reads it the same: %', mine; end if;
+  -- A post play keeps its target and names no reach.
+  post_play := play_card(ann, 'sweetie', pipe, p, '{}', 0, '');
+  got := settlement_input(now() - interval '1 day', now() + interval '1 minute');
+  select e into mine from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = post_play ->> 'id';
+  if mine ->> 'target' is distinct from p::text or mine ? 'reach' then raise exception 'a post play keeps its target and names no reach: %', mine; end if;
+end $$;
+
 -- ---- An instance from before 0055: every card is a post card, and every play reads as one ----
 do $$
 begin

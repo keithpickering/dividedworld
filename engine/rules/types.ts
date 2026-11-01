@@ -208,7 +208,7 @@ export interface BoardSeed {
 /**
  * An Act as the settlement reads it. `thread` is the thread it is in; for a `spin` it is the
  * thread the spin opened, and `target` the Act it was spun from. For a `card`, `target` is the
- * post it landed on.
+ * post it landed on, and a card beyond a post names its `reach` instead.
  */
 export interface InputAct {
   readonly id: string;
@@ -218,6 +218,11 @@ export interface InputAct {
   readonly thread: string;
   readonly target?: string;
   readonly card?: string;
+  /**
+   * A card played beyond a post (0055_card_reach.sql): on a character, a thread or a board. It has no target post to outdraw, so it
+   * carries no `target`; its own reactions pay its caster as any Act's do, and it is in no class's cards played or landed.
+   */
+  readonly reach?: BeyondPost;
 }
 
 /** A staff post a card landed on: its author is staff, so it is named but never settled. */

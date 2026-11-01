@@ -300,11 +300,13 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
      reads the owner's answer 3. A card whose kind the instance has since retired has no
      alignment, and holds nothing. Built once; the acts are already in time order. */
   const holder = new Map<string, string>();
-  for (const c of [...acts.values()].filter((a) => isPlay(a) && a.target && a.card && alignmentOf.has(a.card)).sort((x, y) => x.at - y.at || cmp(x.id, y.id))) {
+  for (const c of [...acts.values()].filter((a) => isPlay(a) && a.reach === undefined && a.target && a.card && alignmentOf.has(a.card)).sort((x, y) => x.at - y.at || cmp(x.id, y.id))) {
     const k = `${c.target}\u0000${playerOf(c.character)}\u0000${alignmentOf.get(c.card!)}`;
     if (!holder.has(k)) holder.set(k, c.id);
   }
-  for (const a of windowActs.filter(isPlay)) {
+  // A play beyond a post has no target post to outdraw, and lands on no post (the card mechanic's design, section 7): its own
+  // reactions reach its caster through `received`, as any Act's do, and no rule here reads it.
+  for (const a of windowActs.filter((x) => isPlay(x) && x.reach === undefined)) {
     if (!a.target) throw new Error(`settle: ${a.kind} Act ${a.id} has no target`);
     // A staff post is another's, and nobody's to land on.
     const staffTarget = unscored.get(a.target);
