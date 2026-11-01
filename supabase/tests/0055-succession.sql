@@ -77,6 +77,18 @@ declare
   hand season_handovers%rowtype;
 begin
   if pg_temp.boss() is distinct from 'su-a' then raise exception 'the first season has the seed''s first Boss, not %', pg_temp.boss(); end if;
+  -- Re-naming the Boss a nomination already names is refused in plain words, never a raw guard error.
+  q := pg_temp.queue_nomination('su-a', 'su-c');
+  perform tests.become(admin);
+  begin
+    perform replace_successor(q, 'su-c');
+    raise exception 'a nomination was replaced with the Boss it already names';
+  exception when others then
+    if sqlstate is distinct from '55000' or sqlerrm is distinct from 'that Boss is already the one named' then raise exception 'naming the same Boss again answered % %', sqlstate, sqlerrm; end if;
+  end;
+  -- Held, so this nomination never lands and the handover below is the rotation's alone.
+  perform hold_move(q);
+  perform tests.unbecome();
   q := pg_temp.queue_nomination('su-a', 'su-c');
   perform tests.become(admin); perform hold_move(q); perform tests.unbecome();
   -- A held nomination is no one's to replace: the refusal is the plain 55000, in its own words.

@@ -248,6 +248,7 @@ begin
     raise exception 'that is not a Boss of the roster' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   if boss = q.staff then raise exception 'a Boss cannot succeed itself' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if boss = q.params ->> 'boss' then raise exception 'that Boss is already the one named' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
   update queued_moves set params = params || jsonb_build_object('boss', replace_successor.boss), replaced_by = auth.uid(), replaced_at = now()
   where queued_moves.id = replace_successor.id;
   return jsonb_build_object('id', q.id, 'boss', boss);
