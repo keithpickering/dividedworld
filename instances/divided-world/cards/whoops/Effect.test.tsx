@@ -608,6 +608,17 @@ describe('motion', () => {
     expect(sudsAfterScrub()).toBe(0);
   });
 
+  test('a fade still running when the post leaves the page leaves no timer behind', () => {
+    vi.useFakeTimers();
+    try {
+      const fading = mount({ clean: 40 });
+      scrubTo(fading.frame, fading.root, 0, new LayerInk(splatFor(0), []), 0.5);
+      expect(fading.root).toHaveAttribute('data-kb-fading', 'true');
+      fading.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
   test('a layer washed clean fades; under reduced motion it is gone at once', () => {
     const fading = mount({ clean: 40 });
     scrubTo(fading.frame, fading.root, 0, new LayerInk(splatFor(0), []), 0.5);
