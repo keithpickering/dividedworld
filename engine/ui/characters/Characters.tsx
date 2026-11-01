@@ -65,6 +65,7 @@ export function Characters() {
   const [busy, setBusy] = useState<Id | null>(null);
   /* A pip style being saved: its character and the style chosen, shown while the save is out. */
   const [savingPip, setSavingPip] = useState<{ readonly id: Id; readonly style: string } | null>(null);
+  const [savingHidden, setSavingHidden] = useState<{ readonly id: Id; readonly hidden: boolean } | null>(null);
   const [problem, setProblem] = useState<{ readonly id: Id; readonly text: string; readonly pip?: boolean } | null>(null);
   const [focusRow, setFocusRow] = useState<Id | null>(null);
   const [picked, setPicked] = useState<Id | null>(() => carried(location.state));
@@ -171,6 +172,28 @@ export function Characters() {
       setProblem({ id: face.id, text: 'That could not be sent. Check your connection and try again.', pip: true });
     } finally {
       setSavingPip(null);
+    }
+  };
+
+  /*
+   * Online status: hidden from "Who is online" and "Users browsing" (0041_presence.sql). As the pip
+   * style, the select keeps the keyboard while it saves, a further change waits, and a refusal puts
+   * it back on what is saved; the HUD's mark follows the player's own characters, read again.
+   */
+  const presenceHidden = async (c: MyCharacter, hidden: boolean) => {
+    if (savingHidden !== null) return;
+    setSavingHidden({ id: c.id, hidden });
+    setProblem(null);
+    setFlash('');
+    try {
+      const answer = await api.setPresenceHidden(c.id, hidden);
+      if (!answer.ok) { setProblem({ id: c.id, text: answer.error, pip: true }); return; }
+      /* Saved: the select and the HUD's mark follow the characters read again (a read that fails keeps them, and says so). */
+      try { await player.refresh(); } catch { setProblem({ id: c.id, text: 'Saved, but this page could not read it back. Reload to see it.', pip: true }); }
+    } catch {
+      setProblem({ id: c.id, text: 'That could not be sent. Check your connection and try again.', pip: true });
+    } finally {
+      setSavingHidden(null);
     }
   };
 
@@ -282,6 +305,24 @@ export function Characters() {
               {instance.pipStyles.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
             </select>
           </label>
+        )}
+        {live && (
+          <>
+            <label className="kb-roster-pip">
+              Online status
+              <select
+                className="kb-glass-select"
+                value={(savingHidden?.id === c.id ? savingHidden.hidden : c.presenceHidden) ? 'hidden' : 'shown'}
+                aria-disabled={savingHidden?.id === c.id || undefined}
+                aria-describedby={`presence-help-${c.id}`}
+                onChange={(e) => void presenceHidden(c, e.target.value === 'hidden')}
+              >
+                <option value="shown">Shown online</option>
+                <option value="hidden">Hidden</option>
+              </select>
+            </label>
+            <p id={`presence-help-${c.id}`} className="kb-roster-line">A hidden character isn't listed in Who is online or Users browsing. Only you see it there.</p>
+          </>
         )}
         {problem?.id === c.id && problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}
         <div className="kb-roster-actions">

@@ -29,6 +29,8 @@ const FALLBACK: ScreenSettings = {
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
   cardSettings: { 'whoops.clean': 95 },
+  presencePollSeconds: 30,
+  presenceWindow: { unit: 'minute', count: 5 },
   cardEconomy: {},
 };
 
@@ -132,6 +134,24 @@ describe('what the adapter may request', () => {
     expect(req?.body).toEqual({ in_thread: T, seq: 3, through: B });
     expect(req?.url.toString()).not.toContain(B);
     expect([...(req?.headers.values() ?? [])].join(' ')).not.toContain(B);
+  });
+
+  it('polls presence with the place and the HUD mask in the body, answers names and a count, and throws on a refusal', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/here') ? json({ names: [{ id: A, name: 'Ann' }], others: 2 }) : json({}, 404)));
+    expect(await h.api.here({ kind: 'thread', thread: T }, B)).toEqual({ names: [{ id: A, name: 'Ann' }], others: 2 });
+    await h.api.here({ kind: 'index' }, null);
+    const [first, second] = h.to('rpc/here');
+    expect(first?.body).toEqual({ in_kind: 'thread', in_place: T, through: B });
+    expect(second?.body).toEqual({ in_kind: 'index', in_place: null, through: null });
+    expect(first?.url.toString()).not.toContain(B);
+    const refused = harness((r) => (r.url.pathname.endsWith('/rpc/here') ? json({ code: '42501', message: 'you do not play that character', hint: 'kayfabb.refusal' }, 403) : json({}, 404)));
+    await expect(refused.api.here({ kind: 'index' }, B)).rejects.toThrow('you do not play that character');
+  });
+
+  it('hides a mask from presence through set_presence_hidden, and answers whether it is hidden', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_presence_hidden') ? json({ character: B, hidden: true }) : json({}, 404)));
+    expect(await h.api.setPresenceHidden(B, true)).toEqual({ ok: true, value: true });
+    expect(h.to('rpc/set_presence_hidden')[0]?.body).toEqual({ in_character: B, hidden: true });
   });
 });
 
@@ -418,11 +438,12 @@ describe('reads and their rows', () => {
   });
 
   it('maps my_characters, with a pending Turn only when one is waiting', async () => {
-    const base = { name: 'Bea', class: 'face', class_since: '2026-09-01T00:00:00+00:00', turn_opens_at: null, debuted_at: '2026-09-02T00:00:00+00:00', debut_loudness: 'silent', retired_at: null, pending_class: null, pending_loudness: null, pending_show_from: null, pending_show_to: null, takes_effect_at: null };
-    const h = harness(() => rows([{ id: B, ...base }, { id: A, ...base, name: 'Al', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00' }]));
+    const base = { name: 'Bea', class: 'face', class_since: '2026-09-01T00:00:00+00:00', turn_opens_at: null, debuted_at: '2026-09-02T00:00:00+00:00', debut_loudness: 'silent', retired_at: null, pending_class: null, pending_loudness: null, pending_show_from: null, pending_show_to: null, takes_effect_at: null, presence_hidden: false };
+    const h = harness(() => rows([{ id: B, ...base }, { id: A, ...base, name: 'Al', presence_hidden: true, pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00' }]));
     const mine = await h.api.myCharacters();
     expect(h.rest().map((r) => r.url.pathname)).toEqual(['/rest/v1/my_characters']);
-    expect(mine[0]).toEqual({ id: B, name: 'Bea', class: 'face', classSince: '2026-09-01T00:00:00+00:00', turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null });
+    expect(mine[0]).toEqual({ id: B, name: 'Bea', class: 'face', classSince: '2026-09-01T00:00:00+00:00', turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false });
+    expect(mine[1]?.presenceHidden).toBe(true);
     expect(mine[1]?.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: '2026-11-01T00:00:00+00:00' });
   });
 

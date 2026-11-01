@@ -14,7 +14,7 @@ const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
-  invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 },
+  invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30,
   postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, cardSettings: {}, economy: {},
 };
 
@@ -1305,5 +1305,88 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     expect(anas.cards).toEqual([]);
     expect(anas.wallet.map((e) => e.kind)).toEqual(['settlement']);
     void ana;
+  });
+});
+
+describe('presence', () => {
+  const ids = (p: { names: readonly { id: string }[] }) => p.names.map((n) => n.id);
+  test('a swap of masks leaves the old one listed until the window passes', async () => {
+    const { fake, bo, anaFace, anaHeel, boFace, thread } = world();
+    expect(ids(await fake.here({ kind: 'thread', thread }, anaFace))).toEqual([anaFace]);
+    fake.clock.advance(MINUTE);
+    await fake.here({ kind: 'thread', thread }, anaHeel);
+    fake.signInAs(bo);
+    expect(ids(await fake.here({ kind: 'thread', thread }, boFace))).toEqual([anaFace, anaHeel, boFace]);
+    fake.clock.advance(4 * MINUTE + 1);
+    expect(ids(await fake.here({ kind: 'thread', thread }, boFace))).toEqual([anaHeel, boFace]);
+  });
+  test('a board counts its threads, the index counts everyone, and the answer is names and a count only', async () => {
+    const { fake, anaFace, thread } = world();
+    await fake.here({ kind: 'thread', thread }, anaFace);
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    const system = (await fake.boards()).find((b) => b.slug === 'the-system')!;
+    expect(ids(await fake.here({ kind: 'board', board: general.id }, null))).toEqual([anaFace]);
+    expect(ids(await fake.here({ kind: 'board', board: system.id }, null))).toEqual([]);
+    const online = await fake.here({ kind: 'index' }, null);
+    expect(online).toEqual({ names: [{ id: anaFace, name: 'Ana Face' }], others: 0 });
+  });
+  test('a hidden mask is written nowhere and omitted for another account; my characters say it is hidden', async () => {
+    const { fake, bo, anaFace, boFace, thread } = world();
+    await fake.here({ kind: 'thread', thread }, anaFace);
+    expect(await fake.setPresenceHidden(anaFace, true)).toEqual({ ok: true, value: true });
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)?.presenceHidden).toBe(true);
+    await fake.here({ kind: 'thread', thread }, anaFace);
+    fake.signInAs(bo);
+    expect(ids(await fake.here({ kind: 'thread', thread }, boFace))).toEqual([boFace]);
+    expect(await fake.setPresenceHidden(anaFace, false)).toEqual(refused('you do not play that character'));
+  });
+  test('past the cap, the rest are counted', async () => {
+    const { fake, bo, anaFace, anaHeel, boFace, thread } = world({ presenceNames: 2 });
+    await fake.here({ kind: 'thread', thread }, anaFace);
+    fake.clock.advance(1000);
+    await fake.here({ kind: 'thread', thread }, anaHeel);
+    fake.clock.advance(1000);
+    fake.signInAs(bo);
+    const box = await fake.here({ kind: 'thread', thread }, boFace);
+    expect(ids(box)).toEqual([anaFace, anaHeel]);
+    expect(box.others).toBe(1);
+  });
+  test('the index is longest online first; a thread, longest there first', async () => {
+    const { fake, ana, bo, anaFace, boFace, thread } = world();
+    const other = fake.seed.thread('general', boFace, 'Other', 'x').thread;
+    await fake.here({ kind: 'thread', thread: other }, anaFace);
+    fake.clock.advance(1000);
+    fake.signInAs(bo);
+    await fake.here({ kind: 'thread', thread }, boFace);
+    fake.clock.advance(1000);
+    fake.signInAs(ana);
+    expect(ids(await fake.here({ kind: 'thread', thread }, anaFace))).toEqual([boFace, anaFace]);
+    expect(ids(await fake.here({ kind: 'index' }, null))).toEqual([anaFace, boFace]);
+  });
+  test('a mask polled exactly the window ago is still listed, and gone a moment later', async () => {
+    const { fake, anaFace, thread } = world();
+    await fake.here({ kind: 'thread', thread }, anaFace);
+    fake.clock.advance(5 * MINUTE);
+    expect(ids(await fake.here({ kind: 'thread', thread }, null))).toEqual([anaFace]);
+    fake.clock.advance(1);
+    expect(ids(await fake.here({ kind: 'thread', thread }, null))).toEqual([]);
+  });
+  test('a retired mask\'s poll writes nothing and answers; a waiting mask\'s is refused; a mask shown again is listed from its next poll', async () => {
+    const { fake, ana, anaFace, anaHeel, thread } = world();
+    const waiting = fake.seed.character(ana, 'Ana Later', 'face', { debuted: false });
+    const retired = fake.seed.character(ana, 'Ana Gone', 'face', { retired: true });
+    expect(await fake.here({ kind: 'thread', thread }, retired)).toEqual({ names: [], others: 0 });
+    await expect(fake.here({ kind: 'thread', thread }, waiting)).rejects.toThrow('that character debuts at the next settlement');
+    await fake.here({ kind: 'thread', thread }, anaHeel);
+    await fake.setPresenceHidden(anaFace, true);
+    await fake.setPresenceHidden(anaFace, false);
+    expect(ids(await fake.here({ kind: 'thread', thread }, null))).toEqual([anaHeel]);
+    fake.clock.advance(1000);
+    expect(ids(await fake.here({ kind: 'thread', thread }, anaFace))).toEqual([anaHeel, anaFace]);
+  });
+  test('a poll through a mask not yours, or of no thread, is refused', async () => {
+    const { fake, boFace, thread } = world();
+    await expect(fake.here({ kind: 'thread', thread }, boFace)).rejects.toThrow('you do not play that character');
+    await expect(fake.here({ kind: 'thread', thread: 'nowhere' }, null)).rejects.toThrow('there is no such thread');
   });
 });

@@ -1413,7 +1413,8 @@ describe('landmarks and focus', () => {
     open(w);
     const article = await screen.findByRole('article', { name: /^Post 2 by Pipewrench/u });
     expect(within(article).getByRole('heading', { level: 2, name: 'Post 2 by Pipewrench' })).toBeInTheDocument();
-    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(3);
+    /* One per post, each inside its article; the presence box's heading is the page's only other. */
+    expect(screen.getAllByRole('article').flatMap((a) => within(a).getAllByRole('heading', { level: 2 }))).toHaveLength(3);
   });
 
   test('the History button controls the list it opens', async () => {
@@ -1459,5 +1460,14 @@ describe('the tally store keeps no empty sets', () => {
     expect(t.listening()).toBe(0);
     t.subscribe('a', () => {})();
     expect(t.listening()).toBe(0);
+  });
+});
+
+describe('who is browsing', () => {
+  test('the thread\'s foot holds "Users browsing this thread", listing the HUD\'s mask', async () => {
+    const w = world(2);
+    open(w);
+    const box = await screen.findByRole('region', { name: 'Users browsing this thread' });
+    expect(await within(box).findByRole('link', { name: 'Pipewrench' })).toHaveAttribute('href', `/c/${w.pipe}`);
   });
 });

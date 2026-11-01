@@ -40,6 +40,7 @@ import type { Act, Id, ThreadListener } from '../data/api.ts';
 import { SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
 import { motionReduced } from '../appearance.ts';
 import { usePlayer } from '../player.tsx';
+import { PresenceBox } from '../presence/PresenceBox.tsx';
 import type { PostbitLayout, PostbitPerson } from '../postbit/Postbit.tsx';
 import { reveals } from '../postbit/reveals.ts';
 import { Link, useLocation, useNavigate } from '../router.tsx';
@@ -560,6 +561,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
           The board this thread is on could not be read, so the reply box is left out. <button type="button" className="kb-link-button" onClick={() => void readBoard()}>Try again</button>
         </p>
       )}
+      <PresenceBox place={{ kind: 'thread', thread }} heading="Users browsing this thread" />
       <div className="kb-visually-hidden" role="status" aria-live="polite" aria-atomic="false">
         {lines.map((l) => <p key={l.key}>{l.text}</p>)}
       </div>

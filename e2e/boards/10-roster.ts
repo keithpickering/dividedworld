@@ -58,8 +58,12 @@ const manifest: BoardManifest = {
     { id: 'card-ready', role: 'text', name: 'Turn ready', within: 'roster', buildNth: 1 },
     { id: 'new', role: 'link', name: 'New character', within: 'roster' },
 
-    /* The selected panel, chamfer step 4. */
-    { id: 'panel', role: 'region', name: 'Pipewrench', type: false },
+    /*
+     * The selected panel, chamfer step 4. The build adds Online status under the pip style (the presence
+     * plan, docs/plans/2026-10-31-presence-plan.md, Task 5), which the board predates: the panel grows by
+     * that row and its line, so the panel is compared by position, and what follows the row by size.
+     */
+    { id: 'panel', role: 'region', name: 'Pipewrench', type: false, box: 'position' },
     { id: 'panel-selected', role: 'text', name: 'Selected', within: 'panel' },
     { id: 'panel-name', role: 'heading', name: 'Pipewrench', within: 'panel' },
     /* The class's "only you" tag follows it on the build's line (web Task 9), so the chip stands left of the board's: its size is compared. */
@@ -72,14 +76,15 @@ const manifest: BoardManifest = {
     /* The pip style, the profile's own, chosen here. */
     { id: 'panel-pip', role: 'combobox', name: 'Pip style', within: 'panel' },
     /* The Turn that opens later, in the neon's text on a dashed edge; its name is the screen's own. */
-    { id: 'panel-turn', role: 'button', name: 'TURN · OPENS NOV 29', buildName: 'Turn Pipewrench', within: 'panel' },
-    { id: 'panel-cooldown', role: 'text', name: 'A character can Turn once every 30 days. Pipewrench last Turned at the Oct 30 settlement.', within: 'panel' },
-    { id: 'panel-avatar', role: 'link', name: 'Change avatar', buildName: 'Edit profile', within: 'panel' },
+    { id: 'panel-turn', role: 'button', name: 'TURN · OPENS NOV 29', buildName: 'Turn Pipewrench', within: 'panel', box: 'size' },
+    { id: 'panel-cooldown', role: 'text', name: 'A character can Turn once every 30 days. Pipewrench last Turned at the Oct 30 settlement.', within: 'panel', box: 'size' },
+    { id: 'panel-avatar', role: 'link', name: 'Change avatar', buildName: 'Edit profile', within: 'panel', box: 'size' },
     { id: 'panel-log', role: 'link', name: 'Pipewrench\'s log', within: 'panel', box: 'size' },
     {
       id: 'panel-most', role: 'text', name: 'Six characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.',
       buildName: '6 characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.',
-      within: 'panel', box: 'position',
+      /* Below the Online status row, so only found: its words are compared, and neither its place nor its size (the board's line is shorter). */
+      within: 'panel', box: 'none',
     },
   ],
 };

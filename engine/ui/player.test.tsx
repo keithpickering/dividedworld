@@ -6,7 +6,7 @@ import { PlayerProvider, usePlayer } from './player.tsx';
 
 const char = (id: string, over: Partial<MyCharacter> = {}): MyCharacter => ({
   id, name: id.toUpperCase(), class: 'face', classSince: '2026-10-01T00:00:00Z', turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
-  debutLoudness: 'silent', retiredAt: null, pendingTurn: null, ...over,
+  debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false, ...over,
 });
 
 function stubApi(over: Partial<KayfaApi> = {}) {
