@@ -64,7 +64,8 @@ export interface DigestCharacter {
  * A move in force, or one that ended in the window, as `system_digest` lists it (supabase/migrations/0045_moves.sql):
  * `{act, kind, params, demand, expiresAt, landedAt, progress: {done, of, met}, ended, state}`, where `ended` is null while the move is in
  * force and `{why: met | expired | reversed, by, at}` after. A move an admin held before it landed has `state: 'held'`, no act, no
- * progress, and `heldAt` and `why` (the Boss's own words for it). Held generically: the renderer reads the fields it knows, defensively,
+ * progress, and `heldAt` and `why` (the Boss's own words for it). A move that ended `met` also has `metBy`, the ids of the public
+ * characters whose Acts counted toward its demand (supabase/migrations/0051_digest_meeters.sql), at most `DIGEST_MOST.metBy`. Held generically: the renderer reads the fields it knows, defensively,
  * and falls back to the row's JSON for one it does not, so a digest from a newer database still renders.
  */
 export type DigestMove = Readonly<Record<string, unknown>>;
@@ -90,15 +91,16 @@ export interface Digest {
  * The ceilings on what a digest holds, for every instance: the settings digestThreads, digestExcerpts and
  * digestExcerptChars may not exceed the first three (engine/rules/instance.ts), and the renderer slices to them
  * whatever it is handed. `feed` is the outside feed's items, which the caller caps but the renderer does not trust.
+ * `metBy` is the most characters a met move credits (SQL caps its `metBy` list at the same number).
  */
-export const DIGEST_MOST = { threads: 25, excerpts: 20, excerptChars: 1000, feed: 30 } as const;
+export const DIGEST_MOST = { threads: 25, excerpts: 20, excerptChars: 1000, feed: 30, metBy: 8 } as const;
 
 /** The clips on strings the digest and the feed carry. Thread titles are at most 120 in SQL. */
 export const CLIPS = {
   title: 120,
   board: 60,
   name: 64,
-  kind: 24,
+  kind: 32,
   /** Reaction kinds shown on one of the Boss's posts, most reacted first. */
   tallyKinds: 32,
   move: 400,
@@ -130,6 +132,15 @@ function moveLine(m: DigestMove): string {
   return `${clip(m['kind'], CLIPS.kind)}: ${state}; ${way};${did}`;
 }
 
+/** The characters who met a move, as ` met by A, B and C`, or nothing: the ids the SQL gave, named from the digest's characters, at most DIGEST_MOST.metBy. */
+function metByText(m: DigestMove, name: (id: string) => string): string {
+  const ids = m['metBy'];
+  if (!Array.isArray(ids)) return '';
+  const names = ids.filter((id): id is string => typeof id === 'string').slice(0, DIGEST_MOST.metBy).map(name);
+  if (names.length === 0) return '';
+  return ` met by ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`}.`;
+}
+
 function memoryText(memory: Memory | null, names: (id: string) => string): string[] {
   if (memory === null) return ['You are new to this board. You have no memory yet; form one from what follows.'];
   const out = [`Your hobby: ${clip(line(memory.hobby.name), 80)} (since ${clip(memory.hobby.since, 40)}, from ${clip(line(memory.hobby.from), 120)}).`];
@@ -146,7 +157,7 @@ function memoryText(memory: Memory | null, names: (id: string) => string): strin
  */
 export function renderDigest(digest: Digest, memory: Memory | null, feed: readonly string[]): string {
   const { threads: T, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
-  const known = new Map(digest.characters.slice(0, 4 * E).map((c) => [c.id, clip(line(c.name), CLIPS.name)]));
+  const known = new Map(digest.characters.slice(0, (4 + DIGEST_MOST.metBy) * E).map((c) => [c.id, clip(line(c.name), CLIPS.name)]));
   const name = (id: string): string => known.get(id) ?? 'someone';
   const out: string[] = [];
   const section = (title: string, rows: readonly string[], none: string): void => {
@@ -170,7 +181,7 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
     digest.standings.slice(0, E).map((s) => `${s.rank}. ${name(s.character)}: ${s.amount}`),
     'No settlement landed in the window.',
   );
-  section('Moves', digest.moves.slice(0, E).map((m) => clip(moveLine(m), CLIPS.move)), 'No move is in force and none ended in the window.');
+  section('Moves', digest.moves.slice(0, E).map((m) => clip(moveLine(m), CLIPS.move) + metByText(m, name)), 'No move is in force and none ended in the window.');
   section(
     'Quotes between characters',
     digest.quotes.slice(0, E).map((q) => `${name(q.from)} quoted ${name(q.to)} ${q.count} time${q.count === 1 ? '' : 's'}.`),
