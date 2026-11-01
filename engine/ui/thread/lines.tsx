@@ -73,6 +73,13 @@ export function UnmaskLine({ act, name }: { readonly act: Act; readonly name: st
   return <p className="kb-act-line">{name} revealed: {cls}{message && <> — “{message}”</>}</p>;
 }
 
+/** The plain record that a move is over, in the engine's words and never the Boss's (the log never lies): how it ended, by whom. */
+export function MoveEndLine({ act }: { readonly act: Act }) {
+  const why = text(act.payload.why);
+  const how = why === 'met' ? 'its demand was met' : why === 'expired' ? 'it ran out' : text(act.payload.by) === 'admin' ? 'an admin reversed it' : 'it was reversed';
+  return <p className="kb-act-line">A move has ended: {how}.</p>;
+}
+
 export { Debuts };
 
 /** The words of The System's own post: the tally of a settlement, or the season's reveal (engine/ui/reveal/). */

@@ -16,6 +16,7 @@ import { useKayfa } from '../context.tsx';
 import type { Board, Character, Id, ThreadSummary } from '../data/api.ts';
 import { Ago, Mini, SignInPrompt, pageList, useSignedIn } from '../mini.tsx';
 import { Link, useLocation } from '../router.tsx';
+import { MoveNotice } from './MoveNotice.tsx';
 import { NewThread } from './NewThread.tsx';
 import './board.css';
 
@@ -108,6 +109,7 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
       <p className="kb-crumb"><Link to="/">Index</Link> › {board.name}</p>
       <h1 ref={heading} tabIndex={-1} className="kb-heading kb-board-title">{board.name}</h1>
       <p className="kb-board-description kb-muted">{board.description}</p>
+      {board.moveAct !== null && <MoveNotice key={board.moveAct} act={board.moveAct} />}
       {board.isSystem
         ? <p className="kb-board-readonly kb-small">Only The System posts here. You can react to what it says, and spin a thread from it.</p>
         : <NewThread key={board.slug} board={board.slug} />}

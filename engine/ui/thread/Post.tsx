@@ -10,6 +10,7 @@
  */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
+import { MoveTag } from '../board/MoveNotice.tsx';
 import { PostEffects } from '../cards/Effects.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { EditPost } from '../composer/EditPost.tsx';
@@ -22,7 +23,7 @@ import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
-import { LastEdited, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
+import { LastEdited, MoveEndLine, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
 export { ThreadCtx, type ThreadContext };
@@ -43,6 +44,17 @@ function Body({ act, name, person, editing, onDone, marks }: { readonly marks: R
   const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
+    case 'move_end': return <MoveEndLine act={act} />;
+    case 'move':
+      /* The Boss's move: its stock line in its own voice, under the glass's label of the move, which the engine's catalog words and the Boss cannot change. */
+      return (
+        <>
+          <MoveTag kind={text(act.payload.kind)} />
+          <BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} />
+          <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
+          {person && <Signature text={person.character.signature} />}
+        </>
+      );
     case 'tally':
     case 'reveal':
       /* The System's own posts are reacted to like any Act (no player is their author, so no one is shut out). */
