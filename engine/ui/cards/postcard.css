@@ -241,5 +241,4 @@ button.kb-postcard {
   background: var(--kb-card-color);
   font-size: var(--kb-glass-size-label);
 }
-.kb-postcard[data-size='slot'] .kb-postcard-play { display: none; }
 .kb-postcard-gem::before { content: attr(data-kb-gem); }

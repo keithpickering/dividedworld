@@ -21,6 +21,10 @@ import forceFieldFace from './cards/force-field.svg?url';
 import forceFieldMark from './cards/force-field-mark.svg?url';
 import bluffFace from './cards/bluff.svg?url';
 import bluffMark from './cards/bluff-mark.svg?url';
+import { forceField } from '../cards/force-field.ts';
+
+/** A span in words: "a week", "3 days". */
+const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `a ${s.unit}` : `${s.count} ${s.unit}s`);
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
 import { Effect as WhoopsEffect } from '../cards/whoops/Effect.tsx';
 import { luminance } from '../cards/whoops/splat.ts';
@@ -82,14 +86,14 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     art: { color: '#ff3d7f', ink: '#14030a', image: trapCardFace, mark: trapCardMark, tagline: 'Catch the next card cast on your post.' },
     summary: 'Set face down on your post. Catches the next card cast there, and pays you what it cost.',
     describe: (settings: Settings) =>
-      `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next card cast on that post that is uncommon or commoner is caught: it lands as caught and does nothing, its caster has spent it, and your wallet gains exactly what their wallet paid to play it. A rarer card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs ${orbs(settings.economy['trapCard.price'] ?? 0)} to buy, and nothing more to set.`,
+      `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next card cast on that post that is uncommon or commoner is caught: it lands as caught and does nothing, its caster has spent it, and your wallet gains what their wallet paid to play it, as far as your wallet's cap allows. A rarer card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs ${orbs(settings.economy['trapCard.price'] ?? 0)} to buy, and nothing more to set.`,
   },
   {
     key: 'force-field',
     art: { color: '#2ee6ff', ink: '#03141a', image: forceFieldFace, mark: forceFieldMark, tagline: 'Turn away cards from your post.' },
-    summary: 'Used on your post. Turns away cards up to uncommon for a week.',
+    summary: `Used on your post. Turns away cards up to ${forceField.rarity} for ${spanWords(forceField.lasts!)}.`,
     describe: (settings: Settings) =>
-      `A Sweet card, uncommon, used on one of your own posts. For a week, every card cast there that is uncommon or commoner is turned away before it lands, and its caster is told so; a rarer card lands as usual. It never stops a card set face down. It costs ${orbs(settings.economy['forceField.price'] ?? 0)} to buy, and nothing more to use.`,
+      `A Sweet card, ${forceField.rarity}, used on one of your own posts. For ${spanWords(forceField.lasts!)}, every card cast there that is ${forceField.rarity} or commoner is turned away before it lands, and its caster is told so; a rarer card lands as usual. It never stops a card set face down. It costs ${orbs(settings.economy['forceField.price'] ?? 0)} to buy, and nothing more to use.`,
   },
   {
     key: 'bluff',

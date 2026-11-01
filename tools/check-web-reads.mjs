@@ -70,6 +70,8 @@ export const ALLOWED_READS = Object.freeze([
   // The player's own.
   'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_cards', 'my_reactions', 'my_invites', 'reading',
   'account_preferences', 'effect_releases',
+  // The player's own cards set face down and plays a trap caught (0054_card_plays.sql): each filtered to auth.uid() on the server.
+  'my_face_down', 'my_caught',
 ]);
 
 /**

@@ -13,7 +13,7 @@ import { useSyncExternalStore } from 'react';
 import type { Act, ActKind, EffectState, Id, KayfaApi } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
 import type { CardRules } from '../../rules/cards.ts';
-import type { Settings } from '../../rules/types.ts';
+import type { Settings, Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, KitControl } from './types.ts';
 
 /** More than any card stacks on one post; a page of posts asks for this many plays per post at most. */
@@ -24,6 +24,22 @@ export const PLAYS_PER_POST = 8;
  * but their setter (the card mechanic's design, section 3). No instance's card key can be it: a key is lowercase words.
  */
 export const CARD_BACK = 'kb:card-back';
+/**
+ * Whether a kind is a card back: a live one (`CARD_BACK`), or one that sprang, which is its own kind (`CARD_BACK` and its spring), so a
+ * back set later on the same post is never drawn or named as the card that sprang.
+ */
+export const isBack = (kind: string): boolean => kind === CARD_BACK || kind.startsWith(`${CARD_BACK}:`);
+const sprungKind = (spring: Id) => `${CARD_BACK}:${spring}`;
+
+/**
+ * The plays a post shows: all but a card back whose time has passed with nothing springing it, which is gone, as the server drops it
+ * (card_target). Its end is setLasts after it was set, the same for every card.
+ */
+export function shownPlays(plays: readonly CardPlay[], setLasts: Span, now: number = Date.now()): readonly CardPlay[] {
+  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
+  const shown = plays.filter((p) => !(p.faceDown && !p.revealed && Date.parse(p.playedAt) + span <= now));
+  return shown.length === plays.length ? plays : shown;
+}
 
 /**
  * A card play, from its card Act or its set Act (a card back); null for any other Act, or a card Act with no card in it. A spring
@@ -195,7 +211,7 @@ export function createPlays(): Plays {
           const own = post === undefined ? undefined : byPost.get(post);
           const back = own?.get(sprung.set);
           if (own && back && !back.revealed) {
-            own.set(back.id, { ...back, revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at } });
+            own.set(back.id, { ...back, card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at } });
             touched.add(back.post);
           }
           continue;
@@ -203,7 +219,7 @@ export function createPlays(): Plays {
         const found = playOf(act);
         if (!found) continue;
         const early = found.faceDown ? springs.get(found.id) : undefined;
-        const play = early ? { ...found, revealed: { card: early.card, spring: early.spring, at: early.at } } : found;
+        const play = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at } } : found;
         const own = byPost.get(play.post) ?? new Map<Id, CardPlay>();
         if (own.has(play.id)) continue;
         own.set(play.id, play);

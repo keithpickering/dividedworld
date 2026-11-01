@@ -141,6 +141,8 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     await target.know([act.character]);
     if (accountNow.current !== account) return;
     target.plays.add([act]);
+    /* The setter's own card under their new back, without waiting on the live broadcast. */
+    if (act.kind === 'set') target.plays.setFaces(await api.myFaceDown([act.id]).catch(() => ({})));
     await player.refresh();
     if (accountNow.current !== account) return;
     onPlayed();

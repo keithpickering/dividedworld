@@ -31,7 +31,7 @@ import { Callout, useCallout } from './Callout.tsx';
 import { Lens, useLensFor, useLensHost, useLensStore, useResolvedView } from './Lens.tsx';
 import { GhostMark } from './PlayActions.tsx';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
-import { CARD_BACK, inPlayOrder, usePlays, type Plays } from './plays.ts';
+import { inPlayOrder, isBack, shownPlays, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 import './marks.css';
 
@@ -78,7 +78,7 @@ interface MarkProps {
 
 const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf }: MarkProps) {
   const { instance, ui } = useKayfa();
-  const back = kind === CARD_BACK;
+  const back = isBack(kind);
   /* A card back that sprang shows the card it was, in its place: no mark moves (the card mechanic's design, section 4). */
   const revealed = back ? plays.find((p) => p.revealed)?.revealed?.card : undefined;
   const shownKind = revealed ?? kind;
@@ -201,12 +201,15 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, co
     watch.observe(el);
     return () => watch.disconnect();
   }, []);
-  const byKind = useKindPlays(here.billed);
+  /* A card back whose time has passed with nothing springing it is gone, as the server drops it. */
+  const { instance } = useKayfa();
+  const billed = useMemo(() => shownPlays(here.billed, instance.settings.setLasts), [here.billed, instance.settings.setLasts]);
+  const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);
   latest.current = onOpen;
   const press = useCallback<Open>((kind, opener) => latest.current(kind, opener), []);
-  const kinds = kindsOf(here.billed);
+  const kinds = kindsOf(billed);
   const room = narrow ? MARKS_NARROW : MARKS_WIDE;
   const shown = kinds.length > room ? kinds.slice(0, room) : kinds;
   const hidden = kinds.slice(shown.length);

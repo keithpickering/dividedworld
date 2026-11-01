@@ -6,7 +6,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
-import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, inPlayOrder, playOf } from './plays.ts';
+import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, inPlayOrder, isBack, playOf, shownPlays } from './plays.ts';
 import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -278,7 +278,7 @@ describe('card backs, springs and catches', () => {
     plays.setBilling('p1', ['s1', 'k1']);
     plays.add([base('sp', 'spring', { card: 'snare', trigger: 'cast', outcome: { do: 'payout' }, set: 's1', by: 'k2', caught: 'k2' })]);
     const got = plays.get('p1');
-    expect(got.billed.map((p) => [p.id, p.card, p.revealed?.card])).toEqual([['s1', CARD_BACK, 'snare'], ['k1', 'whoops', undefined]]);
+    expect(got.billed.map((p) => [p.id, p.card, p.revealed?.card])).toEqual([['s1', `${CARD_BACK}:sp`, 'snare'], ['k1', 'whoops', undefined]]);
     expect(got.billed[0]!.revealed?.spring).toBe('sp');
   });
 
@@ -299,5 +299,23 @@ describe('card backs, springs and catches', () => {
     plays.add([base('s1', 'set', {})]);
     plays.setFaces({ s1: 'bluffy' });
     expect(plays.get('p1').faces).toEqual({ s1: 'bluffy' });
+  });
+});
+
+describe('a back that sprang, and a new back set on the same post', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const base = (id: string, kind: Act['kind'], payload: Record<string, unknown>): Act =>
+    ({ id, kind, character: 'c1', thread: 't', targetActId: 'p1', seq: null, createdAt: at, payload, currentPayload: payload, editedAt: null, shownEditedAt: null });
+  test('are two kinds: the sprung back its own, so the live one is never drawn or named as the card that sprang', () => {
+    const plays = createPlays();
+    plays.add([base('s1', 'set', {}), base('sp', 'spring', { card: 'snare', trigger: 'cast', outcome: { do: 'nullify' }, set: 's1' }), base('s2', 'set', {})]);
+    const kinds = [...new Set(plays.get('p1').billed.map((p) => p.card))];
+    expect(kinds).toHaveLength(2);
+    expect(kinds.every((k) => isBack(k))).toBe(true);
+    expect(plays.get('p1').billed.find((p) => p.id === 's2')!.card).toBe(CARD_BACK);
+  });
+  test('a back whose time has passed with nothing springing it is no longer shown', () => {
+    const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: '2020-01-01T00:00:00.000Z' }, { ...playOf(base('s2', 'set', {}))!, playedAt: new Date().toISOString() }];
+    expect(shownPlays(backs, { unit: 'day', count: 7 }).map((p) => p.id)).toEqual(['s2']);
   });
 });
