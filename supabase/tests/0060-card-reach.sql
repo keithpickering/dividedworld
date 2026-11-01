@@ -241,7 +241,12 @@ begin
   -- An ended play, written as an old one would be: it is not live, so it is not read.
   ended := tests.act(pipe, 'card', t, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', zed, 'ends', now() - interval '1 hour'), p, now() - interval '8 days');
   insert into play_reach (play, reach, character, ends_at) values (ended, 'character', zed, now() - interval '1 hour');
+  -- Read as the Acts are: by a signed-in player, never by a visitor with no session.
   perform tests.become_anon();
+  if pg_temp.refusal(format('select * from effects_above(%L::uuid[], %L, %L)', array[hoo], t, general)) is null then raise exception 'a visitor reads no Acts through effects_above'; end if;
+  if pg_temp.refusal('select * from play_reach') is null then raise exception 'a visitor reads no play_reach'; end if;
+  perform tests.unbecome();
+  perform tests.become(cy);
   got := (select jsonb_agg(to_jsonb(e) order by e.reach) from effects_above(array[hoo, zed, hoo2], t, general) e);
   perform tests.unbecome();
   -- General still carries the board card an earlier block played.
@@ -287,12 +292,39 @@ begin
   if why is distinct from 'card "seedling" is set face down, and a Set lands only on a post' then raise exception 'a Set lands on a post alone, said %', why; end if;
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["room"]}]}')$s$);
   if why is distinct from 'card "seedling" reaches ["room"]; a card reaches a list of post, character, thread or board, each once' then raise exception 'a reach is one of four, said %', why; end if;
+  -- Quoted as JSON.stringify quotes it, so the seed and instanceProblems say the same words.
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["post", "post"]}]}')$s$);
+  if why is distinct from 'card "seedling" reaches ["post","post"]; a card reaches a list of post, character, thread or board, each once' then raise exception 'a reach is listed once, said %', why; end if;
+  -- A time up that is no span is named, never a cast error.
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "reaches": ["thread"], "lasts": {"unit": "day", "count": 1.5}}]}')$s$);
+  if why !~ '^card "seedling" lasts \{"unit": "day", "count": 1.5\}; it must be a span' then raise exception 'a malformed time up is named, said %', why; end if;
   -- One that holds is written with its reaches.
   perform seed_instance('{"settings": {}, "classes": [], "reactions": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 7}}]}');
   if (select reaches from card_kinds where key = 'seedling') is distinct from '{character}' then raise exception 'the seed writes a card''s reaches'; end if;
   -- reachRarity and reachLasts are held to their shapes.
   if pg_temp.refusal($s$update settings set value = '{"character": "uncommon"}' where key = 'reachRarity'$s$) is null then raise exception 'reachRarity names all three reaches'; end if;
   if pg_temp.refusal($s$update settings set value = '{"character": {"unit": "day", "count": 7}, "thread": {"unit": "hour", "count": 1}, "board": {"unit": "day", "count": 1}}' where key = 'reachLasts'$s$) is null then raise exception 'reachLasts gives each a span'; end if;
+end $$;
+
+-- ---- A play beyond a post is not the post's: not in its author's log, and not a state its author saves ----
+do $$
+declare
+  ann uuid := tests.account('reach-log'); bob uuid := tests.account('reach-log-b');
+  pipe uuid := tests.character(ann, 'Log Pipe'); hoo uuid := tests.character(bob, 'Log Hoo');
+  t uuid := tests.thread('Log'); p uuid; pl jsonb;
+begin
+  perform pg_temp.cards();
+  p := tests.post(hoo, t, 'Opener.');
+  perform pg_temp.hand(ann, 'marquee', 'glint', 'sweetie');
+  perform play_card(ann, 'marquee', pipe, t, '{}', 0, '', 'thread');
+  pl := play_card(ann, 'glint', pipe, hoo, '{}', 0, '', 'character', p);
+  perform play_card(ann, 'sweetie', pipe, p, '{}', 0, '');
+  perform tests.become(bob);
+  if (select count(*) from my_posts_played_on where post = p) is distinct from 1::bigint then raise exception 'the opener''s author''s log lists the post''s own play alone'; end if;
+  perform tests.unbecome();
+  if pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', bob, hoo, pl ->> 'id', '{}')) is distinct from 'there is no such card on a post' then
+    raise exception 'a play beyond a post keeps no state its post''s author saves';
+  end if;
 end $$;
 
 -- ---- An instance from before 0055: every card is a post card, and every play reads as one ----

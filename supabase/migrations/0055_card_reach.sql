@@ -66,6 +66,21 @@ language sql immutable set search_path = public, pg_temp as $$
   select to_char(at at time zone 'UTC', 'YYYY-MM-DD HH24:MI') || ' UTC'
 $$;
 
+-- A value as JSON.stringify writes it, with no space after a comma or a colon, so a refusal reads the same from the seed as from
+-- instanceProblems. (A string holding ", " is shown without its space; a refusal's quote of a seed is all this is for.)
+create function compact_json(v jsonb) returns text
+language sql immutable set search_path = public, pg_temp as $$
+  select regexp_replace(v::text, '([,:]) ', '\1', 'g')
+$$;
+
+-- Whether a value is a span as span_interval reads one: a unit of day, week or month and a whole count from 1 to 1000.
+create function span_holds(v jsonb) returns boolean
+language sql immutable set search_path = public, pg_temp as $$
+  select coalesce(jsonb_typeof(v) = 'object' and v ->> 'unit' in ('day', 'week', 'month')
+    and case when jsonb_typeof(v -> 'count') = 'number'
+             then (v ->> 'count')::numeric between 1 and 1000 and (v ->> 'count')::numeric = trunc((v ->> 'count')::numeric) else false end, false)
+$$;
+
 -- What is wrong with a seed's cards' reaches, as instanceProblems (engine/rules/instance.ts's reachProblems) says it, or null: a
 -- list of the four reaches, each once; a Set on a post alone; a time up beyond a post; no reach beyond its rarity's (reachRarity);
 -- no time up past its reach's bound (reachLasts). The settings are read as the seed has just written them.
@@ -84,7 +99,7 @@ language sql stable set search_path = public, pg_temp as $$
     where s.ok and s.reaches ? r.reach
   )
   select string_agg(why, '; ' order by key, n) from (
-    select s.key, 0 as n, format('card "%s" reaches %s; a card reaches a list of post, character, thread or board, each once', s.key, s.reaches) as why
+    select s.key, 0 as n, format('card "%s" reaches %s; a card reaches a list of post, character, thread or board, each once', s.key, compact_json(s.reaches)) as why
     from shaped s where not s.ok
     union all
     select s.key, 1, format('card "%s" is set face down, and a Set lands only on a post', s.key)
@@ -101,7 +116,8 @@ language sql stable set search_path = public, pg_temp as $$
     select b.key, 11 + 2 * b.n, format('card "%s" lasts %s, longer than a %s effect may (reachLasts.%s, %s)', b.key, span_words(s.lasts), b.reach, b.reach, span_words(bound.span))
     from beyond b join shaped s on s.key = b.key
     cross join lateral (select setting('reachLasts') -> b.reach as span) bound
-    where s.lasts is not null and span_interval(s.lasts) > span_interval(bound.span)
+    -- A time up that is no span is card_kinds_problem's to name; it is read as an interval only once it is one.
+    where s.lasts is not null and case when span_holds(s.lasts) and span_holds(bound.span) then span_interval(s.lasts) > span_interval(bound.span) else false end
   ) p where why is not null
 $$;
 
@@ -167,11 +183,14 @@ end $$;
 create trigger play_reach_no_update before update or delete on play_reach for each row execute function play_reach_append_only();
 create trigger play_reach_no_truncate before truncate on play_reach for each statement execute function play_reach_append_only();
 
--- Public, as the plays are: a play's reach, its target and its end are on its Act already. Written only by play_card.
+-- Read as the Acts are, by a signed-in player (acts, 0001): a play's reach, its target and its end are on its Act already. Written only
+-- by play_card. Its truncate guard fires on a restore too, as the ledgers' do.
 alter table play_reach enable row level security;
 revoke all on play_reach from public, anon, authenticated;
-grant select on play_reach to anon, authenticated;
-create policy public_read on play_reach for select to anon, authenticated using (true);
+grant select on play_reach to authenticated;
+create policy read on play_reach for select to authenticated using (true);
+alter table play_reach enable always trigger play_reach_no_update;
+alter table play_reach enable always trigger play_reach_no_truncate;
 
 -- ------------------------------------------------------------------------------ play_card ----
 
@@ -397,7 +416,7 @@ grant execute on function card_target_reach(text, uuid, uuid) to authenticated;
 -- --------------------------------------------------------------------------- effects_above ----
 
 -- The live plays above a page's posts: on its distinct authors, its thread and its board, each with its Act as acts_public shows it,
--- in one query, public. At most 200 characters at once (the client asks in chunks, as cardsOnMany does), so its cost is one probe of
+-- in one query, to a signed-in player, as the Acts are read (acts_public, 0001). At most 200 characters at once (the client asks in chunks, as cardsOnMany does), so its cost is one probe of
 -- play_reach_character per character asked, one of play_reach_thread and one of play_reach_board, each reading only live rows.
 create function effects_above(characters uuid[], thread uuid, board uuid)
 returns table (play uuid, reach text, target uuid, ends_at timestamptz, act jsonb)
@@ -417,8 +436,113 @@ begin
     ) r join acts_public a on a.id = r.play
     order by a.created_at, a.id;
 end $$;
-revoke execute on function effects_above(uuid[], uuid, uuid) from public;
-grant execute on function effects_above(uuid[], uuid, uuid) to anon, authenticated;
+revoke execute on function effects_above(uuid[], uuid, uuid) from public, anon, authenticated;
+grant execute on function effects_above(uuid[], uuid, uuid) to authenticated;
+
+-- ------------------------------------------------------------- the readers of a post's plays ----
+
+-- A play beyond a post that sits on a post is not that post's play. spring_traps (0054), with a strike's stack counted from the
+-- struck post's own plays alone; everything else as 0054 wrote it.
+create or replace function spring_traps(trigger text, post uuid, by_act uuid, quadrant text default null, incoming_rarity text default null,
+                             caster uuid default null, price integer default 0) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  fd face_down%rowtype;
+  kind_of card_kinds%rowtype;
+  struck card_kinds%rowtype;
+  setter_character uuid;
+  springs boolean;
+  outcome text;
+  sprung uuid;
+  struck_play uuid;
+  layer integer;
+  up integer;
+begin
+  select f.* into fd from face_down f
+  where f.post = spring_traps.post and f.ends_at > now()
+  order by f.round desc limit 1 for update;
+  if fd.play is null then return null; end if;
+  select * into kind_of from card_kinds k where k.key = fd.card;
+  -- After the lock, so a spring that landed while this waited is seen.
+  if exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = fd.play::text) then return null; end if;
+  springs := kind_of.trap #>> '{trigger,on}' is not distinct from trigger
+    and (trigger <> 'reaction' or kind_of.trap #>> '{trigger,quadrant}' is not distinct from quadrant)
+    and (trigger <> 'cast' or coalesce(rarity_rank(incoming_rarity) <= rarity_rank(kind_of.rarity), false));
+  if not springs then return null; end if;
+  outcome := kind_of.trap #>> '{outcome,do}';
+  select a.character into setter_character from acts a where a.id = fd.play;
+  -- A setter's character that can no longer act (retired, until an admin restores it) springs nothing: its trap stays set until its
+  -- time, and the write that met it lands as if no trap were there (acts_well_formed would refuse the spring, and with it the write).
+  if exists (select 1 from characters c where c.id = setter_character and (c.retired_at is not null or c.debuted_at is null)) then return null; end if;
+  if outcome = 'strike' then
+    select * into struck from card_kinds k where k.key = kind_of.trap #>> '{outcome,card}';
+    -- A strike that cannot land leaves the trap set: its target already carries its stack of the card, counted as play_card counts
+    -- it (the plays still up), with the layer going on from the last one taken.
+    select count(*) filter (where k.payload ->> 'ends' is null or (k.payload ->> 'ends')::timestamptz > now()),
+           greatest(coalesce(max((k.payload ->> 'layer')::integer), 0), count(*)) + 1
+      into up, layer
+    from acts k where k.kind = 'card' and k.target_act_id = by_act and k.payload ->> 'card' = struck.key and not (k.payload ? 'caught')
+      and coalesce(k.payload ->> 'reach', 'post') = 'post';
+    if struck.key is null or by_act is null or up >= struck.stack
+       or (select a.kind from acts a where a.id = by_act) is distinct from 'post' then return null; end if;
+  end if;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (setter_character, 'spring', fd.thread, fd.post, jsonb_strip_nulls(jsonb_build_object(
+    'card', fd.card, 'trigger', trigger, 'outcome', kind_of.trap -> 'outcome', 'set', fd.play::text, 'by', by_act::text,
+    'caught', case when trigger = 'cast' and outcome in ('nullify', 'payout') then by_act::text end))) returning id into sprung;
+  if outcome = 'payout' and coalesce(price, 0) > 0 and caster is not null then
+    -- Both wallets, in account order, so two players' casts on each other's traps cannot wait on each other.
+    insert into wallets (account) values (caster), (fd.account) on conflict (account) do nothing;
+    perform 1 from wallets w where w.account in (caster, fd.account) order by w.account for update;
+    perform wallet_move(fd.account, price, 'trap', null, sprung);
+  elsif outcome = 'strike' then
+    insert into acts (character, kind, thread, target_act_id, payload)
+    select setter_character, 'card', a.thread, by_act, jsonb_build_object('card', struck.key, 'layer', layer, 'message', '', 'spring', sprung::text,
+      'config', case when struck.seeded then fd.config - 'seed' else fd.config end)
+      || case when struck.seeded then jsonb_build_object('seed', floor(random() * 2147483648)::bigint) else '{}'::jsonb end
+    from acts a where a.id = by_act returning id into struck_play;
+    -- The struck card's play goes out with the spring, so it reaches readers live as the spring does.
+    return act_projection(sprung) || jsonb_build_object('struck', act_projection(struck_play));
+  end if;
+  return act_projection(sprung);
+end $$;
+
+-- save_effect_state (0038), for a play on a post alone: a play beyond a post has no post author to save its state, and the post it
+-- sits on is not its target. Everything else as 0038 wrote it.
+create or replace function save_effect_state(who uuid, through uuid, on_play uuid, state jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare author uuid;
+begin
+  select t.character into author from acts k join acts t on t.id = k.target_act_id where k.id = on_play and k.kind = 'card'
+    and coalesce(k.payload ->> 'reach', 'post') = 'post';
+  -- The post's own player answers for the mask that wrote it, retired or not.
+  if not (author is not distinct from through
+          and exists (select 1 from characters c where c.id = through and c.owner = who and c.debuted_at is not null)) then
+    perform played_by(through, who);
+  end if;
+  if author is null then raise exception 'there is no such card on a post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if author <> through then raise exception 'only the post''s author saves what is on it' using hint = 'kayfabb.refusal', errcode = '42501'; end if;
+  -- Timed when written, after any save it waited on, so the newest saved_at is the state kept.
+  insert into effect_state as e (play, state, saved_by, saved_at) values (on_play, state, through, clock_timestamp())
+  on conflict on constraint effect_state_pkey do update set state = excluded.state, saved_by = excluded.saved_by, saved_at = clock_timestamp();
+  return (select jsonb_build_object('play', e.play, 'thread', (select thread from acts where id = on_play), 'state', e.state, 'saved_at', e.saved_at)
+          from effect_state e where e.play = on_play);
+end $$;
+
+-- my_posts_played_on (0043), with a play beyond a post left out: a character or thread play sits on a post, and the post's author's
+-- log would otherwise say it was played on their post ("The fiction may lie; the log never does"). Everything else, and the grants,
+-- as 0043 wrote them.
+create or replace view my_posts_played_on as
+  select k.id as play, k.target_act_id as post, k.created_at as at, e.saved_at
+  from acts k
+  join acts p on p.id = k.target_act_id
+  join characters c on c.id = p.character
+  join characters by_whom on by_whom.id = k.character
+  left join effect_state e on e.play = k.id
+  where k.kind = 'card' and c.owner = auth.uid() and by_whom.owner is distinct from auth.uid() and coalesce(k.payload ->> 'reach', 'post') = 'post';
+
+revoke all on my_posts_played_on from anon, public;
+grant select on my_posts_played_on to authenticated;
 
 -- ---------------------------------------------------------------------------- the seed ----
 
@@ -576,5 +700,5 @@ end $$;
 
 
 
-revoke execute on function reaches_hold(text[]), reach_list(text[]), span_words(jsonb), refusal_time(timestamptz), card_reach_problem(jsonb),
+revoke execute on function reaches_hold(text[]), reach_list(text[]), compact_json(jsonb), span_holds(jsonb), span_words(jsonb), refusal_time(timestamptz), card_reach_problem(jsonb),
   settings_reach_hold(), play_reach_append_only() from public, anon, authenticated;
