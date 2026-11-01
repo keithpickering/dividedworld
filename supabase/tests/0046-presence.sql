@@ -211,3 +211,39 @@ begin
   execute format('explain (format json) select count(*) from presence p where p.seen_at >= now() - interval %L', '5 minutes') into plan;
   if plan not like '%presence_seen%' then raise exception 'the index''s box reads by seen_at: %', plan; end if;
 end $$;
+
+-- The box's own read is served by its index whatever plan a pooled connection has cached: a thread's
+-- by presence_place and a board's by presence_board, even under a generic plan and with most rows
+-- online, where one statement for every kind of place can be planned only as a scan of everyone online.
+do $$
+declare
+  t uuid := tests.thread('Generic');
+  b uuid := (select board from threads where id = t);
+  viewer uuid := tests.account('here-generic');
+  who uuid;
+  before bigint;
+begin
+  for i in 1 .. 400 loop
+    who := tests.account('here-generic-' || i);
+    insert into presence (character, place_kind, place, board, place_since, online_since, seen_at)
+    select tests.character(who, format('Generic %s %s', i, j)), 'thread', gen_random_uuid(), gen_random_uuid(), now(), now(), now()
+    from generate_series(1, 6) j;
+  end loop;
+  analyze presence;
+  perform set_config('plan_cache_mode', 'force_generic_plan', true);
+  before := pg_stat_get_xact_numscans('presence_place'::regclass);
+  perform tests.become(viewer);
+  perform here('thread', t, null);
+  perform tests.unbecome();
+  if pg_stat_get_xact_numscans('presence_place'::regclass) = before then
+    raise exception 'a thread''s box does not read by (place, seen_at) under a generic plan';
+  end if;
+  before := pg_stat_get_xact_numscans('presence_board'::regclass);
+  perform tests.become(viewer);
+  perform here('board', b, null);
+  perform tests.unbecome();
+  if pg_stat_get_xact_numscans('presence_board'::regclass) = before then
+    raise exception 'a board''s box does not read by (board, seen_at) under a generic plan';
+  end if;
+  perform set_config('plan_cache_mode', 'auto', true);
+end $$;

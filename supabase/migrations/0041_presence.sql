@@ -93,6 +93,16 @@ begin
   return retired;
 end $$;
 
+-- The rows a box may list, with no window yet: a debuted, unretired mask with no presence_hidden row,
+-- so a mask hidden since its last poll drops at once, whatever its row says. A view, so each of here()'s
+-- reads is planned with its own condition on presence's indexes. No client reads it.
+create view presence_listed as
+  select c.id, c.name, p.place_kind, p.place, p.board, p.place_since, p.online_since, p.seen_at
+  from presence p join characters c on c.id = p.character
+  where c.debuted_at is not null and c.retired_at is null
+    and not exists (select 1 from presence_hidden h where h.character = p.character);
+revoke all on presence_listed from anon, authenticated;
+
 -- One poll: mark the mask the caller came through present at the place (unless it is hidden or
 -- retired), then answer the place's box. `through` is null for a player reading with no mask, who is
 -- listed nowhere and still sees the box.
@@ -129,19 +139,29 @@ begin
       place_kind = excluded.place_kind, place = excluded.place, board = excluded.board, seen_at = now();
   end if;
 
-  -- The box. A mask hidden since its last poll drops at once, whatever its row says.
-  with listed as (
-    select c.id, c.name, case when in_kind = 'index' then p.online_since else p.place_since end as since
-    from presence p join characters c on c.id = p.character
-    where p.seen_at >= now() - win
-      and c.debuted_at is not null and c.retired_at is null and c.owner is not null
-      and not exists (select 1 from presence_hidden h where h.character = p.character)
-      and case in_kind when 'thread' then p.place = in_place when 'board' then p.board = in_place else true end
-  )
-  select (select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name) order by f.since, f.id), '[]'::jsonb)
-          from (select l.id, l.name, l.since from listed l order by l.since, l.id limit cap) f),
-         (select count(*) from listed)
-    into shown, total;
+  -- The box, read by one statement per kind of place, each with its own plain condition: one statement
+  -- for every kind, planned once for a pooled connection, could only be served by seen_at, a scan of
+  -- everyone online for every thread's poll. The thread's reads by (place, seen_at), the board's by
+  -- (board, seen_at) and the index's by seen_at. Longest present first; the index, longest online first.
+  if in_kind = 'thread' then
+    select (select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name) order by f.place_since, f.id), '[]'::jsonb)
+            from (select l.id, l.name, l.place_since from presence_listed l
+                  where l.place = in_place and l.seen_at >= now() - win order by l.place_since, l.id limit cap) f),
+           (select count(*) from presence_listed l where l.place = in_place and l.seen_at >= now() - win)
+      into shown, total;
+  elsif in_kind = 'board' then
+    select (select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name) order by f.place_since, f.id), '[]'::jsonb)
+            from (select l.id, l.name, l.place_since from presence_listed l
+                  where l.board = in_place and l.seen_at >= now() - win order by l.place_since, l.id limit cap) f),
+           (select count(*) from presence_listed l where l.board = in_place and l.seen_at >= now() - win)
+      into shown, total;
+  else
+    select (select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name) order by f.online_since, f.id), '[]'::jsonb)
+            from (select l.id, l.name, l.online_since from presence_listed l
+                  where l.seen_at >= now() - win order by l.online_since, l.id limit cap) f),
+           (select count(*) from presence_listed l where l.seen_at >= now() - win)
+      into shown, total;
+  end if;
   return jsonb_build_object('names', shown, 'others', greatest(0, total - jsonb_array_length(shown)));
 end $$;
 
