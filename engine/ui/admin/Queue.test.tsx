@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { seedMoves } from '../board/move-world.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { QueueScreen } from './Queue.tsx';
@@ -152,6 +152,17 @@ describe('who may see it', () => {
     expect(await screen.findByText('The admin queue is for admins.')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: /^Waiting to land/u })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Hold/u })).toBeNull();
+  });
+
+  test('a player\'s page never calls adminQueue, and shows no error, only the message for admins', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'player' });
+    const asked = vi.spyOn(fake, 'adminQueue');
+    renderIn(fake, <QueueScreen now={fake.clock.now()} />, { path: '/admin/queue' });
+    expect(await screen.findByText('The admin queue is for admins.')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(asked).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 

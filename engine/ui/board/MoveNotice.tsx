@@ -131,7 +131,7 @@ function MoveDetail({ loaded, onClose, returnFocusTo }: { readonly loaded: Loade
           </div>
         )}
         {progress?.error && <p>Its progress could not be counted just now.</p>}
-        {notice.expiresAt && <p>If that does not happen, it ends on {shortDate(notice.expiresAt)}.</p>}
+        {notice.expiresAt && <p>{demand === null ? 'It' : 'If that does not happen, it'} ends on {shortDate(notice.expiresAt)}.</p>}
         <p>An admin can reverse it at any time.</p>
         <p className="kb-move-plain">This panel is plain. The announcement on the board is in character and may bluff.</p>
       </div>

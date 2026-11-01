@@ -187,6 +187,14 @@ describe('the ADMIN tab', () => {
     expect(tabs()).toEqual(['Back to the board', 'Vending Machine', 'My characters', 'Rankings', 'My log', 'Settings', 'Admin']);
   });
 
+  test('the current Admin tab is scrolled into view once it arrives, since the admin flag is asked for after the first scroll', async () => {
+    const seen: Element[] = [];
+    Element.prototype.scrollIntoView = function scrollIntoView(this: Element) { seen.push(this); };
+    renderInWorld(<MenuBar />, { path: '/admin/queue', seed: (fake) => fake.signInAs(fake.seed.account('boss', { admin: true })) });
+    const admin = await within(bar()).findByRole('link', { name: 'Admin' });
+    await waitFor(() => expect(seen).toContain(admin));
+  });
+
   test('is not there signed out, where the bar holds Back alone', async () => {
     renderInWorld(<MenuBar />, { path: '/sign-in' });
     await within(bar()).findByRole('link', { name: 'Back to the board' });

@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, test } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { testInstance, buildWorld, renderIn } from '../test-world.tsx';
@@ -71,7 +72,28 @@ describe('the Boss\'s notice on the board its move changed', () => {
   });
 });
 
+describe('the way-out segment\'s focus ring', () => {
+  test('uses the board\'s focus token, since it is drawn outside the dark tag on the board page (a glass-white ring there is about 1.2:1)', () => {
+    const css = readFileSync('engine/ui/board/move.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const rule = /\.kb-move-way:focus-visible\s*\{([^}]*)\}/u.exec(css)?.[1] ?? '';
+    expect(rule).toMatch(/outline:\s*\d+px solid var\(--kb-focus\)/u);
+    expect(rule).not.toMatch(/glass/u);
+  });
+});
+
 describe('the overlay that opens from the way out', () => {
+  test('a move with no demand says it asks nothing and then that it ends on its date, never "if that does not happen"', async () => {
+    const fake = buildWorld();
+    const w = seedMoves(fake, testInstance);
+    const plain = fake.seed.move('director', { board: w.general, name: 'Quiet Hall', at: fake.clock.now() - 1000, expiresAt: Date.UTC(2026, 10, 13, 12) });
+    renderIn(fake, <MoveNotice act={plain} />, { path: '/' });
+    await userEvent.click(await segment());
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('It asks nothing of the board.');
+    expect(dialog).toHaveTextContent(/It ends on Nov 13\./u);
+    expect(dialog).not.toHaveTextContent('If that does not happen');
+  });
+
   test('opens from the keyboard with Enter or Space, and names what was done, the demand in words, its progress, the expiry and the admin\'s power', async () => {
     const { w } = open();
     const way = await segment();

@@ -75,7 +75,7 @@ export function MenuBar() {
   useEffect(() => {
     const current = list.current?.querySelector('[aria-current="page"]');
     current?.scrollIntoView?.({ inline: 'nearest', block: 'nearest', behavior: motionReduced() ? 'auto' : 'smooth' });
-  }, [path, session.signedIn]);
+  }, [path, session.signedIn, admin]);
 
   return (
     <nav className="kb-glass-menu" aria-label="Menu">

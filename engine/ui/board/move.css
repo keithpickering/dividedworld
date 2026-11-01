@@ -76,7 +76,7 @@
 }
 
 .kb-move-way:focus-visible {
-  outline: 3px solid var(--kb-glass-text-hi);
+  outline: 3px solid var(--kb-focus);
   outline-offset: 2px;
 }
 
