@@ -352,10 +352,14 @@ begin
   if mine ->> 'reach' is distinct from 'character' or mine ? 'target' then raise exception 'a character play is read with its reach and no target: %', mine; end if;
   -- The post the character play sits on is not its target, so nothing brings it in.
   if exists (select 1 from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = p::text) then raise exception 'the post a character play sits on is not its target: %', got -> 'acts'; end if;
+  -- The estimate reads the window after the last settlement; an earlier file's committed settlement can put that window past now, and
+  -- then there is nothing of this play's to estimate. Where the window holds it, it is read the same.
   got := estimate_input(ann, now() + interval '1 minute');
-  mine := (select e from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = pl ->> 'id');
-  if mine ->> 'reach' is distinct from 'character' or mine ? 'target' then raise exception 'the estimate reads it the same: %', mine; end if;
-  if exists (select 1 from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = p::text) then raise exception 'the estimate reads no post a character play sits on: %', got -> 'acts'; end if;
+  if got is not null and (got ->> 'windowStart')::timestamptz <= now() then
+    mine := (select e from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = pl ->> 'id');
+    if mine ->> 'reach' is distinct from 'character' or mine ? 'target' then raise exception 'the estimate reads it the same: %', mine; end if;
+    if exists (select 1 from jsonb_array_elements(got -> 'acts') e where e ->> 'id' = p::text) then raise exception 'the estimate reads no post a character play sits on: %', got -> 'acts'; end if;
+  end if;
   -- A play beyond a post from before the window, on the same post: a reaction to the post in the window does not bring it in as an
   -- earlier card there, since it is no card on that post.
   old := tests.act(pipe, 'card', t, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', hoo, 'ends', now() + interval '1 day'), p, now() - interval '30 hours');
