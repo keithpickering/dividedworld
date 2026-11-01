@@ -61,6 +61,27 @@ const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
 /** The most ids one read by id names, so its address stays short whoever asks (a page of the log can name a thousand Acts). */
 const ID_CHUNK = 100;
 const chunks = <T,>(xs: readonly T[]): T[][] => Array.from({ length: Math.ceil(xs.length / ID_CHUNK) }, (_, i) => xs.slice(i * ID_CHUNK, (i + 1) * ID_CHUNK));
+/**
+ * A read by many ids, one request per chunk of them, run together. Every list a read by id takes can grow on a busy
+ * instance (a page's plays, a gap of missed posts), so none goes into one address (#104; tools/check-id-reads.mjs holds
+ * it). One chunk's failure fails the whole read: a missing chunk would read as no reactions, or a reader held again.
+ */
+const byChunks = async <I, T>(ids: readonly I[], read: (part: I[]) => Promise<T[]>): Promise<T[]> => (await Promise.all(chunks([...new Set(ids)]).map(read))).flat();
+/** Code-point order, never a locale's: a timestamp PostgREST writes (one offset, trailing zeros trimmed) and a lowercase uuid sort as the server sorts them. */
+const byCodePoint = (a: unknown, b: unknown): number => {
+  const x = String(a ?? '');
+  const y = String(b ?? '');
+  return x < y ? -1 : x > y ? 1 : 0;
+};
+/**
+ * The rows of an ordered read asked of each chunk, as one query would answer them: sorted by `column` ascending, then
+ * by `key` (the row's id), so ties fall the same way on every screen, and cut to `limit`. Each chunk was asked for the
+ * whole limit, since one chunk can hold every one of the top rows.
+ */
+const merged = <R extends Record<string, unknown>>(rows: readonly R[], column: keyof R, key: keyof R, limit?: number): R[] => {
+  const out = [...rows].sort((a, b) => byCodePoint(a[column], b[column]) || byCodePoint(a[key], b[key]));
+  return limit === undefined ? out : out.slice(0, limit);
+};
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /* ------------------------------------------------------------------- row mappers ---- */
@@ -346,8 +367,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
     if (ids.length === 0) return [];
     const [cs, ps] = await Promise.all([
-      list(() => client.from('characters_public').select('id,name,joined').in('id', [...ids])),
-      list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style').in('character', [...ids])),
+      byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined').in('id', part))),
+      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style').in('character', part))),
     ]);
     const profile = new Map(ps.map((p) => [p['character'] as string, p]));
     const byId = new Map(cs.map((c) => [c['id'] as string, c]));
@@ -535,8 +556,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async actsById(ids) {
       const wanted = [...new Set(ids)].filter(idOk);
       if (wanted.length === 0) return [];
-      const rows = await Promise.all(chunks(wanted).map((part) => list(() => client.from('acts_public').select('*').in('id', part))));
-      return rows.flat().map(toAct);
+      return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('id', part)))).map(toAct);
     },
     async history(post) {
       if (!idOk(post)) return [];
@@ -551,8 +571,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async spunFromMany(actIds, limit) {
       const wanted = [...new Set(actIds)].filter(idOk);
       if (wanted.length === 0) return [];
-      const rows = await list(() => client.from('thread_list').select('*').in('origin_act_id', wanted).order('created_at', { ascending: true }).limit(rowLimit(limit)));
-      return rows.map(toThread);
+      const rows = await byChunks(wanted, (part) => list(() => client.from('thread_list').select('*').in('origin_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
+      return merged(rows, 'created_at', 'id', rowLimit(limit)).map(toThread);
     },
     async cardsOn(actId, limit) {
       if (!idOk(actId)) return [];
@@ -562,21 +582,21 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async cardsOnMany(actIds, limit) {
       const wanted = [...new Set(actIds)].filter(idOk);
       if (wanted.length === 0) return [];
-      const rows = await list(() => client.from('acts_public').select('*').eq('kind', 'card').in('target_act_id', wanted).order('created_at', { ascending: true }).limit(rowLimit(limit)));
-      return rows.map(toAct);
+      const rows = await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card').in('target_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
+      return merged(rows, 'created_at', 'id', rowLimit(limit)).map(toAct);
     },
     async effectStates(plays) {
       const wanted = [...new Set(plays)].filter(idOk);
       const out: Record<Id, EffectState> = {};
       if (wanted.length === 0) return out;
-      const rows = await Promise.all(chunks(wanted).map((part) => list(() => client.from('effect_state').select('play,state,saved_at').in('play', part))));
-      for (const r of rows.flat()) out[r['play']] = { state: r['state'], savedAt: r['saved_at'] };
+      const rows = await byChunks(wanted, (part) => list(() => client.from('effect_state').select('play,state,saved_at').in('play', part)));
+      for (const r of rows) out[r['play']] = { state: r['state'], savedAt: r['saved_at'] };
       return out;
     },
     async myReleases(plays) {
       const wanted = [...new Set(plays)].filter(idOk);
       if (wanted.length === 0) return [];
-      return (await list(() => client.from('effect_releases').select('play').in('play', wanted))).map((r): Id => r['play']);
+      return (await byChunks(wanted, (part) => list(() => client.from('effect_releases').select('play').in('play', part)))).map((r): Id => r['play']);
     },
     async releaseEffect(play) {
       const a = await rpcWrite(() => client.rpc('release_effect', { play }));
@@ -596,7 +616,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async characterStats(ids) {
       const out: Record<Id, { posts: number }> = Object.fromEntries(ids.map((id) => [id, { posts: 0 }]));
       if (ids.length === 0) return out;
-      for (const r of await list(() => client.from('character_post_counts').select('character,posts').in('character', [...ids]))) out[r['character']] = { posts: num(r['posts']) };
+      for (const r of await byChunks(ids, (part) => list(() => client.from('character_post_counts').select('character,posts').in('character', part)))) out[r['character']] = { posts: num(r['posts']) };
       return out;
     },
     async characterActs(id, kinds, page) {
@@ -615,7 +635,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async tallies(acts) {
       const out: Record<Id, Record<string, number>> = Object.fromEntries(acts.map((a) => [a, {}]));
       if (acts.length === 0) return out;
-      for (const r of await list(() => client.from('reaction_tallies').select('act,kind,count').in('act', [...acts]))) {
+      for (const r of await byChunks(acts, (part) => list(() => client.from('reaction_tallies').select('act,kind,count').in('act', part)))) {
         (out[r['act']] ??= {})[r['kind']] = num(r['count']);
       }
       return out as Readonly<Record<Id, Tally>>;
@@ -623,7 +643,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async viewCounts(threads) {
       const out: Record<Id, number> = Object.fromEntries(threads.map((t) => [t, 0]));
       if (threads.length === 0) return out;
-      for (const r of await list(() => client.from('thread_view_counts').select('thread,views').in('thread', [...threads]))) out[r['thread']] = num(r['views']);
+      for (const r of await byChunks(threads, (part) => list(() => client.from('thread_view_counts').select('thread,views').in('thread', part)))) out[r['thread']] = num(r['views']);
       return out;
     },
     async season() {
@@ -648,7 +668,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       /* Through current_standings, which reads the season standings_season() names on the server (the rule the
          profile's place and the standings page read too, written once in 0030_screens_reads.sql): a probe of the
          standings' primary key per character. A character with no row there stands at 0. */
-      for (const r of await list(() => client.from('current_standings').select('character,standing').in('character', [...wanted]))) out[r['character']] = num(r['standing']);
+      for (const r of await byChunks(wanted, (part) => list(() => client.from('current_standings').select('character,standing').in('character', part)))) out[r['character']] = num(r['standing']);
       return out;
     },
     async standingPlace(id): Promise<StandingPlace | null> {
@@ -665,13 +685,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async classReveals(chars) {
       if (chars.length === 0) return [];
-      const rows = await list(() => client.from('class_reveals').select('act,character,class,at,via,thread').in('character', [...chars]).order('at', { ascending: true }));
-      return rows.map((r): ClassReveal => ({ act: r['act'], character: r['character'], class: r['class'], at: r['at'], via: r['via'], thread: r['thread'] }));
+      const rows = await byChunks(chars, (part) => list(() => client.from('class_reveals').select('act,character,class,at,via,thread').in('character', part).order('at', { ascending: true })));
+      return merged(rows, 'at', 'act').map((r): ClassReveal => ({ act: r['act'], character: r['character'], class: r['class'], at: r['at'], via: r['via'], thread: r['thread'] }));
     },
     async turnsAnnounced(chars) {
       if (chars.length === 0) return [];
-      const rows = await list(() => client.from('turns_announced').select('act,character,at,was,since').in('character', [...chars]).order('at', { ascending: true }));
-      return rows.map((r): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null, since: r['since'] ?? null }));
+      const rows = await byChunks(chars, (part) => list(() => client.from('turns_announced').select('act,character,at,was,since').in('character', part).order('at', { ascending: true })));
+      return merged(rows, 'at', 'act').map((r): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null, since: r['since'] ?? null }));
     },
     async nextSettlementAt() {
       return str((await read(() => client.rpc('next_settlement_at'))).data);
@@ -686,7 +706,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async myReactions(acts) {
       if (acts.length === 0) return [];
-      const rows = await list(() => client.from('my_reactions').select('act,kind,character').in('act', [...acts]));
+      const rows = await byChunks(acts, (part) => list(() => client.from('my_reactions').select('act,kind,character').in('act', part)));
       return rows.map((r): MyReaction => ({ act: r['act'], kind: r['kind'], character: r['character'] }));
     },
     async myCards() {
@@ -695,7 +715,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async reading(threads) {
       const out: Record<Id, number> = {};
       if (threads.length === 0) return out;
-      for (const r of await list(() => client.from('reading').select('thread,furthest_seq').in('thread', [...threads]))) out[r['thread']] = num(r['furthest_seq']);
+      for (const r of await byChunks(threads, (part) => list(() => client.from('reading').select('thread,furthest_seq').in('thread', part)))) out[r['thread']] = num(r['furthest_seq']);
       return out;
     },
     async markRead(thread, seq, through) {
@@ -766,9 +786,15 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           character: r['character'], reason: r['reason'], amount: num(r['amount']),
         }));
         const ids = [...new Set(ledger.map((l) => l.settlement))];
-        const shares: ShareRow[] = (ids.length === 0 ? [] : await every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', ids)
+        /* Paged within each chunk of settlements, then merged in the read's own order. A settlement's rows all come from
+           one chunk, already in the server's order (its collation for the text keys), so the merge is a stable sort
+           by settlement alone, newest first, which keeps that order inside each settlement. The log files each share
+           under its line (engine/ui/data/log-page.ts), so no screen sees the order across settlements; the sort keeps
+           the read's promise of each source newest first, as one query answered it. */
+        const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', part)
           .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
-          .range(start, end)))
+          .range(start, end)));
+        const shares: ShareRow[] = [...shareRows].sort((a, b) => num(b['settlement']) - num(a['settlement']))
           .map((r) => ({ settlement: num(r['settlement']), character: r['character'], reason: r['reason'], act: r['act'], quadrant: r['quadrant'] ?? null, amount: num(r['amount']) }));
         return {
           ledger,
