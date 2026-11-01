@@ -58,7 +58,7 @@ const DATA_LAYER = /^web\/src\/data\//;
  */
 export const ALLOWED_READS = Object.freeze([
   // Public: what anyone could have watched.
-  'boards', 'boards_now', 'moves_log', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds',
+  'boards', 'boards_now', 'moves_log', 'staff_profile_now', 'threads', 'thread_list', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'settlements',
   'class_reveals', 'turns_announced', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',
   // A character's standing in the season the standings read, through standings_season() on the server. The
@@ -80,7 +80,7 @@ export const ALLOWED_READS = Object.freeze([
 export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string, count: string, why?: string }[]} */ ([]));
 
 /** The SQL functions a screen may call directly; every other write goes through the `act` function. */
-export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'forget_cards_met', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move']);
+export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'forget_cards_met', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'move_progress']);
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);

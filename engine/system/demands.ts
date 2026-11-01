@@ -33,6 +33,12 @@ export interface DemandKind {
   readonly uuids: readonly string[];
   /** The whole-number params: `count` is at least 1; `reactions` is a reaction threshold, at least the reaction cap plus one. */
   readonly numbers: Readonly<Record<string, 'count' | 'reactions'>>;
+  /** The thing it counts, in capitals, for the glass's short "WAY OUT: 7 OF 12 POSTERS": the singular for a count of one. */
+  readonly unit: { readonly one: string; readonly many: string };
+  /** What was done when it was met, in a few words after "undone:" in a moderation log: "12 posted". */
+  readonly met: (params: Readonly<Record<string, unknown>>) => string;
+  /** What the demand asks, as the end of "Needs ...": "12 different characters to post on this board". */
+  readonly needs: (params: Readonly<Record<string, unknown>>) => string;
   readonly template: (params: Readonly<Record<string, unknown>>, progress: Progress) => string;
 }
 
@@ -55,42 +61,72 @@ const so = (p: Progress): string => `${p.done} of ${p.of} so far`;
 export const DEMAND_KINDS: readonly DemandKind[] = [
   {
     key: 'postsOnBoard',
+    unit: { one: 'POST', many: 'POSTS' },
     params: { type: 'object', fields: { board: uuid, count: number } },
     uuids: ['board'],
     numbers: { count: 'count' },
+    met: (p) => `${num(p['count'])} posts made`,
+    needs: (p) => `${num(p['count'])} new posts on this board`,
     template: (p, g) => `Needs ${num(p['count'])} new posts on this board: ${so(g)}.`,
   },
   {
     key: 'distinctCharactersOnBoard',
+    unit: { one: 'POSTER', many: 'POSTERS' },
     params: { type: 'object', fields: { board: uuid, count: number } },
     uuids: ['board'],
     numbers: { count: 'count' },
+    met: (p) => `${num(p['count'])} posted`,
+    needs: (p) => `${num(p['count'])} different characters to post on this board`,
     template: (p, g) => `Needs ${num(p['count'])} different characters to post on this board: ${so(g)}.`,
   },
   {
     key: 'quadrantOnBoard',
+    unit: { one: 'REACTION', many: 'REACTIONS' },
     params: { type: 'object', fields: { board: uuid, quadrant: { type: 'enum', values: QUADRANTS }, count: number } },
     uuids: ['board'],
     numbers: { count: 'reactions' },
+    met: (p) => `${num(p['count'])} reactions`,
+    needs: (p) => `${num(p['count'])} ${QUADRANT_WORDS[String(p['quadrant'])] ?? 'matching'} reactions on new posts on this board`,
     template: (p, g) =>
       `Needs ${num(p['count'])} ${QUADRANT_WORDS[String(p['quadrant'])] ?? 'matching'} reactions on new posts on this board: ${so(g)}.`,
   },
   {
     key: 'characterPostsInThread',
+    unit: { one: 'POST', many: 'POSTS' },
     params: { type: 'object', fields: { character: uuid, thread: uuid } },
     uuids: ['character', 'thread'],
     numbers: {},
+    met: () => 'it posted',
+    needs: () => 'one named character to post in one named thread',
     template: (_p, g) => `Needs one named character to post in one named thread: ${so(g)}.`,
   },
   {
     key: 'crossQuote',
+    unit: { one: 'QUOTE', many: 'QUOTES' },
     params: { type: 'object', fields: { a: uuid, b: uuid, reactions: number } },
     uuids: ['a', 'b'],
     numbers: { reactions: 'reactions' },
+    met: () => 'they quoted each other',
+    needs: (p) => `two named characters to quote each other, each reply drawing ${num(p['reactions'])} reactions`,
     template: (p, g) =>
       `Needs two named characters to quote each other, each reply drawing ${num(p['reactions'])} reactions: ${so(g)}.`,
   },
 ];
+
+/**
+ * A demand in plain words with no count of progress, for a move that has not landed (the admin queue): "Needs 8 different characters
+ * to post on this board." A key outside the whitelist is said so, plainly, and never guessed at.
+ */
+export function demandAsk(demand: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> }): string {
+  const kind = demandKind(demand.kind);
+  return kind ? `Needs ${kind.needs(demand.params)}.` : 'Needs something The System does not have a plain word for.';
+}
+
+/** A demand in plain words with the progress made, for a move in force: "Needs 12 different characters to post on this board: 7 of 12 so far." */
+export function demandWords(demand: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> }, progress: Progress): string {
+  const kind = demandKind(demand.kind);
+  return kind ? kind.template(demand.params, progress) : demandAsk(demand);
+}
 
 export function demandKind(key: string): DemandKind | undefined {
   return DEMAND_KINDS.find((k) => k.key === key);

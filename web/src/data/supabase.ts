@@ -31,7 +31,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/data/log-page.ts';
+import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
+import { MOVES_LOG_PAGE } from '../../../engine/ui/data/api.ts';
 import type {
+  AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine,
   EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
@@ -142,13 +145,40 @@ function toNewThread(t: Row, first: Act): ThreadSummary {
 }
 
 function toBoard(r: Row): Board {
-  return { id: r['id'], slug: r['slug'], name: r['name'], description: r['description'] ?? '', isSystem: r['is_system'] === true };
+  return { id: r['id'], slug: r['slug'], name: r['name'], description: r['description'] ?? '', isSystem: r['is_system'] === true, moveAct: r['move_act'] ?? null };
 }
 
 function toFrame(v: unknown): Frame | null {
   if (!v || typeof v !== 'object') return null;
   const f = v as Row;
   return [f['x'], f['y'], f['w'], f['h']].every((n) => typeof n === 'number' && Number.isFinite(n)) ? { x: f['x'], y: f['y'], w: f['w'], h: f['h'] } : null;
+}
+
+const orNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+const params = (v: unknown): Readonly<Record<string, unknown>> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+
+function toQueued(r: Row): QueuedMove {
+  return {
+    id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
+    why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
+    failedAt: orNull(r['failedAt']), failure: orNull(r['failure']),
+  };
+}
+
+function toInForce(r: Row): MoveInForce {
+  return {
+    act: r['act'], id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
+    demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: String(r['landedAt'] ?? ''), expiresAt: orNull(r['expiresAt']), progress: toProgress(r['progress']),
+  };
+}
+
+function toEnded(r: Row): MoveEnded {
+  const how = r['how'];
+  return {
+    how: how === 'met' || how === 'expired' || how === 'reversed' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
+    id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
+    demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']),
+  };
 }
 
 function toMyCharacter(r: Row): MyCharacter {
@@ -340,12 +370,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     portraitFrame: toFrame(p?.['portrait_frame']),
     pipStyle: p?.['pip_style'] ?? 'default',
     joined: c['joined'] ?? '',
+    ...(typeof c['staff'] === 'string' ? { staff: c['staff'], staffKind: c['staff_kind'] === 'bot' ? ('bot' as const) : ('boss' as const) } : {}),
   });
 
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
     if (ids.length === 0) return [];
     const [cs, ps] = await Promise.all([
-      list(() => client.from('characters_public').select('id,name,joined').in('id', [...ids])),
+      list(() => client.from('characters_public').select('id,name,joined,staff,staff_kind').in('id', [...ids])),
       list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style').in('character', [...ids])),
     ]);
     const profile = new Map(ps.map((p) => [p['character'] as string, p]));
@@ -360,11 +391,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   async function profileCharacter(p: Row): Promise<Character> {
     let found: Row | undefined;
     try {
-      found = (await list(() => client.from('characters_public').select('id,name,joined').eq('id', p['character']).limit(1)))[0];
+      found = (await list(() => client.from('characters_public').select('id,name,joined,staff,staff_kind').eq('id', p['character']).limit(1)))[0];
     } catch {
       found = undefined;
     }
-    return toCharacter({ id: p['character'], name: found?.['name'] ?? '', joined: found?.['joined'] ?? '' }, p);
+    return toCharacter({ id: p['character'], name: found?.['name'] ?? '', joined: found?.['joined'] ?? '', staff: found?.['staff'], staff_kind: found?.['staff_kind'] }, p);
   }
 
   /* -------------------------------------------------------------------- live ---- */
@@ -493,7 +524,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
     async boards() {
       const [bs, counted] = await Promise.all([
-        list(() => client.from('boards_now').select('id,slug,name,description,is_system').order('created_at', { ascending: true })),
+        list(() => client.from('boards_now').select('id,slug,name,description,is_system,move_act').order('created_at', { ascending: true })),
         list(() => client.from('board_counts').select('board,threads')),
       ]);
       const threadCounts = new Map(counted.map((c) => [c['board'] as string, num(c['threads'])]));
@@ -506,8 +537,66 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       );
     },
     async board(slugOrId) {
-      const rows = await list(() => client.from('boards_now').select('id,slug,name,description,is_system').eq(idOk(slugOrId) ? 'id' : 'slug', slugOrId).limit(1));
+      const rows = await list(() => client.from('boards_now').select('id,slug,name,description,is_system,move_act').eq(idOk(slugOrId) ? 'id' : 'slug', slugOrId).limit(1));
       return rows[0] ? toBoard(rows[0]) : null;
+    },
+    async boardNames() {
+      const [now, own] = await Promise.all([list(() => client.from('boards_now').select('id,slug,name')), list(() => client.from('boards').select('id,name'))]);
+      const was = new Map(own.map((b) => [b['id'] as string, String(b['name'])]));
+      return now.map((b): BoardName => ({ id: b['id'], slug: b['slug'], name: b['name'], was: was.get(b['id']) ?? b['name'] }));
+    },
+    async moveNotice(id) {
+      if (!idOk(id)) return null;
+      const a = (await list(() => client.from('acts_public').select('*').eq('id', id).eq('kind', 'move').limit(1)))[0];
+      if (!a) return null;
+      const [counts, progress] = await Promise.all([
+        list(() => client.from('reaction_tallies').select('kind,count').eq('act', id)),
+        read(() => client.rpc('move_progress', { move_act: id })).then((r) => r.data, () => null),
+      ]);
+      const tally: Record<string, number> = {};
+      for (const r of counts) tally[r['kind']] = num(r['count']);
+      return buildMoveNotice(toAct(a), tally, progress);
+    },
+    async movesLog(staff, before): Promise<MovesLog> {
+      /* Newest first by (at, id), a page and one more row to know whether older ones remain; the keyset is the last row's, so a page turn reads a page. */
+      let q = client.from('moves_log').select('id,kind,params,demand,expires_at,thread,at,ended_why,ended_by,ended_at').eq('staff', staff);
+      if (before && idOk(before.act)) q = q.or(`at.lt.${before.at},and(at.eq.${before.at},id.lt.${before.act})`);
+      const rows = await list(() => q.order('at', { ascending: false }).order('id', { ascending: false }).limit(MOVES_LOG_PAGE + 1));
+      const page = rows.slice(0, MOVES_LOG_PAGE);
+      const last = page.at(-1);
+      return {
+        rows: page.map((r): MoveLogRow => ({
+          act: r['id'], kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']), expiresAt: orNull(r['expires_at']), at: r['at'], thread: r['thread'],
+          end: r['ended_why'] === 'met' || r['ended_why'] === 'expired' || r['ended_why'] === 'reversed'
+            ? { why: r['ended_why'], by: String(r['ended_by'] ?? ''), at: String(r['ended_at'] ?? '') }
+            : null,
+        })),
+        older: rows.length > MOVES_LOG_PAGE && last ? { at: last['at'], act: last['id'] } : null,
+      };
+    },
+    async staffProfile(staff): Promise<StaffProfile | null> {
+      const r = (await list(() => client.from('staff_profile_now').select('staff,at,interests,favorites,mood,signature').eq('staff', staff).limit(1)))[0];
+      if (!r) return null;
+      const texts = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+      return { staff: r['staff'], at: r['at'], interests: texts(r['interests']), favorites: texts(r['favorites']), mood: String(r['mood'] ?? ''), signature: String(r['signature'] ?? '') };
+    },
+    async adminQueue(): Promise<AdminQueue> {
+      const v = (await read(() => client.rpc('admin_queue'))).data;
+      const q = v && typeof v === 'object' && !Array.isArray(v) ? (v as Row) : {};
+      const rows = (x: unknown): Row[] => (Array.isArray(x) ? (x as Row[]) : []);
+      const more = (q['more'] && typeof q['more'] === 'object' ? q['more'] : {}) as Row;
+      return {
+        cap: num(q['cap']), waiting: rows(q['waiting']).map(toQueued), inForce: rows(q['inForce']).map(toInForce), ended: rows(q['ended']).map(toEnded),
+        more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, ended: more['ended'] === true },
+      };
+    },
+    async holdMove(id) {
+      const a = await rpcWrite(() => client.rpc('hold_move', { id }));
+      return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? '') } } : a;
+    },
+    async reverseMove(act) {
+      const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
+      return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'] } } : a;
     },
     async threads(board, page) {
       /* The page is the list's rows; the total is the board's counter (a trigger keeps it), so a page turn counts nothing. */

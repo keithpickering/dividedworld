@@ -45,3 +45,10 @@ test('every move kind has plain words for a stock line\'s {move}, naming only pa
     for (const [, token] of k.plain.matchAll(/\{(\w+)\}/g)) assert.ok(fields.includes(token!), `${k.key}'s words name {${token}}, which is no param`);
   }
 });
+
+test('a move reads as one short plain sentence in pieces, with the boards it names (the moderation log and the admin queue)', () => {
+  const parts = moveKind('renameBoard')!.parts;
+  assert.deepEqual(parts(rename, 'General', 'done'), ['Renamed ', { board, name: 'General' }, ' to ', { board, name: 'Pointless Toast Palace' }]);
+  assert.deepEqual(parts(rename, 'General', 'plan'), ['Rename ', { board, name: 'General' }, ' to ', { board, name: 'Pointless Toast Palace' }]);
+  assert.deepEqual(parts(rename, null, 'done')[1], { board, name: 'a board' });
+});

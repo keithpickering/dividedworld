@@ -78,6 +78,17 @@ export interface Board {
   readonly description: string;
   /** The System's own board: only The System posts there; players react and spin. */
   readonly isSystem: boolean;
+  /** The move in force that renamed this board (boards_now.move_act): its name and description above are that move's. Null when the board has none. */
+  readonly moveAct: Id | null;
+}
+
+/** A board's name now and the name it had before any move, for words that name a board (a staff member's moderation log, the admin queue). */
+export interface BoardName {
+  readonly id: Id;
+  readonly slug: string;
+  readonly name: string;
+  /** The board's own name, which a move in force has changed `name` from. */
+  readonly was: string;
 }
 
 /** A board on the index: its threads and its latest Act. */
@@ -113,7 +124,7 @@ export interface ThreadSummary {
   readonly originSeq: number | null;
 }
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask';
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end';
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -164,6 +175,10 @@ export interface Character {
   readonly pipStyle: string;
   /** The first day of the month it debuted, "2026-10-01": the month and never the time ("Joined Oct 2026"). */
   readonly joined: string;
+  /** Set only for a staff character (a Boss or a Mod Bot): the instance's key for it. A staff member is known to be staff, signed in or not. */
+  readonly staff?: string;
+  /** A Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR. Set with `staff`. */
+  readonly staffKind?: 'boss' | 'bot';
 }
 
 /** A character's season standing and its place, as a page of the standings lists it (standings_page). */
@@ -222,6 +237,158 @@ export interface CharacterCounts {
 
 /** A reaction tally: each kind's count, never who left it. */
 export type Tally = Readonly<Record<string, number>>;
+
+/* ------------------------------------------------------------------- the moves ---- */
+
+/** A condition on public Acts that ends a move when it is met (engine/system/demands.ts is the catalog of kinds and their plain words). */
+export interface Demand {
+  readonly kind: string;
+  readonly params: Readonly<Record<string, unknown>>;
+}
+
+/** How far a move's demand has come (move_progress). `error` is set when the demand could not be read, in which case the count is 0 of 0. */
+export interface DemandProgress {
+  readonly done: number;
+  readonly of: number;
+  readonly met: boolean;
+  readonly error?: string;
+}
+
+/**
+ * A move in force as its board shows it: the Boss's `move` Act, its top three reactions and the progress of its demand. The label
+ * and the words of the demand are not here; they come from the engine's catalogs by `kind` (engine/system/moves.ts, demands.ts),
+ * never from the Boss's own text.
+ */
+export interface MoveNotice {
+  readonly act: Id;
+  readonly thread: Id;
+  /** The Boss who made it, as a character (null if the Act somehow has none). */
+  readonly character: Id | null;
+  readonly kind: string;
+  readonly params: Readonly<Record<string, unknown>>;
+  /** Null for a move that asks nothing. */
+  readonly demand: Demand | null;
+  /** The Boss's own words for it (its stock line or, later, its micro-event line): shown as the Boss's, never as the glass's. */
+  readonly body: string;
+  readonly expiresAt: string | null;
+  readonly landedAt: string;
+  /** Null for a move with no demand. */
+  readonly progress: DemandProgress | null;
+  /** The three kinds with the most reactions, most first; a kind with none is left out. */
+  readonly reactions: readonly { readonly kind: string; readonly count: number }[];
+}
+
+/** The most reactions a move's notice shows. */
+export const NOTICE_REACTIONS = 3;
+
+/** How a landed move ended (moves_log). */
+export interface MoveEnd {
+  readonly why: 'met' | 'expired' | 'reversed';
+  /** `tick` or `admin`. */
+  readonly by: string;
+  readonly at: string;
+}
+
+/** One landed move of a staff member's, as its moderation log lists it. */
+export interface MoveLogRow {
+  readonly act: Id;
+  readonly kind: string;
+  readonly params: Readonly<Record<string, unknown>>;
+  readonly demand: Demand | null;
+  readonly expiresAt: string | null;
+  /** When it landed. */
+  readonly at: string;
+  readonly thread: Id;
+  /** Null while it is in force. */
+  readonly end: MoveEnd | null;
+}
+
+/** Where the next page of a moderation log starts: the last row's time and Act, as the page was ordered by them. */
+export interface MovesCursor {
+  readonly at: string;
+  readonly act: Id;
+}
+
+/** A page of a staff member's moves, newest first. `older` is the cursor for the next page; null when nothing older is left. */
+export interface MovesLog {
+  readonly rows: readonly MoveLogRow[];
+  readonly older: MovesCursor | null;
+}
+
+/** Moves to a page of a moderation log. */
+export const MOVES_LOG_PAGE = 20;
+
+/** A staff member's in-character profile, the latest version (staff_profile_now): what it says about itself, and it may bluff. */
+export interface StaffProfile {
+  readonly staff: string;
+  readonly at: string;
+  readonly interests: readonly string[];
+  /** Characters it named, public ones. */
+  readonly favorites: readonly Id[];
+  readonly mood: string;
+  readonly signature: string;
+}
+
+/** A move the Boss chose that waits to land (admin_queue). */
+export interface QueuedMove {
+  readonly id: number;
+  readonly staff: string;
+  readonly boss: string | null;
+  readonly kind: string;
+  readonly params: Readonly<Record<string, unknown>>;
+  readonly demand: Demand | null;
+  /** The Boss's own words for choosing it; an admin may read them. */
+  readonly why: string;
+  readonly goLiveAt: string;
+  readonly expiresAt: string | null;
+  readonly structural: boolean;
+  /** A rename's board as it is called now. */
+  readonly boardName: string | null;
+  /** When the tick last could not land it, and why in the server's words; null when it has not failed. */
+  readonly failedAt: string | null;
+  readonly failure: string | null;
+}
+
+/** A landed move with no end yet (admin_queue). */
+export interface MoveInForce {
+  readonly act: Id;
+  readonly id: number | null;
+  readonly staff: string | null;
+  readonly boss: string | null;
+  readonly kind: string;
+  readonly params: Readonly<Record<string, unknown>>;
+  readonly demand: Demand | null;
+  readonly why: string | null;
+  readonly landedAt: string;
+  readonly expiresAt: string | null;
+  readonly progress: DemandProgress;
+}
+
+/** A move that ended, or was held and never landed, in the last 30 days (admin_queue). */
+export interface MoveEnded {
+  readonly how: 'met' | 'expired' | 'reversed' | 'held';
+  readonly by: string | null;
+  readonly at: string;
+  /** Null for a held move, which was never an Act. */
+  readonly act: Id | null;
+  readonly id: number | null;
+  readonly staff: string | null;
+  readonly boss: string | null;
+  readonly kind: string;
+  readonly params: Readonly<Record<string, unknown>>;
+  readonly demand: Demand | null;
+  readonly why: string | null;
+  readonly landedAt: string | null;
+}
+
+/** What the admin screen shows. Each group holds at most `cap` rows; `more` says a group was cut. */
+export interface AdminQueue {
+  readonly cap: number;
+  readonly waiting: readonly QueuedMove[];
+  readonly inForce: readonly MoveInForce[];
+  readonly ended: readonly MoveEnded[];
+  readonly more: { readonly waiting: boolean; readonly inForce: boolean; readonly ended: boolean };
+}
 
 /* ---------------------------------------------------------- the player's own ---- */
 
@@ -478,6 +645,12 @@ export interface KayfaApi {
   /** The address the session signed in with, the player's own, for Settings › Account; null signed out. */
   signInAddress(): Promise<string | null>;
   isAdmin(): Promise<boolean>;
+  /** The moves waiting to land, in force, and ended or held in the last 30 days. An admin's alone; anyone else is refused (the call throws). */
+  adminQueue(): Promise<AdminQueue>;
+  /** Holds a move that is waiting: it never lands. An admin's alone, and it cannot be taken back. */
+  holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
+  /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */
+  reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id }>>;
 
   settings(): Promise<ScreenSettings>;
 
@@ -486,6 +659,17 @@ export interface KayfaApi {
   boards(): Promise<readonly BoardSummary[]>;
   /** One board by its slug or its id, or null: a screen that needs one board's row never reads the list of boards. */
   board(slugOrId: string): Promise<Board | null>;
+  /** Every board's name now and the name it had before any move: a handful of rows, for the words that name a board (the moderation log, the admin queue). */
+  boardNames(): Promise<readonly BoardName[]>;
+  /**
+   * A move in force, as its board shows it, or null when the Act is no move (or none the reader may see). The progress is
+   * `move_progress`, a public read: it counts characters, posts and public tallies and never players.
+   */
+  moveNotice(act: Id): Promise<MoveNotice | null>;
+  /** A page of a staff member's moves, newest first, `MOVES_LOG_PAGE` to a page; pass the last page's `older` for the next. */
+  movesLog(staff: string, before?: MovesCursor | null): Promise<MovesLog>;
+  /** A staff member's latest in-character profile, or null before it has one (a Mod Bot has none until it is asked to write one). */
+  staffProfile(staff: string): Promise<StaffProfile | null>;
   /** A page of a board's threads, newest first; `total` is the board's thread counter, never a count of the list. */
   threads(board: Id, page: { readonly offset: number; readonly limit: number }): Promise<{ readonly threads: readonly ThreadSummary[]; readonly total: number }>;
   thread(id: Id): Promise<ThreadSummary | null>;

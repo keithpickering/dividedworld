@@ -1309,3 +1309,72 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     void ana;
   });
 });
+
+describe('moves, a staff member and the admin queue', () => {
+  const world = () => {
+    const fake = createFake({ instance });
+    const player = fake.seed.account('player');
+    const admin = fake.seed.account('boss', { admin: true });
+    fake.seed.character(player, 'Pat', 'face');
+    const director = fake.seed.staff('director', 'The Director', 'boss', { title: 'Head' });
+    const general = 'general';
+    const move = fake.seed.move('director', { board: general, name: 'Toast Palace', demand: { kind: 'distinctCharactersOnBoard', params: { board: general, count: 2 } } });
+    fake.seed.tally(move, { fire: 4, tea: 1, zzz: 2, tomato: 3 });
+    const queued = fake.seed.queueMove('director', { board: general, name: 'Cheese Hall', goLiveAt: Date.UTC(2026, 9, 30) });
+    return { fake, player, admin, director, move, queued };
+  };
+
+  test('a board is called what the move in force calls it, and is called its own name again the moment the move ends', async () => {
+    const { fake, move } = world();
+    expect((await fake.board('general'))?.name).toBe('Toast Palace');
+    expect((await fake.board('general'))?.moveAct).toBe(move);
+    expect((await fake.boardNames()).find((b) => b.slug === 'general')).toMatchObject({ name: 'Toast Palace', was: 'General' });
+    fake.seed.endMove(move, { why: 'expired' });
+    expect((await fake.board('general'))).toMatchObject({ name: 'General', moveAct: null });
+  });
+
+  test('a move\'s notice has its top three reactions and the demand\'s progress, counting characters and never a staff member', async () => {
+    const { fake, move } = world();
+    const notice = await fake.moveNotice(move);
+    expect(notice?.reactions).toEqual([{ kind: 'fire', count: 4 }, { kind: 'tomato', count: 3 }, { kind: 'zzz', count: 2 }]);
+    expect(notice?.progress).toEqual({ done: 0, of: 2, met: false });
+    expect(await fake.moveNotice('no-such-act')).toBeNull();
+  });
+
+  test('the Director is a staff character in the public projection, and a player\'s character is not', async () => {
+    const { fake, director } = world();
+    const [boss] = await fake.characters([director]);
+    expect([boss?.staff, boss?.staffKind]).toEqual(['director', 'boss']);
+    fake.signInAs(null);
+    expect((await fake.characters([director]))[0]?.staff).toBe('director');
+  });
+
+  test('only an admin reads the queue, holds a move or reverses one, in the server\'s words; a hold is once', async () => {
+    const { fake, player, admin, move, queued } = world();
+    fake.signInAs(player);
+    await expect(fake.adminQueue()).rejects.toThrow('only an admin reads the queue');
+    expect(await fake.holdMove(queued)).toEqual({ ok: false, error: 'only an admin holds a move' });
+    expect(await fake.reverseMove(move)).toEqual({ ok: false, error: 'only an admin reverses a move' });
+    fake.signInAs(admin);
+    expect((await fake.adminQueue()).waiting.map((q) => q.id)).toEqual([queued]);
+    expect(await fake.holdMove(queued)).toMatchObject({ ok: true });
+    expect(await fake.holdMove(queued)).toEqual({ ok: false, error: 'that move is already held' });
+    expect((await fake.adminQueue()).waiting).toEqual([]);
+    expect((await fake.adminQueue()).ended.map((e) => e.how)).toEqual(['held']);
+    expect(await fake.reverseMove(move)).toMatchObject({ ok: true });
+    expect(await fake.reverseMove(move)).toEqual({ ok: false, error: 'that move has already ended' });
+    expect((await fake.board('general'))?.name).toBe('General');
+  });
+
+  test('a staff member\'s moves are paged newest first by the keyset of the last row', async () => {
+    const { fake } = world();
+    for (let i = 0; i < 24; i++) fake.seed.move('director', { board: 'general', name: `N${i}`, at: Date.UTC(2026, 8, 1) + i * 60_000 });
+    const first = await fake.movesLog('director');
+    expect(first.rows).toHaveLength(20);
+    expect(first.older).not.toBeNull();
+    const second = await fake.movesLog('director', first.older);
+    expect(second.rows).toHaveLength(5);
+    expect(second.older).toBeNull();
+    expect(new Set([...first.rows, ...second.rows].map((r) => r.act)).size).toBe(25);
+  });
+});

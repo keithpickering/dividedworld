@@ -20,7 +20,9 @@ declare
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text)', 'post(uuid,uuid,text,uuid)',
                            'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text)', 'create_character(text,text,text,text)', 'set_debut(uuid,text,text)',
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer)', 'meet_card(text)', 'forget_cards_met()', 'set_profile(uuid,text,text,text)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',
-                           'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'hold_move(bigint)', 'reverse_move(uuid)'];
+                           'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'hold_move(bigint)', 'reverse_move(uuid)', 'move_progress(uuid)'];
+  -- What a visitor (anon) may execute, on purpose; each is also in the list above.
+  visitor_callable text[] := array['move_progress(uuid)'];
 begin
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind = 'S'
@@ -40,7 +42,8 @@ begin
   loop bad := bad || format(E'\n  table or view %s', r.relname); end loop;
   for r in select p.oid::regprocedure::text as fn from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public'
-             and (has_function_privilege('anon', p.oid, 'execute')
+             and ((has_function_privilege('anon', p.oid, 'execute') and not replace(p.oid::regprocedure::text, ' ', '') = any (visitor_callable))
+                  -- move_progress (0049) is the one function a visitor may call: a move's way out is computed from Acts anyone can read.
                   or (has_function_privilege('authenticated', p.oid, 'execute') and not replace(p.oid::regprocedure::text, ' ', '') = any (callable)))
   loop bad := bad || format(E'\n  function %s', r.fn); end loop;
   if bad <> '' then raise exception 'the API roles can reach what they were never granted:%', bad; end if;

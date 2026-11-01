@@ -104,6 +104,7 @@ describe('what the adapter may request', () => {
     await Promise.allSettled([
       api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.myReleases([A]), api.releaseEffect(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
+      api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
@@ -163,8 +164,8 @@ describe('reads and their rows', () => {
   it('reads one board by its slug, or by its id, as one row of boards_now, the name it is called now', async () => {
     const row = { id: C, slug: 'general', name: 'General', description: 'All', is_system: true };
     const h = harness(() => rows([row]));
-    expect(await h.api.board('general')).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: true });
-    expect(await h.api.board(C)).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: true });
+    expect(await h.api.board('general')).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: true, moveAct: null });
+    expect(await h.api.board(C)).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: true, moveAct: null });
     const [bySlug, byId] = h.to('boards_now');
     expect(bySlug?.url.searchParams.get('slug')).toBe('eq.general');
     expect(bySlug?.url.searchParams.get('id')).toBeNull();
@@ -408,10 +409,10 @@ describe('reads and their rows', () => {
       return rows([THREAD_ROW]);
     });
     const [board] = await h.api.boards();
-    expect(h.to('boards_now')[0]?.url.searchParams.get('select')).toBe('id,slug,name,description,is_system');
+    expect(h.to('boards_now')[0]?.url.searchParams.get('select')).toBe('id,slug,name,description,is_system,move_act');
     expect(h.to('board_counts')[0]?.url.searchParams.get('select')).toBe('board,threads');
     expect(h.to('thread_list').every((r) => r.method === 'GET' && !(r.headers.get('prefer') ?? '').includes('count'))).toBe(true);
-    expect(board).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: false, threadCount: 12, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T });
+    expect(board).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: false, moveAct: null, threadCount: 12, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T });
     const latest = h.to('thread_list').find((r) => r.method === 'GET');
     expect(latest?.url.searchParams.get('order')).toBe('last_at.desc');
     expect(latest?.url.searchParams.get('limit')).toBe('1');
@@ -1117,3 +1118,106 @@ describe('reads by many ids', () => {
   });
 });
 
+
+
+describe('the moves a board shows, a staff profile and the admin queue', () => {
+  const MOVE_ROW = {
+    ...ACT_ROW, kind: 'move', seq: 1, character: B,
+    payload: { kind: 'renameBoard', body: 'Toast now.', params: { board: C, name: 'Toast Palace', premise: 'Toast.', description: 'About toast.' }, demand: { kind: 'distinctCharactersOnBoard', params: { board: C, count: 12 } }, expires_at: '2026-11-13T12:00:00+00:00' },
+  };
+
+  it('puts the board a move renamed with its move Act, from boards_now', async () => {
+    const h = harness(() => rows([{ id: C, slug: 'general', name: 'Toast Palace', description: 'About toast.', is_system: false, move_act: A }]));
+    expect((await h.api.board('general'))?.moveAct).toBe(A);
+  });
+
+  it('reads every board\'s name now and its own name before any move: two small reads, boards_now and boards', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/boards_now') ? rows([{ id: C, slug: 'general', name: 'Toast Palace' }]) : rows([{ id: C, name: 'General' }])));
+    expect(await h.api.boardNames()).toEqual([{ id: C, slug: 'general', name: 'Toast Palace', was: 'General' }]);
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, '')).sort()).toEqual(['boards', 'boards_now']);
+  });
+
+  it('builds a move\'s notice from its Act, its tally (the top three) and move_progress, a public read', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/acts_public')) return rows([MOVE_ROW]);
+      if (r.url.pathname.endsWith('/reaction_tallies')) return rows([{ kind: 'fire', count: 9 }, { kind: 'zzz', count: 1 }, { kind: 'tea', count: 3 }, { kind: 'tomato', count: 6 }]);
+      if (r.url.pathname.endsWith('/rpc/move_progress')) return json({ done: 7, of: 12, met: false });
+      return json({}, 404);
+    });
+    const notice = await h.api.moveNotice(A);
+    expect(notice).toMatchObject({ act: A, kind: 'renameBoard', body: 'Toast now.', demand: { kind: 'distinctCharactersOnBoard' }, progress: { done: 7, of: 12, met: false }, expiresAt: '2026-11-13T12:00:00+00:00' });
+    expect(notice?.reactions).toEqual([{ kind: 'fire', count: 9 }, { kind: 'tomato', count: 6 }, { kind: 'tea', count: 3 }]);
+    expect(h.to('rpc/move_progress')[0]?.body).toEqual({ move_act: A });
+    expect(await harness(() => rows([])).api.moveNotice(A)).toBeNull();
+  });
+
+  it('shows a move without a count when its progress could not be read, and still shows the move', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/acts_public')) return rows([MOVE_ROW]);
+      if (r.url.pathname.endsWith('/rpc/move_progress')) return json({ message: 'down' }, 400);
+      return rows([]);
+    });
+    expect((await h.api.moveNotice(A))?.progress).toEqual({ done: 0, of: 0, met: false });
+  });
+
+  it('pages a staff member\'s moves by keyset: newest first by time then Act, one row more than a page to know there is an older one', async () => {
+    const mk = (i: number) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, kind: 'renameBoard', params: { board: C, name: `N${i}` }, demand: null, expires_at: null, thread: T, at: `2026-10-${String(30 - (i % 28)).padStart(2, '0')}T12:00:00.123456+00:00`, ended_why: i === 1 ? 'met' : null, ended_by: i === 1 ? 'tick' : null, ended_at: i === 1 ? '2026-10-31T00:00:00+00:00' : null });
+    const h = harness(() => rows(Array.from({ length: 21 }, (_, i) => mk(i + 1))));
+    const page = await h.api.movesLog('director');
+    expect(page.rows).toHaveLength(20);
+    expect(page.older).toEqual({ at: page.rows[19]!.at, act: page.rows[19]!.act });
+    expect(page.rows[0]?.end).toEqual({ why: 'met', by: 'tick', at: '2026-10-31T00:00:00+00:00' });
+    expect(page.rows[1]?.end).toBeNull();
+    const first = h.to('moves_log')[0]!.url.searchParams;
+    expect([first.get('staff'), first.get('order'), first.get('limit'), first.get('or')]).toEqual(['eq.director', 'at.desc,id.desc', '21', null]);
+    await h.api.movesLog('director', page.older);
+    const next = h.to('moves_log')[1]!.url.searchParams;
+    expect(next.get('or')).toBe(`(at.lt.${page.older!.at},and(at.eq.${page.older!.at},id.lt.${page.older!.act}))`);
+    expect((await harness(() => rows([mk(1)])).api.movesLog('director')).older).toBeNull();
+  });
+
+  it('reads a staff member\'s latest profile from staff_profile_now, and none before it has one', async () => {
+    const h = harness(() => rows([{ staff: 'director', at: '2026-10-30T12:00:00+00:00', interests: ['toast'], favorites: [B], mood: 'Hopeful', signature: 'Slice.' }]));
+    expect(await h.api.staffProfile('director')).toEqual({ staff: 'director', at: '2026-10-30T12:00:00+00:00', interests: ['toast'], favorites: [B], mood: 'Hopeful', signature: 'Slice.' });
+    expect(h.to('staff_profile_now')[0]?.url.searchParams.get('staff')).toBe('eq.director');
+    expect(await harness(() => rows([])).api.staffProfile('bot')).toBeNull();
+  });
+
+  it('marks a character as staff from characters_public, and not otherwise', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: B, name: 'The Director', joined: '2026-10-01', staff: 'director', staff_kind: 'boss' }, { id: C, name: 'Al', joined: '2026-10-01', staff: null, staff_kind: null }]) : rows([])));
+    const [boss, al] = await h.api.characters([B, C]);
+    expect([boss?.staff, boss?.staffKind, al?.staff, al?.staffKind]).toEqual(['director', 'boss', undefined, undefined]);
+    expect(h.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,name,joined,staff,staff_kind');
+  });
+
+  it('reads the admin queue in its three groups, and holds and reverses through the admin functions', async () => {
+    const queue = {
+      cap: 100,
+      waiting: [{ id: 4, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: { board: C, name: 'Toast' }, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Toast.', goLiveAt: '2026-10-31T14:10:00+00:00', expiresAt: '2026-11-14T00:00:00+00:00', structural: true, boardName: 'General', failedAt: '2026-10-31T14:11:00+00:00', failure: 'it did not land' }],
+      inForce: [{ act: A, id: 3, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Why.', landedAt: '2026-10-30T12:00:00+00:00', expiresAt: '2026-11-13T12:00:00+00:00', progress: { done: 2, of: 5, met: false } }],
+      ended: [{ how: 'held', by: 'admin', at: '2026-10-30T10:00:00+00:00', act: null, id: 2, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: 'x', landedAt: null }, { how: 'met', by: 'tick', at: '2026-10-29T10:00:00+00:00', act: B, id: 1, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: null, landedAt: '2026-10-28T10:00:00+00:00' }],
+      more: { waiting: false, inForce: false, ended: true },
+    };
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/admin_queue')) return json(queue);
+      if (r.url.pathname.endsWith('/rpc/hold_move')) return json({ id: 4, heldAt: '2026-10-31T15:00:00+00:00' });
+      if (r.url.pathname.endsWith('/rpc/reverse_move')) return json({ act: A, endedBy: B });
+      return json({}, 404);
+    });
+    const q = await h.api.adminQueue();
+    expect(q.waiting[0]).toMatchObject({ id: 4, boss: 'The Director', boardName: 'General', failure: 'it did not land', failedAt: '2026-10-31T14:11:00+00:00', demand: { kind: 'postsOnBoard' } });
+    expect(q.inForce[0]?.progress).toEqual({ done: 2, of: 5, met: false });
+    expect(q.ended.map((e) => e.how)).toEqual(['held', 'met']);
+    expect(q.more).toEqual({ waiting: false, inForce: false, ended: true });
+    expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00' } });
+    expect(h.to('rpc/hold_move')[0]?.body).toEqual({ id: 4 });
+    expect(await h.api.reverseMove(A)).toEqual({ ok: true, value: { act: A, endedBy: B } });
+    expect(h.to('rpc/reverse_move')[0]?.body).toEqual({ move_act: A });
+  });
+
+  it('passes an admin function\'s refusal through in the server\'s words, and throws a plain error when the queue cannot be read', async () => {
+    const refused = harness(() => json({ code: '42501', message: 'only an admin holds a move', hint: 'kayfabb.refusal' }, 403));
+    expect(await refused.api.holdMove(4)).toEqual({ ok: false, error: 'only an admin holds a move' });
+    await expect(refused.api.adminQueue()).rejects.toThrow('that could not be read right now; try again');
+  });
+});

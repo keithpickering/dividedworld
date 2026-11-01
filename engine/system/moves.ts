@@ -20,6 +20,15 @@ import { repair, type Repaired, type Rule } from './validate.ts';
 /** A uuid as Postgres writes it; the params that name a board, a character or a thread are held to it. */
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** A board named inside a move's words: the screen makes it a link to the board, whatever the board is called. */
+export interface BoardRef {
+  readonly board: string;
+  readonly name: string;
+}
+
+/** The move as one short plain sentence, in pieces: words, and the boards it names. */
+export type MoveParts = readonly (string | BoardRef)[];
+
 export interface MoveKind {
   readonly key: string;
   /** A structural move reshapes a board and waits in the admin queue before it lands. */
@@ -37,6 +46,12 @@ export interface MoveKind {
   readonly plain: string;
   /** How the move reads in a player's log, in plain words. */
   readonly template: (params: Readonly<Record<string, unknown>>) => string;
+  /**
+   * The move as one short plain sentence for a staff member's moderation log and for the admin queue: "Renamed General to Pointless
+   * Toast Palace" once it has landed, "Rename General to Pointless Toast Palace" while it waits (`plan`). `was` is the name the board
+   * had before the move, when the screen knows it.
+   */
+  readonly parts: (params: Readonly<Record<string, unknown>>, was: string | null, tense: 'done' | 'plan') => MoveParts;
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -57,6 +72,7 @@ export const RENAME_BOARD: MoveKind = {
   uuids: ['board'],
   plain: 'the renaming of a board to "{name}"',
   template: (p) => `The System renamed a board to "${text(p['name'])}". Its subject is now: ${text(p['premise'])}`,
+  parts: (p, was, tense) => [tense === 'plan' ? 'Rename ' : 'Renamed ', { board: text(p['board']), name: was ?? 'a board' }, ' to ', { board: text(p['board']), name: text(p['name']) }],
 };
 
 export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD];

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { COUNT_MOST, DEMAND_KINDS, demandProblems } from './demands.ts';
+import { COUNT_MOST, DEMAND_KINDS, demandAsk, demandKind, demandProblems, demandWords } from './demands.ts';
 
 const CAP = 3;
 const board = '11111111-1111-4111-8111-111111111111';
@@ -85,4 +85,28 @@ test('uuids in a demand are lowercased, as Postgres compares them, and not recor
   assert.ok(r.ok, JSON.stringify(r));
   assert.deepEqual(r.ok && r.value, { kind: 'postsOnBoard', params: { board: mixed.toLowerCase(), count: 3 } });
   assert.equal(r.ok && r.trims.length, 0);
+});
+
+test('a demand reads in plain words with no progress for a move that has not landed, and with it for a move in force', () => {
+  assert.equal(demandAsk({ kind: 'distinctCharactersOnBoard', params: { board, count: 8 } }), 'Needs 8 different characters to post on this board.');
+  assert.equal(
+    demandWords({ kind: 'distinctCharactersOnBoard', params: { board, count: 12 } }, { done: 7, of: 12 }),
+    'Needs 12 different characters to post on this board: 7 of 12 so far.',
+  );
+  assert.match(demandAsk({ kind: 'shout', params: {} }), /plain word/u);
+  for (const k of DEMAND_KINDS) assert.doesNotMatch(k.needs({ board, count: 5, quadrant: 'calmPositive', reactions: 6 }), /[{}]|undefined|NaN/u, k.key);
+});
+
+test('every demand kind names what it counts, for the glass\'s short way out, in capitals and in the singular for one', () => {
+  for (const k of DEMAND_KINDS) {
+    assert.match(k.unit.one, /^[A-Z ]+$/u, k.key);
+    assert.match(k.unit.many, /^[A-Z ]+$/u, k.key);
+    assert.notEqual(k.unit.one, k.unit.many, k.key);
+  }
+});
+
+test('every demand kind says in a few plain words what met it', () => {
+  const params = { board, count: 12, quadrant: 'calmPositive', reactions: 6 };
+  for (const k of DEMAND_KINDS) assert.doesNotMatch(k.met(params), /[{}]|undefined|NaN/u, k.key);
+  assert.equal(demandKind('distinctCharactersOnBoard')!.met(params), '12 posted');
 });
