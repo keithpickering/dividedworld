@@ -6,8 +6,9 @@
  * so a tab left in the background (or frozen by a phone's browser) ages out like a closed one.
  *
  * The box is ambient: a failed poll keeps the last answer, and after three in a row the hook answers
- * null and the box drops out quietly, with no notice. The next page load polls again. Each poll is
- * numbered, and an answer older than one already shown is dropped.
+ * null and the box drops out quietly, with no notice. The polls go on, so the box comes back with the
+ * next answer, as it does on the next page load. Each poll is numbered, and an answer older than one
+ * already shown is dropped. Signed out, nothing is polled: here() answers only a signed-in player.
  */
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
