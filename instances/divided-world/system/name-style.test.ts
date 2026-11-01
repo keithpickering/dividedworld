@@ -44,3 +44,12 @@ test('an empty or blank name fails', () => {
 test('only the last three words must alliterate; a near miss fails', () => {
   assert.ok(nameStyle('Pointless Pirate Puns Games').length > 0);
 });
+
+test('a value that is not text is a problem in plain words, not a crash', () => {
+  for (const bad of [null, undefined, 5, {}]) assert.deepEqual(nameStyle(bad as never), ['a board name must be text'], String(bad));
+});
+
+test('accented initials are folded, so an accent does not break an alliteration', () => {
+  assert.deepEqual(nameStyle('Élan Eagle Egg'), []);
+  assert.deepEqual(nameStyle('Eagle Élan Egg'), []);
+});

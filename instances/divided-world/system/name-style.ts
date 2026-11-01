@@ -16,7 +16,7 @@ const ORIGINAL = ['pointless', 'post', 'palace'] as const;
 
 /** The first letter or digit of a word, lowercased, or '' for a word with none ("&", "--"). */
 function initial(word: string): string {
-  const m = /[\p{L}\p{N}]/u.exec(word);
+  const m = /[\p{L}\p{N}]/u.exec(word.normalize('NFD').replace(/\p{M}/gu, ''));
   return m ? m[0].toLowerCase() : '';
 }
 
@@ -26,6 +26,7 @@ function bare(word: string): string {
 }
 
 export function nameStyle(name: string): string[] {
+  if (typeof name !== 'string') return ['a board name must be text'];
   const words = name.split(/\s+/).filter((w) => initial(w) !== '');
   if (words.length < 3) {
     return [`a board name needs at least three words (like Pointless Post Palace); "${name.trim()}" has ${words.length}`];

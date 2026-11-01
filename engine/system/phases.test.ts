@@ -76,3 +76,21 @@ test('the settings themselves are never changed', () => {
   phaseAt(season, at(45), settings, { phases: { reign: { weeklyMoves: 9999 } } });
   assert.equal(JSON.stringify(settings), before);
 });
+
+test('a fractional override is made whole and the change is recorded as wholeNumber', () => {
+  const r = phaseAt(season, at(45), settings, { phases: { reign: { weeklyMoves: 2.7 } } });
+  assert.equal(r.numbers.weeklyMoves, 2);
+  assert.deepEqual(r.clamps, [{ path: 'phases.reign.weeklyMoves', predicate: 'wholeNumber', before: 2.7, after: 2 }]);
+});
+
+test('an override that is not a number counts as below the least: raised to 1 and recorded', () => {
+  const r = phaseAt(season, at(45), settings, { phases: { reign: { weeklyMoves: '5' as unknown as number } } });
+  assert.equal(r.numbers.weeklyMoves, 1);
+  assert.deepEqual(r.clamps, [{ path: 'phases.reign.weeklyMoves', predicate: 'atLeast(1)', before: '5' as unknown as number, after: 1 }]);
+});
+
+test('a season end that is not a finite number throws, naming it, instead of a reign forever', () => {
+  assert.throws(() => phaseAt({ startsAt: season.startsAt, endsAt: Number.NaN }, at(45), settings), /endsAt/);
+  assert.throws(() => phaseAt({ startsAt: season.startsAt, endsAt: Number.POSITIVE_INFINITY }, at(45), settings), /endsAt/);
+  assert.throws(() => phaseAt({ startsAt: Number.NaN, endsAt: season.endsAt }, at(45), settings), /startsAt/);
+});

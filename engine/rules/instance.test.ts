@@ -435,3 +435,24 @@ test('the new settings are checked like the others', () => {
   assert.match(bad('modelTiers', { strong: 'a', light: '' }), /modelTiers/);
   assert.deepEqual(settingsProblems({ ...settings, microEventDailyCalls: 0, rosterRecentExcluded: 0, inheritanceGraceDays: 0 }), [], 'zero is allowed where it means none');
 });
+
+test('a bot voice that is neither chat nor oldVoice is a problem', () => {
+  assert.match(said(withBot({ voice: 'shout' as never })), /Mod Bot "bot-a" has the voice "shout"/);
+});
+
+test('visit hours with the least above the most, or below 1, are a problem', () => {
+  assert.match(said(withBot({ strictness: { ...bot.strictness, visitHours: { least: 13, most: 12 } } })), /Mod Bot "bot-a" has visit hours/);
+  assert.match(said(withBot({ strictness: { ...bot.strictness, visitHours: { least: 0, most: 12 } } })), /Mod Bot "bot-a" has visit hours/);
+});
+
+test('a bot with no weakness is a problem', () => {
+  assert.match(said(withBot({ weakness: undefined as never })), /Mod Bot "bot-a" has no weakness/);
+});
+
+test('duties naming a key that is not a duty are a problem', () => {
+  assert.match(said(withSystem({ duties: { ...system.duties, bogus: 'boss' } as never })), /the duties name "bogus", which is not a duty/);
+});
+
+test('a stock line for no standing order is a problem', () => {
+  assert.match(said(withSystem({ stockLines: { ...system.stockLines, bogus: ['A line.'] } as never })), /stock line "bogus" is for no standing order/);
+});

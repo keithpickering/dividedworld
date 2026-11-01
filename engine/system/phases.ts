@@ -50,7 +50,11 @@ export const PHASE_CAPS: { readonly [P in PhaseName]: Readonly<PhaseSettings[P]>
   meltdown: { days: 42, weeklyMoves: 16, bankCap: 28, moveExpiryMostDays: 90 },
 };
 
-/** A season's span, in epoch milliseconds; an open season's end is its start plus `seasonLength`. */
+/**
+ * A season's span, in epoch milliseconds. The caller passes the end the database computes,
+ * `coalesce(ends_at, starts_at + span_interval(...))` (`seasonLength` is a calendar span, not a
+ * number of milliseconds), already as epoch ms.
+ */
 export interface SeasonSpan {
   readonly startsAt: number;
   readonly endsAt: number;
@@ -66,6 +70,9 @@ export interface PhaseAt {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function phaseAt(season: SeasonSpan, now: number, settings: Settings, boss?: { readonly phases?: PhaseOverrides }): PhaseAt {
+  for (const field of ['startsAt', 'endsAt'] as const) {
+    if (!Number.isFinite(season[field])) throw new Error(`phaseAt: season.${field} must be a finite number of epoch milliseconds, got ${String(season[field])}`);
+  }
   const clamps: Trim[] = [];
   const phases: { [P in PhaseName]: Record<string, number> } = { honeymoon: {}, reign: {}, meltdown: {} };
   for (const p of PHASES) {
@@ -74,8 +81,10 @@ export function phaseAt(season: SeasonSpan, now: number, settings: Settings, bos
       const given = (boss?.phases?.[p] as Record<string, number> | undefined)?.[key];
       if (given !== undefined) {
         const cap = (PHASE_CAPS[p] as unknown as Record<string, number>)[key]!;
-        const whole = Math.floor(given);
         const path = `phases.${p}.${key}`;
+        // Every change to an override is recorded: a non-number counts as below the least, a fraction is made whole.
+        const whole = typeof given === 'number' ? Math.floor(given) : Number.NaN;
+        if (typeof given === 'number' && Number.isFinite(given) && whole !== given) clamps.push({ path, predicate: 'wholeNumber', before: given, after: whole });
         if (!(whole >= 1)) { clamps.push({ path, predicate: 'atLeast(1)', before: given, after: 1 }); n = 1; }
         else if (whole > cap) { clamps.push({ path, predicate: `atMost(${cap})`, before: given, after: cap }); n = cap; }
         else n = whole;
