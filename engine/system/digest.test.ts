@@ -63,6 +63,8 @@ test('a move in force and one that ended read as plain lines with their state an
   const text = renderDigest({ ...small, moves: [inForce, ended] }, null, []);
   assert.ok(text.includes('renameBoard: in force; demand postsOnBoard 7 of 12; renamed a board to "Pointless Toast Palace"'), text);
   assert.ok(text.includes('renameBoard: ended reversed by admin; demand postsOnBoard 12 of 12, met; renamed a board to "Pointless Toast Palace"'), text);
+  const held = { act: null, kind: 'renameBoard', params: { name: 'Held Hall' }, demand: { kind: 'postsOnBoard' }, progress: null, ended: null, state: 'held', heldAt: '2026-10-31T00:00:00Z', why: 'fun' };
+  assert.ok(renderDigest({ ...small, moves: [held] }, null, []).includes('renameBoard: held by an admin before it landed; demand postsOnBoard, never asked; renamed a board to "Held Hall"'));
   assert.ok(renderDigest({ ...small, moves: [{ note: 'unknown shape' }] }, null, []).includes('{"note":"unknown shape"}'));
 });
 

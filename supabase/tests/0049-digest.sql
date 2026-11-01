@@ -30,6 +30,14 @@ begin
   foreach t in array array['accounts', 'ledger', 'staff_memory', 'meetings', 'move_bank', 'staff_profiles', 'acts', 'paid_votes', 'wallets'] loop
     if has_table_privilege('kayfabb_digest', t, 'select,insert,update,delete') then raise exception 'the digest role reaches %', t; end if;
   end loop;
+  -- The queue (0048): the role reads these columns of queued_moves, one by one and no others. held_by (which admin held a move) and the
+  -- meeting are not among them; a column added later is not readable until this list says so.
+  select string_agg(attname, ', ' order by attname) into bad from pg_attribute
+  where attrelid = 'queued_moves'::regclass and attnum > 0 and not attisdropped and has_column_privilege('kayfabb_digest', 'queued_moves', attname, 'select');
+  if bad is distinct from 'demand, expires_at, go_live_at, held_at, id, kind, landed_act, params, staff, structural, why' then
+    raise exception 'the digest role reads these columns of queued_moves: %', bad;
+  end if;
+  if has_column_privilege('kayfabb_digest', 'queued_moves', 'held_by', 'select') then raise exception 'the digest role reads queued_moves.held_by'; end if;
   -- No my_* view: they read auth.uid(), and the role is nobody.
   select string_agg(relname, ', ') into bad from pg_class
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and relname like 'my\_%' and has_table_privilege('kayfabb_digest', oid, 'select');

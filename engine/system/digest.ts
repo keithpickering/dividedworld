@@ -62,8 +62,9 @@ export interface DigestCharacter {
 
 /**
  * A move in force, or one that ended in the window, as `system_digest` lists it (supabase/migrations/0045_moves.sql):
- * `{act, kind, params, demand, expiresAt, landedAt, progress: {done, of, met}, ended}`, where `ended` is null while the move is in
- * force and `{why: met | expired | reversed, by, at}` after. Held generically: the renderer reads the fields it knows, defensively,
+ * `{act, kind, params, demand, expiresAt, landedAt, progress: {done, of, met}, ended, state}`, where `ended` is null while the move is in
+ * force and `{why: met | expired | reversed, by, at}` after. A move an admin held before it landed has `state: 'held'`, no act, no
+ * progress, and `heldAt` and `why` (the Boss's own words for it). Held generically: the renderer reads the fields it knows, defensively,
  * and falls back to the row's JSON for one it does not, so a digest from a newer database still renders.
  */
 export type DigestMove = Readonly<Record<string, unknown>>;
@@ -117,9 +118,11 @@ function moveLine(m: DigestMove): string {
   const ended = record(m['ended']);
   const progress = record(m['progress']);
   const demand = record(m['demand']);
-  const state = typeof ended['why'] === 'string' ? `ended ${clip(String(ended['why']), CLIPS.kind)} by ${clip(String(ended['by']), CLIPS.kind)}` : 'in force';
+  const state = m['state'] === 'held' ? 'held by an admin before it landed' : typeof ended['why'] === 'string' ? `ended ${clip(String(ended['why']), CLIPS.kind)} by ${clip(String(ended['by']), CLIPS.kind)}` : 'in force';
   const way =
-    typeof demand['kind'] === 'string' && typeof progress['of'] === 'number'
+    typeof demand['kind'] === 'string' && m['state'] === 'held'
+      ? `demand ${clip(String(demand['kind']), CLIPS.kind)}, never asked`
+      : typeof demand['kind'] === 'string' && typeof progress['of'] === 'number'
       ? `demand ${clip(String(demand['kind']), CLIPS.kind)} ${progress['done']} of ${progress['of']}${progress['met'] === true ? ', met' : ''}`
       : 'no demand';
   const name = record(m['params'])['name'];
