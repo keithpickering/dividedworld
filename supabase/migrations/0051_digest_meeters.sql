@@ -13,9 +13,11 @@
 -- index, as demand_progress stops at its `of`); distinctCharactersOnBoard walks the same order one step per character, stopped at the
 -- `count`th distinct one, so its read ends at that character's first post; characterPostsInThread reads that character's posts in that thread from the
 -- landing to the end (the acts_thread_posts index); crossQuote reads no Acts; quadrantOnBoard sums the tallies of every post on the board from the landing to the end, as
--- demand_progress sums them. Neither board count reads the board's whole stretch or sorts it (measured at 50,000 posts on a board of 200
--- threads: 139 ms and 114 ms before, 0.3 ms each after). On a board quieter than the rest of the instance the time-ordered read passes
--- other boards' posts on its way to the board's `count`th, bounded by the move's window as the evaluator's is.
+-- demand_progress sums them. The limits bound what each board count returns and let the planner stop early, but they do not force it
+-- to: with the time-ordered plan a count of 5 on 50,000 posts read in 0.3 ms, and with a per-thread plan the planner chose on another
+-- board it read the board's whole stretch (30,000 posts, 28 ms, a top-N sort in memory). So the cost is at worst the board's posts
+-- between the landing and the end, the same stretch demand_progress may read, bounded by the move's lifetime and paid once a meeting
+-- for at most digestExcerpts moves.
 
 create or replace function system_digest(since timestamptz, until timestamptz) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -157,8 +159,8 @@ begin
     select p.act, p.character, min(p.created_at) as first_at, 0::bigint as weight
     from (
       -- postsOnBoard: the posts demand_progress counted, the first `count` after the landing (oldest first, staff skipped), read as it
-      -- reads them: the Acts in time order from the landing, stopped at `count` matches (the acts_created index), so a busy board costs
-      -- `count` posts and not the board's whole stretch. A post after the count was reached, before the tick noticed, is not the move's.
+      -- reads them: the Acts in time order from the landing, limited to `count` matches (the header says what that does and doesn't
+      -- bound). A post after the count was reached, before the tick noticed, is not the move's.
       select mm.act, x.character, x.created_at
       from met_m mm
       cross join lateral (
