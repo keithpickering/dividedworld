@@ -70,7 +70,10 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
       {size !== 'slot' && <span className="kb-postcard-tag" aria-hidden="true">{face.tag}</span>}
       {' '}
       {/* How it is played, in its word, and how rare it is, as a gem whose shape says it (the card mechanic's design, sections 1 and 2). */}
-      <span className="kb-postcard-play" aria-hidden="true">{playWord(face.play)}</span>
+      {/* In a slot the word is drawn by CSS from its attribute: the slot's button is named by its own words (Vending.tsx), which say the play after the price. */}
+      {size === 'slot'
+        ? <span className="kb-postcard-play" aria-hidden="true" data-kb-word={playWord(face.play)} />
+        : <span className="kb-postcard-play" aria-hidden="true">{playWord(face.play)}</span>}
       {' '}
       <span className="kb-postcard-gem" aria-hidden="true" data-kb-rarity={face.rarity} data-kb-gem={gemOf(face.rarity)} title={rarityName(face.rarity)} />
       {' '}

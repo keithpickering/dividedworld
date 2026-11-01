@@ -2,7 +2,7 @@
  * The Vending Machine, as the Vending board draws it (docs/research/2026-10-29-two-worlds/07-vending.html;
  * the cards plan's Task 2): a glass page under the menu bar, with the wallet and the hand on its
  * left, the drawn machine in the middle and the line about the empty slots on its right. Each slot
- * is a button that selects a card ("Buy Stick Around, 1.00 orb"; the selected one adds ", selected"),
+ * is a button that selects a card ("Buy Stick Around, 1.00 orb, common Cast": its rarity and play after its price; the selected one adds ", selected"),
  * the price display says what is picked, and the buy button spends it. Slots with no card yet are
  * sealed and wait for a future postcard.
  *
@@ -25,7 +25,7 @@
  * marks each decorative one `data-kb-art` (hidden from a screen reader and, being the instance's
  * printing, outside the rendered type measurement; a code printed on a slot is an attribute the
  * stylesheet writes out, so a button's visible text is the card's name alone and the name it is
- * given, "Buy Stick Around, 1.00 orb", contains it), and the instance's stylesheet
+ * given, "Buy Stick Around, 1.00 orb, common Cast", contains it), and the instance's stylesheet
  * (instances/divided-world/ui/vending/vending.css) gives them their colors, their words and their glow. What
  * a player reads and presses is real text in the glass's tokens, so a card, a price and a refusal
  * are said once, in words.
@@ -36,7 +36,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { motionReduced } from '../appearance.ts';
 import { Postcard } from '../cards/Postcard.tsx';
-import { facesOf, orbs, plainRefusal, priceOf, withCardEconomy, type CardFace } from '../cards/faces.ts';
+import { facesOf, orbs, plainRefusal, playWord, priceOf, withCardEconomy, type CardFace } from '../cards/faces.ts';
 import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
@@ -132,7 +132,7 @@ function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, 
                 <button
                   type="button"
                   className="kb-vending-slot"
-                  aria-label={`Buy ${face.name}, ${orbs(face.price)} ${orbWord(face.price)}${selected ? ', selected' : ''}`}
+                  aria-label={`Buy ${face.name}, ${orbs(face.price)} ${orbWord(face.price)}, ${face.rarity} ${playWord(face.play)}${selected ? ', selected' : ''}`}
                   aria-pressed={selected}
                   data-kb-alignment={face.alignment}
                   style={{ '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink } as CSSProperties}

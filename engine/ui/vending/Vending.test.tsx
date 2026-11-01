@@ -53,7 +53,7 @@ describe('a price an admin has tuned', () => {
     fake.signInAs(account);
     /* The screens on the compiled instance, given the settings the backend reads, as the app gives them (web/src/App.tsx). */
     renderIn(fake, <Vending />, { instance: shop, cards: faces, path: '/vending', settings: { cardEconomy: (await fake.settings()).cardEconomy } });
-    fireEvent.click(await screen.findByRole('button', { name: /^Buy Whoops!, 2\.50 orbs?$/u }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Buy Whoops!, 2\.50 orbs?, common Cast$/u }));
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 2.50' }));
     await waitFor(async () => expect((await fake.wallet()).balance).toBe(250));
   });
@@ -62,9 +62,9 @@ describe('a price an admin has tuned', () => {
 describe('the machine as the Vending board draws it', () => {
   test('each slot is a button that names the card and its price, the selected one says so, and the rest are sealed', async () => {
     open(seeded(562));
-    expect(await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb' })).toHaveAttribute('aria-pressed', 'false');
-    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
-    expect(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb, selected' })).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
+    expect(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast, selected' })).toHaveAttribute('aria-pressed', 'true');
     for (const code of ['B1', 'B2', 'C1', 'C2']) expect(screen.getByRole('img', { name: `Empty slot ${code}, waiting for a future postcard` })).toBeInTheDocument();
     expect(screen.getByText('4 slots empty')).toBeInTheDocument();
   });
@@ -76,7 +76,7 @@ describe('the machine as the Vending board draws it', () => {
     const none = await screen.findByRole('status', { name: 'Nothing selected' });
     expect(none).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Buy' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     expect(screen.getByRole('status', { name: 'Selected: A2, Whoops!, 1.00' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toBeEnabled();
     expect(buy).not.toHaveBeenCalled();
@@ -84,10 +84,10 @@ describe('the machine as the Vending board draws it', () => {
 
   test('the wallet panel says solid only, the wallet before and after, and the hand before and after', async () => {
     open(seeded(562));
-    await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb' });
+    await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' });
     expect(screen.getByText(/Wallet · solid only/i)).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Wallet: 5.62 of 6.00' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     expect(screen.getByRole('img', { name: 'Wallet: 5.62 of 6.00; buying Whoops! leaves 4.62' })).toBeInTheDocument();
     expect(document.querySelector('.kb-vending-sum')).toHaveTextContent('5.62 → 4.62');
     expect(screen.getByRole('link', { name: 'Your hand 2 → 3' })).toBeInTheDocument();
@@ -95,14 +95,14 @@ describe('the machine as the Vending board draws it', () => {
 
   test('the machine is named by the instance, the price note says what a long post costs, and the sealed slots keep their line', async () => {
     open(seeded(562));
-    await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb' });
+    await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' });
     expect(screen.getByRole('group', { name: 'Shop' })).toBeInTheDocument();
     /* The list of what is in the machine is gone at every width (it grows with every card added): the info buttons carry the rules. */
     expect(screen.queryByRole('region', { name: 'In the machine' })).toBeNull();
     expect(screen.queryByText('A Sweet card. Holds each reader on a post.')).toBeNull();
     expect(screen.getByText('4 slots empty')).toBeInTheDocument();
     expect(screen.getByText('More postcards arrive in later seasons.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     expect(screen.getByText('Playing it on a long post costs up to 2.00 more, never more than 3.00 in all.')).toBeInTheDocument();
   });
 });
@@ -158,12 +158,12 @@ describe('the info button on each card\'s slot', () => {
     const fake = seeded(562);
     const buy = vi.spyOn(fake, 'buyCard');
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' }));
     fireEvent.click(screen.getByRole('button', { name: 'About Whoops!' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
     /* The pick stays the one made before, and the other slot was never selected. */
-    expect(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb, selected' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast, selected' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('status', { name: 'Selected: A1, Stick Around, 1.00' })).toBeInTheDocument();
     expect(buy).not.toHaveBeenCalled();
     expect((await fake.wallet()).balance).toBe(562);
@@ -181,7 +181,7 @@ describe('buying', () => {
   test('spends the card\'s price from the wallet, the count rises by one, and the card is in the hand at once under reduced motion', async () => {
     const fake = seeded(562);
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     await waitFor(() => expect(screen.getByRole('link', { name: 'Your hand 3 → 4' })).toBeInTheDocument());
     expect((await fake.myCards()).find((c) => c.card === 'whoops')?.held).toBe(2);
@@ -195,7 +195,7 @@ describe('buying', () => {
     const fake = seeded(62);
     const buy = vi.spyOn(fake, 'buyCard');
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     expect(screen.getByText('Whoops! costs 1.00 and your wallet holds 0.62. Only solid Aura can be spent; the ghost estimate cannot.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Whoops! costs 1.00 and your wallet holds 0.62.');
@@ -206,7 +206,7 @@ describe('buying', () => {
   test('a refusal the server makes after the screen\'s preview is said in plain words too, in orbs and not hundredths', async () => {
     const fake = seeded(562);
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     /* The wallet is spent elsewhere between the preview and the press, so the server refuses what the preview allowed. */
     vi.spyOn(fake, 'buyCard').mockResolvedValue({ ok: false, error: 'that costs 100, and your wallet holds 62' });
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
@@ -218,7 +218,7 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
   test('a lost answer that did go through still updates the wallet and the hand, and the page says to look before trying again', async () => {
     const fake = seeded(562);
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     fake.seed.loseNextAnswer(true);
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('look before you try again');
@@ -232,7 +232,7 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     const fake = seeded(562);
     const buy = vi.spyOn(fake, 'buyCard');
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     const button = screen.getByRole('button', { name: 'Buy Whoops! · 1.00' });
     act(() => { fireEvent.click(button); fireEvent.click(button); });
     await waitFor(() => expect(document.querySelector('.kb-vending-outcome')).toHaveTextContent(/is in your hand/));
@@ -244,7 +244,7 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
     const fake = seeded(562);
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     vi.useFakeTimers();
     for (let i = 0; i < 2; i++) {
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })); await Promise.resolve(); });
@@ -286,7 +286,7 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
     const { fake, other, land } = heldAnswer();
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toBeDisabled());
     act(() => fake.signInAs(other));
@@ -298,16 +298,16 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
     const { fake, other, land } = heldAnswer();
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toBeDisabled());
     act(() => fake.signInAs(other));
     /* The second account's page has loaded once its wallet shows. */
     await waitFor(() => expect(document.querySelector('.kb-vending-sum')).toHaveTextContent(/^3\.00$/), { timeout: 800 });
-    fireEvent.click(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' }));
     await land();
     /* Only change()'s account check keeps the first account's answer from replacing what the second holds. */
-    expect(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb, selected' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast, selected' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('signing out and in as another account clears the first one\'s pick and its outcome too', async () => {
@@ -317,10 +317,10 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     fake.seed.wallet(other, 300);
     fake.seed.cards(other, { stick: 1 });
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     expect(await screen.findByText('Whoops! is in your hand. 4.62 is left, solid.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' }));
     act(() => fake.signInAs(null));
     act(() => fake.signInAs(other));
     await nothingOfA();
@@ -332,7 +332,7 @@ describe('the cascade, backwards', () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
     const fake = seeded(562);
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     vi.useFakeTimers();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })); await Promise.resolve(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
@@ -348,7 +348,7 @@ describe('the drop and the flight, under full motion', () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
     const fake = seeded(562);
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     vi.useFakeTimers();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })); await Promise.resolve(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
@@ -373,7 +373,7 @@ describe('the drop and the flight, under full motion', () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
     const fake = seeded(562);
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     vi.useFakeTimers();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })); await Promise.resolve(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
@@ -389,7 +389,7 @@ describe('what the machine says to a screen reader', () => {
   test('the outcome is written into a polite region that was on the page, empty, before it spoke', async () => {
     const fake = seeded(562);
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     const region = document.querySelector<HTMLElement>('.kb-vending-outcome[role="status"]');
     expect(region).not.toBeNull();
     expect(region).toHaveAttribute('aria-live', 'polite');
@@ -403,7 +403,7 @@ describe('what the machine says to a screen reader', () => {
     const fake = seeded(562);
     vi.spyOn(fake, 'buyCard').mockResolvedValue({ ok: false, error: 'the Vending Machine is closed' });
     open(fake);
-    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     const region = screen.getByRole('alert');
     expect(region).toHaveTextContent('');
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));

@@ -222,9 +222,12 @@ button.kb-postcard {
   position: absolute;
   z-index: 2;
   color: var(--kb-card-ink);
-  font-family: var(--kb-glass-font-display);
+  font-family: var(--kb-glass-font-body);
+  font-style: italic;
+  font-weight: 800;
   line-height: 1;
 }
+.kb-postcard-play[data-kb-word]::before { content: attr(data-kb-word); }
 .kb-postcard-play {
   left: 6px;
   top: 28px;
