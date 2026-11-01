@@ -18,9 +18,9 @@ import './glitter.css';
 /** The glints' inks: Pepperoni's warm gold, a pink and a cyan, each drawn at most at GLITTER_ALPHA behind the words. */
 export const GLITTER_INKS: readonly string[] = Object.freeze(['#ffd23f', '#ff6bd6', '#5fe3ff']);
 /** The most a glint covers the page under the words; the contrast test reads it. */
-export const GLITTER_ALPHA = 0.16;
+export const GLITTER_ALPHA = 0.28;
 /** How many glints one post carries. */
-const GLINTS = 14;
+const GLINTS = 22;
 
 /** A small seeded sequence from a play's id: the same id draws the same glints on every screen. */
 function seeded(id: string, post: string): () => number {
@@ -41,7 +41,7 @@ export function GlitterBombEffect({ post, plays, children }: EffectProps) {
     return Array.from({ length: GLINTS }, (_, i) => ({
       left: `${(next() * 96 + 2).toFixed(1)}%`,
       top: `${(next() * 90 + 5).toFixed(1)}%`,
-      size: `${(next() * 0.6 + 0.5).toFixed(2)}em`,
+      size: `${(next() * 0.8 + 0.8).toFixed(2)}em`,
       ink: GLITTER_INKS[i % GLITTER_INKS.length]!,
       delay: `${(next() * 2.4).toFixed(2)}s`,
     }));

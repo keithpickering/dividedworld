@@ -295,3 +295,57 @@
   opacity: 0.55;
   border-style: dashed;
 }
+
+/*
+ * Marks beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 4): a character's on its postbit under its name, a thread's
+ * beside its title in the head, a board's beside its name in the banner, and a pin's beside its thread's title on the board's list.
+ * Each strip starts where its words end, rather than at the far edge as a post's date row has it, and its row keeps the strip's height
+ * whether it holds marks or none, so arming a card or a play landing moves nothing.
+ */
+.kb-postbit-marks,
+.kb-thread-head-marks,
+.kb-board-banner-marks,
+.kb-thread-pin-mark {
+  display: flex;
+  position: relative;
+  min-height: 1.9rem;
+}
+.kb-postbit-marks > .kb-marks-anchor,
+.kb-thread-head-marks > .kb-marks-anchor,
+.kb-board-banner-marks > .kb-marks-anchor,
+.kb-thread-pin-mark > .kb-marks-anchor {
+  margin-inline-start: 0;
+}
+.kb-postbit-marks .kb-marks,
+.kb-thread-head-marks .kb-marks,
+.kb-board-banner-marks .kb-marks,
+.kb-thread-pin-mark .kb-marks {
+  right: auto;
+  left: 0;
+  top: 0.1rem;
+}
+.kb-postbit-marks {
+  margin-block: 0.15rem;
+}
+.kb-thread-head-marks {
+  flex: 1 1 auto;
+  align-self: center;
+}
+.kb-board-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2em 1em;
+}
+.kb-board-banner-marks {
+  flex: 1 1 auto;
+}
+.kb-thread-pin-mark {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-inline-start: 0.5em;
+}
+/* A pinned row reads as one above the list: the board's own rule under the last of them. */
+.kb-thread-pinned > tr:last-child > td {
+  border-bottom: 3px double var(--kb-rule);
+}
