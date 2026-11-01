@@ -9,7 +9,7 @@
  * phone is always stacked, which is the stylesheet's to say (postbit.css), and the square then
  * stands in for a portrait through `<picture>`.
  */
-import { memo, type CSSProperties } from 'react';
+import { memo, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Character } from '../data/api.ts';
@@ -61,7 +61,11 @@ export function Pips({ ranks, index, name, style }: { readonly ranks: number; re
   );
 }
 
-export const Postbit = memo(function Postbit({ person, layout }: { readonly person: PostbitPerson; readonly layout: PostbitLayout }) {
+export const Postbit = memo(function Postbit({ person, layout, marks = null }: {
+  readonly person: PostbitPerson; readonly layout: PostbitLayout;
+  /** The character's own marks (its live plays beyond a post), drawn under its name: the thread hands them in. */
+  readonly marks?: ReactNode;
+}) {
   const { instance, ui } = useKayfa();
   const { character: c } = person;
   const index = rankIndex(instance.ranks, person.standing);
@@ -75,6 +79,7 @@ export const Postbit = memo(function Postbit({ person, layout }: { readonly pers
       <div className="kb-postbit-text">
         <span className="kb-postbit-name"><Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link></span>
         {c.staff && <StaffBadge character={c} />}
+        {marks && <span className="kb-postbit-marks">{marks}</span>}
         {c.title && <span className="kb-postbit-title kb-small kb-muted">{c.title}</span>}
         {/* A staff character is not scored: no rank, no pips, and no class to reveal. */}
         {!c.staff && (

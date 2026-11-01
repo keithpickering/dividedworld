@@ -17,10 +17,11 @@ import { usePlayer } from '../player.tsx';
 import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { faceOf, withCardEconomy } from './faces.ts';
-import { landing } from './land.ts';
-import { playOf, type Play } from '../../rules/cards.ts';
+import { landing, landingOn } from './land.ts';
+import { playOf, reachesOf, type BeyondPost, type CardTarget, type Play } from '../../rules/cards.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
-import { usePlays } from './plays.ts';
+import { livePlays, usePlays, type Plays } from './plays.ts';
+import type { Id } from '../data/api.ts';
 
 /** The post a play lands on, as the hand and the form name it. */
 function useTarget(act: Act): PlayTarget | null {
@@ -61,4 +62,86 @@ export function GhostMark({ act }: { readonly act: Act }) {
       </span>
     </button>
   );
+}
+
+/**
+ * A target beyond a post as its strip offers it (the card mechanic's design, section 7): the reach and its target, its name as the
+ * ghost and the form say it, and what the form links to and reads. A character's is the postbit of one post (`from`), whose thread and
+ * board are above it; a thread's head names its board; a board's banner, nothing.
+ */
+export interface ReachAt {
+  readonly reach: BeyondPost;
+  readonly target: Id;
+  readonly name: string;
+  /** The post whose postbit offers it: a character play's Act sits on it. */
+  readonly fromPost: Act | null;
+  /** The thread and the board above the target, whose live plays its card's rules see. */
+  readonly thread: Id | null;
+  readonly board: Id | null;
+  /** The thread's title, for the form. */
+  readonly title: string;
+  /** Where the form's link goes: the post, the thread, the board. */
+  readonly to: string;
+  readonly plays: Plays;
+  readonly know: (characters: readonly (Id | null)[]) => Promise<void>;
+  /** Where focus goes when the form closes: the post's article, the thread's title, the board's title; the ghost itself may be gone. */
+  readonly focusBack: () => HTMLElement | null;
+}
+
+/** What a ghost beyond a post is named: "Play Glitter on Spritey", "Use a Ward on Spritey". */
+export const reachGhostName = (card: string, play: Play, name: string): string => `${play === 'use' ? 'Use' : 'Play'} ${card} on ${name}`;
+
+/**
+ * The armed card's play control on a target beyond a post: drawn where the card lists the reach and can land on the target, given the
+ * target's live plays and those above it, by the card's own rules (landingOn). A Use on a character goes on one of the reader's own
+ * characters alone, decided from the reader's own characters, never sent; a Set never goes beyond a post.
+ */
+export function ReachGhost({ at }: { readonly at: ReachAt }) {
+  const play = usePlay();
+  const { hudCharacter, actingCharacters } = usePlayer();
+  const { instance, settings, ui } = useKayfa();
+  const here = usePlays(at.plays, at.target);
+  const onThread = usePlays(at.plays, at.thread ?? '');
+  const onBoard = usePlays(at.plays, at.board ?? '');
+  const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
+  if (!play || !hudCharacter || !rules || !reachesOf(rules).includes(at.reach)) return null;
+  const how = playOf(rules);
+  if (how === 'set' || how === 'keep') return null;
+  if (how === 'use' && at.reach === 'character' && !actingCharacters.some((c) => c.id === at.target)) return null;
+  const above = {
+    ...(at.thread ? { thread: livePlays(onThread.plays).filter((p) => p.reach === 'thread').map(effect) } : {}),
+    ...(at.board ? { board: livePlays(onBoard.plays).filter((p) => p.reach === 'board').map(effect) } : {}),
+  };
+  const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
+  if (!landingOn(rules, goal, livePlays(here.plays), { cards: instance.cards, setLasts: instance.settings.setLasts, above }).ok) return null;
+  const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy));
+  const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
+  return (
+    <button
+      type="button" className="kb-mark kb-ghost-mark" aria-label={reachGhostName(rules.name, how, at.name)} data-kb-card={rules.key} data-kb-alignment={rules.alignment} data-kb-reach={at.reach}
+      style={{ '--kb-mark-color': face.art.color } as CSSProperties}
+      onClick={() => play.openForm(rules.key, target)}
+    >
+      <span className="kb-mark-in" aria-hidden="true">
+        {(face.art.mark ?? face.art.image) && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark ?? face.art.image} alt="" draggable={false} />}
+        <span className="kb-mark-plus">+</span>
+      </span>
+    </button>
+  );
+}
+
+const effect = (p: { readonly id: Id; readonly card: string; readonly ends?: string }) => ({ card: p.card, act: p.id, ...(p.ends ? { ends: p.ends } : {}) });
+
+/**
+ * Whether a target beyond a post has a strip to draw: a play on it, or an armed card that reaches it. With neither, its host draws no
+ * strip at all, so a postbit, a thread's head and a banner are as they were until a card concerns them (the board matches hold).
+ */
+export function useReachShown(plays: Plays, target: Id | null, reach: BeyondPost): boolean {
+  const { instance } = useKayfa();
+  const play = usePlay();
+  const here = usePlays(plays, target ?? '');
+  if (target === null) return false;
+  if (here.plays.some((p) => p.reach === reach)) return true;
+  const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
+  return rules !== undefined && reachesOf(rules).includes(reach);
 }

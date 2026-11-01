@@ -197,6 +197,8 @@ export function Effect({ post, plays, states, reader, save, place, show, met, na
   const paintQueued = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* A fade still running when the post leaves the page is let go with it: nothing redraws a post that is gone. */
+  useEffect(() => () => { if (fadeTimer.current) clearTimeout(fadeTimer.current); }, []);
 
   const frame = size.frame;
   const fixed = frame > 0;

@@ -26,12 +26,12 @@ import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
-import { inkOf, useNarrow } from './Effects.tsx';
+import { inkOf, useNarrow, useUntil } from './Effects.tsx';
 import { Callout, useCallout } from './Callout.tsx';
 import { Lens, useLensFor, useLensHost, useLensStore, useResolvedView } from './Lens.tsx';
-import { GhostMark } from './PlayActions.tsx';
+import { GhostMark, ReachGhost, type ReachAt } from './PlayActions.tsx';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
-import { inPlayOrder, isBack, shownPlays, usePlays, type Plays } from './plays.ts';
+import { inPlayOrder, isBack, livePlays, shownPlays, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 import './marks.css';
 
@@ -74,9 +74,11 @@ interface MarkProps {
   readonly onOpen: Open;
   /** A character's name, for a card back's (who set it). */
   readonly nameOf?: (character: Id | null) => string;
+  /** What the marks are on, as a screen reader hears it: a post, or a character, a thread or a board. */
+  readonly where: string;
 }
 
-const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf }: MarkProps) {
+const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf, where }: MarkProps) {
   const { instance, ui } = useKayfa();
   const back = isBack(kind);
   /* A card back that sprang shows the card it was, in its place: no mark moves (the card mechanic's design, section 4). */
@@ -112,7 +114,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
     <button
       ref={button} type="button" className="kb-mark" data-kb-card={kind} data-kb-plays={plays.length} data-kb-alignment={back && !revealed ? undefined : rules?.alignment} data-kb-edge={progress === null ? undefined : 'true'}
       data-kb-back={back ? (revealed ? 'sprung' : 'down') : undefined} data-kb-caught={caught ? 'true' : undefined}
-      aria-label={markName({ card: name, plays: plays.length, state: back ? '' : view.state, more, yours: view.yours })} aria-haspopup="dialog" aria-expanded={expanded} aria-describedby={callout ?? undefined}
+      aria-label={markName({ card: name, plays: plays.length, state: back ? '' : view.state, more, yours: view.yours, where })} aria-haspopup="dialog" aria-expanded={expanded} aria-describedby={callout ?? undefined}
       style={style} onClick={(e) => onOpen(kind, e.currentTarget)}
     >
       <span className="kb-mark-in" aria-hidden="true">
@@ -171,6 +173,10 @@ export interface MarkStripProps {
   readonly open?: string | null;
   /** Offer the armed card on this post with a ghost mark at the strip's end: the thread's posts do, and the ORIGIN box (a view of another thread's Act) does not. */
   readonly ghost?: Act;
+  /** Offer the armed card on a target beyond a post (a postbit's character, a thread's head, a board's banner): its ghost, where the card can land there. */
+  readonly reachAt?: ReachAt;
+  /** What the marks are on, as a screen reader hears it: the reach's (`reachAt`) unless said, else a post. */
+  readonly where?: string;
   /** Compare the plays' reactions with the post's for the corner sign; false where the post's tally is not read here (a card play's ORIGIN box, whose post is in another thread). */
   readonly compare?: boolean;
   /** A character's name, for a card back's (who set it). */
@@ -178,7 +184,7 @@ export interface MarkStripProps {
 }
 
 /** One mark per kind of card played on the post, "+N" for the kinds past the strip's room, and the ghost mark while an armed card can land here. */
-export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, compare = true, nameOf }: MarkStripProps) {
+export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, nameOf }: MarkStripProps) {
   const here = usePlays(plays, post);
   const narrow = useNarrow();
   /* A strip a takeover hosts (Stick Around's view) offers no ghost mark: its play form would open under the view. */
@@ -203,7 +209,9 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, co
   }, []);
   /* A card back whose time has passed with nothing springing it is gone, as the server drops it. */
   const { instance } = useKayfa();
-  const billed = useMemo(() => shownPlays(here.billed, instance.settings.setLasts), [here.billed, instance.settings.setLasts]);
+  /* A play beyond a post goes at its end, by itself: no reread (its way out). */
+  const now = useUntil(here.billed);
+  const billed = useMemo(() => livePlays(shownPlays(here.billed, instance.settings.setLasts), now), [here.billed, instance.settings.setLasts, now]);
   const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);
@@ -216,10 +224,11 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, co
   return (
     <span className="kb-marks" ref={strip}>
       {shown.map((kind) => (
-        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} />
+        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} where={where} />
       ))}
       {hidden.length > 0 && <More hidden={hidden.length} first={hidden[0]!} expanded={open !== null && hidden.includes(open)} onOpen={press} />}
       {ghost && !hosted && <GhostMark act={ghost} />}
+      {reachAt && !hosted && <ReachGhost at={reachAt} />}
     </span>
   );
 }
@@ -229,8 +238,8 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, co
  * first kind it hides, and the same mark again closes it. One Lens is open on a page, so a strip subscribes to whether it is
  * the one and is redrawn for its own opening and closing alone.
  */
-export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, compare = true, onSpin }: {
-  readonly post: Id; readonly ghost?: Act; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
+export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, onSpin }: {
+  readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
   readonly tallies: Tallies; readonly mine: Mine;
   /** Spin a thread from a play: the Lens has closed, and the post opens its spin form for it, giving focus back to `opener` when the form closes. */
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
@@ -245,8 +254,8 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, compa
   const strip = useCallback(() => anchor.current, []);
   return (
     <span className="kb-marks-anchor" ref={anchor}>
-      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} />
-      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} />}
+      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} />
+      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} />}
     </span>
   );
 }

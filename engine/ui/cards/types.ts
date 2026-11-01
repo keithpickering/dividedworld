@@ -10,6 +10,7 @@
  */
 import type { ComponentType, ReactNode } from 'react';
 import type { Settings } from '../../rules/types.ts';
+import type { BeyondPost, Reach } from '../../rules/cards.ts';
 import type { Act, Answer, EffectState, Id } from '../data/api.ts';
 
 /**
@@ -41,8 +42,15 @@ export interface CardPlay {
   readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string };
   /** A play a trap caught, by the set that caught it: it is spent and does nothing, so no effect is drawn for it. */
   readonly caught?: Id;
-  /** When a Use's effect ends, as the server wrote it when it landed. */
+  /** When a Use's effect ends, as the server wrote it when it landed; a play beyond a post's end, which it is drawn until. */
   readonly ends?: string;
+  /**
+   * A play beyond a post (0055_card_reach.sql): the reach it lands on and its target there (`on`: the character, the thread or the
+   * board), where the screens draw its mark and its effect. Its `post` is the post its Act sits on (the postbit's post for a
+   * character, the thread's first post), or empty for a board's, which sits on none.
+   */
+  readonly reach?: BeyondPost;
+  readonly on?: Id;
 }
 
 /** Who the reader is to a post an effect wraps, on their own screen only (it is computed from the player's own characters, never sent). */
@@ -106,6 +114,11 @@ export interface EffectProps {
   readonly released: ReadonlySet<Id>;
   readonly reader: EffectReader;
   readonly place: EffectPlace;
+  /**
+   * Which reach these plays are on (the card mechanic's design, section 7): the post's own, or one above it (its board, its thread,
+   * its author) whose effect falls on every post there. An effect beyond a post saves no state: its plays have no post author.
+   */
+  readonly reach: Reach;
   /**
    * Say what this card's state is on this post, for its mark and the Lens, or clear it with null. Bound to this post and
    * this card by the engine; an effect says it as often as its state changes, and equal views cost nothing. The engine clears

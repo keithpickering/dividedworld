@@ -37,11 +37,11 @@ export const playsPhrase = (n: number): string => (n === 1 ? '1 play' : `${n} pl
  * what the corner sign and the notch say. The state is the card's own sentence, so any stop it ended with is dropped
  * before the name's; a card that has no more to say than its name (its view is the default's) is not named twice.
  */
-export function markName(m: { readonly card: string; readonly plays: number; readonly state: string; readonly more: boolean; readonly yours: boolean }): string {
+export function markName(m: { readonly card: string; readonly plays: number; readonly state: string; readonly more: boolean; readonly yours: boolean; readonly where?: string }): string {
   const state = m.state.trim().replace(/[.\s]+$/u, '');
   const said = state === '' || state === m.card ? '' : `, ${state}`;
   return [
-    `${m.card}, ${playsPhrase(m.plays)}${said}. Opens the cards on this post.`,
+    `${m.card}, ${playsPhrase(m.plays)}${said}. Opens the cards on this ${m.where ?? 'post'}.`,
     m.more ? 'One has more reactions than the post.' : '',
     m.yours ? 'Yours to act on.' : '',
   ].filter((s) => s !== '').join(' ');
@@ -76,6 +76,9 @@ export function wardWords(card: string, rarity: Rarity, ends: string | undefined
   if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: `${card} has ended; it turns nothing away.`, ends: `Ended on ${utcDate(ends)}.` };
   return { state: `Turns away cards up to ${rarity}.`, ...(ends !== undefined ? { ends: `Ends on ${utcDate(ends)}.` } : {}) };
 }
+
+/** When a play beyond a post ends, as its Lens line says it: on its timer, by itself (its way out). */
+export const endsWords = (ends: string): string => `Ends by itself on ${utcDate(ends)}.`;
 
 /** A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). */
 export const caughtWords = (trap: string | null): string => `Caught by ${trap ? article(trap) : 'a trap'}. It did nothing, and its card is spent.`;

@@ -107,7 +107,7 @@ function mount(o: Options = {}) {
   const show: EffectProps['show'] = (view) => { shown.push(view); say(view); };
   const props: EffectProps = {
     post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), reader: { author: o.author ?? false, caster: false },
-    place: 'thread', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
+    place: 'thread', reach: 'post', save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), children: <p>{textOf(layoutLines)}</p>,
   };
   /* The saved states arrive from outside, as another device's save is heard: the host holds them and lets a test push a new set. */
   let push: (next: Record<string, EffectState>) => void = () => {};
@@ -606,6 +606,17 @@ describe('motion', () => {
   test('under reduced motion there are none, and the scrubbing still works', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     expect(sudsAfterScrub()).toBe(0);
+  });
+
+  test('a fade still running when the post leaves the page leaves no timer behind', () => {
+    vi.useFakeTimers();
+    try {
+      const fading = mount({ clean: 40 });
+      scrubTo(fading.frame, fading.root, 0, new LayerInk(splatFor(0), []), 0.5);
+      expect(fading.root).toHaveAttribute('data-kb-fading', 'true');
+      fading.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
   });
 
   test('a layer washed clean fades; under reduced motion it is gone at once', () => {

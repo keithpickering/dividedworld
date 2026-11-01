@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
+import { landsOn, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import type { Act, Refusal, Tally } from './api.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 import { LOG_ROWS, micros } from './log-page.ts';
@@ -15,7 +16,7 @@ const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
-  invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 },
+  invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
   postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, cardSettings: {}, economy: {}, ...systemSettings,
 };
 
@@ -913,8 +914,8 @@ describe('the Vending Machine and a card play, refused as the server refuses the
   /* One salty card at 1.00, and a long post costs 0.50 more: the rules the server prices a play by (engine/rules/cards.ts). */
   const splat = {
     key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', stack: 2,
-    playPrice: (_s: Settings, t: { length: number }) => (t.length > 20 ? 50 : 0),
-    canApply: (t: { kind: string }, on: readonly { card: string | null }[]) => (t.kind !== 'post' ? refused2('a card lands on a post') : on.length >= 2 ? refused2('this post already carries 2 of that card, the most it takes') : { ok: true as const, value: undefined }),
+    playPrice: (_s: Settings, t: CardTarget) => (t.reach === 'post' && t.length > 20 ? 50 : 0),
+    canApply: (t: CardTarget, on: readonly { card: string | null }[]) => (t.reach !== 'post' || t.kind !== 'post' ? refused2('a card lands on a post') : on.length >= 2 ? refused2('this post already carries 2 of that card, the most it takes') : { ok: true as const, value: undefined }),
     validateConfig: (c: unknown) => ([undefined, 'red'].includes((c as { color?: unknown } | undefined)?.color as string | undefined) ? { ok: true as const, value: c ?? {} } : refused2('the ink is red')),
   };
   const refused2 = (why: string) => ({ ok: false as const, why });
@@ -1107,7 +1108,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
   /* One salty card at 1.00 that costs 0.50 more on a long post, as the Vending Machine's tests above price it. */
   const splat = {
     key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', stack: 2,
-    playPrice: (_s: Settings, t: { length: number }) => (t.length > 20 ? 50 : 0),
+    playPrice: (_s: Settings, t: CardTarget) => (t.reach === 'post' && t.length > 20 ? 50 : 0),
     canApply: () => ({ ok: true as const, value: undefined }),
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
@@ -1523,5 +1524,87 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(typeof used.payload.ends).toBe('string');
     fake.signInAs(bo);
     expect(await fake.playCard('blot', boFace, opener, {}, '')).toEqual(refused('this post\'s Shield turns away cards up to uncommon', 'config'));
+  });
+});
+
+/* Cards beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3): a play on a character, a thread or a board, and the live
+   plays above a page's posts read in one batch. */
+describe('a card beyond a post, and the effects above a page', () => {
+  const sparkle = {
+    key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, priceKey: 'sparkle.price', reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 },
+    playPrice: () => 0, validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
+    canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e),
+  };
+  const shop: Instance = { ...instance, cards: [sparkle], settings: { ...settings, economy: { 'sparkle.price': 100 } } };
+  function world() {
+    const fake = createFake({ instance: shop });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const boOther = fake.seed.character(bo, 'Bo Other', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    fake.seed.wallet(ana, 500);
+    fake.seed.cards(ana, { sparkle: 2 });
+    fake.signInAs(ana);
+    return { fake, anaFace, boFace, boOther, thread, opener };
+  }
+
+  test('a character play lands in its post\'s thread, on that post, naming its reach, its target and its end', async () => {
+    const { fake, anaFace, boFace, thread, opener } = world();
+    expect(await fake.playCard('sparkle', anaFace, opener, {}, '')).toMatchObject({ ok: false, field: 'reach', error: 'this card lands on a character' });
+    const played = must(await fake.playCard('sparkle', anaFace, boFace, {}, 'Shine.', 'character', opener));
+    expect(played).toMatchObject({ kind: 'card', thread, targetActId: opener, payload: { card: 'sparkle', reach: 'character', character: boFace, message: 'Shine.' } });
+    expect(Date.parse(String(played.payload.ends)) - Date.parse(played.createdAt)).toBe(7 * 86_400_000);
+    expect(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('this character already carries that card', 'config'));
+  });
+
+  test('a character play is played from that character\'s own post, and is no play on the post it sits on', async () => {
+    const { fake, anaFace, boFace, boOther, opener } = world();
+    expect(await fake.playCard('sparkle', anaFace, boOther, {}, '', 'character', opener)).toEqual(refused('a card on a character is played from one of its posts'));
+    must(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener));
+    expect(await fake.playCard('sparkle', anaFace, opener, {}, '')).toMatchObject({ field: 'reach' });
+    /* The post's own plays are unchanged: the character play takes no layer there. */
+    const shopBoth: Instance = { ...shop, cards: [{ ...sparkle, reaches: ['character', 'post'], canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'sparkle', reaches: ['character', 'post'] }, t, e) }] };
+    const both = createFake({ instance: shopBoth });
+    const a = both.seed.account('a'); const b = both.seed.account('b');
+    const af = both.seed.character(a, 'A Face', 'face'); const bf = both.seed.character(b, 'B Face', 'face');
+    const { act } = both.seed.thread('general', bf, 'Hi', 'Opener');
+    both.seed.wallet(a, 500); both.seed.cards(a, { sparkle: 2 }); both.signInAs(a);
+    must(await both.playCard('sparkle', af, bf, {}, '', 'character', act));
+    expect(must(await both.playCard('sparkle', af, act, {}, ''))).toMatchObject({ payload: { layer: 1 } });
+  });
+
+  test('a Use beyond a post goes on the caller\'s own character, and a board play in The System\'s announcements thread, on no post', async () => {
+    const selfie = { ...sparkle, key: 'selfie', name: 'Selfie', play: 'use' as const, canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'selfie', reaches: ['character'] }, t, e) };
+    const quake = { ...sparkle, key: 'quake', name: 'Quake', rarity: 'legendary' as const, reaches: ['board' as const], lasts: { unit: 'day' as const, count: 3 }, canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'quake', reaches: ['board'] }, t, e) };
+    /* On the wall clock: a card's own rules (landsOn) read the time as the server does, so a live board card is live to them. */
+    const fake = createFake({ instance: { ...shop, cards: [selfie, quake], settings: { ...shop.settings, economy: { 'sparkle.price': 100 } } }, now: () => Date.now() });
+    const ana = fake.seed.account('ana'); const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face'); const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
+    const { act: mine } = fake.seed.thread('general', anaFace, 'Mine', 'My post');
+    fake.seed.wallet(ana, 500); fake.seed.cards(ana, { selfie: 2, quake: 2 }); fake.signInAs(ana);
+    expect(await fake.useCard('selfie', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('Selfie is used on your own character'));
+    must(await fake.useCard('selfie', anaFace, anaFace, {}, '', 'character', mine));
+    const board = (await fake.thread(thread))!.board;
+    const shook = must(await fake.playCard('quake', anaFace, board, {}, '', 'board'));
+    expect(shook.targetActId).toBeNull();
+    expect((await fake.thread(shook.thread))!.board).not.toBe(board);
+    /* Three days, cut to the board's day. */
+    expect(Date.parse(String(shook.payload.ends)) - Date.parse(shook.createdAt)).toBe(86_400_000);
+    expect((await fake.playCard('quake', anaFace, board, {}, '', 'board')).ok).toBe(false);
+  });
+
+  test('effectsAbove answers the live plays on the characters, the thread and the board asked, and nothing on another mask', async () => {
+    const { fake, anaFace, boFace, boOther, thread, opener } = world();
+    const live = must(await fake.playCard('sparkle', anaFace, boFace, {}, '', 'character', opener));
+    const board = (await fake.thread(thread))!.board;
+    const above = await fake.effectsAbove([boFace, boOther], thread, board);
+    expect(above).toEqual([{ play: live.id, reach: 'character', target: boFace, endsAt: live.payload.ends, act: live }]);
+    expect(await fake.effectsAbove([boOther], thread, board)).toEqual([]);
+    /* An ended play is gone without a reread of anything but the time. */
+    fake.clock.advance(7 * 86_400_000 + 1);
+    expect(await fake.effectsAbove([boFace], thread, board)).toEqual([]);
   });
 });

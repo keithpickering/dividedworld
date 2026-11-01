@@ -1,0 +1,41 @@
+/*
+ * Glitter Bomb (Effect.tsx): the glints sit behind the words, in a layer that takes no pointer and no room, so the post reads and
+ * lays out as it would bare. Each glint is a solid four-point star in its ink, twinkling in place by its size alone; the layer as a
+ * whole is drawn at Effect.tsx's GLITTER_ALPHA (set on it inline), so glints that overlap never cover the page more than one does.
+ * Reduced motion, the device's or the player's, holds every glint still where it is.
+ */
+.dw-glitter {
+  position: relative;
+  isolation: isolate;
+}
+.dw-glitter-sparkle {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.dw-glitter-words {
+  position: relative;
+  z-index: 1;
+}
+.dw-glint {
+  position: absolute;
+  background: var(--dw-glint-ink);
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  animation-duration: 2.4s;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+@keyframes dw-twinkle {
+  0%, 100% { transform: scale(0.55) rotate(0deg); }
+  50% { transform: scale(1) rotate(45deg); }
+}
+.dw-glitter[data-kb-moving="false"] .dw-glint {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dw-glint {
+    animation: none;
+  }
+}

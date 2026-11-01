@@ -8,11 +8,12 @@
  * A post is memoized on its Act, its person and its layout, and its reactions read their own tally
  * from the tallies store, so a reaction re-renders the post it is on and nothing else.
  */
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { MoveTag } from '../board/MoveNotice.tsx';
 import { PostEffects } from '../cards/Effects.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
+import { useReachShown } from '../cards/PlayActions.tsx';
 import { EditPost } from '../composer/EditPost.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -135,7 +136,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
 }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
-  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName } = useThread();
+  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, summary, know } = useThread();
   const ref = useRef<HTMLElement>(null);
   const seq = act.seq!;
   useEffect(() => {
@@ -159,6 +160,16 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const marks = act.kind === 'post'
     ? <PostMarks post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />
     : null;
+  /* The character's own live plays, on its postbit, and the armed character card's ghost there (the card mechanic's design, section 7). */
+  /* Drawn only where a play or an armed card concerns the character; memoized, so the memo on Postbit still skips a postbit whose character, post and page are unchanged. */
+  const shown = useReachShown(plays, act.kind === 'post' ? act.character : null, 'character');
+  const characterMarks = useMemo(() => (shown && act.kind === 'post' && act.character !== null
+    ? <PostMarks
+        post={act.character} plays={plays} compare={false} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine}
+        reachAt={{ reach: 'character', target: act.character, name, fromPost: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
+        onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
+      />
+    : null), [shown, act, plays, thread, seq, perPage, casterName, tallies, mine, name, summary.board, summary.title, know]);
   return (
     <article
       ref={ref}
@@ -174,7 +185,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
       {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
       {!plain && (person
-        ? <Postbit person={person} layout={layout} />
+        ? <Postbit person={person} layout={layout} marks={characterMarks} />
         : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
       <header className="kb-act-meta">
         <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt)}</time>
@@ -189,3 +200,39 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
     </article>
   );
 });
+
+/**
+ * The thread's head: its title, the top pager, and the thread's own live plays as marks beside the title, with the armed thread card's
+ * ghost there (the card mechanic's design, section 7). A play's Lens offers Spin, whose form opens under the head.
+ */
+export function ThreadHead({ pager }: { readonly pager: ReactNode }) {
+  const { thread, summary, plays, tallies, mine, nameOf, know } = useThread();
+  const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
+  const drafts = useSpinDrafts();
+  const to = threadHref(thread, 1);
+  /* Where focus goes back to after a play from the head: the ghost goes with the play, the title stays. */
+  const title = useRef<HTMLHeadingElement>(null);
+  const shown = useReachShown(plays, thread, 'thread');
+  return (
+    <>
+      <div className="kb-thread-head">
+        <h1 ref={title} tabIndex={-1} className="kb-heading kb-thread-title">{summary.title}</h1>
+        {shown && <span className="kb-thread-head-marks">
+          <PostMarks
+            post={thread} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
+            reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, fromPost: null, thread: null, board: summary.board, title: summary.title, to, plays, know: know ?? (async () => {}), focusBack: () => title.current }}
+            onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
+          />
+        </span>}
+        {pager}
+      </div>
+      {spinOrigin && (
+        <SpinForm
+          key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
+          draft={drafts.get(spinOrigin.id)} onDraft={(d) => drafts.set(spinOrigin.id, d)}
+          onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); back?.focus(); }}
+        />
+      )}
+    </>
+  );
+}

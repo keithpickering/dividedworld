@@ -13,7 +13,7 @@
  * the two never disagree on an emoji.
  */
 import type { Instance } from './types.ts';
-import { basePrice, casterMessage, type Play } from './cards.ts';
+import { REACHES, basePrice, casterMessage, listed, reachesOf, type Play, type Reach } from './cards.ts';
 
 /**
  * A decided action. Most are written as the player, whose session the database reads. A card's
@@ -74,6 +74,40 @@ const card = (r: Fields, instance: Instance): string => {
   const key = r.card;
   if (typeof key !== 'string' || !instance.cards.some((c) => c.key === key)) throw new Refused('card', `the Vending Machine has no card ${JSON.stringify(key)}`);
   return key;
+};
+
+/**
+ * Where a play goes (the card mechanic's design, section 7): a post unless the request says, and only a reach its card lists, refused
+ * here before SQL is asked. Beyond a post it travels as `reach`, and a character play names the post whose postbit took it
+ * (`from_post`), which SQL holds to be that character's. A Set goes on a post alone.
+ */
+const reached = (r: Fields, instance: Instance, key: string, play: Exclude<Play, 'keep'>): Fields => {
+  const reach = (r.reach ?? 'post') as Reach;
+  if (!REACHES.includes(reach)) throw new Refused('reach', 'is a post, a character, a thread or a board');
+  if (play === 'set') {
+    if (reach !== 'post') throw new Refused('reach', 'a card is set face down on a post');
+    return {};
+  }
+  const lands = reachesOf(instance.cards.find((c) => c.key === key)!);
+  if (!lands.includes(reach)) throw new Refused('reach', `this card lands on ${listed(lands)}`);
+  if (reach === 'post') return {};
+  return { reach, ...(reach === 'character' ? { from_post: id(r, 'post') } : {}) };
+};
+
+/** A Cast's or a Use's arguments: the card, the character, the target, its configuration and message, and where it goes. */
+const played = (r: Fields, instance: Instance, play: 'cast' | 'use'): Fields => {
+  const key = card(r, instance);
+  const through = id(r, 'character');
+  const target = id(r, 'target');
+  return { card: key, through, target, config: r.config ?? {}, message: r.message ?? '', ...reached(r, instance, key, play) };
+};
+
+/** A Set's arguments: the card, the character and the post, with no message; refused for any reach but a post's. */
+const setArgs = (r: Fields, instance: Instance): Fields => {
+  const key = card(r, instance);
+  const args = { card: key, through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {} };
+  reached(r, instance, key, 'set');
+  return args;
 };
 
 type Decided = Omit<Extract<Decision, { ok: true }>, 'ok'>;
@@ -150,8 +184,8 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   },
   playCard: (r, instance) => ({
     rpc: 'play_card',
-    // The message is the card's rules' to read (decidePlay), with the post they price.
-    args: { card: card(r, instance), through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {}, message: r.message ?? '' },
+    // The message is the card's rules' to read (decidePlay), with the target they price.
+    args: played(r, instance, 'cast'),
     asService: true,
     needsTarget: true,
     play: 'cast',
@@ -159,7 +193,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   // A Use is a play on the caller's own post, written as a cast is; SQL holds whose post it is.
   useCard: (r, instance) => ({
     rpc: 'play_card',
-    args: { card: card(r, instance), through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {}, message: r.message ?? '' },
+    args: played(r, instance, 'use'),
     asService: true,
     needsTarget: true,
     play: 'use',
@@ -167,7 +201,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   // A Set carries no message: its Act says nothing, so a Bluff's and a trap's are alike.
   setCard: (r, instance) => ({
     rpc: 'set_card',
-    args: { card: card(r, instance), through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {} },
+    args: setArgs(r, instance),
     asService: true,
     needsTarget: true,
     play: 'set',

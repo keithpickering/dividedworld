@@ -38,11 +38,11 @@ import { Link } from '../router.tsx';
 import { spunCount, useSpunInto } from '../spin/spun.ts';
 import { when } from '../thread/lines.tsx';
 import type { Tallies } from '../thread/tallies.ts';
-import { inkOf, useNarrow } from './Effects.tsx';
+import { inkOf, useNarrow, useUntil } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { backWords, caughtWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
-import { defaultView, inPlayOrder, isBack, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
+import { backWords, caughtWords, endsWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
+import { defaultView, inPlayOrder, isBack, livePlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import './lens.css';
 
@@ -179,6 +179,12 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
       const ward = wardWords(rules.name, rules.rarity, latest.ends);
       return { ...base, state: ward.state, ...(ward.ends ? { ends: ward.ends } : {}), notes: caught };
     }
+    /* A play beyond a post ends on its timer: its line says when, the latest of the kind's (each is drawn until its own). */
+    const timed = live.filter((p) => p.ends !== undefined);
+    if (timed.length > 0) {
+      const latest = [...timed].sort((a, b) => Date.parse(b.ends!) - Date.parse(a.ends!))[0]!;
+      return { ...base, ends: endsWords(latest.ends!), notes: caught };
+    }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
   }, [instance.cards, instance.settings.setLasts, ui.cards, kind, economy, here, nameOf]);
   if (!given) return fallback;
@@ -297,6 +303,8 @@ function Who({ plays, nameOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omi
 
 export interface LensProps {
   readonly open: LensOpen;
+  /** What the marks are on, as the Lens is named for it: a post, or a character, a thread or a board. */
+  readonly where?: string;
   readonly store: LensStore;
   /** The post the marks are on (the id its plays are kept under). */
   readonly post: Id;
@@ -312,12 +320,13 @@ export interface LensProps {
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
 }
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post' }: LensProps) {
   const { instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useNarrow();
   const host = useLensHost();
-  const billed = shownPlays(here.billed, instance.settings.setLasts);
+  const now = useUntil(here.billed);
+  const billed = livePlays(shownPlays(here.billed, instance.settings.setLasts), now);
   const kinds = kindsOf(billed);
   const card = kinds.includes(open.card) ? open.card : null;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
@@ -400,7 +409,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
 
   return (
     <Float
-      label="Cards on this post" surface="effect" anchor={anchor} beside={beside} sheet={narrow} host={host}
+      label={`Cards on this ${where}`} surface="effect" anchor={anchor} beside={beside} sheet={narrow} host={host}
       returnFocusTo={() => anchor.current} onClose={dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
       style={ink ? ({ '--kb-lens-ink': ink } as CSSProperties) : undefined}
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}

@@ -9,7 +9,7 @@
  * Aura is an integer count of hundredths of an orb wherever it is stored or returned. Times
  * are epoch milliseconds.
  */
-import type { CardRules } from './cards.ts';
+import type { BeyondPost, CardRules, Rarity } from './cards.ts';
 import type { StockLineKey } from '../system/stock.ts';
 import type { Duty } from '../system/duties.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
@@ -107,6 +107,13 @@ export interface Settings {
    */
   readonly setLasts: Span;
   /**
+   * The least rarity a card must be to reach beyond a post, per reach (the card mechanic's design, section 7): a card reaching
+   * further than its rarity allows is refused at seeding (instanceProblems, seed_instance).
+   */
+  readonly reachRarity: Readonly<Record<BeyondPost, Rarity>>;
+  /** The longest a play beyond a post lasts, per reach: a card's own `lasts` is at most this, and every such effect ends on its timer. */
+  readonly reachLasts: Readonly<Record<BeyondPost, Span>>;
+  /**
    * The numbers a card gives the screens, each named by the instance ("whoops.clean"): a card's effect
    * decides something on the client (how much of a layer counts as washed clean), so the number is one the
    * screens read (`screen_settings`), which the economy never is. The engine checks each is a number; the
@@ -201,7 +208,7 @@ export interface BoardSeed {
 /**
  * An Act as the settlement reads it. `thread` is the thread it is in; for a `spin` it is the
  * thread the spin opened, and `target` the Act it was spun from. For a `card`, `target` is the
- * post it landed on.
+ * post it landed on, and a card beyond a post names its `reach` instead.
  */
 export interface InputAct {
   readonly id: string;
@@ -211,6 +218,11 @@ export interface InputAct {
   readonly thread: string;
   readonly target?: string;
   readonly card?: string;
+  /**
+   * A card played beyond a post (0055_card_reach.sql): on a character, a thread or a board. It has no target post to outdraw, so it
+   * carries no `target`; its own reactions pay its caster as any Act's do, and it is in no class's cards played or landed.
+   */
+  readonly reach?: BeyondPost;
 }
 
 /** A staff post a card landed on: its author is staff, so it is named but never settled. */

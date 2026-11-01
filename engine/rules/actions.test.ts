@@ -5,11 +5,13 @@ import type { Instance } from './types.ts';
 import { systemSettings, testSystem } from './test-system.ts';
 
 const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+// A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3).
+const sparkle = { ...splat, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 1 } };
 const instance: Instance = {
-  key: 'test-world', name: 'Test World', system: testSystem, classes: [{ key: 'a', name: 'A', earn: () => [] }], cards: [splat],
+  key: 'test-world', name: 'Test World', system: testSystem, classes: [{ key: 'a', name: 'A', earn: () => [] }], cards: [splat, sparkle],
   reactions: [{ key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' }],
   settings: {
-    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 },
+    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
     postMaxLength: 50, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
@@ -183,4 +185,22 @@ test('a reveal names its character and thread, and a line of its words, checked 
   // The class is The System's to read, never the request's.
   assert.deepEqual(decide({ action: 'unmask', character: id, thread: other, class: 'a' }, instance),
     { ok: true, rpc: 'unmask', args: { through: id, in_thread: other, message: '' } });
+});
+
+test('a play beyond a post names its reach and its target, and a character play the post it was played from', () => {
+  const third = '33333333-3333-4333-8333-333333333333';
+  assert.deepEqual(decide({ action: 'playCard', card: 'sparkle', character: id, reach: 'character', target: other, post: third }, instance),
+    { ok: true, rpc: 'play_card', args: { card: 'sparkle', through: id, target: other, config: {}, message: '', reach: 'character', from_post: third }, asService: true, needsTarget: true, play: 'cast' });
+  assert.deepEqual(decide({ action: 'playCard', card: 'sparkle', character: id, reach: 'thread', target: other }, instance),
+    { ok: true, rpc: 'play_card', args: { card: 'sparkle', through: id, target: other, config: {}, message: '', reach: 'thread' }, asService: true, needsTarget: true, play: 'cast' });
+  assert.match(refusal({ action: 'playCard', card: 'sparkle', character: id, reach: 'character', target: other }) ?? '', /^post: is not an id/);
+  assert.match(refusal({ action: 'useCard', card: 'sparkle', character: id, reach: 'thread', target: 'x' }) ?? '', /^target:/);
+});
+
+test('a request with a reach the card lacks is refused before SQL', () => {
+  assert.equal(refusal({ action: 'playCard', card: 'splat', character: id, reach: 'character', target: other, post: other }), 'reach: this card lands on a post');
+  assert.equal(refusal({ action: 'playCard', card: 'sparkle', character: id, reach: 'board', target: other }), 'reach: this card lands on a character or a thread');
+  assert.equal(refusal({ action: 'playCard', card: 'sparkle', character: id, reach: 'room', target: other }), 'reach: is a post, a character, a thread or a board');
+  assert.equal(refusal({ action: 'playCard', card: 'sparkle', character: id, target: other }), 'reach: this card lands on a character or a thread', 'no reach is a post\'s');
+  assert.equal(refusal({ action: 'setCard', card: 'splat', character: id, reach: 'thread', target: other }), 'reach: a card is set face down on a post');
 });

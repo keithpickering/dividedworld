@@ -25,7 +25,7 @@
  * offer to play again, in so many words ("Play again anyway").
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
-import { casterMessage, MESSAGE_MOST, playOf } from '../../rules/cards.ts';
+import { casterMessage, MESSAGE_MOST, playOf, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { Overlay } from '../glass/Overlay.tsx';
@@ -34,8 +34,8 @@ import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
 import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
-import { landing, lengthOf, targetOf } from './land.ts';
-import { effectCards, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
+import { landing, landingOn, lengthOf, targetOf } from './land.ts';
+import { effectCards, livePlays, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
 import './play.css';
 
@@ -80,14 +80,21 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   accountNow.current = account;
   /* The post as it stands: its edits change its length and so its price, and the click's copy is only where it starts. */
   const [live, setLive] = useState(target.post);
-  const post = live.id === target.post.id ? live : target.post;
+  const post = live !== null && target.post !== null && live.id === target.post.id ? live : target.post;
+  const postId = target.post?.id ?? null;
+  const postThread = target.post?.thread ?? null;
   useEffect(() => {
+    if (postId === null || postThread === null) return;
     let open = true;
-    const take = (a: Act) => { if (open && a.id === target.post.id && a.kind === 'post') setLive((held) => newer(held, a)); };
-    try { void api.actsById([target.post.id]).then((read) => { for (const a of read) take(a); }, () => { /* the live edits still arrive */ }); } catch { /* ditto */ }
-    const stop = api.subscribeThread(target.post.thread, { onAct: take });
+    const take = (a: Act) => { if (open && a.id === postId && a.kind === 'post') setLive((held) => (held ? newer(held, a) : a)); };
+    try { void api.actsById([postId]).then((read) => { for (const a of read) take(a); }, () => { /* the live edits still arrive */ }); } catch { /* ditto */ }
+    const stop = api.subscribeThread(postThread, { onAct: take });
     return () => { open = false; stop(); };
-  }, [api, target.post.id, target.post.thread]);
+  }, [api, postId, postThread]);
+  /* A play beyond a post (the card mechanic's design, section 7) goes on the reach's target, where its plays are kept. */
+  const beyond = target.reach ?? null;
+  const goal: CardTarget | null = beyond ? ({ reach: beyond.reach, [beyond.reach]: beyond.target } as unknown as CardTarget) : post ? targetOf(post) : null;
+  const home = beyond ? beyond.target : post?.id ?? '';
 
   const rules = instance.cards.find((c) => c.key === card);
   const cardUi = ui.cards.find((c) => c.key === card);
@@ -101,21 +108,25 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const wallet = player.wallet;
 
   /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. */
-  const carried = usePlays(target.plays, post.id).plays;
-  const lands = rules ? landing(rules, post, carried, { cards: instance.cards, setLasts: instance.settings.setLasts }) : { ok: false as const, why: 'there is no such card' };
+  const carried = livePlays(usePlays(target.plays, home).plays);
+  const context = { cards: instance.cards, setLasts: instance.settings.setLasts, ...(beyond?.above ? { above: beyond.above } : {}) };
+  const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
+    : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);
   const price = useMemo(() => {
     if (!rules) return 0;
     try {
       const checked = (configRules ?? rules).validateConfig(config);
-      return rules.playPrice(priced, targetOf(post), checked.ok ? checked.value : config ?? {});
+      return goal ? rules.playPrice(priced, goal, checked.ok ? checked.value : config ?? {}) : 0;
     } catch {
       return 0;
     }
-  }, [rules, configRules, priced, post, config]);
+  }, [rules, configRules, priced, goal, config]);
 
   if (!rules || !face) return null;
-  const length = lengthOf(post);
-  const ownBoth = hud !== null && post.character !== null && post.character !== hud.id && player.actingCharacters.some((c) => c.id === post.character);
+  const length = post ? lengthOf(post) : 0;
+  /* Another of the player's own masks is the target: a post's author, or the character a play beyond a post lands on. */
+  const other = beyond ? (beyond.reach === 'character' ? beyond.target : null) : post?.character ?? null;
+  const ownBoth = hud !== null && other !== null && other !== hud.id && player.actingCharacters.some((c) => c.id === other);
   const after = wallet ? wallet.balance - price : null;
   const short = wallet !== null && after !== null && after < 0;
   const shortWords = short && wallet ? plainRefusal(`that costs ${price}, and your wallet holds ${wallet.balance}`) : '';
@@ -149,7 +160,9 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   };
   /* No answer came back: read what the play would have changed before offering it again. */
   const read = async () => {
-    const [, acts] = await Promise.all([player.refresh(), api.cardsOn(post.id, PLAYS_PER_POST)]);
+    const [, acts] = await Promise.all([player.refresh(), beyond
+      ? api.effectsAbove(beyond.reach === 'character' ? [beyond.target] : [], beyond.reach === 'thread' ? beyond.target : null, beyond.reach === 'board' ? beyond.target : null).then((a) => a.map((p) => p.act))
+      : api.cardsOn(post!.id, PLAYS_PER_POST)]);
     await target.know(acts.map((a) => a.character));
     target.plays.add(acts);
     await readEffects(api, target.plays, acts, effectCards(ui));
@@ -159,10 +172,10 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     try { await read(); } catch { looked = false; }
     if (accountNow.current !== account) return;
     /* A Set comes back as a card back, which names no card: the new back by this character is it. */
-    const found = target.plays.get(post.id).plays.find((p) => !before.has(p.id) && (how === 'set' ? p.faceDown === true : p.card === card) && p.caster === character);
+    const found = target.plays.get(home).plays.find((p) => !before.has(p.id) && (how === 'set' ? p.faceDown === true : p.card === card) && p.caster === character);
     if (found) { onPlayed(); return; }
     setAgain(true);
-    setRefusal(`${words === null ? 'No answer came back.' : plainRefusal(words)} ${looked ? 'Your play is not on the post yet.' : 'The post could not be checked for it.'} Press “${how === 'set' ? 'Set' : how === 'use' ? 'Use' : 'Play'} again anyway” to ${how === 'set' ? 'set' : how === 'use' ? 'use' : 'play'} it again.`);
+    setRefusal(`${words === null ? 'No answer came back.' : plainRefusal(words)} ${looked ? `Your play is not on the ${beyond?.reach ?? 'post'} yet.` : `The ${beyond?.reach ?? 'post'} could not be checked for it.`} Press “${how === 'set' ? 'Set' : how === 'use' ? 'Use' : 'Play'} again anyway” to ${how === 'set' ? 'set' : how === 'use' ? 'use' : 'play'} it again.`);
   };
 
   const submit = async (e?: FormEvent) => {
@@ -176,9 +189,12 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     try {
       let answer;
       try {
-        answer = how === 'set' ? await api.setCard(card, hud.id, post.id, config ?? {})
-          : how === 'use' ? await api.useCard(card, hud.id, post.id, config ?? {}, message)
-          : await api.playCard(card, hud.id, post.id, config ?? {}, message);
+        answer = beyond
+          ? how === 'use' ? await api.useCard(card, hud.id, beyond.target, config ?? {}, message, beyond.reach, post?.id)
+            : await api.playCard(card, hud.id, beyond.target, config ?? {}, message, beyond.reach, post?.id)
+          : how === 'set' ? await api.setCard(card, hud.id, post!.id, config ?? {})
+          : how === 'use' ? await api.useCard(card, hud.id, post!.id, config ?? {}, message)
+          : await api.playCard(card, hud.id, post!.id, config ?? {}, message);
       } catch { await look(null, before, hud.id); return; }
       if (accountNow.current !== account) return;
       if (answer.ok) await landed(answer.value);
@@ -205,16 +221,18 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
       surface="play"
       className="kb-play-dialog"
       onClose={onClose}
-      returnFocusTo={() => document.getElementById(`post-${post.seq}`)}
+      returnFocusTo={() => target.focusBack?.() ?? (post ? document.getElementById(`post-${post.seq}`) : null)}
     >
       <form className="kb-play" data-kb-alignment={face.alignment} style={{ '--kb-card-color': face.art.color } as React.CSSProperties} onSubmit={(e) => void submit(e)} noValidate>
         <div className="kb-play-fields">
           <p className="kb-play-target kb-calm">
-            On <Link to={target.to} onClick={onClose}>{target.author}'s post #{post.seq}</Link> in “{target.title}”, {length} {length === 1 ? 'character' : 'characters'} long.
+            {beyond || !post
+              ? <>On <Link to={target.to} onClick={onClose}>{beyond?.name ?? target.title}</Link>{beyond?.reach === 'character' ? `, on every post of theirs` : beyond?.reach === 'thread' ? ', the whole thread' : beyond?.reach === 'board' ? ', the whole board' : ''}, until its time is up.</>
+              : <>On <Link to={target.to} onClick={onClose}>{target.author}'s post #{post.seq}</Link> in “{target.title}”, {length} {length === 1 ? 'character' : 'characters'} long.</>}
           </p>
           {ownBoth && <p className="kb-play-both kb-calm">You play both. It costs the same; your log will say so.</p>}
           {how === 'set' && <p className="kb-play-both kb-calm">Everyone sees a card back on your post, the same as any card set face down; only you see which card it is.{struck && configRules ? ` If it springs, it lays ${configRules.name} with these settings.` : ''}</p>}
-          {Config && <div className="kb-calm"><Config config={config} onChange={setConfig} post={post} id={id} /></div>}
+          {Config && post && <div className="kb-calm"><Config config={config} onChange={setConfig} post={post} id={id} /></div>}
           {/* A Set's Act says nothing, so it carries no message: a Bluff's and a trap's are alike. */}
           {how !== 'set' && <div className="kb-play-message">
             <label htmlFor={`${id}-message`} className="kb-play-label kb-calm">Your message</label>

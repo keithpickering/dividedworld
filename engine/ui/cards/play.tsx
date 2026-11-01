@@ -26,10 +26,19 @@ import { useBoard } from '../glass/useBoard.ts';
 import type { Act, Id } from '../data/api.ts';
 import { PlayForm } from './PlayForm.tsx';
 import type { Plays } from './plays.ts';
+import type { BeyondPost, EffectsAbove } from '../../rules/cards.ts';
 
 /** A post a card may be played on, with what the form says about it. */
 export interface PlayTarget {
-  readonly post: Act;
+  /** The post the card goes on, or for a play beyond a post the post whose postbit took it (a character's); none for a thread's head or a board's banner. */
+  readonly post: Act | null;
+  /**
+   * A play beyond a post (the card mechanic's design, section 7): the reach, its target, the target's name as the form says it ("Spritey",
+   * "“Glitter everywhere”", "General"), and the live plays above it, which the card's rules see.
+   */
+  readonly reach?: { readonly reach: BeyondPost; readonly target: Id; readonly name: string; readonly above?: EffectsAbove };
+  /** Where focus goes when the form closes, for a target the form cannot find by its post's number (a thread's head, a board's banner). */
+  readonly focusBack?: () => HTMLElement | null;
   /** The thread's title. */
   readonly title: string;
   /** The post's author's name, as the thread knows it. */
@@ -124,7 +133,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
             const target = form.target;
             setFormHeld(null);
             setArmed(null);
-            setSaid(`Played ${nameOf(form.card)} on ${target.author}'s post #${target.post.seq}.`);
+            setSaid(`Played ${nameOf(form.card)} on ${target.reach ? target.reach.name : `${target.author}'s post #${target.post?.seq ?? ''}`}.`);
           }}
         />
       )}

@@ -45,7 +45,9 @@
   color: var(--kb-glass-text);
 }
 
-.kb-play-dialog .kb-glass-dialog-kicker {
+/* Above the shared dialog's titles rule (characters.css's `.kb-glass-dialog-titles .kb-glass-dialog-kicker`), whatever order the two
+   sheets load in: the play form's kicker is its card's alignment, never the neon. */
+.kb-play-dialog .kb-glass-dialog-titles .kb-glass-dialog-kicker {
   margin: 0;
   line-height: normal;
   font-size: var(--kb-glass-size-body);

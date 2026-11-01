@@ -13,7 +13,7 @@ const ok = { ok: true as const, value: undefined };
 const stick: CardRules = { key: 'stick', name: 'Stick Around', alignment: 'sweet', rarity: 'common', priceKey: 'stick.price', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
 const whoops: CardRules = {
   key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', stack: 3,
-  playPrice: (_s, t) => Math.min(200, Math.floor(t.length / 5)), canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }),
+  playPrice: (_s, t) => Math.min(200, Math.floor((t.reach === 'post' ? t.length : 0) / 5)), canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }),
 };
 const shop: Instance = { ...testInstance, cards: [stick, whoops], settings: { ...testInstance.settings, economy: { 'stick.price': 100, 'whoops.price': 100 } } };
 const art = { color: '#2ee6ff', ink: '#03141a' };

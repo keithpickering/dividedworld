@@ -6,7 +6,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { landsOnPost, ok, type CardRules } from '../../rules/cards.ts';
+import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { hudKey } from '../player.tsx';
@@ -15,7 +15,7 @@ import { ThreadScreen } from '../thread/Thread.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 
 const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
-const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e) => landsOnPost({ key: 'blot' }, t, e) };
+const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e) => landsOn({ key: 'blot' }, t, e) };
 const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'nullify' } }, canApply: () => ok(undefined) };
 const bluffy: CardRules = { ...base, key: 'bluffy', name: 'Bluffy', alignment: 'pepperoni', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
 const instance: Instance = { ...testInstance, cards: [blot, snare, bluffy], settings: { ...testInstance.settings, economy: { 'x.price': 100 } } };

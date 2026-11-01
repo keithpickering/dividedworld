@@ -11,13 +11,29 @@
 import type { ActKind, Alignment, EconomyRead, Hundredths, Quadrant, Settings, Span } from './types.ts';
 import { safeColor } from '../bbcode/parse.ts';
 
-/** The post a card is played on, as its rules see it. */
-export interface CardTarget {
-  readonly act: string;
-  readonly kind: ActKind;
-  /** The length of the post's current text, in characters. */
-  readonly length: number;
-}
+/**
+ * Where a card can land (the card mechanic's design, section 7): a post, a character, a thread or a
+ * board. Each card lists the reaches it takes (`CardRules.reaches`), a post unless it says.
+ */
+export type Reach = 'post' | 'character' | 'thread' | 'board';
+export const REACHES: readonly Reach[] = Object.freeze(['post', 'character', 'thread', 'board']);
+/** The reaches beyond a post, each with a least rarity and a longest time in the settings (`reachRarity`, `reachLasts`). */
+export type BeyondPost = Exclude<Reach, 'post'>;
+export const BEYOND_POST: readonly BeyondPost[] = Object.freeze(['character', 'thread', 'board']);
+
+/** What a card is played on, as its rules see it: a post with its length, or a character, a thread or a board by its id. */
+export type CardTarget =
+  | {
+    readonly reach: 'post';
+    readonly act: string;
+    readonly kind: ActKind;
+    /** The length of the post's current text, in characters. */
+    readonly length: number;
+  }
+  | { readonly reach: 'character'; readonly character: string }
+  | { readonly reach: 'thread'; readonly thread: string }
+  | { readonly reach: 'board'; readonly board: string };
+export type PostTarget = Extract<CardTarget, { reach: 'post' }>;
 
 /**
  * An effect already on a target: a card played there before. A ward carries the rarity it turns
@@ -31,6 +47,8 @@ export interface CardEffect {
   readonly ward?: Rarity;
   readonly ends?: string;
   readonly faceDown?: true;
+  /** Which reach the effect is on: the target's own, or one above it (effectsOnTarget). A post's unless it says. */
+  readonly reach?: Reach;
 }
 
 /** How rare a card is, commonest first. It bounds what a trap catches and what a ward turns away. */
@@ -83,7 +101,7 @@ export const isLive = (effect: Pick<CardEffect, 'ends'>, now: Date = new Date())
 };
 
 /** A ward's refusal, the same for every caster, since the ward is face up; play_card says it in the same words. */
-export const wardWords = (wardName: string, rarity: Rarity): string => `this post's ${wardName} turns away cards up to ${rarity}`;
+export const wardWords = (wardName: string, rarity: Rarity, reach: Reach = 'post'): string => `this ${reach}'s ${wardName} turns away cards up to ${rarity}`;
 
 /** How each play is said in a refusal of the wrong one. */
 const PLAYED: Record<Play, string> = {
@@ -107,8 +125,15 @@ export interface CardRules<Config = unknown> {
   readonly trap?: { readonly trigger: Trigger; readonly outcome: Outcome };
   /** A Use card that turns away casts on its target at or below its rarity while it is up. */
   readonly ward?: true;
-  /** How long a Use card is up once played; with none, it stays. */
+  /** Where it can land; a post unless it says (`['post']`). A reach beyond a post takes at least its `reachRarity`. */
+  readonly reaches?: readonly Reach[];
+  /**
+   * How long a Use card is up once played, and how long a play beyond a post lasts, at most its reach's `reachLasts`;
+   * with none, a Use stays. A play on a post that is not a Use does not end.
+   */
   readonly lasts?: Span;
+  /** A thread play of it pins the thread to the top of its board's list until it ends (Main Event's kind); only a card that reaches a thread pins. */
+  readonly pins?: true;
   /** The economy setting that holds what the Vending Machine sells it for. */
   readonly priceKey: string;
   /** The economy numbers its rules read beside its price. */
@@ -183,8 +208,8 @@ export interface PlayContext {
 export function decidePlay(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: PlayContext = {}): Verdict<{ price: Hundredths; config: unknown; message: string }> {
   if (playOf(rules) !== 'cast') return wrongPlay(rules);
   const now = context.now ?? new Date();
-  const ward = effects.find((e) => e.ward !== undefined && isLive(e, now) && atOrBelow(rules.rarity, e.ward));
-  if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.ward!));
+  const ward = effects.find((e) => e.ward !== undefined && (e.reach ?? 'post') === target.reach && isLive(e, now) && atOrBelow(rules.rarity, e.ward));
+  if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.ward!, target.reach));
   return decided(rules, settings, target, effects, config, message);
 }
 
@@ -206,7 +231,7 @@ export function decideUse(rules: CardRules, settings: Settings, target: CardTarg
  */
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown }> {
   if (playOf(rules) !== 'set') return wrongPlay(rules);
-  if (target.kind !== 'post') return refuse('a card is set face down on a post');
+  if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
   const lands = rules.canApply(target, effects);
   if (!lands.ok) return lands;
@@ -239,16 +264,61 @@ export function casterMessage(message: unknown): Verdict<string> {
   return ok(said);
 }
 
+/** A span in milliseconds, a month as 30 days, as Postgres compares intervals. */
+export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'day' ? 86_400_000 : s.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
+
+/** The reaches a card lists, a post unless it says. */
+export const reachesOf = (rules: Pick<CardRules, 'reaches'>): readonly Reach[] => rules.reaches ?? ['post'];
+
+/** The live effects on each target above a post: its board's, its thread's and its author's (effects_above, 0055_card_reach.sql). */
+export interface EffectsAbove {
+  readonly board?: readonly CardEffect[];
+  readonly thread?: readonly CardEffect[];
+  readonly character?: readonly CardEffect[];
+}
+const ABOVE: Record<Reach, readonly BeyondPost[]> = { post: ['board', 'thread', 'character'], character: ['board', 'thread'], thread: ['board'], board: [] };
+
 /**
- * What every card holds to unless it says otherwise: it lands on a post, and a post carries at
- * most its stack of it (one unless the card says more) that are still up, each its own play.
+ * What a card's `canApply` sees on a target: every live effect above it, board then thread then character, each marked with its
+ * reach, then the target's own (its own ended ones too, which the rules read as ended). The screens wrap effects in the same order,
+ * so cards combine across reaches. Above a character are the board and the thread it is played in.
  */
-export function landsOnPost(rules: Pick<CardRules, 'key' | 'stack'>, target: CardTarget, effects: readonly CardEffect[]): Verdict {
-  if (target.kind !== 'post') return refuse('a card lands on a post');
+export function effectsOnTarget(target: CardTarget, own: readonly CardEffect[], above: EffectsAbove, now: Date = new Date()): CardEffect[] {
+  const over = ABOVE[target.reach].flatMap((reach) => (above[reach] ?? []).filter((e) => isLive(e, now)).map((e) => ({ ...e, reach })));
+  return [...over, ...own.map((e) => (target.reach === 'post' || e.reach ? e : { ...e, reach: target.reach }))];
+}
+
+/** A time as a refusal says it, to the minute in UTC, as play_card says it (0055_card_reach.sql). */
+export const refusalTime = (iso: string): string => {
+  const at = Date.parse(iso);
+  return Number.isNaN(at) ? 'it ends' : `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+};
+const ARTICLE: Record<Reach, string> = { post: 'a post', character: 'a character', thread: 'a thread', board: 'a board' };
+/** A card's reaches as a refusal lists them: "a post", "a character or a thread". */
+export const listed = (reaches: readonly Reach[]): string => {
+  const said = reaches.map((r) => ARTICLE[r] ?? String(r));
+  return said.length < 2 ? said.join('') : `${said.slice(0, -1).join(', ')} or ${said.at(-1)}`;
+};
+
+/**
+ * What every card holds to unless it says otherwise: it lands on a reach it lists (a post unless it says), and its target
+ * carries at most its stack of it (one unless the card says more) that are still up, each its own play, counting only the
+ * effects on that same target, never those above it. A board carries one board card at a time, of any card, until it ends.
+ */
+export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
+  const reaches = reachesOf(rules);
+  if (!reaches.includes(target.reach)) return refuse(`this card lands on ${listed(reaches)}`);
+  if (target.reach === 'post' && target.kind !== 'post') return refuse('a card lands on a post');
+  // An ended effect holds no place (play_card counts the same way).
+  const here = effects.filter((e) => (e.reach ?? 'post') === target.reach && isLive(e, now));
+  if (target.reach === 'board') {
+    const held = here[0];
+    if (held) return refuse(`this board already carries a board card until ${held.ends ? refusalTime(held.ends) : 'it ends'}`);
+  }
   const stack = rules.stack ?? 1;
-  // An ended Use holds no place in the stack (play_card counts the same way).
-  if (effects.filter((e) => e.card === rules.key && isLive(e)).length >= stack) {
-    return refuse(stack === 1 ? 'this post already carries that card' : `this post already carries ${stack} of that card, the most it takes`);
+  if (here.filter((e) => e.card === rules.key).length >= stack) {
+    const where = target.reach === 'post' ? 'this post' : `this ${target.reach}`;
+    return refuse(stack === 1 ? `${where} already carries that card` : `${where} already carries ${stack} of that card, the most it takes`);
   }
   return ok(undefined);
 }

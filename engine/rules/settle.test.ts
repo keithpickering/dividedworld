@@ -36,7 +36,7 @@ const instance: Instance = {
     { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },
   ],
   settings: {
-    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 },
+    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120, postsPerPage: 20, hotReplies: 10, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
   ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
@@ -965,4 +965,33 @@ test('a spring settles as a play of its trap card on the trapped post: its react
 test('a settlement with no staff target and no spring is as it was', () => {
   const b = base();
   assert.deepEqual(settle({ ...b, unscoredTargets: [] }, instance), settle(b, instance));
+});
+
+/* Cards beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 6): a play on a character, a thread or a board has no target
+   post to outdraw. Its own reactions pay its caster by class, as any Act's do; the class rules that read a card's target post pass
+   it over; and it lands on nobody's posts. */
+test('a play beyond a post is paid by its own reactions, and no class rule reads a target post for it', () => {
+  seen.length = 0;
+  const b = base();
+  const input: SettlementInput = {
+    ...b,
+    acts: [
+      ...b.acts,
+      // Ann's Fan plays a character card on Bob's mask; its Act sits on q1, the post whose postbit took it, but it is no play on q1.
+      { id: 'g1', character: 'ann-fan', kind: 'card', at: FROM + 7 * H, thread: 't1', reach: 'character', card: 'splat' },
+      // Bob's Quiet plays one on a thread.
+      { id: 'g2', character: 'bob-1', kind: 'card', at: FROM + 7 * H + 1, thread: 't1', reach: 'thread', card: 'splat' },
+    ],
+    reactions: [...b.reactions, react('g1', 'dee', 'dee-1', 'fire', FROM + 8 * H), react('g2', 'dee', 'dee-1', 'fire', FROM + 8 * H)],
+  };
+  const r = settle(input, instance);
+  assert.equal(amountOf(r, 'ann-fan', 'fan.love'), amountOf(settle(base(), instance), 'ann-fan', 'fan.love') + 10, 'Dee\'s fire on the play pays its caster');
+  assert.deepEqual(seen.filter((s) => s.character === 'bob-1').flatMap((s) => s.cardsPlayed), [], 'no target post to outdraw');
+  assert.deepEqual(seen.flatMap((s) => s.cardsLanded), [], 'a character play lands on none of its character\'s posts');
+  assert.ok(seen.find((s) => s.character === 'bob-1')!.received.some((x) => x.act === 'g2'), 'its reactions reach its caster\'s class');
+});
+
+test('a card with no target and no reach is still refused, not guessed at', () => {
+  const b = base();
+  assert.throws(() => settle({ ...b, acts: [...b.acts, { id: 'k9', character: 'bob-1', kind: 'card', at: FROM + 7 * H, thread: 't1', card: 'splat' }] }, instance), /has no target/);
 });
