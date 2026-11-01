@@ -161,7 +161,7 @@ function toQueued(r: Row): QueuedMove {
   return {
     id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
     why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
-    failedAt: orNull(r['failedAt']), failure: orNull(r['failure']),
+    failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']),
   };
 }
 
@@ -589,6 +589,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return {
         cap: num(q['cap']), waiting: rows(q['waiting']).map(toQueued), inForce: rows(q['inForce']).map(toInForce), ended: rows(q['ended']).map(toEnded),
         more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, ended: more['ended'] === true },
+        roster: rows(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
       };
     },
     async holdMove(id) {

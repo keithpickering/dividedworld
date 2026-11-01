@@ -349,6 +349,8 @@ export interface QueuedMove {
   /** When the tick last could not land it, and why in the server's words; null when it has not failed. */
   readonly failedAt: string | null;
   readonly failure: string | null;
+  /** When an admin put another Boss in a nomination's place; null when none did. Not who: admins do not need each other's accounts here. */
+  readonly replacedAt: string | null;
 }
 
 /** A landed move with no end yet (admin_queue). */
@@ -390,6 +392,8 @@ export interface AdminQueue {
   readonly inForce: readonly MoveInForce[];
   readonly ended: readonly MoveEnded[];
   readonly more: { readonly waiting: boolean; readonly inForce: boolean; readonly ended: boolean };
+  /** The Bosses a waiting nomination can be replaced with: on the roster, not retired, debuted; in the rotation's order. */
+  readonly roster: readonly { readonly staff: string; readonly name: string }[];
 }
 
 /* ---------------------------------------------------------- the player's own ---- */

@@ -91,7 +91,7 @@ export interface Seed {
   /** A tally on an Act as if that many others had reacted, kind by kind: no one's reaction (no account or character stands behind it), only the counts every reader sees. */
   tally(act: Id, counts: Readonly<Record<string, number>>): void;
   /** A staff character (a Boss or a Mod Bot): debuted, owned by no player, with no class; it acts only through the seed below. */
-  staff(key: string, name: string, kind: 'boss' | 'bot', options?: { title?: string; signature?: string; at?: number }): Id;
+  staff(key: string, name: string, kind: 'boss' | 'bot', options?: { title?: string; signature?: string; at?: number; debuted?: boolean }): Id;
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
   /** A staff character's post in a thread of The System's board, as the Boss posts there. */
@@ -271,7 +271,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
-  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; heldAt: number | null; landed: Id | null }
+  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; heldAt: number | null; landed: Id | null; replacedAt?: number }
   const queue: QueueRec[] = [];
   /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
   const moveKeeps = new Map<Id, string>();
@@ -866,11 +866,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const demandFor = moveDemand;
       const waiting = queue.filter((q) => q.landed === null && q.heldAt === null).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
         id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
-        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null,
+        expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt),
       }) : ({
         id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: true, boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
-        failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null,
+        failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null,
       }));
       const rowOf = (a: ActRec) => {
         const q = queue.find((x) => x.landed === a.id);
@@ -895,7 +895,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
         })),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
-      return { cap: 100, waiting, inForce: live, ended, more: { waiting: false, inForce: false, ended: false } } satisfies AdminQueue;
+      return { cap: 100, waiting, inForce: live, ended, more: { waiting: false, inForce: false, ended: false },
+        roster: [...characters.values()].filter((c) => c.staff?.kind === 'boss' && c.retiredAt === null && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
     },
     holdMove(id) {
       if (!me()?.admin) return refuse('only an admin holds a move');
@@ -913,10 +914,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (q.successor === undefined) return refuse('that move names no successor');
       if (q.landed !== null) return refuse('that nomination has already landed; reverse it instead');
       if (q.heldAt !== null) return refuse('that nomination is held');
-      const roster = [...characters.values()].filter((c) => c.staff?.kind === 'boss');
+      const roster = [...characters.values()].filter((c) => c.staff?.kind === 'boss' && c.retiredAt === null && c.debutedAt !== null);
       if (!roster.some((c) => c.staff?.key === boss)) return refuse('that is not a Boss of the roster');
       if (boss === q.staff) return refuse('a Boss cannot succeed itself');
       q.successor = boss;
+      q.replacedAt = now();
       return ok({ id, boss });
     },
     bosses: () => [...characters.values()].filter((c) => c.staff?.kind === 'boss').map((c) => ({ staff: c.staff!.key, name: c.name })),
@@ -1359,7 +1361,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if ([...characters.values()].some((c) => c.staff?.key === key)) throw new Error(`staff member ${key} exists`);
       const at = o?.at ?? now();
       const c: CharRec = {
-        id: uuid(), owner: '', name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null,
+        id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null,
         title: o?.title ?? '', signature: o?.signature ?? '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
         square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key, kind },
       };

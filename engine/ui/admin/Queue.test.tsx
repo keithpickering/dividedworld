@@ -189,7 +189,7 @@ describe('a nomination of a successor', () => {
     const waiting = await group(/^Waiting to land/u);
     const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' });
     expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hype Man']);
-    const replace = within(waiting).getByRole('button', { name: 'Replace the nominated Boss' });
+    const replace = within(waiting).getByRole('button', { name: 'Replace the nominated Boss, The Clerk' });
     expect(replace).toBeDisabled();
     await userEvent.selectOptions(choice, 'Hype Man');
     expect(replace).toBeEnabled();
@@ -197,13 +197,31 @@ describe('a nomination of a successor', () => {
     await waitFor(() => expect(waiting).toHaveTextContent('Name Hype Man as the next Boss'));
     expect((await fake.adminQueue()).waiting.map((q) => q.params['boss'])).toContain('hype-man');
     expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in its place' })).not.toBeNull();
+    /* What was chosen is done: the pick is empty and the button waits, and the line in plain words names who will follow. */
+    expect(within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' })).toHaveValue('');
+    expect(within(waiting).getByRole('button', { name: 'Replace the nominated Boss, Hype Man' })).toBeDisabled();
+    expect(within(waiting).getByRole('status')).toHaveTextContent('Replaced. Hype Man will follow.');
+    expect(waiting).toHaveTextContent('An admin put this Boss in the nomination\'s place on');
+  });
+
+  test('offers no Boss that is retired or has not debuted, though their names still read in a sentence', async () => {
+    const { fake } = open({ build: (f) => {
+      const id = nominate(f);
+      f.seed.retire(f.seed.staff('old-timer', 'Old Timer', 'boss'));
+      f.seed.staff('newcomer', 'Newcomer', 'boss', { debuted: false });
+      void id;
+    } });
+    const waiting = await group(/^Waiting to land/u);
+    const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' });
+    expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hype Man']);
+    expect((await fake.adminQueue()).roster.map((b) => b.staff)).not.toContain('old-timer');
   });
 
   test('a held nomination no longer waits, so it has no REPLACE', async () => {
     open({ build: (fake) => { const id = nominate(fake); fake.seed.holdQueued(id); } });
     const waiting = await group(/^Waiting to land/u);
     expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in its place' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Replace the nominated Boss' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Replace the nominated Boss/u })).toBeNull();
   });
 
   test('the ended group says how a nomination and an inherited move ended: used up at the handover, set aside by the new Boss, or never reviewed', async () => {

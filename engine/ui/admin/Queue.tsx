@@ -97,7 +97,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
             {failed && <p className="kb-queue-note kb-calm" role="alert">The queue could not be read. Reload the page to try again.</p>}
             {queue && (
               <>
-                <Waiting rows={queue.waiting} more={queue.more.waiting} boards={boards} bosses={bosses} now={clock} onHold={(row) => setAsked({ kind: 'hold', row })} onReplaced={load} />
+                <Waiting rows={queue.waiting} more={queue.more.waiting} boards={boards} bosses={bosses} roster={queue.roster} now={clock} onHold={(row) => setAsked({ kind: 'hold', row })} onReplaced={load} />
                 <InForce rows={queue.inForce} more={queue.more.inForce} boards={boards} bosses={bosses} onReverse={(row) => setAsked({ kind: 'reverse', row })} />
                 <Ended rows={queue.ended} more={queue.more.ended} boards={boards} bosses={bosses} />
               </>
@@ -129,20 +129,25 @@ function GroupHead({ id, title, count, more }: { readonly id: string; readonly t
  * A waiting nomination's other choice: an admin may put another Boss of the roster in its place (any but the Boss that wrote it and the
  * one it names). The server holds the same line and answers in its own words if the nomination landed or was held meanwhile.
  */
-function Replace({ row, bosses, onReplaced }: { readonly row: QueuedMove; readonly bosses: readonly Roster[]; readonly onReplaced: () => Promise<void> }) {
+function Replace({ row, roster, bosses, onReplaced }: { readonly row: QueuedMove; readonly roster: readonly Roster[]; readonly bosses: readonly Roster[]; readonly onReplaced: () => Promise<void> }) {
   const { api } = useKayfa();
   const [pick, setPick] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const choices = bosses.filter((b) => b.staff !== row.staff && b.staff !== row.params['boss']);
+  const [done, setDone] = useState<string | null>(null);
+  const choices = roster.filter((b) => b.staff !== row.staff && b.staff !== row.params['boss']);
   if (choices.length === 0) return null;
   const submit = async () => {
     if (!pick || busy) return;
     setBusy(true);
     setRefusal(null);
+    setDone(null);
     try {
       const answer = await api.replaceSuccessor(row.id, pick);
       if (!answer.ok) { setRefusal(answer.error); await onReplaced(); return; }
+      /* What was chosen is done: the pick empties, so the button waits for another choice rather than offering the same replacement again. */
+      setDone(`Replaced. ${choices.find((b) => b.staff === pick)?.name ?? 'The new Boss'} will follow.`);
+      setPick('');
       await onReplaced();
     } catch {
       setRefusal('That could not be sent. Check your connection and look at the queue before you try again.');
@@ -157,13 +162,14 @@ function Replace({ row, bosses, onReplaced }: { readonly row: QueuedMove; readon
         <option value="">Choose a Boss</option>
         {choices.map((b) => <option key={b.staff} value={b.staff}>{b.name}</option>)}
       </select>
-      <button type="button" className="kb-queue-button kb-glass-skew" disabled={!pick || busy} aria-label="Replace the nominated Boss" onClick={() => void submit()}><span className="kb-glass-upright">REPLACE</span></button>
+      <button type="button" className="kb-queue-button kb-glass-skew" disabled={!pick || busy} aria-label={`Replace the nominated Boss, ${bosses.find((b) => b.staff === row.params['boss'])?.name ?? 'the Boss it names'}`} onClick={() => void submit()}><span className="kb-glass-upright">REPLACE</span></button>
       {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
+      {done && <p role="status" className="kb-small kb-muted">{done}</p>}
     </div>
   );
 }
 
-function Waiting({ rows, more, boards, bosses, now, onHold, onReplaced }: { readonly rows: readonly QueuedMove[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
+function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }: { readonly rows: readonly QueuedMove[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly roster: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
   return (
     <section className="kb-queue-group" aria-labelledby="queue-waiting" data-kb-group="waiting">
       <GroupHead id="queue-waiting" title="Waiting to land" count={rows.length} more={more} />
@@ -182,6 +188,7 @@ function Waiting({ rows, more, boards, bosses, now, onHold, onReplaced }: { read
               {premise && <p>New subject: {premise}</p>}
               <p>{demandNeeds(q.demand, q.kind)}{q.expiresAt && <> If that never happens, it ends on its own on {shortDate(q.expiresAt)}.</>}</p>
               {q.kind === 'nameSuccessor' && <p>If it lands and is not held or reversed, the Boss it names takes the seat when the season rolls over. Otherwise the roster&apos;s rotation chooses.</p>}
+              {q.replacedAt && <p>An admin put this Boss in the nomination&apos;s place on {dayAndTime(q.replacedAt)}.</p>}
               {description && <p className="kb-queue-quote">Description: “{description}”</p>}
               {q.why && <p className="kb-queue-quote">Why, in {q.boss ?? 'the Boss'}&apos;s words: “{q.why}”</p>}
               {q.failedAt && (
@@ -192,7 +199,7 @@ function Waiting({ rows, more, boards, bosses, now, onHold, onReplaced }: { read
             </div>
             <div className="kb-queue-act">
               <button type="button" className="kb-queue-button kb-queue-hold kb-glass-skew" aria-label={`Hold: ${q.params['name'] ?? (q.kind === 'nameSuccessor' ? 'the naming of a successor' : 'this move')}`} onClick={() => onHold(q)}><span className="kb-glass-upright">HOLD</span></button>
-              {q.kind === 'nameSuccessor' && <Replace row={q} bosses={bosses} onReplaced={onReplaced} />}
+              {q.kind === 'nameSuccessor' && <Replace row={q} roster={roster} bosses={bosses} onReplaced={onReplaced} />}
             </div>
           </article>
         );

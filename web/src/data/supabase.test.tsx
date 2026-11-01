@@ -1197,6 +1197,7 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
       inForce: [{ act: A, id: 3, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Why.', landedAt: '2026-10-30T12:00:00+00:00', expiresAt: '2026-11-13T12:00:00+00:00', progress: { done: 2, of: 5, met: false } }],
       ended: [{ how: 'held', by: 'admin', at: '2026-10-30T10:00:00+00:00', act: null, id: 2, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: 'x', landedAt: null }, { how: 'met', by: 'tick', at: '2026-10-29T10:00:00+00:00', act: B, id: 1, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: null, landedAt: '2026-10-28T10:00:00+00:00' }],
       more: { waiting: false, inForce: false, ended: true },
+      roster: [{ staff: 'the-clerk', name: 'The Clerk' }, { staff: 7, name: 'bad' }],
     };
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/admin_queue')) return json(queue);
@@ -1209,6 +1210,8 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(q.inForce[0]?.progress).toEqual({ done: 2, of: 5, met: false });
     expect(q.ended.map((e) => e.how)).toEqual(['held', 'met']);
     expect(q.more).toEqual({ waiting: false, inForce: false, ended: true });
+    expect(q.roster).toEqual([{ staff: 'the-clerk', name: 'The Clerk' }]);
+    expect(q.waiting[0]?.replacedAt).toBeNull();
     expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00' } });
     expect(h.to('rpc/hold_move')[0]?.body).toEqual({ id: 4 });
     expect(await h.api.reverseMove(A)).toEqual({ ok: true, value: { act: A, endedBy: B } });

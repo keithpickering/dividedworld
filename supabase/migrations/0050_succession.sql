@@ -173,9 +173,13 @@ end $$;
 
 -- ------------------------------------------------------------------------ the nomination ----
 
+-- A replaced nomination keeps the record of it: which admin's account, and when. Like held_by, no client and not the digest role reads
+-- them (their grants are by column and name neither); admin_queue shows an admin only that it was replaced, and when.
+alter table queued_moves add column replaced_by uuid references accounts, add column replaced_at timestamptz;
+
 -- queued_moves_guard (0045), with two rules added: a nameSuccessor is queued with a roster Boss, no demand and no expiry; and an
--- admin's replace_successor may change a waiting nomination's `boss` (and nothing else about its params), once, while it has neither
--- landed nor been held. Everything else as 0045 wrote it.
+-- admin's replace_successor may change a waiting nomination's `boss` (and nothing else about its params), with replaced_by and replaced_at
+-- beside it, while it has neither landed nor been held. Everything else as 0045 wrote it.
 create or replace function queued_moves_guard() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -213,6 +217,11 @@ begin
           is distinct from (old.id, old.meeting, old.staff, old.kind, old.demand, old.why, old.go_live_at, old.expires_at, old.structural) then
       raise exception 'a queued move is only ever held or landed' using errcode = '23514';
     end if;
+    -- Who replaced a nomination and when change only with the Boss they replace, and with each other.
+    if (new.replaced_by, new.replaced_at) is distinct from (old.replaced_by, old.replaced_at)
+       and (new.params is not distinct from old.params or new.replaced_by is null or new.replaced_at is null) then
+      raise exception 'a replacement is recorded with the Boss it puts in place' using errcode = '23514';
+    end if;
     if (old.held_at is not null and (new.held_at, new.held_by) is distinct from (old.held_at, old.held_by))
        or (old.landed_act is not null and new.landed_act is distinct from old.landed_act) then
       raise exception 'a queued move that is held or landed stays so' using errcode = '23514';
@@ -239,11 +248,83 @@ begin
     raise exception 'that is not a Boss of the roster' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   if boss = q.staff then raise exception 'a Boss cannot succeed itself' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  update queued_moves set params = params || jsonb_build_object('boss', replace_successor.boss) where queued_moves.id = replace_successor.id;
+  update queued_moves set params = params || jsonb_build_object('boss', replace_successor.boss), replaced_by = auth.uid(), replaced_at = now()
+  where queued_moves.id = replace_successor.id;
   return jsonb_build_object('id', q.id, 'boss', boss);
 end $$;
 revoke execute on function replace_successor(bigint, text) from public, anon;
 grant execute on function replace_successor(bigint, text) to authenticated;
+
+-- admin_queue (0048), its waiting rows also saying `replacedAt` (when an admin put another Boss in a nomination's place, else null; not
+-- who: admins do not need each other's accounts here, and replaced_by is read by nobody), and `roster`: the Bosses a nomination can be
+-- replaced with, [{staff, name}] in the rotation's order (boss_roster: not retired, debuted), so the screen offers no one that cannot
+-- take the seat. Everything else as 0048 wrote it; the owner and grants are kept.
+create or replace function admin_queue() returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  cap constant integer := 100;
+  uuid_re constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+  win constant timestamptz := now() - interval '30 days';
+  waiting jsonb; waiting_more boolean;
+  in_force jsonb; in_force_more boolean;
+  ended jsonb; ended_more boolean;
+  roster jsonb;
+begin
+  perform only_admins('reads the queue');
+
+  -- The Bosses that can take a nomination's seat, by the roster's own rule and order (boss_roster): not retired, debuted.
+  select coalesce(jsonb_agg(jsonb_build_object('staff', c.staff, 'name', c.name) order by r.ord), '[]'::jsonb) into roster
+  from unnest(boss_roster()) with ordinality r(staff, ord) join characters c on c.staff = r.staff;
+
+  select coalesce(jsonb_agg(x.j order by x.n) filter (where x.n <= cap), '[]'::jsonb), coalesce(bool_or(x.n > cap), false) into waiting, waiting_more from (
+    select row_number() over (order by q.go_live_at, q.id) as n,
+           jsonb_build_object('id', q.id, 'staff', q.staff, 'boss', (select c.name from characters c where c.staff = q.staff), 'kind', q.kind,
+             'params', q.params, 'demand', q.demand, 'why', q.why, 'goLiveAt', q.go_live_at, 'expiresAt', q.expires_at, 'structural', q.structural,
+             'failedAt', q.failed_at, 'failure', q.failure, 'replacedAt', q.replaced_at,
+             'boardName', case when q.kind = 'renameBoard' and lower(q.params ->> 'board') ~ uuid_re
+                               then (select b.name from boards_now b where b.id = (q.params ->> 'board')::uuid) end) as j
+    from queued_moves q where q.landed_act is null and q.held_at is null
+    order by q.go_live_at, q.id limit cap + 1
+  ) x;
+
+  select coalesce(jsonb_agg(x.j order by x.n) filter (where x.n <= cap), '[]'::jsonb), coalesce(bool_or(x.n > cap), false) into in_force, in_force_more from (
+    select row_number() over (order by a.created_at desc, a.id) as n,
+           jsonb_build_object('act', a.id, 'id', q.id, 'staff', c.staff, 'boss', c.name, 'kind', a.payload ->> 'kind', 'params', a.payload -> 'params',
+             'demand', a.payload -> 'demand', 'why', q.why, 'landedAt', a.created_at, 'expiresAt', a.payload -> 'expires_at',
+             'progress', demand_progress_or_error(a.id)) as j
+    from open_moves o
+    join acts a on a.id = o.move_act
+    left join characters c on c.id = a.character
+    left join queued_moves q on q.landed_act = a.id
+    order by a.created_at desc, a.id limit cap + 1
+  ) x;
+
+  -- Ended and held, merged: each side cut at cap + 1 first, so the merge never reads more than 2 * (cap + 1) rows.
+  select coalesce(jsonb_agg(x.j order by x.n) filter (where x.n <= cap), '[]'::jsonb), coalesce(bool_or(x.n > cap), false) into ended, ended_more from (
+    select row_number() over (order by u.at desc, u.tie) as n, u.j from (
+      (select e.created_at as at, e.id::text as tie,
+              jsonb_build_object('how', e.payload ->> 'why', 'by', e.payload ->> 'by', 'at', e.created_at, 'act', a.id, 'id', q.id, 'staff', c.staff, 'boss', c.name,
+                'kind', a.payload ->> 'kind', 'params', a.payload -> 'params', 'demand', a.payload -> 'demand', 'why', q.why, 'landedAt', a.created_at) as j
+       from acts e
+       join acts a on a.id = e.target_act_id
+       left join characters c on c.id = a.character
+       left join queued_moves q on q.landed_act = a.id
+       where e.kind = 'move_end' and e.created_at >= win
+       order by e.created_at desc, e.id desc limit cap + 1)
+      union all
+      (select h.held_at, 'q' || h.id::text,
+              jsonb_build_object('how', 'held', 'by', 'admin', 'at', h.held_at, 'act', null, 'id', h.id, 'staff', h.staff, 'boss', c.name,
+                'kind', h.kind, 'params', h.params, 'demand', h.demand, 'why', h.why, 'landedAt', null)
+       from queued_moves h
+       left join characters c on c.staff = h.staff
+       where h.held_at is not null and h.held_at >= win
+       order by h.held_at desc, h.id desc limit cap + 1)
+    ) u order by u.at desc, u.tie limit cap + 1
+  ) x;
+
+  return jsonb_build_object('cap', cap, 'waiting', waiting, 'inForce', in_force, 'ended', ended, 'roster', roster,
+    'more', jsonb_build_object('waiting', waiting_more, 'inForce', in_force_more, 'ended', ended_more));
+end $$;
 
 -- ---------------------------------------------------------------------------- the review ----
 
@@ -837,12 +918,13 @@ begin
   for inh in select value from jsonb_array_elements(case when jsonb_typeof(payload -> 'inherited') = 'array' then payload -> 'inherited' else '[]'::jsonb end) loop
     act_id := case when (inh ->> 'move_act') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (inh ->> 'move_act')::uuid end;
     select * into due from inheritance_due(boss, 100) d where d.act = act_id;
-    if act_id is null or not found or (inh ->> 'decision') not in ('keep', 'end') then
+    -- An answer with no decision (null in the test) is no decision: skipped, never read as "end".
+    if act_id is null or not found or not coalesce((inh ->> 'decision') in ('keep', 'end'), false) then
       skipped := skipped + 1;
     elsif inh ->> 'decision' = 'keep' then
       perform write_staff_act(boss, 'move_keep', due.thread, due.act, '{}'::jsonb);
       kept := kept + 1;
-    else
+    elsif inh ->> 'decision' = 'end' then
       if (end_move(due.act, 'superseded', 'boss') ->> 'ended')::boolean then perform say_move_end(due.act, 'superseded'); ended_n := ended_n + 1; end if;
     end if;
   end loop;

@@ -79,6 +79,15 @@ begin
   if pg_temp.boss() is distinct from 'su-a' then raise exception 'the first season has the seed''s first Boss, not %', pg_temp.boss(); end if;
   q := pg_temp.queue_nomination('su-a', 'su-c');
   perform tests.become(admin); perform hold_move(q); perform tests.unbecome();
+  -- A held nomination is no one's to replace: the refusal is the plain 55000, in its own words.
+  perform tests.become(admin);
+  begin
+    perform replace_successor(q, 'su-d');
+    raise exception 'a held nomination was replaced';
+  exception when others then
+    if sqlstate is distinct from '55000' or sqlerrm is distinct from 'that nomination is held' then raise exception 'replacing a held nomination answered % %', sqlstate, sqlerrm; end if;
+  end;
+  perform tests.unbecome();
   perform system_tick();
   if (select landed_act from queued_moves where id = q) is not null then raise exception 'a held nomination landed'; end if;
   ran := pg_temp.roll();
@@ -105,6 +114,8 @@ declare
   q bigint;
   denied boolean;
   mv uuid;
+  qj jsonb;
+  row_j jsonb;
 begin
   q := pg_temp.queue_nomination('su-b', 'su-c');
   -- A player cannot replace; the nominee must be a roster Boss that is not the nominating one; one that is not a nomination is no target.
@@ -120,10 +131,29 @@ begin
   if not denied then raise exception 'a Boss was put in place of its own successor'; end if;
   perform tests.unbecome();
   if (select params ->> 'boss' from queued_moves where id = q) is distinct from 'su-c' then raise exception 'a refused replacement changed the nomination'; end if;
+  if (select replaced_by is not null or replaced_at is not null from queued_moves where id = q) then raise exception 'an unreplaced nomination has a replacement on record'; end if;
   perform tests.become(admin);
   perform replace_successor(q, 'su-d');
+  -- The queue shows when it was replaced and nobody's account; its roster offers the Bosses that can take the seat (not retired, debuted).
+  qj := admin_queue();
   perform tests.unbecome();
   if (select params ->> 'boss' from queued_moves where id = q) is distinct from 'su-d' then raise exception 'the nomination was not replaced'; end if;
+  if (select replaced_by from queued_moves where id = q) is distinct from admin or (select replaced_at from queued_moves where id = q) is null then raise exception 'the replacement was not recorded'; end if;
+  row_j := (select e from jsonb_array_elements(qj -> 'waiting') e where (e ->> 'id')::bigint = q);
+  if row_j -> 'replacedAt' is null or jsonb_typeof(row_j -> 'replacedAt') <> 'string' or row_j ? 'replacedBy' or row_j::text like '%' || admin::text || '%' then raise exception 'the queue shows the replacement as %', row_j; end if;
+  if (select jsonb_agg(r ->> 'staff' order by ord) from jsonb_array_elements(qj -> 'roster') with ordinality x(r, ord)) is distinct from '["su-a", "su-b", "su-c", "su-d"]'::jsonb then raise exception 'the queue offered the roster %', qj -> 'roster'; end if;
+  update characters set retired_at = now() where staff = 'su-c';
+  update characters set debuted_at = null where staff = 'su-b';
+  perform tests.become(admin); qj := admin_queue(); perform tests.unbecome();
+  update characters set retired_at = null where staff = 'su-c';
+  update characters set debuted_at = now() where staff = 'su-b';
+  if (select jsonb_agg(r ->> 'staff' order by ord) from jsonb_array_elements(qj -> 'roster') with ordinality x(r, ord)) is distinct from '["su-a", "su-d"]'::jsonb then raise exception 'the queue offered a retired or undebuted Boss: %', qj -> 'roster'; end if;
+  if has_column_privilege('authenticated', 'queued_moves', 'replaced_by', 'select') or has_column_privilege('authenticated', 'queued_moves', 'replaced_at', 'select')
+     or has_column_privilege('anon', 'queued_moves', 'replaced_by', 'select') or has_column_privilege('kayfabb_digest', 'queued_moves', 'replaced_by', 'select')
+     or has_column_privilege('kayfabb_digest', 'queued_moves', 'replaced_at', 'select') then raise exception 'a client or the digest reads who replaced a nomination'; end if;
+  -- The record of a replacement changes only with the Boss it replaces; it is not editable on its own.
+  denied := false; begin update queued_moves set replaced_at = null where id = q; exception when check_violation then denied := true; end;
+  if not denied then raise exception 'a replacement record was erased on its own'; end if;
   -- Nothing but the Boss of a waiting nomination changes: the guard refuses a rename of anything else.
   denied := false; begin update queued_moves set params = params || '{"extra": 1}' where id = q; exception when check_violation then denied := true; end;
   if not denied then raise exception 'a nomination''s other params changed'; end if;
@@ -236,12 +266,15 @@ begin
   perform apply_meeting(meet, pg_temp.payload(jsonb_build_array(
     jsonb_build_object('move_act', m1, 'decision', 'keep'), jsonb_build_object('move_act', m2, 'decision', 'end'),
     jsonb_build_object('move_act', gen_random_uuid(), 'decision', 'keep'), jsonb_build_object('move_act', nom, 'decision', 'end'),
-    jsonb_build_object('move_act', m1, 'decision', 'end'))));
+    jsonb_build_object('move_act', m1, 'decision', 'end'),
+    -- a move named by something that is no uuid, and a move named with no decision at all: both skipped, neither ends the move.
+    jsonb_build_object('move_act', 'not-a-uuid', 'decision', 'keep'), jsonb_build_object('move_act', m3))));
   select * into mt from meetings where id = meet;
   if mt.outcome is distinct from 'ok' then raise exception 'the meeting did not close ok'; end if;
+  if exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = m3) or not exists (select 1 from open_moves where move_act = m3) then raise exception 'an answer with no decision ended the move'; end if;
   if mt.bank_after is distinct from mt.bank_before then raise exception 'reviewing cost the bank: % to %', mt.bank_before, mt.bank_after; end if;
   if (select balance from move_bank where staff = new_boss) is distinct from mt.bank_before then raise exception 'the bank changed by reviewing'; end if;
-  if mt.record -> 'handover' is distinct from jsonb_build_object('kept', 1, 'ended', 1, 'skipped', 3, 'nominated', false) then raise exception 'the meeting recorded the handover as %', mt.record -> 'handover'; end if;
+  if mt.record -> 'handover' is distinct from jsonb_build_object('kept', 1, 'ended', 1, 'skipped', 5, 'nominated', false) then raise exception 'the meeting recorded the handover as %', mt.record -> 'handover'; end if;
 
   select k.id into keep_act from acts k where k.kind = 'move_keep' and k.target_act_id = m1;
   if keep_act is null or (select c.staff from acts k join characters c on c.id = k.character where k.id = keep_act) is distinct from new_boss then raise exception 'the kept move has no move_keep by the new Boss'; end if;
@@ -411,6 +444,22 @@ begin
   if pg_temp.boss() is distinct from outgoing then raise exception 'the season did not keep the outgoing Boss when the handover raised: %', pg_temp.boss(); end if;
   if (select note from season_handovers where season = (select id from seasons where ends_at is null)) not like 'the handover failed: boom%' then raise exception 'the raised handover was not recorded'; end if;
   if not exists (select 1 from seasons where number = before_number and reveal_act is not null) then raise exception 'the reveal did not happen when the handover raised'; end if;
+end $$;
+
+-- ---- The review is capped: inheritance_due at the cap it is given, the meeting's context at 20 ----
+do $$
+declare
+  boss text := pg_temp.boss();
+  other text := (select staff from characters where staff_kind = 'boss' and staff is distinct from pg_temp.boss() order by staff limit 1);
+  n integer;
+begin
+  for i in 1..22 loop perform pg_temp.rename(other, 'Capped ' || i, now() - interval '50 days'); end loop;
+  select count(*) into n from inheritance_due(boss, 2);
+  if n is distinct from 2 then raise exception 'inheritance_due(boss, 2) returned % moves', n; end if;
+  select count(*) into n from inheritance_due(boss, 100);
+  if n < 22 then raise exception 'the uncapped review should hold the 22 new moves, held %', n; end if;
+  n := jsonb_array_length(meeting_context() -> 'inheritanceDue');
+  if n is distinct from 20 then raise exception 'the meeting was handed % inherited moves, not at most 20', n; end if;
 end $$;
 
 -- ---- The handover is nobody's to call ----
