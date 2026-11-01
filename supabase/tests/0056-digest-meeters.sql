@@ -55,6 +55,7 @@ declare
   p uuid;
   i integer;
   posts uuid;
+  d3board uuid; th_d3 uuid; m_d3 uuid;
   m_posts uuid; m_distinct uuid; m_thread uuid; m_cross uuid; m_quad uuid; m_expired uuid; m_reversed uuid;
   d jsonb;
   e jsonb;
@@ -68,6 +69,8 @@ begin
   insert into threads (board, title) values (other, 'Dm elsewhere') returning id into th_other;
   insert into boards (slug, name, description) values ('dm-distinct', 'Dm Distinct', 'x') returning id into dboard;
   insert into boards (slug, name, description) values ('dm-quad', 'Dm Quad', 'x') returning id into qboard;
+  insert into boards (slug, name, description) values ('dm-d3', 'Dm D3', 'x') returning id into d3board;
+  insert into threads (board, title) values (d3board, 'Dm d3 thread') returning id into th_d3;
   insert into threads (board, title) values (dboard, 'Dm distinct thread') returning id into th_dist;
   insert into threads (board, title) values (qboard, 'Dm quad thread') returning id into th_quad;
 
@@ -95,6 +98,16 @@ begin
   perform tests.post(posters[3], th_dist, 'Three.', base - interval '4 hours');
   perform tests.post(posters[2], th_dist, 'Two.', base - interval '3 hours 50 minutes');
   perform pg_temp.end_at(m_distinct, 'met', base - interval '2 hours');
+
+  -- ---- Met distinctCharactersOnBoard of 3 with four posters before the end: the demand counted the first three, and a fourth who
+  -- posted after it was met but before the tick noticed is not credited. ----
+  m_d3 := pg_temp.move(d3board, 'Dm D3 Palace', jsonb_build_object('kind', 'distinctCharactersOnBoard', 'params', jsonb_build_object('board', d3board, 'count', 3)), base - interval '5 hours');
+  perform tests.post(posters[10], th_d3, 'First.', base - interval '4 hours');
+  perform tests.post(posters[10], th_d3, 'First again.', base - interval '3 hours 55 minutes');
+  perform tests.post(posters[9], th_d3, 'Second.', base - interval '3 hours 50 minutes');
+  perform tests.post(posters[8], th_d3, 'Third: the demand is met here.', base - interval '3 hours 40 minutes');
+  perform tests.post(posters[7], th_d3, 'Fourth, before the tick noticed.', base - interval '3 hours 30 minutes');
+  perform pg_temp.end_at(m_d3, 'met', base - interval '2 hours 50 minutes');
 
   -- ---- Met characterPostsInThread: the named character; crossQuote: the two; quadrantOnBoard: the authors whose tallies counted ----
   m_thread := pg_temp.move(hall, 'Dm Thread Palace', jsonb_build_object('kind', 'characterPostsInThread', 'params', jsonb_build_object('thread', th, 'character', posters[4])), base - interval '5 hours');
@@ -130,6 +143,11 @@ begin
   -- distinct characters on another board: its own posters, in order
   e := (select m from jsonb_array_elements(d -> 'moves') m where (m ->> 'act')::uuid = m_distinct);
   if e -> 'metBy' is distinct from jsonb_build_array(posters[3]::text, posters[2]::text) then raise exception 'distinctCharactersOnBoard lists %', e -> 'metBy'; end if;
+
+  e := (select m from jsonb_array_elements(d -> 'moves') m where (m ->> 'act')::uuid = m_d3);
+  if e -> 'metBy' is distinct from jsonb_build_array(posters[10]::text, posters[9]::text, posters[8]::text) then
+    raise exception 'a met distinctCharactersOnBoard of 3 lists % (the first three characters to post, not the fourth who came before the tick noticed)', e -> 'metBy';
+  end if;
 
   e := (select m from jsonb_array_elements(d -> 'moves') m where (m ->> 'act')::uuid = m_thread);
   if e -> 'metBy' is distinct from jsonb_build_array(posters[4]::text) then raise exception 'characterPostsInThread lists %', e -> 'metBy'; end if;

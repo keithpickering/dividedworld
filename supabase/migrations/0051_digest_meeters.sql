@@ -138,7 +138,8 @@ begin
            case when m.payload #>> '{demand,params,character}' ~ uuid_re then (m.payload #>> '{demand,params,character}')::uuid end as character,
            case when m.payload #>> '{demand,params,a}' ~ uuid_re then (m.payload #>> '{demand,params,a}')::uuid end as a,
            case when m.payload #>> '{demand,params,b}' ~ uuid_re then (m.payload #>> '{demand,params,b}')::uuid end as b,
-           m.payload #>> '{demand,params,quadrant}' as quadrant
+           m.payload #>> '{demand,params,quadrant}' as quadrant,
+           case when m.payload #>> '{demand,params,count}' ~ '^[0-9]{1,9}$' then (m.payload #>> '{demand,params,count}')::integer end as cnt
     from moved m
     where m.state = 'ended' and m.ended ->> 'why' = 'met' and jsonb_typeof(m.payload -> 'demand') = 'object'
   ),
@@ -147,15 +148,42 @@ begin
   -- public tallies counted, the most reacted first; for a post in a thread, the character named; for a crossQuote, the two. A staff
   -- character's Acts never count (the evaluator skips them) and are never listed. Only public relations, and never a reactor.
   met_credit as (
-    select mm.act, a.character, min(a.created_at) as first_at, 0::bigint as weight
-    from met_m mm
-    join thread_list tl on tl.board = mm.board
-    join acts_public a on a.thread = tl.id
-    join characters_public c on c.id = a.character
-    where mm.dkind in ('postsOnBoard', 'distinctCharactersOnBoard')
-      and a.kind = 'post' and a.created_at > mm.landed_at and a.created_at <= mm.end_at and c.staff is null
-    group by mm.act, a.character
+    select r.act, r.character, min(r.created_at) as first_at, 0::bigint as weight
+    from (
+      -- postsOnBoard: the posts demand_progress counted, the first `count` after the landing (oldest first, staff skipped). A post after the
+      -- count was reached, before the tick noticed, is not the move's.
+      select mm.act, a.character, a.created_at,
+             row_number() over (partition by mm.act order by a.created_at, a.id) as n
+      from met_m mm
+      join thread_list tl on tl.board = mm.board
+      join acts_public a on a.thread = tl.id
+      join characters_public c on c.id = a.character
+      where mm.dkind = 'postsOnBoard' and mm.cnt >= 1
+        and a.kind = 'post' and a.created_at > mm.landed_at and a.created_at <= mm.end_at and c.staff is null
+    ) r
+    join met_m mm on mm.act = r.act and r.n <= mm.cnt
+    group by r.act, r.character
     union all
+    select f.act, f.character, f.first_at, 0::bigint
+    from (
+      -- distinctCharactersOnBoard: the first `count` distinct characters to post after the landing, in the order they first did.
+      select x.act, x.character, x.first_at, row_number() over (partition by x.act order by x.first_at, x.first_id) as n
+      from (
+        select mm.act, a.character, min(a.created_at) as first_at, (array_agg(a.id order by a.created_at, a.id))[1] as first_id
+        from met_m mm
+        join thread_list tl on tl.board = mm.board
+        join acts_public a on a.thread = tl.id
+        join characters_public c on c.id = a.character
+        where mm.dkind = 'distinctCharactersOnBoard' and mm.cnt >= 1
+          and a.kind = 'post' and a.created_at > mm.landed_at and a.created_at <= mm.end_at and c.staff is null
+        group by mm.act, a.character
+      ) x
+    ) f
+    join met_m mm on mm.act = f.act and f.n <= mm.cnt
+    union all
+    -- quadrantOnBoard: the public tally as it stands when the digest is built, not as of the move's end. A reaction after the end can raise
+    -- it, and a public tally keeps no time per reaction (a reaction's time is private, and is never read here), so this credit may include
+    -- an author a later reaction put in the quadrant.
     select mm.act, a.character, min(a.created_at), -sum(t.count)::bigint
     from met_m mm
     join thread_list tl on tl.board = mm.board

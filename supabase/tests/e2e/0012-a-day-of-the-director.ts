@@ -11,7 +11,7 @@
  * The structural hold is stepped over as 0013-handover.ts steps over it: there is no clock or test-only path for a queued move's time (the
  * hold is a setting at least an hour, the tick reads now()), so the queue's guard is disabled for one update as superuser. The same
  * goes for the tick's pacing of demand checks (open_moves.checked_at, derived state, reset as supabase/tests/0052-tick.sql does) and for
- * the time of the two reactions (moved into the window the settlement will read, since earlier files leave settled windows ahead of now).
+ * the time of the two reactions (moved into the middle of the window next_settlement_window gives, so the file needs no earlier file's settlements).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -167,12 +167,24 @@ test('a rename is queued, lands, is met by three characters and ends, and the ne
   await rex.rpc('react', { target: ada, through: chars['Dayrun Rex'], reaction: 'tomato' });
   await psqlDb(account('Dayrun Dov')).rpc('react', { target: ada, through: chars['Dayrun Dov'], reaction: 'tomato' });
   assert.equal(sql(`select count from reaction_tallies where act = '${moveAct}' and kind = 'tomato'`), '1', 'the tally of the move shows it, in public');
-  // Earlier files leave settled windows ahead of now; the reactions are moved into the next window.
-  const start = sql(`select to_jsonb(coalesce(max(ends_at), now()))#>>'{}' from settlements`);
-  const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
-  sql(`update reactions set created_at = '${at(1)}' where act in ('${moveAct}', '${ada}')`);
-  const settled = await runSettlement(db, instance, at(24));
+  // Self-contained: the window is the one next_settlement_window gives, whatever earlier files left settled (nothing, when this file runs
+  // alone). It starts where the last settled window ended, or at the season's start, and a run until exactly one settlement length
+  // later (the instance's is a day) asks for that one whole window and no other: a first window ends in step with `until`, less whole
+  // lengths, so an `until` of start + one length ends it there. The reactions go to its middle, and every Act of this file was made
+  // before its end, so the settlement reads them all.
+  // Run alone, nothing is settled yet and the fixtures' first season began in 2000, so thousands of daily windows would come before this
+  // file's day: the season is moved to begin an hour ago, the one change that leaves exactly this day due (the real runSettlement settles
+  // at most a month of windows a run). Where an earlier file left settlements, the season and its windows are theirs and are not touched.
+  sql(`update seasons set starts_at = now() - interval '1 hour' where ends_at is null and not exists (select 1 from settlements)`);
+  const windowStart = sql(`select to_jsonb(coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons)))#>>'{}'`);
+  assert.equal(sql(`select span_interval(setting('settlementLength'))::text`), '1 day', 'the window below is one day long');
+  const win = await db.rpc<{ start: string; end: string } | null>('next_settlement_window', { until: new Date(Date.parse(windowStart) + 86_400_000).toISOString() });
+  assert.ok(win, 'there is a window to settle');
+  const windowMid = new Date((Date.parse(win.start) + Date.parse(win.end)) / 2).toISOString();
+  sql(`update reactions set created_at = '${windowMid}' where act in ('${moveAct}', '${ada}')`);
+  const settled = await runSettlement(db, instance, win.end);
   assert.equal(settled.status, 'applied', JSON.stringify(settled));
+  assert.equal(settled.windows.length, 1, 'only the reactions\' window is settled');
   assert.equal(sql(`select count(*) from ledger_shares where act = '${moveAct}'`), '0', 'a staff Act pays nobody');
   assert.equal(sql(`select count(*) from ledger l where l.character in (select id from characters where staff is not null)`), '0', 'and no staff character is paid');
   assert.notEqual(sql(`select count(*) from ledger_shares where act = '${ada}'`), '0', 'while the same reaction to a player\'s post does');
