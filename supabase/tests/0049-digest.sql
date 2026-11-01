@@ -10,7 +10,6 @@ declare
   t1 uuid; t2 uuid; t3 uuid; t4 uuid;
   pa uuid; pb uuid; pboss uuid; pquote uuid;
   d jsonb;
-  titles text[];
   denied boolean;
   bad text;
   -- The window is far from now: other files commit rows (the race tests) that a window around now would count.
@@ -91,7 +90,10 @@ begin
   insert into characters (name, staff, staff_kind, debuted_at) values ('Digest Boss', 'digest-boss', 'boss', now()) returning id into boss;
   update seasons set boss = 'digest-boss' where ends_at is null;
 
-  t1 := tests.thread('Most posts'); t2 := tests.thread('Split reactions'); t3 := tests.thread('One reaction'); t4 := tests.thread('Quiet');
+  t1 := tests.thread('Most posts'); t2 := tests.thread('Two threads alike'); t3 := tests.thread('Two threads alike'); t4 := tests.thread('Quiet');
+  -- t2 and t3 tie on posts, so only controversy can rank them. The split reactions go to the one whose
+  -- id sorts last, so that if controversy stopped counting, the id tie-break would put it last and fail.
+  if t2 < t3 then t4 := t2; t2 := t3; t3 := t4; t4 := tests.thread('Quiet'); end if;
   perform tests.post(a, t1, 'abcdefghijklmnopqrstuvwxyz', base); perform tests.post(b, t1, 'Hello.', base); perform tests.post(a, t1, 'Hello.', base);
   pa := tests.post(a, t2, 'second thread first post', base); pb := tests.post(b, t2, 'Hello.', base);
   perform tests.post(a, t3, 'Hello.', base); perform tests.post(b, t3, 'Hello.', base);
@@ -115,9 +117,10 @@ begin
   perform tests.unbecome();
 
   if jsonb_array_length(d -> 'threads') > 3 or jsonb_array_length(d -> 'threads') <> 3 then raise exception 'the thread list is not capped at digestThreads: %', d -> 'threads'; end if;
-  select array_agg(e ->> 'title' order by o) into titles from jsonb_array_elements(d -> 'threads') with ordinality x(e, o);
   -- t1 has 5 posts (heat 2.5 an hour over the 2-hour window), t2 and t3 have 2 each, t4 one: t2 splits its reactions, so it outranks t3.
-  if titles is distinct from array['Most posts', 'Split reactions', 'One reaction'] then raise exception 'threads are ordered %', titles; end if;
+  if (select array_agg((e ->> 'thread')::uuid order by o) from jsonb_array_elements(d -> 'threads') with ordinality x(e, o)) is distinct from array[t1, t2, t3] then
+    raise exception 'threads are ordered %', d -> 'threads';
+  end if;
   if (d #>> '{threads,0,heat}')::numeric <> 2.5 then raise exception 'heat is posts an hour: %', d #> '{threads,0}'; end if;
   if (d #>> '{threads,0,length}')::integer <> 5 then raise exception 'length is the thread''s posts: %', d #> '{threads,0}'; end if;
   if (d #>> '{threads,1,controversy}')::numeric <> 0.5 or (d #>> '{threads,2,controversy}')::numeric <> 0 then raise exception 'controversy is %, %', d #>> '{threads,1,controversy}', d #>> '{threads,2,controversy}'; end if;
@@ -126,7 +129,9 @@ begin
   -- Excerpts: capped at digestExcerpts, each cut to digestExcerptChars, the most reacted first.
   if jsonb_array_length(d -> 'excerpts') <> 2 then raise exception 'excerpts are not capped at digestExcerpts: %', d -> 'excerpts'; end if;
   if exists (select 1 from jsonb_array_elements(d -> 'excerpts') e where char_length(e ->> 'text') > 10) then raise exception 'an excerpt is not cut: %', d -> 'excerpts'; end if;
-  if (d #>> '{excerpts,0,act}')::uuid is distinct from pboss and (d #>> '{excerpts,0,act}')::uuid is distinct from (select x.id from acts x where x.thread = t3 and x.seq = 1) then
+  -- t3's first post and pa drew 6 each, the Boss's post 5: the two 6s fill the cap of 2, the 5 is left out.
+  if (select array_agg((e ->> 'act')::uuid order by (e ->> 'act')) from jsonb_array_elements(d -> 'excerpts') e)
+     is distinct from (select array_agg(x order by x) from unnest(array[pa, (select x.id from acts x where x.thread = t3 and x.seq = 1)]) x) then
     raise exception 'the first excerpt is not the most reacted: %', d -> 'excerpts';
   end if;
   -- Quotes: b quotes a, once.
