@@ -17,7 +17,7 @@ import { INT4_MAX } from './cards.ts';
 export const BRIBE_BOUNDS = { least: 25, most: 500 } as const;
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
-/** A grace may be minutes long (editGrace); nothing else is. */
+/** A grace may be minutes long (editGrace), and so may presence's window; nothing else is. */
 const GRACE_UNITS: readonly Span['unit'][] = ['minute', ...SPAN_UNITS];
 /** The most of a unit a span counts, as settings_spans_hold (0007) holds it: past any instance's life, inside span_interval's integer. */
 export const SPAN_MOST = 1000;
@@ -90,6 +90,10 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   postsPerPage: (v) => (isWhole(v, 1) ? null : 'a whole number of posts, at least 1'),
   hotReplies: (v) => (isWhole(v, 1) ? null : 'a whole number of replies, at least 1'),
+  presenceWindow: (v) => (isSpan(v, GRACE_UNITS) ? null : 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000'),
+  presenceNames: (v) => (isWhole(v, 1) ? null : 'a whole number of names, at least 1'),
+  // At least 10, so no instance is polled into load; at most 300, so the window still means something.
+  presencePollSeconds: (v) => (isWhole(v, 10) && (v as number) <= 300 ? null : 'a whole number of seconds from 10 to 300'),
   economy: namedNumbers,
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
@@ -220,7 +224,7 @@ export function instanceProblems(instance: Instance): string[] {
   return out;
 }
 
-/** The longest a Boss's or bot's title and signature may be: what the seed writes into a profile (0042 cuts them in silence). */
+/** The longest a Boss's or bot's title and signature may be: what the seed writes into a profile (0043 cuts them in silence). */
 export const STAFF_TITLE_MAX = 40;
 export const STAFF_SIGNATURE_MAX = 500;
 

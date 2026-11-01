@@ -20,7 +20,8 @@ declare
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text)', 'post(uuid,uuid,text,uuid)',
                            'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text)', 'create_character(text,text,text,text)', 'set_debut(uuid,text,text)',
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer)', 'meet_card(text)', 'forget_cards_met()', 'set_profile(uuid,text,text,text)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',
-                           'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'hold_move(bigint)', 'reverse_move(uuid)', 'replace_successor(bigint,text)', 'move_progress(uuid)'];
+                           'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'hold_move(bigint)', 'reverse_move(uuid)', 'replace_successor(bigint,text)', 'move_progress(uuid)',
+                           'here(text,uuid,uuid)', 'set_presence_hidden(uuid,boolean)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)'];
 begin
@@ -32,9 +33,9 @@ begin
            where n.nspname = 'public' and c.relkind in ('r', 'v', 'm', 'p')
              and (has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger') and not c.relname in ('screen_settings', 'staff_now', 'staff_profile_now', 'boards_now', 'moves_log')
                   -- screen_settings (0030) is a view a visitor reads: the sign-up page must know whether the instance asks for an invite.
-                  -- staff_now (0042) is the other: the staff are known to be staff, signed in or not.
-                  -- staff_profile_now (0043) is the third: a Boss's in-character profile is a public page.
-                  -- boards_now and moves_log (0045) are the last two: a board's name now, and a Boss's moves with how each ended, are
+                  -- staff_now (0043) is the other: the staff are known to be staff, signed in or not.
+                  -- staff_profile_now (0044) is the third: a Boss's in-character profile is a public page.
+                  -- boards_now and moves_log (0046) are the last two: a board's name now, and a Boss's moves with how each ended, are
                   -- computed from Acts anyone can read.
                   or has_table_privilege('anon', c.oid, 'insert,update,delete,truncate,references,trigger')
                   or (has_table_privilege('authenticated', c.oid, 'select,insert,update,delete,truncate,references,trigger') and not c.relname = any (readable))
@@ -43,7 +44,7 @@ begin
   for r in select p.oid::regprocedure::text as fn from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public'
              and ((has_function_privilege('anon', p.oid, 'execute') and not replace(p.oid::regprocedure::text, ' ', '') = any (visitor_callable))
-                  -- move_progress (0049) is the one function a visitor may call: a move's way out is computed from Acts anyone can read.
+                  -- move_progress (0050) is the one function a visitor may call: a move's way out is computed from Acts anyone can read.
                   or (has_function_privilege('authenticated', p.oid, 'execute') and not replace(p.oid::regprocedure::text, ' ', '') = any (callable)))
   loop bad := bad || format(E'\n  function %s', r.fn); end loop;
   if bad <> '' then raise exception 'the API roles can reach what they were never granted:%', bad; end if;

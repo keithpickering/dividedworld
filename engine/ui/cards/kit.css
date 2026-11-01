@@ -54,6 +54,11 @@
   transform: skewX(calc(var(--kb-glass-skew) * -1));
 }
 
+.kb-kit-tile:hover {
+  --kb-tile: color-mix(in srgb, var(--kb-glass-text) 70%, transparent);
+  color: var(--kb-glass-text);
+}
+
 .kb-kit-tile[data-kb-lit],
 .kb-kit-tile[aria-pressed="true"] {
   --kb-tile: var(--kb-tag, var(--kb-glass-sweet));

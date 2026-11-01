@@ -10,7 +10,7 @@
  *
  * The structural hold is stepped over as 0013-handover.ts steps over it: there is no clock or test-only path for a queued move's time (the
  * hold is a setting at least an hour, the tick reads now()), so the queue's guard is disabled for one update as superuser. The same
- * goes for the tick's pacing of demand checks (open_moves.checked_at, derived state, reset as supabase/tests/0052-tick.sql does) and for
+ * goes for the tick's pacing of demand checks (open_moves.checked_at, derived state, reset as supabase/tests/0053-tick.sql does) and for
  * the time of the two reactions (moved into the middle of the window next_settlement_window gives, so the file needs no earlier file's settlements).
  */
 import { test } from 'node:test';

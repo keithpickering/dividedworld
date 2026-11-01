@@ -66,7 +66,7 @@ test('every demand kind accepts a well-formed demand and renders its template as
 });
 
 test('the kinds in TypeScript are the kinds demand_progress has a case for (the two lists are one list)', () => {
-  const sql = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0045_moves.sql'), 'utf8');
+  const sql = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0046_moves.sql'), 'utf8');
   const body = sql.slice(sql.indexOf('create function demand_progress'));
   const cases = [...body.matchAll(/^\s*when '([A-Za-z]+)' then/gm)].map((m) => m[1]!).sort();
   assert.deepEqual(cases, DEMAND_KINDS.map((k) => k.key).sort());

@@ -349,6 +349,21 @@ describe('what the Lens says and offers', () => {
     expect(within(lens()).getAllByRole('button', { name: 'Spin thread' })).toHaveLength(3);
     expect(within(lens()).getAllByRole('link', { name: 'Go to post' })).toHaveLength(3);
   });
+
+  test('every control in a row is the kit\'s skewed tile, as Hold to scrub is: React, Spin thread and Go to post speak one shape', async () => {
+    width(false);
+    const w = world();
+    w.play('k2', w.spritey); w.play('k2', w.gloomba);
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    await userEvent.click(whoButton());
+    const controls = [...lens().querySelectorAll<HTMLElement>('.kb-lens-row :is(button, a)')];
+    expect(controls.map((c) => c.textContent)).toEqual(expect.arrayContaining(['+ React', 'Spin thread', 'Go to post']));
+    for (const c of controls) {
+      expect(c, c.textContent ?? '').toHaveClass('kb-kit-tile');
+      expect(c.querySelector(':scope > .kb-kit-tile-label'), `${c.textContent}'s words stand upright on the skew`).not.toBeNull();
+    }
+  });
 });
 
 describe('spinning from a play', () => {

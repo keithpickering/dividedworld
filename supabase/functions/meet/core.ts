@@ -4,7 +4,7 @@
  * this file is what Node tests (core.test.ts) and Deno both run. The engine's side of the call (the prompt, the rule, the repair)
  * is engine/system/meeting.ts; this file moves data between the database, the model and it.
  *
- * **The meeting's row is opened at its start and closed once** (supabase/migrations/0046_meeting.sql). Every model call's ledger
+ * **The meeting's row is opened at its start and closed once** (supabase/migrations/0047_meeting.sql). Every model call's ledger
  * row names its meeting, so the row exists before the first call. `begin_meeting(slot)` opens it, or says the slot was already
  * met (closed: nothing to do), or hands back the row of a run that began and never closed (a crash: the retry reuses it).
  * Everything the meeting keeps is written by one SQL function, `apply_meeting`, in one transaction that closes the row, so a
@@ -85,7 +85,7 @@ interface Context {
   /** The slot of the last meeting that closed ok or failed: where this window starts. Null before the first. */
   readonly lastSlot: string | null;
   readonly boards: readonly { readonly id: string; readonly name: string }[];
-  /** The moves of an earlier Boss, still in force and shaping a board, that this Boss has neither kept nor ended (0050); absent from an older database. */
+  /** The moves of an earlier Boss, still in force and shaping a board, that this Boss has neither kept nor ended (0051); absent from an older database. */
   readonly inheritanceDue?: readonly InheritedMove[];
 }
 

@@ -70,3 +70,18 @@ describe('a board a move has renamed', () => {
     expect((await fake.boards()).find((b) => b.slug === 'general')?.name).toBe('General');
   });
 });
+
+describe('who is online', () => {
+  test('the index\'s foot holds "Who is online", with the window it counts', async () => {
+    renderInWorld(<IndexScreen />, {
+      seed: (f) => {
+        const me = f.seed.account('me');
+        f.seed.character(me, 'Spritey', 'face');
+        f.signInAs(me);
+      },
+    });
+    const box = await screen.findByRole('region', { name: 'Who is online' });
+    expect(await within(box).findByRole('link', { name: 'Spritey' })).toBeInTheDocument();
+    expect(box).toHaveTextContent('Characters active in the past 5 minutes');
+  });
+});

@@ -1,8 +1,8 @@
 /**
  * The demands a move can carry (system design, section 3; the system plan, Task 8): a whitelist of conditions code can check
  * against public Acts. The Director parameterizes one from this list; a key outside it is not a demand. The list is seeded into
- * `demand_kinds` by `seed_instance`, and `demand_progress` (supabase/migrations/0045_moves.sql) holds a case for each key and
- * raises for one it does not know, so a key added here without its case is red in supabase/tests/0050-moves.sql and in
+ * `demand_kinds` by `seed_instance`, and `demand_progress` (supabase/migrations/0046_moves.sql) holds a case for each key and
+ * raises for one it does not know, so a key added here without its case is red in supabase/tests/0051-moves.sql and in
  * `engine/system/demands.test.ts` ("Two lists that must agree are one list").
  *
  * Every demand counts characters, posts and public tallies, never players, and counts only Acts after the move landed.

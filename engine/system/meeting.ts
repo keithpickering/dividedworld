@@ -19,7 +19,7 @@
  * the end. Times are clamped into what the settings allow.
  *
  * `successor` and `inherited` are the handover's (Task 12b) and are repaired here and carried in the result; the database acts
- * on them (apply_meeting, 0050): a successor is queued as a structural move, and each inherited move is kept or ended. A
+ * on them (apply_meeting, 0051): a successor is queued as a structural move, and each inherited move is kept or ended. A
  * successor named before the meltdown's last week is dropped and recorded; an inheritance answer naming a move the meeting was
  * not shown is too. `inheritedText` is what the Boss is shown to answer them.
  *

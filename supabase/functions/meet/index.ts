@@ -1,6 +1,6 @@
 /**
  * The meeting's Edge Function: pg_cron calls it at the instance's meetingCron with the minute it fired
- * (supabase/migrations/0046_meeting.sql). The work is core.ts; this is the edge: the service key, the environment, the model
+ * (supabase/migrations/0047_meeting.sql). The work is core.ts; this is the edge: the service key, the environment, the model
  * adapters (supabase/functions/_shared/models/) and an answer that says what happened. No secret is ever logged or returned:
  * the model key is read by the adapter from `Deno.env` and appears in no message.
  */

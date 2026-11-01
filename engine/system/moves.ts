@@ -8,7 +8,7 @@
  * lands and lands unless an admin holds it. `nameSuccessor` (the handover, Task 12b) is the Boss's pick of the next Boss: structural
  * too, so it waits the same way, with no demand and no expiry; the meeting queues it from the answer's `successor`, never from
  * `moves`, and it is spent at the handover. A move is an Act, and what a board is called now is computed from the Acts
- * (the `boards_now` view, supabase/migrations/0045_moves.sql), so ending a move brings the old name back with nothing
+ * (the `boards_now` view, supabase/migrations/0046_moves.sql), so ending a move brings the old name back with nothing
  * rewritten.
  *
  * A move reads to a player in plain words (the label on the glass, the line in the log), never in the Director's: the fiction

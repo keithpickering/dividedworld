@@ -29,6 +29,8 @@ const FALLBACK: ScreenSettings = {
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
   cardSettings: { 'whoops.clean': 95 },
+  presencePollSeconds: 30,
+  presenceWindow: { unit: 'minute', count: 5 },
   cardEconomy: {},
 };
 
@@ -133,6 +135,24 @@ describe('what the adapter may request', () => {
     expect(req?.body).toEqual({ in_thread: T, seq: 3, through: B });
     expect(req?.url.toString()).not.toContain(B);
     expect([...(req?.headers.values() ?? [])].join(' ')).not.toContain(B);
+  });
+
+  it('polls presence with the place and the HUD mask in the body, answers names and a count, and throws on a refusal', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/here') ? json({ names: [{ id: A, name: 'Ann' }], others: 2 }) : json({}, 404)));
+    expect(await h.api.here({ kind: 'thread', thread: T }, B)).toEqual({ names: [{ id: A, name: 'Ann' }], others: 2 });
+    await h.api.here({ kind: 'index' }, null);
+    const [first, second] = h.to('rpc/here');
+    expect(first?.body).toEqual({ in_kind: 'thread', in_place: T, through: B });
+    expect(second?.body).toEqual({ in_kind: 'index', in_place: null, through: null });
+    expect(first?.url.toString()).not.toContain(B);
+    const refused = harness((r) => (r.url.pathname.endsWith('/rpc/here') ? json({ code: '42501', message: 'you do not play that character', hint: 'kayfabb.refusal' }, 403) : json({}, 404)));
+    await expect(refused.api.here({ kind: 'index' }, B)).rejects.toThrow('you do not play that character');
+  });
+
+  it('hides a mask from presence through set_presence_hidden, and answers whether it is hidden', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_presence_hidden') ? json({ character: B, hidden: true }) : json({}, 404)));
+    expect(await h.api.setPresenceHidden(B, true)).toEqual({ ok: true, value: true });
+    expect(h.to('rpc/set_presence_hidden')[0]?.body).toEqual({ in_character: B, hidden: true });
   });
 });
 
@@ -419,11 +439,12 @@ describe('reads and their rows', () => {
   });
 
   it('maps my_characters, with a pending Turn only when one is waiting', async () => {
-    const base = { name: 'Bea', class: 'face', class_since: '2026-09-01T00:00:00+00:00', turn_opens_at: null, debuted_at: '2026-09-02T00:00:00+00:00', debut_loudness: 'silent', retired_at: null, pending_class: null, pending_loudness: null, pending_show_from: null, pending_show_to: null, takes_effect_at: null };
-    const h = harness(() => rows([{ id: B, ...base }, { id: A, ...base, name: 'Al', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00' }]));
+    const base = { name: 'Bea', class: 'face', class_since: '2026-09-01T00:00:00+00:00', turn_opens_at: null, debuted_at: '2026-09-02T00:00:00+00:00', debut_loudness: 'silent', retired_at: null, pending_class: null, pending_loudness: null, pending_show_from: null, pending_show_to: null, takes_effect_at: null, presence_hidden: false };
+    const h = harness(() => rows([{ id: B, ...base }, { id: A, ...base, name: 'Al', presence_hidden: true, pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00' }]));
     const mine = await h.api.myCharacters();
     expect(h.rest().map((r) => r.url.pathname)).toEqual(['/rest/v1/my_characters']);
-    expect(mine[0]).toEqual({ id: B, name: 'Bea', class: 'face', classSince: '2026-09-01T00:00:00+00:00', turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null });
+    expect(mine[0]).toEqual({ id: B, name: 'Bea', class: 'face', classSince: '2026-09-01T00:00:00+00:00', turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false });
+    expect(mine[1]?.presenceHidden).toBe(true);
     expect(mine[1]?.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: '2026-11-01T00:00:00+00:00' });
   });
 
@@ -1102,22 +1123,166 @@ describe('the log', () => {
 
 describe('reads by many ids', () => {
   const id = (n: number) => `${A.slice(0, -4)}${String(n).padStart(4, '0')}`;
-  it('reads Acts and effect states by id in chunks, so no request carries an address too long for a proxy, and every id is read once', async () => {
-    const h = harness((r) => {
-      const asked = (r.url.searchParams.get('id') ?? r.url.searchParams.get('play') ?? '').replace(/^in\.\(|\)$/gu, '').split(',').filter(Boolean);
-      return r.url.pathname.endsWith('/acts_public') ? rows(asked.map((a) => ({ ...ACT_ROW, id: a }))) : rows(asked.map((a) => ({ play: a, state: {}, saved_at: '2026-10-30T00:00:00Z' })));
-    });
-    const ids = Array.from({ length: 450 }, (_, n) => id(n));
-    expect((await h.api.actsById(ids)).length).toBe(450);
-    expect(Object.keys(await h.api.effectStates(ids)).length).toBe(450);
-    for (const name of ['acts_public', 'effect_state']) {
+  const ids = Array.from({ length: 450 }, (_, n) => id(n));
+  /** The ids a request names in its one `in.(…)` filter (an Act kind list is a bounded filter, never the read's ids). */
+  const askedIn = (r: Rec): string[] => {
+    for (const [key, value] of r.url.searchParams) {
+      if (key !== 'kind' && value.startsWith('in.(')) return value.replace(/^in\.\(|\)$/gu, '').split(',').filter(Boolean);
+    }
+    return [];
+  };
+  /** A row per id asked, carrying the id under every column a by-id read filters on. */
+  const rowFor = (a: string, n: number) => ({
+    ...ACT_ROW, ...THREAD_ROW, id: a, act: a, character: a, thread: a, play: a, origin_act_id: a, target_act_id: a, kind: 'card',
+    name: 'Mask', joined: '2026-10-01', count: 1, views: 2, posts: 3, standing: 4, furthest_seq: 5, state: {}, saved_at: 'x',
+    class: 'heel', at: `2026-10-01T10:00:${String(n % 60).padStart(2, '0')}+00:00`, via: 'reveal', was: null, since: null,
+  });
+  const byIdHarness = () => harness((r) => rows(askedIn(r).map((a, n) => rowFor(a, n))));
+
+  const reads: readonly (readonly [string, readonly string[], (api: KayfaApi) => Promise<unknown>])[] = [
+    ['actsById', ['acts_public'], (api) => api.actsById(ids)],
+    ['effectStates', ['effect_state'], (api) => api.effectStates(ids)],
+    ['characters', ['characters_public', 'character_profiles'], (api) => api.characters(ids)],
+    ['spunFromMany', ['thread_list'], (api) => api.spunFromMany(ids, 20)],
+    ['cardsOnMany', ['acts_public'], (api) => api.cardsOnMany(ids, 20)],
+    ['myReleases', ['effect_releases'], (api) => api.myReleases(ids)],
+    ['characterStats', ['character_post_counts'], (api) => api.characterStats(ids)],
+    ['tallies', ['reaction_tallies'], (api) => api.tallies(ids)],
+    ['viewCounts', ['thread_view_counts'], (api) => api.viewCounts(ids)],
+    ['standingAmounts', ['current_standings'], (api) => api.standingAmounts(ids)],
+    ['classReveals', ['class_reveals'], (api) => api.classReveals(ids)],
+    ['turnsAnnounced', ['turns_announced'], (api) => api.turnsAnnounced(ids)],
+    ['myReactions', ['my_reactions'], (api) => api.myReactions(ids)],
+    ['reading', ['reading'], (api) => api.reading(ids)],
+  ];
+
+  it.each(reads)('%s reads by id in chunks, so no request carries an address too long for a proxy, and every id is read once', async (_name, tables, call) => {
+    const h = byIdHarness();
+    await call(h.api);
+    for (const name of tables) {
       const reqs = h.to(name);
-      expect(reqs.length).toBe(5);
-      for (const r of reqs) expect(r.url.toString().length).toBeLessThan(8000);
+      expect(reqs.length, name).toBe(5);
+      for (const r of reqs) expect(r.url.toString().length, name).toBeLessThan(8000);
+      const asked = reqs.flatMap(askedIn);
+      expect(asked.length, name).toBe(450);
+      expect(new Set(asked), name).toEqual(new Set(ids));
     }
   });
-});
 
+  it('reads the log\'s shares by settlement in chunks, and every settlement once', async () => {
+    const settlements = Array.from({ length: 450 }, (_, n) => n + 1);
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_ledger') return rows(settlements.map((s) => ({ settlement: s, starts_at: 'a', ends_at: `2026-10-01T00:00:00Z`, character: B, reason: 'heel.drewHeat', amount: 1, shares_kept: true })));
+      if (name === 'my_ledger_shares') return rows(askedIn(r).map((s) => ({ settlement: Number(s), character: B, reason: 'heel.drewHeat', act: A, quadrant: null, amount: 1 })));
+      return rows([]);
+    });
+    const log = await h.api.log();
+    const reqs = h.to('my_ledger_shares');
+    expect(reqs.length).toBe(5);
+    for (const r of reqs) expect(r.url.toString().length).toBeLessThan(8000);
+    expect(reqs.flatMap(askedIn).map(Number).sort((a, b) => a - b)).toEqual(settlements);
+    expect(log.settlements.every((s) => s.lines[0]?.shares.length === 1)).toBe(true);
+  });
+
+  /** A table of rows the harness answers as one PostgREST query would: filtered by the request's `in.(…)`, ordered by `order`, cut at `limit`. */
+  const asOneQuery = (table: readonly Row[], column: string, order: (a: Row, b: Row) => number) => (r: Rec) => {
+    const asked = new Set(askedIn(r));
+    const limit = Number(r.url.searchParams.get('limit') ?? Infinity);
+    return rows(table.filter((x) => asked.has(x[column])).sort(order).slice(0, limit));
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type Row = Record<string, any>;
+  const byTimeThenId = (a: Row, b: Row) => String(a['created_at']).localeCompare(String(b['created_at'])) || String(a['id']).localeCompare(String(b['id']));
+  /** 250 posts' worth of rows, each post's created at a time that does not follow its id, so the earliest are spread across every chunk. */
+  const scattered = (n: number) => `2026-10-01T${String(10 + ((n * 37) % 250) / 25 | 0).padStart(2, '0')}:${String((n * 37) % 25).padStart(2, '0')}:00+00:00`;
+  const posts = Array.from({ length: 250 }, (_, n) => id(n));
+  const cardRows = posts.map((p, n) => ({ ...ACT_ROW, id: id(1000 + n), kind: 'card', target_act_id: p, created_at: scattered(n) }));
+  const threadRows = posts.map((p, n) => ({ ...THREAD_ROW, id: id(2000 + n), origin_act_id: p, created_at: scattered(n) }));
+
+  it.each([0, 1, 7])('cardsOnMany over 250 posts with limit %i answers the earliest rows across every chunk, in order, as one query would', async (limit) => {
+    const h = harness(asOneQuery(cardRows, 'target_act_id', byTimeThenId));
+    const got = await h.api.cardsOnMany(posts, limit);
+    const want = [...cardRows].sort(byTimeThenId).slice(0, Math.max(1, limit)).map((r) => r.id);
+    expect(got.map((a) => a.id)).toEqual(want);
+    expect(h.to('acts_public').length).toBe(3);
+  });
+
+  it.each([0, 1, 7])('spunFromMany over 250 posts with limit %i answers the earliest threads across every chunk, in order, as one query would', async (limit) => {
+    const h = harness(asOneQuery(threadRows, 'origin_act_id', byTimeThenId));
+    const got = await h.api.spunFromMany(posts, limit);
+    expect(got.map((t) => t.id)).toEqual([...threadRows].sort(byTimeThenId).slice(0, Math.max(1, limit)).map((r) => r.id));
+  });
+
+  it('classReveals orders rows with equal times across two chunks by their Act', async () => {
+    const at = '2026-10-01T10:00:00+00:00';
+    /* The character in the first chunk carries the later Act id, so only a merge by Act puts the second chunk's row first. */
+    const table = [
+      { act: id(901), character: ids[5], class: 'heel', at, via: 'reveal', thread: T },
+      { act: id(900), character: ids[300], class: 'face', at, via: 'reveal', thread: T },
+      { act: id(899), character: ids[6], class: 'heel', at: '2026-10-01T09:00:00+00:00', via: 'reveal', thread: T },
+    ];
+    const h = harness(asOneQuery(table, 'character', (a, b) => String(a['at']).localeCompare(String(b['at']))));
+    expect((await h.api.classReveals(ids)).map((r) => r.act)).toEqual([id(899), id(900), id(901)]);
+  });
+
+  it('classReveals orders times written with and without fractions of a second as the server does, never as a locale would', async () => {
+    /* PostgREST trims a timestamp's trailing zeros, so a whole second has no fraction; a locale's collation can sort "00.5+" before "00+". */
+    const table = [
+      { act: id(901), character: ids[5], class: 'heel', at: '2026-10-01T10:00:00.5+00:00', via: 'reveal', thread: T },
+      { act: id(902), character: ids[300], class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'reveal', thread: T },
+      { act: id(900), character: ids[6], class: 'heel', at: '2026-10-01T10:00:00.25+00:00', via: 'reveal', thread: T },
+    ];
+    const h = harness(asOneQuery(table, 'character', (a, b) => Date.parse(String(a['at'])) - Date.parse(String(b['at']))));
+    expect((await h.api.classReveals(ids)).map((r) => r.act)).toEqual([id(902), id(900), id(901)]);
+  });
+
+  it('reads each id once when the list names it twice, and characters still answers in the order asked', async () => {
+    const h = byIdHarness();
+    await h.api.tallies([...ids, ...ids]);
+    expect(h.to('reaction_tallies').length).toBe(5);
+    expect(h.to('reaction_tallies').flatMap(askedIn).length).toBe(450);
+    const asked = [ids[7] as string, ids[3] as string, ids[7] as string];
+    expect((await h.api.characters(asked)).map((c) => c.id)).toEqual(asked);
+  });
+
+  it('reads 150 settlements\' shares, one holding more than a page of rows, whole and in the log\'s order', async () => {
+    const settlements = Array.from({ length: 150 }, (_, n) => n + 1);
+    const share = (s: number, k: number) => ({ settlement: s, character: B, reason: 'heel.drewHeat', act: id(k), quadrant: null, amount: 1 });
+    const table = settlements.flatMap((s) => (s === 120 ? Array.from({ length: 1003 }, (_, k) => share(s, k)) : [share(s, 0), share(s, 1)]));
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'my_ledger') return rows(settlements.map((s) => ({ settlement: s, starts_at: 'a', ends_at: `2026-10-01T00:00:00Z`, character: B, reason: 'heel.drewHeat', amount: 1, shares_kept: true })));
+      if (name === 'my_ledger_shares') {
+        const asked = new Set(askedIn(r).map(Number));
+        const offset = Number(r.url.searchParams.get('offset') ?? 0);
+        const mine = table.filter((x) => asked.has(x.settlement)).sort((a, b) => b.settlement - a.settlement || a.act.localeCompare(b.act));
+        return rows(mine.slice(offset, offset + Number(r.url.searchParams.get('limit'))));
+      }
+      return rows([]);
+    });
+    const log = await h.api.log();
+    const counts = Object.fromEntries(log.settlements.map((s) => [s.id, s.lines[0]?.shares.length]));
+    expect(counts[120]).toBe(1003);
+    expect(Object.values(counts).reduce((a, b) => (a ?? 0) + (b ?? 0), 0)).toBe(1003 + 149 * 2);
+    expect(log.settlements[0]?.lines[0]?.shares.map((x) => x.act)).toEqual([id(0), id(1)]);
+  });
+
+  it.each([
+    ['tallies', 'reaction_tallies', (api: KayfaApi) => api.tallies(ids)],
+    ['myReleases', 'effect_releases', (api: KayfaApi) => api.myReleases(ids)],
+    ['cardsOnMany', 'acts_public', (api: KayfaApi) => api.cardsOnMany(ids, 20)],
+  ] as const)('%s fails whole when one chunk fails, never answering the other chunks\' rows', async (_name, table, call) => {
+    let n = 0;
+    const h = harness((r) => {
+      if (r.url.pathname === `${REST}/${table}` && askedIn(r).includes(ids[250] as string)) return json({ message: 'bad' }, 400);
+      n += 1;
+      return rows(askedIn(r).map((a, k) => rowFor(a, k)));
+    });
+    await expect(call(h.api)).rejects.toThrow();
+    expect(n).toBeGreaterThan(0);
+  });
+});
 
 
 describe('the moves a board shows, a staff profile and the admin queue', () => {

@@ -372,3 +372,15 @@ describe('a move in force on the board', () => {
     expect(screen.queryByRole('region', { name: /^Announcement from/u })).toBeNull();
   });
 });
+
+describe('who is browsing', () => {
+  test('under the thread list, "Users browsing this board" lists a mask on one of its threads', async () => {
+    const { seeded, fake } = renderInWorld(<BoardScreen slug="general" />, { seed: (f) => world(f) });
+    fake.signInAs(seeded.other);
+    await fake.here({ kind: 'thread', thread: seeded.ids[0]! }, seeded.spritey);
+    fake.signInAs(seeded.me);
+    const box = await screen.findByRole('region', { name: 'Users browsing this board' });
+    await within(box).findByRole('link', { name: 'Spritey' });
+    expect(await within(box).findByRole('link', { name: 'Pipewrench' })).toBeInTheDocument();
+  });
+});

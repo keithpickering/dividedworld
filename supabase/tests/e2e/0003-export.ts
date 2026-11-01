@@ -100,6 +100,9 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_releases (account, play) values (bob, play);
       insert into reading (account, thread, furthest_seq, first_character) values (bob, t, 1, b);
       insert into thread_reads (thread, reader) values (t, b);
+      -- Presence: a mask browsing a thread, and a mask hidden from the online lists.
+      insert into presence (character, place_kind, place, board, place_since, online_since, seen_at) values (b, 'thread', t, (select board from threads where id = t), now(), now(), now());
+      insert into presence_hidden (character) values (a);
       perform count_thread_views();
       insert into account_preferences (account, theme, postbit, motion, smoke, contrast, text_size, cards_met) values (ann, 'dark', 'stacked', 'reduce', 'low', 'high', 150, '{whoops,stick-around}');
       insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame)
@@ -118,11 +121,11 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 10 from ledger;
       -- The first settlement made with its shares kept (0037): every one here.
       insert into ledger_shares_kept (from_settlement) values (1);
-      -- A model call in the ledger (0041): the instance's own bookkeeping, carried across with the rest.
-      -- A meeting, the Boss's memory and profile from it, and its move bank (0043); the call above names the meeting.
+      -- A model call in the ledger (0042): the instance's own bookkeeping, carried across with the rest.
+      -- A meeting, the Boss's memory and profile from it, and its move bank (0044); the call above names the meeting.
       insert into meetings (started_at, slot, finished_at, outcome, bank_before, bank_after, record) values (now() - interval '1 minute', now() - interval '1 minute', now(), 'ok', 1, 0, '{"trims": []}');
       perform record_model_call(jsonb_build_object('duty', 'meeting', 'staff', 'director', 'provider', 'anthropic', 'model', 'claude-opus-5-5', 'service_tier', 'standard', 'input_tokens', 1200, 'output_tokens', 300, 'cost_microdollars', 10800, 'outcome', 'rejected', 'predicate', 'atMost(6)', 'trims', '[{"path": "moves", "predicate": "atMost(6)", "before": 7, "after": 6}]'::jsonb, 'retries', 1, 'meeting', (select max(id) from meetings)));
-      -- A Boss and a Mod Bot (0042): characters with no owner, the bot on staff, the Boss named by the season and writing an Act.
+      -- A Boss and a Mod Bot (0043): characters with no owner, the bot on staff, the Boss named by the season and writing an Act.
       insert into characters (name, staff, staff_kind, debuted_at) values ('Exported Boss', 'exp-boss', 'boss', now()), ('Exported Bot', 'exp-bot', 'bot', now());
       insert into staff_changes (staff, on_staff) values ('exp-bot', true);
       update seasons set boss = 'exp-boss' where ends_at is null;
@@ -130,7 +133,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into staff_profiles (staff, meeting, interests, favorites, mood, signature) select 'exp-boss', max(id), '{pie}', array[a], 'smug', 'It is decided.' from meetings;
       insert into move_bank (staff, balance, as_of) values ('exp-boss', 3.5, now());
       perform write_staff_act('exp-boss', 'post', t, null, '{"body": "Carried across, with no account behind it."}');
-      -- The moves it can make and the demands it can set (0045, seeded as the engine lists them), a rename ended and one in force with
+      -- The moves it can make and the demands it can set (0046, seeded as the engine lists them), a rename ended and one in force with
       -- its queue entry, so that the catalogs, the queue and the moves in force are carried across with the Acts that name them.
       insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;
       insert into demand_kinds (key) values ('postsOnBoard') on conflict (key) do nothing;

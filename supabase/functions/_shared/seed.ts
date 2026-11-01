@@ -11,7 +11,7 @@ import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 export function instanceSeed(instance: Instance) {
   return {
     // The System's words travel as one setting, read by the SQL that posts them (0007).
-    // The tick (0047) reads the stock lines and the moves' plain words from settings, so SQL names no instance and no kind.
+    // The tick (0048) reads the stock lines and the moves' plain words from settings, so SQL names no instance and no kind.
     settings: {
       ...instance.settings, copy: instance.copy,
       systemLines: instance.system.stockLines,
@@ -26,7 +26,7 @@ export function instanceSeed(instance: Instance) {
     })),
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
     pipStyles: instance.pipStyles.map((p) => ({ key: p.key, name: p.name, full: p.full, empty: p.empty })),
-    // The roster as characters (0042): a Boss or a Mod Bot, once each, with the profile its title and signature give. The
+    // The roster as characters (0043): a Boss or a Mod Bot, once each, with the profile its title and signature give. The
     // prompts stay in the instance module; the meeting reads them in code (chooseInstance), so they are not seeded.
     system: {
       staff: [
@@ -34,11 +34,11 @@ export function instanceSeed(instance: Instance) {
         ...instance.system.modBots.map((b) => ({ key: b.key, name: b.name, title: b.title, signature: b.signature, kind: 'bot' as const })),
       ],
       firstStaff: [...instance.system.firstStaff],
-      // The first season's Boss, set on an open season that has none (0046).
+      // The first season's Boss, set on an open season that has none (0047).
       firstBoss: instance.system.firstBoss,
-      // The thread on The System's board where moves land and end, made once (0047).
+      // The thread on The System's board where moves land and end, made once (0048).
       announcementsTitle: instance.system.announcementsTitle,
-      // The engine's catalogs of moves and demands (0045), so SQL and TypeScript read one list. This file is the composition
+      // The engine's catalogs of moves and demands (0046), so SQL and TypeScript read one list. This file is the composition
       // root: the engine names no instance, and the SQL names no kind of its own.
       moves: MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard })),
       demands: DEMAND_KINDS.map((d) => ({ key: d.key })),

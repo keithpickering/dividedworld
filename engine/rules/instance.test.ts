@@ -28,6 +28,9 @@ const settings: Settings = {
   cardSettings: { 'splat.clean': 95 },
   economy: { 'a.bonus': 5, 'splat.price': 100 },
   settlementLength: { unit: 'day', count: 1 },
+  presenceWindow: { unit: 'minute', count: 5 },
+  presenceNames: 15,
+  presencePollSeconds: 30,
   systemEnabled: false,
   meetingCron: '23 9 * * *',
   phases: {
@@ -490,4 +493,21 @@ test('duties naming a key that is not a duty are a problem', () => {
 
 test('a stock line for no standing order is a problem', () => {
   assert.match(said(withSystem({ stockLines: { ...system.stockLines, bogus: ['A line.'] } as never })), /stock line "bogus" is for no standing order/);
+});
+
+test('presence: a window that may count minutes, a most of names, and a poll between 10 and 300 seconds', () => {
+  for (const key of ['presenceWindow', 'presenceNames', 'presencePollSeconds'] as const) {
+    const { [key]: _gone, ...without } = settings;
+    assert.match(settingsProblems(without as Settings).join('\n'), new RegExp(`setting "${key}" is missing`));
+  }
+  for (const bad of [5, 9, 301, 400, 30.5]) {
+    assert.match(settingsProblems({ ...settings, presencePollSeconds: bad }).join('\n'), /setting "presencePollSeconds"/, String(bad));
+  }
+  assert.deepEqual(settingsProblems({ ...settings, presencePollSeconds: 10 }), []);
+  assert.deepEqual(settingsProblems({ ...settings, presencePollSeconds: 300 }), []);
+  for (const bad of [0, 2.5, '15']) {
+    assert.match(settingsProblems({ ...settings, presenceNames: bad as number }).join('\n'), /setting "presenceNames"/, String(bad));
+  }
+  assert.deepEqual(settingsProblems({ ...settings, presenceWindow: { unit: 'day', count: 1 } }), []);
+  assert.match(settingsProblems({ ...settings, presenceWindow: { unit: 'second', count: 300 } } as unknown as Settings).join('\n'), /presenceWindow/);
 });

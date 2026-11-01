@@ -29,7 +29,7 @@ import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
   DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
+  Presence, PresencePlace, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
 /** The code `verifyCode` accepts for any address. */
@@ -185,6 +185,8 @@ interface CharRec {
   loudness: DebutLoudness;
   readonly history: { cls: string; at: number }[];
   pending: (PendingTurn & { asked: number }) | null;
+  /** Hidden from every presence box (presence_hidden, 0041). */
+  presenceHidden: boolean;
   title: string;
   signature: string;
   pipStyle: string;
@@ -242,6 +244,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
+    presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow,
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
     cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
   };
@@ -267,6 +270,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const invites: InviteRec[] = [];
   const pendingInvite = new Map<string, string | null>();
   const views = new Map<Id, number>();
+  /** Presence (0041): one row per character, written only by that character's own polls. */
+  const presence = new Map<Id, { kind: PresencePlace['kind']; place: Id | null; board: Id | null; placeSince: number; onlineSince: number; seenAt: number }>();
   const standingOf = new Map<Id, number>();
   const seasons: Season[] = [{ id: 1, number: 1, startsAt: iso(START), endsAt: null, turnsThread: null, revealAct: null }];
   let lastSettled: number | null = null;
@@ -464,6 +469,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!c || c.owner !== account.id) return refuse('you do not play that character');
     if (c.debutedAt === null) return refuse('that character debuts at the next settlement');
     if (c.retiredAt !== null) return refuse('that character is retired; an admin can restore it');
+    return c;
+  }
+  /** presence_mask (0041): its player's, and debuted; a retired mask is not refused, its poll writing nothing. */
+  function presenceMask(through: Id): CharRec | Refusal {
+    const account = me();
+    const c = characters.get(through);
+    if (!account || !c || c.owner !== account.id) return refuse('you do not play that character');
+    if (c.debutedAt === null) return refuse('that character debuts at the next settlement');
     return c;
   }
   /* The next write whose answer is lost (see `Seed.loseNextAnswer`). */
@@ -736,7 +749,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const at = o.at ?? now();
     const c: CharRec = {
       id: uuid(), owner, name, createdAt: at, debutedAt: o.debuted ? at : null, retiredAt: o.retired ? at : null, loudness: o.loudness,
-      history: [{ cls, at }], pending: null, title: '', signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+      history: [{ cls, at }], pending: null, presenceHidden: false, title: '', signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
       square: null, portrait: null, squareFrame: null, portraitFrame: null,
     };
     characters.set(c.id, c);
@@ -1083,6 +1096,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           id: c.id, name: c.name, class: classNow(c).cls, classSince: iso(classNow(c).at), turnOpensAt: opens === null ? null : iso(opens),
           debutedAt: c.debutedAt === null ? null : iso(c.debutedAt), debutLoudness: c.loudness, retiredAt: c.retiredAt === null ? null : iso(c.retiredAt),
           pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt() } : null,
+          presenceHidden: c.presenceHidden,
         };
       });
     },
@@ -1107,6 +1121,53 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const clamped = Math.max(0, Math.min(seq, t.nextSeq - 1));
       account.reading.set(thread, Math.max(account.reading.get(thread) ?? 0, clamped));
       return true;
+    },
+    here(where, through): Presence {
+      // here() (0041): a refusal rejects, as the adapter throws the server's.
+      if (!me()) throw new Error('sign in with an account first');
+      let place: Id | null = null;
+      let board: Id | null = null;
+      if (where.kind === 'thread') {
+        const t = threads.get(where.thread);
+        if (!t) throw new Error('there is no such thread');
+        place = t.id;
+        board = t.board;
+      } else if (where.kind === 'board') {
+        if (!boards.some((b) => b.id === where.board)) throw new Error('there is no such board');
+        place = where.board;
+        board = where.board;
+      }
+      const win = span(settings.presenceWindow);
+      const at = now();
+      if (through !== null) {
+        const c = presenceMask(through);
+        if (isRefusal(c)) throw new Error(c.error);
+        // This mask's row and no other: a swap leaves the old mask to age out by itself.
+        if (c.retiredAt === null && !c.presenceHidden) {
+          const was = presence.get(c.id);
+          const fresh = !was || was.seenAt < at - win;
+          const moved = fresh || was.kind !== where.kind || was.place !== place;
+          presence.set(c.id, { kind: where.kind, place, board, placeSince: moved ? at : was.placeSince, onlineSince: fresh ? at : was.onlineSince, seenAt: at });
+        }
+      }
+      const listed = [...presence.entries()].flatMap(([id, row]) => {
+        const c = characters.get(id)!;
+        if (row.seenAt < at - win || c.debutedAt === null || c.retiredAt !== null || c.presenceHidden) return [];
+        if (where.kind === 'thread' && !(row.kind === 'thread' && row.place === place)) return [];
+        if (where.kind === 'board' && row.board !== board) return [];
+        return [{ id, name: c.name, since: where.kind === 'index' ? row.onlineSince : row.placeSince }];
+      }).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const shown = listed.slice(0, settings.presenceNames);
+      return { names: shown.map(({ id, name }) => ({ id, name })), others: listed.length - shown.length };
+    },
+    setPresenceHidden(character, hidden) {
+      if (!me()) return refuse('sign in with an account first');
+      const c = presenceMask(character);
+      if (isRefusal(c)) return c;
+      c.presenceHidden = hidden;
+      /* Either way its row goes, as set_presence_hidden (0041) removes it: shown again, it is listed from its next poll. */
+      presence.delete(c.id);
+      return ok(hidden);
     },
     preferences: () => me()?.prefs ?? DEFAULT_PREFERENCES,
     setPreferences(p) {
@@ -1373,7 +1434,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if ([...characters.values()].some((c) => c.staff?.key === key)) throw new Error(`staff member ${key} exists`);
       const at = o?.at ?? now();
       const c: CharRec = {
-        id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null,
+        id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
         title: o?.title ?? '', signature: o?.signature ?? '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
         square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key, kind },
       };

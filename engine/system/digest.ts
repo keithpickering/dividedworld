@@ -1,5 +1,5 @@
 /**
- * The digest a meeting reads (system design, sections 5 and 13): what `system_digest` (supabase/migrations/0044_digest.sql)
+ * The digest a meeting reads (system design, sections 5 and 13): what `system_digest` (supabase/migrations/0045_digest.sql)
  * returned, laid out as plain text with the Boss's own memory and the outside feed beside it. The SQL digest is built by
  * a role that can read public relations only, so nothing here can name who owns a mask, a class, or who reacted.
  *
@@ -61,11 +61,11 @@ export interface DigestCharacter {
 }
 
 /**
- * A move in force, or one that ended in the window, as `system_digest` lists it (supabase/migrations/0045_moves.sql):
+ * A move in force, or one that ended in the window, as `system_digest` lists it (supabase/migrations/0046_moves.sql):
  * `{act, kind, params, demand, expiresAt, landedAt, progress: {done, of, met}, ended, state}`, where `ended` is null while the move is in
  * force and `{why: met | expired | reversed, by, at}` after. A move an admin held before it landed has `state: 'held'`, no act, no
  * progress, and `heldAt` and `why` (the Boss's own words for it). A move that ended `met` also has `metBy`, the ids of the public
- * characters whose Acts counted toward its demand (supabase/migrations/0051_digest_meeters.sql), at most `DIGEST_MOST.metBy`. Held generically: the renderer reads the fields it knows, defensively,
+ * characters whose Acts counted toward its demand (supabase/migrations/0052_digest_meeters.sql), at most `DIGEST_MOST.metBy`. Held generically: the renderer reads the fields it knows, defensively,
  * and falls back to the row's JSON for one it does not, so a digest from a newer database still renders.
  */
 export type DigestMove = Readonly<Record<string, unknown>>;

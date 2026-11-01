@@ -911,3 +911,59 @@ describe('the Turn\'s classes, as a carousel', () => {
     expect(within(dialog).getAllByRole('radio')[0]).toHaveFocus();
   });
 });
+
+describe('the panel\'s online status', () => {
+  /** The player's own characters as the player context holds them, which the HUD's mark reads. */
+  function HudHidden() {
+    const { characters } = usePlayer();
+    return <p data-testid="hud">Hidden: {characters.filter((c) => c.presenceHidden).map((c) => c.name).join(', ') || 'none'}</p>;
+  }
+  const status = async () => within(row('Pipewrench')).findByRole('combobox', { name: 'Online status' });
+
+  test('shows the character\'s state; choosing Hidden hides it, and the player\'s own characters say so after the refresh', async () => {
+    const w = world();
+    const hide = vi.spyOn(w.fake, 'setPresenceHidden');
+    renderIn(w.fake, <><HudHidden /><Characters /></>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+    await ready();
+    const select = await status();
+    expect(select).toHaveValue('shown');
+    expect(screen.getByTestId('hud')).toHaveTextContent('Hidden: none');
+    expect(within(row('Pipewrench')).getByText(/A hidden character isn't listed in Who is online or Users browsing\. Only you see it there\./u)).toBeInTheDocument();
+    await userEvent.selectOptions(select, 'hidden');
+    await waitFor(() => expect(hide).toHaveBeenCalledWith(w.pipe, true));
+    await waitFor(() => expect(select).toHaveValue('hidden'));
+    await waitFor(() => expect(screen.getByTestId('hud')).toHaveTextContent('Hidden: Pipewrench'));
+    /* A mask waiting to debut has no switch: it is listed nowhere already. */
+    expect(within(row('Spritey')).queryByRole('combobox', { name: 'Online status' })).toBeNull();
+  });
+
+  test('a refusal shows in the panel, and the select goes back to what is saved', async () => {
+    const w = world();
+    vi.spyOn(w.fake, 'setPresenceHidden').mockResolvedValue({ ok: false, error: 'you do not play that character' });
+    open(w);
+    await ready();
+    const select = await status();
+    await userEvent.selectOptions(select, 'hidden');
+    expect(await within(row('Pipewrench')).findByRole('alert')).toHaveTextContent('you do not play that character');
+    expect(select).toHaveValue('shown');
+  });
+
+  test('keeps the keyboard on the select while it saves, shows the choice, and a second change made meanwhile is not sent', async () => {
+    const w = world();
+    let finish: () => void = () => {};
+    const real = w.fake.setPresenceHidden.bind(w.fake);
+    const hide = vi.spyOn(w.fake, 'setPresenceHidden').mockImplementation((...args) => new Promise((done) => { finish = () => done(real(...args)); }));
+    open(w);
+    await ready();
+    const select = await status();
+    await userEvent.selectOptions(select, 'hidden');
+    expect(select).toHaveValue('hidden');
+    expect(select).toHaveAttribute('aria-disabled', 'true');
+    expect(select).not.toBeDisabled();
+    await userEvent.selectOptions(select, 'shown');
+    expect(hide).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(); });
+    await waitFor(() => expect(select).not.toHaveAttribute('aria-disabled'));
+    expect(select).toHaveValue('hidden');
+  });
+});

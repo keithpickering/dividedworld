@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Character, KayfaApi, MyCharacter } from '../data/api.ts';
@@ -12,7 +12,7 @@ import { Frame } from './Frame.tsx';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
   id, name, class: cls, classSince: '2026-10-01T00:00:00Z', turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
-  debutLoudness: 'silent', retiredAt: null, pendingTurn: null,
+  debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false,
 });
 const pub = (id: string, name: string): Character => ({
   id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01',
@@ -451,5 +451,27 @@ describe('from the Task 1.4 reviews', () => {
     await userEvent.keyboard('{Enter}');
     expect(hand).toHaveAttribute('aria-expanded', 'false');
     expect(hand).toHaveFocus();
+  });
+});
+
+describe('the HUD\'s hidden mark', () => {
+  test('shows for a hidden HUD mask, in words a screen reader reads, and not for a shown one', async () => {
+    setup(true, [{ ...mine('a', 'Pipewrench'), presenceHidden: true }]);
+    const tag = await screen.findByText('Hidden');
+    expect(tag.closest('.kb-hud-class-line')).not.toBeNull();
+    expect(tag).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByText('hidden from online lists')).toBeInTheDocument();
+    cleanup();
+    setup(true, [mine('a', 'Pipewrench')]);
+    await screen.findByText('Pipewrench', { selector: '.kb-hud-name' });
+    expect(screen.queryByText('Hidden')).toBeNull();
+  });
+  test('on the phone, whose HUD has no name line, the mark stands beside the mask it names', async () => {
+    width(boardSwitch(testGlass) - 1);
+    setup(true, [{ ...mine('a', 'Pipewrench'), presenceHidden: true }]);
+    const select = await within(await hud()).findByRole('combobox', { name: 'Posting as' });
+    const tag = await screen.findByText('Hidden');
+    expect(tag.closest('.kb-hud-swap')).toBe(select.closest('.kb-hud-swap'));
+    expect(screen.getAllByText('hidden from online lists')).toHaveLength(1);
   });
 });

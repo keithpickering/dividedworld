@@ -60,6 +60,10 @@ export interface ScreenSettings {
   readonly titleMaxLength: number;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
+  /** How often a page polls who is browsing it, in seconds; each poll is also the viewer's heartbeat. */
+  readonly presencePollSeconds: number;
+  /** How long after its last poll a mask stays listed: what "Who is online" says it counts. */
+  readonly presenceWindow: Span;
   /** The numbers the instance's cards give the screens, by name (`Settings.cardSettings`). */
   readonly cardSettings: Readonly<Record<string, number>>;
   /**
@@ -424,6 +428,21 @@ export interface MyCharacter {
   readonly debutLoudness: 'silent' | 'announced' | 'with_class' | null;
   readonly retiredAt: string | null;
   readonly pendingTurn: PendingTurn | null;
+  /** Hidden from "Who is online" and "Users browsing": listed nowhere, its player's switch in My characters. */
+  readonly presenceHidden: boolean;
+}
+
+/** Where a presence box is: a thread, a board (its page and every thread on it) or the index ("Who is online"). */
+export type PresencePlace = { readonly kind: 'thread'; readonly thread: Id } | { readonly kind: 'board'; readonly board: Id } | { readonly kind: 'index' };
+
+/**
+ * Who is browsing a place (0041_presence.sql): the characters present within the window, longest present first, at
+ * most the instance's presenceNames of them, and how many more. Names and a count of characters only: never an
+ * account, and nothing that says which are the caller's.
+ */
+export interface Presence {
+  readonly names: readonly { readonly id: Id; readonly name: string }[];
+  readonly others: number;
 }
 
 export interface PendingTurn {
@@ -772,6 +791,14 @@ export interface KayfaApi {
    * not recorded (signed out, no answer) is simply sent again with the next position.
    */
   markRead(thread: Id, seq: number, through: Id | null): Promise<boolean>;
+  /**
+   * One presence poll: marks `through` (the HUD's mask; null for none) present at the place, unless it is hidden or
+   * retired, and answers the place's box. A mask arrives on its first poll and leaves only by aging out: a poll
+   * through another mask never removes this one. Rejects on a refusal or a lost answer, so the caller counts failures.
+   */
+  here(place: PresencePlace, through: Id | null): Promise<Presence>;
+  /** Hides a mask of the player's from every presence box, or shows it again; answers whether it is now hidden. */
+  setPresenceHidden(character: Id, hidden: boolean): Promise<Answer<boolean>>;
   preferences(): Promise<Preferences>;
   setPreferences(p: PreferencesPatch): Promise<Answer<Preferences>>;
   /**

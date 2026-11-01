@@ -1,6 +1,6 @@
 /**
  * The model-call ledger's writer, at the edge: a row per call, through the one SQL function that
- * writes it (supabase/migrations/0041_model_calls.sql). The service role calls it; no client can.
+ * writes it (supabase/migrations/0042_model_calls.sql). The service role calls it; no client can.
  * The row is camelCase here and snake_case on the wire, where the migration's columns are.
  * "Cost is a column, not a report": index.ts writes one for every call it makes, in a `finally`.
  */
