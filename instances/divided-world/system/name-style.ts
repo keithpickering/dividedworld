@@ -41,3 +41,7 @@ export function nameStyle(name: string): string[] {
     `the last three words must start with the same first letter (these start with ${last.map((w) => initial(w).toUpperCase()).join(', ')}), or the name must be a take on Pointless Post Palace that keeps two of its three words in place`,
   ];
 }
+
+/** The same style in words, for the meeting's prompt (the engine composes the prompt and writes no community's style itself). */
+export const nameStyleBrief =
+  'A board\'s name follows the forum\'s own "Pointless Post Palace": either the last three words start with the same letter ("Pirate Puns Palace", "Pointless Post SATAN SATAN SATAN"), or it is a take on the original that has at least three words and keeps two of its three words where they stand ("Pointless Toast Palace"). Anything else is dropped, never fixed for you.';

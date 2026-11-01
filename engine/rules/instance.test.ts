@@ -71,6 +71,7 @@ const system: SystemContent = {
   wheelhouse: ['games'],
   oldVoice: ({ name }) => ({ prompt: `Board: ${name}\nDescription:`, stop: ['\n'] }),
   nameStyle: () => [],
+  nameStyleBrief: 'any name',
 };
 
 const good: Instance = {
@@ -409,6 +410,10 @@ test('a staff member needs a name, a title and a persona', () => {
   assert.match(said(withBot({ name: ' ' })), /Mod Bot "bot-a" has no name/);
   assert.match(said(withBot({ persona: '' })), /Mod Bot "bot-a" has no persona/);
   assert.match(said(withSystem({ bosses: [{ ...system.bosses[0]!, title: '' }] })), /Boss "boss-a" has no title/);
+});
+
+test('the name style must also be said in words for the meeting\'s prompt', () => {
+  assert.match(said(withSystem({ nameStyleBrief: ' ' })), /nameStyleBrief/);
 });
 
 test('nameStyle must be a function', () => {

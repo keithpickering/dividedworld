@@ -16,7 +16,7 @@ import { sighbot } from './bosses/sighbot.ts';
 import { placeholderMonitor } from './bots/placeholder-monitor.ts';
 import { feeds } from './feeds.ts';
 import { stockLines } from './lines.ts';
-import { nameStyle } from './name-style.ts';
+import { nameStyle, nameStyleBrief } from './name-style.ts';
 import { oldVoice } from './old-voice.ts';
 import { realWorld } from './real-world.ts';
 import { wheelhouse } from './wheelhouse.ts';
@@ -34,4 +34,5 @@ export const system: SystemContent = Object.freeze({
   wheelhouse,
   oldVoice,
   nameStyle,
+  nameStyleBrief,
 });

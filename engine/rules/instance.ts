@@ -298,6 +298,7 @@ function systemProblems(instance: Instance): string[] {
   }
   for (const key of Object.keys(sys.stockLines ?? {})) if (!(STOCK_LINE_KEYS as readonly string[]).includes(key)) out.push(`stock line "${key}" is for no standing order`);
   for (const key of ['nameStyle', 'oldVoice'] as const) if (typeof sys[key] !== 'function') out.push(`system.${key} is not a function`);
+  if (typeof sys.nameStyleBrief !== 'string' || sys.nameStyleBrief.trim() === '') out.push('system.nameStyleBrief is empty; the meeting\'s prompt needs the name style in words');
   for (const key of ['feeds', 'realWorld', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);
   // The settings that bound a move: a phase's longest move cannot outrun the longest any move may run.
   const set = instance.settings;

@@ -505,6 +505,11 @@ export interface SystemContent {
   oldVoice(input: { readonly name: string; readonly premise: string }): OldVoiceFrame;
   /** Problems with a board name The System proposes; empty when it is in style. */
   nameStyle(name: string): string[];
+  /**
+   * The same style, said in the instance's own words for the meeting's prompt: what a name must look like, with a few
+   * examples. The engine composes the prompt from this and never writes a community's style itself.
+   */
+  readonly nameStyleBrief: string;
 }
 
 export interface Instance {

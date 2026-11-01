@@ -32,4 +32,5 @@ export const testSystem: SystemContent = {
   feeds: [], realWorld: [], wheelhouse: [],
   oldVoice: () => ({ prompt: '', stop: [] }),
   nameStyle: () => [],
+  nameStyleBrief: 'any name',
 };
