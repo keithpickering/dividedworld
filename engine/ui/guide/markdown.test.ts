@@ -5,7 +5,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MARKERS, parse, settingText, slug, type Block, type Inline } from './markdown.ts';
+import { MARKERS, parse, safeHref, sectionsOf, settingText, slug, type Block, type Inline } from './markdown.ts';
 import type { ScreenSettings } from '../data/api.ts';
 
 const text = (t: string): Inline => ({ t: 'text', text: t });
@@ -60,6 +60,15 @@ describe('blocks', () => {
       { t: 'quote', blocks: [{ t: 'p', children: [text('Quote '), { t: 'strong', children: [text('me')] }, text('.')] }, { t: 'p', children: [text('Twice.')] }] },
     ]);
   });
+  test('a short table row is padded and a long one cut to the header\'s width', () => {
+    const [t] = parse('| A | B |\n| --- | --- |\n| 1 |\n| 1 | 2 | 3 |');
+    assert.ok(t?.t === 'table');
+    assert.deepEqual(t.rows, [[[text('1')], []], [[text('1')], [text('2')]]]);
+  });
+  test('a line of asterisks is a rule, not a list', () => {
+    assert.deepEqual(parse('Above\n\n* * *\n\nBelow'), [{ t: 'p', children: [text('Above')] }, { t: 'hr' }, { t: 'p', children: [text('Below')] }]);
+    assert.deepEqual(parse('- - -'), [{ t: 'hr' }]);
+  });
   test('a rule is a rule', () => {
     assert.deepEqual(parse('Above\n\n---\n\nBelow'), [{ t: 'p', children: [text('Above')] }, { t: 'hr' }, { t: 'p', children: [text('Below')] }]);
   });
@@ -81,6 +90,14 @@ describe('no raw HTML', () => {
     for (const bad of ['javascript:alert(1)', 'JavaScript:alert(1)', 'data:text/html,x', '//evil.example/x', 'vbscript:x']) {
       assert.deepEqual(link(bad), [text('go')], bad);
     }
+  });
+});
+
+describe('safeHref', () => {
+  test('a backslash after the slash is a host to a browser, so it is not a path of this site', () => {
+    assert.equal(safeHref('/\\evil.com'), false);
+    assert.equal(safeHref('//evil.com'), false);
+    assert.equal(safeHref('/guide#cards'), true);
   });
 });
 
@@ -114,6 +131,13 @@ describe('slug', () => {
     assert.equal(slug('Turns and reveals'), 'turns-and-reveals');
     assert.equal(slug('  The "System"! '), 'the-system');
     assert.equal(slug('Whoops! 2'), 'whoops-2');
+  });
+});
+
+describe('sectionsOf', () => {
+  test('each second-level heading is a section, its anchor kept unique, and a heading with no letters is "section"', () => {
+    const s = sectionsOf(parse('## Cards\n\nA.\n\n### Sub\n\n## Cards\n\nB.\n\n## !!!\n'), (p) => p);
+    assert.deepEqual(s.map((x) => [x.id, x.title, x.blocks.length]), [['cards', 'Cards', 2], ['cards-2', 'Cards', 1], ['section', '!!!', 0]]);
   });
 });
 

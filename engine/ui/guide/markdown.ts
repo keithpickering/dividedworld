@@ -44,8 +44,8 @@ export type MarkerName = (typeof MARKERS)[number];
 
 /* ------------------------------------------------------------------------ links ---- */
 
-/** http, https, a path of this site (one slash, not two) or a fragment: no scheme that runs code, no `//host`. */
-const SAFE_HREF = /^(?:https?:\/\/[^\s]+|\/(?!\/)[^\s]*|#[^\s]*)$/iu;
+/** http, https, a path of this site (one slash, not two, and no backslash, which a browser reads as a slash) or a fragment: no scheme that runs code, no `//host`. */
+const SAFE_HREF = /^(?:https?:\/\/[^\s]+|\/(?![\/\\])[^\s]*|#[^\s]*)$/iu;
 export const safeHref = (href: string): boolean => SAFE_HREF.test(href);
 
 /* ----------------------------------------------------------------------- inline ---- */
@@ -145,11 +145,37 @@ export function slug(text: string): string {
   return text.normalize('NFKD').replace(/[̀-ͯ]/gu, '').toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '');
 }
 
+export interface Section {
+  readonly id: string;
+  readonly title: string;
+  readonly blocks: readonly Block[];
+}
+
+/**
+ * The guide's sections: each second-level heading and what follows it, with an anchor made from its words, kept unique. The one reading,
+ * used by the page (its sections and their ids) and by tools/check-guide.mjs (a `#fragment` link must name one of these).
+ */
+export function sectionsOf(blocks: readonly Block[], say: (path: string) => string): Section[] {
+  const out: { id: string; title: string; blocks: Block[] }[] = [];
+  const used = new Set<string>();
+  for (const b of blocks) {
+    if (b.t === 'heading' && b.level === 2) {
+      const title = inlineText(b.children, say);
+      const base = slug(title) || 'section';
+      let id = base;
+      for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
+      used.add(id);
+      out.push({ id, title, blocks: [] });
+    } else if (out.length > 0) out.at(-1)!.blocks.push(b);
+  }
+  return out;
+}
+
 /* ----------------------------------------------------------------------- blocks ---- */
 
 const MARKER_LINE = /^<!--\s*kayfabb:([A-Za-z][\w-]*)\s*-->$/u;
 const HEADING = /^(#{1,4})\s+(.+?)(?:\s+#+)?\s*$/u;
-const RULE = /^(?:-{3,}|\*{3,}|_{3,})$/u;
+const RULE = /^(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/u;
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/u;
 const SEPARATOR = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/u;
 
@@ -197,7 +223,13 @@ function blocks(lines: readonly string[]): Block[] {
         const head = cells(line).map(inline);
         i += 2;
         const rows: Inline[][][] = [];
-        while (i < lines.length && lines[i]!.trim() !== '' && lines[i]!.includes('|')) { rows.push(cells(lines[i]!).map(inline)); i++; }
+        /* Every row is as wide as the header: a short one is padded with empty cells, a long one cut, so the screen draws a table. */
+        while (i < lines.length && lines[i]!.trim() !== '' && lines[i]!.includes('|')) {
+          const row = cells(lines[i]!).slice(0, head.length);
+          while (row.length < head.length) row.push('');
+          rows.push(row.map(inline));
+          i++;
+        }
         out.push({ t: 'table', head, rows });
         continue;
       }

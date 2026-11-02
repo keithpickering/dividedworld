@@ -112,6 +112,14 @@ describe('the contents and the sections', () => {
     expect(button).toHaveTextContent(/Two/u);
   });
 
+  test('choosing a section in the open menu moves the focus to that section\'s heading, so it does not fall to the page', async () => {
+    const user = userEvent.setup();
+    page('## One\n\nA.\n\n## Two\n\nB.');
+    await user.click(screen.getByRole('button', { name: /Contents/u }));
+    await user.click(within(contents()).getByRole('link', { name: 'Two' }));
+    expect(screen.getByRole('heading', { level: 2, name: 'Two' })).toHaveFocus();
+  });
+
   test('Escape closes the open menu and gives the focus back to its button', async () => {
     const user = userEvent.setup();
     page('## One\n\nA.');

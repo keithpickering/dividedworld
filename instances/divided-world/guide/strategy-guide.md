@@ -50,7 +50,7 @@ Aura is the score and the money, counted in **orbs**. It comes mostly from other
 
 ### The settlement
 
-Aura doesn't land the moment somebody reacts. It lands at the **settlement**, which comes around every {{setting:settlementLength}}. In between, your orbs show a hatched **ghost**: an estimate of where the reactions so far are taking you. Think of it as a forecast, and of the settlement as what actually happened. The first time you load the board after a settlement that moved your Aura, a summary opens by itself.
+Aura doesn't land the moment somebody reacts. It lands at the **settlement**. Settlements are {{setting:settlementLength}} apart. In between, your orbs show a hatched **ghost**: an estimate of where the reactions so far are taking you. Think of it as a forecast, and of the settlement as what actually happened. The first time you load the board after a settlement that moved your Aura, a summary opens by itself.
 
 ### Your log
 

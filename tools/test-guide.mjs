@@ -76,6 +76,15 @@ const fires = (markdown, pattern, o = {}) => {
   check('the wallet, a count, a span and a card\'s price are all clean', faultsOf('## A\n\n{{setting:walletCap}} {{setting:reactionCap}} {{setting:turnCooldown}} {{setting:cardEconomy.whoops.price}} {{setting:cardEconomy.lurker.crowd}}\n').length === 0);
 }
 
+/* ---- a fragment link ---- */
+{
+  const r = faultsOf('## Aura\n\nSee [the nope](#nope).\n');
+  check('a #fragment link that names no section fires, naming it and its line', r.length === 1 && /#nope/.test(r[0].why) && r[0].line === 3, JSON.stringify(r));
+  check('a #fragment link to a section is clean, in a paragraph, a list and a table', faultsOf('## Aura\n\n[a](#aura)\n\n- [b](#aura)\n\n| H |\n| --- |\n| [c](#aura) |\n').length === 0);
+  check('a second section of one title is #title-2, as the page names it', faultsOf('## Aura\n\n## Aura\n\n[a](#aura-2)\n').length === 0 && faultsOf('## Aura\n\n[a](#aura-2)\n').length === 1);
+  check('a link to a path or an address is not a fragment and is left alone', faultsOf('## Aura\n\n[a](/updates#x) [b](https://example.com/#y)\n').length === 0);
+}
+
 /* ---- a retyped number ---- */
 {
   const retyped = [
@@ -125,6 +134,7 @@ const fires = (markdown, pattern, o = {}) => {
     check(`${name}: the real guide with an unknown marker appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\n<!-- kayfabb:leaderboard -->\n` }).length === 1);
     check(`${name}: the real guide with an unknown setting appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\nA {{setting:walletCapp}}.\n` }).length === 1);
     check(`${name}: the real guide with a retyped number appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\nA wallet holds 6.00 orbs.\n` }).length === 1);
+    check(`${name}: the real guide with a link to no section appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\n[x](#nope)\n` }).length === 1);
     const r = guideFaults(real);
     check(`${name}: the real guide is clean`, r.length === 0, JSON.stringify(r));
   }

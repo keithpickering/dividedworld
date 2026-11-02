@@ -18,34 +18,11 @@ import { useKayfa } from '../context.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { Classes, CardList, Letter, ReactionGrid } from './markers.tsx';
-import { inlineText, parse, settingText, slug, type Block, type MarkerName } from './markdown.ts';
+import { parse, sectionsOf, settingText, type MarkerName } from './markdown.ts';
 import { Blocks, DASH, type Fill } from './render.tsx';
 import './guide.css';
 
 const possessive = (name: string) => (name.endsWith('s') ? `${name}'` : `${name}'s`);
-
-interface Section {
-  readonly id: string;
-  readonly title: string;
-  readonly blocks: readonly Block[];
-}
-
-/** The guide's sections: each second-level heading and what follows it, with an anchor made from its words, kept unique. */
-function sectionsOf(blocks: readonly Block[], say: (path: string) => string): Section[] {
-  const out: { id: string; title: string; blocks: Block[] }[] = [];
-  const used = new Set<string>();
-  for (const b of blocks) {
-    if (b.t === 'heading' && b.level === 2) {
-      const title = inlineText(b.children, say);
-      const base = slug(title) || 'section';
-      let id = base;
-      for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
-      used.add(id);
-      out.push({ id, title, blocks: [] });
-    } else if (out.length > 0) out.at(-1)!.blocks.push(b);
-  }
-  return out;
-}
 
 export function Guide() {
   const { instance, ui, settings } = useKayfa();
@@ -82,12 +59,12 @@ export function Guide() {
   useEffect(() => {
     const target = hash === '' ? undefined : els.current.get(hash);
     if (!target) return;
-    const first = !arrived.current;
+    const initial = !arrived.current;
     arrived.current = true;
     const go = (behavior: ScrollBehavior) => target.scrollIntoView?.({ block: 'start', behavior });
     setCurrent(hash);
-    go(first || motionReduced() ? 'auto' : 'smooth');
-    if (first) void document.fonts?.ready.then(() => { if (els.current.get(hash) === target) go('auto'); });
+    go(initial || motionReduced() ? 'auto' : 'smooth');
+    if (initial) void document.fonts?.ready.then(() => { if (els.current.get(hash) === target) go('auto'); });
   }, [location]);
 
   /*
@@ -110,6 +87,12 @@ export function Guide() {
     for (const id of order) { const el = els.current.get(id); if (el) observer.observe(el); }
     return () => observer.disconnect();
   }, [sections]);
+
+  /* Choosing a section from the open menu closes it, and the focus goes with the reader to the section's heading, not to the page. */
+  const choose = (id: string) => {
+    if (open) els.current.get(id)?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+    setOpen(false);
+  };
 
   const voice = instance.developer?.name;
   const here = sections.find((s) => s.id === current) ?? sections[0];
@@ -141,7 +124,7 @@ export function Guide() {
             <ul id={list} className="kb-guide-toc kb-calm">
               {sections.map((s) => (
                 <li key={s.id}>
-                  <Link to={`${path}#${s.id}`} aria-current={s.id === current ? 'location' : undefined} onClick={() => setOpen(false)}>{s.title}</Link>
+                  <Link to={`${path}#${s.id}`} aria-current={s.id === current ? 'location' : undefined} onClick={() => choose(s.id)}>{s.title}</Link>
                 </li>
               ))}
             </ul>
@@ -153,7 +136,7 @@ export function Guide() {
               key={s.id} id={s.id} className="kb-guide-section" aria-labelledby={`${s.id}-title`}
               ref={(el) => { if (el) els.current.set(s.id, el); else els.current.delete(s.id); }}
             >
-              <h2 id={`${s.id}-title`} className="kb-guide-section-title kb-glass-display">{s.title}</h2>
+              <h2 id={`${s.id}-title`} tabIndex={-1} className="kb-guide-section-title kb-glass-display">{s.title}</h2>
               <div className="kb-guide-prose"><Blocks blocks={s.blocks} fill={fill} /></div>
             </section>
           ))}

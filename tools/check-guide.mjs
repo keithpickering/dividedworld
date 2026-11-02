@@ -18,7 +18,13 @@
  *    and a `{{` that is not a marker at all;
  *  - a bare number in the prose next to a word the settings name ("6.00 orbs", "30 days", "up to six characters"), a heuristic for a
  *    retyped setting. A number beside any other word is the prose's own ("four corners") and is left alone; "one" is a pronoun as often
- *    as a number and is left alone too. A comment is for the author and is not read.
+ *    as a number and is left alone too. A comment is for the author and is not read. There is no escape hatch, on purpose: the remedy
+ *    for a flagged number is to reword the sentence or say it with a marker, never to silence the check. The heuristic misses what
+ *    it is not shaped to see: a number beside a unit with two words between ("30 whole long days"), a unit it does not list, a figure
+ *    in a link's address or in code, a number split by markup, and one word standing for a number ("a dozen", "one"); it is a net for
+ *    the common retype, not a proof that none is left;
+ *  - a `#fragment` link that names no section: a section's anchor is its second-level heading's words, as the page makes it
+ *    (`sectionsOf`), so a link to `#nope` or to a heading since renamed would scroll nowhere.
  *
  * Read from git, so an untracked scratch file neither fails the build nor makes it pass. The detection is exported and pure so
  * tools/test-guide.mjs drives every branch red. (The plan named the pair test-check-guide.mjs; tools/build.mjs pairs a check with
@@ -36,7 +42,15 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
  * strips as it loads; the specifier is built, not written, so the tools' type check (tsconfig.tools.json, which reads .mjs alone) does not
  * try to read the engine through it.
  */
-const { inlineText, MARKERS, parse, settingText } = await import(pathToFileURL(path.join(repoRoot, 'engine/ui/guide/markdown.ts')).href);
+let reader;
+try {
+  reader = await import(pathToFileURL(path.join(repoRoot, 'engine/ui/guide/markdown.ts')).href);
+} catch (error) {
+  if (error?.code !== 'ERR_UNKNOWN_FILE_EXTENSION') throw error;
+  console.error('  guide: this check needs Node 22.18 or later (type stripping), to read the engine\'s TypeScript; this is Node ' + process.versions.node);
+  process.exit(1);
+}
+const { inlineText, MARKERS, parse, sectionsOf, settingText } = reader;
 
 export const UI_INDEX = /^instances\/([^/]+)\/ui\/index\.ts$/;
 export const GUIDE_FILE = (name) => `instances/${name}/guide/strategy-guide.md`;
@@ -68,7 +82,8 @@ function walk(blocks, visit) {
   const inlines = (nodes) => {
     for (const n of nodes) {
       if (n.t === 'setting') visit.setting?.(n.path);
-      else if (n.t === 'strong' || n.t === 'em' || n.t === 'link') inlines(n.children);
+      else if (n.t === 'link') { visit.link?.(n.href); inlines(n.children); }
+      else if (n.t === 'strong' || n.t === 'em') inlines(n.children);
     }
   };
   for (const b of blocks) {
@@ -116,6 +131,14 @@ export function guideFaults({ file, markdown, hints, hintsFile = file.replace(/s
     },
     setting: (p) => {
       if (settingText(p, settings) === undefined) fault(file, lineOf(markdown, `{{setting:${p}`), `{{setting:${p}}} names no setting the page can say (a number or a span, by the name the screens read it)`);
+    },
+  });
+
+  /* A link to a fragment names a section, by the anchor the page gives it (`sectionsOf`, the page's own reading). */
+  const anchors = new Set(sectionsOf(blocks, (p) => settingText(p, settings) ?? '—').map((x) => x.id));
+  walk(blocks, {
+    link: (href) => {
+      if (href.startsWith('#') && !anchors.has(href.slice(1))) fault(file, lineOf(markdown, `](${href}`), `the link to "${href}" names no section of the guide (the sections are ${[...anchors].map((a) => `#${a}`).join(', ') || 'none'})`);
     },
   });
 
