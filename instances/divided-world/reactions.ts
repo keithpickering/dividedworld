@@ -10,7 +10,7 @@ export const reactions: readonly ReactionKind[] = Object.freeze([
   { key: 'raised-hands', emoji: '🙌', quadrant: 'excitedPositive' },
   { key: 'star-struck', emoji: '🤩', quadrant: 'excitedPositive' },
   { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },
-  { key: 'angry', emoji: '😡', quadrant: 'excitedNegative' },
+  { key: 'nauseated', emoji: '🤢', quadrant: 'excitedNegative' },
   { key: 'cursing', emoji: '🤬', quadrant: 'excitedNegative' },
   { key: 'thumbs-down', emoji: '👎', quadrant: 'excitedNegative' },
   { key: 'relieved', emoji: '😌', quadrant: 'calmPositive' },
