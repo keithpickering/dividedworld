@@ -77,6 +77,20 @@ describe('the grid tip', () => {
     expect(tipDialog('grid')).toBeNull();
   });
 
+  test('Escape over the tip skips all tips: they are off, the picker stays open and answers again, with focus back in it', async () => {
+    const w = thread();
+    board(w);
+    const p = await openPicker();
+    await screen.findByRole('dialog', { name: 'Title of grid' });
+    await userEvent.keyboard('{Escape}');
+    await settle();
+    expect(tipDialog('grid')).toBeNull();
+    expect((await w.fake.preferences()).tips).toBe('off');
+    expect(picker(), 'the picker is still open').toBe(p);
+    expect(p.closest('[inert]'), 'the picker answers again').toBeNull();
+    expect(p).toContainElement(document.activeElement as HTMLElement);
+  });
+
   test('is not shown with the tips off', async () => {
     const w = thread();
     await w.fake.skipTips();

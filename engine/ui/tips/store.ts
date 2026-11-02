@@ -7,7 +7,7 @@
  * for the load, when it is decided while focus is in a text field or a contenteditable, while a game effect holds the screen
  * (`hold`), or while a modal is open. A hold that begins under the tip already showing does not drop it: `active()` returns null (the
  * spotlight hides, unseen) until the hold lets go, and then the same tip shows again. A modal being open does not drop a tip whose target
- * stands inside the top modal itself (the reaction grid, in the open picker): the tip is about that layer, and its spotlight is drawn above it. "A tip that cannot show waits for the next load": a dropped key is not asked again. A tip withdrawn after it was
+ * stands inside the top modal itself (the reaction grid, in the open picker): the tip is about that layer, and its spotlight is drawn above it (`topModalHolds` spares it). For a game effect's takeover the hold is the only barrier, and it wins even over a target inside the top modal, so a takeover must hold the screen while it shows. "A tip that cannot show waits for the next load": a dropped key is not asked again. A tip withdrawn after it was
  * decided (its component unmounts, or its `when` goes false) is settled for the load all the same: if it was showing it goes, unseen,
  * and it is not asked again.
  *
