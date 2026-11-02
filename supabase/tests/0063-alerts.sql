@@ -112,25 +112,25 @@ begin
   -- A card on a post: Ann's post, Bob's Sweetie.
   said := play_card(bob, 'sweetie', b1, a1_post, '{}', 0);
   select * into r from alerts;
-  if (select count(*) from alerts) <> 1 or r.kind <> 'cardOnYours' or r.account <> ann or r.character <> a1 or r.act <> (said ->> 'id')::uuid then
+  if (select count(*) from alerts) is distinct from 1 or r.kind is distinct from 'cardOnYours' or r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from (said ->> 'id')::uuid then
     raise exception 'a card on a post is Ann''s cardOnYours about the play: % / %', to_jsonb(r), (select count(*) from alerts);
   end if;
-  if (select count(*) from broadcasts_due where topic = 'account:' || ann) <> 1 or pg_temp.queued() <> 1 then raise exception 'a card on a post queued % account broadcasts', pg_temp.queued(); end if;
+  if (select count(*) from broadcasts_due where topic = 'account:' || ann) is distinct from 1 or pg_temp.queued() is distinct from 1 then raise exception 'a card on a post queued % account broadcasts', pg_temp.queued(); end if;
   delete from broadcasts_due where topic like 'account:%'; delete from alerts;
 
   -- A card on a character: Ann's Ann One, from her post.
   said := play_card(bob, 'glint', b1, a1, '{}', 0, '', 'character', a1_post);
   select * into r from alerts;
-  if (select count(*) from alerts) <> 1 or r.kind <> 'cardOnYours' or r.account <> ann or r.character <> a1 or r.act <> (said ->> 'id')::uuid then
+  if (select count(*) from alerts) is distinct from 1 or r.kind is distinct from 'cardOnYours' or r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from (said ->> 'id')::uuid then
     raise exception 'a card on a character is Ann''s cardOnYours: % / %', to_jsonb(r), (select count(*) from alerts);
   end if;
-  if (select count(*) from broadcasts_due where topic = 'account:' || ann) <> 1 or pg_temp.queued() <> 1 then raise exception 'a card on a character queued % account broadcasts', pg_temp.queued(); end if;
+  if (select count(*) from broadcasts_due where topic = 'account:' || ann) is distinct from 1 or pg_temp.queued() is distinct from 1 then raise exception 'a card on a character queued % account broadcasts', pg_temp.queued(); end if;
   delete from broadcasts_due where topic like 'account:%'; delete from alerts;
 
   -- A card on a thread: the player of the character that started it.
   said := play_card(bob, 'marquee', b1, mine_t, '{}', 0, '', 'thread');
   select * into r from alerts;
-  if (select count(*) from alerts) <> 1 or r.kind <> 'cardOnYours' or r.account <> ann or r.character <> a1 or r.act <> (said ->> 'id')::uuid then
+  if (select count(*) from alerts) is distinct from 1 or r.kind is distinct from 'cardOnYours' or r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from (said ->> 'id')::uuid then
     raise exception 'a card on a thread is its starter''s player''s: % / %', to_jsonb(r), (select count(*) from alerts);
   end if;
   if pg_temp.queued() <> 1 then raise exception 'a card on a thread queued % account broadcasts', pg_temp.queued(); end if;
@@ -153,18 +153,18 @@ begin
   perform tests.unbecome();
   sprung_act := (said -> 'sprung' ->> 'id')::uuid;
   if sprung_act is null then raise exception 'the quote did not spring the trap: %', said; end if;
-  if (select count(*) from alerts where kind = 'quote') <> 1 then raise exception 'the quote of the trapped post wrote no quote alert'; end if;
+  if (select count(*) from alerts where kind = 'quote') is distinct from 1 then raise exception 'the quote of the trapped post wrote no quote alert'; end if;
   select * into r from alerts where kind = 'trapSprang';
-  if (select count(*) from alerts where kind = 'trapSprang') <> 1 or r.account <> ann or r.character <> a1 or r.act <> sprung_act then
+  if (select count(*) from alerts where kind = 'trapSprang') is distinct from 1 or r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from sprung_act then
     raise exception 'a trap sprung is the setter''s, about the spring: %', to_jsonb(r);
   end if;
   -- The replier's post was struck by a trap another account set: the replier's own trapStruck, about the card that struck. It goes
   -- to the replier's own account, so it tells no one else anything.
   select * into r from alerts where kind = 'trapStruck';
-  if (select count(*) from alerts where kind = 'trapStruck') <> 1 or r.account <> bob or r.character <> b1 or r.act <> (said -> 'sprung' -> 'struck' ->> 'id')::uuid then
+  if (select count(*) from alerts where kind = 'trapStruck') is distinct from 1 or r.account is distinct from bob or r.character is distinct from b1 or r.act is distinct from (said -> 'sprung' -> 'struck' ->> 'id')::uuid then
     raise exception 'a trap set off against another player''s is the replier''s trapStruck: %', (select jsonb_agg(to_jsonb(x)) from alerts x);
   end if;
-  if (select count(*) from broadcasts_due where topic like 'account:%') <> 3 then raise exception 'a quote that sprang a trap queued % broadcasts, not 3', pg_temp.queued(); end if;
+  if (select count(*) from broadcasts_due where topic like 'account:%') is distinct from 3 then raise exception 'a quote that sprang a trap queued % broadcasts, not 3', pg_temp.queued(); end if;
   delete from broadcasts_due where topic like 'account:%'; delete from alerts;
 
   -- A trap Bob set on his other mask's post, set off by his Bob One: his own doing to himself, so no alert at all.
@@ -184,11 +184,11 @@ begin
   said := spring_traps('quote', trapped2, reply);
   if said is null or said -> 'struck' is null then raise exception 'the direct spring did not strike: %', said; end if;
   select * into r from alerts where kind = 'trapStruck';
-  if (select count(*) from alerts where kind = 'trapStruck') <> 1 or r.account <> cat or r.character <> c1 or r.act <> (said -> 'struck' ->> 'id')::uuid then
+  if (select count(*) from alerts where kind = 'trapStruck') is distinct from 1 or r.account is distinct from cat or r.character is distinct from c1 or r.act is distinct from (said -> 'struck' ->> 'id')::uuid then
     raise exception 'a trap struck is the struck post''s author''s, about the card that struck: %', to_jsonb(r);
   end if;
   select * into r from alerts where kind = 'trapSprang';
-  if (select count(*) from alerts where kind = 'trapSprang') <> 1 or r.account <> ann or r.act <> (said ->> 'id')::uuid then
+  if (select count(*) from alerts where kind = 'trapSprang') is distinct from 1 or r.account is distinct from ann or r.act is distinct from (said ->> 'id')::uuid then
     raise exception 'the same spring is also the setter''s trapSprang: %', to_jsonb(r);
   end if;
   if pg_temp.queued() <> 2 then raise exception 'a strike and its spring queued % account broadcasts, not 2', pg_temp.queued(); end if;
@@ -272,7 +272,7 @@ begin
     raise exception 'the answer from play_card on a thread differs with who started it: % / % / %', pg_temp.shape(said_owned), pg_temp.shape(said_staff), pg_temp.shape(said_mine);
   end if;
   if said_owned::text ~* 'alert' or said_staff::text ~* 'alert' or said_mine::text ~* 'alert' then raise exception 'play_card''s answer on a thread holds the alert'; end if;
-  if (select count(*) from alerts where account = ann and act = (said_owned ->> 'id')::uuid) <> 1
+  if (select count(*) from alerts where account = ann and act = (said_owned ->> 'id')::uuid) is distinct from 1
      or exists (select 1 from alerts where act in ((said_staff ->> 'id')::uuid, (said_mine ->> 'id')::uuid)) then
     raise exception 'only the thread owned by another account wrote an alert';
   end if;
@@ -300,7 +300,7 @@ begin
   said := play_card(bob, 'sweetie', b1, anns, '{}', 0);
   if said -> 'sprung' is null then raise exception 'the cast did not spring the trap: %', said; end if;
   select * into r from alerts where kind = 'trapSprang' and account = ann;
-  if (select count(*) from alerts where kind = 'trapSprang') <> 1 or r.character <> a1 or r.act <> (said -> 'sprung' ->> 'id')::uuid then
+  if (select count(*) from alerts where kind = 'trapSprang') is distinct from 1 or r.character is distinct from a1 or r.act is distinct from (said -> 'sprung' ->> 'id')::uuid then
     raise exception 'a cast that springs another''s trap is the setter''s trapSprang: %', (select jsonb_agg(to_jsonb(x)) from alerts x where kind = 'trapSprang');
   end if;
   delete from broadcasts_due where topic like 'account:%'; delete from alerts;
@@ -319,7 +319,7 @@ begin
   reply := tests.post(a2, t, 'Ann Two replies.');
   said := spring_traps('quote', third, reply);
   if said is null then raise exception 'the direct spring did not spring: %', said; end if;
-  if (select count(*) from alerts where kind = 'trapSprang' and account = ann and act = (said ->> 'id')::uuid) <> 1 then
+  if (select count(*) from alerts where kind = 'trapSprang' and account = ann and act = (said ->> 'id')::uuid) is distinct from 1 then
     raise exception 'a spring with no named actor writes the setter''s trapSprang: %', (select jsonb_agg(to_jsonb(x)) from alerts x);
   end if;
   if exists (select 1 from alerts where kind = 'trapStruck') then raise exception 'the setter''s owner was written a trapStruck for their own mask''s doing'; end if;
@@ -351,10 +351,10 @@ begin
   perform tests.unbecome();
   if said -> 'sprung' is null then raise exception 'the reaction did not spring the trap: %', said; end if;
   select * into r from alerts;
-  if (select count(*) from alerts) <> 1 or r.kind <> 'trapSprang' or r.account <> ann or r.character <> a1 or r.act <> (said -> 'sprung' ->> 'id')::uuid then
+  if (select count(*) from alerts) is distinct from 1 or r.kind is distinct from 'trapSprang' or r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from (said -> 'sprung' ->> 'id')::uuid then
     raise exception 'a reaction that springs a trap is the setter''s one trapSprang: %', (select jsonb_agg(to_jsonb(x)) from alerts x);
   end if;
-  if (select count(*) from broadcasts_due where topic like 'account:%') <> 1 then raise exception 'the spring queued % broadcasts, not 1', pg_temp.queued(); end if;
+  if (select count(*) from broadcasts_due where topic like 'account:%') is distinct from 1 then raise exception 'the spring queued % broadcasts, not 1', pg_temp.queued(); end if;
   if (select array_agg(k order by k) from broadcasts_due b, jsonb_object_keys(b.payload) k where b.topic like 'account:%') is distinct from array['act', 'at', 'character', 'kind', 'sub'] then
     raise exception 'the broadcast holds more than the public projection: %', (select payload from broadcasts_due where topic like 'account:%');
   end if;
@@ -389,7 +389,7 @@ begin
   plain := tests.post(a1, t, 'Ann One, retired.');
   update characters set retired_at = now() where id = a1;
   said := play_card(bob, 'sweetie', b1, plain, '{}', 0);
-  if (select count(*) from alerts where account = ann and kind = 'cardOnYours' and act = (said ->> 'id')::uuid and character = a1) <> 1 then
+  if (select count(*) from alerts where account = ann and kind = 'cardOnYours' and act = (said ->> 'id')::uuid and character = a1) is distinct from 1 then
     raise exception 'the owner of a retired character got no alert for a card on its post';
   end if;
 end $$;
@@ -405,7 +405,7 @@ begin
   perform tests.become(bob);
   q := (post(t, b1, 'Bob quotes Ann.', p) ->> 'id')::uuid;
   perform tests.unbecome();
-  if (select count(*) from alerts where account = ann and act = q) <> 1 then raise exception 'Ann has no alert to read'; end if;
+  if (select count(*) from alerts where account = ann and act = q) is distinct from 1 then raise exception 'Ann has no alert to read'; end if;
 
   seen := (select count(*) from alerts where account = ann);
   perform tests.become(ann);
@@ -443,5 +443,5 @@ begin
              where has_table_privilege(r, 'public.alerts', 'insert,update,delete,truncate') or has_function_privilege(r, 'write_alert(uuid,text,text,uuid,uuid)', 'execute')) then
     raise exception 'an API role holds a write on alerts or can call write_alert';
   end if;
-  if exists (select 1 from alerts where act = q and kind <> 'quote') or (select count(*) from alerts where act = q) <> 1 then raise exception 'an alert changed under a refused write'; end if;
+  if exists (select 1 from alerts where act = q and kind is distinct from 'quote') or (select count(*) from alerts where act = q) is distinct from 1 then raise exception 'an alert changed under a refused write'; end if;
 end $$;
