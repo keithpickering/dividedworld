@@ -47,6 +47,10 @@ export function WriteUpdate({ onWritten }: { readonly onWritten?: (update: Updat
   const blank = title.trim() === '' || words.trim() === '';
   const tooLong = length > settings.postMaxLength || [...title].length > settings.titleMaxLength;
 
+  /* Why the button is held, in words: the button is described by this, and a too-long form says by how much. */
+  const over = length - settings.postMaxLength;
+  const why = over > 0 ? `Too long by ${over} ${over === 1 ? 'character' : 'characters'}` : tooLong ? 'The title is too long.' : blank ? 'Give the update a title and some words to post it.' : '';
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (busy || blank || tooLong) return;
@@ -85,8 +89,8 @@ export function WriteUpdate({ onWritten }: { readonly onWritten?: (update: Updat
       </div>
       <div className="kb-write-update-field">
         <label htmlFor={`${id}-words`}>Words</label>
-        <textarea id={`${id}-words`} className="kb-write-update-input" rows={6} value={words} onChange={(e) => { edit(); setWords(e.target.value); }} />
-        <span className="kb-write-update-count kb-num">{length} of {settings.postMaxLength}</span>
+        <textarea id={`${id}-words`} className="kb-write-update-input" rows={6} value={words} aria-describedby={`${id}-count`} onChange={(e) => { edit(); setWords(e.target.value); }} />
+        <span id={`${id}-count`} className="kb-write-update-count kb-num">{length} of {settings.postMaxLength}</span>
       </div>
       <fieldset className="kb-write-update-changes">
         <legend>What changed</legend>
@@ -101,8 +105,9 @@ export function WriteUpdate({ onWritten }: { readonly onWritten?: (update: Updat
         <button type="button" className="kb-write-update-button" disabled={rows.length >= MOST_CHANGES} onClick={add}>Add a change</button>
       </fieldset>
       <div className="kb-write-update-actions">
-        <button type="submit" className="kb-write-update-button kb-write-update-post" disabled={busy || blank || tooLong}>Post update</button>
+        <button type="submit" className="kb-write-update-button kb-write-update-post" disabled={busy || blank || tooLong} aria-describedby={why === '' ? undefined : `${id}-why`}>Post update</button>
       </div>
+      <div id={`${id}-why`} aria-live="polite" className="kb-write-update-why">{why}</div>
       <div role="status" className="kb-write-update-status">{posted ? 'Posted. Every player has it in their alerts.' : ''}</div>
       {refusal && <p role="alert" className="kb-write-update-refusal">{refusal}</p>}
     </form>

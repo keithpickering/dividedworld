@@ -68,7 +68,9 @@ describe('the page', () => {
     expect(within(post).getByText('The trap was right to be offended.')).toBeInTheDocument();
     // The plain list, each change a label and its words.
     expect(within(post).getByRole('heading', { level: 3, name: 'What changed' })).toBeInTheDocument();
-    const items = within(within(post).getByRole('list', { name: 'What changed' })).getAllByRole('listitem');
+    /* The h3 names the list, so the list carries no label of its own (it would be announced twice). */
+    expect(within(post).queryByRole('list', { name: 'What changed' })).toBeNull();
+    const items = within(post.querySelector('ul.kb-updates-changes') as HTMLElement).getAllByRole('listitem');
     expect(items.map((li) => li.textContent)).toEqual(['Trap Card can now catch a card played on a thread or a board.', 'Fixed: the log names what a card was played on.', 'No label on this one.']);
     expect(items[0]!.querySelector('b')).toHaveTextContent('Trap Card');
     expect(items[2]!.querySelector('b')).toBeNull();
@@ -80,10 +82,10 @@ describe('the page', () => {
     expect(await screen.findByText(/The voice is Gabe's; every fact in it is true\./u)).toBeInTheDocument();
   });
 
-  test('beside it, the archive lists every update newest first with its date; the open one is the current page', async () => {
+  test('beside it, the archive (all updates, the open one included) lists every update newest first with its date; the open one is the current page', async () => {
     const w = world();
     show(w.fake);
-    const nav = await screen.findByRole('navigation', { name: 'Earlier updates' });
+    const nav = await screen.findByRole('navigation', { name: 'All updates' });
     const links = within(nav).getAllByRole('link');
     expect(links.map((l) => l.textContent)).toEqual(['Traps now bite board cardsNov 2', 'Washes 20% fasterNov 1', 'Welcome to playtestNov 1']);
     expect(links[0]).toHaveAttribute('aria-current', 'page');
@@ -120,7 +122,7 @@ describe('the page', () => {
     const post = await screen.findByRole('article', { name: 'Markup' });
     expect(post.querySelector('script, img[onerror]')).toBeNull();
     expect(post).toHaveTextContent('<script>window.__ran = 1</script>');
-    expect(within(post).getByRole('list', { name: 'What changed' })).toHaveTextContent('<b> <i>text</i>');
+    expect(post.querySelector('ul.kb-updates-changes')).toHaveTextContent('<b> <i>text</i>');
     expect((window as unknown as { __ran?: number }).__ran).toBeUndefined();
   });
 
@@ -151,7 +153,7 @@ describe('the page', () => {
   test('earlier updates come a page at a time, from the oldest read', async () => {
     const w = world({ updates: 22 });
     show(w.fake);
-    const nav = await screen.findByRole('navigation', { name: 'Earlier updates' });
+    const nav = await screen.findByRole('navigation', { name: 'All updates' });
     expect(within(nav).getAllByRole('link')).toHaveLength(20);
     await userEvent.click(screen.getByRole('button', { name: 'Show earlier updates' }));
     await waitFor(() => expect(within(nav).getAllByRole('link')).toHaveLength(25));
@@ -281,7 +283,7 @@ describe('the admin\'s form', () => {
     await userEvent.type(within(form).getByLabelText('Words'), 'It is new.');
     await userEvent.click(within(form).getByRole('button', { name: 'Post update' }));
     expect(await screen.findByRole('article', { name: 'Brand new' })).toBeInTheDocument();
-    expect(within(screen.getByRole('navigation', { name: 'Earlier updates' })).getAllByRole('link')[0]).toHaveTextContent('Brand new');
+    expect(within(screen.getByRole('navigation', { name: 'All updates' })).getAllByRole('link')[0]).toHaveTextContent('Brand new');
     expect((await w.fake.updates())[0]!.title).toBe('Brand new');
   });
 });

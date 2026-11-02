@@ -15,9 +15,10 @@ export function Prose({ body }: { readonly body: string }) {
   );
 }
 
-export function ChangedList({ changes }: { readonly changes: readonly UpdateChange[] }) {
+/** `label` names the list where no heading above it does (the ORIGIN box); under the Updates page's "What changed" heading it is left off, so it is not announced twice. */
+export function ChangedList({ changes, label }: { readonly changes: readonly UpdateChange[]; readonly label?: string }) {
   return (
-    <ul className="kb-updates-changes" aria-label="What changed">
+    <ul className="kb-updates-changes" aria-label={label}>
       {changes.map((c, i) => <li key={i}>{c.label !== '' && <><b>{c.label}</b>{' '}</>}{c.text}</li>)}
     </ul>
   );

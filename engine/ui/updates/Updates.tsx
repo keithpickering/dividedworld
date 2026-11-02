@@ -127,7 +127,7 @@ export function Updates({ updates, open, more, onMore, admin, onWritten }: Updat
             {voice !== undefined && <> The voice is {possessive(voice)}; every fact in it is true.</>}
           </p>
           {updates.length > 0 && (
-            <nav aria-label="Earlier updates" className="kb-updates-archive kb-calm">
+            <nav aria-label="All updates" className="kb-updates-archive kb-calm">
               <ul>
                 {updates.map((u) => (
                   <li key={u.act}>

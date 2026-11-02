@@ -162,7 +162,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
             <p className="kb-origin-update-title"><b>{u.title}</b></p>
             <Prose body={u.body} />
-            {u.changes.length > 0 && <ChangedList changes={u.changes} />}
+            {u.changes.length > 0 && <ChangedList changes={u.changes} label="What changed" />}
           </>
         );
       }

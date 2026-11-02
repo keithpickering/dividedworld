@@ -138,3 +138,9 @@
 :where(:root[data-kb-layout='phone']) .kb-write-update-row {
   grid-template-columns: minmax(0, 1fr);
 }
+
+.kb-write-update-why {
+  font-size: var(--kb-glass-size-body);
+  color: var(--kb-glass-text-2);
+}
+.kb-write-update-why:empty { display: none; }

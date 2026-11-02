@@ -107,6 +107,25 @@ describe('Write an update', () => {
     expect(post).toBeDisabled();
   });
 
+  test('says why the button is held: a blank form is described by a hint, and too long by a live line with the count', async () => {
+    renderIn(world(), <WriteUpdate />, { instance });
+    const post = within(form()).getByRole('button', { name: 'Post update' });
+    expect(post).toBeDisabled();
+    expect(post).toHaveAccessibleDescription('Give the update a title and some words to post it.');
+    await userEvent.type(within(form()).getByLabelText('Title'), 'T');
+    await userEvent.click(within(form()).getByLabelText('Words'));
+    await userEvent.paste('x'.repeat(205));
+    expect(within(form()).getByLabelText('Words')).toHaveAccessibleDescription('205 of 200');
+    const live = within(form()).getByText('Too long by 5 characters');
+    expect(live.closest('[aria-live="polite"]')).not.toBeNull();
+    expect(post).toHaveAccessibleDescription('Too long by 5 characters');
+    await userEvent.clear(within(form()).getByLabelText('Words'));
+    await userEvent.paste('x'.repeat(200));
+    expect(within(form()).queryByText(/Too long by/u)).toBeNull();
+    expect(post).toBeEnabled();
+    expect(post).not.toHaveAccessibleDescription();
+  });
+
   test('a lost answer is not resent: it says to look before posting again, and keeps what was written', async () => {
     const fake = world();
     vi.spyOn(fake, 'postUpdate').mockResolvedValue({ ok: false, error: 'No answer came back. It may have gone through: look at Updates before you post it again.', uncertain: true });

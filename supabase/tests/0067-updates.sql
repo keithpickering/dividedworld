@@ -430,3 +430,30 @@ begin
     raise exception 'post_update is a definer with a pinned search_path';
   end if;
 end $$;
+
+-- ---- A seed with a developer but no board to open its thread on says so plainly ----
+do $$
+declare
+  said text;
+begin
+  begin
+    -- Foreign keys and triggers are set aside for the one subtransaction that is rolled back below.
+    set local session_replication_role = replica;
+    delete from boards;
+    if system_board() is not null then raise exception 'the boards are gone but system_board() is not null'; end if;
+    delete from characters where staff_kind = 'developer';
+    delete from settings where key = 'updatesThread';
+    begin
+      perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+        'developer', jsonb_build_object('name', 'Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe')));
+    exception when others then
+      said := sqlerrm;
+    end;
+    raise exception 'undo';
+  exception when raise_exception then
+    if sqlerrm is distinct from 'undo' then raise; end if;
+  end;
+  if said is distinct from 'a developer needs The System''s board; seed boards first' then
+    raise exception 'a developer with no board is refused in plain words, not: %', said;
+  end if;
+end $$;
