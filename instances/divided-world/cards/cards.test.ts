@@ -16,7 +16,7 @@ import type { CardTarget } from '../../../engine/rules/cards.ts';
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -199,4 +199,25 @@ test('the instance, with its cards beyond a post, has no problems, and its reach
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(settings.reachRarity, { character: 'uncommon', thread: 'rare', board: 'legendary' });
   assert.deepEqual(settings.reachLasts, { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } });
+});
+
+/* Feelin' Fab (docs/plans/2026-11-02-onboarding-plan.md, Task 10). */
+test("Feelin' Fab is a common Sweet Cast on a post, three to a post, that lasts until the post goes; it costs 0.20 and nothing more to play", async () => {
+  const { feelinFab } = await import('./feelin-fab.ts');
+  assert.deepEqual([feelinFab.key, feelinFab.name, feelinFab.alignment, feelinFab.rarity, feelinFab.play ?? 'cast', feelinFab.reaches, feelinFab.stack, feelinFab.lasts], ['feelin-fab', "Feelin' Fab", 'sweet', 'common', 'cast', ['post'], 3, undefined]);
+  assert.equal(basePrice(feelinFab, settings), 20);
+  assert.ok(basePrice(feelinFab, settings) < basePrice(by('bluff'), settings), 'below Bluff');
+  assert.equal(feelinFab.playPrice(settings, post(6000), {}), 0);
+  assert.equal(feelinFab.playPrice(settings, post(10), {}), 0);
+  assert.equal(feelinFab.validateConfig({ anything: 1 }).ok, true);
+  assert.ok(cards.some((c) => c.key === 'feelin-fab'));
+});
+
+test("Feelin' Fab lands on a post alone, up to three, and a fourth is refused in plain words", async () => {
+  const { feelinFab } = await import('./feelin-fab.ts');
+  const up = (n: number) => Array.from({ length: n }, (_, i) => ({ card: 'feelin-fab', act: `f${i}`, reach: 'post' as const }));
+  for (const n of [0, 1, 2]) assert.equal(feelinFab.canApply(post(10), up(n)).ok, true, `${n} up`);
+  assert.deepEqual(feelinFab.canApply(post(10), up(3)), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
+  assert.deepEqual(feelinFab.canApply({ reach: 'character', character: 'c1' }, []), { ok: false, why: 'this card lands on a post' });
+  assert.deepEqual(feelinFab.canApply({ reach: 'thread', thread: 't1' }, []), { ok: false, why: 'this card lands on a post' });
 });

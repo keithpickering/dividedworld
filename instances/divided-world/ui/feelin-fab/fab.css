@@ -1,0 +1,119 @@
+/*
+ * Feelin' Fab (Effect.tsx): the rainbow sits behind the words in a layer that takes no pointer and no room, so the post reads and lays
+ * out as it would bare. Colors come only from the palettes Effect.tsx sets on the box as custom properties (--dw-fab-light-N for the
+ * light board, --dw-fab-dark-N for the dark), picked here for the mode the way the theme contract picks (tools/check-theme.mjs): light
+ * on the base, dark under the device's setting unless the player chose light, and again when the player chose dark. The words keep a
+ * text shadow in the board's ground. Animation moves a background position or a twinkle's opacity and scale, never layout, and is
+ * paused while the post is out of view (data-kb-running) and off under reduced motion (data-kb-moving, or the device's own setting).
+ * Level 1 sits on the stop Effect.tsx chose (data-kb-still) when held still.
+ */
+.dw-fab {
+  --dw-fab-1: var(--dw-fab-light-1);
+  --dw-fab-2: var(--dw-fab-light-2);
+  --dw-fab-3: var(--dw-fab-light-3);
+  --dw-fab-4: var(--dw-fab-light-4);
+  --dw-fab-5: var(--dw-fab-light-5);
+  --dw-fab-6: var(--dw-fab-light-6);
+  --dw-fab-twinkle: var(--dw-fab-twinkle-light);
+  position: relative;
+  isolation: isolate;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-kb-mode="light"]) .dw-fab {
+    --dw-fab-1: var(--dw-fab-dark-1);
+    --dw-fab-2: var(--dw-fab-dark-2);
+    --dw-fab-3: var(--dw-fab-dark-3);
+    --dw-fab-4: var(--dw-fab-dark-4);
+    --dw-fab-5: var(--dw-fab-dark-5);
+    --dw-fab-6: var(--dw-fab-dark-6);
+    --dw-fab-twinkle: var(--dw-fab-twinkle-dark);
+  }
+}
+:root[data-kb-mode="dark"] .dw-fab {
+  --dw-fab-1: var(--dw-fab-dark-1);
+  --dw-fab-2: var(--dw-fab-dark-2);
+  --dw-fab-3: var(--dw-fab-dark-3);
+  --dw-fab-4: var(--dw-fab-dark-4);
+  --dw-fab-5: var(--dw-fab-dark-5);
+  --dw-fab-6: var(--dw-fab-dark-6);
+  --dw-fab-twinkle: var(--dw-fab-twinkle-dark);
+}
+.dw-fab-ground {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  animation-duration: 30s;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+  animation-timing-function: ease-in-out;
+}
+.dw-fab-words {
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 0 2px var(--kb-bg), 0 0 6px var(--kb-bg);
+}
+/* Level 1: the whole background drifts slowly through the rainbow. */
+.dw-fab-cycle .dw-fab-ground {
+  background-image: linear-gradient(90deg, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6));
+  background-size: 600% 100%;
+  animation-name: dw-fab-drift;
+  animation-timing-function: linear;
+}
+/* Level 2: an animated linear rainbow. */
+.dw-fab-linear .dw-fab-ground {
+  background-image: linear-gradient(100deg, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6));
+  background-size: 300% 100%;
+  animation-name: dw-fab-drift;
+  animation-duration: 12s;
+}
+/* Level 3: an animated radial rainbow. */
+.dw-fab-radial .dw-fab-ground {
+  background-image: radial-gradient(circle at 50% 50%, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6));
+  background-size: 220% 220%;
+  animation-name: dw-fab-spread;
+  animation-duration: 14s;
+}
+@keyframes dw-fab-drift {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+@keyframes dw-fab-spread {
+  from { background-position: 0% 0%; }
+  to { background-position: 100% 100%; }
+}
+/* Level 1 held still: the one stop chosen on this load. */
+.dw-fab-cycle[data-kb-still="1"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-1), var(--dw-fab-1)); }
+.dw-fab-cycle[data-kb-still="2"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-2), var(--dw-fab-2)); }
+.dw-fab-cycle[data-kb-still="3"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-3), var(--dw-fab-3)); }
+.dw-fab-cycle[data-kb-still="4"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-4), var(--dw-fab-4)); }
+.dw-fab-cycle[data-kb-still="5"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-5), var(--dw-fab-5)); }
+.dw-fab-cycle[data-kb-still="6"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-6), var(--dw-fab-6)); }
+.dw-fab-twinkle {
+  position: absolute;
+  background: var(--dw-fab-twinkle);
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  animation-duration: 3s;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+@keyframes dw-fab-twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.5); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.dw-fab[data-kb-running="false"] .dw-fab-ground,
+.dw-fab[data-kb-running="false"] .dw-fab-twinkle {
+  animation-play-state: paused;
+}
+.dw-fab[data-kb-moving="false"] .dw-fab-ground,
+.dw-fab[data-kb-moving="false"] .dw-fab-twinkle {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dw-fab-ground,
+  .dw-fab-twinkle {
+    animation: none;
+  }
+}
