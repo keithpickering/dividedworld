@@ -245,3 +245,156 @@ begin
   set local plan_cache_mode = auto;
   perform set_config('request.jwt.claims', '', true);
 end $$;
+
+-- ---- Pages to exhaustion across every source: no repeats, no gaps, ties kept whole ----
+-- Every page of `size` read from the caller's list, each from the oldest `at` of the page before; raises on a repeat and answers
+-- the keys read, so a test can compare them with the whole list read at once.
+create function pg_temp.exhaust(size integer) returns text[] language plpgsql as $$
+declare
+  prior timestamptz; got text[] := '{}'; page text[]; pages integer := 0;
+begin
+  loop
+    select array_agg(p.kind || '|' || coalesce(p.sub, '') || '|' || coalesce(p.act::text, '') || '|' || coalesce(p.thread::text, '') || '|' || p.at::text), min(p.at)
+      into page, prior from my_alerts(prior, size) p;
+    exit when page is null;
+    pages := pages + 1;
+    if got && page then raise exception 'a page repeats a row of an earlier one (page %): %', pages, page; end if;
+    got := got || page;
+    if pages > 50 then raise exception 'paging does not end'; end if;
+  end loop;
+  return got;
+end $$;
+create function pg_temp.whole() returns text[] language sql as $$
+  select array_agg(p.kind || '|' || coalesce(p.sub, '') || '|' || coalesce(p.act::text, '') || '|' || coalesce(p.thread::text, '') || '|' || p.at::text) from my_alerts(null, 100) p
+$$;
+
+do $$
+declare
+  eva uuid := tests.account('ar-eva'); fay uuid := tests.account('ar-fay'); gus uuid := tests.account('ar-gus');
+  e1 uuid; f1 uuid; g1 uuid; t uuid; i integer; sid bigint; page record; first_page integer; got text[]; ties timestamptz;
+  base timestamptz := now() - interval '30 days';
+begin
+  e1 := tests.character(eva, 'Ar Eva'); f1 := tests.character(fay, 'Ar Fay'); g1 := tests.character(gus, 'Ar Gus');
+
+  -- (a) More settlements than a page, two of them applied at one instant across the page's edge (the 5th and 6th newest of 9).
+  -- Applied in order, later than every settlement before in this file (a server's ids go the way its applied_at does, and the
+  -- ledger is bounded by id, 0060's header), so the later id is the newer.
+  for i in 1..9 loop
+    insert into settlements (starts_at, ends_at, season, applied_at)
+    values (base + i * interval '1 day', base + i * interval '1 day' + interval '6 hours', (select min(id) from seasons),
+            now() + interval '10 days' + (case when i = 4 then 5 else i end) * interval '1 day') returning id into sid;
+    insert into ledger (settlement, account, character, reason, amount) values (sid, eva, e1, 'post.reacted', 10);
+  end loop;
+  perform tests.become(eva);
+  select count(*) into first_page from my_alerts(null, 5);
+  if first_page is distinct from 6 then raise exception '(a) a tie of settlements across the edge is kept whole: a page of five holds %', first_page; end if;
+  got := pg_temp.exhaust(5);
+  if cardinality(got) is distinct from 9 or (select array_agg(x order by x) from unnest(got) x) is distinct from (select array_agg(x order by x) from unnest(pg_temp.whole()) x) then
+    raise exception '(a) paging settlements reads every one once: % of 9', cardinality(got);
+  end if;
+  perform tests.unbecome();
+
+  -- (b) Followed threads, two with their newest post at one instant across the edge (the 5th and 6th newest of 9).
+  for i in 1..9 loop
+    t := tests.thread('Ar followed ' || i);
+    perform tests.post(f1, t, 'opening', base);
+    perform tests.post(g1, t, 'later', base + (case when i = 4 then 5 else i end) * interval '1 day');
+    -- Fay started it and Gus replied; the thread is Fay's.
+  end loop;
+  perform tests.become(fay);
+  select count(*) into first_page from my_alerts(null, 5);
+  if first_page is distinct from 6 then raise exception '(b) a tie of followed threads across the edge is kept whole: a page of five holds %', first_page; end if;
+  got := pg_temp.exhaust(5);
+  if cardinality(got) is distinct from 9 or (select array_agg(x order by x) from unnest(got) x) is distinct from (select array_agg(x order by x) from unnest(pg_temp.whole()) x) then
+    raise exception '(b) paging followed threads reads every one once: % of 9', cardinality(got);
+  end if;
+  perform tests.unbecome();
+
+  -- (c) A settlement and a written alert at one instant, on the edge between sources: newest first, three written, then the
+  -- settlement and a written alert together (the 4th and 5th), then one written; a page of four ends inside the tie.
+  t := tests.thread('Ar cross');
+  perform tests.post(g1, t, 'opening', base);
+  ties := now() + interval '100 days';
+  for i in 1..6 loop
+    insert into alerts (account, kind, act, character, at)
+    values (gus, 'quote', tests.post(g1, t, 'p' || i, base + i * interval '1 minute'), g1,
+            case i when 1 then ties - interval '2 hours' when 2 then ties - interval '1 hour' when 3 then ties else ties + (i - 3) * interval '1 hour' end);
+  end loop;
+  -- Order, newest first: i=6 (+3h), 5 (+2h), 4 (+1h), then i=3 and the settlement (both at `ties`), then 2 (-1h), 1 (-2h).
+  insert into settlements (starts_at, ends_at, season, applied_at)
+  values (base + interval '40 days', base + interval '40 days' + interval '6 hours', (select min(id) from seasons), ties) returning id into sid;
+  insert into ledger (settlement, account, character, reason, amount) values (sid, gus, g1, 'post.reacted', 10);
+  perform tests.become(gus);
+  select count(*) into first_page from my_alerts(null, 4);
+  if first_page is distinct from 5 then raise exception '(c) a tie across sources on the edge is kept whole: a page of four holds %', first_page; end if;
+  if not exists (select 1 from my_alerts(null, 4) where kind = 'settlement') then raise exception '(c) the settlement is on the page of its tie'; end if;
+  got := pg_temp.exhaust(4);
+  if cardinality(got) is distinct from 7 or (select array_agg(x order by x) from unnest(got) x) is distinct from (select array_agg(x order by x) from unnest(pg_temp.whole()) x) then
+    raise exception '(c) paging across sources reads every row once: % of 7', cardinality(got);
+  end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- The count at the settlement boundary: a settlement applied at the mark is seen, one an instant after is new ----
+do $$
+declare
+  hal uuid := tests.account('ar-hal'); h1 uuid; sid bigint; sid2 bigint; at_mark timestamptz := now() - interval '5 days';
+begin
+  h1 := tests.character(hal, 'Ar Hal');
+  insert into settlements (starts_at, ends_at, season, applied_at)
+  values (now() - interval '9 days', now() - interval '9 days' + interval '6 hours', (select min(id) from seasons), at_mark) returning id into sid;
+  insert into settlements (starts_at, ends_at, season, applied_at)
+  values (now() - interval '8 days', now() - interval '8 days' + interval '6 hours', (select min(id) from seasons), at_mark + interval '1 microsecond') returning id into sid2;
+  insert into ledger (settlement, account, character, reason, amount) values (sid, hal, h1, 'post.reacted', 10), (sid2, hal, h1, 'post.quoted', 10);
+  perform tests.become(hal);
+  if my_alerts_unread() is distinct from 2 then raise exception 'with no mark, both settlements are new: %', my_alerts_unread(); end if;
+  perform see_alerts(at_mark);
+  if my_alerts_unread() is distinct from 1 then raise exception 'a settlement applied at the mark is seen, one an instant after it is new: %', my_alerts_unread(); end if;
+  perform see_alerts(at_mark + interval '1 microsecond');
+  if my_alerts_unread() is distinct from 0 then raise exception 'and seen once the mark reaches it: %', my_alerts_unread(); end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- Nothing the news stubs are reachable by an API role; nothing hides a thread from a player today ----
+do $$
+begin
+  if has_function_privilege('anon', 'alerts_news(timestamptz,integer)', 'execute') or has_function_privilege('authenticated', 'alerts_news(timestamptz,integer)', 'execute')
+     or has_function_privilege('anon', 'alerts_news_unread(timestamptz)', 'execute') or has_function_privilege('authenticated', 'alerts_news_unread(timestamptz)', 'execute') then
+    raise exception 'alerts_news and alerts_news_unread are read through my_alerts alone, never by an API role';
+  end if;
+  -- my_alerts names a thread's title under its owner's rights, which is right while every signed-in player may read every thread and
+  -- board (0001). A feature that hides one fails this, and must null the title where the caller cannot read the thread (0060's header).
+  if exists (select 1 from pg_policies where schemaname = 'public' and tablename in ('threads', 'boards', 'acts') and (permissive <> 'PERMISSIVE' or qual is distinct from 'true')) then
+    raise exception 'a thread, board or Act can be hidden from a player now: my_alerts must null the titles of those the caller cannot read';
+  end if;
+end $$;
+
+-- ---- The count of followed threads is a probe that stops at 10: 500 followed threads, each with a post past the place ----
+do $$
+declare
+  ivy uuid := tests.account('ar-ivy'); jon uuid := tests.account('ar-jon'); i1 uuid; j1 uuid; t uuid; i integer; ln record; plan text := ''; bufs integer;
+begin
+  i1 := tests.character(ivy, 'Ar Ivy'); j1 := tests.character(jon, 'Ar Jon');
+  for i in 1..500 loop
+    t := tests.thread('Ar heavy ' || i);
+    perform tests.post(i1, t, 'opening', now() - interval '3 days');
+    perform tests.post(j1, t, 'reply', now() - interval '2 days');
+  end loop;
+  analyze acts; analyze threads;
+  perform tests.become(ivy);
+  if my_alerts_unread() is distinct from 10 then raise exception '500 followed threads with new posts count to the bound: %', my_alerts_unread(); end if;
+  perform tests.unbecome();
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', ivy, 'role', 'authenticated')::text, true);
+  set local enable_seqscan = off;
+  for ln in explain (analyze, buffers) select my_alerts_unread() loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  -- The function's own statement, as shipped, so the plan shows the statement and not the call.
+  plan := '';
+  execute format('prepare plan_heavy as %s', (select prosrc from pg_proc where proname = 'my_alerts_unread' and pronamespace = 'public'::regnamespace));
+  for ln in execute 'explain (analyze, buffers) execute plan_heavy' loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  deallocate plan_heavy;
+  set local enable_seqscan = on;
+  perform set_config('request.jwt.claims', '', true);
+  bufs := (regexp_match(plan, 'Buffers: shared hit=(\d+)'))[1]::integer;
+  raise notice 'followed-heavy my_alerts_unread reads % buffers', bufs;
+  if bufs > 400 then raise exception 'the count of 500 followed threads stops at its bound and reads few buffers, not %: %', bufs, plan; end if;
+end $$;

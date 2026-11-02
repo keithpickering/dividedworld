@@ -39,6 +39,12 @@
 -- my_alerts_unread(): how many of those are newer than the account's alerts_seen_at (0057; never set means everything is new),
 -- counted with a bound: at most 10. A result of 10 means ten or more, and the screen says "9+" for it; 0 to 9 are exact.
 --
+-- Who may read a thread's title: my_alerts names a thread's title under the function owner's rights. That is right while every signed-in
+-- player may read every thread and board (0001's `read` policies are `using (true)`; no restricted board, ban or hidden thread
+-- exists yet, and supabase/tests/0065-alerts-read.sql fails the day a policy on threads, boards or acts stops being `true`). A
+-- feature that hides a board or thread from a player must, in the same change, null `title` (and `name` of a hidden character) in
+-- my_alerts where the caller cannot read the thread, since this function would otherwise show it.
+--
 -- Its way out: a list is a read, not a state. The count falls when the mark moves (see_alerts), and a followed thread falls out
 -- when it is read or unfollowed (0059).
 
@@ -138,14 +144,32 @@ language sql stable security definer set search_path = public, pg_temp as $$
   parts as (
     select (select count(*) from (select 1 from alerts a where a.account = (select id from me) and a.at > (select at from seen) limit 10) w) as n
     union all
-    select (select count(*) from (select 1 from my_followed_threads v where v.newest_at > (select at from seen) limit 10) f)
+    -- Followed threads, by their own probe that stops at ten and not by the view that reads every one (0059): the threads the caller
+    -- started (acts_thread_openers) and chose, less the ones unfollowed, kept where a post by a character they do not own sits past
+    -- their place and after the mark. A thread whose last Act is no newer than the mark (threads.last_at, 0030) is skipped from its
+    -- own row; the post is looked for from the newest back, so a thread with one is answered by the first row.
+    select (select count(*) from (
+      select 1 from (
+        select o.thread from characters c join acts o on o.character = c.id and o.seq = 1 where c.owner = (select id from me)
+        union
+        select f.thread from thread_follows f where f.account = (select id from me) and f.follow
+      ) fo
+      join threads th on th.id = fo.thread
+      left join reading r on r.account = (select id from me) and r.thread = th.id
+      where th.last_at > (select at from seen)
+        and not exists (select 1 from thread_follows u where u.account = (select id from me) and u.thread = th.id and not u.follow)
+        and exists (select 1 from acts a join characters pc on pc.id = a.character
+                    where a.thread = th.id and a.kind = 'post' and a.seq > coalesce(r.furthest_seq, 0) and a.created_at > (select at from seen)
+                      and pc.owner is distinct from (select id from me)
+                    order by a.seq desc limit 1)
+      limit 10) f)
     union all
     select (select count(*) from (
       select 1 from ledger l join settlements s on s.id = l.settlement
       where l.account = (select id from me)
         and l.settlement > coalesce((select s0.id from settlements s0 where s0.applied_at <= (select at from seen) order by s0.applied_at desc, s0.id desc limit 1), 0)
         and s.applied_at > (select at from seen)
-      group by s.id limit 10) x)
+      group by l.settlement order by l.settlement desc limit 10) x)
     union all
     select alerts_news_unread((select at from seen))
   )
