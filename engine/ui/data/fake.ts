@@ -337,9 +337,39 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const sendAct = (act: ActRec) => {
     const shown = publicAct(act);
     send(`thread:${act.thread}`, 'act', () => { for (const l of [...(threadListeners.get(act.thread) ?? [])]) l.onAct?.(shown); });
+    /* The alert the write queued (write_alert, 0058), announced to the target's account alone: none for a staff or unowned target, or
+       for the account that did it. */
+    const alert = derivedAlert(act);
+    if (alert === null) return;
+    const live = { kind: alert.kind, sub: null, act: act.id, character: alert.character, at: iso(act.at) };
+    send(`account:${alert.account}`, 'alert', () => { for (const l of [...(accountListeners.get(alert.account) ?? [])]) l.onAlert?.(live); });
   };
+  /**
+   * The alert an Act writes, read from the Act as `write_alert`'s callers do: a quote of a post, or a card on a post, a character or a
+   * thread, for the owner of what it landed on. Null for a staff target, a spring, and a target of the Act's own account.
+   */
+  function derivedAlert(a: ActRec): { account: Id; kind: 'quote' | 'cardOnYours'; character: Id } | null {
+    if (a.character === null) return null;
+    let kind: 'quote' | 'cardOnYours';
+    let target: Id | null | undefined;
+    if (a.kind === 'post' && a.target !== null) {
+      const quoted = acts.get(a.target);
+      if (quoted?.kind !== 'post') return null;
+      kind = 'quote'; target = quoted.character;
+    } else if (a.kind === 'card' && a.target !== null && a.payload.spring === undefined) {
+      const reach = (a.payload.reach ?? 'post') as string;
+      kind = 'cardOnYours';
+      target = reach === 'post' ? acts.get(a.target)?.character
+        : reach === 'character' ? String(a.payload.character)
+        : reach === 'thread' ? [...acts.values()].find((x) => x.thread === a.payload.thread && x.seq === 1)?.character : null;
+    } else return null;
+    const owner = target == null ? undefined : characters.get(target)?.owner;
+    if (owner == null || owner === characters.get(a.character)?.owner) return null;
+    return { account: owner, kind, character: target! };
+  }
   /* A play beyond a post is also heard on `reach` by every signed-in page (act/core.ts's BROADCASTS.play_card). */
   const sendReach = (act: ActRec) => {
+    if (act.payload.reach !== 'character' && act.payload.reach !== 'thread' && act.payload.reach !== 'board') return;
     const shown = publicAct(act);
     send('reach', 'effect', () => { for (const l of [...reachListeners]) l.onPlay?.(shown); });
   };
@@ -1668,16 +1698,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const out: Alert[] = [];
     for (const a of acts.values()) {
       if (a.character === null || ownerOfCharacter(a.character) === account.id) continue;
-      if (a.kind === 'post' && a.target !== null) {
-        const quoted = acts.get(a.target);
-        if (quoted?.kind === 'post' && ownerOfCharacter(quoted.character) === account.id) out.push(line({ kind: 'quote', sub: null, act: a.id, character: quoted.character, at: a.at }));
-      } else if (a.kind === 'card' && a.target !== null && a.payload.spring === undefined) {
-        const reach = (a.payload.reach ?? 'post') as string;
-        const target = reach === 'post' ? acts.get(a.target)?.character
-          : reach === 'character' ? String(a.payload.character)
-          : reach === 'thread' ? [...acts.values()].find((x) => x.thread === a.payload.thread && x.seq === 1)?.character : null;
-        if (target != null && ownerOfCharacter(target) === account.id) out.push(line({ kind: 'cardOnYours', sub: null, act: a.id, character: target, at: a.at }));
-      }
+      const derived = derivedAlert(a);
+      if (derived?.account === account.id) out.push(line({ kind: derived.kind, sub: null, act: a.id, character: derived.character, at: a.at }));
     }
     for (const w of seededAlerts) if (w.account === account.id) out.push(line({ kind: w.kind, sub: w.sub, act: w.act, character: w.character, at: w.at }));
     for (const f of followedFor(account)) out.push(line({ kind: 'followed', sub: null, act: null, character: null, at: Date.parse(f.newestAt), thread: f.thread, title: f.title, count: f.newPosts }));

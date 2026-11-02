@@ -1722,3 +1722,47 @@ describe('the Alerts read and the count (my_alerts, my_alerts_unread, 0060)', ()
     expect(first.length + second.length + (await fake.alerts(second.at(-1)!.at)).length).toBe(47);
   });
 });
+
+/* The alerts the server announces live (write_alert, 0058: on `account:<owner>`), for the ones the fake derives from Acts: only the target's
+   own account hears, never the caster's, and none for a staff target or one of the caster's own masks. */
+describe('live alerts derived from Acts', () => {
+  function listening() {
+    const w = world();
+    const heard = { ana: [] as unknown[], bo: [] as unknown[] };
+    w.fake.signInAs(w.bo);
+    w.fake.subscribeAccount({ onAlert: (a) => heard.bo.push(a) });
+    w.fake.signInAs(w.ana);
+    w.fake.subscribeAccount({ onAlert: (a) => heard.ana.push(a) });
+    return { ...w, heard };
+  }
+  test('a quote of a post is heard by its author\'s account, and not by the quoter\'s', async () => {
+    const w = listening();
+    must(await w.fake.post(w.thread, w.anaFace, 'agreed', w.opener));
+    await flush();
+    expect(w.heard.bo).toEqual([expect.objectContaining({ kind: 'quote', character: w.boFace, sub: null })]);
+    expect(w.heard.ana).toEqual([]);
+  });
+  test('a quote of one\'s own other mask, or of a staff post, is heard by no one', async () => {
+    const w = listening();
+    const mine = must(await w.fake.post(w.thread, w.anaFace, 'mine', null));
+    must(await w.fake.post(w.thread, w.anaHeel, 'me again', mine.id));
+    await flush();
+    expect(w.heard).toEqual({ ana: [], bo: [] });
+  });
+  test('a card on a post is heard by the post\'s author\'s account only', async () => {
+    const w = listening();
+    w.fake.seed.card(w.anaFace, w.opener, 'dab', { live: true });
+    await flush();
+    expect(w.heard.bo).toEqual([expect.objectContaining({ kind: 'cardOnYours', character: w.boFace })]);
+    expect(w.heard.ana).toEqual([]);
+  });
+});
+
+describe('a play on a post is not announced on reach', () => {
+  test('only a character, a thread or a board play is', async () => {
+    const w = world();
+    w.fake.seed.card(w.anaFace, w.opener, 'dab', { live: true });
+    await flush();
+    expect(w.fake.broadcast.log.filter((e) => e.topic === 'reach')).toEqual([]);
+  });
+});
