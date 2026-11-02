@@ -26,12 +26,13 @@
   grid-template-columns: 360px minmax(0, 1fr);
   gap: 24px 48px;
   align-items: start;
-  margin-top: 8px;
+  margin-top: 1px;
 }
 
 .kb-updates-lede {
   max-width: 720px;
-  margin: 0;
+  /* The board sets the lede 22px under the heading's foot, 20px lower than the post beside it starts. */
+  margin: 20px 0 0;
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
   line-height: 1.5;
@@ -50,7 +51,7 @@
 /* ---- the archive ---- */
 
 .kb-updates-archive {
-  margin-top: 40px;
+  margin-top: 36px;
 }
 
 .kb-updates-archive ul {
@@ -66,6 +67,7 @@
 .kb-updates-archive a {
   display: block;
   padding: 14px 0;
+  line-height: normal;
   text-decoration: none;
   color: inherit;
 }
@@ -180,7 +182,8 @@
 }
 
 .kb-updates-time {
-  display: block;
+  display: inline-block;
+  line-height: normal;
   font-size: var(--kb-glass-size-body);
   font-weight: 700;
   letter-spacing: 1px;
@@ -203,6 +206,7 @@
 
 .kb-updates-changed {
   margin: 30px 0 8px;
+  font-family: var(--kb-glass-font-body);
   font-size: 1.375rem;
   font-weight: 800;
   letter-spacing: 2px;
@@ -249,11 +253,13 @@
 }
 
 .kb-updates-note {
-  margin: 12px 0 0;
-  font-size: var(--kb-glass-size-body);
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--kb-glass-text-2);
+  /* The board's note takes the post's paragraph style (its `.post p` outranks its `.note`): 22px, 500, 18px under the actions. */
+  max-width: 760px;
+  margin: 18px 0 0;
+  font-size: 1.375rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
 }
 
 /* The spin form is the board's own small form, read on the glass: its text in the glass's colors, its fields on the glass's field color. */
@@ -277,6 +283,11 @@
 :where(:root[data-kb-layout='phone']) .kb-updates-cols {
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+  margin-top: 8px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-lede {
+  margin-top: 0;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-updates-lede,

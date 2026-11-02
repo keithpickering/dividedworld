@@ -104,6 +104,9 @@ const PAGES: readonly Screen[] = [
   { name: 'New character', path: '/characters/new' },
   { name: 'Edit profile', path: '/characters/edit' },
   { name: 'Rankings', path: '/season?tab=rankings' },
+  { name: 'Season news', path: '/season?tab=news' },
+  { name: 'Alerts', path: '/alerts' },
+  { name: 'Updates', path: '/updates' },
   { name: 'My log, before anything has settled', path: '/log' },
   { name: 'The Vending Machine', path: '/vending' },
   { name: 'The hand, open', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
@@ -472,7 +475,7 @@ test.describe('the poisons, planted in a real page', () => {
   test('a 19px label', async ({ page }) => {
     await open(page, rankings);
     await plant(page, '.kb-glass-menu-tab { font-size: 19px !important; }');
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Rankings" in .*\(surface rankings\): inks 17\.\dpx at 19px of Barlow Condensed, under the floor of 18px of ink$/u));
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Season" in .*\(surface rankings\): inks 17\.\dpx at 19px of Barlow Condensed, under the floor of 18px of ink$/u));
   });
 
   test('with no overlay open, text a page marks inert is still read', async ({ page }) => {
@@ -500,7 +503,7 @@ test.describe('the poisons, planted in a real page', () => {
     await open(page, rankings);
     /* 21px drawn at 0.9 is 18.9px, 17.4px of ink. */
     await plant(page, '.kb-glass-menu-list { transform: scale(0.9); transform-origin: left center; }');
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Rankings" in .*\(surface rankings\): inks 17\.\dpx at 18\.9px of Barlow Condensed, under the floor of 18px of ink$/u));
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Season" in .*\(surface rankings\): inks 17\.\dpx at 18\.9px of Barlow Condensed, under the floor of 18px of ink$/u));
   });
 
   test('a line in a face the page has not loaded fails loudly, not in the fallback', async ({ page }) => {
@@ -612,7 +615,7 @@ test.describe('the poisons, planted in a real page', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page, rankings);
     await plant(page, '.kb-glass-menu-tab, .kb-glass-menu-tab * { font-size: 15px !important; }');
-    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Rankings" in .*\(surface rankings\): is 15px of [^,]+, under the phone's floor of 16px$/u));
+    expect(await measure(page)).toContainEqual(expect.stringMatching(/^"Season" in .*\(surface rankings\): is 15px of [^,]+, under the phone's floor of 16px$/u));
   });
 
   test('a translucent text color', async ({ page }) => {

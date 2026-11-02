@@ -37,7 +37,7 @@ export async function pageViolations(page: Page): Promise<string[]> {
 test.use({ bypassCSP: true });
 
 /* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
-const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/vending']);
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/alerts', '/updates', '/vending']);
 const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.has(path)
   ? page.getByRole('navigation', { name: 'Menu' })
   : page.getByRole('region', { name: 'Game HUD' }));
@@ -82,7 +82,7 @@ const ABOVE_SWITCH = SWITCH + 8;
 const BELOW_SWITCH = SWITCH - 8;
 
 const PAGES: readonly [string, string][] = [
-  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'],
+  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'],
 ];
 
 const STORIES = boardStoryIds();
@@ -349,7 +349,7 @@ test.describe('between the boards\' widths', () => {
   /*
    * The menu bar is the boards' (06, 07, 10, 11 and 12 draw it alike): 85px tall over the strong
    * panel with a pale rule at its foot, its tabs skewed -10 degrees in uppercase Barlow Condensed
-   * 800 at 21px spaced 2px, Back outlined in white with its ESC key cap before its words, the current
+   * 800 at 21px spaced 1.5px, Back outlined in white with its ESC key cap before its words, the current
    * tab lit with a neon rule along its foot.
    */
   test('at 1440px a glass page\'s menu bar is drawn as the boards draw it', async ({ page }) => {
@@ -378,7 +378,7 @@ test.describe('between the boards\' widths', () => {
         current: { ...words(tab), skewed: getComputedStyle(tab).transform !== 'none', lit: getComputedStyle(tab).boxShadow.includes('inset') },
       };
     });
-    const type = { family: 'Barlow Condensed', size: '21px', weight: '800', spacing: '2px', upper: 'uppercase' };
+    const type = { family: 'Barlow Condensed', size: '21px', weight: '800', spacing: '1.5px', upper: 'uppercase' };
     expect(got).toEqual({
       height: 85, rule: 'solid',
       back: { ...type, border: 'solid', skewed: true, keyFirst: true, key: '"ESC"' },
@@ -393,7 +393,7 @@ test.describe('between the boards\' widths', () => {
    * Rankings story, a restyled page with calms to the column's edge, and on the restyled pages of
    * the app, at the Phone board's width.
    */
-  for (const [label, path] of [['Rankings', '/?fixture=boards&story=boards-13-rankings--season'], ['My characters', '/characters'], ['New character', '/characters/new'], ['Settings', '/settings'], ['Settings › Account', '/settings?section=account']] as const) {
+  for (const [label, path] of [['Rankings', '/?fixture=boards&story=boards-13-rankings--season'], ['Alerts', '/?fixture=boards&story=boards-02-alerts--open'], ['Updates', '/?fixture=boards&story=boards-03-updates--newest'], ['Season news', '/?fixture=boards&story=boards-04-season-news--news'], ['My characters', '/characters'], ['New character', '/characters/new'], ['Settings', '/settings'], ['Settings › Account', '/settings?section=account']] as const) {
     test(`on a phone 390 wide, the restyled ${label} page does not scroll sideways`, async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto(path);

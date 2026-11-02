@@ -14,6 +14,8 @@
   z-index: 29;
   box-sizing: border-box;
   width: min(470px, calc(100vw - 32px));
+  /* Outside the HUD and every glass page, so the glass's face is set here, not inherited from the 2003 board's Verdana. */
+  font-family: var(--kb-glass-font-body);
   background: transparent;
   pointer-events: none;
 }
@@ -126,7 +128,7 @@
   font-weight: 800;
   line-height: 1.25;
   letter-spacing: 0.3px;
-  color: var(--kb-glass-text-hi);
+  color: var(--kb-glass-text);
 }
 
 .kb-toast-detail {

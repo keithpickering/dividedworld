@@ -1,5 +1,5 @@
 /**
- * The thread page's Follow / Unfollow control, in the glass: a strip of its own above the thread, outside every post and outside the
+ * The thread page's Follow / Unfollow control, in the glass: a strip of its own after the thread's last post (above the reply box), outside every post and outside the
  * board's table (the alerts design, sections 4 and 12). A thread one's characters started is followed by default; this follows or
  * unfollows any thread, and it is the way out of a thread followed ("No player is ever stuck"; the Alerts row offers the same).
  *

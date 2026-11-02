@@ -89,6 +89,9 @@ const moment = (at: number, account: Account, route: (thread: string) => string)
 export const MOMENTS = Object.freeze({
   // Between #46 (21:46) and Pipewrench's play at 21:52: the second Whoops! is armed, not yet played.
   '01-main': moment(POSTED[46] + MINUTE, 'player', (id) => thread(id)),
+  // The Main board's moment with the hand closed, five alerts arriving as the page opens: the bell's count and the toasts above the seam
+  // (docs/research/2026-11-02-alerts/01-board-toasts.html; armToasts below).
+  '01-board-toasts': moment(POSTED[46] + MINUTE, 'player', (id) => thread(id)),
   '02-phone': moment(POSTED[46] + MINUTE, 'player', (id) => thread(id)),
   // Ten minutes after #42, with its reactions in, before #43.
   '03-react': moment(POSTED[42] + 10 * MINUTE, 'rival', (id) => thread(id, 42)),
@@ -111,6 +114,28 @@ export const MOMENTS = Object.freeze({
 export type MomentName = keyof typeof MOMENTS;
 
 const NAMES = Object.keys(MOMENTS);
+
+/**
+ * Five alerts that arrive as the page opens, for the toasts board (01-board-toasts): a toast is a live arrival, which a seeded world has none of,
+ * so the player's private channel is watched and the alerts are written, each a minute on from the last, the moment the HUD first listens
+ * (on the same turn, through the fake's own `seed.alert`, which announces them as the server would). The account's mark is set at the moment,
+ * so the bell counts these five and nothing older. A kind that never toasts is not chosen: these are the written kinds that do by default.
+ */
+type ToastAlert = readonly ['ruling' | 'trapStruck', string, string];
+function armToasts(fake: Fake, account: string, alerts: readonly ToastAlert[]): void {
+  const now = fake.clock.now();
+  void fake.seeAlerts(new Date(now).toISOString());
+  const listen = fake.subscribeAccount.bind(fake);
+  let armed = false;
+  fake.subscribeAccount = (listener) => {
+    const off = listen(listener);
+    if (!armed) {
+      armed = true;
+      queueMicrotask(() => alerts.forEach(([kind, act, character], i) => fake.seed.alert(account, { kind, act, character, at: now + (i + 1) * MINUTE })));
+    }
+    return off;
+  };
+}
 
 /** A fake whose clock is the moment's, for `seedBoards`. */
 export function createBoardsFake(moment: MomentName): Fake {
@@ -317,6 +342,9 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   for (const step of steps.filter((s) => s.at <= now).sort((a, b) => a.at - b.at)) step.run(step.at);
 
   fake.signInAs({ player, rival, reader }[MOMENTS[moment].account]);
+  if (moment === '01-board-toasts') armToasts(fake, player, [
+    ['ruling', posts[43]!, pipewrench], ['trapStruck', posts[41]!, spritey], ['ruling', posts[42]!, hooligan], ['trapStruck', posts[43]!, pipewrench], ['ruling', posts[41]!, spritey],
+  ]);
   /*
    * The boards draw the player's HUD on Pipewrench. Which character the HUD shows is this device's
    * choice (engine/ui/player.tsx), not the server's, so the fixture makes it on the device, as the

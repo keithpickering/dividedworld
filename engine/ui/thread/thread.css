@@ -325,7 +325,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4em 1em;
-  margin: 0 0 0.6em;
+  margin: 0.6em 0;
   padding: 0.3em 0.6em;
   /* Kept while the state loads (the button's 44px and the strip's padding), so the thread does not shift when it arrives. */
   min-height: calc(44px + 0.6em);

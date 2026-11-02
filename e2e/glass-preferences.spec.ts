@@ -60,7 +60,10 @@ async function linesOffGround(page: Page): Promise<string[]> {
   });
 }
 
-/** Every line of text cut off: past the window's sides, or past an ancestor that clips it. */
+/**
+ * Every line of text cut off: past the window's sides, or past an ancestor that clips it. The menu bar's tab strip is left out: on the one-column layout
+ * it is a strip that scrolls sideways by design (shell.css), and with the Alerts and Updates tabs the strip is wider than a 1280px window at 200% text.
+ */
 async function clipped(page: Page): Promise<string[]> {
   return page.evaluate(async () => {
     await document.fonts.ready;
@@ -70,7 +73,7 @@ async function clipped(page: Page): Promise<string[]> {
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const text = n.textContent?.trim();
       const el = n.parentElement;
-      if (!text || !el || el.closest('[aria-hidden="true"], .kb-visually-hidden, script, style, option, [hidden]')) continue;
+      if (!text || !el || el.closest('[aria-hidden="true"], .kb-visually-hidden, script, style, option, [hidden], .kb-glass-menu-list')) continue;
       const range = document.createRange();
       range.selectNodeContents(n);
       for (const r of range.getClientRects()) {

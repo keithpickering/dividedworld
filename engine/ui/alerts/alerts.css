@@ -42,12 +42,12 @@
   display: inline-flex;
   align-items: center;
   min-height: 52px;
-  padding: 0 20px;
+  padding: 0 16px;
   border: 1px solid color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
   background: transparent;
   color: var(--kb-glass-text-2);
   font: 800 var(--kb-glass-size-body) / 1 var(--kb-glass-font-body);
-  letter-spacing: 2px;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -80,6 +80,8 @@
 }
 
 .kb-alerts-board {
+  /* flow-root keeps the first divider's own 26px margin from collapsing into this one: the board sets its divider 26px under its list's top. */
+  display: flow-root;
   margin-top: 30px;
 }
 
@@ -106,6 +108,7 @@
   align-items: center;
   gap: 16px;
   margin: 26px 0 4px;
+  font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-body);
   font-weight: 800;
   line-height: normal;

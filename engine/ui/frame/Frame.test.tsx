@@ -524,23 +524,23 @@ describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', (
     alerts.unread = 3;
     const { unmount } = setup();
     const link = await alertsLink();
-    await waitFor(() => expect(link).toHaveAccessibleName('Alerts, 3 new'));
+    await waitFor(() => expect(link).toHaveAccessibleName('Alerts 3 new'));
     expect(link.querySelector('.kb-hud-alerts-count')).toHaveTextContent('3');
     unmount();
     alerts.unread = ALERTS_UNREAD_BOUND;
     setup();
     const bound = await alertsLink();
-    await waitFor(() => expect(bound).toHaveAccessibleName('Alerts, 9+ new'));
+    await waitFor(() => expect(bound).toHaveAccessibleName('Alerts 9+ new'));
     expect(bound.querySelector('.kb-hud-alerts-count')).toHaveTextContent('9+');
   });
 
   test('the count is read again on each page', async () => {
     alerts.unread = 1;
     setup(true, undefined, <Link to="/b/general">go</Link>);
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Alerts, 1 new' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Alerts 1 new' })).toBeInTheDocument());
     alerts.unread = 4;
     await userEvent.click(screen.getByRole('link', { name: 'go' }));
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Alerts, 4 new' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Alerts 4 new' })).toBeInTheDocument());
   });
 
   test('the count is read again when an alert arrives, and the account\'s channel is opened once', async () => {
@@ -549,7 +549,7 @@ describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', (
     await waitFor(() => expect(alerts.account).not.toBeNull());
     alerts.unread = 2;
     await act(async () => { alerts.account!.onAlert?.({ ...quoted('q1'), kind: 'hint', sub: 'leading:x' }); });
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Alerts, 2 new' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Alerts 2 new' })).toBeInTheDocument());
     expect(alerts.subscribed).toBe(1);
   });
 

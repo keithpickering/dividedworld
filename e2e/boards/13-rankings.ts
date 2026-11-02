@@ -18,16 +18,16 @@ const seen = new Map<string, number>();
 const cell = (id: string, name: string): Landmark => {
   const nth = seen.get(name) ?? 0;
   seen.set(name, nth + 1);
-  return { id, role: 'cell', name, within: 'table', nth };
+  return { id, role: 'cell', name, within: 'table', nth, origin: 'table' };
 };
 
 /** A row: its header (the name, with Yours on the player's own), its link, and its place, rank and standing. */
 function row(n: number, name: string, place: string, rank: string, standing: string, own: boolean): Landmark[] {
   const id = `row-${n}`;
   return [
-    { id, role: 'rowheader', name: own ? `${name} Yours` : name, within: 'table', type: false },
-    { id: `${id}-name`, role: 'link', name, within: id },
-    ...(own ? [{ id: `${id}-yours`, role: 'text', name: 'Yours', within: id }] : []),
+    { id, role: 'rowheader', name: own ? `${name} Yours` : name, within: 'table', type: false, origin: 'table' },
+    { id: `${id}-name`, role: 'link', name, within: id, origin: 'table' },
+    ...(own ? [{ id: `${id}-yours`, role: 'text', name: 'Yours', within: id, origin: 'table' }] : []),
     cell(`${id}-place`, place),
     cell(`${id}-rank`, rank),
     cell(`${id}-standing`, standing),
@@ -47,25 +47,39 @@ const manifest: BoardManifest = {
      * Machine's among them (the glass build's Part 3 added it).
      */
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
-    { id: 'menu-back', role: 'link', name: 'ESC Back to the board', buildName: 'Back to the board', within: 'menu' },
-    { id: 'menu-vending', role: 'link', name: 'Vending Machine', within: 'menu' },
-    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu' },
-    { id: 'menu-rankings', role: 'link', name: 'Rankings', within: 'menu' },
-    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu' },
-    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu' },
+    { id: 'menu-back', role: 'link', name: 'ESC Back to the board', buildName: 'Back to the board', within: 'menu', box: 'height' },
+    /*
+     * REVISED by the alerts design (docs/plans/2026-11-02-alerts-design.md, sections 4, 6 and 7; the menu as docs/research/2026-11-02-alerts/02-alerts.html draws it):
+     * the tabs are now Alerts, Vending Machine, My characters, Season, My log, Updates and Settings after Back, and Rankings is the Season
+     * tab's page. This board is a record of the earlier menu and is not edited, so the build's tabs sit further right than this board
+     * draws them (the new menu sets its tabs 16px padded and spaced 1.5px, with Back 8px further left, to hold eight): Back and each tab are compared by their y and height and their type, not their x and width. The Season tab is this board's Rankings. The new menu
+     * is held in full by e2e/boards/02-alerts.ts.
+     */
+    { id: 'menu-vending', role: 'link', name: 'Vending Machine', within: 'menu', box: 'height' },
+    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu', box: 'height' },
+    { id: 'menu-rankings', role: 'link', name: 'Rankings', buildName: 'Season', within: 'menu', box: 'height' },
+    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu', box: 'height' },
+    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu', box: 'height' },
 
     /* The heading, the season's line and the lead. */
-    { id: 'title', role: 'heading', name: 'Rankings' },
-    { id: 'season', role: 'text', name: 'Season 1 · Settled Oct 30, 8:17 AM' },
-    { id: 'lead', role: 'text', name: 'The season\'s standings, as the last settlement left them. Your own characters are marked, with their classes, which only you see here. Anyone else\'s class shows only once its player has revealed it.' },
+    /*
+     * REVISED by the alerts design (docs/plans/2026-11-02-alerts-design.md, section 7; docs/research/2026-11-02-alerts/04-season-news.html): Rankings is
+     * the Season page's first tab, under the heading "Season 1" with the tabs beside it and the season's line beneath, so this board's heading and
+     * line are not where the page now puts them, and the table sits 82px lower. This board is a record and is not edited: the heading, the line and
+     * the lead are found and compared by their type, and the table, its heads and every row are compared as they sit in the table (`origin`), as the
+     * Main board's posts are from their own corner. The page's heading, tabs and News tab are held by e2e/boards/04-season-news.ts.
+     */
+    { id: 'title', role: 'heading', name: 'Rankings', buildName: 'Season 1', box: 'none' },
+    { id: 'season', role: 'text', name: 'Season 1 · Settled Oct 30, 8:17 AM', box: 'none' },
+    { id: 'lead', box: 'none', role: 'text', name: 'The season\'s standings, as the last settlement left them. Your own characters are marked, with their classes, which only you see here. Anyone else\'s class shows only once its player has revealed it.' },
 
     /* The table and its heads. */
-    { id: 'table', role: 'table', name: 'Season 1 rankings, highest standing first', type: false },
-    { id: 'head-place', role: 'columnheader', name: 'Place', within: 'table' },
-    { id: 'head-character', role: 'columnheader', name: 'Character', within: 'table' },
-    { id: 'head-rank', role: 'columnheader', name: 'Rank', within: 'table' },
-    { id: 'head-standing', role: 'columnheader', name: 'Standing', within: 'table' },
-    { id: 'head-class', role: 'columnheader', name: 'Class', within: 'table' },
+    { id: 'table', role: 'table', name: 'Season 1 rankings, highest standing first', type: false, box: 'size' },
+    { id: 'head-place', role: 'columnheader', name: 'Place', within: 'table', origin: 'table' },
+    { id: 'head-character', role: 'columnheader', name: 'Character', within: 'table', origin: 'table' },
+    { id: 'head-rank', role: 'columnheader', name: 'Rank', within: 'table', origin: 'table' },
+    { id: 'head-standing', role: 'columnheader', name: 'Standing', within: 'table', origin: 'table' },
+    { id: 'head-class', role: 'columnheader', name: 'Class', within: 'table', origin: 'table' },
 
     /* Every row, in the standings' order. */
     ...row(1, 'Spritey', '1', 'Main Eventer', '6.50', true),
@@ -79,16 +93,16 @@ const manifest: BoardManifest = {
     ...row(9, 'Ringside 4', '6', 'Jobber', '0.00', false),
 
     /* The classes, by their words in the table: the player's own filled, the two said in public outlined with their dates. */
-    { id: 'class-spritey', role: 'text', name: 'Jabroni', within: 'table' },
-    { id: 'class-hooligan', role: 'text', name: 'Face', within: 'table', nth: 0 },
-    { id: 'class-pipewrench', role: 'text', name: 'Face', within: 'table', nth: 1 },
-    { id: 'class-gloomba', role: 'text', name: 'Heel', within: 'table' },
-    { id: 'revealed-gloomba', role: 'text', name: 'Revealed Oct 30', within: 'table' },
-    { id: 'class-thwompson', role: 'text', name: 'Lurker', within: 'table' },
-    { id: 'revealed-thwompson', role: 'text', name: 'Revealed Oct 8', within: 'table' },
-    { id: 'turned-thwompson', role: 'text', name: 'Has Turned since Oct 30', within: 'table' },
+    { id: 'class-spritey', role: 'text', name: 'Jabroni', within: 'table', origin: 'table' },
+    { id: 'class-hooligan', role: 'text', name: 'Face', within: 'table', nth: 0, origin: 'table' },
+    { id: 'class-pipewrench', role: 'text', name: 'Face', within: 'table', nth: 1, origin: 'table' },
+    { id: 'class-gloomba', role: 'text', name: 'Heel', within: 'table', origin: 'table' },
+    { id: 'revealed-gloomba', role: 'text', name: 'Revealed Oct 30', within: 'table', origin: 'table' },
+    { id: 'class-thwompson', role: 'text', name: 'Lurker', within: 'table', origin: 'table' },
+    { id: 'revealed-thwompson', role: 'text', name: 'Revealed Oct 8', within: 'table', origin: 'table' },
+    { id: 'turned-thwompson', role: 'text', name: 'Has Turned since Oct 30', within: 'table', origin: 'table' },
     /* No class for the rest: the dash is hidden from a reader and "Not revealed" from the eye, so each dash is compared by its box and type. */
-    ...[1, 2, 3, 4].map((n): Landmark => ({ id: `none-ringside-${n}`, role: 'text', name: '—', within: 'table', nth: n - 1 })),
+    ...[1, 2, 3, 4].map((n): Landmark => ({ id: `none-ringside-${n}`, role: 'text', name: '—', within: 'table', nth: n - 1, origin: 'table' })),
   ],
 };
 

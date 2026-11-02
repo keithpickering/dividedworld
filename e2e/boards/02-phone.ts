@@ -40,7 +40,12 @@ const manifest: BoardManifest = {
     /* The link's place follows the line above it, whose words are the armed card's (cards Task 3), so only where it starts is compared. */
     { id: 'hand-vending', role: 'link', name: 'Vending Machine', within: 'hand', box: 'position' },
     { id: 'hud', role: 'region', name: 'Game HUD', type: false },
-    { id: 'hud-swap', role: 'combobox', name: 'Posting as', within: 'hud' },
+    /*
+     * REVISED by the alerts design (docs/plans/2026-11-02-alerts-design.md, section 8; docs/research/2026-11-02-alerts/05-phone.html): on the phone the HUD's
+     * row gains a 52px Alerts bell between Posting as and Menu, so the select is narrower than this board draws it. This board is a record and is not
+     * edited; the select is compared by its place and type, not its width, and the bell is held by e2e/boards/05-phone.ts.
+     */
+    { id: 'hud-swap', role: 'combobox', name: 'Posting as', within: 'hud', box: 'position' },
     { id: 'hud-menu', role: 'button', name: 'Menu', within: 'hud' },
     { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards, open', within: 'hud' },
   ],

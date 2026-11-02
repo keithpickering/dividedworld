@@ -31,12 +31,19 @@ const manifest: BoardManifest = {
     /* The menu bar every glass page shares, the Vending Machine current. */
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
     /* The board writes the key cap into the link's name; the build hides it (MenuBar.tsx). */
-    { id: 'menu-back', role: 'link', name: 'ESC BACK TO THE BOARD', buildName: 'Back to the board', within: 'menu' },
-    { id: 'menu-vending', role: 'link', name: 'Vending Machine', within: 'menu' },
-    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu' },
-    { id: 'menu-rankings', role: 'link', name: 'Rankings', within: 'menu' },
-    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu' },
-    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu' },
+    { id: 'menu-back', role: 'link', name: 'ESC BACK TO THE BOARD', buildName: 'Back to the board', within: 'menu', box: 'height' },
+    /*
+     * REVISED by the alerts design (docs/plans/2026-11-02-alerts-design.md, sections 4, 6 and 7; the menu as docs/research/2026-11-02-alerts/02-alerts.html draws it):
+     * the tabs are now Alerts, Vending Machine, My characters, Season, My log, Updates and Settings after Back, and Rankings is the Season
+     * tab's page. This board is a record of the earlier menu and is not edited, so the build's tabs sit further right than this board
+     * draws them (the new menu sets its tabs 16px padded and spaced 1.5px, with Back 8px further left, to hold eight): Back and each tab are compared by their y and height and their type, not their x and width. The Season tab is this board's Rankings. The new menu
+     * is held in full by e2e/boards/02-alerts.ts.
+     */
+    { id: 'menu-vending', role: 'link', name: 'Vending Machine', within: 'menu', box: 'height' },
+    { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu', box: 'height' },
+    { id: 'menu-rankings', role: 'link', name: 'Rankings', buildName: 'Season', within: 'menu', box: 'height' },
+    { id: 'menu-log', role: 'link', name: 'My log', within: 'menu', box: 'height' },
+    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu', box: 'height' },
 
     /* The head: drawn in outline on the board and solid in the build (the glass measures no translucent type), so its box is compared. */
     { id: 'eyebrow', role: 'text', name: 'Spend Aura' },

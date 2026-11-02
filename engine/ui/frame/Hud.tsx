@@ -358,13 +358,15 @@ export function Hud() {
                 <Link
                   to={GLASS_NAV.alerts}
                   className="kb-hud-alerts kb-glass-skew"
-                  aria-label={unread === null ? 'Alerts' : `Alerts, ${unread} new`}
+                  data-kb-held={handOpen ? '' : undefined}
+                  aria-label={unread === null ? 'Alerts' : `Alerts ${unread} new`}
                 >
                   <svg className="kb-hud-bell kb-glass-upright" aria-hidden="true" focusable="false" width="22" height="24" viewBox="0 0 22 24">
                     <path d="M11 2.5c-3.6 0-6.2 2.8-6.2 6.4v4.6L2.5 17.6h17l-2.3-4.1V8.9c0-3.6-2.6-6.4-6.2-6.4z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
                     <path d="M8.2 20.2a2.9 2.9 0 0 0 5.6 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   </svg>
                   <span className="kb-hud-alerts-word kb-glass-upright">Alerts</span>
+                  {' '}
                   {unread !== null && <span className="kb-hud-alerts-count kb-glass-upright kb-num" aria-hidden="true">{unread}</span>}
                 </Link>
                 <div className="kb-hud-actions">

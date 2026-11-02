@@ -557,7 +557,6 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   return (
     <div className="kb-thread" data-kb-thread={thread} data-kb-known={feed.knownLast} aria-busy={busy || undefined}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {summary.title}</p>
-      {player.session.signedIn && <FollowControl thread={thread} />}
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
           <CalloutProvider met={player.session.signedIn ? cardsMet : null}>
@@ -587,6 +586,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
         </p>
       )}
       {pager('bottom')}
+      {/* Follow sits after the last post, where a reader decides whether to keep up: the board draws no control above the thread, so a strip there would push it down. */}
+      {player.session.signedIn && <FollowControl thread={thread} />}
       {systemBoard !== null && (
         <ActIndex.Provider value={index}>
           <ThreadCtx.Provider value={context}>
