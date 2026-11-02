@@ -5,7 +5,10 @@
  * Pacing: a page load shows one tip. The first to be decided spends the page's budget for its `group`; a later request of another
  * group is dropped for the load, and one of the same group (the HUD tour's three steps) queues behind it. A request is also dropped,
  * for the load, when it is decided while focus is in a text field or a contenteditable, while a game effect holds the screen
- * (`hold`), or while a modal is open. "A tip that cannot show waits for the next load": a dropped key is not asked again.
+ * (`hold`), or while a modal is open. A hold that begins under the tip already showing does not drop it: `active()` returns null (the
+ * spotlight hides, unseen) until the hold lets go, and then the same tip shows again. "A tip that cannot show waits for the next load": a dropped key is not asked again. A tip withdrawn after it was
+ * decided (its component unmounts, or its `when` goes false) is settled for the load all the same: if it was showing it goes, unseen,
+ * and it is not asked again.
  *
  * State: a tip shows only while the account's tips are on and its key is not among those seen. `see` and `skip` update this at once
  * and tell the account through the handlers; a write that fails leaves the account unchanged, so the tip shows again on the next
@@ -119,10 +122,12 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
       if (!settled.has(request.key) && current?.view.key !== request.key) { queue.push(entry); change(); }
       return () => {
         const at = queue.indexOf(entry);
-        if (at >= 0) queue.splice(at, 1);
+        let changed = false;
+        if (at >= 0) { queue.splice(at, 1); changed = true; }
         /* The page the tip points at is gone: the tip goes, and is not seen. */
-        if (current?.entry.id === entry.id) current = null;
-        change();
+        if (current?.entry.id === entry.id) { current = null; changed = true; }
+        /* A request already decided and gone from the queue leaves nothing to tell. */
+        if (changed) change();
       };
     },
     holding: () => holders.size > 0,

@@ -64,26 +64,26 @@ export function Frame({ children }: { readonly children: ReactNode }) {
 
   return (
     <TipsProvider>
-    <PlayProvider>
-      <div className="kb-frame">
-        <header className="kb-banner">
-          <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
-          <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
-          <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
-            Boards
-          </button>
-        </header>
-        <nav id={navId} className="kb-nav" aria-label="Main" data-kb-open={open || undefined}>
-          <ul>
-            {links.map((l) => (
-              <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.label}</Link></li>
-            ))}
-          </ul>
-        </nav>
-        <main ref={main} className="kb-page" tabIndex={-1}>{children}</main>
-        <Hud />
-      </div>
-    </PlayProvider>
+      <PlayProvider>
+        <div className="kb-frame">
+          <header className="kb-banner">
+            <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
+            <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
+            <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
+              Boards
+            </button>
+          </header>
+          <nav id={navId} className="kb-nav" aria-label="Main" data-kb-open={open || undefined}>
+            <ul>
+              {links.map((l) => (
+                <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.label}</Link></li>
+              ))}
+            </ul>
+          </nav>
+          <main ref={main} className="kb-page" tabIndex={-1}>{children}</main>
+          <Hud />
+        </div>
+      </PlayProvider>
     </TipsProvider>
   );
 }

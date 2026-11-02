@@ -1,6 +1,8 @@
 /*
  * The spotlight (Spotlight.tsx), to the boards docs/research/2026-11-02-onboarding/03-spotlight.html and 04-phone.html: the whole page dimmed and
  * blurred but for a sharp cut-out round the target, a ring round that, and Gabe's panel beside it or, on a phone, docked above the HUD.
+ * The panel's rules are written `.kb-tips .kb-tips-panel` so they outrank the glass's `.kb-glass-cut-dialog` (engine/ui/glass/base.css) whatever the
+ * order the two sheets load in.
  * Every color is a glass token; the scrim is the glass's ground at 72%, which the boards draw as rgba(3, 2, 8, .72).
  */
 .kb-tips {
@@ -29,12 +31,12 @@
   pointer-events: none;
 }
 
-.kb-tips-panel {
+.kb-tips .kb-tips-panel {
   --kb-cut: var(--kb-glass-chamfer-1);
   position: absolute;
   left: var(--kb-tip-left);
   top: var(--kb-tip-top, auto);
-  bottom: var(--kb-tip-bottom, auto);
+  bottom: auto;
   width: var(--kb-tip-width);
   box-sizing: border-box;
   padding: 22px 26px 20px;
@@ -42,7 +44,7 @@
   outline: none;
 }
 
-.kb-tips-panel::after {
+.kb-tips .kb-tips-panel::after {
   background: var(--kb-glass-sheet);
 }
 
@@ -186,7 +188,7 @@
 }
 
 /* The Phone board's layout (data-kb-layout, set from the glass's sizes): the panel docks as a sheet above the HUD, full width, and the pointer goes. */
-:where(:root[data-kb-layout='phone']) .kb-tips-panel {
+:where(:root[data-kb-layout='phone']) .kb-tips .kb-tips-panel {
   --kb-cut: 14px;
   left: 8px;
   right: 8px;
@@ -236,5 +238,5 @@
 
 @media (forced-colors: active) {
   .kb-tips-ring { border-color: CanvasText; }
-  .kb-tips-panel { outline: 1px solid CanvasText; }
+  .kb-tips .kb-tips-panel { outline: 1px solid CanvasText; }
 }

@@ -228,8 +228,65 @@ describe('the spotlight', () => {
     expect(dim.getAttribute('style') ?? dim.style.cssText).toMatch(/evenodd|clip-path/u);
     rect = { left: 100, top: 120, width: 50, height: 30 };
     act(() => { fireEvent.scroll(window); });
+    await frames();
     expect(ring().style.top).toBe('114px');
     spy.mockRestore();
+  });
+
+  /** Sizes for the geometry tests: the target's rect, and a dialog of a given height; everything else is empty. */
+  function sizes(target: { left: number; top: number; width: number; height: number }, panelHeight = 0) {
+    return vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const r = this.textContent === 'target grid' ? target : this.getAttribute('role') === 'dialog' ? { left: 0, top: 0, width: 580, height: panelHeight } : { left: 0, top: 0, width: 0, height: 0 };
+      return { ...r, x: r.left, y: r.top, right: r.left + r.width, bottom: r.top + r.height, toJSON: () => r } as DOMRect;
+    });
+  }
+  const frames = () => act(async () => { await new Promise((r) => requestAnimationFrame(() => r(null))); });
+
+  test('a target partly off the left edge is cut out only as far as the screen shows', async () => {
+    const fake = signedIn();
+    sizes({ left: -20, top: 200, width: 50, height: 30 });
+    open(fake, <Wants tip="grid" />);
+    await screen.findByRole('dialog');
+    const ring = document.querySelector<HTMLElement>('.kb-tips-ring')!;
+    expect(ring.style.left).toBe('0px');
+    expect(ring.style.width, 'from the screen edge to 6px past the target\'s right edge (30)').toBe('36px');
+  });
+
+  test('a target near the bottom of a short screen puts the whole panel, buttons and all, inside it', async () => {
+    const fake = signedIn();
+    Object.defineProperty(window, 'innerHeight', { value: 300, configurable: true });
+    sizes({ left: 100, top: 250, width: 50, height: 30 }, 280);
+    open(fake, <Wants tip="grid" />);
+    const box = await screen.findByRole('dialog');
+    const top = parseFloat(box.style.getPropertyValue('--kb-tip-top'));
+    expect(top).toBeGreaterThanOrEqual(8);
+    expect(top + 280, 'its bottom edge, where Got it and Skip all tips are').toBeLessThanOrEqual(300 - 8);
+  });
+
+  test('a scroll storm re-measures the target once a frame, not once an event', async () => {
+    const fake = signedIn();
+    const spy = sizes({ left: 100, top: 200, width: 50, height: 30 });
+    open(fake, <Wants tip="grid" />);
+    await screen.findByRole('dialog');
+    await frames();
+    const targetReads = () => spy.mock.contexts.filter((c) => (c as HTMLElement).textContent === 'target grid').length;
+    const before = targetReads();
+    act(() => { for (let i = 0; i < 5; i++) fireEvent.scroll(window); });
+    expect(targetReads(), 'nothing is read until the frame').toBe(before);
+    await frames();
+    expect(targetReads()).toBe(before + 1);
+  });
+
+  test('the next step replaces the words and keeps focus on its Got it, so a screen reader reads it afresh', async () => {
+    const fake = signedIn();
+    const step = (n: number) => ({ group: 'tour', step: { n, of: 2 } });
+    open(fake, <><Wants tip="tour-plate" options={step(1)} /><Wants tip="tour-orbs" options={step(2)} /></>);
+    const one = await screen.findByRole('dialog', { name: 'Title of tour-plate' });
+    const oldHeading = within(one).getByRole('heading');
+    await userEvent.click(within(one).getByRole('button', { name: 'Got it' }));
+    const two = await screen.findByRole('dialog', { name: 'Title of tour-orbs' });
+    expect(within(two).getByRole('heading'), 'a new element, not the old one reworded').not.toBe(oldHeading);
+    expect(within(two).getByRole('button', { name: 'Got it' })).toHaveFocus();
   });
 
   test('shows the step "2 of 3" with its pips', async () => {

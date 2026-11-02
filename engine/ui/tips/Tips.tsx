@@ -47,6 +47,7 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
       {children}
       {active && words && (
         <Spotlight
+          tipKey={active.key}
           title={words.title}
           line={words.line}
           step={active.step}
