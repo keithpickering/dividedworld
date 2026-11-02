@@ -37,26 +37,28 @@ const ROWS: readonly { readonly name: string; readonly cells: readonly [Quadrant
 export function ReactionGrid() {
   const { instance, ui } = useKayfa();
   return (
-    <table className="kb-guide-grid" aria-label="The reaction grid">
-      <thead>
-        <tr><td /><th scope="col">Negative</th><th scope="col">Positive</th></tr>
-      </thead>
-      <tbody>
-        {ROWS.map((row) => (
-          <tr key={row.name}>
-            <th scope="row">{row.name}</th>
-            {row.cells.map((q) => (
-              <td key={q}>
-                <b className="kb-guide-grid-name">{ui.quadrantLabels[q]}</b>
-                <span className="kb-guide-grid-set">
-                  {instance.reactions.filter((r) => r.quadrant === q).map((r) => <span key={r.key} role="img" aria-label={readable(r.key)}>{r.emoji}</span>)}
-                </span>
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="kb-guide-table-wrap" tabIndex={0}>
+      <table className="kb-guide-grid" aria-label="The reaction grid">
+        <thead>
+          <tr><td /><th scope="col">Negative</th><th scope="col">Positive</th></tr>
+        </thead>
+        <tbody>
+          {ROWS.map((row) => (
+            <tr key={row.name}>
+              <th scope="row">{row.name}</th>
+              {row.cells.map((q) => (
+                <td key={q}>
+                  <b className="kb-guide-grid-name">{ui.quadrantLabels[q]}</b>
+                  <span className="kb-guide-grid-set">
+                    {instance.reactions.filter((r) => r.quadrant === q).map((r) => <span key={r.key} role="img" aria-label={readable(r.key)}>{r.emoji}</span>)}
+                  </span>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
