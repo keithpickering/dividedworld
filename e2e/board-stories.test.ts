@@ -25,6 +25,16 @@ test('a story planted under an instance\'s ui folder is listed', () => {
   expect(boardStoryIds(roots)).toEqual(['boards-99-planted--seen']);
 });
 
+test('a title in double quotes, as one with an apostrophe must be, is read, and the real repository lists Feelin\' Fab', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-stories-'));
+  made.push(repo);
+  const ui = path.join(repo, 'instances', 'planted', 'ui');
+  fs.mkdirSync(ui, { recursive: true });
+  fs.writeFileSync(path.join(ui, 'Quoted.board.stories.tsx'), 'const meta = { title: "Boards/98 Feelin\' Quoted" };\nexport const Seen = {};\n');
+  expect(boardStoryIds(instanceUis(repo))).toEqual(['boards-98-feelin-quoted--seen']);
+  expect(boardStoryIds()).toContain('boards-10-feelin-fab--twenty-light');
+});
+
 test('an instance with no ui folder adds none, and the real repository lists the Hold stories', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-stories-'));
   made.push(repo);

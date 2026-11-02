@@ -36,8 +36,9 @@ function storyFiles(dir: string): string[] {
 export function boardStoryIds(roots: readonly string[] = [ENGINE_UI, ...instanceUis()]): string[] {
   return roots.flatMap((root) => storyFiles(root).map((file) => ({ root, file }))).flatMap(({ root, file }) => {
     const text = fs.readFileSync(file, 'utf8');
-    /* The meta's title: the object a file's `meta` names (a story's own data may have titles too). */
-    const title = /\bconst meta\b[^=]*=\s*\{[^}]*?\btitle:\s*'([^']+)'/.exec(text)?.[1];
+    /* The meta's title: the object a file's `meta` names (a story's own data may have titles too), in either quote (one with an
+       apostrophe, Feelin' Fab's, is double-quoted). */
+    const title = /\bconst meta\b[^=]*=\s*\{[^}]*?\btitle:\s*(?:'([^']+)'|"([^"]+)")/.exec(text)?.slice(1).find(Boolean);
     if (!title) throw new Error(`${path.relative(root, file)} has no title the story ids can be worked out from`);
     return [...text.matchAll(/^export const (\w+)\b/gm)].map((m) => toId(title, storyNameFromExport(m[1]!)));
   }).sort();
