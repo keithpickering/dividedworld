@@ -60,6 +60,7 @@
 }
 
 .kb-alerts-tab:focus-visible,
+.kb-alerts-row:focus-visible,
 .kb-alerts-unfollow:focus-visible,
 .kb-alerts a:focus-visible,
 .kb-alerts-board:focus-visible {

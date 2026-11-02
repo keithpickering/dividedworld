@@ -482,6 +482,23 @@ describe('where focus goes', () => {
     expect(document.activeElement).toBe(screen.getByRole('group', { name: 'Your alerts' }));
   });
 
+  test('a failed Older leaves no claim on focus: a later change of rows moves it only to where that change says', async () => {
+    const w = world({ mark: null });
+    for (let i = 0; i < 40; i++) w.fake.seed.alert(w.me, { kind: 'hint', act: w.opener, character: w.pipe, sub: `h${i}`, at: T0 + 100 * H + i * MIN });
+    await show(w);
+    await screen.findByRole('button', { name: 'Older' });
+    vi.spyOn(w.fake, 'alerts').mockRejectedValueOnce(new Error('offline'));
+    await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+    await screen.findByRole('alert');
+    const before = document.activeElement;
+    expect(rows()).toHaveLength(ALERTS_PAGE);
+    // The followed row is on the second page, so the page that reads again brings new rows; focus goes to the first of them, once.
+    await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+    await waitFor(() => expect(rows().length).toBeGreaterThan(ALERTS_PAGE));
+    expect(document.activeElement).toBe(rows()[ALERTS_PAGE]);
+    expect(before).not.toBe(rows()[ALERTS_PAGE]);
+  });
+
   test('on Older, to the first row that was loaded', async () => {
     const w = world({ mark: null });
     for (let i = 0; i < 40; i++) w.fake.seed.alert(w.me, { kind: 'hint', act: w.opener, character: w.pipe, sub: `h${i}`, at: T0 + 100 * H + i * MIN });

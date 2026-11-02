@@ -113,7 +113,8 @@ export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null)
     setRead({ ...state, older: 'loading' });
     (async () => {
       const page = await api.alerts(last.at);
-      const fresh = page.filter((r) => !data.rows.some((h) => rowKey(h) === rowKey(r)));
+      const held = new Set(data.rows.map(rowKey));
+      const fresh = page.filter((r) => !held.has(rowKey(r)));
       const [acts, started, reading] = await Promise.all([
         actsAround(api, fresh, data.acts),
         startedAmong(api, fresh, data.mine, data.started),

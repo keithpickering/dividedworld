@@ -157,11 +157,14 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
       lis.find((l) => !before.has(l.getAttribute('data-kb-key')!))?.focus();
     }
   }, [data.rows]);
+  /* A page that could not be read leaves nothing to move focus to, and must not claim a later change of rows. */
+  useEffect(() => { if (older === 'failed') known.current = null; }, [older]);
   const unfollow = async (thread: Id) => {
     const order = [...fresh, ...earlier];
     const at = order.findIndex((i) => i.rows[0]!.kind === 'followed' && i.rows[0]!.thread === thread);
     const next = order[at + 1] ?? order[at - 1];
-    pending.current = { key: at < 0 || next === undefined ? null : next.key };
+    /* Only a row that is on the page leaves it, so only then is there focus to move on. */
+    pending.current = at < 0 ? null : { key: next === undefined ? null : next.key };
     const ok = await onUnfollow(thread);
     if (!ok) pending.current = null;
     return ok;
