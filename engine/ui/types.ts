@@ -69,6 +69,17 @@ export interface UiCopy {
    * none), such as "a card that holds you in place still does, only instantly."
    */
   readonly reducedMotionCard: string;
+  /** Words where the instance names a thing in an alert; absent, the engine's plain words stand (engine/ui/alerts/words.ts). */
+  readonly alerts?: AlertCopy;
+}
+
+/** The instance's words for the alerts that name something it invented. Each is plain and true: the glass describes the game, it never bluffs. */
+export interface AlertCopy {
+  /**
+   * A hint's line and its detail by the pattern that fired (`leading:<quadrant>`, `divisive` or `thunder`, the alerts design's section 5);
+   * undefined for a pattern the instance has no words for, which is then said in the engine's plain words. May joke, may not mislead.
+   */
+  readonly hint?: (pattern: string) => { readonly line: string; readonly detail: string } | undefined;
 }
 
 /**
