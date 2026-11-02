@@ -318,3 +318,34 @@
     transform: none;
   }
 }
+
+/* The glass's control strip above the thread (Follow / Unfollow): the glass's own look, outside every post. */
+.kb-thread-glass {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em 1em;
+  margin: 0.6em 0;
+  padding: 0.3em 0.6em;
+  /* Kept while the state loads (the button's 44px and the strip's padding), so the thread does not shift when it arrives. */
+  min-height: calc(44px + 0.6em);
+  box-sizing: border-box;
+}
+
+.kb-thread-glass-note {
+  font-size: var(--kb-glass-size-body);
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-thread-follow {
+  min-height: 44px;
+  padding: 0.3em 1.2em;
+  font: inherit;
+  color: var(--kb-glass-text-hi);
+  border: 0;
+  cursor: pointer;
+}
+
+.kb-thread-follow[aria-disabled] {
+  cursor: progress;
+}

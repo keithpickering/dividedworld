@@ -29,7 +29,20 @@ describe('the menu bar', () => {
     renderInWorld(<MenuBar />, { path: '/characters', seed: signedIn });
     const back = await within(bar()).findByRole('link', { name: 'Back to the board' });
     expect(back).toHaveAttribute('aria-keyshortcuts', 'Escape');
-    expect(tabs()).toEqual(['Back to the board', 'Vending Machine', 'My characters', 'Rankings', 'My log', 'Settings']);
+    expect(tabs()).toEqual(['Back to the board', 'Alerts', 'Vending Machine', 'My characters', 'Season', 'My log', 'Updates', 'Settings']);
+  });
+  test('Alerts and Updates are links to their pages, each the current page there and no other', async () => {
+    const { unmount } = renderInWorld(<MenuBar />, { path: '/alerts', seed: signedIn });
+    const alerts = await within(bar()).findByRole('link', { name: 'Alerts' });
+    expect(alerts).toHaveAttribute('href', '/alerts');
+    expect(alerts).toHaveAttribute('aria-current', 'page');
+    expect(within(bar()).getByRole('link', { name: 'Updates' })).not.toHaveAttribute('aria-current');
+    unmount();
+    renderInWorld(<MenuBar />, { path: '/updates', seed: signedIn });
+    const updates = await within(bar()).findByRole('link', { name: 'Updates' });
+    expect(updates).toHaveAttribute('href', '/updates');
+    expect(updates).toHaveAttribute('aria-current', 'page');
+    expect(within(bar()).getByRole('link', { name: 'Alerts' })).not.toHaveAttribute('aria-current');
   });
   test('the current page carries aria-current, the character pages under My characters and invites under Settings', async () => {
     const { unmount } = renderInWorld(<MenuBar />, { path: '/characters/new', seed: signedIn });
@@ -50,14 +63,14 @@ describe('the menu bar', () => {
     expect(await within(bar()).findByRole('link', { name: 'Vending Machine' })).toHaveAttribute('aria-current', 'page');
     expect(within(bar()).getByRole('link', { name: 'My characters' })).not.toHaveAttribute('aria-current');
   });
-  test('Rankings goes to its own page, marked current there', async () => {
+  test('Season goes to its own page, marked current there', async () => {
     const { unmount } = renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
-    const rankings = await within(bar()).findByRole('link', { name: 'Rankings' });
-    expect(rankings).toHaveAttribute('href', '/rankings');
-    expect(rankings).not.toHaveAttribute('aria-current');
+    const season = await within(bar()).findByRole('link', { name: 'Season' });
+    expect(season).toHaveAttribute('href', '/season');
+    expect(season).not.toHaveAttribute('aria-current');
     unmount();
-    renderInWorld(<MenuBar />, { path: '/rankings', seed: signedIn });
-    expect(await within(bar()).findByRole('link', { name: 'Rankings' })).toHaveAttribute('aria-current', 'page');
+    renderInWorld(<MenuBar />, { path: '/season', seed: signedIn });
+    expect(await within(bar()).findByRole('link', { name: 'Season' })).toHaveAttribute('aria-current', 'page');
     expect(within(bar()).getByRole('link', { name: 'Settings' })).not.toHaveAttribute('aria-current');
   });
   test('My log goes to the log, and is the current page there', async () => {
@@ -177,14 +190,14 @@ describe('the ADMIN tab', () => {
   test('is not on a player\'s menu, and is the last tab on an admin\'s, going to the queue and marked current there', async () => {
     const { unmount } = renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
     await within(bar()).findByRole('link', { name: 'Settings' });
-    await waitFor(() => expect(tabs()).toEqual(['Back to the board', 'Vending Machine', 'My characters', 'Rankings', 'My log', 'Settings']));
+    await waitFor(() => expect(tabs()).toEqual(['Back to the board', 'Alerts', 'Vending Machine', 'My characters', 'Season', 'My log', 'Updates', 'Settings']));
     expect(within(bar()).queryByRole('link', { name: 'Admin' })).toBeNull();
     unmount();
     renderInWorld(<MenuBar />, { path: '/admin/queue', seed: (fake) => fake.signInAs(fake.seed.account('boss', { admin: true })) });
     const admin = await within(bar()).findByRole('link', { name: 'Admin' });
     expect(admin).toHaveAttribute('href', '/admin/queue');
     expect(admin).toHaveAttribute('aria-current', 'page');
-    expect(tabs()).toEqual(['Back to the board', 'Vending Machine', 'My characters', 'Rankings', 'My log', 'Settings', 'Admin']);
+    expect(tabs()).toEqual(['Back to the board', 'Alerts', 'Vending Machine', 'My characters', 'Season', 'My log', 'Updates', 'Settings', 'Admin']);
   });
 
   test('the current Admin tab is scrolled into view once it arrives, since the admin flag is asked for after the first scroll', async () => {

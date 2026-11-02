@@ -19,7 +19,7 @@ test('opens a profile from a postbit, and pages the public record by keyboard', 
   await expect(page).toHaveURL(/record\?page=2/u);
 });
 
-for (const path of ['/standings']) {
+for (const path of ['/season?tab=rankings']) {
   test(`${path} has no horizontal scroll at 320px wide`, async ({ page }) => {
     await page.goto(path);
     await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible();
@@ -29,7 +29,7 @@ for (const path of ['/standings']) {
 }
 
 test('a profile and its record have no horizontal scroll at 320px wide', async ({ page }) => {
-  await page.goto('/standings');
+  await page.goto('/season?tab=rankings');
   await page.getByRole('link', { name: 'Pipewrench' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Pipewrench' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'About Pipewrench' })).toContainText('Posts:');

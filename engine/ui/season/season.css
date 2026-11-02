@@ -1,0 +1,209 @@
+/*
+ * The season page on the glass (Season.tsx), as board 04-season-news.html draws it: the heading at the Settings board's 112px with the
+ * two tabs beside it (the open one filled in the neon, the other framed in the pale rule), a lede, and under it the News feed: a time
+ * column of 180px and, beside it, an item headed in Anton with its words, its quotation set off by a rule, and the results' top three in
+ * three chamfered panels. The Rankings tab is Rankings' own (rankings.css). The text stands in calms (calm.css).
+ *
+ * Sizes are the boards' px or the glass's size tokens, never under the label (20px) on the Main board's layout (engine/ui/glass/board.test.tsx
+ * reads this file). On the Phone board's layout the time stacks over the item and the podium is a column.
+ */
+.kb-season {
+  padding-top: 32px;
+}
+
+.kb-season-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 32px;
+}
+
+.kb-season-title {
+  margin: 0;
+  font-size: 7rem;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+.kb-season-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.kb-season-tab {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 16px;
+  font-size: 1.3125rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  color: var(--kb-glass-text);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-pale) 60%, transparent);
+}
+
+.kb-season-tab[data-kb-current] {
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  border-color: var(--kb-glass-neon);
+}
+
+.kb-season-tab:focus-visible {
+  outline: 3px solid var(--kb-glass-text);
+  outline-offset: 3px;
+}
+
+.kb-season-panel {
+  margin-top: 8px;
+}
+
+.kb-season-lede,
+.kb-season-empty {
+  max-width: 720px;
+  margin: 20px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-season-feed {
+  margin: 17px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-season-item {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 28px;
+  padding: 22px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-pale) 20%, transparent);
+}
+
+.kb-season-item time {
+  padding-top: 6px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-season-item h3 {
+  margin: 0;
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-m);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+.kb-season-item p {
+  max-width: 820px;
+  margin: 8px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-season-link {
+  color: var(--kb-glass-neon-text);
+  text-underline-offset: 3px;
+}
+
+.kb-season-quote {
+  max-width: 820px;
+  margin: 12px 0 0;
+  padding: 10px 0 10px 18px;
+  font-size: var(--kb-glass-size-lead);
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1.4;
+  border-left: 1px solid var(--kb-glass-pale);
+  color: var(--kb-glass-text);
+}
+
+.kb-season-names {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--kb-glass-size-body);
+  line-height: 1.7;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-season-podium-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  max-width: 900px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-season-podium {
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  outline: 1px solid color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+  outline-offset: -1px;
+}
+
+.kb-season-place {
+  display: block;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-season-name {
+  display: block;
+  margin: 4px 0;
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-title);
+  font-weight: 400;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.kb-season-name a {
+  color: var(--kb-glass-text);
+  text-decoration-color: color-mix(in srgb, var(--kb-glass-pale) 60%, transparent);
+  text-underline-offset: 4px;
+}
+
+.kb-season-standing {
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-season-more {
+  margin-top: 24px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-season-title {
+  font-size: 4rem;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-season-item {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-season-podium-list {
+  grid-template-columns: minmax(0, 1fr);
+}

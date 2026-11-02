@@ -49,6 +49,9 @@ function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, u
       if (fn === 'instance_settings') return databaseSettings as T;
       if (fn === 'due_broadcasts') return outbox.slice(0, Number(args.most)) as T;
       if (fn === 'broadcasts_sent') { const ids = args.ids as number[]; outbox.splice(0, outbox.length, ...outbox.filter((m) => !ids.includes(m.id))); return ids.length as T; }
+      // A release keeps the rows waiting; a row given up is dead, which the SQL keeps but no longer hands out (0061_account_channel.sql).
+      if (fn === 'broadcasts_release' || fn === 'broadcasts_renew') return (args.ids as number[]).length as T;
+      if (fn === 'broadcasts_dead') { const ids = args.ids as number[]; outbox.splice(0, outbox.length, ...outbox.filter((m) => !ids.includes(m.id))); return ids.length as T; }
       if (fn === 'apply_settlement') {
         const key = `${args.window_start}/${args.window_end}`;
         // Another run applied this window first.
@@ -68,7 +71,8 @@ test('a run settles the next window: reads its input, runs the instance\'s class
   const { db, calls } = fakeDb();
   const out = await runSettlement(db, instance, new Date(TO).toISOString());
   assert.equal(out.status, 'applied');
-  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement', 'next_settlement_window', 'due_broadcasts']);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement', 'next_settlement_window']);
+  // With no sender, the outbox is not even claimed: a claim nobody sends would hold the rows for its lease (a run that sends comes after).
   const apply = calls[3]!.args;
   assert.deepEqual(apply.entries, [
     // Heat: Cat's, Eve's and Fay's whole votes and half of Dee's; a shrug: the other half of Dee's.
@@ -121,7 +125,7 @@ test('a database with no economy row is refused, never settled on the code\'s nu
 test('a run with nothing to settle reads no settings, and sends what still waits to be sent', async () => {
   const { db, calls } = fakeDb();
   await runSettlement(db, instance, new Date(FROM).toISOString());
-  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'due_broadcasts']);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window']);
 });
 
 test('what a settlement posted is sent live from the outbox, then cleared; a failed send leaves it for the next run', async () => {
@@ -138,6 +142,15 @@ test('what a settlement posted is sent live from the outbox, then cleared; a fai
   assert.equal(out.status, 'nothing to settle');
   assert.deepEqual(sent, [[{ topic: 'thread:t', event: 'act', payload: { id: 'a0' } }, { topic: 'thread:t', event: 'act', payload: { id: 'a1' } }, { topic: 'thread:t', event: 'act', payload: { id: 'a2' } }]]);
   assert.equal(outbox.length, 0, 'sent, they are cleared');
+});
+
+test('the announcement of a settlement (queued by the SQL as it is applied) goes out on reach once, with only its id and time, then is cleared', async () => {
+  const outbox: { id: number; topic: string; event: string; payload: unknown }[] = [{ id: 1, topic: 'reach', event: 'settled', payload: { id: 7, at: '2026-11-02T08:00:01Z' } }];
+  const { db } = fakeDb(day, undefined, {}, [], outbox);
+  const sent: unknown[][] = [];
+  await runSettlement(db, instance, new Date(TO).toISOString(), { deliver: async (m) => { sent.push([...m]); return 'sent' as const; } });
+  assert.deepEqual(sent, [[{ topic: 'reach', event: 'settled', payload: { id: 7, at: '2026-11-02T08:00:01Z' } }]]);
+  assert.equal(outbox.length, 0);
 });
 
 test('a reveal larger than one send goes out in batches, every one of it', async () => {

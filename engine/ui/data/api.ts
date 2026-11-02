@@ -18,6 +18,7 @@
  */
 import type { Quadrant, Span } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
+import type { AlertKind } from '../../rules/alerts.ts';
 
 export type Id = string;
 
@@ -72,6 +73,10 @@ export interface ScreenSettings {
    * the keys its rules read, from the economy row an admin tunes. A key it lacks is the compiled economy's (`withCardEconomy`).
    */
   readonly cardEconomy: Readonly<Record<string, number>>;
+  /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
+  readonly toastDefaults: readonly AlertKind[];
+  /** How long a toast stays, in milliseconds, where a world sets it (the boards fixture holds its toasts); absent, the HUD's six seconds. */
+  readonly toastMs?: number;
 }
 
 /* ------------------------------------------------------------- public reads ---- */
@@ -129,7 +134,7 @@ export interface ThreadSummary {
   readonly originSeq: number | null;
 }
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring';
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update';
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -182,8 +187,8 @@ export interface Character {
   readonly joined: string;
   /** Set only for a staff character (a Boss or a Mod Bot): the instance's key for it. A staff member is known to be staff, signed in or not. */
   readonly staff?: string;
-  /** A Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR. Set with `staff`. */
-  readonly staffKind?: 'boss' | 'bot';
+  /** A Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; the developer persona (the Updates page's author) has no badge. Set with `staff`. */
+  readonly staffKind?: 'boss' | 'bot' | 'developer';
 }
 
 /** A character's season standing and its place, as a page of the standings lists it (standings_page). */
@@ -503,13 +508,28 @@ export interface Preferences {
    * set. Changed only by `meetCard` and `forgetCardsMet`, never by `setPreferences`; at most 64, read by its own account alone.
    */
   readonly cardsMet: readonly string[];
+  /**
+   * When the account last opened Alerts (an ISO time), or null if it never has: what arrived after it is new, on every device. Changed
+   * only by `seeAlerts`, only forward; read by its own account alone.
+   */
+  readonly alertsSeenAt: string | null;
+  /** The end (an ISO time) of the last settlement whose summary the account has seen, or null. Changed only by `seeSettlement`, only forward. */
+  readonly settlementSeen: string | null;
+  /**
+   * The alert kinds the player keeps on toast (Settings › Notifications), exactly those; an empty list is a choice (nothing toasts). Null means
+   * they never chose, and the instance's `toastDefaults` hold. Changed by `setPreferences` (null there puts it back); read by its own account alone.
+   */
+  readonly toasts: readonly AlertKind[] | null;
 }
 
-/** What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `forgetCardsMet`). */
-export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet'>>;
+/**
+ * What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `forgetCardsMet`) or the two marks.
+ * A `toasts` of null puts the choice back to the instance's defaults; a key left out leaves the choice as it is.
+ */
+export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet' | 'alertsSeenAt' | 'settlementSeen'>>;
 
 /** What an account's preferences are before it has set any (account_preferences' defaults). */
-export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [] };
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null };
 
 export interface MyInvite {
   readonly id: number;
@@ -589,12 +609,135 @@ export interface CardEvent {
   readonly at: string;
 }
 
-/** A play another player landed on one of the player's own posts (`my_posts_played_on`). */
+/**
+ * A play another player landed on one of the player's own posts, characters or threads (`my_posts_played_on`). `post` is the post the
+ * play sits on; `targetName` is the character's name or the thread's title the play landed on, null for a post.
+ */
 export interface PlayOnMine {
   readonly play: Id;
   readonly post: Id;
   readonly at: string;
+  readonly reach: 'post' | 'character' | 'thread';
+  readonly targetName: string | null;
+  /** The player's character the row is about: the one played on, the thread's starter, or the post's author. */
+  readonly targetCharacter: Id | null;
 }
+
+/**
+ * A thread the player follows that has posts past their place (`my_followed_threads`). `newPosts` is the count of posts by
+ * characters the player does not own, counted up to `FOLLOWED_COUNT_CAP` (a count at the cap means that many or more); `newestAt`
+ * is the newest such post's time.
+ */
+export interface FollowedThread {
+  readonly thread: Id;
+  readonly board: Id;
+  readonly title: string;
+  readonly newPosts: number;
+  readonly newestAt: string;
+}
+/** The most new posts a followed thread counts (supabase/migrations/0059_follows.sql): a screen words a count at it as "100+". */
+export const FOLLOWED_COUNT_CAP = 100;
+
+export type { AlertKind };
+
+/**
+ * One line of the player's Alerts (`my_alerts`, supabase/migrations/0060_alerts_read.sql): the kind, and the inputs of the words a
+ * screen says. Never a caster, a reactor, an account or a class. `at` is when it arrived: a written alert's time, a followed
+ * thread's newest new post, the time a settlement was applied. `sub` is a ruling's sub-key, or a settlement's id as text. `act` is
+ * the public Act a written alert is about (null for a followed thread and a settlement), `character` the player's character it
+ * concerns, `thread` and `title` the thread to open and its title, `name` that character's public name, `count` the new posts of a
+ * followed thread (to `FOLLOWED_COUNT_CAP`) or the characters a settlement moved. Any of them is null where it does not apply.
+ */
+export interface Alert {
+  readonly kind: AlertKind;
+  readonly sub: string | null;
+  readonly act: Id | null;
+  readonly character: Id | null;
+  readonly at: string;
+  readonly thread: Id | null;
+  readonly name: string | null;
+  readonly title: string | null;
+  readonly count: number | null;
+}
+/** One line of an update's plain "What changed" list: a bold label (it may be empty) and the words after it. */
+export interface UpdateChange {
+  readonly label: string;
+  readonly text: string;
+}
+
+/**
+ * One update, a post of the instance's developer persona (`updates`, supabase/migrations/0062_updates.sql), with the persona that wrote it.
+ * Public: it says nothing that depends on who reads. `avatar` is an asset key the instance's UI turns into a picture (null: none).
+ * `act` is the Act to react to and to spin a thread from; `thread` is the updates thread's id, which the board never lists.
+ */
+export interface Update {
+  readonly act: Id;
+  readonly thread: Id;
+  readonly character: Id;
+  readonly name: string;
+  readonly tagline: string;
+  readonly avatar: string | null;
+  readonly title: string;
+  readonly body: string;
+  readonly changes: readonly UpdateChange[];
+  readonly at: string;
+  readonly seq: number;
+}
+/** A page of Updates holds at most this many. */
+export const UPDATES_PAGE = 20;
+
+/** What a player made public of a character's class in a season (the reveal's `shown`): its reveals and its announced Turns, in order. */
+export interface SeasonShown {
+  readonly kind: 'reveal' | 'turn';
+  readonly act: Id;
+  readonly at: string;
+  /** A reveal: the class it named. */
+  readonly class: string | null;
+  /** A Turn announced with its old class: the class it left. */
+  readonly was: string | null;
+}
+/** One of the season's top three (the reveal's Acts), with its final place and standing. Public; the server marks no one's own. */
+export interface SeasonResult {
+  readonly character: Id;
+  readonly name: string;
+  readonly place: number;
+  readonly standing: number;
+  readonly shown: readonly SeasonShown[];
+}
+/** A name a tally Act holds: a debut, or a Turn (with the class it left where its player announced that, and the class it took where announced). */
+export interface TallyName {
+  readonly character: Id;
+  readonly name: string;
+  readonly class: string | null;
+  readonly was: string | null;
+}
+export type SeasonNewsKind = 'results' | 'tally' | 'bossArrived' | 'bossLeft';
+/**
+ * One item of season news (`season_news`, supabase/migrations/0063_season_news.sql): public, and the same for every reader. `act`, `thread` and
+ * `seq` name the Act to link (the reveal's header, the tally, or the Boss's post, which is null where the instance wrote no line for it).
+ * `results` carries the top three and `count`, the characters ranked; `tally` its debuts and Turns; a Boss row its `name` and the `quote` of its post.
+ */
+export interface SeasonNewsItem {
+  readonly kind: SeasonNewsKind;
+  readonly act: Id | null;
+  readonly thread: Id | null;
+  readonly seq: number | null;
+  readonly at: string;
+  readonly season: number;
+  readonly name: string | null;
+  readonly quote: string | null;
+  readonly count: number | null;
+  readonly top: readonly SeasonResult[];
+  readonly debuts: readonly TallyName[];
+  readonly turns: readonly TallyName[];
+}
+/** A page of season news holds at least this many (more only to keep the items of one instant together). */
+export const SEASON_NEWS_PAGE = 20;
+
+/** A page of the Alerts is at least this many lines (more only to keep lines that share an instant together). */
+export const ALERTS_PAGE = 30;
+/** The count `alertsUnread` stops at: a result at the bound means that many or more, and a screen says "9+". */
+export const ALERTS_UNREAD_BOUND = 10;
 
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
 export interface EffectSaved {
@@ -694,6 +837,45 @@ export interface BoardListener {
   readonly onThread?: (thread: { readonly id: Id; readonly board: Id; readonly title: string; readonly originActId: Id | null; readonly createdAt: string }) => void;
 }
 
+/** An alert as the private channel announces it (`account:<id>`, supabase/migrations/0058_alerts.sql): the public projection, with no caster, reactor, account or class. */
+export type LiveAlert = Pick<Alert, 'kind' | 'sub' | 'act' | 'character' | 'at'> & {
+  /** The alert's own id (`alerts.id`, a uuid), so a client that hears one twice, or hears it and reads the list, can tell it is the same. */
+  readonly id: string;
+};
+
+/**
+ * News for everyone as the `reach` topic announces it (`news`, supabase/migrations/0063_season_news.sql): an update or an item of season news as it lands. Public, and the same for every
+ * listener; no account, no character of a player's. It has no id of its own: its kind, sub, Act and time are its identity, so one heard twice is one.
+ */
+export type LiveNews = Pick<Alert, 'kind' | 'sub' | 'act' | 'at'>;
+
+/**
+ * A settlement applied, as the `reach` topic announces it (`settled`, supabase/migrations/0063_season_news.sql): its id and when it was applied. Public and
+ * the same for every listener (everyone sees the clock); whether it moved the listener's characters is read from the listener's own alerts.
+ */
+export interface LiveSettled {
+  readonly id: string;
+  readonly at: string;
+}
+
+export interface AccountListener {
+  /** An alert for the player's own account, as it is written. May come twice: key by act and kind, or reread the list. */
+  readonly onAlert?: (alert: LiveAlert) => void;
+}
+
+export interface ReachListener {
+  /**
+   * A card played beyond a post (a character, a thread or a board; the card reach design), as the public Act it is, wherever the
+   * page is. May come twice or out of order: key by id. Every signed-in player hears every one, so a page keeps the plays whose
+   * target it shows and drops the rest.
+   */
+  readonly onPlay?: (play: Act) => void;
+  /** An update or an item of season news, as it lands, for every signed-in player alike. May come twice: key by kind, sub, Act and time. */
+  readonly onNews?: (news: LiveNews) => void;
+  /** A settlement was applied, for every signed-in player alike. May come twice: key by id. */
+  readonly onSettled?: (settled: LiveSettled) => void;
+}
+
 /* ---------------------------------------------------------------- the api ---- */
 
 /** A thread pinned to the top of its board's list by a live thread play whose card pins (pinned_threads, 0055): the thread, its play's Act, and when the pin ends. */
@@ -726,6 +908,12 @@ export interface KayfaApi {
   isAdmin(): Promise<boolean>;
   /** The moves waiting to land, in force, and ended or held in the last 30 days. An admin's alone; anyone else is refused (the call throws). */
   adminQueue(): Promise<AdminQueue>;
+  /**
+   * An admin's update, written as the developer persona. The title and body are held to the limits a post is; `changes` is the plain
+   * list under "What changed": a blank row is dropped and the words are trimmed, and a label with no text, a text over 600 characters,
+   * a label over 80 or more than 30 changes is refused naming which. An admin's alone, and written by no model.
+   */
+  postUpdate(title: string, body: string, changes: readonly UpdateChange[]): Promise<Answer<Update>>;
   /** Holds a move that is waiting: it never lands. An admin's alone, and it cannot be taken back. */
   holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */
@@ -761,6 +949,8 @@ export interface KayfaApi {
   act(id: Id): Promise<Act | null>;
   /** Several Acts by id in one read; an id that is not an Act (or none the reader may see) is left out. Order is not promised. */
   actsById(ids: readonly Id[]): Promise<readonly Act[]>;
+  /** The first post (seq 1) of each of these threads, in one read; a thread with none the reader may see is left out. Order is not promised. */
+  openingActs(threads: readonly Id[]): Promise<readonly Act[]>;
   /** A post's every version, the original first, each as it was written. */
   history(post: Id): Promise<readonly Act[]>;
   /** The threads spun from an Act, oldest first, at most `limit` (default `SPUN_FROM_MAX`): a result as long as the limit may be cut. */
@@ -864,6 +1054,42 @@ export interface KayfaApi {
   meetCard(card: string): Promise<Answer<Preferences>>;
   /** Empties the set of cards met, so every first-time callout shows again ("Show card tips again" in Settings). */
   forgetCardsMet(): Promise<Answer<Preferences>>;
+  /**
+   * Marks Alerts as opened at `at` (an ISO time) on the account, and answers the mark as it now stands. Only forward: an older time
+   * leaves the mark and answers it, and a time past the server's clock is taken as now.
+   */
+  seeAlerts(at: string): Promise<Answer<string>>;
+  /** Marks the settlement ending at `endsAt` (an ISO time) as seen on the account, as `seeAlerts` does: only forward; answers the mark. */
+  seeSettlement(endsAt: string): Promise<Answer<string>>;
+  /**
+   * Whether the player follows the thread: their own choice, else whether one of their characters started it (`following_thread`).
+   * Rejects when it cannot be read or nobody is signed in; it is the player's own fact and appears in no public read.
+   */
+  following(thread: Id): Promise<boolean>;
+  /** Follows the thread (`on` true) or stops following it, and answers the state now. Refused for a thread that does not exist or no one signed in. */
+  follow(thread: Id, on: boolean): Promise<Answer<boolean>>;
+  /** The threads the player follows that have posts past their place, newest first, at most 50 (`my_followed_threads`). */
+  followed(): Promise<readonly FollowedThread[]>;
+  /**
+   * A page of the player's Alerts (`my_alerts`), newest first: the newest `ALERTS_PAGE` lines older than `before` (an ISO time,
+   * exclusive; none for the newest page), and every line sharing the instant of the last, so a later page never repeats one. The
+   * next page is read from the oldest `at` of this one. Written alerts, followed threads with new posts and settlements that moved
+   * the player's characters; every player's news joins it in the updates and season-news builds. Rejects when it cannot be read.
+   */
+  alerts(before?: string | null): Promise<readonly Alert[]>;
+  /** How many alerts arrived after the account's mark (`my_alerts_unread`), at most `ALERTS_UNREAD_BOUND`; a result at the bound is shown "9+". Rejects when it cannot be read. */
+  alertsUnread(): Promise<number>;
+  /**
+   * A page of the Updates, newest first, `UPDATES_PAGE` to a page: those older than `before` (an ISO time, exclusive; none for the
+   * newest page). The developer persona's posts, which anyone signed in reads; they are the same for every reader.
+   */
+  updates(before?: string | null): Promise<readonly Update[]>;
+  /**
+   * A page of the season's news (`season_news`), newest first: the newest `SEASON_NEWS_PAGE` older than `before` (an ISO time, exclusive; none
+   * for the newest page) and every item sharing the instant of the last. Public: the same for every reader, and no character is marked as the
+   * player's own (a screen marks them from `myCharacters`).
+   */
+  seasonNews(before?: string | null): Promise<readonly SeasonNewsItem[]>;
   estimate(): Promise<Estimate>;
   /** A page of the player's own log (`Log`): the newest with no cursor, then each older page from the last one's `before`. */
   log(before?: string | null): Promise<Log>;
@@ -913,4 +1139,8 @@ export interface KayfaApi {
   /* Live: Acts, tallies and saved effects on a thread; new threads on a board. Each returns its unsubscribe. */
   subscribeThread(thread: Id, listener: ThreadListener): () => void;
   subscribeBoard(board: Id, listener: BoardListener): () => void;
+  /** Live: the signed-in player's own alerts (their private channel); nothing while signed out. Returns its unsubscribe. */
+  subscribeAccount(listener: AccountListener): () => void;
+  /** Live: plays beyond a post, for every page that shows their target (issue 140). Returns its unsubscribe. */
+  subscribeReach(listener: ReachListener): () => void;
 }

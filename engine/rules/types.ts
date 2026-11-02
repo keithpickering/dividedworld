@@ -12,6 +12,8 @@
 import type { BeyondPost, CardRules, Rarity } from './cards.ts';
 import type { StockLineKey } from '../system/stock.ts';
 import type { Duty } from '../system/duties.ts';
+import type { HintSettings } from './hints.ts';
+import type { AlertKind } from './alerts.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
 
 /** Where a reaction sits on the two axes the classes read: how excited, how positive. */
@@ -36,7 +38,7 @@ export type Hundredths = number;
 
 /** A length of time in calendar units, so "3 months" stays three months in SQL too. */
 export interface Span {
-  /** Minutes only where a setting says it takes them (editGrace, presenceWindow); a window, a season and a cooldown count days or more. */
+  /** Minutes only where a setting says it takes them (editGrace, presenceWindow, hints.window); a window, a season and a cooldown count days or more. */
   readonly unit: 'minute' | 'day' | 'week' | 'month';
   readonly count: number;
 }
@@ -179,6 +181,16 @@ export interface Settings {
    * `demandCheckMinutes` allow: a met demand then ends a few minutes later. A starting point.
    */
   readonly demandChecksPerTick: number;
+  /**
+   * When a post's or a card's reactions earn their player a hint (the alerts design's section 5): the fewest reactions, the share
+   * that makes one quadrant lead, the share that makes it divisive, and how far back reactions count. Computed from public counts only.
+   */
+  readonly hints: HintSettings;
+  /**
+   * The alert kinds that toast for a player who has not chosen (Settings › Notifications; the alerts design's section 8). A kind that does not
+   * toast still counts and still has its row in Alerts, and a player's own choice replaces this list whole.
+   */
+  readonly toastDefaults: readonly AlertKind[];
   /** The model each tier of a call uses (the meeting runs on `strong`, small lines on `light`), as the provider names it. */
   readonly modelTiers: { readonly strong: string; readonly light: string };
 }
@@ -572,6 +584,18 @@ export interface SystemContent {
   readonly nameStyleBrief: string;
 }
 
+/**
+ * The instance's developer persona (the alerts design, section 3): the one in-character voice the glass has, on the Updates page. It
+ * is written by the instance's admins and never by a model, so it is no part of `system`, which is all a model reads. `name` is the
+ * staff character's; `tagline` is its profile title (at most 40 characters, which a profile holds); `avatar` is a key the instance's UI
+ * turns into a picture (`InstanceUi.avatars`), as a pip style's key is. An instance with none stands on the engine's plain default.
+ */
+export interface DeveloperPersona {
+  readonly name: string;
+  readonly tagline: string;
+  readonly avatar?: string;
+}
+
 export interface Instance {
   readonly key: string;
   readonly name: string;
@@ -584,4 +608,6 @@ export interface Instance {
   readonly ranks: readonly Rank[];
   readonly pipStyles: readonly PipStyle[];
   readonly system: SystemContent;
+  /** The developer persona; left out, the engine's default ("The developers", no tagline, no avatar). */
+  readonly developer?: DeveloperPersona;
 }

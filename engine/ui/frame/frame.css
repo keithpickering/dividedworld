@@ -422,6 +422,9 @@
 .kb-hud-clock {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  /* Ends before the Alerts button, which stands at the right of the same corner (1229px at the board's 1440): the date and time are never drawn under it. */
+  max-width: 240px;
   margin: 1.875rem 0 0;
 }
 
@@ -434,7 +437,8 @@
 }
 
 .kb-hud-clock-time {
-  font-size: 2.75rem;
+  /* The settlement's day and time ("Oct 30, 8:17 AM") in 240px, where the board's countdown is shorter and 44px. */
+  font-size: 2.125rem;
   font-weight: 800;
   line-height: 1;
   color: var(--kb-glass-pale);
@@ -448,6 +452,83 @@
   right: 0;
   display: flex;
   justify-content: space-between;
+}
+
+/*
+ * Alerts, above Hand and beside the clock (board 01-board-toasts.html): the bell, its word and a gold count of what is new, in a skewed panel with
+ * a border in the ready color. Hand and Menu stay where they are below it. Same 170 by 52 as Hand, and over it.
+ */
+.kb-hud-alerts {
+  position: absolute;
+  top: 2.5rem;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 170px;
+  height: 3.25rem;
+  color: var(--kb-glass-text);
+  text-decoration: none;
+  /* Solid, so its word and count stand on an opaque fill however the smoke is drawn. */
+  background: var(--kb-glass-ground);
+  border: 1px solid var(--kb-glass-ready);
+}
+
+.kb-hud-alerts-word {
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-lead);
+  /* Anton has the one weight; a link inherits the page's 600, which no face is loaded at. */
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.kb-hud-bell {
+  color: var(--kb-glass-ready);
+}
+
+.kb-hud-alerts-count {
+  padding: 2px 8px;
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--kb-glass-ink-ready);
+  background: var(--kb-glass-ready);
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-alerts[data-kb-held] {
+  /* The open hand fans its cards through this corner; the bell waits under them, as the toasts do. It is back, and its count with it, when the hand closes. */
+  visibility: hidden;
+}
+
+/*
+ * On a phone, while a card is armed the Hand button holds "Armed · Whoops!" and the one row has no room left for the bell beside the picker, so the bell
+ * steps aside until the card is played or put back; its count is still on the Alerts page and the bell is back the moment it is.
+ */
+:where(:root[data-kb-layout='phone']) .kb-hud:has(.kb-hud-hand[data-kb-armed]) .kb-hud-alerts {
+  display: none;
+}
+
+.kb-hud-alerts:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+/* The mask's name set in the picker's face, unseen, so the HUD can tell whether the picker would cut it (Hud.tsx). */
+.kb-hud-name-probe {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-phone-display);
+  text-transform: uppercase;
+}
+
+.kb-hud-menu-glyph {
+  display: block;
 }
 
 /* The HUD's buttons: skewed (base.css), their words set upright, at the boards' sizes. */
@@ -833,7 +914,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-bar {
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   grid-template-rows: auto auto;
   align-items: center;
   gap: 8px 10px;
@@ -859,14 +940,29 @@
   justify-self: start;
 }
 
+:where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-hud .kb-hud-alerts {
+  grid-row: 2;
+  grid-column: 3;
+}
+
 :where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-hud .kb-hud-hand {
   grid-row: 2;
-  grid-column: 3 / -1;
+  grid-column: 4 / -1;
   justify-self: end;
 }
 
 :where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-hud .kb-hud-aura {
   grid-row: 3;
+}
+
+/*
+ * On a phone narrower than 380px the one row (avatar, picker, bell, Menu, hand) leaves the picker too little with a card armed, and the HUD keeps its
+ * 124px, so the avatar, which only repeats the mask's face beside its name, is not drawn there.
+ */
+@media (max-width: 379px) {
+  :where(:root[data-kb-layout='phone']) .kb-hud-avatar {
+    display: none;
+  }
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-plate,
@@ -952,18 +1048,18 @@
 :where(:root[data-kb-layout='phone']) .kb-hud-hand {
   grid-row: 1;
   width: auto;
-  min-width: 64px;
+  min-width: 60px;
   height: 48px;
   padding: 0 6px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-menu {
-  grid-column: 3;
+  grid-column: 4;
   box-shadow: 0 0 12px color-mix(in srgb, var(--kb-glass-neon) 50%, transparent);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-hand {
-  grid-column: 4;
+  grid-column: 5;
   gap: 0.25em;
   box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-salty) 70%, transparent);
 }
@@ -972,6 +1068,35 @@
 :where(:root[data-kb-layout='phone']) .kb-hud-hand > span:first-child {
   font-size: 1.125rem;
   letter-spacing: 0.5px;
+}
+
+/*
+ * The phone's bell (board 05-phone.html): 52 by 48, between "Posting as" and Menu, the count on its corner, the word for a screen reader alone.
+ */
+:where(:root[data-kb-layout='phone']) .kb-hud-alerts {
+  position: relative;
+  /* The desk layout's offsets (top, right) would move a relative box off its cell. */
+  top: auto;
+  right: auto;
+  grid-row: 1;
+  grid-column: 3;
+  width: 52px;
+  height: 48px;
+  gap: 0;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-glass-ready) 45%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-alerts .kb-hud-alerts-word {
+  display: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-alerts-count {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  padding: 0 6px;
+  font-size: var(--kb-glass-size-phone-small);
+  line-height: 1.2;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-hand-count {

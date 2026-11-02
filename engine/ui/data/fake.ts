@@ -22,14 +22,16 @@ import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX } from './api.ts';
+import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
+import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
-  DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Presence, PresencePlace, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
+  Act, AccountListener, ActKind, Alert, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
+  DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
+  Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
 /** The code `verifyCode` accepts for any address. */
@@ -43,7 +45,7 @@ const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'alert' | 'news' | 'settled';
 }
 
 export interface Seed {
@@ -74,6 +76,24 @@ export interface Seed {
   season(season: Partial<Season>): void;
   nextSettlementAt(at: number | null): void;
   views(thread: Id, count: number): void;
+  /**
+   * An alert the writers of the Acts would have written for `account` (`write_alert`, 0058), of a kind that is not read from the Acts
+   * themselves: a trap struck or sprung, a hint, a ruling. A quote and a card on the account's post, character or thread are alerts
+   * here as the Acts that make them are (a post that quotes theirs, a card played on theirs by another player), so seeding either
+   * is refused. `act` is the Act it is about, `character` the account's character it concerns, `at` an epoch (else now).
+   */
+  alert(account: Id, alert: { kind: WrittenKind; act: Id; character?: Id; sub?: string; at?: number }): void;
+  /**
+   * A change of Boss at a season's roll-over (a `season_handovers` row, 0051): the outgoing Boss (null at the first) and the arriving one, by staff key,
+   * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
+   * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words.
+   */
+  handover(handover: { outgoing?: string | null; boss: string; at?: number }): void;
+  /**
+   * An update by the developer persona (what `post_update` writes, 0062), dated `at` (else now): the developer character is made on its first
+   * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
+   */
+  update(update: { title: string; body: string; changes?: readonly UpdateChange[]; at?: number }): Id;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
   wallet(account: Id, balance: number): void;
@@ -208,7 +228,7 @@ interface CharRec {
   squareFrame: Frame | null;
   portraitFrame: Frame | null;
   /** Set for a staff character. */
-  staff?: { readonly key: string; readonly kind: 'boss' | 'bot' };
+  staff?: { readonly key: string; readonly kind: 'boss' | 'bot' | 'developer' };
 }
 interface ActRec {
   readonly id: Id;
@@ -230,6 +250,8 @@ interface AccountRec {
   wallet: number;
   cards: Record<string, number>;
   reading: Map<Id, number>;
+  /** The account's follow choices over the default (thread_follows, 0059). */
+  follows: Map<Id, boolean>;
   estimate: { entries: Estimate['entries']; lines: readonly EstimateLine[] };
   asked: Estimate | null;
 }
@@ -240,7 +262,7 @@ const ok = <T,>(value: T): Answer<T> => ({ ok: true, value });
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /** The methods that are not a promise of something: everything else is made one. */
-const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard']);
+const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
 type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R> ? (...a: A) => R : T[K] };
 
 /**
@@ -257,7 +279,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
-    presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow,
+    presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
+    ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
     cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
   };
@@ -298,6 +321,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
   const moveKeeps = new Map<Id, string>();
   const playersBoard = boards.find((b) => !b.isSystem);
+  /* The developer persona and its updates thread (0062), made at the first update; the board never lists that thread. */
+  let developerId: Id | null = null;
+  let updatesThreadId: Id | null = null;
 
   let session: { email: string | null; account: Id | null } = { email: null, account: null };
   const sessionListeners = new Set<(s: Session) => void>();
@@ -313,6 +339,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* ----------------------------------------------------------------------- live ---- */
   const threadListeners = new Map<Id, Set<ThreadListener>>();
   const boardListeners = new Map<Id, Set<BoardListener>>();
+  const accountListeners = new Map<Id, Set<AccountListener>>();
+  const reachListeners = new Set<ReachListener>();
   const log: LiveEvent[] = [];
   let held: (() => void)[] | null = null;
   let muted = false;
@@ -325,6 +353,51 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const sendAct = (act: ActRec) => {
     const shown = publicAct(act);
     send(`thread:${act.thread}`, 'act', () => { for (const l of [...(threadListeners.get(act.thread) ?? [])]) l.onAct?.(shown); });
+    /* The alert the write queued (write_alert, 0058), announced to the target's account alone: none for a staff or unowned target, or
+       for the account that did it. */
+    const alert = derivedAlert(act);
+    if (alert === null) return;
+    const live = { id: crypto.randomUUID(), kind: alert.kind, sub: null, act: act.id, character: alert.character, at: iso(act.at) };
+    send(`account:${alert.account}`, 'alert', () => { for (const l of [...(accountListeners.get(alert.account) ?? [])]) l.onAlert?.(live); });
+  };
+  /**
+   * The alert an Act writes, read from the Act as `write_alert`'s callers do: a quote of a post, or a card on a post, a character or a
+   * thread, for the owner of what it landed on. Null for a staff target, a spring, and a target of the Act's own account.
+   */
+  function derivedAlert(a: ActRec): { account: Id; kind: 'quote' | 'cardOnYours'; character: Id } | null {
+    if (a.character === null) return null;
+    let kind: 'quote' | 'cardOnYours';
+    let target: Id | null | undefined;
+    if (a.kind === 'post' && a.target !== null) {
+      const quoted = acts.get(a.target);
+      if (quoted?.kind !== 'post') return null;
+      kind = 'quote'; target = quoted.character;
+    } else if (a.kind === 'card' && a.target !== null && a.payload.spring === undefined) {
+      const reach = (a.payload.reach ?? 'post') as string;
+      kind = 'cardOnYours';
+      target = reach === 'post' ? acts.get(a.target)?.character
+        : reach === 'character' ? String(a.payload.character)
+        : reach === 'thread' ? [...acts.values()].find((x) => x.thread === a.payload.thread && x.seq === 1)?.character : null;
+    } else return null;
+    const owner = target == null ? undefined : characters.get(target)?.owner;
+    if (owner == null || owner === characters.get(a.character)?.owner) return null;
+    return { account: owner, kind, character: target! };
+  }
+  /* A play beyond a post is also heard on `reach` by every signed-in page (act/core.ts's BROADCASTS.play_card). */
+  const sendReach = (act: ActRec) => {
+    if (act.payload.reach !== 'character' && act.payload.reach !== 'thread' && act.payload.reach !== 'board') return;
+    const shown = publicAct(act);
+    send('reach', 'effect', () => { for (const l of [...reachListeners]) l.onPlay?.(shown); });
+  };
+  /* An update is announced on `reach` to every signed-in page as it is written (news_announce, 0063); a seed is the database's own hand and says nothing. */
+  const sendNews = (a: ActRec) => {
+    const news = { kind: 'update' as const, sub: null, act: a.id, at: iso(a.at) };
+    send('reach', 'news', () => { for (const l of [...reachListeners]) l.onNews?.(news); });
+  };
+  /* A settlement applied is announced on `reach` to every signed-in page (settlement_announce, 0063): its id and time, nothing of any player's. */
+  const sendSettled = (id: number, at: number) => {
+    const settled = { id: String(id), at: iso(at + APPLIED_AFTER) };
+    send('reach', 'settled', () => { for (const l of [...reachListeners]) l.onSettled?.(settled); });
   };
   const sendThread = (t: ThreadRec) => {
     const shown = { id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at) };
@@ -344,7 +417,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     };
   }
 
+  /** Whether the account follows the thread: its choice, else whether one of its characters started it (following_thread, 0059). */
+  const follows = (account: AccountRec, threadId: Id): boolean => {
+    const chosen = account.follows.get(threadId);
+    if (chosen !== undefined) return chosen;
+    const opening = placed(threadId)[0];
+    return opening?.character != null && characters.get(opening.character)?.owner === account.id;
+  };
   const placed = (threadId: Id) => [...acts.values()].filter((a) => a.thread === threadId && a.seq !== null).sort((a, b) => a.seq! - b.seq!);
+
+  /** The account's followed threads with posts past its place by characters it does not own, newest first, at most 50 (my_followed_threads, 0059). */
+  function followedFor(account: AccountRec): FollowedThread[] {
+    const out: FollowedThread[] = [];
+    for (const t of threads.values()) {
+      if (!follows(account, t.id)) continue;
+      const past = placed(t.id).filter((a) => a.kind === 'post' && a.seq! > (account.reading.get(t.id) ?? 0) && a.character !== null && characters.get(a.character)?.owner !== account.id);
+      if (past.length === 0) continue;
+      out.push({ thread: t.id, board: t.board, title: t.title, newPosts: Math.min(past.length, FOLLOWED_COUNT_CAP), newestAt: iso(Math.max(...past.map((a) => a.at))) });
+    }
+    return out.sort((a, b) => Date.parse(b.newestAt) - Date.parse(a.newestAt)).slice(0, 50);
+  }
 
   function summary(t: ThreadRec): ThreadSummary {
     const all = placed(t.id);
@@ -406,7 +498,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function announcements(): Id {
     const board = boards.find((b) => b.isSystem);
     if (!board) throw new Error('the instance has no System board');
-    const found = [...threads.values()].find((t) => t.board === board.id);
+    const found = [...threads.values()].find((t) => t.board === board.id && t.id !== updatesThreadId);
     return found ? found.id : openThread(board.id, 'Announcements', null).id;
   }
   const staffId = (key: string): Id => {
@@ -452,6 +544,120 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const r of reactions) if (r.act === act) counts[r.kind] = (counts[r.kind] ?? 0) + 1;
     return counts;
   };
+
+  /* -------------------------------------------------------------------- updates ---- */
+  /** The developer persona's staff character, made when it is first needed: the instance's persona, else the engine's plain one (seed_instance, 0062). */
+  function developer(): CharRec {
+    if (developerId !== null) return characters.get(developerId)!;
+    const persona = options.instance.developer ?? DEFAULT_DEVELOPER;
+    const at = now();
+    const c: CharRec = {
+      id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
+      title: persona.tagline.slice(0, 40), signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+      square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key: 'developer', kind: 'developer' },
+    };
+    characters.set(c.id, c);
+    developerId = c.id;
+    return c;
+  }
+  /** The updates thread on The System's board, which no list of that board holds. */
+  function updatesThread(): ThreadRec {
+    if (updatesThreadId !== null) return threads.get(updatesThreadId)!;
+    const board = boards.find((b) => b.isSystem);
+    if (!board) throw new Error('the instance has no System board');
+    updatesThreadId = openThread(board.id, 'Updates', null).id;
+    return threads.get(updatesThreadId)!;
+  }
+  /* A board's list leaves out the updates thread and the season's reveal and Turns threads (thread_list, 0063); thread() opens any of them by id (thread_open). */
+  const seasonThreads = (): Set<Id> => new Set(seasons.flatMap((s) => [s.turnsThread, s.revealAct === null ? null : acts.get(s.revealAct)?.thread ?? null]).filter((x): x is Id => x !== null));
+  const listed = (t: ThreadRec) => t.id !== updatesThreadId && !seasonThreads().has(t.id);
+  /** `within` (0005): text that is something and no longer than the setting, in the server's words. */
+  const within = (field: string, value: string, most: number): string | null =>
+    /^[\s\u200b-\u200d\u2060]*$/u.test(value) ? `${field} is empty` : [...value].length > most ? `${field} is longer than ${most} characters` : null;
+  /** One update, with the persona that wrote it (the `updates` read). */
+  function updateOf(a: ActRec): Update {
+    const c = characters.get(a.character!)!;
+    return {
+      act: a.id, thread: a.thread, character: c.id, name: c.name, tagline: c.title, avatar: (options.instance.developer ?? DEFAULT_DEVELOPER).avatar ?? null,
+      title: String(a.payload['title']), body: String(a.payload['body']), changes: a.payload['changes'] as UpdateChange[], at: iso(a.at), seq: a.seq!,
+    };
+  }
+  /* ------------------------------------------------------------------ season news ---- */
+  /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
+  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number }[] = [];
+  const staffByKey = (key: string) => [...characters.values()].find((c) => c.staff?.key === key);
+  /** The first post of a staff member in the announcements thread dated at the handover's instant: what the Boss said as it came or went (a later remark is not it). */
+  function bossPost(key: string, at: number): ActRec | undefined {
+    const who = staffByKey(key);
+    if (!who) return undefined;
+    const board = boards.find((b) => b.isSystem);
+    const home = board ? [...threads.values()].find((t) => t.board === board.id && t.id !== updatesThreadId && !seasonThreads().has(t.id)) : undefined;
+    return [...acts.values()].filter((a) => a.kind === 'post' && a.character === who.id && a.thread === home?.id && a.at === at).sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0))[0];
+  }
+  const names = (v: unknown): TallyName[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []).map((e) => ({
+    character: String(e['character']), name: String(e['name']), class: typeof e['class'] === 'string' ? e['class'] : null, was: typeof e['was'] === 'string' ? e['was'] : null }));
+  /** `season_news` (0063) over the Acts the fake holds: the reveal's header and top three, each tally with names, the Boss's arrival and farewell. */
+  function newsItems(): SeasonNewsItem[] {
+    const out: SeasonNewsItem[] = [];
+    const base = { act: null, thread: null, seq: null, name: null, quote: null, count: null, top: [], debuts: [], turns: [] } as const;
+    for (const s of seasons) {
+      const h = s.revealAct === null ? undefined : acts.get(s.revealAct);
+      if (!h) continue;
+      const top = [...acts.values()].filter((a) => a.thread === h.thread && a.kind === 'reveal' && typeof a.payload['character'] === 'string').sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0) || x.order - y.order).slice(0, 3)
+        .map((a) => ({ character: String(a.payload['character']), name: String(a.payload['name']), place: Number(a.payload['place']), standing: Number(a.payload['standing']),
+          shown: ((a.payload['shown'] ?? []) as Record<string, unknown>[]).map((x): SeasonShown => ({ kind: x['kind'] === 'turn' ? 'turn' : 'reveal', act: String(x['act']), at: String(x['at']), class: typeof x['class'] === 'string' ? x['class'] : null, was: typeof x['was'] === 'string' ? x['was'] : null })) }));
+      out.push({ ...base, kind: 'results', act: h.id, thread: h.thread, seq: h.seq, at: iso(h.at), season: Number(h.payload['season'] ?? s.number), count: Number(h.payload['characters'] ?? 0), top });
+    }
+    for (const a of acts.values()) {
+      if (a.kind !== 'tally') continue;
+      const debuts = names(a.payload['debuts']);
+      const turns = names(a.payload['turns']);
+      if (debuts.length + turns.length === 0) continue;
+      out.push({ ...base, kind: 'tally', act: a.id, thread: a.thread, seq: a.seq, at: iso(a.at), season: Number(a.payload['season'] ?? 0), count: debuts.length + turns.length, debuts, turns });
+    }
+    for (const h of handovers) {
+      if (h.boss === h.outgoing) continue;
+      const number = [...seasons].filter((s) => Date.parse(s.startsAt) <= h.at).sort((x, y) => y.number - x.number)[0]?.number ?? 1;
+      const arrived = bossPost(h.boss, h.at);
+      out.push({ ...base, kind: 'bossArrived', act: arrived?.id ?? null, thread: arrived?.thread ?? null, seq: arrived?.seq ?? null, at: iso(h.at), season: number, name: staffByKey(h.boss)?.name ?? h.boss, quote: arrived ? String(arrived.payload['body'] ?? '') : null });
+      if (h.outgoing !== null) {
+        const left = bossPost(h.outgoing, h.at);
+        out.push({ ...base, kind: 'bossLeft', act: left?.id ?? null, thread: left?.thread ?? null, seq: left?.seq ?? null, at: iso(h.at), season: number - 1, name: staffByKey(h.outgoing)?.name ?? h.outgoing, quote: left ? String(left.payload['body'] ?? '') : null });
+      }
+    }
+    return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || String(a.act ?? '').localeCompare(String(b.act ?? '')));
+  }
+  /** A page as `season_news` cuts it: the newest `most` older than `before`, with every item sharing the instant of the last. */
+  function newsPage(before: string | null | undefined, most: number): SeasonNewsItem[] {
+    const until = before == null ? Infinity : Date.parse(before);
+    const older = newsItems().filter((n) => Date.parse(n.at) < until);
+    const last = older[Math.min(most, older.length) - 1];
+    return last === undefined ? [] : older.filter((n) => Date.parse(n.at) >= Date.parse(last.at));
+  }
+  const updateActs = () => [...acts.values()].filter((a) => a.kind === 'update').sort((a, b) => b.at - a.at || b.order - a.order);
+  /**
+   * post_update (0062) past its admin check, which `postUpdate` makes (a seed is the database's own hand): an update. The words are held as a post's are; the changes are repaired where they can be (the space
+   * around words, a row with neither label nor text) and refused, naming the predicate and the change's number, where they cannot.
+   */
+  function writeUpdate(title: string, body: string, changes: readonly UpdateChange[], at: number | undefined): Answer<Update> {
+    const bad = within('title', title, settings.titleMaxLength) ?? within('body', body, settings.postMaxLength);
+    if (bad) return refuse(bad);
+    const fixed: UpdateChange[] = [];
+    for (const [i, c] of (changes ?? []).entries()) {
+      const label = String(c?.label ?? '').replace(/^\s+|\s+$/g, '');
+      const text = String(c?.text ?? '').replace(/^\s+|\s+$/g, '');
+      if (label === '' && text === '') continue;
+      if (text === '') return refuse(`change ${i + 1} has a label and no text; give it a text, or leave the row out`);
+      fixed.push({ label, text });
+    }
+    if (fixed.length > 30) return refuse('an update lists at most 30 changes');
+    for (const [i, c] of fixed.entries()) {
+      if ([...c.label].length > 80) return refuse(`change ${i + 1} has a label of at most 80 characters`);
+      if ([...c.text].length > 600) return refuse(`change ${i + 1} has a text of 1 to 600 characters`);
+    }
+    const written = write({ character: developer().id, kind: 'update', thread: updatesThread().id, payload: { title, body, changes: fixed }, at });
+    return ok(updateOf(written));
+  }
 
   /* -------------------------------------------------------------------- writing ---- */
   let order = 0;
@@ -785,6 +991,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
+    sendReach(written);
     return ok(publicAct(written));
   }
 
@@ -962,7 +1169,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   function addAccount(email: string): AccountRec {
     const a: AccountRec = {
-      id: uuid(), email, admin: false, prefs: DEFAULT_PREFERENCES, wallet: 0, cards: {}, reading: new Map(),
+      id: uuid(), email, admin: false, prefs: DEFAULT_PREFERENCES, wallet: 0, cards: {}, reading: new Map(), follows: new Map(),
       estimate: { entries: [], lines: [] }, asked: null,
     };
     accounts.set(a.id, a);
@@ -1015,10 +1222,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     signOut() { setSession({ email: null, account: null }); },
     signInAddress: () => session.email,
     isAdmin: () => me()?.admin ?? false,
+    updates(before) {
+      const until = before == null ? Infinity : Date.parse(before);
+      return updateActs().filter((a) => a.at < until).slice(0, UPDATES_PAGE).map(updateOf);
+    },
+    seasonNews: (before) => newsPage(before, SEASON_NEWS_PAGE),
+    postUpdate: (title, body, changes) => {
+      if (!me()?.admin) return refuse('only an admin writes an update');
+      const written = writeUpdate(title, body, changes, undefined);
+      if (written.ok) sendNews(acts.get(written.value.act)!);
+      return written;
+    },
     settings: () => screen,
 
     boards: () => boards.map((b): BoardSummary => {
-      const mine = [...threads.values()].filter((t) => t.board === b.id).map(summary);
+      const mine = [...threads.values()].filter((t) => t.board === b.id && listed(t)).map(summary);
       const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
       return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null };
     }),
@@ -1127,13 +1345,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return ok({ act, endedBy: end.id });
     },
     threads(board, page) {
-      const all = [...threads.values()].filter((t) => t.board === board).map(summary)
+      const all = [...threads.values()].filter((t) => t.board === board && listed(t)).map(summary)
         .sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id));
       return { threads: all.slice(page.offset, page.offset + page.limit), total: all.length };
     },
-    thread: (id) => (threads.has(id) ? summary(threads.get(id)!) : null),
+    thread: (id) => (threads.has(id) && id !== updatesThreadId ? summary(threads.get(id)!) : null),
     acts: (thread, from, to) => placed(thread).filter((a) => a.seq! >= from && a.seq! <= to).map(publicAct),
     act: (id) => (acts.has(id) ? publicAct(acts.get(id)!) : null),
+    openingActs: (threads) => [...acts.values()].filter((a) => a.seq === 1 && threads.includes(a.thread)).map(publicAct),
     actsById: (ids) => [...new Set(ids)].filter((id) => acts.has(id)).map((id) => publicAct(acts.get(id)!)),
     history(id) {
       const original = acts.get(id);
@@ -1175,15 +1394,29 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const read = new Set(ledger.map((l) => l.settlement));
         const shares: ShareRow[] = settlements.filter((x) => read.has(x.id))
           .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, ...sh }))));
-        /* my_posts_played_on: the plays on the player's posts made through another player's characters. */
+        /* my_posts_played_on: the plays other players landed on the player's posts, characters, and threads their characters started (0056).
+           A board has no owner, so a board play is no one's row. */
+        const reachOf = (a: ActRec): 'post' | 'character' | 'thread' | 'board' => (a.payload.reach ?? 'post') as 'post' | 'character' | 'thread' | 'board';
+        const targetOwner = (a: ActRec): Id | undefined => {
+          switch (reachOf(a)) {
+            case 'post': return characters.get(acts.get(a.target ?? '')?.character ?? '')?.owner;
+            case 'character': return characters.get(String(a.payload.character))?.owner;
+            case 'thread': return characters.get([...acts.values()].find((x) => x.thread === a.payload.thread && x.seq === 1)?.character ?? '')?.owner;
+            default: return undefined;
+          }
+        };
+        const targetCharacter = (a: ActRec): Id | null => reachOf(a) === 'post' ? acts.get(a.target ?? '')?.character ?? null
+          : reachOf(a) === 'character' ? String(a.payload.character) : [...acts.values()].find((x) => x.thread === a.payload.thread && x.seq === 1)?.character ?? null;
+        const targetName = (a: ActRec): string | null => reachOf(a) === 'character' ? characters.get(String(a.payload.character))?.name ?? null
+          : reachOf(a) === 'thread' ? threads.get(String(a.payload.thread))?.title ?? null : null;
         const onMine = [...acts.values()].filter((a) => a.kind === 'card' && a.target !== null && a.character !== null
-          && characters.get(acts.get(a.target)?.character ?? '')?.owner === account && characters.get(a.character)?.owner !== account);
+          && targetOwner(a) === account && characters.get(a.character)?.owner !== account);
         return {
           ledger,
           shares,
           wallet: newest(walletEvents.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           cards: newest(cardLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
-          playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at) })),
+          playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
           /* The in-memory backend sets no card face down and springs no trap: the setter's and the caster's lines are the adapter's (my_face_down, my_caught). */
@@ -1368,9 +1601,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p.smoke !== undefined && !['full', 'low', 'off'].includes(p.smoke)) return refuse('the smoke is full, low or off');
       if (p.contrast !== undefined && p.contrast !== 'standard' && p.contrast !== 'high') return refuse('contrast is standard or high');
       if (p.textSize !== undefined && ![100, 125, 150, 200].includes(p.textSize)) return refuse('text size is 100, 125, 150 or 200 percent');
+      /* As set_preferences (0064) keeps the toasts: the kinds of alert there are, each once in the order first named, null for the defaults. */
+      let toasts = account.prefs.toasts;
+      if (p.toasts === null) toasts = null;
+      else if (p.toasts !== undefined) {
+        const unknown = [...new Set(p.toasts.filter((k) => !(ALERT_KINDS as readonly string[]).includes(k)))];
+        if (unknown.length) return refuse(`not a kind of alert: ${unknown.join(', ')}`);
+        toasts = [...new Set(p.toasts)];
+      }
       /* The set of cards met is no parameter of set_preferences: a stray one in a patch is ignored, as the server would. */
-      const { cardsMet: _ignored, ...choices } = p as PreferencesPatch & { cardsMet?: unknown };
-      account.prefs = { ...account.prefs, ...choices };
+      const { cardsMet: _ignored, toasts: _toasts, ...choices } = p as PreferencesPatch & { cardsMet?: unknown };
+      account.prefs = { ...account.prefs, ...choices, toasts };
       return ok(account.prefs);
     },
     meetCard(card) {
@@ -1389,6 +1630,55 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!account) return refuse('sign in with an account first');
       account.prefs = { ...account.prefs, cardsMet: [] };
       return ok(account.prefs);
+    },
+    seeAlerts(at) {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (!Number.isFinite(Date.parse(at))) return refuse('a mark is a time');
+      /* Only forward, as see_alerts (0057) keeps it. (Not held to the clock: this backend's seeded times and its clock are not one story.) */
+      const held = account.prefs.alertsSeenAt;
+      if (held === null || Date.parse(held) < Date.parse(at)) account.prefs = { ...account.prefs, alertsSeenAt: at };
+      return ok(account.prefs.alertsSeenAt!);
+    },
+    following(thread) {
+      const account = me();
+      if (!account) throw new Error('sign in with an account first');
+      return follows(account, thread);
+    },
+    follow(thread, on) {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (!threads.has(thread)) return refuse('there is no such thread');
+      account.follows.set(thread, on);
+      return ok(on);
+    },
+    followed() {
+      const account = me();
+      return account ? followedFor(account) : [];
+    },
+    alerts(before) {
+      // my_alerts (0060): the newest page of the list older than `before`, extended to every line sharing the instant of its last.
+      const account = me();
+      if (!account) throw new Error('sign in with an account first');
+      const until = before == null ? Infinity : Date.parse(before);
+      const older = alertsOf(account).filter((a) => Date.parse(a.at) < until);
+      const floor = older.length >= ALERTS_PAGE ? Date.parse(older[ALERTS_PAGE - 1]!.at) : -Infinity;
+      return older.filter((a) => Date.parse(a.at) >= floor);
+    },
+    alertsUnread() {
+      // my_alerts_unread (0060): what arrived after the account's mark (never set: everything), to the bound.
+      const account = me();
+      if (!account) throw new Error('sign in with an account first');
+      const seen = account.prefs.alertsSeenAt === null ? -Infinity : Date.parse(account.prefs.alertsSeenAt);
+      return Math.min(ALERTS_UNREAD_BOUND, alertsOf(account).filter((a) => Date.parse(a.at) > seen).length);
+    },
+    seeSettlement(endsAt) {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (!Number.isFinite(Date.parse(endsAt))) return refuse('a mark is a time');
+      const held = account.prefs.settlementSeen;
+      if (held === null || Date.parse(held) < Date.parse(endsAt)) account.prefs = { ...account.prefs, settlementSeen: endsAt };
+      return ok(account.prefs.settlementSeen!);
     },
     estimate() {
       const account = me();
@@ -1444,6 +1734,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const set = boardListeners.get(board) ?? new Set();
       boardListeners.set(board, set.add(listener));
       return () => { set.delete(listener); };
+    },
+    subscribeAccount(listener) {
+      // The private channel is the signed-in account's own; signed out, there is none to hear.
+      const account = session.account;
+      if (account === null) return () => {};
+      const set = accountListeners.get(account) ?? new Set();
+      accountListeners.set(account, set.add(listener));
+      return () => { set.delete(listener); };
+    },
+    subscribeReach(listener) {
+      reachListeners.add(listener);
+      return () => { reachListeners.delete(listener); };
     },
   };
 
@@ -1521,6 +1823,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     });
     const id = settlements.length + 1;
     settlements.push({ id, startsAt, endsAt: at, sharesKept, lines: written });
+    sendSettled(id, at);
     const credits = new Map<Id, number>();
     for (const l of written) {
       credits.set(l.account, (credits.get(l.account) ?? 0) + l.amount);
@@ -1535,6 +1838,40 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       recordWallet(account, at + APPLIED_AFTER, { settlement: id, kind: 'settlement', change: after - a.wallet, overflow: Math.max(0, raw - settings.walletCap), floored: Math.max(0, -raw), balanceAfter: after, ref: null });
       a.wallet = after;
     }
+  }
+
+  /* The written alerts the fake's seeds hold (`alerts`, 0058): a trap, a hint, a ruling. A quote and a card on an account's own are read from the Acts. */
+  const seededAlerts: { readonly account: Id; readonly kind: WrittenKind; readonly sub: string | null; readonly act: Id; readonly character: Id | null; readonly at: number }[] = [];
+
+  /**
+   * Every alert of the account, newest first, as `my_alerts` (0060) unions them: written (a quote of its post, a card on its post,
+   * character or thread by another player, and the seeded kinds), its followed threads with new posts, and the settlements that moved
+   * its characters. Every player's news joins in the updates and season-news builds.
+   */
+  function alertsOf(account: AccountRec): Alert[] {
+    const line = (a: Pick<Alert, 'kind' | 'sub' | 'act' | 'character'> & { at: number; thread?: Id | null; count?: number | null; title?: string | null; name?: string | null }): Alert => {
+      const thread = a.thread ?? (a.act === null ? null : acts.get(a.act)?.thread ?? null);
+      return { kind: a.kind, sub: a.sub, act: a.act, character: a.character, at: iso(a.at), thread,
+        name: a.name !== undefined ? a.name : a.character === null ? null : characters.get(a.character)?.name ?? null,
+        title: a.title !== undefined ? a.title : thread === null ? null : threads.get(thread)?.title ?? null, count: a.count ?? null };
+    };
+    const ownerOfCharacter = (c: Id | null | undefined) => (c == null ? undefined : characters.get(c)?.owner);
+    const out: Alert[] = [];
+    for (const a of acts.values()) {
+      if (a.character === null || ownerOfCharacter(a.character) === account.id) continue;
+      const derived = derivedAlert(a);
+      if (derived?.account === account.id) out.push(line({ kind: derived.kind, sub: null, act: a.id, character: derived.character, at: a.at }));
+    }
+    for (const w of seededAlerts) if (w.account === account.id) out.push(line({ kind: w.kind, sub: w.sub, act: w.act, character: w.character, at: w.at }));
+    for (const f of followedFor(account)) out.push(line({ kind: 'followed', sub: null, act: null, character: null, at: Date.parse(f.newestAt), thread: f.thread, title: f.title, count: f.newPosts }));
+    /* Every player's news, the same for each (alerts_news, 0062): one line per update, and nothing of the player's in it. Season news joins here. */
+    for (const n of newsItems()) out.push(line({ kind: 'seasonNews', sub: n.kind, act: n.act, character: null, at: Date.parse(n.at), thread: n.thread, title: null, name: n.name, count: n.count }));
+    for (const u of updateActs()) out.push(line({ kind: 'update', sub: null, act: u.id, character: null, at: u.at, thread: u.thread, title: String(u.payload['title']), name: characters.get(u.character!)?.name ?? null }));
+    for (const x of settlements) {
+      const mine = x.lines.filter((l) => l.account === account.id);
+      if (mine.length > 0) out.push(line({ kind: 'settlement', sub: String(x.id), act: null, character: null, at: x.endsAt + APPLIED_AFTER, count: new Set(mine.map((l) => l.character)).size }));
+    }
+    return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || String(a.sub ?? '').localeCompare(String(b.sub ?? '')) || String(a.act ?? '').localeCompare(String(b.act ?? '')));
   }
 
   const seed: Seed = {
@@ -1596,6 +1933,35 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     nextSettlementAt(at) { nextSettlement = at; },
     views(thread, count) { views.set(thread, count); },
+    alert(account, a) {
+      seeded(account);
+      if (!isWritten(a.kind) || a.kind === 'quote' || a.kind === 'cardOnYours') throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);
+      if (!acts.has(a.act)) throw new Error('an alert is about an Act that exists');
+      if (a.character !== undefined && characters.get(a.character)?.owner !== account) throw new Error('an alert concerns a character of the account\'s');
+      const line = { account, kind: a.kind, sub: a.sub ?? null, act: a.act, character: a.character ?? null, at: a.at ?? now() };
+      seededAlerts.push(line);
+      send(`account:${account}`, 'alert', () => { for (const l of [...(accountListeners.get(account) ?? [])]) l.onAlert?.({ id: crypto.randomUUID(), kind: line.kind, sub: line.sub, act: line.act, character: line.character, at: iso(line.at) }); });
+    },
+    handover(h) {
+      if (h.outgoing !== null && h.outgoing !== undefined) staffId(h.outgoing);
+      staffId(h.boss);
+      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now() });
+      /* A change of Boss is two items of news, as news_announce (0063) queues them: the one who left, where there was one, and the one who arrived. */
+      const at = iso(h.at ?? now());
+      if (h.outgoing != null && h.outgoing !== h.boss) {
+        const left = { kind: 'seasonNews' as const, sub: 'bossLeft', act: null, at };
+        send('reach', 'news', () => { for (const l of [...reachListeners]) l.onNews?.(left); });
+      }
+      if (h.outgoing !== h.boss) {
+        const arrived = { kind: 'seasonNews' as const, sub: 'bossArrived', act: null, at };
+        send('reach', 'news', () => { for (const l of [...reachListeners]) l.onNews?.(arrived); });
+      }
+    },
+    update(u) {
+      const wrote = writeUpdate(u.title, u.body, u.changes ?? [], u.at);
+      if (!wrote.ok) throw new Error(`a seeded update is refused: ${wrote.error}`);
+      return wrote.value.act;
+    },
     cards(account, held) { seeded(account).cards = { ...held }; },
     wallet(account, balance) { setWallet(account, balance); },
     buy(account, card, o) { accepted(asAt(account, o?.at, () => buyCard(card))); },
@@ -1728,7 +2094,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const endsAt = o?.ends ?? at + Math.min(rules?.lasts ? span(rules.lasts) : bound, bound);
       const written = asAt(ownerOf(character), at, () => write({ character, kind: 'card', thread, target: on, at, payload: { card, message: o?.message ?? '', config: o?.config ?? {}, reach, [reach]: target, ends: iso(endsAt) } }));
       reachPlays.set(written.id, { reach, target, endsAt });
-      if (o?.live) sendAct(written);
+      if (o?.live) { sendAct(written); sendReach(written); }
       return written.id;
     },
     set(character, target, card, o) {

@@ -114,6 +114,24 @@ export function BoardScreen({ slug }: { readonly slug: string }) {
     return () => { live = false; };
   }, [api, slug, asked, signedIn, plays, tallies, mine, effects]);
 
+  /* A board card is announced on `reach`, which every signed-in page hears, and not on this board's own topic: this banner keeps the
+     plays on its board and drops the rest. The caster is read first, so the mark names them as the banner reads one on load. */
+  const boardId = state.status === 'ready' ? state.board.id : null;
+  useEffect(() => {
+    if (boardId === null) return undefined;
+    return api.subscribeReach({
+      onPlay(a) {
+        if (a.kind !== 'card' || a.payload.reach !== 'board' || a.payload.board !== boardId) return;
+        void (async () => {
+          const who = a.character === null ? [] : await api.characters([a.character]).catch(() => []);
+          if (who.length) setState((s) => (s.status === 'ready' && s.board.id === boardId ? { ...s, characters: new Map([...s.characters, ...who.map((c) => [c.id, c] as const)]) } : s));
+          plays.add([a]);
+          await readEffects(api, plays, [a], effects);
+        })().catch(() => { /* the next read of the board shows it */ });
+      },
+    });
+  }, [api, boardId, plays, effects]);
+
   /* After a page turn, focus goes to the board's heading, so a keyboard starts the new page at its top, never on the page's body. */
   const readyPage = state.status === 'ready' ? `${state.board.slug}:${state.page}` : null;
   useEffect(() => {

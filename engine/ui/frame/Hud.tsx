@@ -20,6 +20,12 @@
  * click on the avatar or the orbs opens its page as the browser would and leaves this one alone.
  * Menu navigates rather than opening a menu, so it claims no popup.
  *
+ * Alerts (the alerts plan, Task 10; the alerts design, section 8) is a link to the Alerts page with a bell and a gold count of what is new
+ * (`alertsUnread`: 1 to 9, "9+" at the bound, nothing at none), above Hand beside the clock on the Main board's layout and a bell between "Posting
+ * as" and Menu on the Phone board's. The count is read on each page and on each alert that arrives; what arrives live also toasts above the seam
+ * (engine/ui/alerts/Toasts.tsx), which wait while the hand is open. On the Phone board Menu shortens to its glyph, its word kept for a screen
+ * reader, when the row would cut the mask's name.
+ *
  * The hand opens as a region and takes focus, so a keyboard is in it at once; its Close the hand
  * button, or Esc, closes it and returns focus to the hand. What it holds is the cards' (engine/ui/cards/Hand.tsx):
  * a sheet above the bar on the Phone board's layout, and on the Main board's the cards themselves,
@@ -44,7 +50,10 @@ import { facesOf, withCardEconomy } from '../cards/faces.ts';
 import { usePlay } from '../cards/play.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
-import { motionReduced } from '../appearance.ts';
+import { motionReduced, useTextSize } from '../appearance.ts';
+import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
+import { Toasts } from '../alerts/Toasts.tsx';
+import { useAlertFeed } from '../alerts/useAlertFeed.ts';
 import { HUD_CLASS } from '../glass/place.ts';
 import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import { pageEscape } from '../glass/keys.ts';
@@ -55,6 +64,11 @@ import { useBoard } from '../glass/useBoard.ts';
 const SLOPE = 28;
 const TAB = 24;
 const TAB_OUT = 20;
+/** The room the mask picker's arrow takes beside the name, in the phone's px. */
+const PICKER_ARROW = 28;
+
+/** The count as the HUD says it: nothing at none, the number to 9, "9+" at the bound. */
+export const unreadText = (n: number | null): string | null => (n === null || n <= 0 ? null : n >= ALERTS_UNREAD_BOUND ? `${ALERTS_UNREAD_BOUND - 1}+` : String(n));
 
 export function Hud() {
   const { api, instance, settings, ui } = useKayfa();
@@ -70,6 +84,12 @@ export function Hud() {
   const drawer = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
   const aura = useRef<HTMLDivElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const picker = useRef<HTMLSelectElement>(null);
+  const probe = useRef<HTMLSpanElement>(null);
+  /* On the Phone board: Menu is its glyph, because the row would cut the mask's name with the word; and Menu's width with the word, kept for judging that. */
+  const [compact, setCompact] = useState(false);
+  const menuWide = useRef(0);
   const drawerId = useId();
   /* Priced as the server prices them now (withCardEconomy). */
   const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy)), [instance, ui.cards, settings.cardEconomy]);
@@ -90,6 +110,8 @@ export function Hud() {
   if (!play) throw new Error('the HUD is drawn inside the Frame');
   const { handOpen, setHandOpen, armed } = play;
   const signedIn = player.session.signedIn;
+  const feed = useAlertFeed(api, player.session.account, location.path);
+  const unread = unreadText(feed.unread);
 
   const hudId = hud?.id ?? null;
   useEffect(() => {
@@ -161,6 +183,43 @@ export function Hud() {
     for (const group of el.querySelectorAll('.kb-hud-bar > *')) watch.observe(group);
     return () => { watch.disconnect(); root.style.removeProperty('--kb-hud-measured'); };
   }, [signedIn, board, scale]);
+
+  /*
+   * Menu is its word unless the word would cut the mask's name. The name is measured as the picker draws it (a hidden copy of it, in the picker's
+   * face), against the picker's room as it would be with Menu's word: the room now, less what shortening gave it. Judged that way the answer does
+   * not flip back and forth as the picker grows when Menu shortens. It is judged again whenever the bar, the name or the picker changes size.
+   */
+  const hudName = hud?.name ?? null;
+  const shortened = useRef(false);
+  shortened.current = compact;
+  /* A change of text size changes the word's width and every other: what was kept of the word's width is let go, Menu is drawn with its word, and judged again. */
+  const size = useTextSize();
+  const sizeJudged = useRef(size);
+  const [redraw, setRedraw] = useState(0);
+  useEffect(() => {
+    if (sizeJudged.current !== size) {
+      sizeJudged.current = size;
+      if (shortened.current) { shortened.current = false; setCompact(false); setRedraw((n) => n + 1); return undefined; }
+    }
+    const bar = section.current;
+    const choose = picker.current;
+    const word = probe.current;
+    const menu = menuButton.current;
+    if (wide || !bar || !choose || !word || !menu || typeof ResizeObserver === 'undefined') { setCompact(false); return undefined; }
+    const judge = () => {
+      const menuNow = menu.getBoundingClientRect().width;
+      if (!shortened.current) menuWide.current = menuNow;
+      /* Shortened, the picker has grown by what Menu gave back; with the word it would be that much narrower. */
+      const room = choose.getBoundingClientRect().width - (shortened.current ? Math.max(0, menuWide.current - menuNow) : 0);
+      const cut = word.getBoundingClientRect().width + PICKER_ARROW > room;
+      shortened.current = cut;
+      setCompact(cut);
+    };
+    judge();
+    const watch = new ResizeObserver(judge);
+    for (const el of [bar, choose, word]) watch.observe(el);
+    return () => watch.disconnect();
+  }, [wide, hudName, board, scale, size, redraw]);
 
   /* The opened hand takes focus, so the keyboard is in it at once. */
   useEffect(() => { if (handOpen) drawer.current?.focus(); }, [handOpen]);
@@ -267,7 +326,8 @@ export function Hud() {
                       <label htmlFor={selectId} className="kb-hud-swap-label">{wide ? 'Swap mask' : 'Posting as'}</label>
                       {/* The phone's HUD has no name line: the mark stands by the mask it names. */}
                       {!wide && hiddenMark}
-                      <select id={selectId} className="kb-hud-select" value={hud.id} onChange={(e) => player.setHudCharacter(e.target.value)}>
+                      {!wide && <span ref={probe} className="kb-hud-name-probe" aria-hidden="true">{hud.name}</span>}
+                      <select ref={picker} id={selectId} className="kb-hud-select" value={hud.id} onChange={(e) => player.setHudCharacter(e.target.value)}>
                         {player.actingCharacters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </span>
@@ -295,15 +355,35 @@ export function Hud() {
                   <span className="kb-hud-clock-label">Next settlement</span>
                   {next ? <time className="kb-hud-clock-time kb-num" dateTime={next}>{dayAndTime(next)}</time> : <span className="kb-hud-clock-time">not yet set</span>}
                 </p>
+                <Link
+                  to={GLASS_NAV.alerts}
+                  className="kb-hud-alerts kb-glass-skew"
+                  data-kb-held={handOpen ? '' : undefined}
+                  aria-label={unread === null ? 'Alerts' : `Alerts ${unread} new`}
+                >
+                  <svg className="kb-hud-bell kb-glass-upright" aria-hidden="true" focusable="false" width="22" height="24" viewBox="0 0 22 24">
+                    <path d="M11 2.5c-3.6 0-6.2 2.8-6.2 6.4v4.6L2.5 17.6h17l-2.3-4.1V8.9c0-3.6-2.6-6.4-6.2-6.4z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                    <path d="M8.2 20.2a2.9 2.9 0 0 0 5.6 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  <span className="kb-hud-alerts-word kb-glass-upright">Alerts</span>
+                  {' '}
+                  {unread !== null && <span className="kb-hud-alerts-count kb-glass-upright kb-num" aria-hidden="true">{unread}</span>}
+                </Link>
                 <div className="kb-hud-actions">
                   <button
+                    ref={menuButton}
                     type="button"
                     className="kb-hud-menu kb-glass-skew"
                     aria-keyshortcuts="Escape"
                     onClick={() => navigate(GLASS_NAV.characters)}
                   >
                     <kbd className="kb-hud-key kb-glass-upright" aria-hidden="true">ESC</kbd>
-                    <span className="kb-glass-upright">Menu</span>
+                    <span className={compact ? 'kb-visually-hidden' : 'kb-glass-upright'}>Menu</span>
+                    {compact && (
+                      <svg className="kb-hud-menu-glyph kb-glass-upright" aria-hidden="true" focusable="false" width="22" height="18" viewBox="0 0 22 18">
+                        <path d="M2 3h18M2 9h18M2 15h18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                      </svg>
+                    )}
                   </button>
                   <button
                     ref={handButton}
@@ -324,6 +404,14 @@ export function Hud() {
           </div>
         </div>
       </section>
+      {signedIn && (
+        <Toasts
+          key={player.session.account ?? ''}
+          arrivals={feed.arrivals}
+          hold={handOpen}
+          returnFocus={() => section.current?.querySelector<HTMLElement>('.kb-hud-alerts')?.focus()}
+        />
+      )}
     </>
   );
 }

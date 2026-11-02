@@ -44,7 +44,7 @@ describe('the public profile', () => {
     expect(facts).toHaveTextContent('Threads spun: 0');
     expect(facts).toHaveTextContent('Cards played: 1');
     expect(facts).toHaveTextContent('Joined Oct 2026');
-    expect(within(facts).getByRole('link', { name: 'season standings' })).toHaveAttribute('href', '/standings');
+    expect(within(facts).getByRole('link', { name: 'season standings' })).toHaveAttribute('href', '/season?tab=rankings');
   });
 
   test('a title and a signature, as the character set them', async () => {

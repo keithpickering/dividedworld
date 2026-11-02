@@ -60,7 +60,10 @@ async function linesOffGround(page: Page): Promise<string[]> {
   });
 }
 
-/** Every line of text cut off: past the window's sides, or past an ancestor that clips it. */
+/**
+ * Every line of text cut off: past the window's sides, or past an ancestor that clips it. The menu bar's tab strip is left out only where it scrolls sideways
+ * by design (the one-column layout, shell.css, overflow auto), where with the Alerts and Updates tabs it is wider than a 1280px window at 200% text.
+ */
 async function clipped(page: Page): Promise<string[]> {
   return page.evaluate(async () => {
     await document.fonts.ready;
@@ -71,6 +74,9 @@ async function clipped(page: Page): Promise<string[]> {
       const text = n.textContent?.trim();
       const el = n.parentElement;
       if (!text || !el || el.closest('[aria-hidden="true"], .kb-visually-hidden, script, style, option, [hidden]')) continue;
+      /* The menu's tab strip is left out only where it scrolls on its own (the one-column layout's, overflow auto); on the desk layout it is checked like any text. */
+      const strip = el.closest('.kb-glass-menu-list');
+      if (strip && ['auto', 'scroll'].includes(getComputedStyle(strip).overflowX)) continue;
       const range = document.createRange();
       range.selectNodeContents(n);
       for (const r of range.getClientRects()) {
@@ -233,4 +239,26 @@ test.describe('200% text at 1280px wide', () => {
       expect(await clipped(page)).toEqual([]);
     });
   }
+});
+
+/* The check `clipped` is trusted only if it is red on a planted defect: the menu strip is skipped where it scrolls on its own, and nowhere else. */
+test.describe('the clipped-text check and the menu\'s tab strip', () => {
+  test('a desk-layout strip planted with overflow hidden and too narrow for its tabs is reported', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await prefer(page, '/settings', {});
+    await expect(ready(page, true)).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-kb-layout', 'main');
+    await page.evaluate(() => { const l = document.querySelector<HTMLElement>('.kb-glass-menu-list')!; l.style.cssText += ';width:200px;overflow:hidden;flex-wrap:nowrap'; });
+    expect((await clipped(page)).length).toBeGreaterThan(0);
+  });
+
+  test('a one-column strip that scrolls on its own, wider than the window, reports nothing', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await prefer(page, '/settings', {});
+    await expect(ready(page, true)).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-kb-layout', 'phone');
+    const strip = await page.evaluate(() => { const l = document.querySelector<HTMLElement>('.kb-glass-menu-list')!; return { overflowX: getComputedStyle(l).overflowX, scrolls: l.scrollWidth > l.clientWidth }; });
+    expect(strip).toEqual({ overflowX: 'auto', scrolls: true });
+    expect(await clipped(page)).toEqual([]);
+  });
 });

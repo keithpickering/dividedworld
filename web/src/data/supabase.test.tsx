@@ -32,6 +32,7 @@ const FALLBACK: ScreenSettings = {
   presencePollSeconds: 30,
   presenceWindow: { unit: 'minute', count: 5 },
   cardEconomy: {},
+  toastDefaults: ['quote', 'update'],
 };
 
 const B64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -108,7 +109,7 @@ describe('what the adapter may request', () => {
     await Promise.allSettled([
       api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.myReleases([A]), api.releaseEffect(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
-      api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A),
+      api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
@@ -202,7 +203,27 @@ describe('reads and their rows', () => {
     const h = harness(() => rows([origin]));
     const row = await h.api.thread(T);
     expect([row?.originActId, row?.originThread, row?.originTitle, row?.originSeq]).toEqual([A, C, 'Where it came from', 7]);
-    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['thread_list']);
+    /* By its id, from thread_open: thread_list leaves the season's reveal and Turns threads out of a board's list, and a link to one still opens it. */
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['thread_open']);
+  });
+
+  it('reads a page of the season\'s news, newest first, and keeps only what the shape holds', async () => {
+    const top = [{ character: A, name: 'Spritey', place: 1, standing: 985, shown: [{ kind: 'reveal', act: B, at: '2026-10-03T13:00:00Z', class: 'face' }, { kind: 'odd', act: B, at: 'x' }] }, { name: 'no id' }];
+    const h = harness(() => rows([
+      { kind: 'results', act: B, thread: C, seq: 1, at: '2026-10-28T12:00:00Z', season: 1, name: null, quote: null, count: 4, detail: { top } },
+      { kind: 'tally', act: A, thread: C, seq: 2, at: '2026-10-26T08:00:00Z', season: 1, name: null, quote: null, count: 2,
+        detail: { debuts: [{ character: A, name: 'Thwompson' }, { name: 'no id' }], turns: [{ character: B, name: 'Pipewrench', was: 'heel' }] } },
+      { kind: 'bossArrived', act: null, thread: null, seq: null, at: '2026-10-28T12:00:00Z', season: 2, name: 'Mister Spreadsheet', quote: null, count: null, detail: null },
+    ]));
+    const news = await h.api.seasonNews('2026-11-01T00:00:00Z');
+    const [req] = h.to('rpc/season_news');
+    expect(req?.method).toBe('POST');
+    expect(req?.body).toEqual({ before: '2026-11-01T00:00:00Z', most: 20 });
+    expect(news.map((n) => n.kind)).toEqual(['results', 'tally', 'bossArrived']);
+    expect(news[0]?.top).toEqual([{ character: A, name: 'Spritey', place: 1, standing: 985, shown: [{ kind: 'reveal', act: B, at: '2026-10-03T13:00:00Z', class: 'face', was: null }] }]);
+    expect(news[1]?.debuts).toEqual([{ character: A, name: 'Thwompson', class: null, was: null }]);
+    expect(news[1]?.turns).toEqual([{ character: B, name: 'Pipewrench', class: null, was: 'heel' }]);
+    expect(news[2]).toMatchObject({ act: null, thread: null, seq: null, quote: null, name: 'Mister Spreadsheet', top: [], debuts: [], turns: [] });
   });
 
   it('counts a character\'s posts, spins and cards from its one counter row, never from its Acts', async () => {
@@ -458,7 +479,7 @@ describe('reads and their rows', () => {
 
   it('answers preferences with the defaults when no row exists', async () => {
     const h = harness(() => rows([]));
-    expect(await h.api.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [] });
+    expect(await h.api.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null });
   });
 
   it('reads the glass\'s three preferences from their columns and sends them to set_preferences by its parameter names', async () => {
@@ -466,10 +487,64 @@ describe('reads and their rows', () => {
       if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', text_size: 200, cards_met: ['whoops'] });
       return rows([{ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150 }]);
     });
-    expect(await h.api.preferences()).toEqual({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, cardsMet: [] });
-    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,postbit,motion,smoke,contrast,text_size,cards_met');
-    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: ['whoops'] } });
-    expect(h.to('rpc/set_preferences')[0]?.body).toEqual({ theme: null, postbit: null, motion: null, smoke: 'off', contrast: 'high', text_size: 200 });
+    expect(await h.api.preferences()).toEqual({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null });
+    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,postbit,motion,smoke,contrast,text_size,cards_met,alerts_seen_at,settlement_seen,toasts');
+    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: ['whoops'], alertsSeenAt: null, settlementSeen: null, toasts: null } });
+    expect(h.to('rpc/set_preferences')[0]?.body).toEqual({ theme: null, postbit: null, motion: null, smoke: 'off', contrast: 'high', text_size: 200, toasts: null, toasts_default: false });
+  });
+
+  it('reads the kinds that toast (null where never chosen, an empty list where chosen so), drops a kind it does not know, and sends a choice or a reset by set_preferences\' parameter names', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', text_size: 100, cards_met: [], toasts: ['quote', 'someday'] });
+      return rows([{ theme: 'system', toasts: [] }]);
+    });
+    expect((await h.api.preferences()).toasts).toEqual([]);
+    expect(await h.api.setPreferences({ toasts: ['quote', 'someday' as never] })).toMatchObject({ ok: true, value: { toasts: ['quote'] } });
+    expect(h.to('rpc/set_preferences')[0]?.body).toMatchObject({ toasts: ['quote', 'someday'], toasts_default: false });
+    await h.api.setPreferences({ toasts: null });
+    expect(h.to('rpc/set_preferences')[1]?.body).toMatchObject({ toasts: null, toasts_default: true });
+    await h.api.setPreferences({ smoke: 'low' });
+    expect(h.to('rpc/set_preferences')[2]?.body).toMatchObject({ toasts: null, toasts_default: false });
+  });
+
+  it('reads the account\'s two marks and moves them by see_alerts and see_settlement, answering the mark as it stands', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/see_alerts')) return json({ seen: '2026-10-29T08:17:00+00:00' });
+      if (r.url.pathname.endsWith('/rpc/see_settlement')) return json({ seen: '2026-10-30T08:17:00+00:00' });
+      return rows([{ alerts_seen_at: '2026-10-29T08:17:00+00:00', settlement_seen: '2026-10-30T08:17:00+00:00' }]);
+    });
+    expect(await h.api.preferences()).toMatchObject({ alertsSeenAt: '2026-10-29T08:17:00+00:00', settlementSeen: '2026-10-30T08:17:00+00:00' });
+    expect(await h.api.seeAlerts('2026-10-01T00:00:00Z')).toEqual({ ok: true, value: '2026-10-29T08:17:00+00:00' });
+    expect(await h.api.seeSettlement('2026-10-30T08:17:00Z')).toEqual({ ok: true, value: '2026-10-30T08:17:00+00:00' });
+    expect(h.to('rpc/see_alerts')[0]?.body).toEqual({ at: '2026-10-01T00:00:00Z' });
+    expect(h.to('rpc/see_settlement')[0]?.body).toEqual({ ends_at: '2026-10-30T08:17:00Z' });
+  });
+
+  it('reads the Alerts through my_alerts, a page at a time from a cursor, and the count through my_alerts_unread, bounded', async () => {
+    const written = { kind: 'quote', sub: null, act: A, character: B, at: '2026-10-29T08:17:00+00:00', thread: T, name: 'Ana Face', title: 'A title', count: null };
+    const followed = { kind: 'followed', sub: null, act: null, character: null, at: '2026-10-29T09:00:00+00:00', thread: T, name: null, title: 'A title', count: 4 };
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_alerts')) return json([followed, written, { ...written, kind: 'someFutureKind' }]);
+      if (r.url.pathname.endsWith('/rpc/my_alerts_unread')) return json(r.method === 'POST' ? 27 : 0);
+      return undefined;
+    });
+    expect(await h.api.alerts()).toEqual([
+      { kind: 'followed', sub: null, act: null, character: null, at: '2026-10-29T09:00:00+00:00', thread: T, name: null, title: 'A title', count: 4 },
+      { kind: 'quote', sub: null, act: A, character: B, at: '2026-10-29T08:17:00+00:00', thread: T, name: 'Ana Face', title: 'A title', count: null },
+    ]);
+    await h.api.alerts('2026-10-29T08:17:00+00:00');
+    expect(h.to('rpc/my_alerts').map((r) => r.body)).toEqual([{ before: null, most: 30 }, { before: '2026-10-29T08:17:00+00:00', most: 30 }]);
+    /* A server that answered more than the bound is still read at it. */
+    expect(await h.api.alertsUnread()).toBe(10);
+  });
+
+  it('maps the marks an answer carries (set_preferences, meet_card, forget_cards_met) into the preferences', async () => {
+    const marks = { alerts_seen_at: '2026-10-29T08:17:00+00:00', settlement_seen: '2026-10-30T08:17:00+00:00' };
+    const h = harness((r) => json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150, cards_met: ['whoops'], ...marks }));
+    const want = { ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, cardsMet: ['whoops'], alertsSeenAt: marks.alerts_seen_at, settlementSeen: marks.settlement_seen, toasts: null } };
+    expect(await h.api.setPreferences({ smoke: 'low' })).toEqual(want);
+    expect(await h.api.meetCard('whoops')).toEqual(want);
+    expect(await h.api.forgetCardsMet()).toEqual(want);
   });
 
   it('reads the cards met from their column and calls meet_card and forget_cards_met by their parameter names', async () => {
@@ -906,7 +981,7 @@ describe('live', () => {
     const removed: string[] = [];
     const order: string[] = [];
     const client = {
-      auth: { getSession: async () => ({ data: { session: { access_token: JWT } } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) },
+      auth: { getSession: async () => ({ data: { session: { access_token: JWT, user: { id: A } } } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) },
       realtime: { setAuth: vi.fn(async (t: string) => { order.push(`auth:${t === JWT}`); }) },
       channel(topic: string, opts: unknown) {
         const ch = { topic, opts, handlers: new Map<string, (m: { payload: unknown }) => void>(), subscribed: false };
@@ -977,6 +1052,61 @@ describe('live', () => {
     await settle();
     expect(early.channels.filter((c) => c.subscribed)).toEqual([]);
   });
+
+  it('opens the signed-in account\'s own channel for alerts, and maps an alert broadcast', async () => {
+    const s = stub();
+    const onAlert = vi.fn();
+    const off = s.api.subscribeAccount({ onAlert });
+    await settle();
+    expect(s.channels.map((c) => c.topic)).toEqual([`account:${A}`]);
+    expect(s.channels[0]?.opts).toEqual({ config: { private: true } });
+    expect(s.order).toEqual([`channel:account:${A}`, 'auth:true', `subscribe:account:${A}`]);
+    s.channels[0]?.handlers.get('alert')?.({ payload: { id: '7b1d6c1e-0000-4000-8000-000000000007', kind: 'quote', sub: null, act: B, character: C, at: '2026-11-02T10:00:00Z' } });
+    expect(onAlert).toHaveBeenCalledWith({ id: '7b1d6c1e-0000-4000-8000-000000000007', kind: 'quote', sub: null, act: B, character: C, at: '2026-11-02T10:00:00Z' });
+    off();
+    expect(s.client.removeChannel).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens nothing for an account when unsubscribed before the session was read', async () => {
+    const s = stub();
+    s.api.subscribeAccount({ onAlert: vi.fn() })();
+    await settle();
+    expect(s.channels).toEqual([]);
+  });
+
+  it('hears plays beyond a post on reach, as the public Act', async () => {
+    const s = stub();
+    const onPlay = vi.fn();
+    s.api.subscribeReach({ onPlay });
+    await settle();
+    expect(s.channels.map((c) => c.topic)).toEqual(['reach']);
+    s.channels[0]?.handlers.get('effect')?.({ payload: ACT_ROW });
+    expect(onPlay).toHaveBeenCalledWith(ACT);
+  });
+
+  it('hears a settlement applied on reach as its id and time', async () => {
+    const s = stub();
+    const onSettled = vi.fn();
+    s.api.subscribeReach({ onSettled });
+    await settle();
+    s.channels[0]?.handlers.get('settled')?.({ payload: { id: 41, at: '2026-11-02T08:00:01Z' } });
+    expect(onSettled).toHaveBeenCalledWith({ id: '41', at: '2026-11-02T08:00:01Z' });
+  });
+
+  it('hears news on reach as its public projection, and not as a play', async () => {
+    const s = stub();
+    const onPlay = vi.fn();
+    const onNews = vi.fn();
+    s.api.subscribeReach({ onPlay, onNews });
+    await settle();
+    s.channels[0]?.handlers.get('news')?.({ payload: { kind: 'seasonNews', sub: 'tally', act: B, at: '2026-11-02T10:00:00Z' } });
+    s.channels[0]?.handlers.get('news')?.({ payload: { kind: 'update', sub: null, act: C, at: '2026-11-02T11:00:00Z' } });
+    expect(onNews.mock.calls.map((c) => c[0])).toEqual([
+      { kind: 'seasonNews', sub: 'tally', act: B, at: '2026-11-02T10:00:00Z' },
+      { kind: 'update', sub: null, act: C, at: '2026-11-02T11:00:00Z' },
+    ]);
+    expect(onPlay).not.toHaveBeenCalled();
+  });
 });
 
 export type { KayfaApi };
@@ -1003,7 +1133,7 @@ describe('the log', () => {
       if (name === 'my_posts_played_on') {
         return r.url.searchParams.get('select') === 'play,post,saved_at'
           ? rows([{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }])
-          : rows([{ play: C, post: A, at: '2026-10-29T21:16:00+00:00' }]);
+          : rows([{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', target_name: null, target_character: B }]);
       }
       if (name === 'my_face_down') return rows([{ play: SET, card: 'bluffy', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
       if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, bought_price: 100, at: '2026-10-29T19:00:00+00:00' }]);
@@ -1024,7 +1154,7 @@ describe('the log', () => {
       }],
       wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
       cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }],
-      playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00' }],
+      playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
       setEnds: [{ play: SET, card: 'bluffy', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
       caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, boughtPrice: 100, at: '2026-10-29T19:00:00+00:00' }],
@@ -1458,3 +1588,37 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     await expect(refused.api.adminQueue()).rejects.toThrow('that could not be read right now; try again');
   });
 });
+
+describe('Updates', () => {
+  const ROW = {
+    act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.',
+    changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2,
+  };
+  const UPDATE = { act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2 };
+
+  it('reads a page through updates, from a cursor, and takes what a row holds as it is', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/updates') ? json([ROW, { ...ROW, act: C, avatar: null, changes: null, tagline: null, seq: 1 }]) : undefined));
+    expect(await h.api.updates()).toEqual([UPDATE, { ...UPDATE, act: C, avatar: null, changes: [], tagline: '', seq: 1 }]);
+    await h.api.updates('2026-11-02T08:00:00+00:00');
+    expect(h.to('rpc/updates').map((r) => r.body)).toEqual([{ before: null, most: 20 }, { before: '2026-11-02T08:00:00+00:00', most: 20 }]);
+  });
+
+  it('writes through post_update by its parameter names, and answers the update as it reads it', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/post_update') ? json(ROW) : undefined));
+    expect(await h.api.postUpdate('Traps bite', 'The trap was offended.', [{ label: 'Trap Card', text: 'catches more.' }])).toEqual({ ok: true, value: UPDATE });
+    expect(h.to('rpc/post_update')[0]?.body).toEqual({ title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }] });
+    const refused = harness(() => json({ code: '22023', message: 'change 2 has a label and no text; give it a text, or leave the row out', hint: 'kayfabb.refusal' }, 400));
+    expect(await refused.api.postUpdate('T', 'B', [])).toEqual({ ok: false, error: 'change 2 has a label and no text; give it a text, or leave the row out' });
+    const lost = harness(() => new Error('network'));
+    expect(await lost.api.postUpdate('T', 'B', [])).toMatchObject({ ok: false, uncertain: true });
+  });
+
+  it('knows the developer as a staff kind of its own', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Gabe', joined: '2026-10-01', staff: 'developer', staff_kind: 'developer' }], 1);
+      return rows([], 0);
+    });
+    expect((await h.api.characters([B]))[0]).toMatchObject({ name: 'Gabe', staff: 'developer', staffKind: 'developer' });
+  });
+});
+

@@ -7,8 +7,8 @@ import './postbit.css';
 
 export const STAFF_BADGE = { boss: 'ADMINISTRATOR', bot: 'MODERATOR' } as const;
 
-/** Nothing for a character who is not staff. */
+/** Nothing for a character who is not staff, and nothing for the developer persona, whose posts are on the Updates page and in no thread. */
 export function StaffBadge({ character }: { readonly character: Character }) {
-  if (!character.staff || !character.staffKind) return null;
+  if (!character.staff || !character.staffKind || character.staffKind === 'developer') return null;
   return <span className="kb-staff-badge" data-kb-staff={character.staffKind}>{STAFF_BADGE[character.staffKind]}</span>;
 }

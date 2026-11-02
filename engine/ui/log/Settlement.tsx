@@ -14,12 +14,13 @@
  *
  * `SettlementOnLoad` opens it: once the session is known, where the app says a load may be met by it
  * (a board page, not a glass page the player went to), it asks when the last settlement was
- * (`lastSettledAt`, public) and, if this device has not marked it seen for this account, reads the log;
+ * (`lastSettledAt`, public) and, if the account has not marked it seen, reads the log;
  * a settlement that holds a line of the player's opens the summary, and one that holds nothing of
  * theirs is marked seen without opening. (A Turn that took effect in a window none of the player's characters scored in is on
- * the roster alone: the log's settlements are the ones the player has lines in, my_ledger's.) The mark is this device's alone
- * (`kb-settled-seen:<account>`), sent nowhere (the design, Open: the last settlement seen is kept on
- * the device). It is set as the summary shows, so it does not show again after either way out.
+ * the roster alone: the log's settlements are the ones the player has lines in, my_ledger's.) The mark is the account's
+ * (`settlement_seen`, only ever forward; the alerts design, section 4), so a second device does not show it again; it was this
+ * device's alone (`kb-settled-seen:<account>`), a key that is no longer read or written. It is set as the summary shows, so it
+ * does not show again after either way out.
  */
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
@@ -36,12 +37,6 @@ import { heldBack, inOrder, plain, rankChanges, scoredAs, signed, turnsTaken, ut
 import { tabsOf, type LogOpening } from './Log.tsx';
 import { useLog } from './useLog.ts';
 import './settlement.css';
-
-/** Where this device keeps the last settlement an account has seen, by its end. */
-export const seenKey = (account: Id) => `kb-settled-seen:${account}`;
-
-const readSeen = (account: Id): string | null => { try { return globalThis.localStorage?.getItem(seenKey(account)) ?? null; } catch { return null; } };
-const markSeen = (account: Id, endsAt: string) => { try { globalThis.localStorage?.setItem(seenKey(account), endsAt); } catch { /* a device that keeps nothing shows it again: no harm */ } };
 
 /** The character whose tab the summary shows: the one picked, else the first with a line in the newest settlement, else the first. */
 function shownTab(data: LogData, tab: Id | null) {
@@ -174,8 +169,8 @@ export function SettlementScreen() {
 
   const newest = state.status === 'ready' ? state.data.log.settlements[0] : undefined;
   useEffect(() => {
-    if (newest && session.account) markSeen(session.account, newest.endsAt);
-  }, [newest, session.account]);
+    if (newest && session.account) void api.seeSettlement(newest.endsAt).catch(() => { /* unmarked, it shows again on a later load: no harm */ });
+  }, [api, newest, session.account]);
 
   /*
    * The page owns its ways out, so every state draws Back to the board: with no menu bar here, and no Esc on a touch screen, a
@@ -223,7 +218,7 @@ export function startLoad(): void {
 }
 
 /**
- * Opens the summary on the first load after a settlement this device has not seen for the account. `active` is the app's word that
+ * Opens the summary on the first load after a settlement the account has not seen. `active` is the app's word that
  * the load may be met by it (a board page); it looks once per load and account, and a look dropped before it finished is made again
  * on the next board page.
  */
@@ -253,12 +248,13 @@ export function SettlementOnLoad({ active }: { readonly active: boolean }) {
       const last = await api.lastSettledAt();
       if (!live) return;
       if (!last) return done();
-      const seen = readSeen(account);
+      const seen = (await api.preferences()).settlementSeen;
+      if (!live) return;
       if (seen !== null && micros(seen) >= micros(last)) return done();
       const newest = (await api.log()).settlements[0];
       if (!live) return;
       done();
-      markSeen(account, last);
+      void api.seeSettlement(last).catch(() => { /* unmarked, it shows again on a later load: no harm */ });
       /* The summary is of a settlement the player has lines in; one that scored nothing of theirs is only marked. */
       if (newest && micros(newest.endsAt) === micros(last)) navigate('/log/settlement');
     })().catch(() => { done(); /* a load the summary could not be read for opens as it would have */ });

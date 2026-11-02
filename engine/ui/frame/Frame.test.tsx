@@ -1,13 +1,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { Character, KayfaApi, MyCharacter } from '../data/api.ts';
+import type { AccountListener, Character, KayfaApi, MyCharacter } from '../data/api.ts';
+import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { PlayerProvider } from '../player.tsx';
 import { RouterProvider } from '../router.tsx';
 import { testGlass } from '../test-world.tsx';
 import { boardPlace, forgetBoard, keepBoardPlace } from '../glass/back.ts';
 import { boardSwitch } from '../glass/board.ts';
+import { Link } from '../router.tsx';
 import { Frame } from './Frame.tsx';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
@@ -19,8 +21,11 @@ const pub = (id: string, name: string): Character => ({
 });
 
 /* The glass routes as the app names them (web/src/App.tsx): the router's moves into them keep the board's place. */
-const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/invites', '/settings', '/sign-in', '/register', '/log', '/log/settlement']);
+const GLASS = new Set(['/alerts', '/characters', '/characters/new', '/characters/edit', '/invites', '/settings', '/sign-in', '/register', '/log', '/log/settlement']);
 const isGlass = (path: string) => GLASS.has(path);
+
+/* What the backend says of the player's alerts: the count, and the channel the player's account hears (the test sends on it). */
+const alerts: { unread: number; account: AccountListener | null; subscribed: number; reads: number } = { unread: 0, account: null, subscribed: 0, reads: 0 };
 
 function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>) {
   const api = {
@@ -36,6 +41,11 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
       return [{ id: 'g', slug: 'general', name: 'General' }, { id: 's', slug: 'the-system', name: 'The System' }];
     },
     nextSettlementAt: async () => '2026-10-31T08:17:00Z',
+    alertsUnread: async () => { alerts.reads += 1; return alerts.unread; },
+    subscribeAccount: (l: AccountListener) => { alerts.account = l; alerts.subscribed += 1; return () => { alerts.account = null; }; },
+    subscribeReach: () => () => {},
+    actsById: async () => [],
+    thread: async () => null,
   } as unknown as KayfaApi;
   const kayfa = {
     api,
@@ -77,7 +87,7 @@ function width(px: number) {
   Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, get: () => px });
 }
 
-beforeEach(() => { localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
+beforeEach(() => { alerts.unread = 0; alerts.account = null; alerts.subscribed = 0; alerts.reads = 0; localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); delete (document.documentElement as { clientWidth?: number }).clientWidth; });
 
 describe('the banner: the board\'s own', () => {
@@ -473,5 +483,172 @@ describe('the HUD\'s hidden mark', () => {
     const tag = await screen.findByText('Hidden');
     expect(tag.closest('.kb-hud-swap')).toBe(select.closest('.kb-hud-swap'));
     expect(screen.getAllByText('hidden from online lists')).toHaveLength(1);
+  });
+});
+
+describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', () => {
+  const alertsLink = async () => within(await hud()).findByRole('link', { name: /^Alerts/ });
+  const quoted = (id: string) => ({ id, kind: 'quote' as const, sub: null, act: null, character: null, at: '2026-10-31T08:00:00Z' });
+
+  test('is a link to Alerts that names itself plainly at none, and shows no count', async () => {
+    setup();
+    const link = await alertsLink();
+    await waitFor(() => expect(alerts.reads).toBeGreaterThan(0));
+    expect(link).toHaveAccessibleName('Alerts');
+    expect(link).toHaveAttribute('href', '/alerts');
+    expect(link.querySelector('.kb-hud-alerts-count')).toBeNull();
+  });
+
+  test('on the Main board it sits with the clock, over Hand, and Menu and Hand are where they were', async () => {
+    width(1440);
+    setup();
+    const link = await alertsLink();
+    const side = link.closest('.kb-hud-side')!;
+    expect(side.querySelector('.kb-hud-clock')).not.toBeNull();
+    expect(link.compareDocumentPosition(side.querySelector('.kb-hud-actions')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(side.querySelector<HTMLElement>('.kb-hud-actions')!).getAllByRole('button').map((b) => b.className.split(' ')[0])).toEqual(['kb-hud-menu', 'kb-hud-hand']);
+  });
+
+  test('on the Phone board it is a bell between "Posting as" and Menu', async () => {
+    width(boardSwitch(testGlass) - 1);
+    setup();
+    const link = await alertsLink();
+    const picker = await within(await hud()).findByRole('combobox', { name: 'Posting as' });
+    const menu = within(await hud()).getByRole('button', { name: 'Menu' });
+    expect(picker.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(link.compareDocumentPosition(menu) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(link.querySelector('svg.kb-hud-bell')).not.toBeNull();
+  });
+
+  test('the count is what is new, named for a screen reader, and "9+" at the bound', async () => {
+    alerts.unread = 3;
+    const { unmount } = setup();
+    const link = await alertsLink();
+    await waitFor(() => expect(link).toHaveAccessibleName('Alerts 3 new'));
+    expect(link.querySelector('.kb-hud-alerts-count')).toHaveTextContent('3');
+    unmount();
+    alerts.unread = ALERTS_UNREAD_BOUND;
+    setup();
+    const bound = await alertsLink();
+    await waitFor(() => expect(bound).toHaveAccessibleName('Alerts 9+ new'));
+    expect(bound.querySelector('.kb-hud-alerts-count')).toHaveTextContent('9+');
+  });
+
+  test('the count is read again on each page', async () => {
+    alerts.unread = 1;
+    setup(true, undefined, <Link to="/b/general">go</Link>);
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Alerts 1 new' })).toBeInTheDocument());
+    alerts.unread = 4;
+    await userEvent.click(screen.getByRole('link', { name: 'go' }));
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Alerts 4 new' })).toBeInTheDocument());
+  });
+
+  test('the count is read again when an alert arrives, and the account\'s channel is opened once', async () => {
+    setup();
+    await alertsLink();
+    await waitFor(() => expect(alerts.account).not.toBeNull());
+    alerts.unread = 2;
+    await act(async () => { alerts.account!.onAlert?.({ ...quoted('q1'), kind: 'hint', sub: 'leading:x' }); });
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Alerts 2 new' })).toBeInTheDocument());
+    expect(alerts.subscribed).toBe(1);
+  });
+
+  test('signed out there is no Alerts button and no channel', async () => {
+    setup(false);
+    await act(async () => {});
+    expect(screen.queryByRole('link', { name: /^Alerts/ })).toBeNull();
+    expect(alerts.subscribed).toBe(0);
+  });
+
+  test('an alert that arrives toasts above the HUD, waits while the hand is open and rises when it closes', async () => {
+    width(390);
+    setup();
+    await alertsLink();
+    await waitFor(() => expect(alerts.account).not.toBeNull());
+    await act(async () => { alerts.account!.onAlert?.(quoted('q1')); });
+    const toast = await screen.findByRole('article');
+    expect(toast).toHaveTextContent('your post was quoted');
+    expect(within(await hud()).queryByRole('article')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /^Hand, 3 postcards/ }));
+    await waitFor(() => expect(screen.queryByRole('article')).toBeNull());
+    await act(async () => { alerts.account!.onAlert?.(quoted('q2')); });
+    expect(screen.queryByRole('article')).toBeNull();
+    await userEvent.click(within(screen.getByRole('region', { name: 'Your hand' })).getByRole('button', { name: 'Close the hand' }));
+    expect(await screen.findAllByRole('article')).toHaveLength(2);
+  });
+
+  test('a toast that leaves with focus on it gives focus to the Alerts button', async () => {
+    setup();
+    const link = await alertsLink();
+    await waitFor(() => expect(alerts.account).not.toBeNull());
+    await act(async () => { alerts.account!.onAlert?.(quoted('q1')); });
+    const dismiss = within(await screen.findByRole('article')).getByRole('button', { name: 'Dismiss' });
+    dismiss.focus();
+    await userEvent.click(dismiss);
+    expect(link).toHaveFocus();
+    await waitFor(() => expect(screen.queryByRole('article')).toBeNull());
+  });
+
+  describe('Menu on the Phone board', () => {
+    let picker = 200;
+    let name = 120;
+    const callbacks: (() => void)[] = [];
+    beforeEach(() => {
+      picker = 200; name = 120; callbacks.length = 0;
+      vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { callbacks.push(cb); } observe() {} disconnect() {} });
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const cls = this.classList;
+        const w = cls.contains('kb-hud-name-probe') ? name : cls.contains('kb-hud-select') ? picker : cls.contains('kb-hud-menu') ? (this.querySelector('.kb-hud-menu-glyph') ? 52 : 90) : 0;
+        return { width: w, height: 48, left: 0, top: 0, right: w, bottom: 48 } as DOMRect;
+      });
+    });
+    const tell = () => act(() => { for (const cb of [...callbacks]) cb(); });
+
+    test('keeps its word while the name fits, and shortens to its glyph, still named Menu, when the row would cut the name', async () => {
+      width(boardSwitch(testGlass) - 1);
+      setup();
+      const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
+      await tell();
+      expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull();
+      /* A longer name than the picker holds with Menu's word. */
+      name = 190;
+      await tell();
+      await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).not.toBeNull());
+      expect(menu).toHaveAccessibleName('Menu');
+      /* The picker grew by what shortening gave back (38px): with the word it would still cut the name, so it stays short rather than flipping back and forth. */
+      picker = 238;
+      await tell();
+      expect(menu.querySelector('.kb-hud-menu-glyph')).not.toBeNull();
+      /* A shorter name returns the word. */
+      name = 100;
+      await tell();
+      await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull());
+    });
+
+    test('is judged afresh when the text size changes, with the word\'s width measured again and not the one kept from before', async () => {
+      width(boardSwitch(testGlass) - 1);
+      setup();
+      const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
+      name = 190;
+      await tell();
+      await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).not.toBeNull());
+      /* The word is wider at a larger size (the kept 90px would say 128 cuts nothing), and the bar itself reports nothing. */
+      name = 150;
+      picker = 240;
+      document.documentElement.setAttribute('data-kb-text-size', '125');
+      try {
+        await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull());
+      } finally { document.documentElement.removeAttribute('data-kb-text-size'); }
+    });
+
+    test('the Main board\'s Menu is always its word', async () => {
+      width(1440);
+      setup();
+      const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
+      name = 900;
+      await tell();
+      expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull();
+      expect(document.querySelector('.kb-hud-name-probe')).toBeNull();
+    });
   });
 });

@@ -100,11 +100,16 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_releases (account, play) values (bob, play);
       insert into reading (account, thread, furthest_seq, first_character) values (bob, t, 1, b);
       insert into thread_reads (thread, reader) values (t, b);
+      -- A follow chosen over the default (0059), an alert written with the Act it is about (0058), and the account's two marks (0057).
+      insert into thread_follows (account, thread, follow) values (bob, t, true), (ann, t, false);
+      insert into alerts (account, kind, act, character) values (ann, 'quote', p, a);
+      -- A hint fired for Ann's post (0065): the pattern it fired once, carried so a hint is not fired again after an import.
+      insert into hints_fired (act, pattern) values (p, 'divisive');
       -- Presence: a mask browsing a thread, and a mask hidden from the online lists.
       insert into presence (character, place_kind, place, board, place_since, online_since, seen_at) values (b, 'thread', t, (select board from threads where id = t), now(), now(), now());
       insert into presence_hidden (character) values (a);
       perform count_thread_views();
-      insert into account_preferences (account, theme, postbit, motion, smoke, contrast, text_size, cards_met) values (ann, 'dark', 'stacked', 'reduce', 'low', 'high', 150, '{whoops,stick-around}');
+      insert into account_preferences (account, theme, postbit, motion, smoke, contrast, text_size, cards_met, alerts_seen_at, settlement_seen, toasts) values (ann, 'dark', 'stacked', 'reduce', 'low', 'high', 150, '{whoops,stick-around}', now() - interval '1 hour', now() - interval '2 hours', '{quote,hint}');
       insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame)
       values (a, 'Exported', '[b]sig[/b]', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
       -- An original 0025 handed to the sweep: a row the export carries, naming a file it does not.
@@ -133,6 +138,18 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into staff_profiles (staff, meeting, interests, favorites, mood, signature) select 'exp-boss', max(id), '{pie}', array[a], 'smug', 'It is decided.' from meetings;
       insert into move_bank (staff, balance, as_of) values ('exp-boss', 3.5, now());
       perform write_staff_act('exp-boss', 'post', t, null, '{"body": "Carried across, with no account behind it."}');
+      -- The developer persona (0062): a staff character of its own kind, its avatar key, the updates thread The System's board never lists (updatesThread),
+      -- and an update by it, written as post_update writes one.
+      perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+        'developer', jsonb_build_object('name', 'Exported Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe')));
+      perform set_config('kayfabb.staff_writer', 'on', true);
+      perform set_config('kayfabb.update_writer', 'on', true);
+      insert into acts (character, kind, thread, payload)
+      select c.id, 'update', (select (v.value #>> '{}')::uuid from settings v where v.key = 'updatesThread'),
+             '{"title": "Exported update", "body": "Carried across.", "changes": [{"label": "Export", "text": "round-trips."}]}'
+      from characters c where c.staff_kind = 'developer';
+      perform set_config('kayfabb.staff_writer', '', true);
+      perform set_config('kayfabb.update_writer', '', true);
       -- The moves it can make and the demands it can set (0046, seeded as the engine lists them), a rename ended and one in force with
       -- its queue entry, so that the catalogs, the queue and the moves in force are carried across with the Acts that name them.
       insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;

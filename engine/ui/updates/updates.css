@@ -1,0 +1,333 @@
+/*
+ * Updates on the glass (Updates.tsx), as the Updates board draws it (docs/research/2026-11-02-alerts/03-updates.html): the heading at the
+ * Settings board's 112px, the lede and the archive in a column of 360px at the left, and the open update at the right as a dev-blog post on a
+ * chamfered panel: the persona's avatar, name and tagline, the headline in Anton, its date in the label type, the prose, a plain WHAT CHANGED
+ * list, and under a rule the reactions (glass chips and the kit's tiles) with Spin a thread. The archive's current update is marked with
+ * the neon along its left edge. The text stands in calms (calm.css) where it stands on the smoke, and the post is its own panel.
+ *
+ * Sizes are the boards' px or the glass's size tokens, never under the label (20px) on the Main board's layout (engine/ui/glass/board.test.tsx
+ * reads this file). On the Phone board's layout the columns stack: the lede, the archive, then the post, at the phone's sizes.
+ */
+.kb-updates {
+  padding-top: 32px;
+}
+
+.kb-updates-title {
+  margin: 0;
+  font-size: 7rem;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+.kb-updates-cols {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 24px 48px;
+  align-items: start;
+  margin-top: 1px;
+}
+
+.kb-updates-lede {
+  max-width: 720px;
+  /* The board sets the lede 22px under the heading's foot, 20px lower than the post beside it starts. */
+  margin: 20px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-updates-empty {
+  max-width: 680px;
+  margin: 28px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+/* ---- the archive ---- */
+
+.kb-updates-archive {
+  margin-top: 36px;
+}
+
+.kb-updates-archive ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.kb-updates-archive li {
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+.kb-updates-archive a {
+  display: block;
+  padding: 14px 0;
+  line-height: normal;
+  text-decoration: none;
+  color: inherit;
+}
+
+.kb-updates-archive a b {
+  display: block;
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--kb-glass-text);
+}
+
+.kb-updates-archive a span {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-updates-archive a[aria-current='page'] {
+  padding-left: 14px;
+  box-shadow: inset 3px 0 0 var(--kb-glass-neon);
+}
+
+.kb-updates-archive a[aria-current='page'] b {
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-updates-archive a:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-updates-more {
+  margin-top: 20px;
+}
+
+/* ---- the post ---- */
+
+.kb-updates-write {
+  margin: 0 0 24px;
+}
+
+.kb-updates-write .kb-write-update {
+  margin-top: 16px;
+}
+
+.kb-updates-post {
+  padding: 36px 44px 32px;
+  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
+  outline-offset: -1px;
+  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+}
+
+.kb-updates-by {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
+.kb-updates-ava {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  overflow: hidden;
+  border: 2px solid var(--kb-glass-pale);
+  background: var(--kb-glass-field);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--kb-glass-pale) 50%, transparent);
+}
+
+.kb-updates-ava img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kb-updates-ava-none {
+  font-family: var(--kb-glass-font-display);
+  font-size: 2.125rem;
+  line-height: 1;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-updates-name {
+  display: block;
+  font-family: var(--kb-glass-font-display);
+  font-size: 2.125rem;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+.kb-updates-tagline {
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-updates-headline {
+  margin: 26px 0 6px;
+  font-size: 4rem;
+  line-height: 1.02;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 24px color-mix(in srgb, var(--kb-glass-pale) 35%, transparent);
+}
+
+.kb-updates-time {
+  display: inline-block;
+  line-height: normal;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-updates-prose {
+  max-width: 760px;
+  margin-top: 18px;
+  font-size: 1.375rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-updates-prose .kb-bb {
+  margin: 0 0 18px;
+}
+
+.kb-updates-changed {
+  margin: 30px 0 8px;
+  font-family: var(--kb-glass-font-body);
+  font-size: 1.375rem;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-updates-changes {
+  max-width: 760px;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.kb-updates-changes li {
+  margin: 6px 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-updates-changes li b {
+  font-weight: 800;
+  color: var(--kb-glass-text);
+}
+
+.kb-updates-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 25%, transparent);
+}
+
+/* The reactions are the kit's chips and tile as the thread draws them; here they sit in the row with Spin, with no margin of their own. */
+.kb-updates-acts .kb-reactions {
+  margin: 0;
+}
+
+.kb-updates-spinning {
+  margin-top: 16px;
+}
+
+.kb-updates-note {
+  /* The board's note takes the post's paragraph style (its `.post p` outranks its `.note`): 22px, 500, 18px under the actions. */
+  max-width: 760px;
+  margin: 18px 0 0;
+  font-size: 1.375rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+/* The spin form is the board's own small form, read on the glass: its text in the glass's colors, its fields on the glass's field color. */
+.kb-updates-spinning .kb-spin-form {
+  color: var(--kb-glass-text);
+  background: var(--kb-glass-field);
+  border: 1.5px solid color-mix(in srgb, var(--kb-glass-pale) 60%, transparent);
+  font-size: var(--kb-glass-size-body);
+}
+
+/* ---- the Phone board's layout ---- */
+
+:where(:root[data-kb-layout='phone']) .kb-updates {
+  padding-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-title {
+  font-size: var(--kb-glass-size-display-l);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-cols {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 8px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-lede {
+  margin-top: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-lede,
+:where(:root[data-kb-layout='phone']) .kb-updates-empty,
+:where(:root[data-kb-layout='phone']) .kb-updates-tagline,
+:where(:root[data-kb-layout='phone']) .kb-updates-time,
+:where(:root[data-kb-layout='phone']) .kb-updates-changes li,
+:where(:root[data-kb-layout='phone']) .kb-updates-note,
+:where(:root[data-kb-layout='phone']) .kb-updates-prose {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-archive {
+  margin-top: 8px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-archive a b,
+:where(:root[data-kb-layout='phone']) .kb-updates-changed {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-archive a span {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-post {
+  padding: 20px 16px 20px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-headline {
+  margin-top: 18px;
+  font-size: var(--kb-glass-size-display-m);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-name,
+:where(:root[data-kb-layout='phone']) .kb-updates-ava-none {
+  font-size: var(--kb-glass-size-display-s);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-updates-ava {
+  width: 56px;
+  height: 56px;
+}

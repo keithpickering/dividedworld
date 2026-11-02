@@ -5,6 +5,7 @@ import { DEFAULT_PREFERENCES, type Answer, type Preferences, type PreferencesPat
 import { Smoke } from '../glass/Smoke.tsx';
 import { applyAppearance } from '../appearance.ts';
 import { buildWorld, renderIn, testGlass } from '../test-world.tsx';
+import { onToastChoice } from '../alerts/toast-choice.ts';
 import { SettingsScreen } from './Settings.tsx';
 
 const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'];
@@ -37,11 +38,11 @@ async function persists(w: ReturnType<typeof world>, groupName: string, name: st
 }
 
 describe('Settings, as board 11 draws it', () => {
-  test('its sections are a navigation of Account and Accessibility, and the page opens on Accessibility', async () => {
+  test('its sections are a navigation of Account, Accessibility and Notifications, and the page opens on Accessibility', async () => {
     open(world().fake);
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: 'Settings sections' });
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['Account', 'Accessibility']);
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['Account', 'Accessibility', 'Notifications']);
     expect(within(nav).getByRole('link', { name: 'Accessibility' })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/settings?section=account');
     expect(await screen.findByRole('heading', { level: 2, name: 'Accessibility' })).toBeInTheDocument();
@@ -364,6 +365,125 @@ describe('Settings, as board 11 draws it', () => {
   test('signed out, it points to sign-in', async () => {
     open(buildWorld());
     expect(await screen.findByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in');
+  });
+});
+
+describe('Settings › Notifications', () => {
+  const WORDS: readonly (readonly [string, string])[] = [
+    ['Quotes', 'A post quotes one of your characters.'],
+    ['Cards on yours', 'A card is played on one of your posts.'],
+    ['Traps that hit', 'A trap struck one of your posts.'],
+    ['Traps you set', 'A trap you set sprang.'],
+    ['Rulings', 'A ruling lands on one of your characters.'],
+    ['Settlements', 'A settlement is in and moved your characters.'],
+    ['Updates', 'The developer posts an update.'],
+    ['Followed threads', 'A thread you follow has new posts.'],
+    ['Hints', 'A hint says one of your posts or cards is drawing a pattern of reactions.'],
+    ['Season news', 'The season has news: results, debuts and Turns, a new Boss.'],
+  ];
+  const at = '/settings?section=notifications';
+  const kindSwitch = (name: string) => screen.getByRole('switch', { name });
+  const reset = () => screen.getByRole('button', { name: 'Reset to defaults' });
+
+  test('it lists a switch for each kind of alert, in plain words, each on or off as the instance\'s defaults say', async () => {
+    const { fake } = world();
+    renderIn(fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote', 'hint'] } });
+    expect(await screen.findByRole('heading', { level: 2, name: 'Notifications' })).toBeInTheDocument();
+    expect(screen.getAllByRole('switch').map((el) => el.getAttribute('aria-label') ?? el.closest('.kb-acct-row')?.querySelector('h3')?.textContent)).toEqual(WORDS.map(([n]) => n));
+    for (const [name, sentence] of WORDS) {
+      expect(kindSwitch(name)).toHaveAccessibleDescription(expect.stringContaining(sentence));
+      const on = name === 'Quotes' || name === 'Hints';
+      if (on) expect(kindSwitch(name)).toBeChecked(); else expect(kindSwitch(name)).not.toBeChecked();
+      expect(kindSwitch(name)).toHaveAccessibleDescription(expect.stringContaining(on ? 'Toasts by default.' : 'Quiet by default.'));
+    }
+    expect(screen.getByText(/Every alert still counts and waits in Alerts/)).toBeInTheDocument();
+    expect(screen.getByText('You have not chosen, so the defaults hold.')).toBeInTheDocument();
+  });
+
+  test('a change is saved as it is made, read back from the account, and kept on a fresh load', async () => {
+    const w = world();
+    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    await screen.findByRole('switch', { name: 'Hints' });
+    await userEvent.click(kindSwitch('Hints'));
+    expect(kindSwitch('Hints')).toBeChecked();
+    await waitFor(async () => expect((await w.fake.preferences()).toasts).toEqual(['quote', 'hint']));
+    expect(await screen.findByText('Saved to your account.')).toBeInTheDocument();
+    await userEvent.click(kindSwitch('Quotes'));
+    await waitFor(async () => expect((await w.fake.preferences()).toasts).toEqual(['hint']));
+    cleanup();
+    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    await screen.findByRole('switch', { name: 'Hints' });
+    expect(kindSwitch('Hints')).toBeChecked();
+    expect(kindSwitch('Quotes')).not.toBeChecked();
+    expect(screen.queryByText('You have not chosen, so the defaults hold.')).not.toBeInTheDocument();
+  });
+
+  test('turning every kind off is a choice of its own: nothing toasts, and it is not the defaults', async () => {
+    const w = world();
+    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    await screen.findByRole('switch', { name: 'Quotes' });
+    await userEvent.click(kindSwitch('Quotes'));
+    await waitFor(async () => expect((await w.fake.preferences()).toasts).toEqual([]));
+    expect(screen.getAllByRole('switch').every((el) => !(el as HTMLInputElement).checked)).toBe(true);
+  });
+
+  test('Reset to defaults puts the choice back to the instance\'s, and says nothing is left to reset', async () => {
+    const w = world();
+    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    await screen.findByRole('switch', { name: 'Hints' });
+    expect(reset()).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(kindSwitch('Hints'));
+    await waitFor(async () => expect((await w.fake.preferences()).toasts).toEqual(['quote', 'hint']));
+    expect(reset()).toHaveAttribute('aria-disabled', 'false');
+    await userEvent.click(reset());
+    await waitFor(async () => expect((await w.fake.preferences()).toasts).toBeNull());
+    expect(kindSwitch('Hints')).not.toBeChecked();
+    expect(kindSwitch('Quotes')).toBeChecked();
+    expect(reset()).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('You have not chosen, so the defaults hold.')).toBeInTheDocument();
+  });
+
+  test('a refused save says so in the server\'s words and puts the switch back', async () => {
+    const w = world();
+    const real = w.fake.setPreferences;
+    w.fake.setPreferences = async (p: PreferencesPatch): Promise<Answer<Preferences>> => (p.toasts !== undefined ? { ok: false, error: 'not a kind of alert: hint' } : real(p));
+    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    await screen.findByRole('switch', { name: 'Hints' });
+    await userEvent.click(kindSwitch('Hints'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('not a kind of alert: hint');
+    expect(kindSwitch('Hints')).not.toBeChecked();
+  });
+
+  test('the switches are real switches: named, described, reached by Tab and toggled by Space, in a group named for the section', async () => {
+    const w = world();
+    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    await screen.findByRole('switch', { name: 'Quotes' });
+    for (const el of screen.getAllByRole('switch')) {
+      expect(el).toHaveAttribute('role', 'switch');
+      expect(el).toHaveAccessibleName();
+      expect(el).toHaveAccessibleDescription();
+    }
+    expect(screen.getByRole('group', { name: 'Which alerts toast' })).toBeInTheDocument();
+    kindSwitch('Quotes').focus();
+    expect(kindSwitch('Quotes')).toHaveFocus();
+    await userEvent.keyboard(' ');
+    expect(kindSwitch('Quotes')).not.toBeChecked();
+    await waitFor(async () => expect((await w.fake.preferences()).toasts).toEqual([]));
+    await userEvent.tab();
+    expect(kindSwitch('Cards on yours')).toHaveFocus();
+  });
+
+  test('the kinds that toast reach the HUD at once, with no reload', async () => {
+    const heard: unknown[] = [];
+    const off = onToastChoice((k) => heard.push(k));
+    const w = world();
+    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    await screen.findByRole('switch', { name: 'Hints' });
+    await userEvent.click(kindSwitch('Hints'));
+    await waitFor(() => expect(heard).toEqual([['quote', 'hint']]));
+    await userEvent.click(reset());
+    await waitFor(() => expect(heard).toEqual([['quote', 'hint'], null]));
+    off();
   });
 });
 

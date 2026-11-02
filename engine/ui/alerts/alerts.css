@@ -1,0 +1,313 @@
+/*
+ * Alerts on the glass (Alerts.tsx), as the Alerts board draws it (docs/research/2026-11-02-alerts/02-alerts.html and the phone board 05-phone.html):
+ * the heading at the Settings board's 112px with the filters at its foot on the right, the lede under it at most 720px wide, then the divider ("new
+ * since you last looked", in the ready color) and the rows, then Earlier under a divider in the neon. Each row is a grid of an icon in its kind's ink,
+ * the line in the heavy body over its detail and its links, the character it concerns in a skewed tag, and the time at the right. A new row has a
+ * diamond in its kind's ink before its line. The text stands in calms (calm.css), as the Log's table does.
+ *
+ * Ink by kind: followed threads and quotes in the neon, cards, traps and rulings in the salty, settlements and hints in the ready, news in the pale.
+ * Sizes are the boards' px or the glass's size tokens, never under the label (20px) on the Main board's layout (engine/ui/glass/board.test.tsx reads
+ * this file). On the Phone board's layout each row is stacked: the icon and the line, the detail under them, then the tag and the time, at the phone's
+ * sizes.
+ */
+.kb-alerts {
+  padding-top: 32px;
+}
+
+.kb-alerts-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 32px;
+}
+
+.kb-alerts-title {
+  margin: 0;
+  font-size: 7rem;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+.kb-alerts-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.kb-alerts-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 60%, transparent);
+  background: transparent;
+  color: var(--kb-glass-text-2);
+  font: 800 var(--kb-glass-size-body) / 1 var(--kb-glass-font-body);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.kb-alerts-tab[aria-pressed='true'] {
+  border-color: var(--kb-glass-neon);
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
+}
+
+.kb-alerts-tab:focus-visible,
+.kb-alerts-row:focus-visible,
+.kb-alerts-unfollow:focus-visible,
+.kb-alerts a:focus-visible,
+.kb-alerts-board:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-alerts-lede,
+.kb-alerts-empty,
+.kb-alerts-nothing {
+  max-width: 720px;
+  margin: 18px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-alerts-board {
+  /* flow-root keeps the first divider's own 26px margin from collapsing into this one: the board sets its divider 26px under its list's top. */
+  display: flow-root;
+  margin-top: 30px;
+}
+
+.kb-alerts a,
+.kb-alerts-unfollow {
+  color: var(--kb-glass-pale);
+  text-underline-offset: 3px;
+}
+
+/* Unfollow and Try again are buttons that read as the links beside them. */
+.kb-alerts-unfollow {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---- the dividers ---- */
+
+.kb-alerts-divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 26px 0 4px;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  line-height: normal;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-ready-text);
+}
+
+.kb-alerts-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--kb-glass-ready), transparent);
+}
+
+.kb-alerts-earlier {
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-alerts-earlier::after {
+  background: linear-gradient(90deg, var(--kb-glass-neon-text), transparent);
+}
+
+/* ---- the rows ---- */
+
+.kb-alerts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.kb-alerts-row {
+  --kb-alerts-ink: var(--kb-glass-neon);
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 170px 150px;
+  gap: 18px;
+  align-items: start;
+  padding: 16px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+.kb-alerts-row[data-kb-kind='cardOnYours'],
+.kb-alerts-row[data-kb-kind='trapStruck'],
+.kb-alerts-row[data-kb-kind='trapSprang'],
+.kb-alerts-row[data-kb-kind='ruling'] {
+  --kb-alerts-ink: var(--kb-glass-salty);
+}
+
+.kb-alerts-row[data-kb-kind='settlement'],
+.kb-alerts-row[data-kb-kind='hint'] {
+  --kb-alerts-ink: var(--kb-glass-ready);
+}
+
+.kb-alerts-row[data-kb-kind='update'],
+.kb-alerts-row[data-kb-kind='seasonNews'] {
+  --kb-alerts-ink: var(--kb-glass-pale);
+}
+
+.kb-alerts-ico {
+  width: 40px;
+  height: 40px;
+  margin-top: 2px;
+  color: var(--kb-alerts-ink);
+}
+
+.kb-alerts-line {
+  margin: 0;
+  font-size: 1.4375rem;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: 0.3px;
+  color: var(--kb-glass-text);
+}
+
+.kb-alerts-row[data-kb-new] .kb-alerts-line::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 10px 3px 0;
+  background: var(--kb-alerts-ink);
+  transform: rotate(45deg);
+  box-shadow: 0 0 10px var(--kb-alerts-ink);
+}
+
+.kb-alerts-detail {
+  max-width: 760px;
+  margin: 4px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-alerts-detail:empty {
+  display: none;
+}
+
+.kb-alerts-note {
+  margin: 4px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  color: var(--kb-glass-over);
+}
+
+.kb-alerts-who {
+  justify-self: start;
+  transform: skewX(-10deg);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-pale) 60%, transparent);
+  padding: 2px 10px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--kb-glass-pale);
+  white-space: nowrap;
+}
+
+.kb-alerts-who[data-kb-all] {
+  border-color: color-mix(in srgb, var(--kb-glass-text-2) 60%, transparent);
+  color: var(--kb-glass-text-2);
+}
+
+.kb-alerts-row time {
+  justify-self: end;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.kb-alerts-older {
+  margin: 20px 0 0;
+  font-size: var(--kb-glass-size-body);
+}
+
+.kb-alerts-older-failed {
+  color: var(--kb-glass-over);
+}
+
+/* ---- the Phone board's layout ---- */
+
+:where(:root[data-kb-layout='phone']) .kb-alerts {
+  padding-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-alerts-title {
+  font-size: var(--kb-glass-size-display-l);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-alerts-tab {
+  min-height: 48px;
+  padding: 0 12px;
+  font-size: var(--kb-glass-size-phone-small);
+  letter-spacing: 1px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-alerts-lede,
+:where(:root[data-kb-layout='phone']) .kb-alerts-empty,
+:where(:root[data-kb-layout='phone']) .kb-alerts-nothing,
+:where(:root[data-kb-layout='phone']) .kb-alerts-detail,
+:where(:root[data-kb-layout='phone']) .kb-alerts-note,
+:where(:root[data-kb-layout='phone']) .kb-alerts-older {
+  margin-top: 12px;
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-alerts-detail {
+  margin-top: 4px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-alerts-board {
+  margin-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-alerts-divider {
+  font-size: var(--kb-glass-size-phone-small);
+  letter-spacing: 1px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-alerts-row {
+  grid-template-columns: 32px max-content minmax(0, 1fr);
+  grid-template-areas:
+    'ico body body'
+    'who who time';
+  gap: 6px 12px;
+  padding: 12px 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-alerts-row > .kb-alerts-ico { grid-area: ico; width: 32px; height: 32px; }
+:where(:root[data-kb-layout='phone']) .kb-alerts-row > div { grid-area: body; }
+:where(:root[data-kb-layout='phone']) .kb-alerts-row > .kb-alerts-who { grid-area: who; }
+:where(:root[data-kb-layout='phone']) .kb-alerts-row > time { grid-area: time; justify-self: start; }
+
+:where(:root[data-kb-layout='phone']) .kb-alerts-line {
+  font-size: var(--kb-glass-size-phone-display);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-alerts-who,
+:where(:root[data-kb-layout='phone']) .kb-alerts-row time {
+  font-size: var(--kb-glass-size-phone-small);
+}

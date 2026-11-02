@@ -14,7 +14,7 @@
  * heading as the Settings board sets its own, and a table set as the Log board's. The page shell
  * and the menu bar are the route's (web/src/App.tsx puts it in `Page`).
  *
- * `RankingsScreen` reads it at /rankings, fifty to a page as the standings are. Every read but one
+ * `RankingsScreen` reads it on the season page (engine/ui/season/Season.tsx; /rankings goes there), fifty to a page as the standings are. Every read but one
  * is public and asked the same for every player: the page of standings, its count, the season, the
  * last settlement, and the reveals and announced Turns of the page's characters, the player's own
  * among them, so the questions sent never say which rows are the player's. The one read that
@@ -49,12 +49,14 @@ export interface RankingsProps {
   /** Which page of the standings this is, from 1, and its address; one page when left out. */
   readonly page?: number;
   readonly href?: (page: number) => string;
+  /** Drawn inside the season page, whose heading and tabs are above: the table and the pager are as ever, the heading is left out. */
+  readonly embedded?: boolean;
 }
 
-/** Fifty to a page, as the standings screen reads them (engine/ui/standings/Standings.tsx says why). */
+/** Fifty to a page: a page of the ranking costs a page, however many characters have debuted (the board's standings page, retired with the season page, read fifty as well). */
 export const PER_PAGE = 50;
 const MAX_PAGE = 10_000;
-const rankingsPage = (page: number) => (page === 1 ? '/rankings' : `/rankings?page=${page}`);
+export const rankingsPage = (page: number) => (page === 1 ? '/rankings' : `/rankings?page=${page}`);
 
 /** A class's chip, in the class's own fill and ink: filled for the player's own, outlined for a public reveal. */
 function ClassChip({ cls, name, kind }: { readonly cls: string; readonly name: string; readonly kind: 'own' | 'revealed' }) {
@@ -76,7 +78,7 @@ function ClassCell({ own, stated, className }: { readonly own: MyCharacter | und
   );
 }
 
-export function Rankings({ season, settledAt, standings, reveals, turns, mine, total = standings.length, page = 1, href = rankingsPage }: RankingsProps) {
+export function Rankings({ season, settledAt, standings, reveals, turns, mine, total = standings.length, page = 1, href = rankingsPage, embedded = false }: RankingsProps) {
   const { instance } = useKayfa();
   const className = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
   const own = new Map(mine.map((c) => [c.id, c]));
@@ -85,7 +87,7 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
   return (
     <div className="kb-rankings">
       <div className="kb-rankings-head">
-        <h1 className="kb-rankings-title kb-glass-display">Rankings</h1>
+        {!embedded && <h1 className="kb-rankings-title kb-glass-display">Rankings</h1>}
         <p className="kb-rankings-season kb-calm">
           {season ? `Season ${season.number}` : 'This season'}
           {' · '}
@@ -147,8 +149,8 @@ type State =
   | { readonly status: 'failed'; readonly key: string }
   | { readonly status: 'ready'; readonly key: string; readonly props: Omit<RankingsProps, 'page' | 'href'> };
 
-/** Rankings at /rankings, `?page=` choosing the page. */
-export function RankingsScreen() {
+/** Rankings at /rankings, `?page=` choosing the page. On the season page (`embedded`) the pager's links are the season page's (`href`). */
+export function RankingsScreen({ embedded = false, href = rankingsPage }: { readonly embedded?: boolean; readonly href?: (page: number) => string } = {}) {
   const { api } = useKayfa();
   const signedIn = useSignedIn(api);
   /* Whose rows are marked: another account signing in reads the page again, with its own. */
@@ -184,5 +186,5 @@ export function RankingsScreen() {
   if (signedIn === false) return <div className="kb-rankings"><div className="kb-rankings-empty kb-calm"><SignInPrompt /></div></div>;
   if (signedIn === null || state.status === 'loading') return <div className="kb-rankings" aria-busy="true" />;
   if (state.status === 'failed') return <div className="kb-rankings"><p className="kb-rankings-empty kb-calm">The rankings could not be loaded. Reload the page to try again.</p></div>;
-  return <Rankings {...state.props} page={page} href={rankingsPage} />;
+  return <Rankings {...state.props} page={page} href={href} embedded={embedded} />;
 }

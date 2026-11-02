@@ -103,10 +103,10 @@ function Profile({ character: c }: { readonly character: Character }) {
               {data.standing && data.settledAt
                 ? (
                   <p className="kb-profile-standing">
-                    Aura this season: <b>{figure(data.standing.standing)}</b> (settled {dayAndTime(data.settledAt)}) · Place {data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/standings">season standings</Link>
+                    Aura this season: <b>{figure(data.standing.standing)}</b> (settled {dayAndTime(data.settledAt)}) · Place {data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/season?tab=rankings">season standings</Link>
                   </p>
                 )
-                : <p className="kb-profile-standing kb-muted">Nothing has settled for it yet. <Link to="/standings">Season standings</Link></p>}
+                : <p className="kb-profile-standing kb-muted">Nothing has settled for it yet. <Link to="/season?tab=rankings">Season standings</Link></p>}
               <p className="kb-profile-counts">
                 <span>Posts: {data.counts.posts}</span> · <span>Threads spun: {data.counts.spins}</span> · <span>Cards played: {data.counts.cards}</span>
                 {monthYear(c.joined) && <> · <span>Joined {monthYear(c.joined)}</span></>}

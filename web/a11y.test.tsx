@@ -35,8 +35,8 @@ const stories = Object.entries(modules).flatMap(([file, mod]) =>
 const SCREENS: readonly (readonly [string, string])[] = [
   ['index', '.kb-board-row'], ['board', '.kb-thread-row'], ['thread', '.kb-act'], ['reactions', '.kb-picker'],
   ['composer', '.kb-composer'], ['spin', '.kb-spin-form, [role="group"][aria-label="Origin"]'], ['characters', '.kb-roster-card'],
-  ['profile-edit', '.kb-profile-edit'], ['profile', '.kb-profile'], ['standings', '.kb-standings'], ['reveal', '.kb-reveal-post, .kb-tally-post'],
-  ['frame', '.kb-hud-bar'], ['account', '.kb-acct'], ['postbit', '.kb-postbit-text'], ['orbs', '.kb-orbs-row'],
+  ['profile-edit', '.kb-profile-edit'], ['profile', '.kb-profile'], ['season', '.kb-season, .kb-rankings'], ['reveal', '.kb-reveal-post, .kb-tally-post'],
+  ['frame', '.kb-hud-bar'], ['account', '.kb-acct'], ['postbit', '.kb-postbit-text'], ['orbs', '.kb-orbs-row'], ['alerts', '.kb-alerts-row'],
 ];
 
 /** Stories that are an error or an empty state on purpose: a missing thing, a signed-out reader, a bare orb row. */

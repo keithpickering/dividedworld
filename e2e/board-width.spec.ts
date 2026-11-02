@@ -37,7 +37,7 @@ test.describe('a wide window', () => {
     expect(await overflow(page)).toBe(0);
   });
 
-  for (const [label, path] of [['the index', '/'], ['a board', '/b/general'], ['the standings', '/standings']] as const) {
+  for (const [label, path] of [['the index', '/'], ['a board', '/b/general']] as const) {
     test(`${label} is a column at most 960px wide, centered`, async ({ page }) => {
       await page.goto(path);
       await expect(page.locator('.kb-frame > .kb-page')).toBeVisible();

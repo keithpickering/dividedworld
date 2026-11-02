@@ -17,6 +17,7 @@ const settings: Settings = {
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
+  hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
   postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, cardSettings: {}, economy: {}, ...systemSettings,
 };
 
@@ -612,20 +613,29 @@ describe('the account', () => {
   });
   test('preferences have defaults and are set whole or in part', async () => {
     const { fake } = world();
-    const glass = { smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [] } as const;
+    const glass = { smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null } as const;
     expect(await fake.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', ...glass });
     expect(await fake.setPreferences({ motion: 'reduce' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'reduce', ...glass } });
     expect(await fake.setPreferences({ theme: 'Loud!' })).toEqual(refused('a theme is named in lowercase words joined by hyphens'));
   });
   test('the glass\'s three preferences are set and kept as the server keeps them, and refused in its words', async () => {
     const { fake } = world();
-    expect(await fake.setPreferences({ smoke: 'off' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'standard', textSize: 100, cardsMet: [] } });
-    expect(await fake.setPreferences({ contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: [] } });
+    expect(await fake.setPreferences({ smoke: 'off' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null } });
+    expect(await fake.setPreferences({ contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null } });
     /* A fresh read is what the next load sees. */
     expect(await fake.preferences()).toMatchObject({ smoke: 'off', contrast: 'high', textSize: 200 });
     expect(await fake.setPreferences({ smoke: 'thick' as never })).toEqual(refused('the smoke is full, low or off'));
     expect(await fake.setPreferences({ contrast: 'max' as never })).toEqual(refused('contrast is standard or high'));
     expect(await fake.setPreferences({ textSize: 175 as never })).toEqual(refused('text size is 100, 125, 150 or 200 percent'));
+  });
+  test('the kinds that toast are chosen whole, kept once each, refused naming an unknown kind, left alone by other settings and put back by null', async () => {
+    const { fake } = world();
+    expect((await fake.preferences()).toasts).toBeNull();
+    expect(must(await fake.setPreferences({ toasts: ['update', 'quote', 'update'] })).toasts).toEqual(['update', 'quote']);
+    expect(await fake.setPreferences({ toasts: ['quote', 'confetti' as never] })).toEqual(refused('not a kind of alert: confetti'));
+    expect(must(await fake.setPreferences({ smoke: 'low' })).toasts).toEqual(['update', 'quote']);
+    expect(must(await fake.setPreferences({ toasts: [] })).toasts).toEqual([]);
+    expect(must(await fake.setPreferences({ toasts: null })).toasts).toBeNull();
   });
   test('cards met are added once, refused past 64 or when malformed, and forgotten whole, setPreferences leaving them alone', async () => {
     const { fake } = world();
@@ -641,6 +651,16 @@ describe('the account', () => {
     expect(must(await fake.meetCard('whoops')).cardsMet).toHaveLength(64);
     expect(must(await fake.forgetCardsMet()).cardsMet).toEqual([]);
     expect((await fake.preferences()).cardsMet).toEqual([]);
+  });
+  test('the two marks move only forward, refuse what is not a time, and are the account\'s', async () => {
+    const { fake } = world();
+    for (const [see, key] of [[fake.seeAlerts, 'alertsSeenAt'], [fake.seeSettlement, 'settlementSeen']] as const) {
+      expect(await see('2026-10-30T08:00:00.000Z')).toEqual({ ok: true, value: '2026-10-30T08:00:00.000Z' });
+      expect(await see('2026-10-29T08:00:00.000Z')).toEqual({ ok: true, value: '2026-10-30T08:00:00.000Z' });
+      expect(await see('2026-10-31T08:00:00.000Z')).toEqual({ ok: true, value: '2026-10-31T08:00:00.000Z' });
+      expect(await see('yesterday')).toEqual(refused('a mark is a time'));
+      expect((await fake.preferences())[key]).toBe('2026-10-31T08:00:00.000Z');
+    }
   });
   test('the wallet is the settled balance under its cap', async () => {
     const { fake, ana } = world();
@@ -1231,7 +1251,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     fake.signInAs(bo);
     expect((await fake.log()).playsOnMine).toEqual([]);
     fake.signInAs(ana);
-    expect((await fake.log()).playsOnMine).toEqual([{ play: theirs, post: mine, at }]);
+    expect((await fake.log()).playsOnMine).toEqual([{ play: theirs, post: mine, at, reach: 'post', targetName: null, targetCharacter: expect.any(String) }]);
     expect((await fake.log()).saves).toEqual([]);
     fake.clock.advance(MINUTE);
     must(await fake.saveEffect(theirs, anaFace, { clean: true }));
@@ -1606,5 +1626,327 @@ describe('a card beyond a post, and the effects above a page', () => {
     /* An ended play is gone without a reread of anything but the time. */
     fake.clock.advance(7 * 86_400_000 + 1);
     expect(await fake.effectsAbove([boFace], thread, board)).toEqual([]);
+  });
+});
+
+describe('followed threads (my_followed_threads, 0059)', () => {
+  test('a count stops at the cap, counts others\' posts alone, and a thread read to its end leaves', async () => {
+    const fake = createFake({ instance });
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    const mine = fake.seed.character(me, 'Mine', 'face');
+    const theirs = fake.seed.character(other, 'Theirs', 'heel');
+    const { thread } = fake.seed.thread('general', mine, 'Capped', 'opening');
+    for (let i = 0; i < 101; i++) fake.seed.post(thread, theirs, `reply ${i}`);
+    fake.seed.post(thread, mine, 'my own');
+    fake.signInAs(me);
+    const rows = await fake.followed();
+    expect(rows.map((r) => [r.thread, r.newPosts])).toEqual([[thread, 100]]);
+    await fake.markRead(thread, 200, null);
+    expect(await fake.followed()).toEqual([]);
+  });
+});
+
+describe('the Alerts read and the count (my_alerts, my_alerts_unread, 0060)', () => {
+  const T0 = Date.parse('2026-11-01T00:00:00Z');
+  const H = 3_600_000;
+
+  /** Ana plays Ana Face (who started "Mine") and Ana Heel; Bo plays Bo Face; Cy plays Cy Face. Each source holds one line for Ana. */
+  function alertsWorld() {
+    const fake = createFake({ instance });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const cy = fake.seed.account('cy');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const anaHeel = fake.seed.character(ana, 'Ana Heel', 'heel');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const cyFace = fake.seed.character(cy, 'Cy Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Mine', 'opening', { at: T0 });
+    const quote = fake.seed.post(thread, boFace, 'quoting', { quote: opener, at: T0 + H });
+    const card = fake.seed.card(boFace, opener, 'whoops', { at: T0 + 2 * H });
+    fake.seed.alert(ana, { kind: 'trapSprang', act: quote, character: anaFace, at: T0 + 3 * H });
+    fake.seed.alert(ana, { kind: 'hint', act: opener, character: anaFace, at: T0 + 4 * H });
+    fake.seed.alert(ana, { kind: 'ruling', act: opener, character: anaFace, sub: 'x', at: T0 + 5 * H });
+    fake.seed.settle({ at: T0 + 6 * H - 1000, ledger: [{ character: anaFace, reason: 'face.shone', amount: 5 }, { character: anaHeel, reason: 'heel.drewHeat', amount: 4 }, { character: boFace, reason: 'face.shone', amount: 3 }] });
+    fake.seed.post(thread, cyFace, 'another', { at: T0 + 7 * H });
+    return { fake, ana, bo, cy, anaFace, anaHeel, boFace, thread, opener, quote, card };
+  }
+
+  test('each source is one line with its kind, newest first, and carries the words\' inputs', async () => {
+    const { fake, ana, thread, opener, quote, card, anaFace } = alertsWorld();
+    fake.signInAs(ana);
+    const rows = await fake.alerts();
+    expect(rows.map((r) => r.kind)).toEqual(['followed', 'settlement', 'ruling', 'hint', 'trapSprang', 'cardOnYours', 'quote']);
+    expect(rows[0]).toEqual({ kind: 'followed', sub: null, act: null, character: null, at: new Date(T0 + 7 * H).toISOString(), thread, name: null, title: 'Mine', count: 2 });
+    expect(rows[1]).toMatchObject({ kind: 'settlement', act: null, count: 2 });
+    expect(rows[1]!.sub).toBe('1');
+    expect(rows[2]).toMatchObject({ kind: 'ruling', sub: 'x', act: opener, character: anaFace, name: 'Ana Face', thread, title: 'Mine' });
+    expect(rows[5]).toMatchObject({ kind: 'cardOnYours', act: card, character: anaFace, name: 'Ana Face' });
+    expect(rows[6]).toMatchObject({ kind: 'quote', act: quote, character: anaFace, name: 'Ana Face', title: 'Mine', count: null });
+  });
+
+  test('the count moves with the mark and stops at its bound; a followed thread read to its end leaves', async () => {
+    const { fake, ana, thread } = alertsWorld();
+    fake.signInAs(ana);
+    expect(await fake.alertsUnread()).toBe(7);
+    must(await fake.seeAlerts(new Date(T0 + 4.5 * H).toISOString()));
+    expect(await fake.alertsUnread()).toBe(3);
+    must(await fake.seeAlerts(new Date(T0 + 8 * H).toISOString()));
+    expect(await fake.alertsUnread()).toBe(0);
+    expect((await fake.alerts()).length).toBe(7);
+    await fake.markRead(thread, 100, null);
+    expect((await fake.alerts()).map((r) => r.kind)).not.toContain('followed');
+    // Many alerts: the count stops at 10.
+    const { fake: busy, ana: busyAna, anaFace, opener } = alertsWorld();
+    for (let i = 0; i < 20; i++) busy.seed.alert(busyAna, { kind: 'hint', act: opener, character: anaFace, at: T0 + 10 * H + i * MINUTE });
+    busy.signInAs(busyAna);
+    expect(await busy.alertsUnread()).toBe(10);
+  });
+
+  test('another account sees none of the caller\'s, and a visitor reads nothing', async () => {
+    const { fake, cy, bo, anaHeel } = alertsWorld();
+    fake.signInAs(cy);
+    // Cy posted in Ana's thread; nothing in it is Cy's: Cy started nothing, follows nothing, has no settlement line.
+    expect(await fake.alerts()).toEqual([]);
+    expect(await fake.alertsUnread()).toBe(0);
+    fake.signInAs(bo);
+    // Bo has his own settlement line and nothing of Ana's.
+    expect((await fake.alerts()).map((r) => r.kind)).toEqual(['settlement']);
+    expect((await fake.alerts())[0]!.count).toBe(1);
+    expect(anaHeel).toBeTruthy();
+    fake.signOut();
+    await expect(fake.alerts()).rejects.toThrow();
+    await expect(fake.alertsUnread()).rejects.toThrow();
+  });
+
+  test('paging with before returns the next page without repeats, and keeps a tie whole', async () => {
+    const { fake, ana, anaFace, opener } = alertsWorld();
+    // 40 more: the 29th, 30th and 31st newest share an instant, across the edge of the first page of 30.
+    for (let i = 0; i < 40; i++) fake.seed.alert(ana, { kind: 'hint', act: opener, character: anaFace, sub: `h${i}`, at: T0 + 100 * H + (i === 9 || i === 10 || i === 11 ? 11 : i) * MINUTE });
+    fake.signInAs(ana);
+    const first = await fake.alerts();
+    expect(first.length).toBe(31);
+    const second = await fake.alerts(first.at(-1)!.at);
+    const key = (r: { kind: string; sub: string | null; act: string | null; at: string }) => `${r.kind} ${r.sub} ${r.act} ${r.at}`;
+    expect(second.map(key).filter((k) => first.map(key).includes(k))).toEqual([]);
+    expect(first.length + second.length + (await fake.alerts(second.at(-1)!.at)).length).toBe(47);
+  });
+});
+
+describe('live news on reach', () => {
+  test('a change of Boss is heard as the Boss who left and the Boss who arrived, in the words the page reads', async () => {
+    const { fake } = world();
+    fake.seed.staff('first', 'First Boss', 'boss');
+    fake.seed.staff('second', 'Second Boss', 'boss');
+    const heard: unknown[] = [];
+    fake.subscribeReach({ onNews: (n) => heard.push(n) });
+    fake.seed.handover({ outgoing: 'first', boss: 'second', at: Date.UTC(2026, 10, 2) });
+    await flush();
+    expect(heard).toEqual([
+      { kind: 'seasonNews', sub: 'bossLeft', act: null, at: '2026-11-02T00:00:00.000Z' },
+      { kind: 'seasonNews', sub: 'bossArrived', act: null, at: '2026-11-02T00:00:00.000Z' },
+    ]);
+  });
+  test('a settlement applied is heard once by every listener on reach, with its id and time and nothing of any player\'s', async () => {
+    const { fake } = world();
+    const me = fake.seed.account('settler');
+    const ch = fake.seed.character(me, 'Settled', 'face');
+    const heard: unknown[] = [];
+    fake.subscribeReach({ onSettled: (s) => heard.push(s) });
+    fake.seed.settle({ at: Date.UTC(2026, 10, 2, 8), ledger: [{ character: ch, reason: 'face.story', amount: 10 }] });
+    await flush();
+    expect(heard).toEqual([{ id: '1', at: '2026-11-02T08:00:01.000Z' }]);
+  });
+  test('an update posted by an admin is heard by every listener on reach, once, with its Act and time', async () => {
+    const { fake } = world();
+    const admin = fake.seed.account('boss', { admin: true });
+    const heard: unknown[] = [];
+    fake.subscribeReach({ onNews: (n) => heard.push(n) });
+    fake.signInAs(admin);
+    const update = must(await fake.postUpdate('Traps bite', 'Two fixes.', []));
+    await flush();
+    expect(heard).toEqual([{ kind: 'update', sub: null, act: update.act, at: expect.any(String) }]);
+    expect(fake.broadcast.log.filter((e) => e.topic === 'reach' && e.event === 'news')).toHaveLength(1);
+  });
+});
+
+/* The alerts the server announces live (write_alert, 0058: on `account:<owner>`), for the ones the fake derives from Acts: only the target's
+   own account hears, never the caster's, and none for a staff target or one of the caster's own masks. */
+describe('live alerts derived from Acts', () => {
+  function listening() {
+    const w = world();
+    const heard = { ana: [] as unknown[], bo: [] as unknown[] };
+    w.fake.signInAs(w.bo);
+    w.fake.subscribeAccount({ onAlert: (a) => heard.bo.push(a) });
+    w.fake.signInAs(w.ana);
+    w.fake.subscribeAccount({ onAlert: (a) => heard.ana.push(a) });
+    return { ...w, heard };
+  }
+  test('a quote of a post is heard by its author\'s account, and not by the quoter\'s', async () => {
+    const w = listening();
+    must(await w.fake.post(w.thread, w.anaFace, 'agreed', w.opener));
+    await flush();
+    expect(w.heard.bo).toEqual([expect.objectContaining({ kind: 'quote', character: w.boFace, sub: null })]);
+    expect(w.heard.ana).toEqual([]);
+  });
+  test('a quote of one\'s own other mask, or of a staff post, is heard by no one', async () => {
+    const w = listening();
+    const mine = must(await w.fake.post(w.thread, w.anaFace, 'mine', null));
+    must(await w.fake.post(w.thread, w.anaHeel, 'me again', mine.id));
+    await flush();
+    expect(w.heard).toEqual({ ana: [], bo: [] });
+  });
+  test('a card on a post is heard by the post\'s author\'s account only', async () => {
+    const w = listening();
+    w.fake.seed.card(w.anaFace, w.opener, 'dab', { live: true });
+    await flush();
+    expect(w.heard.bo).toEqual([expect.objectContaining({ kind: 'cardOnYours', character: w.boFace })]);
+    expect(w.heard.ana).toEqual([]);
+  });
+});
+
+describe('a play on a post is not announced on reach', () => {
+  test('only a character, a thread or a board play is', async () => {
+    const w = world();
+    w.fake.seed.card(w.anaFace, w.opener, 'dab', { live: true });
+    await flush();
+    expect(w.fake.broadcast.log.filter((e) => e.topic === 'reach')).toEqual([]);
+  });
+});
+
+describe('Updates: the developer persona\'s posts (updates, post_update, 0062)', () => {
+  const T0 = Date.parse('2026-11-01T00:00:00Z');
+  const H = 3_600_000;
+  const gabe = { name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' };
+
+  function updatesWorld(persona?: typeof gabe) {
+    /* The clock is after every update the world seeds, so one posted now is the newest. */
+    const fake = createFake({ instance: persona ? { ...instance, developer: persona } : instance, now: () => T0 + 100 * H });
+    const admin = fake.seed.account('admin', {});
+    fake.seed.admin(admin);
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const cy = fake.seed.account('cy');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const first = fake.seed.update({ title: 'Playtest begins', body: 'Hello.', at: T0 });
+    const second = fake.seed.update({ title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: T0 + 2 * H });
+    return { fake, admin, ana, bo, cy, anaFace, boFace, first, second };
+  }
+
+  test('a page is the updates newest first, each with the persona: the instance\'s, or the engine\'s plain one', async () => {
+    const w = updatesWorld(gabe);
+    w.fake.signInAs(w.ana);
+    const rows = await w.fake.updates();
+    expect(rows.map((r) => [r.act, r.title, r.seq])).toEqual([[w.second, 'Traps bite', 2], [w.first, 'Playtest begins', 1]]);
+    expect(rows[0]).toMatchObject({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: new Date(T0 + 2 * H).toISOString() });
+    expect(rows[1]!.changes).toEqual([]);
+    const plain = updatesWorld();
+    plain.fake.signInAs(plain.ana);
+    expect((await plain.fake.updates())[0]).toMatchObject({ name: 'The developers', tagline: '', avatar: null });
+    // The persona is a staff character of its own kind, known to be staff, and no player's.
+    const [character] = await w.fake.characters([rows[0]!.character]);
+    expect(character).toMatchObject({ name: 'Gabe', title: 'Made this. Sorry.', staff: 'developer', staffKind: 'developer' });
+  });
+
+  test('a page is bounded and pages back by `before`, exclusive', async () => {
+    const w = updatesWorld(gabe);
+    for (let i = 0; i < 25; i++) w.fake.seed.update({ title: `Update ${i}`, body: 'x', at: T0 + 10 * H + i * H });
+    w.fake.signInAs(w.ana);
+    const page = await w.fake.updates();
+    expect(page).toHaveLength(20);
+    const next = await w.fake.updates(page.at(-1)!.at);
+    expect(next).toHaveLength(7);
+    expect(next.map((r) => r.act)).not.toContain(page.at(-1)!.act);
+    expect((await w.fake.updates(new Date(T0 + 1).toISOString())).map((r) => r.act)).toEqual([w.first]);
+  });
+
+  test('the board never lists the updates thread, and counts it nowhere', async () => {
+    const w = updatesWorld(gabe);
+    w.fake.signInAs(w.ana);
+    const system = (await w.fake.boards()).find((b) => b.isSystem)!;
+    const before = system.threadCount;
+    const rows = await w.fake.updates();
+    expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).threads.map((t) => t.id)).not.toContain(rows[0]!.thread);
+    expect(await w.fake.thread(rows[0]!.thread)).toBeNull();
+    expect(before).toBe(0);
+    // The announcements thread (a Boss's moves) is still the first thread of that board, however the updates came first.
+    w.fake.seed.staff('boss', 'The Boss', 'boss');
+    w.fake.seed.move('boss', { board: 'general', name: 'Renamed' });
+    const after = (await w.fake.boards()).find((b) => b.isSystem)!;
+    expect(after.threadCount).toBe(1);
+    expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).total).toBe(1);
+  });
+
+  test('only an admin posts one, as the developer; a refusal is in the server\'s words and leaves nothing', async () => {
+    const w = updatesWorld(gabe);
+    w.fake.signInAs(w.ana);
+    expect(await w.fake.postUpdate('Mine', 'A player\'s.', [])).toEqual(refused('only an admin writes an update'));
+    w.fake.signOut();
+    expect(await w.fake.postUpdate('Visitor', 'x', [])).toEqual(refused('only an admin writes an update'));
+    w.fake.signInAs(w.admin);
+    const wrote = must(await w.fake.postUpdate('Third', 'Body three.', [{ label: '  Fixed:  ', text: '  the log.  ' }, { label: '', text: ' ' }, { label: '', text: 'no label' }]));
+    expect(wrote).toMatchObject({ title: 'Third', body: 'Body three.', name: 'Gabe', seq: 3, changes: [{ label: 'Fixed:', text: 'the log.' }, { label: '', text: 'no label' }] });
+    expect((await w.fake.updates())[0]!.act).toBe(wrote.act);
+    const act = (await w.fake.act(wrote.act))!;
+    expect(act).toMatchObject({ kind: 'update', character: wrote.character, thread: wrote.thread });
+    const refusals: [string, string, readonly { label: string; text: string }[], string][] = [
+      ['', 'x', [], 'title is empty'],
+      ['T', ' ', [], 'body is empty'],
+      ['T', 'B', [{ label: 'Orphan', text: ' ' }], 'change 1 has a label and no text; give it a text, or leave the row out'],
+      ['T', 'B', [{ label: 'x'.repeat(81), text: 'fine' }], 'change 1 has a label of at most 80 characters'],
+      ['T', 'B', [{ label: 'L', text: 'x'.repeat(601) }], 'change 1 has a text of 1 to 600 characters'],
+      ['T', 'B', Array.from({ length: 31 }, (_, i) => ({ label: 'L', text: `row ${i}` })), 'an update lists at most 30 changes'],
+    ];
+    for (const [title, body, changes, error] of refusals) expect(await w.fake.postUpdate(title, body, changes), error).toEqual(refused(error));
+    expect(await w.fake.postUpdate('x'.repeat(21), 'B', [])).toEqual(refused('title is longer than 20 characters'));
+    expect(await w.fake.postUpdate('T', 'x'.repeat(51), [])).toEqual(refused('body is longer than 50 characters'));
+    expect(await w.fake.updates()).toHaveLength(3);
+  });
+
+  test('a player reacts to one (the developer has no owner to hold them apart from) and spins a thread from it onto the players\' board', async () => {
+    const w = updatesWorld(gabe);
+    w.fake.signInAs(w.ana);
+    expect(must(await w.fake.react(w.second, w.anaFace, 'fire')).tally).toEqual({ fire: 1 });
+    w.fake.signInAs(w.bo);
+    expect(must(await w.fake.react(w.second, w.boFace, 'fire')).tally).toEqual({ fire: 2 });
+    const spun = must(await w.fake.spin(w.second, w.boFace, 'About the trap', 'Discuss.'));
+    expect(spun.thread).toMatchObject({ originActId: w.second, originTitle: 'Updates', originSeq: 2 });
+    const board = (await w.fake.boards()).find((b) => b.id === spun.thread.board)!;
+    expect(board.isSystem).toBe(false);
+    expect((await w.fake.spunFrom(w.second)).map((t) => t.id)).toEqual([spun.thread.id]);
+  });
+
+  test('no player acts as the developer', async () => {
+    const w = updatesWorld(gabe);
+    w.fake.signInAs(w.ana);
+    const dev = (await w.fake.updates())[0]!.character;
+    const { thread } = w.fake.seed.thread('general', w.anaFace, 'Mine', 'x');
+    expect(await w.fake.post(thread, dev, 'As the developer', null)).toEqual(refused('you do not play that character'));
+    expect(await w.fake.react(w.second, dev, 'fire')).toEqual(refused('you do not play that character'));
+  });
+
+  test('every player has one `update` alert per update, the same for each, whatever else they have', async () => {
+    const w = updatesWorld(gabe);
+    const read = async (account: string) => { w.fake.signInAs(account); return { rows: await w.fake.alerts(), unread: await w.fake.alertsUnread() }; };
+    const ana = await read(w.ana);
+    const cy = await read(w.cy); // no character at all
+    const bo = await read(w.bo);
+    for (const r of [ana, cy, bo]) {
+      expect(r.rows.filter((a) => a.kind === 'update')).toHaveLength(2);
+      expect(r.unread).toBe(2);
+    }
+    expect(cy.rows).toEqual(ana.rows);
+    expect(bo.rows).toEqual(ana.rows);
+    const newest = ana.rows[0]!;
+    expect(newest).toEqual({ kind: 'update', sub: null, act: w.second, character: null, at: new Date(T0 + 2 * H).toISOString(), thread: (await w.fake.updates())[0]!.thread, name: 'Gabe', title: 'Traps bite', count: null });
+    // The mark moves the count.
+    w.fake.signInAs(w.ana);
+    must(await w.fake.seeAlerts(new Date(T0 + H).toISOString()));
+    expect(await w.fake.alertsUnread()).toBe(1);
+    // A new update is an alert for all at once.
+    w.fake.signInAs(w.admin);
+    must(await w.fake.postUpdate('Fourth', 'Body.', []));
+    for (const account of [w.ana, w.cy, w.bo]) { w.fake.signInAs(account); expect((await w.fake.alerts()).filter((a) => a.kind === 'update')).toHaveLength(3); }
   });
 });

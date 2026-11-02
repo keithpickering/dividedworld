@@ -9,6 +9,7 @@
  */
 import type { Quadrant } from '../rules/types.ts';
 import type { CardUi } from './cards/types.ts';
+import type { Alert } from './data/api.ts';
 
 /**
  * A theme: a stylesheet that sets the `--kb-` tokens of engine/ui/tokens.css. `modes` says
@@ -69,6 +70,23 @@ export interface UiCopy {
    * none), such as "a card that holds you in place still does, only instantly."
    */
   readonly reducedMotionCard: string;
+  /** Words where the instance names a thing in an alert; absent, the engine's plain words stand (engine/ui/alerts/words.ts). */
+  readonly alerts?: AlertCopy;
+}
+
+/** The instance's words for the alerts that name something it invented. Each is plain and true: the glass describes the game, it never bluffs. */
+export interface AlertCopy {
+  /**
+   * A hint's line and its detail by the pattern that fired (`leading:<quadrant>`, `divisive` or `thunder`, the alerts design's section 5),
+   * and whether the Act it is about is a card play (`about.card`) and not a post: a hint can be about either, and for a thunder it says
+   * which side of the theft the player is on. Undefined for a pattern the instance has no words for, which is then said in the engine's plain words. May joke, may not mislead.
+   */
+  readonly hint?: (pattern: string, about: { readonly card: boolean }) => { readonly line: string; readonly detail: string } | undefined;
+  /**
+   * A season-news alert's line and detail by its sub (`results`, `tally`, `bossArrived`, `bossLeft`) and the row (the Boss's name, a count of names);
+   * undefined for one the instance has no words for, which is then said in the engine's plain words. The link to the Season page is the engine's.
+   */
+  readonly seasonNews?: (sub: string, row: Alert) => { readonly line: string; readonly detail: string } | undefined;
 }
 
 /**
@@ -219,6 +237,8 @@ export interface InstanceUi {
   readonly pips: Readonly<Record<string, PipImages>>;
   /** The glass: smoke, tokens, fonts and class colors for every screen outside the board. */
   readonly glass: GlassTheme;
+  /** The instance's pictures for its personas, by the key its rules name (`DeveloperPersona.avatar`) as a URL; a persona with none is drawn as an initial. */
+  readonly avatars?: Readonly<Record<string, string>>;
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
   readonly cards: readonly CardUi[];
 }

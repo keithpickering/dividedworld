@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, runAction } from './core.ts';
+import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, afterTheAnswer, coalesced, forgetHintSettings, handleAction, runAction } from './core.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 import { landsOn } from '../../../engine/rules/cards.ts';
@@ -313,4 +313,313 @@ test('a target card_target_reach does not find is refused in its reach\'s words'
   const { dbs } = pair({ whoami, card_target_reach: null });
   const out = await runAction(dbs, reaching, { action: 'playCard', card: 'sparkle', character: id, reach: 'character', target, post: target });
   assert.deepEqual(out.body, { field: 'target', error: 'there is no such character' });
+});
+
+// The drain after every write (docs/plans/2026-11-02-alerts-plan.md, Task 6): an alert is queued in the outbox by the write itself,
+// and sent from there after the answer. What a player sees of an action, and when, must not tell whether it queued an alert (which
+// exists only when the quoted or targeted character has an owner), so the answer is made before the drain starts, and the drain
+// is never awaited by the answer, with or without a runtime that lets work outlive it.
+const quoting = { action: 'post', thread: id, character: id, body: 'Hello.', quote: target };
+const wait = (ms = 0) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+test('the answer to a quoting post is made before the drain starts, and is the same whether the drain finds an alert or nothing', async () => {
+  const outcomes: { answer: string; before: string[] }[] = [];
+  for (const waiting of [[], [{ id: 1, topic: `account:${whoami}`, event: 'alert', payload: { kind: 'quote' } }]]) {
+    const log: string[] = [];
+    const db: Db = { rpc: async <T>(fn: string) => { log.push(`rpc:${fn}`); return { id: 'q', kind: 'post', thread: id } as T; } };
+    let later: (() => Promise<void>) | undefined;
+    const answer = await handleAction({
+      dbs: { player: db, service: db }, instance, body: quoting,
+      send: async () => { log.push('send'); },
+      drain: async () => { log.push(`drain:${waiting.length}`); },
+      after: (work) => { later = work; },
+    });
+    const before = [...log];
+    assert.ok(later, 'the drain is handed on to run after the answer');
+    await later();
+    outcomes.push({ answer: JSON.stringify(answer), before });
+    assert.deepEqual(log.slice(before.length), ['send', `drain:${waiting.length}`], 'the live updates go out, then the outbox is drained');
+  }
+  assert.equal(outcomes[0]!.answer, outcomes[1]!.answer, 'the answer is byte for byte the same');
+  assert.deepEqual(outcomes[0]!.before, ['rpc:post']);
+  assert.deepEqual(outcomes[0]!.before, outcomes[1]!.before, 'nothing the drain does has happened when the answer is made');
+});
+
+test('a write that is refused is drained after too, so that no answer differs by whether anything was queued', async () => {
+  const db: Db = { rpc: async () => { throw new DatabaseError('post: no', '42501', 403, 'no', REFUSAL_HINT); } };
+  let later = 0;
+  const answer = await handleAction({ dbs: { player: db, service: db }, instance, body: quoting, send: async () => {}, drain: async () => {}, after: () => { later++; } });
+  assert.equal(answer.status, 403);
+  assert.equal(later, 1);
+});
+
+test('after the answer, the work starts on a later turn, and without EdgeRuntime the answer does not wait for it', async () => {
+  // The local runtime has no waitUntil: the answer must not be held by a drain that finds an alert (a slower drain) any more than by
+  // one that finds nothing.
+  for (const takes of [0, 50]) {
+    const log: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    afterTheAnswer(async () => { log.push('started'); if (takes) await gate; log.push('finished'); });
+    assert.deepEqual(log, [], 'not started in the same turn as the answer');
+    await Promise.resolve();
+    assert.deepEqual(log, [], 'nor in a microtask after it');
+    await wait(5);
+    assert.deepEqual(log, takes ? ['started'] : ['started', 'finished'], 'it runs on, with nothing awaiting it');
+    release();
+    await wait();
+  }
+});
+
+test('with a runtime that lets work outlive the answer, the work is handed to it whole, and nothing it throws reaches anyone', async () => {
+  const handed: Promise<unknown>[] = [];
+  const logged: unknown[][] = [];
+  const was = console.error;
+  console.error = (...a: unknown[]) => { logged.push(a); };
+  try {
+    afterTheAnswer(async () => { throw new Error('realtime is down'); }, { waitUntil: (p) => { handed.push(p); } });
+    assert.equal(handed.length, 1);
+    await handed[0]; // settles, and does not reject
+  } finally { console.error = was; }
+  assert.equal(logged.length, 1);
+  assert.match(String(logged[0]![0]), /after the answer/);
+});
+
+test('a play beyond a post is also sent on reach, as the public Act and nothing more; a play on a post is not', async () => {
+  const thread = '44444444-4444-4444-8444-444444444444';
+  const play = { id: 'k', kind: 'card', thread, payload: { card: 'sparkle', reach: 'character', character: target, ends: '2026-11-09T00:00:00Z', targetName: 'Ann' } };
+  const { dbs } = pair({ whoami, card_target_reach: { reach: 'character', character: target, effects: [], above: {} }, play_card: play });
+  const out = await runAction(dbs, reaching, { action: 'playCard', card: 'sparkle', character: id, reach: 'character', target, post: id });
+  assert.deepEqual(out.broadcasts, [{ topic: `thread:${thread}`, event: 'act', payload: play }, { topic: 'reach', event: 'effect', payload: play }]);
+  const onPost = pair({ whoami, card_target_reach: { act: target, kind: 'post', length: 10, effects: [] }, play_card: { id: 'c', kind: 'card', thread, payload: { card: 'whoops' } } });
+  const plain = await runAction(onPost.dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } });
+  assert.ok(!plain.broadcasts?.some((b) => b.topic === 'reach'));
+});
+
+test('drains started while one is in flight are one follow-up, not one each; a drain that throws does not stop the next', async () => {
+  let runs = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const drain = coalesced(async () => { runs++; await gate; });
+  const first = drain();
+  await wait();
+  assert.equal(runs, 1);
+  const many = [drain(), drain(), drain(), drain()];
+  await wait();
+  assert.equal(runs, 1, 'writes during a drain start no drain of their own');
+  release();
+  await Promise.all([first, ...many]);
+  assert.equal(runs, 2, 'one follow-up covers every write that came meanwhile');
+  const quiet = coalesced(async () => { throw new Error('realtime is down'); });
+  const log = console.error;
+  console.error = () => {};
+  try { await quiet(); await quiet(); } finally { console.error = log; }
+});
+
+// ---- Hints (the alerts plan, Task 12): checked after a reaction's answer, from public counts, fired once per Act and pattern ----
+const reacting = { action: 'react', act: target, character: id, kind: 'tomato' };
+const post = '66666666-6666-4666-8666-666666666666';
+const zero = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
+const heat = { counts: { ...zero, excitedNegative: 12 }, cardOn: null };
+/** A Db answering by function and recording every call; `windows` answers act_window_counts by the Act asked about. */
+function hinting(windows: Record<string, unknown>, o: { fired?: boolean } = {}) {
+  forgetHintSettings();
+  const calls: { fn: string; args: Record<string, unknown> }[] = [];
+  /** Hint calls, sends and drains in the order they happened. */
+  const seq: string[] = [];
+  const hints = { least: 8, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } };
+  const db: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => {
+    calls.push({ fn, args });
+    if (fn === 'act_window_counts' || fn === 'fire_hint') seq.push(`${fn}:${args.about}${args.pattern ? `:${args.pattern}` : ''}`);
+    if (fn === 'react') return { act: target, thread: id, tally: { boo: 12 } } as T;
+    if (fn === 'instance_settings') return { economy: instance.settings.economy, hints } as T;
+    if (fn === 'act_window_counts') return (windows[args.about as string] ?? { counts: zero, cardOn: null }) as T;
+    if (fn === 'fire_hint') return (o.fired ?? true) as T;
+    return null as T;
+  } };
+  return { db, calls, seq };
+}
+const hintCalls = (calls: { fn: string; args: Record<string, unknown> }[]) => calls.filter((c) => c.fn === 'act_window_counts' || c.fn === 'fire_hint');
+async function reactedWith(db: Db, request: unknown = reacting, log: string[] = []) {
+  let later: (() => Promise<void>) | undefined;
+  const answer = await handleAction({
+    dbs: { player: db, service: db }, instance, body: request,
+    send: async () => { log.push('send'); }, drain: async () => { log.push('drain'); }, after: (work) => { later = work; },
+  });
+  return { answer, later: later!, log };
+}
+
+test('a reaction whose window shows a pattern fires its hint, after the answer and before the drain', async () => {
+  const { db, calls, seq } = hinting({ [target]: heat });
+  const { answer, later } = await reactedWith(db, reacting, seq);
+  assert.deepEqual(calls.map((c) => c.fn), ['react'], 'the answer was made from the reaction alone');
+  assert.equal(answer.status, 200);
+  await later();
+  const since = (calls.find((c) => c.fn === 'act_window_counts')!.args.since) as string;
+  assert.ok(Math.abs(Date.now() - 360 * 60_000 - Date.parse(since)) < 5_000, `the window starts six hours back: ${since}`);
+  assert.deepEqual(hintCalls(calls), [
+    { fn: 'act_window_counts', args: { about: target, since } },
+    { fn: 'fire_hint', args: { about: target, pattern: 'leading:excitedNegative' } },
+  ]);
+  // The reaction's own broadcasts and alerts go out first, never held by the hint's reads; the hint's alert is drained once more.
+  assert.deepEqual(seq, ['send', 'drain', `act_window_counts:${target}`, `fire_hint:${target}:leading:excitedNegative`, 'drain']);
+});
+
+test('the answer is the same whether a hint fires or not, and made before any hint work', async () => {
+  const answers: string[] = [];
+  const before: string[][] = [];
+  for (const windows of [{ [target]: heat }, {}]) {
+    const { db, calls } = hinting(windows);
+    const { answer, later } = await reactedWith(db);
+    before.push(calls.map((c) => c.fn));
+    answers.push(JSON.stringify(answer));
+    await later();
+  }
+  assert.equal(answers[0], answers[1], 'byte for byte');
+  assert.deepEqual(before[0], ['react']);
+  assert.deepEqual(before[0], before[1]);
+});
+
+test('a quiet window fires nothing, and only a reaction looks at hints at all', async () => {
+  const quiet = hinting({ [target]: { counts: { ...zero, excitedNegative: 3 }, cardOn: null } });
+  await (await reactedWith(quiet.db)).later();
+  assert.deepEqual(hintCalls(quiet.calls).map((c) => c.fn), ['act_window_counts']);
+  const posted = hinting({});
+  await (await reactedWith(posted.db, { action: 'post', thread: id, character: id, body: 'Hello.' })).later();
+  assert.deepEqual(hintCalls(posted.calls), [], 'a post is no reaction');
+  const refused: Db = { rpc: async () => { throw new DatabaseError('react: no', '42501', 403, 'your characters cannot react to each other', REFUSAL_HINT); } };
+  const calls: string[] = [];
+  const spy: Db = { rpc: async <T>(fn: string, a: Record<string, unknown>) => { calls.push(fn); return refused.rpc<T>(fn, a); } };
+  await (await reactedWith(spy)).later();
+  assert.deepEqual(calls, ['react'], 'a refused reaction reads no counts');
+});
+
+test('a reaction sent again fires the same hint again, which the database answers with false: a pattern is fired once, never twice', async () => {
+  const first = hinting({ [target]: heat }, { fired: true });
+  const second = hinting({ [target]: heat }, { fired: false });
+  await (await reactedWith(first.db)).later();
+  const again = await reactedWith(second.db);
+  await again.later();
+  assert.equal(hintCalls(first.calls).filter((c) => c.fn === 'fire_hint').length, 1);
+  assert.deepEqual(hintCalls(first.calls).filter((c) => c.fn === 'fire_hint'), hintCalls(second.calls).filter((c) => c.fn === 'fire_hint'), 'the same call both times, so SQL\'s once-per-Act-and-pattern decides');
+  assert.deepEqual(again.log, ['send', 'drain'], 'a hint that did not fire is no error, and the drain still runs');
+});
+
+test('a card reacted to is compared with the post it landed on: more than the post is stealing the thunder, for both players', async () => {
+  const card = { counts: { ...zero, excitedPositive: 10 }, cardOn: post };
+  const { db, calls } = hinting({ [target]: card, [post]: { counts: { ...zero, calmPositive: 4 }, cardOn: null } });
+  await (await reactedWith(db)).later();
+  assert.deepEqual(hintCalls(calls).map((c) => `${c.fn}:${c.args.about}:${c.args.pattern ?? ''}`), [
+    `act_window_counts:${target}:`, `act_window_counts:${post}:`, `fire_hint:${target}:thunder`, `fire_hint:${post}:thunder`,
+  ]);
+});
+
+test('a card that has not outdrawn its post is judged by its own reactions, and its post is not read twice', async () => {
+  const card = { counts: { ...zero, excitedNegative: 10 }, cardOn: post };
+  const { db, calls } = hinting({ [target]: card, [post]: { counts: { ...zero, calmPositive: 30 }, cardOn: null } });
+  await (await reactedWith(db)).later();
+  assert.deepEqual(hintCalls(calls).filter((c) => c.fn === 'fire_hint').map((c) => `${c.args.about}:${c.args.pattern}`), [`${target}:leading:excitedNegative`]);
+  assert.equal(calls.filter((c) => c.fn === 'act_window_counts').length, 2);
+});
+
+test('an error in the hint work is logged and does not stop the drain; a database error is not retried', async () => {
+  forgetHintSettings();
+  const seen: string[] = [];
+  const fetch = (async (url: string) => {
+    const fn = url.split('/').pop()!;
+    seen.push(fn);
+    if (fn === 'react') return new Response(JSON.stringify({ act: target, thread: id, tally: {} }), { status: 200 });
+    if (fn === 'instance_settings') return new Response(JSON.stringify({ economy: instance.settings.economy, hints: { least: 8, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } } }), { status: 200 });
+    if (fn === 'act_window_counts') return new Response(JSON.stringify(heat), { status: 200 });
+    return new Response(JSON.stringify({ code: '23503', message: 'insert or update on table "hints_fired" violates foreign key constraint' }), { status: 409 });
+  }) as unknown as typeof globalThis.fetch;
+  const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+  const logged: unknown[][] = [];
+  const was = console.error;
+  console.error = (...a: unknown[]) => { logged.push(a); };
+  let later!: () => Promise<void>;
+  const drained: string[] = [];
+  try {
+    await handleAction({ dbs, instance, body: reacting, send: async () => {}, drain: async () => { drained.push('drain'); }, after: (w) => { later = w; } });
+    await later();
+  } finally { console.error = was; }
+  assert.equal(seen.filter((f) => f === 'fire_hint').length, 1, 'a database error is a fact about the request: thrown at once');
+  assert.deepEqual(drained, ['drain']);
+  assert.ok(logged.some((l) => /hint/.test(String(l[0]))), 'and logged');
+});
+
+test('a transport failure on the hint\'s calls is retried on the request itself, and they are safe to repeat', async () => {
+  for (const fn of ['act_window_counts', 'fire_hint']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
+  const seen: string[] = [];
+  let tries = 0;
+  const fetch = (async (url: string) => {
+    seen.push(url.split('/').pop()!);
+    return ++tries < 3 ? new Response('', { status: 504 }) : new Response('true', { status: 200 });
+  }) as unknown as typeof globalThis.fetch;
+  const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+  assert.equal(await dbs.service.rpc('fire_hint', { about: target, pattern: 'divisive' }), true);
+  assert.deepEqual(seen, ['fire_hint', 'fire_hint', 'fire_hint']);
+});
+
+test('a card whose thunder has already fired is judged by its own reactions after that', async () => {
+  const card = { counts: { ...zero, excitedNegative: 10 }, cardOn: post };
+  const h = hinting({ [target]: card, [post]: { counts: { ...zero, calmPositive: 2 }, cardOn: null } });
+  const fired: Record<string, boolean> = { [`${target}:thunder`]: false, [`${post}:thunder`]: false };
+  const rpc = h.db.rpc;
+  const db: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => {
+    const told = fn === 'fire_hint' && `${args.about}:${args.pattern}` in fired;
+    if (told) h.seq.push(`fire_hint:${args.about}:${args.pattern}`);
+    return told ? (fired[`${args.about}:${args.pattern}`] as T) : rpc<T>(fn, args);
+  } };
+  await (await reactedWith(db, reacting, h.seq)).later();
+  assert.deepEqual(h.seq.filter((s) => s.startsWith('fire_hint')), [`fire_hint:${target}:thunder`, `fire_hint:${post}:thunder`, `fire_hint:${target}:leading:excitedNegative`]);
+});
+
+test('a card under the least is not compared: its post\'s window is not read', async () => {
+  const h = hinting({ [target]: { counts: { ...zero, excitedPositive: 3 }, cardOn: post } });
+  await (await reactedWith(h.db, reacting, h.seq)).later();
+  assert.deepEqual(h.seq.filter((s) => s.startsWith('act_window_counts')), [`act_window_counts:${target}`]);
+});
+
+test('the hint settings are read once a minute per connection, not once a reaction', async () => {
+  const h = hinting({ [target]: heat });
+  await (await reactedWith(h.db)).later();
+  await (await reactedWith(h.db)).later();
+  assert.equal(h.calls.filter((c) => c.fn === 'instance_settings').length, 1);
+});
+
+test('the hint settings are held across requests: two connections built per request make one settings read', async () => {
+  forgetHintSettings();
+  const seen: string[] = [];
+  const fetch = (async (url: string) => {
+    const fn = url.split('/').pop()!;
+    seen.push(fn);
+    if (fn === 'react') return new Response(JSON.stringify({ act: target, thread: id, tally: {} }), { status: 200 });
+    if (fn === 'instance_settings') return new Response(JSON.stringify({ economy: instance.settings.economy, hints: { least: 8, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } } }), { status: 200 });
+    if (fn === 'act_window_counts') return new Response(JSON.stringify({ counts: zero, cardOn: null }), { status: 200 });
+    return new Response('null', { status: 200 });
+  }) as unknown as typeof globalThis.fetch;
+  for (let request = 0; request < 2; request++) {
+    const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+    let later!: () => Promise<void>;
+    await handleAction({ dbs, instance, body: reacting, send: async () => {}, drain: async () => {}, after: (w) => { later = w; } });
+    await later();
+  }
+  assert.equal(seen.filter((f) => f === 'instance_settings').length, 1);
+  assert.equal(seen.filter((f) => f === 'act_window_counts').length, 2);
+});
+
+test('a thunder told to the card and then refused to the post is still a hint written: the second drain runs', async () => {
+  const card = { counts: { ...zero, excitedPositive: 10 }, cardOn: post };
+  const h = hinting({ [target]: card, [post]: { counts: { ...zero, calmPositive: 2 }, cardOn: null } });
+  const rpc = h.db.rpc;
+  const db: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => {
+    if (fn === 'fire_hint' && args.about === post) { h.seq.push('fire_hint:post threw'); throw new DatabaseError('fire_hint: x', '23503', 409, 'x'); }
+    return rpc<T>(fn, args);
+  } };
+  const was = console.error;
+  console.error = () => {};
+  try { await (await reactedWith(db, reacting, h.seq)).later(); } finally { console.error = was; }
+  assert.deepEqual(h.seq.slice(-3), [`fire_hint:${target}:thunder`, 'fire_hint:post threw', 'drain']);
+  assert.equal(h.seq.filter((s) => s === 'drain').length, 2);
 });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BRIBE_BOUNDS, deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
+import { BRIBE_BOUNDS, DEFAULT_DEVELOPER, deepFreeze, instanceProblems, settingsProblems, withOverrides } from './instance.ts';
 import type { Instance, ModBotPersona, Settings, SystemContent } from './types.ts';
 import { PHASE_CAPS } from '../system/phases.ts';
 import { DUTIES } from '../system/duties.ts';
@@ -58,6 +58,8 @@ const settings: Settings = {
   setLasts: { unit: 'day', count: 7 },
   reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
   reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
+  hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } },
+  toastDefaults: ['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'ruling', 'settlement', 'update'],
 };
 
 const bot: ModBotPersona = {
@@ -169,6 +171,18 @@ test('pip styles hold a default, each with a key, a name and a full and an empty
   assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'default', name: 'Again', full: 'f', empty: 'e' }] }).join('\n'), /pip style "default" is used twice/);
   assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'Bad Key', name: 'Bad', full: 'f', empty: 'e' }] }).join('\n'), /pip style key "Bad Key"/);
   assert.match(instanceProblems({ ...good, pipStyles: [...good.pipStyles, { key: 'blank', name: 'Blank', full: '', empty: 'e' }] }).join('\n'), /pip style "blank" has no full/);
+});
+
+test('the developer persona: a name a character can bear, a tagline a profile holds, an avatar key if any; the engine\'s own is plain', () => {
+  assert.deepEqual(DEFAULT_DEVELOPER, { name: 'The developers', tagline: '' }, 'the engine\'s default names no one');
+  assert.deepEqual(instanceProblems({ ...good, developer: { name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' } }), []);
+  assert.deepEqual(instanceProblems(good), [], 'an instance with no persona stands on the default');
+  assert.match(instanceProblems({ ...good, developer: { name: ' ', tagline: '' } }).join('\n'), /developer has no name/);
+  assert.match(instanceProblems({ ...good, developer: { name: 'G'.repeat(41), tagline: '' } }).join('\n'), /developer name .* 41 characters.* at most 40/);
+  assert.match(instanceProblems({ ...good, developer: { name: ' Padded ', tagline: '' } }).join('\n'), /developer name .*space/);
+  assert.match(instanceProblems({ ...good, developer: { name: 'Gabe', tagline: 'x'.repeat(41) } }).join('\n'), /developer tagline .* 41 characters.* at most 40/);
+  assert.match(instanceProblems({ ...good, developer: { name: 'Gabe', tagline: 'Fine', avatar: ' ' } }).join('\n'), /developer avatar/);
+  assert.match(instanceProblems({ ...good, developer: { name: 'Gabe', tagline: 3 as unknown as string } }).join('\n'), /developer tagline/);
 });
 
 test('a player holds a whole number of open invites, each open for a span', () => {
@@ -375,6 +389,8 @@ test('a key shared by a Boss and a bot is a problem, and so is one used twice in
   assert.match(said(withBot({ key: 'boss-a' })), /"boss-a" is both a Boss and a Mod Bot/);
   assert.match(said(withSystem({ bosses: [system.bosses[0]!, system.bosses[0]!] })), /Boss key "boss-a" is used twice/);
   assert.match(said(withSystem({ modBots: [bot, bot] })), /Mod Bot key "bot-a" is used twice/);
+  assert.match(said(withSystem({ bosses: [{ ...system.bosses[0]!, key: 'developer' }] })), /Boss key "developer" is reserved/);
+  assert.match(said(withBot({ key: 'developer' })), /Mod Bot key "developer" is reserved/);
 });
 
 test('a quiz needs a question, and each question\'s answer must be one of its choices', () => {
@@ -513,6 +529,30 @@ test('presence: a window that may count minutes, a most of names, and a poll bet
   }
   assert.deepEqual(settingsProblems({ ...settings, presenceWindow: { unit: 'day', count: 1 } }), []);
   assert.match(settingsProblems({ ...settings, presenceWindow: { unit: 'second', count: 300 } } as unknown as Settings).join('\n'), /presenceWindow/);
+});
+
+test('hints: a least of whole reactions, a share above a half, a split of at most a half, a window that may count minutes', () => {
+  const { hints: _gone, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "hints" is missing/);
+  assert.deepEqual(settingsProblems({ ...settings, hints: { ...settings.hints, least: 1, share: 1, split: 0.5 } }), []);
+  const bad = (over: Record<string, unknown>) => settingsProblems({ ...settings, hints: { ...settings.hints, ...over } as never }).join('\n');
+  for (const least of [0, 2.5, '10']) assert.match(bad({ least }), /setting "hints"/, `least ${least}`);
+  for (const share of [0.5, 0, 1.1, '0.6']) assert.match(bad({ share }), /setting "hints"/, `share ${share}`);
+  for (const split of [0, 0.51, 1, -0.1]) assert.match(bad({ split }), /setting "hints"/, `split ${split}`);
+  for (const window of [{ unit: 'second', count: 30 }, { unit: 'minute', count: 0 }, 360, null]) assert.match(bad({ window }), /setting "hints"/, JSON.stringify(window));
+  assert.match(settingsProblems({ ...settings, hints: [] as never }).join('\n'), /setting "hints"/);
+  assert.match(settingsProblems({ ...settings, hints: { least: 10, share: 0.6, split: 0.3 } as never }).join('\n'), /setting "hints"/, 'a missing window');
+});
+
+test('toastDefaults: the kinds that toast until a player chooses, each a kind of alert named once; none at all is allowed', () => {
+  const { toastDefaults: _gone, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "toastDefaults" is missing/);
+  assert.deepEqual(settingsProblems({ ...settings, toastDefaults: [] }), []);
+  assert.deepEqual(settingsProblems({ ...settings, toastDefaults: ['seasonNews', 'hint'] }), []);
+  for (const bad of [['confetti'], ['quote', 'quote'], 'quote', null, [1], ['quote', null], { quote: true }]) {
+    assert.match(settingsProblems({ ...settings, toastDefaults: bad as never }).join('\n'), /setting "toastDefaults"/, JSON.stringify(bad));
+  }
+  assert.match(settingsProblems({ ...settings, toastDefaults: ['quote', 'confetti'] as never }).join('\n'), /confetti/, 'the unknown kind is named');
 });
 
 // The card mechanic's pairings (docs/plans/2026-11-01-card-plays-plan.md, Task 1): each refused, naming the card.

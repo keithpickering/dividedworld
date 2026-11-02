@@ -5,16 +5,20 @@
  * the call is made as the player; the service key, for a card's writes and the live updates
  * that follow each write; a bound on the body; and the headers a browser's preflight asks for.
  */
-import { actDbs, runAction } from './core.ts';
+import { actDbs, afterTheAnswer, coalesced, handleAction } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';
 import { CORS, boundedJson, environment } from '../_shared/serve.ts';
 import { broadcaster } from '../_shared/broadcast.ts';
+import { sendWaiting } from '../_shared/outbox.ts';
 
 /** A post at its longest is 20,000 characters of up to four bytes; a Whoops! save is bounded at 256 KB. */
 const MOST_BYTES = 512 * 1024;
 
 const answer = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
+
+/** One drain at a time in this isolate (coalesced says why); the service connection it uses carries no player's session. */
+let drainOutbox: (() => Promise<void>) | undefined;
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
@@ -27,14 +31,17 @@ Deno.serve(async (request) => {
   const { tooLong, body } = await boundedJson(request, MOST_BYTES);
   if (tooLong) return answer(413, { error: 'that request is too long' });
   const dbs = actDbs({ url: env.url, key: env.key, anon, session });
-  const out = await runAction(dbs, chooseInstance(Deno.env.get('KAYFABB_PROFILE')), body);
-  // After the write committed, and after the answer where the runtime lets work outlive it: a
-  // reader who misses this sees the change on their next load, and a slow Realtime never holds
-  // up a player's answer.
-  if (out.broadcasts?.length) {
-    const sending = broadcaster({ url: env.url, key: env.key }).send(out.broadcasts).catch((e) => console.error('broadcast threw', e));
-    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime) EdgeRuntime.waitUntil(sending);
-    else await sending;
-  }
+  const live = broadcaster({ url: env.url, key: env.key });
+  // After the write committed, and after the answer where the runtime lets work outlive it: the write's live updates, then the
+  // outbox (an alert is queued by the write itself), drained after every write whether or not it queued anything. A reader who
+  // misses a send sees the change on their next load, a failed send is retried by the next drain, and neither a slow Realtime nor
+  // what was queued ever holds up, or shows in, a player's answer (afterTheAnswer says why). Without EdgeRuntime, the local
+  // runtime, nothing awaits the work either.
+  const out = await handleAction({
+    dbs, instance: chooseInstance(Deno.env.get('KAYFABB_PROFILE')), body,
+    send: live.send,
+    drain: (drainOutbox ??= coalesced(() => sendWaiting(dbs.service, live.deliver))),
+    after: (work) => afterTheAnswer(work, { waitUntil: typeof EdgeRuntime !== 'undefined' && EdgeRuntime ? (p) => EdgeRuntime.waitUntil(p) : undefined }),
+  });
   return answer(out.status, out.body);
 });

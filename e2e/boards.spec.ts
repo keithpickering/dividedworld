@@ -6,8 +6,8 @@ import { boardsToRun, compareBoard, compareSides, type BoardManifest, type Misma
 import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
- * The board match, end to end: each board the two-worlds session drew (docs/research/2026-10-29-two-worlds/)
- * opened beside the app at the same size, and the manifest's landmarks compared (e2e/board-match.ts).
+ * The board match, end to end: each board the two-worlds session drew (docs/research/2026-10-29-two-worlds/) and the
+ * alerts session (docs/research/2026-11-02-alerts/) opened beside the app at the same size, and the manifest's landmarks compared (e2e/board-match.ts).
  * The list of boards is the folder's, so a board with no manifest fails by name unless PENDING says
  * which part of the glass build builds it; a board in PENDING that has a manifest fails too, so the
  * map cannot go stale. The part that builds a board takes it out of PENDING in the same change that
@@ -26,19 +26,38 @@ import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInF
  * index.html with the mismatches listed, which CI uploads.
  */
 const here = path.dirname(fileURLToPath(import.meta.url));
-const BOARDS = path.join(here, '..', 'docs', 'research', '2026-10-29-two-worlds');
+/*
+ * The boards' folders, in the order the sessions drew them. The two-worlds boards are a record and are not edited; the alerts
+ * design's (docs/plans/2026-11-02-alerts-design.md) are drawn over them and revise some of what they show, which the old boards'
+ * manifests say where they compare it. A board's id is its file name, so no two folders may hold the same one (checked below).
+ */
+const BOARD_FOLDERS = [
+  path.join(here, '..', 'docs', 'research', '2026-10-29-two-worlds'),
+  path.join(here, '..', 'docs', 'research', '2026-11-02-alerts'),
+];
 const MANIFESTS = path.join(here, 'boards');
 const REPORT = path.join(here, 'report', 'boards');
 
 /** The boards not built yet, each with the part of docs/plans/2026-10-30-glass-build-plan.md that builds it. */
 const PENDING: Readonly<Record<string, string>> = {};
 
-const folder = fs.readdirSync(BOARDS);
+/** Where each board's file is, by its id; a name two folders share is a problem the first test reports. */
+const boardFile = new Map<string, string>();
+const shared: string[] = [];
+for (const dir of BOARD_FOLDERS) {
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith('.html')) continue;
+    const id = name.slice(0, -'.html'.length);
+    if (boardFile.has(id)) shared.push(`${id} is drawn in two board folders`);
+    else boardFile.set(id, path.join(dir, name));
+  }
+}
+const folder = [...boardFile.keys()].map((id) => `${id}.html`);
 const manifestIds = fs.existsSync(MANIFESTS) ? fs.readdirSync(MANIFESTS).filter((f) => f.endsWith('.ts')).map((f) => f.slice(0, -3)) : [];
 const { run, problems } = boardsToRun(folder, manifestIds, PENDING);
 
 test('every board has a manifest or is pending, and the pending map is not stale', () => {
-  expect(problems).toEqual([]);
+  expect([...shared, ...problems]).toEqual([]);
 });
 
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -85,7 +104,7 @@ async function compareSide(browser: Browser, baseURL: string | undefined, id: st
     let failure: unknown;
     try {
       await routeBoardFonts(boardPage);
-      await boardPage.goto(pathToFileURL(path.join(BOARDS, `${id}.html`)).href);
+      await boardPage.goto(pathToFileURL(boardFile.get(id)!).href);
       const query = 'moment' in manifest.build ? `moment=${encodeURIComponent(manifest.build.moment)}` : `story=${encodeURIComponent(manifest.build.story)}`;
       await buildPage.goto(`/?fixture=boards&${query}`);
       await pressControls(buildPage, manifest.press);

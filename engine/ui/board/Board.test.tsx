@@ -466,6 +466,30 @@ describe('pinned threads and the banner', () => {
     await waitFor(() => expect(document.activeElement).toBe(banner.querySelector('h1')));
   });
 
+  test('a board card played while the page is open is drawn on the banner, heard on reach', async () => {
+    const fake = createFake({ instance, now: () => Date.now() });
+    const w = world(fake, { threads: 2 });
+    renderIn(fake, <BoardScreen slug="general" />, { instance, path: '/b/general' });
+    await screen.findByRole('link', { name: 'Thread 002' });
+    const banner = document.querySelector('.kb-board-banner') as HTMLElement;
+    expect(within(banner).queryByRole('button', { name: /^Rumble, 1 play\b/u })).toBeNull();
+    const board = (await fake.board('general'))!.id;
+    /* Another player's play: on the announcements thread's topic, which this page is not on. */
+    fake.seed.reach(w.spritey, 'board', board, 'rumble', { ends: Date.now() + DAY, live: true });
+    expect(await within(banner).findByRole('button', { name: /^Rumble, 1 play\b/u })).toBeInTheDocument();
+  });
+
+  test('a board card on another board is not drawn on this banner', async () => {
+    const fake = createFake({ instance, now: () => Date.now() });
+    const w = world(fake, { threads: 2 });
+    renderIn(fake, <BoardScreen slug="general" />, { instance, path: '/b/general' });
+    await screen.findByRole('link', { name: 'Thread 002' });
+    const banner = document.querySelector('.kb-board-banner') as HTMLElement;
+    fake.seed.reach(w.spritey, 'board', '99999999-9999-4999-8999-999999999999', 'rumble', { ends: Date.now() + DAY, live: true });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(banner).queryByRole('button', { name: /^Rumble, \d play/u })).toBeNull();
+  });
+
   test('the board\'s live board card is a mark on its banner', async () => {
     await open();
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;

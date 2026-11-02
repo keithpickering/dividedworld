@@ -325,7 +325,8 @@ begin
   pl := play_card(ann, 'glint', pipe, hoo, '{}', 0, '', 'character', p);
   perform play_card(ann, 'sweetie', pipe, p, '{}', 0, '');
   perform tests.become(bob);
-  if (select count(*) from my_posts_played_on where post = p) is distinct from 1::bigint then raise exception 'the opener''s author''s log lists the post''s own play alone'; end if;
+  -- 0056 reads a character's and a thread's play as its own row, with its reach (0061 holds those): as plays on a post, the log still has the one.
+  if (select count(*) from my_posts_played_on where post = p and reach = 'post') is distinct from 1::bigint then raise exception 'the opener''s author''s log lists the post''s own play alone'; end if;
   perform tests.unbecome();
   if pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', bob, hoo, pl ->> 'id', '{}')) is distinct from 'there is no such card on a post' then
     raise exception 'a play beyond a post keeps no state its post''s author saves';

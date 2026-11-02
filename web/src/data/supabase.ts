@@ -4,7 +4,7 @@
  * This is the one place a Supabase client lives ("Portable by construction"), and it reads only
  * what tools/check-web-reads.mjs allows: public projections and the signed-in player's own rows.
  * Every write goes through the `act` function (it validates and sends the broadcasts) except the
- * six rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, forget_cards_met, set_profile, release_effect) and the
+ * nine rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, forget_cards_met, see_alerts, see_settlement, set_profile, release_effect, post_update, which is an admin's alone) and the
  * avatar, which is a multipart form to the `avatar` function. Sign-in goes through the `account`
  * function only; Auth's own code endpoints are never called, and the session the `account` function
  * answers with is installed with `auth.setSession`.
@@ -32,11 +32,12 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
-import { MOVES_LOG_PAGE } from '../../../engine/ui/data/api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
+import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
 
@@ -101,6 +102,9 @@ function toPreferences(r: Row): Preferences {
     theme: r['theme'] ?? d.theme, postbit: r['postbit'] ?? d.postbit, motion: r['motion'] ?? d.motion,
     smoke: r['smoke'] ?? d.smoke, contrast: r['contrast'] ?? d.contrast, textSize: num(r['text_size'], d.textSize) as Preferences['textSize'],
     cardsMet: Array.isArray(r['cards_met']) ? r['cards_met'].filter((k): k is string => typeof k === 'string') : d.cardsMet,
+    alertsSeenAt: str(r['alerts_seen_at']), settlementSeen: str(r['settlement_seen']),
+    /* A kind this build does not know (a newer server's) is no kind here; a choice never made stays null, which is not an empty one. */
+    toasts: Array.isArray(r['toasts']) ? r['toasts'].filter((k): k is AlertKind => (ALERT_KINDS as readonly unknown[]).includes(k)) : null,
   };
 }
 
@@ -121,6 +125,38 @@ function toAct(r: Row): Act {
     currentPayload: r['current_payload'] ?? r['payload'] ?? {},
     editedAt: r['edited_at'] ?? null,
     shownEditedAt: r['shown_edited_at'] ?? null,
+  };
+}
+
+/** One row of `updates`, or post_update's answer, which is the same row. A change that is not a { label, text } of words is no line. */
+function toUpdate(r: Row): Update {
+  const changes = Array.isArray(r['changes']) ? (r['changes'] as Row[]) : [];
+  return {
+    act: r['act'], thread: r['thread'], character: r['character'], name: String(r['name'] ?? ''), tagline: String(r['tagline'] ?? ''), avatar: str(r['avatar']),
+    title: String(r['title'] ?? ''), body: String(r['body'] ?? ''),
+    changes: changes.filter((c) => typeof c?.['text'] === 'string').map((c) => ({ label: typeof c['label'] === 'string' ? c['label'] : '', text: String(c['text']) })),
+    at: String(r['at']), seq: num(r['seq']),
+  };
+}
+
+/** The names a tally Act holds under `key`; an entry with no id or name is no line. A class is kept only where the entry says it. */
+function toTallyNames(v: unknown): TallyName[] {
+  return (Array.isArray(v) ? (v as Row[]) : []).flatMap((e) => (typeof e?.['character'] === 'string' && typeof e['name'] === 'string'
+    ? [{ character: e['character'], name: e['name'], class: str(e['class']), was: str(e['was']) }] : []));
+}
+/** One row of `season_news` (0063). Its public detail is read as the Acts wrote it; what is not in the shape is left out. */
+function toSeasonNews(r: Row): SeasonNewsItem {
+  const detail = (r['detail'] ?? {}) as Row;
+  const top = (Array.isArray(detail['top']) ? (detail['top'] as Row[]) : []).flatMap((t): SeasonResult[] => (typeof t?.['character'] === 'string'
+    ? [{
+      character: t['character'], name: String(t['name'] ?? ''), place: num(t['place']), standing: num(t['standing']),
+      shown: (Array.isArray(t['shown']) ? (t['shown'] as Row[]) : []).flatMap((x): SeasonShown[] => (x?.['kind'] === 'reveal' || x?.['kind'] === 'turn'
+        ? [{ kind: x['kind'], act: String(x['act']), at: String(x['at']), class: str(x['class']), was: str(x['was']) }] : [])),
+    }] : []));
+  return {
+    kind: r['kind'], act: r['act'] ?? null, thread: r['thread'] ?? null, seq: r['seq'] === null || r['seq'] === undefined ? null : num(r['seq']), at: String(r['at']),
+    season: num(r['season']), name: str(r['name']), quote: str(r['quote']), count: r['count'] === null || r['count'] === undefined ? null : num(r['count']),
+    top, debuts: toTallyNames(detail['debuts']), turns: toTallyNames(detail['turns']),
   };
 }
 
@@ -398,7 +434,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     portraitFrame: toFrame(p?.['portrait_frame']),
     pipStyle: p?.['pip_style'] ?? 'default',
     joined: c['joined'] ?? '',
-    ...(typeof c['staff'] === 'string' ? { staff: c['staff'], staffKind: c['staff_kind'] === 'bot' ? ('bot' as const) : ('boss' as const) } : {}),
+    ...(typeof c['staff'] === 'string' ? { staff: c['staff'], staffKind: c['staff_kind'] === 'bot' ? ('bot' as const) : c['staff_kind'] === 'developer' ? ('developer' as const) : ('boss' as const) } : {}),
   });
 
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
@@ -620,6 +656,21 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         roster: rows(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
       };
     },
+    /* A page of the Updates (`updates`, 0062): public, the same for every reader, newest first. */
+    async updates(before) {
+      const r = await read(() => client.rpc('updates', { before: before ?? null, most: UPDATES_PAGE }));
+      return (Array.isArray(r.data) ? (r.data as Row[]) : []).map(toUpdate);
+    },
+    /* A page of the season's news (`season_news`, 0063): public, the same for every reader, newest first. */
+    async seasonNews(before) {
+      const r = await read(() => client.rpc('season_news', { before: before ?? null, most: SEASON_NEWS_PAGE }));
+      return (Array.isArray(r.data) ? (r.data as Row[]) : []).map(toSeasonNews);
+    },
+    /* An admin's update, written as the developer persona; the answer is the update as `updates` reads it. */
+    async postUpdate(title, body, changes) {
+      const a = await rpcWrite(() => client.rpc('post_update', { title, body, changes: changes.map((c) => ({ label: c.label, text: c.text })) }));
+      return a.ok ? { ok: true, value: toUpdate(a.value) } : a;
+    },
     async holdMove(id) {
       const a = await rpcWrite(() => client.rpc('hold_move', { id }));
       return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? '') } } : a;
@@ -647,7 +698,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return { threads: rows.map(toThread), total: all };
     },
     async thread(id) {
-      const r = await list(() => client.from('thread_list').select('*').eq('id', id).limit(1));
+      /* thread_open: every thread by its id, the reveal and Turns threads (which thread_list leaves out of a board's list) included. */
+      const r = await list(() => client.from('thread_open').select('*').eq('id', id).limit(1));
       return r[0] ? toThread(r[0]) : null;
     },
     async acts(thread, fromSeq, toSeq) {
@@ -662,6 +714,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const wanted = [...new Set(ids)].filter(idOk);
       if (wanted.length === 0) return [];
       return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('id', part)))).map(toAct);
+    },
+    async openingActs(threads) {
+      const wanted = [...new Set(threads)].filter(idOk);
+      if (wanted.length === 0) return [];
+      return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('thread', part).eq('seq', 1)))).map(toAct);
     },
     async history(post) {
       if (!idOk(post)) return [];
@@ -870,13 +927,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return a.ok ? { ok: true, value: a.value['hidden'] === true } : a;
     },
     async preferences(): Promise<Preferences> {
-      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,cards_met').limit(1)))[0];
+      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,cards_met,alerts_seen_at,settlement_seen,toasts').limit(1)))[0];
       return r ? toPreferences(r) : DEFAULT_PREFERENCES;
     },
     async setPreferences(p) {
       const a = await rpcWrite(() => client.rpc('set_preferences', {
         theme: p.theme ?? null, postbit: p.postbit ?? null, motion: p.motion ?? null,
         smoke: p.smoke ?? null, contrast: p.contrast ?? null, text_size: p.textSize ?? null,
+        toasts: p.toasts ?? null, toasts_default: p.toasts === null,
       }));
       return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
     },
@@ -887,6 +945,39 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async forgetCardsMet() {
       const a = await rpcWrite(() => client.rpc('forget_cards_met'));
       return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    async seeAlerts(at) {
+      const a = await rpcWrite(() => client.rpc('see_alerts', { at }));
+      return a.ok ? { ok: true, value: str(a.value['seen']) ?? at } : a;
+    },
+    async following(thread) {
+      return (await read(() => client.rpc('following_thread', { in_thread: thread }))).data === true;
+    },
+    async follow(thread, on) {
+      const a = await rpcWrite(() => client.rpc('follow_thread', { in_thread: thread, on_: on }));
+      return a.ok ? { ok: true, value: a.value['following'] === true } : a;
+    },
+    async followed() {
+      return (await list(() => client.from('my_followed_threads').select('thread,board,title,new_posts,newest_at').order('newest_at', { ascending: false }).limit(50)))
+        .map((r): FollowedThread => ({ thread: r['thread'], board: r['board'], title: String(r['title'] ?? ''), newPosts: num(r['new_posts']), newestAt: String(r['newest_at']) }));
+    },
+    async alerts(before) {
+      const r = await read(() => client.rpc('my_alerts', { before: before ?? null, most: ALERTS_PAGE }));
+      return (Array.isArray(r.data) ? (r.data as Row[]) : [])
+        /* A kind this build does not know (a newer server's) is no line, rather than a line a screen cannot word. */
+        .filter((a) => (ALERT_KINDS as readonly string[]).includes(String(a['kind'])))
+        .map((a): Alert => ({
+          kind: a['kind'] as AlertKind, sub: str(a['sub']), act: str(a['act']), character: str(a['character']), at: String(a['at']),
+          thread: str(a['thread']), name: str(a['name']), title: str(a['title']), count: typeof a['count'] === 'number' ? a['count'] : null,
+        }));
+    },
+    async alertsUnread() {
+      const r = await read(() => client.rpc('my_alerts_unread'));
+      return Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(r.data))));
+    },
+    async seeSettlement(endsAt) {
+      const a = await rpcWrite(() => client.rpc('see_settlement', { ends_at: endsAt }));
+      return a.ok ? { ok: true, value: str(a.value['seen']) ?? endsAt } : a;
     },
     /*
      * A page of the player's own log: each of its own views read newest first, at or before the cursor and a page long, then the
@@ -913,7 +1004,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
           rows(() => client.from('my_card_ledger').select('card,kind,act,price,at'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
-          rows(() => client.from('my_posts_played_on').select('play,post,at'), 'at', (q) => q, ['play']),
+          rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
           rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
           /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
           rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
@@ -942,7 +1033,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
             floored: num(r['floored']), balanceAfter: num(r['balance_after']), ref: r['ref'] ?? null, at: r['at'],
           })),
           cards: cardRows.map((r): CardEvent => ({ card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'] })),
-          playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'] })),
+          playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
           saves: saveRows.map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
           setEnds: endRows.map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'] })),
           caught: caughtRows.map((r): CaughtPlay => ({
@@ -1015,6 +1106,29 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     subscribeBoard(board, l) {
       return join(`board:${board}`, ['thread'], (_event, p) => {
         l.onThread?.({ id: p['id'], board: p['board'], title: p['title'], originActId: p['origin_act_id'] ?? null, createdAt: p['created_at'] });
+      });
+    },
+    /* The player's own channel, `account:<their id>` (supabase/migrations/0061_account_channel.sql lets only that account hear it). It is
+       opened for the account signed in when this is called; a caller that follows sign-in changes subscribes again after one. */
+    subscribeAccount(l) {
+      let off: (() => void) | null = null;
+      let closed = false;
+      void (async () => {
+        let id: string | undefined;
+        try { id = (await client.auth.getSession()).data.session?.user.id; } catch { /* no session: nothing to hear */ }
+        if (!id || closed) return;
+        off = join(`account:${id}`, ['alert'], (_event, p) => {
+          l.onAlert?.({ id: p['id'], kind: p['kind'], sub: p['sub'] ?? null, act: p['act'] ?? null, character: p['character'] ?? null, at: p['at'] });
+        });
+      })();
+      return () => { closed = true; off?.(); };
+    },
+    /* Plays beyond a post, and news, on `reach`: every signed-in player hears every one. A play's Act is the public one its thread carries; news is an update or an item of season news, as 0063 announces it. */
+    subscribeReach(l) {
+      return join('reach', ['effect', 'news', 'settled'], (event, p) => {
+        if (event === 'news') l.onNews?.({ kind: p['kind'], sub: p['sub'] ?? null, act: p['act'] ?? null, at: p['at'] });
+        else if (event === 'settled') l.onSettled?.({ id: String(p['id']), at: p['at'] });
+        else l.onPlay?.(toAct(p));
       });
     },
   };

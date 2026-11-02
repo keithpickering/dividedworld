@@ -44,7 +44,7 @@ const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
 
 describe('the moments', () => {
   it('names a moment for each board that has one, in the order the boards are numbered', () => {
-    expect(NAMES).toEqual(['01-main', '02-phone', '03-react', '05-cards', '06-turn', '07-vending', '08-hold', '09-settlement', '10-roster', '11-settings', '12-log', '13-rankings']);
+    expect(NAMES).toEqual(['01-main', '01-board-toasts', '02-phone', '03-react', '05-cards', '06-turn', '07-vending', '08-hold', '09-settlement', '10-roster', '11-settings', '12-log', '13-rankings']);
   });
 
   it('is frozen, so a test cannot move a board by editing a moment', () => {
@@ -54,6 +54,7 @@ describe('the moments', () => {
 
   const ROUTES: Record<MomentName, RegExp> = {
     '01-main': /^\/t\/[^?#]+\?page=3$/,
+    '01-board-toasts': /^\/t\/[^?#]+\?page=3$/,
     '02-phone': /^\/t\/[^?#]+\?page=3$/,
     '03-react': /^\/t\/[^?#]+\?page=3#post-42$/,
     '05-cards': /^\/t\/[^?#]+\?page=3#post-46$/,
@@ -64,10 +65,11 @@ describe('the moments', () => {
     '10-roster': /^\/characters$/,
     '11-settings': /^\/settings$/,
     '12-log': /^\/log$/,
-    '13-rankings': /^\/rankings$/,
+    '13-rankings': /^\/season\?tab=rankings$/,
   };
   const WHO: Record<MomentName, readonly string[]> = {
     '01-main': ['Mrs. Hooligan', 'Pipewrench', 'Spritey'],
+    '01-board-toasts': ['Mrs. Hooligan', 'Pipewrench', 'Spritey'],
     '02-phone': ['Mrs. Hooligan', 'Pipewrench', 'Spritey'],
     '03-react': ['Gloomba'],
     '05-cards': ['Mrs. Hooligan', 'Pipewrench', 'Spritey'],
@@ -94,6 +96,27 @@ describe('the moments', () => {
     const { fake } = await load(moment);
     const account = must((await fake.session()).account);
     expect(await nameOf(fake, globalThis.localStorage.getItem(hudKey(account)))).toBe('Pipewrench');
+  });
+
+  it('01-board-toasts: five alerts arrive the moment the HUD listens to the account\'s channel, and the bell counts those five alone', async () => {
+    const { fake } = await load('01-board-toasts');
+    const heard: string[] = [];
+    expect(await fake.alertsUnread()).toBe(0);
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a.kind) });
+    expect(heard).toEqual([]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(heard).toEqual(['ruling', 'trapStruck', 'ruling', 'trapStruck', 'ruling']);
+    expect(await fake.alertsUnread()).toBe(5);
+    /* A second listener (a page changed, a StrictMode remount) does not write them again. */
+    fake.subscribeAccount({ onAlert: () => {} });
+    await Promise.resolve();
+    expect(await fake.alertsUnread()).toBe(5);
+  });
+
+  it('01-board-toasts holds its toasts: its screen settings give them a lifetime far past the default six seconds, and no other moment sets one', async () => {
+    expect((await (await load('01-board-toasts')).fake.settings()).toastMs).toBeGreaterThan(60_000);
+    expect((await (await load('01-main')).fake.settings()).toastMs).toBeUndefined();
   });
 
   it('refuses a fake whose clock is not the moment\'s, since the moment is what its Acts are dated against', () => {

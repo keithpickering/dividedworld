@@ -5,9 +5,17 @@ import { instance, playtestInstance } from './index.ts';
 import { defaults, playtest, playtestOverrides } from './settings.ts';
 import { reactions } from './reactions.ts';
 import { QUADRANTS } from '../../engine/rules/types.ts';
+import { hintPatterns } from '../../engine/rules/hints.ts';
+import { hintWords } from './ui/hint-words.ts';
 
 test('the defaults hold every setting the engine reads, in range', () => {
   assert.deepEqual(settingsProblems(defaults), []);
+});
+
+test('the toast defaults are the alerts design\'s section 8: news of your own characters toasts, followed threads, hints and season news do not', () => {
+  assert.deepEqual([...defaults.toastDefaults].sort(), ['cardOnYours', 'quote', 'ruling', 'settlement', 'trapSprang', 'trapStruck', 'update']);
+  assert.deepEqual(playtest.toastDefaults, defaults.toastDefaults);
+  assert.deepEqual(settingsProblems({ ...defaults, toastDefaults: ['quote', 'quote'] }).length > 0, true, 'a kind named twice is a problem');
 });
 
 test('the playtest settings hold every setting the engine reads, in range', () => {
@@ -112,4 +120,44 @@ test('the new settings validate, in the defaults and the playtest, and reject wh
 test('Divided World\'s whole instance has no problems', () => {
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instanceProblems(playtestInstance), []);
+});
+
+test('hints: the thresholds are valid and a hint needs a crowd, a clear lead, and a real split', () => {
+  assert.deepEqual(defaults.hints, { least: 8, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } });
+  assert.deepEqual(settingsProblems({ ...defaults, hints: defaults.hints }), []);
+  assert.ok(Object.isFrozen(defaults.hints), 'frozen with the rest');
+  assert.deepEqual(playtest.hints, defaults.hints);
+});
+
+test('hints: the instance has words for every pattern, for a post and for a card, and they are plain text', () => {
+  for (const pattern of hintPatterns) {
+    for (const card of [false, true]) {
+      const w = hintWords(pattern, { card });
+      assert.ok(w, `${pattern} (card ${card}) has words`);
+      assert.ok(w.line.length > 0 && w.line.length <= 60, `${pattern} line fits a toast: ${w.line}`);
+      assert.ok(w.detail.length > 0, `${pattern} detail`);
+      assert.doesNotMatch(w.line + w.detail, /[<>]/, 'plain text, never markup');
+    }
+  }
+  assert.equal(hintWords('leading:excitedNegative', { card: false })?.line, 'Your post is picking up heat');
+  assert.equal(hintWords('somethingNew', { card: false }), undefined, 'a pattern it has no words for is the engine\'s to say');
+});
+
+test('hints: a post is never called a card, nor a card a post, and the thunder says which side the player is on', () => {
+  for (const pattern of hintPatterns.filter((p) => p !== 'thunder')) {
+    assert.match(hintWords(pattern, { card: false })!.line, /post/i, pattern);
+    assert.match(hintWords(pattern, { card: true })!.line, /card/i, pattern);
+    assert.doesNotMatch(hintWords(pattern, { card: true })!.line, /post/i, pattern);
+  }
+  assert.match(hintWords('thunder', { card: false })!.line, /post/i);
+  assert.match(hintWords('thunder', { card: true })!.line, /card/i);
+});
+
+test('hints: the words claim no more than the threshold proves (a lead is "most", a split is "a real share", never "nobody" or "half")', () => {
+  for (const pattern of hintPatterns) {
+    for (const card of [false, true]) {
+      const w = hintWords(pattern, { card })!;
+      assert.doesNotMatch(w.line + ' ' + w.detail, /\b(nobody|no one|everyone|half the|all of)\b/i, `${pattern} (card ${card}) overstates what fired it: ${w.detail}`);
+    }
+  }
 });

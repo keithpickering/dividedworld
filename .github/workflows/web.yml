@@ -16,7 +16,9 @@ jobs:
   e2e:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The suite runs a spec file to a worker, and a11y.spec.ts alone is about 11 minutes (1,153 tests in about 13 locally, 2026-11-02);
+    # with the browser's download that outgrew 15. Thirty leaves room and still ends a hang.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

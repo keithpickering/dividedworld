@@ -24,6 +24,7 @@ import { settle, shareEntries } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
 import type { Db } from '../_shared/rpc.ts';
 import type { Broadcast, Delivery } from '../_shared/broadcast.ts';
+import { sendWaiting } from '../_shared/outbox.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
 type Window = { readonly start: string; readonly end: string };
@@ -50,9 +51,6 @@ export interface RunOptions {
   readonly deliver?: (messages: readonly Broadcast[]) => Promise<Delivery>;
 }
 
-/** How many waiting broadcasts one send carries. */
-const BROADCASTS_PER_SEND = 500;
-
 /**
  * How many windows one run settles before it stops: a month of missed days, and the next firing
  * carries on from where this one ended. A cron that fires less often than this many lengths
@@ -69,7 +67,9 @@ export const MOST_RUN_MS = 60_000;
 
 export async function runSettlement(db: Db, instance: Instance, until: string, options: RunOptions = {}): Promise<SettlementOutcome> {
   const clock = options.clock ?? Date.now;
-  const deliver = options.deliver ?? (async (): Promise<Delivery> => 'unreachable');
+  // With no sender nothing is claimed from the outbox: a claim that is never sent holds its rows for its lease, away from the next run that sends.
+  const deliver = options.deliver;
+  const sendOutbox = async () => { if (deliver) await sendWaiting(db, deliver); };
   if (Number.isNaN(Date.parse(until))) throw new Error(`settle: until is not a time: ${JSON.stringify(until)}`);
   const windows: (Window & { applied: boolean; entries: number; masks?: string; reveal?: string })[] = [];
   const started = clock();
@@ -81,7 +81,7 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     const window = await db.rpc<Window | null>('next_settlement_window', { until });
     if (!window) break;
     if (windows.length === MOST_WINDOWS_PER_RUN || (windows.length && clock() - started >= MOST_RUN_MS)) {
-      await sendWaiting(db, deliver);
+      await sendOutbox();
       return outcome(windows, true);
     }
     tuned ??= await withDatabaseSettings(instance, db);
@@ -104,36 +104,8 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     if (applied.reveal) console.error('settle: the season was not revealed at', window.end, applied.reveal);
     windows.push({ ...window, applied: applied.applied, entries: result.entries.length, ...(applied.masks ? { masks: applied.masks } : {}), ...(applied.reveal ? { reveal: applied.reveal } : {}) });
   }
-  await sendWaiting(db, deliver);
+  await sendOutbox();
   return windows.length ? outcome(windows, false) : { status: 'nothing to settle', until };
-}
-
-/**
- * Sends what waits in the outbox, a batch at a time, and clears each batch once it went. Where
- * Realtime cannot be reached, everything stays for the next run. Where it refuses a batch for
- * good (a 413, say), the batch is sent one message at a time, so one bad message never holds back
- * every one after it, run after run: each that goes is cleared, and one refused alone is given
- * up, logged by its topic, and cleared too. Its Act is on the board for the next load.
- */
-async function sendWaiting(db: Db, deliver: NonNullable<RunOptions['deliver']>): Promise<void> {
-  const shape = (m: { topic: string; event: string; payload: unknown }) => ({ topic: m.topic, event: m.event, payload: m.payload });
-  for (;;) {
-    const due = await db.rpc<{ id: number; topic: string; event: string; payload: unknown }[]>('due_broadcasts', { most: BROADCASTS_PER_SEND });
-    if (!due.length) return;
-    const outcome = await deliver(due.map(shape));
-    if (outcome === 'unreachable') return;
-    if (outcome === 'refused') {
-      for (const m of due) {
-        const one = await deliver([shape(m)]);
-        if (one === 'unreachable') return;
-        if (one === 'refused') console.error('broadcast given up: Realtime refuses it for good', m.topic, m.event, m.id);
-        await db.rpc('broadcasts_sent', { ids: [m.id] });
-      }
-    } else {
-      await db.rpc('broadcasts_sent', { ids: due.map((m) => m.id) });
-    }
-    if (due.length < BROADCASTS_PER_SEND) return;
-  }
 }
 
 function outcome(windows: (Window & { applied: boolean; entries: number; masks?: string; reveal?: string })[], behind: boolean): SettlementOutcome {

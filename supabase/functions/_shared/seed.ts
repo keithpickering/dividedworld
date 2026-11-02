@@ -5,10 +5,12 @@
  * characters only; their prompts are read from the instance in code and never travel in the seed.
  */
 import type { Instance } from '../../../engine/rules/types.ts';
+import { DEFAULT_DEVELOPER } from '../../../engine/rules/instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 
 export function instanceSeed(instance: Instance) {
+  const dev = instance.developer ?? DEFAULT_DEVELOPER;
   return {
     // The System's words travel as one setting, read by the SQL that posts them (0007).
     // The tick (0048) reads the stock lines and the moves' plain words from settings, so SQL names no instance and no kind.
@@ -29,6 +31,9 @@ export function instanceSeed(instance: Instance) {
       // Where it reaches and whether a thread play of it pins (0055), which seed_instance checks against reachRarity and reachLasts.
       reaches: c.reaches ?? ['post'], pins: c.pins === true,
     })),
+    // The developer persona (0062): the instance's, else the engine's plain one. It is not in `system`, which a model reads, and its tagline is its
+    // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
+    developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}) },
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
     pipStyles: instance.pipStyles.map((p) => ({ key: p.key, name: p.name, full: p.full, empty: p.empty })),
     // The roster as characters (0043): a Boss or a Mod Bot, once each, with the profile its title and signature give. The

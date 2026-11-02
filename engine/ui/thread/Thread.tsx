@@ -48,6 +48,7 @@ import { returnOf } from '../glass/back.ts';
 import { emptyFeed, feedReducer, newer, ordered, shownEnd, waitingPosts } from './feed.ts';
 import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageEndsThread, pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
+import { FollowControl } from './Follow.tsx';
 import { ActArticle, ThreadHead } from './Post.tsx';
 import { ThreadCtx, type ThreadContext } from './context.ts';
 import { text } from './lines.tsx';
@@ -341,6 +342,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   }, [api, thread, P, prepare, navigate]);
 
   /* ----------------------------------------------------------------------- live ---- */
+  /* A live Act's follow-up read that goes wrong is dropped: the next read of the page shows what it would have, and nothing is thrown at the page. */
+  const quietly = () => {};
   const announcedIds = useRef(new Set<Id>());
   /* Acts whose characters are being read, with the latest version of each that has arrived since. */
   const inflight = useRef(new Map<Id, Act>());
@@ -357,7 +360,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
       onAct(a) {
         /* A card play is a tag on its post, never a place in the thread: it is added to the post it names, wherever that post is, once its caster is known. */
         if (a.kind === 'card') {
-          void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); });
+          void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); }).catch(quietly);
           return;
         }
         /* A card set face down is a back on its post; a spring reveals the back in its place, moving no mark (the card mechanic's design). */
@@ -366,7 +369,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
             plays.add([a]);
             if (a.kind === 'set') return api.myFaceDown([a.id]).then((faces) => { plays.setFaces(faces); }, () => {});
             return undefined;
-          });
+          }).catch(quietly);
           return;
         }
         const f = feedRef.current;
@@ -381,7 +384,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
           inflight.current.delete(a.id);
           dispatch({ type: 'live', act: latest });
           if (feedRef.current.ready) announce(latest);
-        });
+        }).catch(() => { inflight.current.delete(a.id); });
       },
       onEffect(play) {
         /* A saved state is read where it is kept, by the play it names: the post author's newest version is what every reader loads. */
@@ -400,6 +403,22 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     };
     return api.subscribeThread(thread, listener);
   }, [api, thread, ensurePeople, tallies, plays, effects]);
+
+  /* A play beyond a post is announced on `reach`, which every signed-in page hears, since it is played from a post in some other thread
+     as often as this one (a character's) and on The System's announcements thread (a board's). This page keeps the plays whose target it
+     shows: this thread, this thread's board, or a character with a post in view; the rest are dropped, so its memory is its screen's.
+     It then reads the play as it reads one on its own thread (the caster's name first), so the mark is drawn the same. */
+  useEffect(() => api.subscribeReach({
+    onPlay(a) {
+      if (a.kind !== 'card') return;
+      const reach = a.payload.reach;
+      const shown = reach === 'thread' ? a.payload.thread === thread
+        : reach === 'board' ? boardOf.current !== null && a.payload.board === boardOf.current
+        : reach === 'character' ? typeof a.payload.character === 'string' && people.current.has(a.payload.character) : false;
+      if (!shown) return;
+      void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); }).catch(quietly);
+    },
+  }), [api, thread, ensurePeople, plays, effects]);
 
   /* At the bottom of the last page, held Acts come in, sliding. */
   useEffect(() => {
@@ -567,6 +586,8 @@ function ThreadView({ thread }: { readonly thread: Id }) {
         </p>
       )}
       {pager('bottom')}
+      {/* Follow sits after the last post, where a reader decides whether to keep up: the board draws no control above the thread, so a strip there would push it down. */}
+      {player.session.signedIn && <FollowControl thread={thread} />}
       {systemBoard !== null && (
         <ActIndex.Provider value={index}>
           <ThreadCtx.Provider value={context}>

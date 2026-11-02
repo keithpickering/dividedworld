@@ -19,6 +19,7 @@ const settings: Settings = {
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
+  hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
   postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, cardSettings: {}, economy: { 'whoops.price': 100 }, ...systemSettings,
 };
 
@@ -92,6 +93,8 @@ export interface WorldOptions {
   readonly glass?: Kayfa['ui']['glass'];
   /** The instance's cards' looks, one `CardUi` per card key (none by default: every play is shown as its tag alone). */
   readonly cards?: Kayfa['ui']['cards'];
+  /** The instance's pictures for its personas, by key (`InstanceUi.avatars`); none by default. */
+  readonly avatars?: Readonly<Record<string, string>>;
 }
 
 /** The backend alone, for a test that must do something asynchronous (a spin) before it renders. */
@@ -102,7 +105,7 @@ export function buildWorld(settingsOverride?: Partial<ScreenSettings>, instance:
 /** Render a screen on a backend made by `buildWorld`. */
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards ? { ...ui, ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}) } : ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.avatars ? { ...ui, ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.avatars ? { avatars: options.avatars } : {}) } : ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
   return {
     fake,
     ...render(
