@@ -98,7 +98,7 @@
 
 .kb-season-item h3 {
   margin: 0;
-  font-family: Anton, Impact, sans-serif;
+  font-family: var(--kb-glass-font-display);
   font-size: var(--kb-glass-size-display-m);
   font-weight: 400;
   line-height: 1.05;
@@ -154,7 +154,7 @@
 
 .kb-season-podium {
   padding: 16px 18px;
-  background: color-mix(in srgb, var(--kb-glass-ink-neon, #000) 6%, rgb(8 5 16 / 0.86));
+  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
   clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
   outline: 1px solid color-mix(in srgb, var(--kb-glass-neon) 55%, transparent);
   outline-offset: -1px;
@@ -172,7 +172,7 @@
 .kb-season-name {
   display: block;
   margin: 4px 0;
-  font-family: Anton, Impact, sans-serif;
+  font-family: var(--kb-glass-font-display);
   font-size: var(--kb-glass-size-title);
   font-weight: 400;
   line-height: 1;

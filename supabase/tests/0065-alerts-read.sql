@@ -400,12 +400,18 @@ begin
   perform tests.unbecome();
   perform set_config('request.jwt.claims', jsonb_build_object('sub', ivy, 'role', 'authenticated')::text, true);
   set local enable_seqscan = off;
+  -- Not an index-only scan: the 500 threads were made in this transaction, so none of their rows is in the visibility map, and an index-only scan
+  -- of them is a heap fetch, and a buffer access, per row (476 buffers, against 6 and a bitmap's pages) whenever the planner's estimate (25 rows, for
+  -- 500) happens to favour it, which depends on when autovacuum last ran. That is the shape of a fresh transaction and not of the probe: committed
+  -- rows are all-visible and the same scan reads the index alone. So the plan measured is the one the visible rows get.
+  set local enable_indexonlyscan = off;
   plan := '';
   -- The function's own statement, as shipped, so the plan shows the statement and not the call.
   execute format('prepare plan_heavy as %s', (select prosrc from pg_proc where proname = 'my_alerts_unread' and pronamespace = 'public'::regnamespace));
   for ln in execute 'explain (analyze, buffers) execute plan_heavy' loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   deallocate plan_heavy;
   set local enable_seqscan = on;
+  set local enable_indexonlyscan = on;
   perform set_config('request.jwt.claims', '', true);
   bufs := (regexp_match(plan, 'Buffers: shared hit=(\d+)'))[1]::integer;
   raise notice 'followed-heavy my_alerts_unread reads % buffers', bufs;

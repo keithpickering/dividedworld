@@ -114,10 +114,6 @@ language sql immutable set search_path = public, pg_temp as $$
 $$;
 revoke execute on function tally_names(jsonb) from public, anon, authenticated;
 
--- Tallies by time (the migration's first form read the news from this index, and it stays: it is small, partial, and serves any read of the newest
--- tallies, a repair's or an admin's). The suite's bound on `my_alerts_unread` for 500 followed threads (0065) was found to hold only with it present.
-create index acts_tallies on acts (created_at desc, id desc) where kind = 'tally';
-
 -- When each tally with names and each reveal header landed: the transaction that wrote it (now(), which is also the instant the Boss's lines
 -- are dated at in a handover). Not an Act's column, since an Act is never edited and a column would have to be filled for every Act.
 create table news_landed (
