@@ -4,6 +4,7 @@
  * beside it. React reacts as the HUD's character, with one plain "React" button; Spin a thread starts a thread on the board with the update
  * in its ORIGIN box. The chips are glass. Everything on the page is what `api.updates()` returned and nothing else: no model is asked.
  */
+import fs from 'node:fs';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -19,7 +20,7 @@ afterEach(() => { vi.restoreAllMocks(); });
 
 const gabe = { name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' };
 const instance: Instance = { ...testInstance, developer: gabe };
-const AVATARS = { gabe: '/avatars/gabe.svg' };
+const AVATARS = { gabe: '/avatars/gabe.png' };
 const at = (day: number, hour = 8) => Date.UTC(2026, 10, day, hour);
 
 function world(o: { updates?: number } = {}) {
@@ -47,6 +48,14 @@ function world(o: { updates?: number } = {}) {
 const show = (fake: Fake, path = '/updates') => renderIn(fake, <UpdatesScreen />, { path, instance, avatars: AVATARS });
 const article = () => screen.getByRole('article');
 
+describe('the persona\'s picture', () => {
+  test('is drawn pixelated, so a sprite stays crisp', () => {
+    const css = fs.readFileSync('engine/ui/updates/updates.css', 'utf8');
+    const rule = /\.kb-updates-ava img\s*\{([^}]*)\}/u.exec(css)?.[1] ?? '';
+    expect(rule).toMatch(/image-rendering:\s*pixelated/u);
+  });
+});
+
 describe('the page', () => {
   test('is a heading, the persona, a dated headline, prose and a plain What changed list, for the newest update', async () => {
     const w = world();
@@ -57,7 +66,7 @@ describe('the page', () => {
     // The persona: avatar, name, tagline.
     expect(within(post).getByText('Gabe')).toBeInTheDocument();
     expect(within(post).getByText('Made this. Sorry.')).toBeInTheDocument();
-    expect(post.querySelector('img')).toHaveAttribute('src', '/avatars/gabe.svg');
+    expect(post.querySelector('img')).toHaveAttribute('src', '/avatars/gabe.png');
     // A dated headline: the time element carries the instant, in UTC.
     const time = within(post).getByText(/NOV 2/iu);
     expect(time.tagName).toBe('TIME');

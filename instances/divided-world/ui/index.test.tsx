@@ -13,6 +13,7 @@ describe('Divided World\'s developer persona', () => {
   test('is Gabe, with his tagline, and his picture is one the UI has', () => {
     expect(instance.developer).toEqual({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' });
     expect(typeof instanceUi.avatars?.[instance.developer!.avatar!], 'the persona\'s avatar key names a picture').toBe('string');
+    expect(instanceUi.avatars!.gabe, 'Gabe\'s face is the sprite\'s PNG').toMatch(/^(data:image\/png|.*gabe.*\.png)/u);
   });
 });
 

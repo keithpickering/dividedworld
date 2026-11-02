@@ -11,7 +11,7 @@ import { cardsUi } from './cards.ts';
 import theme from './theme.css?url';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
-import gabe from './avatars/gabe.svg?url';
+import gabe from './avatars/gabe.png?url';
 import { hintWords } from './hint-words.ts';
 
 /** The font files, as URLs the bundler gives them, by their path under this folder. */
