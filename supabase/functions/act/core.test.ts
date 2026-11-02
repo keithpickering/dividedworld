@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, afterTheAnswer, coalesced, handleAction, runAction } from './core.ts';
+import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, afterTheAnswer, coalesced, forgetHintSettings, handleAction, runAction } from './core.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 import { landsOn } from '../../../engine/rules/cards.ts';
@@ -423,6 +423,7 @@ const zero = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNeg
 const heat = { counts: { ...zero, excitedNegative: 12 }, cardOn: null };
 /** A Db answering by function and recording every call; `windows` answers act_window_counts by the Act asked about. */
 function hinting(windows: Record<string, unknown>, o: { fired?: boolean } = {}) {
+  forgetHintSettings();
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
   /** Hint calls, sends and drains in the order they happened. */
   const seq: string[] = [];
@@ -522,6 +523,7 @@ test('a card that has not outdrawn its post is judged by its own reactions, and 
 });
 
 test('an error in the hint work is logged and does not stop the drain; a database error is not retried', async () => {
+  forgetHintSettings();
   const seen: string[] = [];
   const fetch = (async (url: string) => {
     const fn = url.split('/').pop()!;
@@ -584,4 +586,40 @@ test('the hint settings are read once a minute per connection, not once a reacti
   await (await reactedWith(h.db)).later();
   await (await reactedWith(h.db)).later();
   assert.equal(h.calls.filter((c) => c.fn === 'instance_settings').length, 1);
+});
+
+test('the hint settings are held across requests: two connections built per request make one settings read', async () => {
+  forgetHintSettings();
+  const seen: string[] = [];
+  const fetch = (async (url: string) => {
+    const fn = url.split('/').pop()!;
+    seen.push(fn);
+    if (fn === 'react') return new Response(JSON.stringify({ act: target, thread: id, tally: {} }), { status: 200 });
+    if (fn === 'instance_settings') return new Response(JSON.stringify({ economy: instance.settings.economy, hints: { least: 8, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } } }), { status: 200 });
+    if (fn === 'act_window_counts') return new Response(JSON.stringify({ counts: zero, cardOn: null }), { status: 200 });
+    return new Response('null', { status: 200 });
+  }) as unknown as typeof globalThis.fetch;
+  for (let request = 0; request < 2; request++) {
+    const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+    let later!: () => Promise<void>;
+    await handleAction({ dbs, instance, body: reacting, send: async () => {}, drain: async () => {}, after: (w) => { later = w; } });
+    await later();
+  }
+  assert.equal(seen.filter((f) => f === 'instance_settings').length, 1);
+  assert.equal(seen.filter((f) => f === 'act_window_counts').length, 2);
+});
+
+test('a thunder told to the card and then refused to the post is still a hint written: the second drain runs', async () => {
+  const card = { counts: { ...zero, excitedPositive: 10 }, cardOn: post };
+  const h = hinting({ [target]: card, [post]: { counts: { ...zero, calmPositive: 2 }, cardOn: null } });
+  const rpc = h.db.rpc;
+  const db: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => {
+    if (fn === 'fire_hint' && args.about === post) { h.seq.push('fire_hint:post threw'); throw new DatabaseError('fire_hint: x', '23503', 409, 'x'); }
+    return rpc<T>(fn, args);
+  } };
+  const was = console.error;
+  console.error = () => {};
+  try { await (await reactedWith(db, reacting, h.seq)).later(); } finally { console.error = was; }
+  assert.deepEqual(h.seq.slice(-3), [`fire_hint:${target}:thunder`, 'fire_hint:post threw', 'drain']);
+  assert.equal(h.seq.filter((s) => s === 'drain').length, 2);
 });

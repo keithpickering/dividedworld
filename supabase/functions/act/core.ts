@@ -221,35 +221,42 @@ const totalOf = (c: QuadrantCounts): number => c.excitedPositive + c.excitedNega
  * the request and is thrown at once, to be logged by the caller.
  */
 export async function fireHints(service: Db, instance: Instance, about: string, now: Date = new Date()): Promise<boolean> {
-  const hints = await hintSettings(service, instance, now);
   const fire = (on: string, pattern: string) => service.rpc<boolean>('fire_hint', { about: on, pattern });
-  const since = windowStart(now, hints.window).toISOString();
-  const read = await service.rpc<WindowCounts>('act_window_counts', { about, since });
+  // Whatever is written stays counted if a later call throws: an alert that was queued still needs its drain.
   let fired = false;
-  // A card is compared with its post only once it has drawn the least: below it, no thunder is possible, and the post is not read.
-  if (read.cardOn && totalOf(read.counts) >= hints.least) {
-    const post = await service.rpc<WindowCounts>('act_window_counts', { about: read.cardOn, since });
-    if (hintFor(read.counts, hints, { cardCount: totalOf(read.counts), postCount: totalOf(post.counts) }) === 'thunder') {
-      const card = await fire(about, 'thunder');
-      const theirs = await fire(read.cardOn, 'thunder');
-      fired = card || theirs;
-      // A thunder fired once does not hide the card's own pattern for good: when it has already been told, the card is judged by its reactions.
-      if (card) return fired;
+  try {
+    const hints = await hintSettings(instance, service, now);
+    const since = windowStart(now, hints.window).toISOString();
+    const read = await service.rpc<WindowCounts>('act_window_counts', { about, since });
+    // A card is compared with its post only once it has drawn the least: below it, no thunder is possible, and the post is not read.
+    if (read.cardOn && totalOf(read.counts) >= hints.least) {
+      const post = await service.rpc<WindowCounts>('act_window_counts', { about: read.cardOn, since });
+      if (hintFor(read.counts, hints, { cardCount: totalOf(read.counts), postCount: totalOf(post.counts) }) === 'thunder') {
+        const card = await fire(about, 'thunder');
+        fired = card;
+        fired = (await fire(read.cardOn, 'thunder')) || fired;
+        // A thunder fired once does not hide the card's own pattern for good: when it has already been told, the card is judged by its reactions.
+        if (card) return fired;
+      }
     }
+    const pattern = hintFor(read.counts, hints);
+    if (pattern) fired = (await fire(about, pattern)) || fired;
+  } catch (e) {
+    console.error('hint check threw', e);
   }
-  const pattern = hintFor(read.counts, hints);
-  if (pattern) fired = (await fire(about, pattern)) || fired;
   return fired;
 }
 
-/** The hint settings as the rows hold them, read at most once a minute per connection: a retune is felt within the minute, and a reaction costs no settings read. */
+/** The hint settings as the rows hold them, read at most once a minute per instance in this isolate: the act function builds its connections per request, so the cache lives with what outlives one. A retune is felt within the minute. */
 const HINT_SETTINGS_FOR_MS = 60_000;
-const settingsSeen = new WeakMap<Db, { readonly at: number; readonly hints: HintSettings }>();
-async function hintSettings(service: Db, instance: Instance, now: Date): Promise<HintSettings> {
-  const seen = settingsSeen.get(service);
+let settingsSeen = new WeakMap<Instance, { readonly at: number; readonly hints: HintSettings }>();
+/** Forgets the held settings (for tests; a running isolate lets them lapse). */
+export const forgetHintSettings = (): void => { settingsSeen = new WeakMap(); };
+async function hintSettings(instance: Instance, service: Db, now: Date): Promise<HintSettings> {
+  const seen = settingsSeen.get(instance);
   if (seen && now.getTime() - seen.at < HINT_SETTINGS_FOR_MS && now.getTime() >= seen.at) return seen.hints;
   const { hints } = (await withDatabaseSettings(instance, service)).settings;
-  settingsSeen.set(service, { at: now.getTime(), hints });
+  settingsSeen.set(instance, { at: now.getTime(), hints });
   return hints;
 }
 
