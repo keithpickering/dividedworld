@@ -58,7 +58,7 @@ begin
   return id;
 end $$;
 
--- A character of a player's, with its first class. It has debuted, as one a settlement has passed since; create_character() makes one that waits.
+-- A character of a player's, with its first class. It has debuted, as one a settlement has passed since; create_character(name, class, 'tally') makes one that waits.
 create function tests.character(owner uuid, name text, class_key text default 'alpha', at timestamptz default now()) returns uuid language plpgsql as $$
 declare id uuid;
 begin
