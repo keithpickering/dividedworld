@@ -13,11 +13,11 @@ export const onboarding: OnboardingUi = Object.freeze({
   tips: Object.freeze({
     'tour-plate': {
       title: 'This is your mask',
-      line: 'It is the character you are posting as. The tag beside its name is its class, and no other player can see it. Swap masks here, or press the picture to see all of yours.',
+      line: 'It is the character you are posting as. The tag beside its name is its class, and no other player can see it unless you reveal it. Swap masks here, or press the picture to see all of yours.',
     },
     'tour-orbs': {
       title: 'These are your orbs',
-      line: 'Reactions to your characters fill them, once a day at the settlement. Until then, hatched fill shows where you\'re headed. There is a most you can hold, so spend it.',
+      line: 'Reactions to your characters fill them at the settlement. Until then, hatched fill shows where you\'re headed. There is a most you can hold, so spend it.',
     },
     'tour-hand': {
       title: 'This is your hand',
@@ -25,7 +25,7 @@ export const onboarding: OnboardingUi = Object.freeze({
     },
     grid: {
       title: 'Four corners',
-      line: 'Every reaction sits in a corner of this grid: excited or calm, positive or negative. Each class is paid by some corners and hurt by others, so a reaction can lift one character and sink another. The Strategy Guide has the whole chart.',
+      line: 'Every reaction sits in a corner of this grid: excited or low-key, positive or negative. Most classes are paid by some corners and hurt by others, so a reaction can lift one character and sink another. The Strategy Guide has the whole chart.',
     },
     ghost: {
       title: 'Ghost means estimate',

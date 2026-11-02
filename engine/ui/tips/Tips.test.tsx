@@ -98,6 +98,24 @@ describe('the page shows one tip', () => {
     expect(dialog()).toBeNull();
   });
 
+  test('a hold that begins while a tip is up hides it, and the tip comes back, unseen, when the hold lets go', async () => {
+    const fake = signedIn();
+    let setHeld: (held: boolean) => void = () => {};
+    function Takeover() {
+      const hold = useHoldScreen();
+      setHeld = hold;
+      return null;
+    }
+    open(fake, <><Takeover /><Wants tip="grid" /></>);
+    expect(await screen.findByRole('dialog', { name: 'Title of grid' })).toBeInTheDocument();
+    act(() => { setHeld(true); });
+    await settle();
+    expect(dialog(), 'no tip over a held screen').toBeNull();
+    expect((await fake.preferences()).tipsSeen, 'hidden by the hold, not seen').toEqual([]);
+    act(() => { setHeld(false); });
+    expect(await screen.findByRole('dialog', { name: 'Title of grid' })).toBeInTheDocument();
+  });
+
   test('a tip is not shown over an open modal', async () => {
     const fake = signedIn();
     open(fake, <><Modal title="Something else" onClose={() => {}}>Words.</Modal><Wants tip="grid" /></>);

@@ -108,7 +108,8 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
 
   return {
     subscribe(l) { listeners.add(l); return () => { listeners.delete(l); }; },
-    active: () => current?.view ?? null,
+    /* A hold that begins while a tip is up hides it, unseen, until the hold lets go: no tip over a held screen, and none lost to one. */
+    active: () => (holders.size > 0 ? null : current?.view ?? null),
     load(state) {
       prefs = state === null ? null : { tips: state.tips, seen: new Set(state.seen) };
       change();
