@@ -37,7 +37,7 @@ export async function pageViolations(page: Page): Promise<string[]> {
 test.use({ bypassCSP: true });
 
 /* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
-const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/alerts', '/updates', '/vending']);
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/alerts', '/updates', '/guide', '/vending']);
 const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.has(path)
   ? page.getByRole('navigation', { name: 'Menu' })
   : page.getByRole('region', { name: 'Game HUD' }));
@@ -82,7 +82,7 @@ const ABOVE_SWITCH = SWITCH + 8;
 const BELOW_SWITCH = SWITCH - 8;
 
 const PAGES: readonly [string, string][] = [
-  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'],
+  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['guide', '/guide'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'],
 ];
 
 const STORIES = boardStoryIds();

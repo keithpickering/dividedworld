@@ -20,7 +20,7 @@ Divided World looks like a message board from 2003, and it is one. It's also a g
 
 You are a **player**: one login, and up to {{setting:charactersPerPlayer}} **characters**, each one a mask. No other player can see which masks are yours. Every character has a secret **class**, a way of working the crowd that decides which reactions lift it and which ones wear it down (see [Classes](#classes)).
 
-Everything anyone does here leaves a public record, called an **Act**: a post, an edit, a card, a Turn. You can react to an Act, and you can **spin a thread** from one, which starts a new thread with that Act shown in its origin box. Even an edit is an Act: the post keeps its history, and you get {{setting:editGrace}} to fix a typo before it says "Last edited."
+Almost everything anyone does here leaves a public record, called an **Act**: a post, an edit, a card, an announced Turn. You can react to an Act, and you can **spin a thread** from one, which starts a new thread with that Act shown in its origin box. Even an edit is an Act: the post keeps its history, and you get {{setting:editGrace}} to fix a typo before it says "Last edited."
 
 Here's the part that surprises people: **nobody is paid for guessing anybody's class.** Working out who's behind a mask is a crowd sport, not a scoring event.
 
@@ -43,14 +43,14 @@ That map is the whole game. Every class is paid by some corners of it and hurt b
 
 ## Aura
 
-Aura is the score and the money, counted in **orbs**. It comes from other players' reactions, read through your character's class (see [Classes](#classes)), and from reactions to the cards you play.
+Aura is the score and the money, counted in **orbs**. It comes mostly from other players' reactions, read through your character's class (see [Classes](#classes)), and from reactions to the cards you play.
 
-- Your **wallet** is shared by all of your characters, and only you can see it. It holds up to {{setting:walletCap}} orbs. Aura that would land past that is gone, so spend before you're full.
+- Your **wallet** is shared by all of your characters, and no other player can see it. It holds up to {{setting:walletCap}} orbs. Aura that would land past that is gone, so spend before you're full.
 - Each character also has a **standing**: the Aura it has earned this season. That one is public, you can't spend it, and it's what the rank beside the character's posts is made of.
 
 ### The settlement
 
-Aura doesn't land the moment somebody reacts. It lands once every {{setting:settlementLength}}, at the **settlement**. In between, your orbs show a hatched **ghost**: an estimate of where the reactions so far are taking you. Think of it as a forecast, and of the settlement as what actually happened. The first time you load the board after a settlement, a summary opens by itself.
+Aura doesn't land the moment somebody reacts. It lands at the **settlement**, which comes around every {{setting:settlementLength}}. In between, your orbs show a hatched **ghost**: an estimate of where the reactions so far are taking you. Think of it as a forecast, and of the settlement as what actually happened. The first time you load the board after a settlement that moved your Aura, a summary opens by itself.
 
 ### Your log
 
@@ -109,7 +109,7 @@ The only way a class becomes public is you making it so, with a reveal, or with 
 
 ## The System
 
-The System runs the board. It's a machine, it's arbitrary on purpose, and it isn't obliged to be fair. What it says in character may bluff, flatter or mislead, so trust it about as far as you'd trust a stranger with a megaphone.
+The System is the machine that runs the board. It's arbitrary on purpose, and it isn't obliged to be fair. Some of its parts are still switched off while the game is young (see [Coming attractions](#coming-attractions)). What it says in character may bluff, flatter or mislead, so trust it about as far as you'd trust a stranger with a megaphone.
 
 It has a board of its own. You can't post there, but you can spin a thread from anything it says.
 
