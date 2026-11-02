@@ -31,7 +31,7 @@ h1{margin:0;font:112px/1 Anton,sans-serif;letter-spacing:1px;text-shadow:0 0 30p
 .post > p{max-width:780px;margin:16px 0 0;font:500 22px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
 .cls{display:grid;grid-template-columns:116px 1fr;column-gap:26px;padding:24px 0;border-top:1px solid rgba(241,236,255,.22)}
 .cls:first-of-type{margin-top:26px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;width:104px;height:104px}
+.grid{display:grid;grid-template-columns:50px 50px;grid-template-rows:50px 50px;gap:4px;align-self:start}
 .grid span{display:flex;align-items:center;justify-content:center;border:1px solid rgba(241,236,255,.35);font:800 26px/1 'Barlow Condensed',sans-serif;color:#e4def7}
 .grid .e{background:rgba(255,217,61,.2);border-color:#ffd93d;color:#ffd93d}
 .grid .h{background:rgba(255,61,127,.16);border-color:#ff7aa5;color:#ff9cc0}
@@ -96,13 +96,14 @@ h1{margin:0;font:112px/1 Anton,sans-serif;letter-spacing:1px;text-shadow:0 0 30p
     <p>Every character has one, and only you can see it. A class decides which corners of the reaction grid pay your character and which ones cost it. Reactions to a card you play count for you too, read through your class.</p>
     <p>Pick the one that sounds like how you already post, or one that sounds like a bad idea. You can Turn later.</p>
     <div class="legend" aria-hidden="true">
+      <span>top row excited, bottom calm; left negative, right positive</span>
       <span><s style="background: rgba(255,217,61,.2); border: 1px solid #ffd93d"></s>earns</span>
       <span><s style="background: rgba(255,61,127,.16); border: 1px solid #ff7aa5"></s>hurts</span>
       <span><s style="border: 1px dashed #9ef4ff"></s>earns by calling it early</span>
     </div>
 
     <section class="cls" aria-labelledby="c-face">
-      <div class="grid" role="img" aria-label="Earns from hype, hurt by the groan"><span class="h">−</span><span class="e">+</span><span></span><span></span></div>
+      <div class="grid" role="img" aria-label="Earns from hype, hurt by the groan"><span></span><span class="e">+</span><span class="h">−</span><span></span></div>
       <div>
         <div class="name"><span class="chip" id="c-face" style="background: #2e86de; color: #ffffff"><b>FACE</b></span></div>
         <p>The crowd's favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.</p>
