@@ -240,3 +240,25 @@ test.describe('200% text at 1280px wide', () => {
     });
   }
 });
+
+/* The check `clipped` is trusted only if it is red on a planted defect: the menu strip is skipped where it scrolls on its own, and nowhere else. */
+test.describe('the clipped-text check and the menu\'s tab strip', () => {
+  test('a desk-layout strip planted with overflow hidden and too narrow for its tabs is reported', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await prefer(page, '/settings', {});
+    await expect(ready(page, true)).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-kb-layout', 'main');
+    await page.evaluate(() => { const l = document.querySelector<HTMLElement>('.kb-glass-menu-list')!; l.style.cssText += ';width:200px;overflow:hidden;flex-wrap:nowrap'; });
+    expect((await clipped(page)).length).toBeGreaterThan(0);
+  });
+
+  test('a one-column strip that scrolls on its own, wider than the window, reports nothing', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await prefer(page, '/settings', {});
+    await expect(ready(page, true)).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-kb-layout', 'phone');
+    const strip = await page.evaluate(() => { const l = document.querySelector<HTMLElement>('.kb-glass-menu-list')!; return { overflowX: getComputedStyle(l).overflowX, scrolls: l.scrollWidth > l.clientWidth }; });
+    expect(strip).toEqual({ overflowX: 'auto', scrolls: true });
+    expect(await clipped(page)).toEqual([]);
+  });
+});

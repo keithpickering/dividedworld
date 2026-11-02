@@ -44,9 +44,9 @@ function Harness({ api, hand = false, path = '/' }: { readonly api: KayfaApi; re
   );
 }
 
-function mount(b: ReturnType<typeof backend>, props: { hand?: boolean; path?: string; toastDefaults?: readonly Alert['kind'][] } = {}) {
+function mount(b: ReturnType<typeof backend>, props: { hand?: boolean; path?: string; toastDefaults?: readonly Alert['kind'][]; toastMs?: number } = {}) {
   const kayfa = {
-    api: b.api, instance: { cards: [] }, ui: { glass: testGlass, copy: {} }, settings: { postsPerPage: 20, walletCap: 600, ...(props.toastDefaults ? { toastDefaults: props.toastDefaults } : {}) },
+    api: b.api, instance: { cards: [] }, ui: { glass: testGlass, copy: {} }, settings: { postsPerPage: 20, walletCap: 600, ...(props.toastDefaults ? { toastDefaults: props.toastDefaults } : {}), ...(props.toastMs ? { toastMs: props.toastMs } : {}) },
   } as unknown as Kayfa;
   const tree = (hand: boolean, path: string) => (
     <RouterProvider><KayfaProvider value={kayfa}><Harness api={b.api} hand={hand} path={path} /></KayfaProvider></RouterProvider>
@@ -125,6 +125,16 @@ describe('the column', () => {
     expect(toasts()).toHaveLength(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(6_500); });
     expect(toasts()).toHaveLength(0);
+  });
+
+  test('stays as long as the settings say, where the world sets a lifetime (the boards fixture holds its toasts)', async () => {
+    vi.useFakeTimers();
+    const b = backend();
+    mount(b, { toastMs: 600_000 });
+    for (const id of ['1', '2', '3', '4', '5']) await send(b, quote(id));
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(toasts()).toHaveLength(3);
+    expect(screen.getByRole('link', { name: '+2 more alerts' })).toBeInTheDocument();
   });
 
   test('a hovered toast stays past its time and goes with the time it had left once the pointer leaves', async () => {

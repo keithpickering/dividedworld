@@ -118,11 +118,11 @@ export function Toasts({ arrivals, hold, returnFocus }: ToastsProps) {
         if (!live.current) return;
         const said = wordsFor(row, ctx);
         const toast: Toast = { id: a.id, order: mine, kind: a.kind, line: plainText(said.line), detail: plainText(said.detail), way: said.ways[0] ?? null, at: a.at };
-        left.current.set(toast.id, TOAST_MS);
+        left.current.set(toast.id, settings.toastMs ?? TOAST_MS);
         setQueue((q) => (q.some((t) => t.id === toast.id) ? q : [...q, toast].sort((x, y) => x.order - y.order)));
       });
     }
-  }, [arrivals, api, instance, ui, settings.postsPerPage]);
+  }, [arrivals, api, instance, ui, settings.postsPerPage, settings.toastMs]);
 
   /* A dropped toast leaves the map, so its card's cleanup does not write it back. */
   const drop = useCallback((id: string) => { left.current.delete(id); setQueue((q) => q.filter((t) => t.id !== id)); }, []);

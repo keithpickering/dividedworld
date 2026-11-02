@@ -114,6 +114,11 @@ describe('the moments', () => {
     expect(await fake.alertsUnread()).toBe(5);
   });
 
+  it('01-board-toasts holds its toasts: its screen settings give them a lifetime far past the default six seconds, and no other moment sets one', async () => {
+    expect((await (await load('01-board-toasts')).fake.settings()).toastMs).toBeGreaterThan(60_000);
+    expect((await (await load('01-main')).fake.settings()).toastMs).toBeUndefined();
+  });
+
   it('refuses a fake whose clock is not the moment\'s, since the moment is what its Acts are dated against', () => {
     const fake = createBoardsFake('01-main');
     expect(() => seedBoards(fake, '12-log')).toThrow(/clock/);

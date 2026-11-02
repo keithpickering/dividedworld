@@ -139,7 +139,9 @@ function armToasts(fake: Fake, account: string, alerts: readonly ToastAlert[]): 
 
 /** A fake whose clock is the moment's, for `seedBoards`. */
 export function createBoardsFake(moment: MomentName): Fake {
-  return createFake({ instance, settings: fallbackSettings, now: () => MOMENTS[moment].at });
+  /* The toasts board holds its toasts (ten minutes), so the match reads them whenever the run gets to it: a toast's own six seconds would race a slow runner. */
+  const held = moment === '01-board-toasts' ? { toastMs: 10 * 60_000 } : {};
+  return createFake({ instance, settings: { ...fallbackSettings, ...held }, now: () => MOMENTS[moment].at });
 }
 
 /** The moment a name or an address's parameter says, or an Error that lists the moments there are (a missing name included). */

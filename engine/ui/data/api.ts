@@ -75,6 +75,8 @@ export interface ScreenSettings {
   readonly cardEconomy: Readonly<Record<string, number>>;
   /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
   readonly toastDefaults: readonly AlertKind[];
+  /** How long a toast stays, in milliseconds, where a world sets it (the boards fixture holds its toasts); absent, the HUD's six seconds. */
+  readonly toastMs?: number;
 }
 
 /* ------------------------------------------------------------- public reads ---- */
