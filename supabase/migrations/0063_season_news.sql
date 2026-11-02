@@ -119,9 +119,13 @@ revoke execute on function tally_names(jsonb) from public, anon, authenticated;
 create table news_landed (
   act uuid primary key references acts (id),
   kind text not null check (kind in ('results', 'tally')),
+  -- now() is the settlement transaction's start, not its commit: a mark set while a long settlement runs can pass its news by. It
+  -- holds while a settlement is a few seconds; commit-time dating is a follow-up on the plan's issue.
   landed_at timestamptz not null default now()
 );
 create index news_landed_by_kind on news_landed (kind, landed_at desc, act desc);
+-- alerts_news_unread asks for every kind landed after the mark on each HUD load: a range of this one.
+create index news_landed_by_time on news_landed (landed_at desc);
 alter table news_landed enable row level security;
 revoke all on news_landed from public, anon, authenticated;
 

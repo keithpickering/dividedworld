@@ -423,3 +423,18 @@ begin
   perform backfill_news_landed();
   if (select threads from board_counts where board = sys) is distinct from (select count(*)::integer from thread_list where board = sys) then raise exception 'the backfill is idempotent'; end if;
 end $$;
+
+-- ---- The HUD's count finds news since the mark by time alone, from an index led by the time ----
+-- alerts_news_unread asks news_landed for rows landed after the mark, whatever their kind, on every HUD load; the table grows by a
+-- row for each tally part and reveal, so that read is a range of an index whose first key is landed_at. (An index led by kind shows
+-- the same `Index Cond` in the plan but walks the whole index, so the plan's text alone cannot tell them apart: its index is read.)
+do $$
+declare ln record; plan text := ''; used text; lead text;
+begin
+  set local enable_seqscan = off;
+  for ln in explain select 1 from news_landed n where n.landed_at > now() - interval '1 day' limit 10 loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  used := substring(plan from 'Index (?:Only )?Scan (?:Backward )?using (\w+) on news_landed');
+  lead := (select a.attname from pg_index i join pg_class c on c.oid = i.indexrelid join pg_attribute a on a.attrelid = i.indrelid and a.attnum = i.indkey[0]
+           where c.relname = used);
+  if lead is distinct from 'landed_at' then raise exception 'news since the mark is not read as a range of landed_at (index %, led by %):%', used, lead, plan; end if;
+end $$;
