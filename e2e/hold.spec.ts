@@ -23,6 +23,26 @@ const scroller = (page: Page) => view(page).getByRole('region', { name: 'The hel
 const level = async (page: Page) => Number(await bar(page).getAttribute('aria-valuenow'));
 const ready = async (page: Page) => { await page.evaluate(() => document.fonts.ready); };
 
+/**
+ * The reader presses Break free again and again, every 130ms, until the view lets them go (60 presses at most). The presses are made
+ * by the page at its own pace, as the wheel's are in the tests above: the bar drains while the reader waits, so a press that comes
+ * to the page through a round trip of the test's own (the button found, checked still and clicked, a few hundred ms on a busy runner)
+ * arrives after the bar has drained what the last one filled, and the reader is never freed by the test's slowness alone.
+ */
+async function pressBreakFreeUntilFree(page: Page) {
+  await page.evaluate(() => new Promise<void>((done) => {
+    let presses = 0;
+    const press = () => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"][aria-label="Stick Around"] button')].find((b) => b.textContent === 'Break free');
+      if (!button || presses >= 60) { done(); return; }
+      presses += 1;
+      button.click();
+      setTimeout(press, 130);
+    };
+    press();
+  }));
+}
+
 /** How far the view's post has still to scroll to its end, in px. */
 const toEnd = (page: Page) => scroller(page).evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
 
@@ -120,11 +140,7 @@ test.describe('the app at the Hold board\'s moment', () => {
     await page.goto(MOMENT);
     await ready(page);
     await expect(view(page)).toBeVisible({ timeout: 10_000 });
-    const button = view(page).getByRole('button', { name: 'Break free', exact: true });
-    for (let i = 0; i < 60 && (await view(page).isVisible()); i += 1) {
-      await button.click({ timeout: 2000 }).catch(() => {});
-      await page.waitForTimeout(130);
-    }
+    await pressBreakFreeUntilFree(page);
     await expect(view(page)).toBeHidden();
     await page.getByRole('link', { name: 'General', exact: true }).first().click();
     await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
@@ -243,11 +259,7 @@ test('Whoops!\' ink under the hold keeps its canvas and a reader\'s scrubbing ac
   expect(Math.abs((await inked()) - scrubbed) / whole).toBeLessThan(0.1);
 
   /* Released back into the thread: still the same canvas and the same scrubbing. */
-  const button = view(page).getByRole('button', { name: 'Break free', exact: true });
-  for (let i = 0; i < 60 && (await view(page).isVisible()); i += 1) {
-    await button.click({ timeout: 2000 }).catch(() => {});
-    await page.waitForTimeout(130);
-  }
+  await pressBreakFreeUntilFree(page);
   await expect(view(page)).toBeHidden();
   await expect(page.locator('article .kb-whoops-ink[data-kb-same="yes"]')).toHaveCount(1);
   await expect.poll(inked).toBeLessThan(whole * 0.97);
