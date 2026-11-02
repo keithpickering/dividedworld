@@ -913,7 +913,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
           rows(() => client.from('my_card_ledger').select('card,kind,act,price,at'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
-          rows(() => client.from('my_posts_played_on').select('play,post,at'), 'at', (q) => q, ['play']),
+          rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name'), 'at', (q) => q, ['play']),
           rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
           /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
           rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
@@ -942,7 +942,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
             floored: num(r['floored']), balanceAfter: num(r['balance_after']), ref: r['ref'] ?? null, at: r['at'],
           })),
           cards: cardRows.map((r): CardEvent => ({ card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'] })),
-          playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'] })),
+          playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null })),
           saves: saveRows.map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
           setEnds: endRows.map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'] })),
           caught: caughtRows.map((r): CaughtPlay => ({

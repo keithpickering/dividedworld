@@ -589,11 +589,16 @@ export interface CardEvent {
   readonly at: string;
 }
 
-/** A play another player landed on one of the player's own posts (`my_posts_played_on`). */
+/**
+ * A play another player landed on one of the player's own posts, characters or threads (`my_posts_played_on`). `post` is the post the
+ * play sits on; `targetName` is the character's name or the thread's title the play landed on, null for a post.
+ */
 export interface PlayOnMine {
   readonly play: Id;
   readonly post: Id;
   readonly at: string;
+  readonly reach: 'post' | 'character' | 'thread';
+  readonly targetName: string | null;
 }
 
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */

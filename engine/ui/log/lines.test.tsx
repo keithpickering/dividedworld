@@ -170,7 +170,7 @@ describe('cards set face down, traps and catches', () => {
   test('a strike on the player\'s post is their line, naming the trap that laid it', () => {
     const spring = act('sp', 'spring', 's', { targetActId: 'post4', payload: { card: 'hook', trigger: 'reply', outcome: { do: 'strike', card: 'whoops' }, set: 'setS', by: 'post3' } });
     const struck = act('k3', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', spring: 'sp' } });
-    const log = { ...empty, playsOnMine: [{ play: 'k3', post: 'post3', at }] };
+    const log = { ...empty, playsOnMine: [{ play: 'k3', post: 'post3', at, reach: 'post' as const, targetName: null }] };
     const [row] = logRows(data({ log, mine, acts: new Map([...posts, spring, struck].map((a) => [a.id, a])), names }), w, 600, null);
     expect(row!.kind).toBe('struck');
     expect(text(row!)).toBe('A Hook on Spritey\'s post #4 laid Whoops! on your post #3.');
@@ -195,7 +195,7 @@ describe('a caught play and a ward\'s end, in the setter\'s and the user\'s logs
   test('a play a trap caught on the player\'s post is no "played on your post" line: the spring\'s line says it', () => {
     const post = act('post3', 'post', 'p', { seq: 3 });
     const caught = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', caught: 'set1' } });
-    const log = { ...empty, playsOnMine: [{ play: 'k1', post: 'post3', at: '2026-10-30T10:00:00.000Z' }] };
+    const log = { ...empty, playsOnMine: [{ play: 'k1', post: 'post3', at: '2026-10-30T10:00:00.000Z', reach: 'post' as const, targetName: null }] };
     expect(logRows(data({ log, mine, acts: new Map([post, caught].map((a) => [a.id, a])) }), w, 600, null)).toEqual([]);
   });
 
@@ -206,5 +206,82 @@ describe('a caught play and a ward\'s end, in the setter\'s and the user\'s logs
     const rows = logRows(data({ log, mine, acts: new Map([post, ward].map((a) => [a.id, a])) }), w, 600, null);
     expect(rows.map((r) => [r.kind, r.at])).toEqual([['wardEnded', '2026-10-31T10:00:00.000Z'], ['played', '2026-10-24T10:00:00.000Z']]);
     expect(text(rows[0]!)).toBe('Shield on your post #3 ended.');
+  });
+});
+
+/* Cards beyond a post (docs/plans/2026-11-02-alerts-design.md, section 9): every line names its target by its public name and its
+   reach, and none names a caster or an owner. */
+describe('a play beyond a post, in the caster\'s and the target\'s logs', () => {
+  const w: Words = {
+    ...words,
+    instance: { ...testInstance, cards: [...testInstance.cards,
+      { ...testInstance.cards[0]!, key: 'glitter', name: 'Glitter Bomb' },
+      { ...testInstance.cards[0]!, key: 'event', name: 'Main Event' },
+      { ...testInstance.cards[0]!, key: 'minus', name: 'Minus World' }] },
+  };
+  const act = (id: string, kind: Act['kind'], character: string | null, over: Partial<Act> = {}): Act =>
+    ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: '2026-10-30T10:00:00.000Z', payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
+  const text = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+  const at = '2026-10-30T10:00:00.000Z';
+  const ended = '2026-10-31T10:00:00.000Z';
+  const names = new Map([['g', 'Gloomba']]);
+  const titles = new Map([['tt', 'Thwomp appreciation'], ['bd', 'Hobbies']]);
+  const post = act('post1', 'post', 'g', { seq: 1 });
+  const caster = [char('p', 'Pipewrench', 'heel')];
+  const plays = {
+    character: act('k1', 'card', 'p', { targetActId: 'post1', payload: { card: 'glitter', reach: 'character', character: 'g', ends: ended } }),
+    thread: act('k2', 'card', 'p', { targetActId: 'post1', payload: { card: 'event', reach: 'thread', thread: 'tt', ends: ended } }),
+    board: act('k3', 'card', 'p', { payload: { card: 'minus', reach: 'board', board: 'bd', ends: ended } }),
+  };
+  const cast = (play: Act, card: string) => {
+    const log = { ...empty, cards: [{ card, kind: 'played' as const, act: play.id, price: 0, at }] };
+    return logRows(data({ log, mine: caster, acts: new Map([post, play].map((a) => [a.id, a])), names, titles }), w, 600, null);
+  };
+
+  test.each([
+    ['character', 'glitter', 'Glitter Bomb', 'Gloomba'],
+    ['thread', 'event', 'Main Event', '\'Thwomp appreciation\''],
+    ['board', 'minus', 'Minus World', 'the Hobbies board'],
+  ] as const)('a %s play names its target in the caster\'s played and ended rows', (reach, key, card, place) => {
+    const rows = cast(plays[reach], key);
+    expect(rows.map((r) => r.kind)).toEqual(['wardEnded', 'played']);
+    expect(rows[1]!.what).toBe(`You played ${card} on ${place}`);
+    expect(rows[0]!.what).toBe(`${card} on ${place} ended`);
+    expect(text(rows[0]!)).toBe(`${card} on ${place} ended.`);
+    expect(text(rows[1]!)).toContain(`on ${place}`);
+    expect(text(rows[1]!)).not.toMatch(/post/iu);
+  });
+
+  test('a post play keeps its words', () => {
+    const own = act('post3', 'post', 'p', { seq: 3 });
+    const play = act('k4', 'card', 'p', { targetActId: 'post3', payload: { card: 'glitter', ends: ended } });
+    const log = { ...empty, cards: [{ card: 'glitter', kind: 'played' as const, act: 'k4', price: 0, at }] };
+    const rows = logRows(data({ log, mine: caster, acts: new Map([own, play].map((a) => [a.id, a])) }), w, 600, null);
+    expect(rows.map((r) => r.what)).toEqual(['Glitter Bomb ended', 'You played Glitter Bomb']);
+    expect(text(rows[0]!)).toBe('Glitter Bomb on your post #3 ended.');
+  });
+
+  test.each([
+    ['character', 'glitter', 'Glitter Bomb was played on Gloomba'],
+    ['thread', 'event', 'Main Event was played on \'Thwomp appreciation\''],
+  ] as const)('the target\'s player reads a %s play on theirs, naming no caster', (reach, key, said) => {
+    const mine = [char('g', 'Gloomba', 'face')];
+    const play = plays[reach];
+    const targetName = reach === 'character' ? 'Gloomba' : 'Thwomp appreciation';
+    const log = { ...empty, playsOnMine: [{ play: play.id, post: 'post1', at, reach, targetName }] };
+    const rows = logRows(data({ log, mine, acts: new Map([post, play].map((a) => [a.id, a])), names, titles }), w, 600, null);
+    expect(rows.map((r) => r.kind)).toEqual(['onMine']);
+    expect(text(rows[0]!)).toBe(`${said}.`);
+    expect(rows[0]!.characters).toEqual(['g']);
+    expect(rows[0]!.what).not.toMatch(/post/iu);
+    expect(`${rows[0]!.what} ${text(rows[0]!)}`).not.toMatch(/Pipewrench|account|player|owner/iu);
+  });
+
+  test('a message the caster left is shown with a play on a thread', () => {
+    const mine = [char('g', 'Gloomba', 'face')];
+    const play = act('k5', 'card', 'p', { targetActId: 'post1', payload: { ...plays.thread.payload, message: 'Hear ye.' } });
+    const log = { ...empty, playsOnMine: [{ play: 'k5', post: 'post1', at, reach: 'thread' as const, targetName: 'Thwomp appreciation' }] };
+    const rows = logRows(data({ log, mine, acts: new Map([post, play].map((a) => [a.id, a])), names, titles }), w, 600, null);
+    expect(text(rows[0]!)).toBe('Main Event was played on \'Thwomp appreciation\', with the message \u201cHear ye.\u201d.');
   });
 });

@@ -118,9 +118,14 @@ const className = (instance: Instance, key: string) => instance.classes.find((c)
 const withArticle = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}`;
 
 /** A link to an Act: a post by its number in its thread; a card play by the post it landed on. */
-export function actLink(act: Act | undefined, data: Pick<LogData, 'acts' | 'names' | 'mine'>, words: Words, own?: string): Segment | null {
+export function actLink(act: Act | undefined, data: Pick<LogData, 'acts' | 'names' | 'mine'> & Partial<Pick<LogData, 'titles'>>, words: Words, own?: string): Segment | null {
   if (!act) return null;
   if (act.kind === 'card') {
+    const place = placeOf(act, data);
+    if (place !== null) {
+      const card = words.instance.cards.find((c) => c.key === act.payload.card)?.name ?? 'card';
+      return `${data.mine.some((c) => c.id === act.character) ? 'your' : 'a'} ${card} on ${place}`;
+    }
     const post = act.targetActId ? data.acts.get(act.targetActId) : undefined;
     const card = words.instance.cards.find((c) => c.key === act.payload.card)?.name ?? 'card';
     const target = post && post.seq !== null ? postWords(post, data, own) : 'a post';
@@ -131,6 +136,21 @@ export function actLink(act: Act | undefined, data: Pick<LogData, 'acts' | 'name
   }
   if (act.seq === null) return null;
   return { text: postWords(act, data, own), href: threadHref(act.thread, pageOf(act.seq, words.postsPerPage), act.seq) };
+}
+
+/**
+ * Where a play beyond a post landed, by its public name (design, section 9): "Gloomba", "'Thwomp appreciation'", "the Hobbies board".
+ * The play's payload holds the target's id; its name is read beside the log (`names`, `titles`: a board's is kept with the threads'), and
+ * a name that could not be read is said plainly. Null for a play on a post, which the lines name by its author and number.
+ */
+export function placeOf(play: Act, data: Pick<LogData, 'names' | 'mine'> & Partial<Pick<LogData, 'titles'>>): string | null {
+  const id = (key: string) => (typeof play.payload[key] === 'string' ? play.payload[key] as Id : null);
+  switch (play.payload.reach) {
+    case 'character': { const c = id('character'); return (c && (data.mine.find((m) => m.id === c)?.name ?? data.names.get(c))) || 'a character'; }
+    case 'thread': { const t = id('thread'); return `'${(t && data.titles?.get(t)) || 'a thread'}'`; }
+    case 'board': { const b = id('board'); const name = b ? data.titles?.get(b) : undefined; return name ? `the ${name} board` : 'a board'; }
+    default: return null;
+  }
 }
 
 /** "your post #43" for the post of the character whose line it is, as the Settlement board says it; "Gloomba's post #46" otherwise. */
@@ -323,8 +343,10 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const play = e.act ? data.acts.get(e.act) : undefined;
     const post = play?.targetActId ? data.acts.get(play.targetActId) : undefined;
     const caster = play?.character ?? null;
-    const link = post ? actLink(post, data, words, caster ?? undefined) : null;
-    const ownOther = mine(post?.character) && post?.character !== caster;
+    /* A play beyond a post is named by its target's public name, and says nothing of the post it sits on. */
+    const place = play ? placeOf(play, data) : null;
+    const link = place ?? (post ? actLink(post, data, words, caster ?? undefined) : null);
+    const ownOther = place === null && mine(post?.character) && post?.character !== caster;
     const paid = take((w) => w.kind === 'play' && w.ref === e.act);
     /* A card set face down: its card is the setter's own row, said only to them. */
     if (play?.kind === 'set') {
@@ -350,16 +372,16 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const ends = typeof play?.payload.ends === 'string' ? play.payload.ends : null;
     if (ends && Date.parse(ends) <= Date.now()) {
       rows.push({
-        key: `wardEnded:${e.act}`, kind: 'wardEnded', at: ends, what: `${cardName(e.card)} ended`,
+        key: `wardEnded:${e.act}`, kind: 'wardEnded', at: ends, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
         details: [`${cardName(e.card)} on `, link ?? 'your post', ' ended.'],
         aura: 0, wallet: null, characters: caster ? [caster] : [],
       });
     }
     rows.push({
-      key: `played:${e.act ?? i}`, kind: 'played', at: e.at, what: `You played ${cardName(e.card)}`,
+      key: `played:${e.act ?? i}`, kind: 'played', at: e.at, what: `You played ${cardName(e.card)}${place ? ` on ${place}` : ''}`,
       details: [
         `As ${nameOf(caster, 'one of your characters')}, on `, link ?? 'a post', `${ownOther ? ', a post of one of your own characters' : ''}. `,
-        `The card was paid for at the machine; ${e.price > 0 ? `this post added ${plain(e.price)}.` : 'this play cost nothing more.'}`,
+        `The card was paid for at the machine; ${e.price > 0 ? `this ${place ? 'play' : 'post'} added ${plain(e.price)}.` : 'this play cost nothing more.'}`,
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
     });
@@ -382,6 +404,16 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       continue;
     }
     const message = typeof play?.payload.message === 'string' && play.payload.message.trim() !== '' ? play.payload.message.trim() : null;
+    /* A play on one of the player's characters or on a thread one of them started: named by the target, and by no caster. */
+    if (p.reach !== 'post') {
+      const target = p.reach === 'thread' ? `'${p.targetName ?? 'a thread'}'` : p.targetName ?? 'a character';
+      rows.push({
+        key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: `A card on your ${p.reach}`,
+        details: [`${cardName(play?.payload.card)} was played on ${target}${message ? `, with the message “${message}”` : ''}.`],
+        aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
+      });
+      continue;
+    }
     rows.push({
       key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: 'A card on your post',
       details: [`${nameOf(play?.character, 'Someone')} played ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `${message ? `, with the message “${message}”` : ''}.`],

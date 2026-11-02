@@ -1175,15 +1175,27 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const read = new Set(ledger.map((l) => l.settlement));
         const shares: ShareRow[] = settlements.filter((x) => read.has(x.id))
           .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, ...sh }))));
-        /* my_posts_played_on: the plays on the player's posts made through another player's characters. */
+        /* my_posts_played_on: the plays other players landed on the player's posts, characters, and threads their characters started (0056).
+           A board has no owner, so a board play is no one's row. */
+        const reachOf = (a: ActRec): 'post' | 'character' | 'thread' | 'board' => (a.payload.reach ?? 'post') as 'post' | 'character' | 'thread' | 'board';
+        const targetOwner = (a: ActRec): Id | undefined => {
+          switch (reachOf(a)) {
+            case 'post': return characters.get(acts.get(a.target ?? '')?.character ?? '')?.owner;
+            case 'character': return characters.get(String(a.payload.character))?.owner;
+            case 'thread': return characters.get([...acts.values()].find((x) => x.thread === a.payload.thread && x.seq === 1)?.character ?? '')?.owner;
+            default: return undefined;
+          }
+        };
+        const targetName = (a: ActRec): string | null => reachOf(a) === 'character' ? characters.get(String(a.payload.character))?.name ?? null
+          : reachOf(a) === 'thread' ? threads.get(String(a.payload.thread))?.title ?? null : null;
         const onMine = [...acts.values()].filter((a) => a.kind === 'card' && a.target !== null && a.character !== null
-          && characters.get(acts.get(a.target)?.character ?? '')?.owner === account && characters.get(a.character)?.owner !== account);
+          && targetOwner(a) === account && characters.get(a.character)?.owner !== account);
         return {
           ledger,
           shares,
           wallet: newest(walletEvents.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           cards: newest(cardLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
-          playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at) })),
+          playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a) })),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
           /* The in-memory backend sets no card face down and springs no trap: the setter's and the caster's lines are the adapter's (my_face_down, my_caught). */
