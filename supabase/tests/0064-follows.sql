@@ -91,6 +91,8 @@ begin
   -- And followed again: the choice is the caller's, both ways.
   perform follow_thread(mine, true);
   if not exists (select 1 from my_followed_threads where thread = mine) then raise exception 'followed again, it is a row again'; end if;
+  -- Followed by default and by choice at once is still one row.
+  if (select count(*) from my_followed_threads where thread = mine) is distinct from 1 then raise exception 'a thread followed by default and by choice is one row'; end if;
   perform follow_thread(theirs, false);
   if exists (select 1 from my_followed_threads where thread = theirs) then raise exception 'a thread followed then unfollowed is no row'; end if;
   perform follow_thread(theirs, true);
@@ -102,7 +104,7 @@ begin
   if got.new_posts is distinct from 1 then raise exception 'read through seq 2: only Cat''s post, seq 3, is past it: %', got.new_posts; end if;
   perform mark_read(mine, 5, a1);
   if exists (select 1 from my_followed_threads where thread = mine) then raise exception 'a thread read to its end leaves the list'; end if;
-  -- Reading through a post short of the end, where only one's own masks posted after, clears it too.
+  -- "theirs" holds: 1 Bob, 2 Cat, 3 Ann One. Read through 3, its end, it leaves the list.
   perform mark_read(theirs, 3, a1);
   if exists (select 1 from my_followed_threads where thread = theirs) then raise exception 'a followed thread read to its end leaves the list'; end if;
   -- A later post by another is new again.
@@ -132,7 +134,7 @@ do $$
 declare
   dee uuid := tests.account('follow-dee');
   eli uuid := tests.account('follow-eli');
-  d1 uuid; e1 uuid; boss uuid; t uuid; s uuid; i integer; got record;
+  d1 uuid; d2 uuid; e1 uuid; boss uuid; t uuid; s uuid; r uuid; i integer; got record;
 begin
   d1 := tests.character(dee, 'Follow Dee');
   e1 := tests.character(eli, 'Follow Eli');
@@ -142,6 +144,20 @@ begin
   perform tests.become(dee);
   select * into got from my_followed_threads where thread = t;
   if got.new_posts is distinct from 100 then raise exception '101 posts by others are counted to the cap of 100: %', got.new_posts; end if;
+  perform tests.unbecome();
+
+  -- A thread started by a character the player has since retired is still followed: the player still owns that history, and
+  -- Unfollow (on the thread and on the Alerts row) is its way out, so it is not silently dropped.
+  d2 := tests.character(dee, 'Follow Dee Retired');
+  r := tests.thread('Started by a retired mask');
+  perform tests.post(d2, r, 'opening');
+  perform tests.post(e1, r, 'a reply');
+  update characters set retired_at = now() where id = d2;
+  perform tests.become(dee);
+  select * into got from my_followed_threads where thread = r;
+  if got.new_posts is distinct from 1 then raise exception 'a thread a retired character started is still followed: %', got.new_posts; end if;
+  perform follow_thread(r, false);
+  if exists (select 1 from my_followed_threads where thread = r) then raise exception 'and Unfollow ends it'; end if;
   perform tests.unbecome();
 
   -- A staff character has no owner, so its post in a followed thread is another's and is counted.

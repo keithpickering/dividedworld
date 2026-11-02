@@ -45,6 +45,33 @@ describe('the follow control', () => {
     expect(await w.fake.following(w.elsewhere)).toBe(false);
   });
 
+  test('keyboard focus stays on the button while it works and after', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.follow.bind(w.fake);
+    w.fake.follow = ((thread: string, on: boolean) => new Promise((done) => { release = () => done(real(thread, on)); })) as unknown as typeof w.fake.follow;
+    show(w, w.elsewhere);
+    const button = await screen.findByRole('button', { name: 'Follow this thread' });
+    button.focus();
+    await userEvent.keyboard('{Enter}');
+    /* Mid-request the button is busy but not disabled: a disabled button drops focus. */
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    await act(async () => { release(); });
+    const after = await screen.findByRole('button', { name: 'Unfollow this thread' });
+    expect(after).toBe(button);
+    expect(after).toHaveFocus();
+    expect(after).not.toHaveAttribute('aria-disabled');
+  });
+
+  test('a visitor\'s follow is refused as the server refuses it', async () => {
+    const w = world();
+    w.fake.signInAs(null);
+    expect(await w.fake.follow(w.elsewhere, true)).toEqual({ ok: false, error: 'sign in with an account first' });
+  });
+
   test('a thread the player started is followed by default, so it offers Unfollow', async () => {
     const w = world();
     show(w, w.started);

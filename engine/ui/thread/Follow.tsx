@@ -15,6 +15,7 @@ import type { Id } from '../data/api.ts';
 export function FollowControl({ thread }: { readonly thread: Id }) {
   const { api } = useKayfa();
   const [following, setFollowing] = useState<boolean | null>(null);
+  const [unread, setUnread] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
 
@@ -22,12 +23,17 @@ export function FollowControl({ thread }: { readonly thread: Id }) {
     let live = true;
     setFollowing(null);
     setRefused(null);
-    void Promise.resolve().then(() => api.following(thread)).then((f) => { if (live) setFollowing(f); }, () => { /* no control while unread */ });
+    setUnread(false);
+    void Promise.resolve().then(() => api.following(thread)).then((f) => { if (live) setFollowing(f); }, () => { if (live) setUnread(true); });
     return () => { live = false; };
   }, [api, thread]);
 
-  if (following === null) return null;
+  /* Unread: no control, since either label could be wrong. While it loads the strip's height is kept, so the thread does not shift. */
+  if (unread) return null;
+  if (following === null) return <div className="kb-glass kb-thread-glass" aria-hidden="true" />;
   const toggle = async () => {
+    /* Busy is not disabled: a disabled button drops the keyboard's focus. */
+    if (busy) return;
     setBusy(true);
     setRefused(null);
     try {
@@ -38,7 +44,7 @@ export function FollowControl({ thread }: { readonly thread: Id }) {
   };
   return (
     <div className="kb-glass kb-thread-glass" role="group" aria-label="Thread controls">
-      <button type="button" className="kb-glass-cut-button kb-thread-follow" disabled={busy} onClick={() => void toggle()}>
+      <button type="button" className="kb-glass-cut-button kb-thread-follow" aria-disabled={busy || undefined} onClick={() => void toggle()}>
         {following ? 'Unfollow this thread' : 'Follow this thread'}
       </button>
       {refused && <span className="kb-thread-glass-note" role="alert">{refused}</span>}
