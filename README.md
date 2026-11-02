@@ -25,3 +25,202 @@ The engine's core loop is built (`docs/plans/2026-10-28-core-loop-engine-plan.md
   end-to-end tests in `supabase/tests/` (`tools/test-sql.mjs`; it refuses any database but localhost).
 - `tools/export-instance.mjs` and `tools/import-instance.mjs`: an instance's every table, private ones included, out to
   a directory and back into a fresh instance.
+
+## Deploying Divided World
+
+This is the first deploy of dw.gripe, from nothing: a Supabase project for the database, Auth, Storage, Realtime, the
+Edge Functions and the schedules; a Netlify site for the web app; and Resend for the sign-in emails, through Supabase
+Auth's custom SMTP. It assumes a Pro plan on Supabase and on Netlify, and a Resend account. Every step is the owner's
+to run: no session touches a deployed project ("A standing permission is written down, or it is only remembered" in
+`CLAUDE.md`).
+
+Before the first step, read the two known problems at the end of this section. The first decides which API keys you
+use.
+
+### What you need on your own machine
+
+- Node 22 and this repository, with `npm ci` run in it. Run `npm run build` once; it should end green.
+- The Supabase CLI. `npx supabase` runs it without installing anything; the steps below write `supabase` for short.
+- `psql`, which `tools/sweep-avatars.mjs`, `tools/export-instance.mjs` and `tools/import-instance.mjs` call.
+- Access to dw.gripe's DNS.
+
+### 1. Resend: a sending domain
+
+1. In Resend, add the domain `dw.gripe` (or a subdomain such as `mail.dw.gripe`, if you would rather keep the root's
+   mail records clear). Add the DNS records Resend lists (the DKIM `TXT`, and the `MX` and SPF `TXT` on its `send`
+   subdomain) wherever dw.gripe's DNS lives, and wait until Resend shows the domain as verified.
+2. Create an API key with **Sending access** only, restricted to that domain. It is the SMTP password in step 4. Keep
+   it in your password manager; nothing in this repository stores it.
+
+### 2. Supabase: the project
+
+1. Create a project in your Pro organization. Choose the region nearest the players, and a strong database password,
+   which goes in your password manager.
+2. Note the project's ref (the `<ref>` in `https://<ref>.supabase.co`).
+3. Under **Project Settings > API Keys**, open the **Legacy API keys** tab and note the `anon` key and the
+   `service_role` key. The code needs these two today, not the publishable and secret keys (issue #157, below). The
+   `service_role` key is a secret: it goes only where these steps say.
+4. Stay on the `<ref>.supabase.co` address. A custom Supabase domain would be refused by the site's
+   Content-Security-Policy, which allows `https://*.supabase.co` and `wss://*.supabase.co` alone (`netlify.toml`, kept
+   equal to `web/headers.ts`); adding one means changing both in a pull request first.
+
+### 3. Supabase: the schema
+
+From the repository's root:
+
+```bash
+supabase login
+```
+
+```bash
+supabase link --project-ref <ref>
+```
+
+```bash
+supabase db push
+```
+
+`db push` applies every file in `supabase/migrations/` in order. They create the extensions they need (`pg_cron`,
+`pg_net`, `pgcrypto`), the tables, policies and functions, the Realtime policies, and the `avatars` bucket. A fresh
+project holds no avatar from before `0025_avatars.sql`, so the bucket is public from the start (issue #20).
+
+Then compare the repository's migrations with the project's ("A test that builds its own subject cannot tell you the
+subject is missing"):
+
+```bash
+supabase migration list
+```
+
+Every row should show the same version under Local and Remote. Run it again after every later deploy. From this
+first push on, a migration a database holds is never edited in place; a change is a new migration.
+
+**Do not run `supabase config push`.** `supabase/config.toml` holds the Auth settings the code relies on, but not
+yet SMTP, rate limits or token lifetimes, and a push writes the CLI's default over every setting the file leaves out,
+which would switch the Resend SMTP off. Step 4 sets Auth in the dashboard instead, to the values the file holds.
+
+### 4. Supabase: Auth and email
+
+In the dashboard, under **Authentication**:
+
+1. **URL Configuration**: Site URL `https://dw.gripe`, no extra redirect URLs.
+2. **Sign In / Providers > Email**: email enabled, **Confirm email** on, password sign-in irrelevant (every login's
+   password is kept empty by `0012_passwordless.sql`), **Email OTP Expiration** `3600` seconds and **Email OTP
+   Length** `6`. Leave new sign-ups allowed: accounts open only with an invite, through the `account` function.
+3. **Emails > SMTP Settings**: enable custom SMTP with host `smtp.resend.com`, port `465`, username `resend`, the
+   Resend API key from step 1 as the password, the sender `noreply@dw.gripe` (on the domain you verified) and the
+   sender name `Divided World`.
+4. **Emails > Templates**: set **Magic Link** to the subject `Your Divided World sign-in code` and the body of
+   `supabase/templates/sign-in.html`, and **Confirm signup** to `Your Divided World sign-up code` and the body of
+   `supabase/templates/sign-up.html`. Both must keep `{{ .Token }}`: the `account` function signs in with the code.
+5. **Rate Limits**: with custom SMTP on, raise the emails-per-hour limit to what a sign-up evening needs; a few
+   dozen an hour is plenty for a small circle.
+
+Send yourself a code from the site once it is up (step 8) and check that it arrives from your domain.
+
+### 5. Supabase: the Edge Functions
+
+The functions are `account`, `act`, `avatar`, `estimate`, `meet`, `seed` and `settle`. Supabase gives each of them
+`SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` itself. Set the rest as secrets, under **Edge
+Functions > Secrets** or with the CLI:
+
+- `ANTHROPIC_API_KEY`: the model provider's key for The System. It is read only while the instance's `systemEnabled`
+  setting is on, which Divided World ships off (issue #73 turns it on); setting the key now does no harm.
+- `KAYFABB_PROFILE`: `playtest` for the playtest's three-week season and seven-day Turn cooldown; leave it unset for
+  the full game's numbers. Any other value is refused (`supabase/functions/_shared/instance.ts`).
+
+Then deploy all seven:
+
+```bash
+supabase functions deploy --use-api
+```
+
+The functions import the engine and the instance from outside `supabase/functions/` (`engine/`, `instances/`).
+Whether the CLI bundles those is one of the checks for the first deploy (issue #5, gathered in #130); if a deploy says
+a module is not found, stop there and file what it printed.
+
+### 6. Supabase: the instance and its schedules
+
+1. **Seed the instance.** This writes Divided World's settings, classes, reactions, cards and boards, opens the first
+   season, and, through the settings' triggers, schedules the jobs. Run it with the `service_role` key in your shell's
+   environment, never typed into a file. `read -s` takes it without echoing it or keeping it in the shell's history:
+
+   ```bash
+   read -rs SUPABASE_SERVICE_ROLE_KEY
+   ```
+
+   ```bash
+   curl -sS -X POST "https://<ref>.supabase.co/functions/v1/seed" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"
+   ```
+
+   It answers with how many settings, classes, reactions, cards and boards the instance holds. Seeding is safe to run
+   again, and every deploy that changes the instance's settings or vocabulary runs it again; it puts back the code's
+   numbers over any an admin tuned by hand.
+2. **Give the jobs their address and key.** The settlement and the meeting are called by `pg_cron` through `pg_net`
+   with two secrets from Vault (`0004_schedule.sql`); until both exist those jobs send nothing. In **Integrations >
+   Vault**, add `kayfabb_functions_url` with the value `https://<ref>.supabase.co` (no trailing slash), and
+   `kayfabb_service_key` with the `service_role` key. The Vault screen keeps the key out of the SQL editor's history.
+3. **Check the schedules.** In the SQL editor:
+
+   ```sql
+   select jobname, schedule, active from cron.job order by jobname;
+   ```
+
+   It should list `kayfabb-meet`, `kayfabb-settle`, `kayfabb-system-tick` and `kayfabb-view-counts`. After the first
+   settlement time has passed (`settlementCron` in `instances/divided-world/settings.ts`),
+   `select * from cron.job_run_details order by start_time desc limit 10;` and the `settle` function's log say whether
+   it ran.
+
+### 7. Netlify: the site
+
+1. Add a new site from this GitHub repository, on `main`. `netlify.toml` already says the build command
+   (`npm run build:web`), the published directory (`web/dist`), Node 22, the single-page redirect and the security
+   headers; leave those fields as the file sets them.
+2. Under **Site configuration > Environment variables**, set `VITE_SUPABASE_URL` to `https://<ref>.supabase.co` and
+   `VITE_SUPABASE_ANON_KEY` to the legacy `anon` key. Both are public by design; no other variable belongs here, and
+   the `service_role` key never does. A build without the two succeeds and the app refuses to start, saying so.
+3. Deploy, then under **Domain management** add `dw.gripe`, point its DNS at Netlify as Netlify says (or move the
+   domain's DNS to Netlify), and let Netlify issue the certificate. Turn on **Force HTTPS**.
+
+### 8. The first admin, and the first invites
+
+Divided World opens an account only with an invite, and an invite is made by someone who already has an account, so
+the first account is opened with registration briefly open.
+
+1. In the SQL editor, open registration:
+
+   ```sql
+   update settings set value = '"open"' where key = 'registrationMode';
+   ```
+
+2. On https://dw.gripe, sign up with your own address and type the code from the email. Your account opens.
+3. Make that account an admin, and close registration back to invites by seeding again (step 6.1), which writes
+   `invite` back:
+
+   ```sql
+   insert into admins (account) select id from auth.users where email = '<your address>';
+   ```
+
+4. Sign in again and make invites for the players. An admin holds any number of open invites.
+
+### 9. After the first deploy
+
+- Work through issue #130, the checks that could only be made against a real project, and record each one where it
+  lives.
+- Every later deploy is the same in a shorter order: `supabase db push` and `supabase migration list` when there are
+  new migrations, `supabase functions deploy --use-api` when the functions, the engine or the instance changed, the
+  seed when the instance's settings or vocabulary changed, and Netlify deploys `main` by itself.
+- Keep an export. `tools/export-instance.mjs` writes every table and every avatar to a directory only you can read,
+  and `tools/import-instance.mjs` brings it back into a fresh project. Use the database's session-pooler connection
+  string from the dashboard's **Connect** dialog as `--from`, and the `service_role` key in `KAYFABB_STORAGE_KEY`.
+  The export holds who plays every character, so keep it as private as the database.
+- The ledger of model calls (`model_calls`) is to be reconciled against Anthropic's bill monthly ("Cost is a column,
+  not a report").
+
+### Known problems before the first deploy
+
+- **The legacy keys end with 2026 (issue #157).** Supabase says the legacy `anon` and `service_role` keys keep
+  working until the end of 2026, and the engine reads only those, sending the anon key as a JWT bearer. These steps
+  use them because nothing else works yet; the move to the publishable and secret keys needs a design session and has
+  to land before the year is out, or sign-in, every Act and every schedule stop.
+- **Auth's own endpoints are reachable with the public key (issue #3).** Whether Supabase Auth answers an address it
+  knows measurably differently from one it does not is to be measured on the deployed project before players arrive.
