@@ -65,9 +65,9 @@ begin
   if (said ->> 'alerts_seen_at')::timestamptz is distinct from now() or (said ->> 'settlement_seen')::timestamptz is distinct from t0 + interval '2 hours' then
     raise exception 'meet_card answered without the marks: %', said;
   end if;
-  said := forget_cards_met();
+  said := restore_tips();
   if (said ->> 'alerts_seen_at')::timestamptz is distinct from now() or (said ->> 'settlement_seen')::timestamptz is distinct from t0 + interval '2 hours' then
-    raise exception 'forget_cards_met answered without the marks: %', said;
+    raise exception 'restore_tips answered without the marks: %', said;
   end if;
 
   -- A mark is a time.

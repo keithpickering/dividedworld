@@ -63,12 +63,6 @@ begin
     raise exception 'restoring puts all three back: %', said;
   end if;
   if (select welcomed_at from account_preferences) is distinct from first_at then raise exception 'restoring touched the welcome mark'; end if;
-  -- forget_cards_met stays, as the same thing under its old name.
-  perform skip_tips(); perform see_tip('ghost'); perform meet_card('whoops');
-  said := forget_cards_met();
-  if said ->> 'tips' is distinct from 'on' or said -> 'tips_seen' is distinct from '[]'::jsonb or said -> 'cards_met' is distinct from '[]'::jsonb then
-    raise exception 'forget_cards_met is restore_tips: %', said;
-  end if;
 
   -- A key that is not a key is refused by its words.
   if pg_temp.refusal($q$select see_tip('Grid')$q$) is distinct from 'a tip is named in lowercase words joined by hyphens' then raise exception 'an uppercase key'; end if;

@@ -651,8 +651,8 @@ describe('the account', () => {
     expect(must(await fake.meetCard('whoops')).cardsMet).toHaveLength(64);
     must(await fake.seeTip('grid'));
     must(await fake.skipTips());
-    /* forget_cards_met is restore_tips until the Settings row is replaced: it forgets every card and tip and turns tips on. */
-    expect(must(await fake.forgetCardsMet())).toMatchObject({ cardsMet: [], tips: 'on', tipsSeen: [] });
+    /* restore_tips forgets every card and tip and turns tips on. */
+    expect(must(await fake.restoreTips())).toMatchObject({ cardsMet: [], tips: 'on', tipsSeen: [] });
     expect((await fake.preferences()).cardsMet).toEqual([]);
   });
   test('the tips: the welcome is seen once, a tip once, 64 at most, skipping and restoring and replaying undo each other', async () => {
@@ -670,11 +670,23 @@ describe('the account', () => {
     expect(must(await fake.skipTips())).toMatchObject({ tips: 'off', tipsSeen: ['grid', 'tour-plate', 'tour-orbs', 'tour-hand'] });
     expect(must(await fake.replayTour())).toMatchObject({ tips: 'on', tipsSeen: ['grid'], cardsMet: ['whoops'] });
     must(await fake.skipTips());
+    /* resume_tips turns tips on and forgets nothing. */
+    must(await fake.seeTip('ghost'));
+    expect(must(await fake.resumeTips())).toMatchObject({ tips: 'on', tipsSeen: ['grid', 'ghost'], cardsMet: ['whoops'] });
+    must(await fake.skipTips());
     expect(must(await fake.restoreTips())).toMatchObject({ welcomedAt: first, tips: 'on', tipsSeen: [], cardsMet: [] });
     for (const bad of ['Grid', '', '1up', 'a'.repeat(41), 'bad key']) expect(await fake.seeTip(bad)).toEqual(refused('a tip is named in lowercase words joined by hyphens'));
     for (let i = 0; i < 64; i++) must(await fake.seeTip(`tip-${i}`));
     expect(await fake.seeTip('one-too-many')).toEqual(refused('at most 64 tips are kept as seen'));
     expect(must(await fake.seeTip('tip-0')).tipsSeen).toHaveLength(64);
+  });
+  test('replaying the tour marks the welcome seen when it never was, and keeps a first time', async () => {
+    const { fake } = world();
+    expect((await fake.preferences()).welcomedAt).toBeNull();
+    const at = must(await fake.replayTour()).welcomedAt;
+    expect(at).not.toBeNull();
+    fake.clock.advance(60_000);
+    expect(must(await fake.replayTour()).welcomedAt).toBe(at);
   });
   test('the two marks move only forward, refuse what is not a time, and are the account\'s', async () => {
     const { fake } = world();

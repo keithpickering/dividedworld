@@ -89,7 +89,7 @@ const manifest: BoardManifest = {
     { id: 'board-black-on-white', role: 'text', name: 'Black on white', within: 'board', box: 'none', type: false },
     { id: 'board-white-on-black', role: 'text', name: 'White on black', within: 'board', box: 'none' },
 
-    /* The build's Accessibility sections carry a row the board does not (Cards, "Show card tips again", the callout's way back: marks-and-the-lens plan, Task 7), so this line stands 211px lower than the board's: held by its words and type alone. */
+    /* The build's Accessibility sections carry a row the board does not (Tips, "Show tips again", the callout's way back: marks-and-the-lens plan, Task 7), so this line stands 211px lower than the board's: held by its words and type alone. */
     { id: 'saves', role: 'text', name: 'Changes save as you make them.', box: 'none' },
   ],
 };

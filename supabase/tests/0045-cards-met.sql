@@ -57,9 +57,9 @@ begin
   said := meet_card('whoops');
   if said -> 'cards_met' is distinct from '["whoops"]'::jsonb then raise exception 'bob met one card: %', said; end if;
   -- Forgetting empties the caller's own set alone.
-  said := forget_cards_met();
+  said := restore_tips();
   if said -> 'cards_met' is distinct from '[]'::jsonb then raise exception 'forgetting empties the set: %', said; end if;
-  if forget_cards_met() is distinct from said then raise exception 'forgetting an empty set answers the same'; end if;
+  if restore_tips() is distinct from said then raise exception 'forgetting an empty set answers the same'; end if;
   if (select count(*) from account_preferences) is distinct from 1 then raise exception 'an account reads its own row alone'; end if;
   perform tests.unbecome();
   if cardinality((select cards_met from account_preferences where account = ann)) is distinct from 64 then raise exception 'bob forgot ann''s cards'; end if;
@@ -72,6 +72,6 @@ begin
   -- A visitor cannot call either: refused by the grant.
   perform tests.become_anon();
   if pg_temp.refusal($q$select meet_card('whoops')$q$) is distinct from 'permission denied for function meet_card' then raise exception 'a visitor could call meet_card'; end if;
-  if pg_temp.refusal($q$select forget_cards_met()$q$) is distinct from 'permission denied for function forget_cards_met' then raise exception 'a visitor could call forget_cards_met'; end if;
+  if pg_temp.refusal($q$select restore_tips()$q$) is distinct from 'permission denied for function restore_tips' then raise exception 'a visitor could call restore_tips'; end if;
   perform tests.unbecome();
 end $$;

@@ -1,7 +1,7 @@
 /**
  * The first-time callout (docs/plans/2026-10-31-marks-and-the-lens-design.md, section 5): the page's first mark of an unmet
  * kind whose card gives a `hint` carries one small bubble, out of the page's flow, with "Got it". Met is the account's own
- * (`Preferences.cardsMet`), written by `meetCard` and cleared by Settings' "Show card tips again".
+ * (`Preferences.cardsMet`), written by `meetCard` and cleared by Settings' "Show tips again".
  */
 import { readFileSync } from 'node:fs';
 import { act, screen, waitFor, within } from '@testing-library/react';
@@ -123,7 +123,7 @@ describe('the first-time callout', () => {
     await waitFor(() => expect(tips()).toHaveLength(1));
   });
 
-  test('Settings\' "Show card tips again" clears the set, and the callout returns on the next read', async () => {
+  test('Settings\' "Show tips again" clears the set, and the callout returns on the next read', async () => {
     const w = world();
     w.play('k1', w.second);
     const first = open(w, hinted);
@@ -135,7 +135,7 @@ describe('the first-time callout', () => {
     await screen.findAllByRole('button', { name: /^Card 1, 1 play/u });
     expect(tips()).toHaveLength(0);
     second.unmount();
-    await w.fake.forgetCardsMet();
+    await w.fake.restoreTips();
     open(w, hinted);
     await waitFor(() => expect(tips()).toHaveLength(1));
   });

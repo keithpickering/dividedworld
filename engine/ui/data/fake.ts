@@ -1629,13 +1629,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }
       return ok(account.prefs);
     },
-    /* Settings' old row, until the tips' row replaces it: the server's forget_cards_met is restore_tips. */
-    forgetCardsMet() {
-      const account = me();
-      if (!account) return refuse('sign in with an account first');
-      account.prefs = { ...account.prefs, tips: 'on', tipsSeen: [], cardsMet: [] };
-      return ok(account.prefs);
-    },
     seeWelcome() {
       const account = me();
       if (!account) return refuse('sign in with an account first');
@@ -1659,6 +1652,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       account.prefs = { ...account.prefs, tips: 'off' };
       return ok(account.prefs);
     },
+    resumeTips() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      account.prefs = { ...account.prefs, tips: 'on' };
+      return ok(account.prefs);
+    },
     restoreTips() {
       const account = me();
       if (!account) return refuse('sign in with an account first');
@@ -1668,7 +1667,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     replayTour() {
       const account = me();
       if (!account) return refuse('sign in with an account first');
-      account.prefs = { ...account.prefs, tips: 'on', tipsSeen: account.prefs.tipsSeen.filter((k) => !TOUR_TIPS.includes(k)) };
+      /* The tour waits on the welcome: an account that never saw it gets the mark, as replay_tour (0068) sets it. */
+      account.prefs = { ...account.prefs, tips: 'on', welcomedAt: account.prefs.welcomedAt ?? iso(now()), tipsSeen: account.prefs.tipsSeen.filter((k) => !TOUR_TIPS.includes(k)) };
       return ok(account.prefs);
     },
     seeAlerts(at) {

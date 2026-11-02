@@ -17,6 +17,8 @@ import { LOST_ANSWER, type Answer, type Preferences, type PreferencesPatch } fro
 import { applyAppearance } from '../appearance.ts';
 import { announceToastChoice } from '../alerts/toast-choice.ts';
 
+export type TipsChange = 'skip' | 'resume' | 'restore' | 'replay';
+
 export interface SavedPreferences {
   /** The account's choices as the page holds them now; null until they are read for the account signed in. */
   readonly prefs: Preferences | null;
@@ -26,8 +28,12 @@ export interface SavedPreferences {
   readonly saved: boolean;
   /** Choose: shown and applied at once, saved in its turn. */
   readonly change: (patch: PreferencesPatch) => void;
-  /** Empty the set of cards met, in its turn behind the choices before it. */
-  readonly forgetTips: () => void;
+  /**
+   * Change the tips (Settings' Tips row), in its turn behind the choices before it: `skip` turns them off, `resume` on with nothing forgotten,
+   * `restore` on with the tips seen and the cards met forgotten, `replay` on with the HUD tour's steps forgotten (and the welcome marked seen).
+   * Shown once the account has answered, not before.
+   */
+  readonly changeTips: (how: TipsChange) => void;
   /** Say a refusal of the screen's own (something other than a preference went wrong). */
   readonly refuse: (text: string) => void;
 }
@@ -88,19 +94,20 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
     });
   }, [api, ui, account]);
 
-  /* It waits its turn behind the choices before it, and the screen shows the empty set once the account has answered; a refusal is said. */
-  const forgetTips = useCallback(() => {
+  /* It waits its turn behind the choices before it, and the screen shows what the account answered; a refusal is said. */
+  const changeTips = useCallback((how: TipsChange) => {
     const madeFor = account;
     if (madeFor === null || current.current === null) return;
     setRefusal(null);
     setSaved(null);
     line.current = line.current.then(async () => {
       let r: Answer<Preferences>;
-      try { r = await api.forgetCardsMet(); } catch { r = { ok: false, error: LOST_ANSWER }; }
+      try { r = await (how === 'skip' ? api.skipTips() : how === 'resume' ? api.resumeTips() : how === 'restore' ? api.restoreTips() : api.replayTour()); } catch { r = { ok: false, error: LOST_ANSWER }; }
       if (showing.current !== madeFor) return;
       if (r.ok) {
-        current.current = { ...current.current!, cardsMet: r.value.cardsMet };
-        confirmed.current = { ...confirmed.current!, cardsMet: r.value.cardsMet };
+        const kept = { cardsMet: r.value.cardsMet, tips: r.value.tips, tipsSeen: r.value.tipsSeen, welcomedAt: r.value.welcomedAt };
+        current.current = { ...current.current!, ...kept };
+        confirmed.current = { ...confirmed.current!, ...kept };
         setRead({ account: madeFor, prefs: current.current });
         setSaved(madeFor);
         return;
@@ -111,5 +118,5 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
 
   const refuse = useCallback((text: string) => { if (account !== null) setRefusal({ account, text }); }, [account]);
 
-  return { prefs, refusal, saved, change, forgetTips, refuse };
+  return { prefs, refusal, saved, change, changeTips, refuse };
 }

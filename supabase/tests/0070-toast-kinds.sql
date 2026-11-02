@@ -52,8 +52,8 @@ begin
   -- The other two functions that answer the preferences carry it, as do the marks.
   said := meet_card('whoops');
   if said -> 'toasts' is distinct from '["update", "quote", "hint"]'::jsonb then raise exception 'meet_card answered without the toasts: %', said; end if;
-  said := forget_cards_met();
-  if said -> 'toasts' is distinct from '["update", "quote", "hint"]'::jsonb then raise exception 'forget_cards_met answered without the toasts: %', said; end if;
+  said := restore_tips();
+  if said -> 'toasts' is distinct from '["update", "quote", "hint"]'::jsonb then raise exception 'restore_tips answered without the toasts: %', said; end if;
 
   -- Resetting puts the choice back to null, the instance's defaults, and the answer says null (a key that is there, with no value).
   said := set_preferences(toasts_default => true);

@@ -4,7 +4,7 @@
  * This is the one place a Supabase client lives ("Portable by construction"), and it reads only
  * what tools/check-web-reads.mjs allows: public projections and the signed-in player's own rows.
  * Every write goes through the `act` function (it validates and sends the broadcasts) except the
- * fourteen rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, forget_cards_met, see_alerts, see_settlement, see_welcome, see_tip,
+ * fourteen rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, see_alerts, see_settlement, see_welcome, see_tip, resume_tips,
  * skip_tips, restore_tips, replay_tour, set_profile, release_effect, post_update, which is an admin's alone) and the
  * avatar, which is a multipart form to the `avatar` function. Sign-in goes through the `account`
  * function only; Auth's own code endpoints are never called, and the session the `account` function
@@ -945,10 +945,6 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('meet_card', { card }));
       return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
     },
-    async forgetCardsMet() {
-      const a = await rpcWrite(() => client.rpc('forget_cards_met'));
-      return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
-    },
     async seeWelcome() {
       const a = await rpcWrite(() => client.rpc('see_welcome'));
       return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
@@ -959,6 +955,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async skipTips() {
       const a = await rpcWrite(() => client.rpc('skip_tips'));
+      return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    async resumeTips() {
+      const a = await rpcWrite(() => client.rpc('resume_tips'));
       return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
     },
     async restoreTips() {

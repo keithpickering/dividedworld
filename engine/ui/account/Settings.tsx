@@ -8,7 +8,7 @@
  * white, white on black, then the instance's own themes) and the post style, each a row of skewed
  * choices with its sentence. Each is saved to the account the moment it is chosen and applied to the
  * page at once (applyAppearance): the theme restyles the board only, the smoke, contrast and text
- * size the glass and the board together. The thread reads the post style when it opens, so a change
+ * size the glass and the board together. Tips (a switch, Show tips again, Replay the HUD tour) calls the tips' own functions and the next board page behaves so. The thread reads the post style when it opens, so a change
  * shows on the next thread view with no reload.
  *
  * Account: the address the session signed in with, plainly and not as a field (it is changed nowhere
@@ -29,7 +29,7 @@ import { toastDefaultKinds } from '../alerts/toast-kinds.ts';
 import { Link, useLocation, useNavigate } from '../router.tsx';
 import { Choice, MotionRow, TextSizeRow, ThemeRow, type Option } from './appearanceRows.tsx';
 import { Invites } from './Invites.tsx';
-import { usePreferenceSaves } from './preferences.ts';
+import { usePreferenceSaves, type TipsChange } from './preferences.ts';
 import { useSession } from './session.ts';
 import './account.css';
 
@@ -104,6 +104,34 @@ function ToastSwitch({ title, sentence, byDefault, on, onChange }: {
   );
 }
 
+/**
+ * Tips: a switch for whether they show at all, and two buttons. In the glass's own voice, so it says plainly what each does and what it leaves
+ * alone. The switch shows what the account has, so a refused change leaves it where it was.
+ */
+function TipsRow({ on, change }: { readonly on: boolean; readonly change: (how: TipsChange) => void }) {
+  const id = useId();
+  return (
+    <div className="kb-acct-row">
+      <h3 id={`${id}-name`} className="kb-acct-row-label">Tips</h3>
+      <div className="kb-acct-row-body">
+        <label className="kb-acct-seg-option">
+          <input type="checkbox" role="switch" checked={on} onChange={(e) => change(e.target.checked ? 'resume' : 'skip')} aria-labelledby={`${id}-name`} aria-describedby={`${id}-says`} />
+          <span className="kb-acct-seg-face kb-glass-skew" aria-hidden="true"><b className="kb-glass-upright">{on ? 'On' : 'Off'}</b></span>
+        </label>
+        <p id={`${id}-says`} className="kb-acct-row-sentence">
+          Tips are the small notes that explain the board as you meet it: the HUD tour, the grid and each card's marks. Off hides every tip and card note. On shows the ones you have not read yet.
+          Show tips again also brings back the ones you have read, and turns tips on. Replay the HUD tour shows the three steps of the tour again and turns tips on.
+        </p>
+        <p>
+          <button type="button" className="kb-acct-button kb-glass-skew" onClick={() => change('restore')}><b className="kb-glass-upright">Show tips again</b></button>
+          {' '}
+          <button type="button" className="kb-acct-button kb-glass-skew" onClick={() => change('replay')}><b className="kb-glass-upright">Replay the HUD tour</b></button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /** The Settings board's frame: the heading, the sections' navigation, and the section. */
 function Frame({ section, children }: { readonly section: Section | null; readonly children: ReactNode }) {
   return (
@@ -138,7 +166,7 @@ export function SettingsScreen() {
   const section: Section = asked === 'account' || asked === 'notifications' ? asked : 'accessibility';
   const account = session?.account ?? null;
   /* The preferences, read and saved as the welcome page's rows save them too (preferences.ts). */
-  const { prefs, refusal, saved, change, forgetTips, refuse } = usePreferenceSaves(account);
+  const { prefs, refusal, saved, change, changeTips, refuse } = usePreferenceSaves(account);
   /* The address is read for the account too, and drawn only while that account is the one signed in. */
   const [addressRead, setAddressRead] = useState<{ readonly account: string; readonly address: string | null } | null>(null);
   const address = addressRead?.account === account ? addressRead : null;
@@ -233,9 +261,7 @@ export function SettingsScreen() {
         <ThemeRow value={prefs.theme} onChange={(v) => change({ theme: v })} />
         <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
           sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />
-        <Row label="Card tips" sentence="The first time one of a card's marks shows on a page, a small note says what the card does. Each shows once. This brings them all back.">
-          <p><button type="button" className="kb-acct-button kb-glass-skew" aria-disabled={prefs.cardsMet.length === 0} onClick={() => { if (prefs.cardsMet.length > 0) forgetTips(); }}><b className="kb-glass-upright">Show card tips again</b></button></p>
-        </Row>
+        <TipsRow on={prefs.tips === 'on'} change={changeTips} />
         {said}
         <p className="kb-acct-foot">Changes save as you make them.</p>
       </section>
