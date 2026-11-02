@@ -55,6 +55,21 @@ begin
     raise exception 'set_preferences changed a mark';
   end if;
 
+  -- The three functions that answer the whole preferences carry the marks, so a screen taking their answer
+  -- as the preferences reports what the account holds, not null.
+  said := set_preferences(smoke => 'low');
+  if (said ->> 'alerts_seen_at')::timestamptz is distinct from now() or (said ->> 'settlement_seen')::timestamptz is distinct from t0 + interval '2 hours' then
+    raise exception 'set_preferences answered without the marks: %', said;
+  end if;
+  said := meet_card('whoops');
+  if (said ->> 'alerts_seen_at')::timestamptz is distinct from now() or (said ->> 'settlement_seen')::timestamptz is distinct from t0 + interval '2 hours' then
+    raise exception 'meet_card answered without the marks: %', said;
+  end if;
+  said := forget_cards_met();
+  if (said ->> 'alerts_seen_at')::timestamptz is distinct from now() or (said ->> 'settlement_seen')::timestamptz is distinct from t0 + interval '2 hours' then
+    raise exception 'forget_cards_met answered without the marks: %', said;
+  end if;
+
   -- A mark is a time.
   if pg_temp.refusal($q$select see_alerts(null)$q$) is distinct from 'a mark is a time' then raise exception 'a null alerts mark'; end if;
   if pg_temp.refusal($q$select see_settlement(null)$q$) is distinct from 'a mark is a time' then raise exception 'a null settlement mark'; end if;

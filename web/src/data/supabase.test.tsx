@@ -485,6 +485,15 @@ describe('reads and their rows', () => {
     expect(h.to('rpc/see_settlement')[0]?.body).toEqual({ ends_at: '2026-10-30T08:17:00Z' });
   });
 
+  it('maps the marks an answer carries (set_preferences, meet_card, forget_cards_met) into the preferences', async () => {
+    const marks = { alerts_seen_at: '2026-10-29T08:17:00+00:00', settlement_seen: '2026-10-30T08:17:00+00:00' };
+    const h = harness((r) => json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150, cards_met: ['whoops'], ...marks }));
+    const want = { ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, cardsMet: ['whoops'], alertsSeenAt: marks.alerts_seen_at, settlementSeen: marks.settlement_seen } };
+    expect(await h.api.setPreferences({ smoke: 'low' })).toEqual(want);
+    expect(await h.api.meetCard('whoops')).toEqual(want);
+    expect(await h.api.forgetCardsMet()).toEqual(want);
+  });
+
   it('reads the cards met from their column and calls meet_card and forget_cards_met by their parameter names', async () => {
     const mine = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', text_size: 100 };
     const h = harness((r) => {
