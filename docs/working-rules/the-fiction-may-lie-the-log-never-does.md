@@ -4,7 +4,7 @@ Incident. Rewritten in the design session of 2026-10-28 (docs/plans/2026-10-28-k
 
 The owner's words. Asked whether The System may lie to players, the owner chose "the fiction may lie; the log never does" ("A sounds good", the owner, 2026-10-28), beside "there is always an opportunity to step back and appreciate that a game is being played."
 
-The owner's words, 2026-11-02, in the alerts design session (`docs/plans/2026-11-02-alerts-design.md`, section 3). The owner
+The owner's words. In the alerts design session of 2026-11-02 (`docs/plans/2026-11-02-alerts-design.md`, section 3). The owner
 asked for in-character developer updates in the glass, in the manner of Minus World's "Gabe Newell" character, "who
 ostensibly invented the game": "information always accurate, even if it has character flavor … it's still not the
 glass lying." And on the glass's copy: "it also opens up the opportunity for menu descriptions to have a bit of humor
