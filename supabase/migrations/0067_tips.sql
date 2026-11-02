@@ -21,7 +21,7 @@ alter table account_preferences
 -- The whole preferences, as every function that answers them shows them (0064's shape, with the three more keys). One place, so the
 -- answers cannot drift apart. Not callable by the API roles; the functions below run it as their owner.
 create function preferences_answer(kept account_preferences) returns jsonb
-language sql immutable set search_path = pg_temp as $$
+language sql stable set search_path = pg_temp as $$
   select jsonb_build_object('theme', kept.theme, 'postbit', kept.postbit, 'motion', kept.motion,
     'smoke', kept.smoke, 'contrast', kept.contrast, 'text_size', kept.text_size, 'cards_met', to_jsonb(kept.cards_met),
     'alerts_seen_at', kept.alerts_seen_at, 'settlement_seen', kept.settlement_seen, 'toasts', to_jsonb(kept.toasts),

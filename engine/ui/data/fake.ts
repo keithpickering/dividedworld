@@ -1612,8 +1612,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (unknown.length) return refuse(`not a kind of alert: ${unknown.join(', ')}`);
         toasts = [...new Set(p.toasts)];
       }
-      /* The set of cards met is no parameter of set_preferences: a stray one in a patch is ignored, as the server would. */
-      const { cardsMet: _ignored, toasts: _toasts, ...choices } = p as PreferencesPatch & { cardsMet?: unknown };
+      /* The set of cards met, the welcome mark and the tips' state are no parameters of set_preferences: a stray one in a patch is ignored, as the server would. */
+      const { cardsMet: _ignored, welcomedAt: _w, tips: _t, tipsSeen: _s, toasts: _toasts, ...choices } = p as PreferencesPatch & { cardsMet?: unknown; welcomedAt?: unknown; tips?: unknown; tipsSeen?: unknown };
       account.prefs = { ...account.prefs, ...choices, toasts };
       return ok(account.prefs);
     },
