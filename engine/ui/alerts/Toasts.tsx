@@ -51,7 +51,7 @@ export function ago(at: string, now: number = Date.now()): string {
 /** The row an arrival is, with what the words need beside it, read as far as can be. */
 async function read(api: KayfaApi, a: Arrival, base: Pick<WordsContext, 'instance' | 'ui' | 'perPage'>): Promise<{ row: Alert; ctx: WordsContext }> {
   const acts = new Map<Id, Act>();
-  let row: Alert = { kind: a.kind, sub: a.sub, act: a.act, character: a.character, at: a.at, thread: null, name: null, title: null, count: null };
+  let row: Alert = { kind: a.kind, sub: a.sub, act: a.act, character: a.character, at: a.at, thread: null, name: null, title: null, count: a.count ?? null };
   try {
     if (a.kind === 'update' && a.act !== null) {
       const update = (await api.updates()).find((u) => u.act === a.act);
@@ -68,6 +68,8 @@ async function read(api: KayfaApi, a: Arrival, base: Pick<WordsContext, 'instanc
         a.character ? api.characters([a.character]).then((cs) => cs[0]?.name ?? null, () => null) : null,
       ]);
       row = { ...row, thread: about?.thread ?? null, title, name: who };
+    } else if (a.kind === 'settlement') {
+      /* Its row is the player's own and says all it needs. */
     } else if (a.character !== null) {
       row = { ...row, name: (await api.characters([a.character]))[0]?.name ?? null };
     }

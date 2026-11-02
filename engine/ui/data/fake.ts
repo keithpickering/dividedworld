@@ -45,7 +45,7 @@ const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'alert' | 'news';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'alert' | 'news' | 'settled';
 }
 
 export interface Seed {
@@ -392,6 +392,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const sendNews = (a: ActRec) => {
     const news = { kind: 'update' as const, sub: null, act: a.id, at: iso(a.at) };
     send('reach', 'news', () => { for (const l of [...reachListeners]) l.onNews?.(news); });
+  };
+  /* A settlement applied is announced on `reach` to every signed-in page (settlement_announce, 0063): its id and time, nothing of any player's. */
+  const sendSettled = (id: number, at: number) => {
+    const settled = { id: String(id), at: iso(at + APPLIED_AFTER) };
+    send('reach', 'settled', () => { for (const l of [...reachListeners]) l.onSettled?.(settled); });
   };
   const sendThread = (t: ThreadRec) => {
     const shown = { id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at) };
@@ -1809,6 +1814,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     });
     const id = settlements.length + 1;
     settlements.push({ id, startsAt, endsAt: at, sharesKept, lines: written });
+    sendSettled(id, at);
     const credits = new Map<Id, number>();
     for (const l of written) {
       credits.set(l.account, (credits.get(l.account) ?? 0) + l.amount);
@@ -1931,6 +1937,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (h.outgoing !== null && h.outgoing !== undefined) staffId(h.outgoing);
       staffId(h.boss);
       handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now() });
+      /* A change of Boss is two items of news, as news_announce (0063) queues them: the one who left, where there was one, and the one who arrived. */
+      const at = iso(h.at ?? now());
+      if (h.outgoing != null && h.outgoing !== h.boss) {
+        const left = { kind: 'seasonNews' as const, sub: 'bossLeft', act: null, at };
+        send('reach', 'news', () => { for (const l of [...reachListeners]) l.onNews?.(left); });
+      }
+      if (h.outgoing !== h.boss) {
+        const arrived = { kind: 'seasonNews' as const, sub: 'bossArrived', act: null, at };
+        send('reach', 'news', () => { for (const l of [...reachListeners]) l.onNews?.(arrived); });
+      }
     },
     update(u) {
       const wrote = writeUpdate(u.title, u.body, u.changes ?? [], u.at);

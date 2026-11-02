@@ -25,7 +25,8 @@
 -- that reveal_season and post_tally make, without redefining either.
 --
 -- Live: a new update or item of season news queues a broadcast on `reach` (event `news`, a public projection: the kind, its sub, the
--- Act and its time), by a trigger on the table the item is written to, so no writer is redefined. The HUD hears it (0061).
+-- Act and its time), by a trigger on the table the item is written to, so no writer is redefined. The HUD hears it (0061). A Boss's change is two
+-- items, bossLeft and bossArrived, as the page reads them; a settlement is announced as `settled` (id and time), so the HUD can toast it for those it moved.
 
 -- ------------------------------------------------------------------------ the threads ----
 
@@ -279,7 +280,11 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if tg_table_name = 'season_handovers' then
     if new.boss is not null and new.boss is distinct from new.outgoing and new.how in ('nomination', 'rotation') then
-      perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'boss', 'act', null, 'at', new.landed_at));
+      -- The words the news reads are bossLeft (the one who goes, where there was one) and bossArrived (the one who comes), as season_news says them.
+      if new.outgoing is not null then
+        perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'bossLeft', 'act', null, 'at', new.landed_at));
+      end if;
+      perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'bossArrived', 'act', null, 'at', new.landed_at));
     end if;
   elsif new.kind = 'update' then
     perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'update', 'sub', null, 'act', new.id, 'at', new.created_at));
@@ -297,3 +302,15 @@ end $$;
 create trigger acts_announce_news after insert on acts for each row when (new.kind in ('update', 'tally', 'reveal')) execute function news_announce();
 create trigger season_handovers_announce_news after insert on season_handovers for each row execute function news_announce();
 revoke execute on function news_announce() from public, anon, authenticated;
+
+-- A settlement landing is public (everyone sees the clock), so it is announced once on `reach` as it is applied: the settlement's id and the time
+-- it was applied, nothing of any player's. Each client reads only its own rows to learn whether it moved their characters (alerts, 0060), and toasts
+-- it if it did. The id is what a client that hears it twice keeps it once by.
+create function settlement_announce() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform broadcast_later('reach', 'settled', jsonb_build_object('id', new.id, 'at', new.applied_at));
+  return new;
+end $$;
+create trigger settlements_announce after insert on settlements for each row execute function settlement_announce();
+revoke execute on function settlement_announce() from public, anon, authenticated;

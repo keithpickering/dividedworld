@@ -1122,8 +1122,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     /* Plays beyond a post, and news, on `reach`: every signed-in player hears every one. A play's Act is the public one its thread carries; news is an update or an item of season news, as 0063 announces it. */
     subscribeReach(l) {
-      return join('reach', ['effect', 'news'], (event, p) => {
+      return join('reach', ['effect', 'news', 'settled'], (event, p) => {
         if (event === 'news') l.onNews?.({ kind: p['kind'], sub: p['sub'] ?? null, act: p['act'] ?? null, at: p['at'] });
+        else if (event === 'settled') l.onSettled?.({ id: String(p['id']), at: p['at'] });
         else l.onPlay?.(toAct(p));
       });
     },

@@ -144,6 +144,15 @@ test('what a settlement posted is sent live from the outbox, then cleared; a fai
   assert.equal(outbox.length, 0, 'sent, they are cleared');
 });
 
+test('the announcement of a settlement (queued by the SQL as it is applied) goes out on reach once, with only its id and time, then is cleared', async () => {
+  const outbox: { id: number; topic: string; event: string; payload: unknown }[] = [{ id: 1, topic: 'reach', event: 'settled', payload: { id: 7, at: '2026-11-02T08:00:01Z' } }];
+  const { db } = fakeDb(day, undefined, {}, [], outbox);
+  const sent: unknown[][] = [];
+  await runSettlement(db, instance, new Date(TO).toISOString(), { deliver: async (m) => { sent.push([...m]); return 'sent' as const; } });
+  assert.deepEqual(sent, [[{ topic: 'reach', event: 'settled', payload: { id: 7, at: '2026-11-02T08:00:01Z' } }]]);
+  assert.equal(outbox.length, 0);
+});
+
 test('a reveal larger than one send goes out in batches, every one of it', async () => {
   const outbox = Array.from({ length: 1201 }, (_, i) => ({ id: i + 1, topic: 'thread:r', event: 'act', payload: { id: `r${i}` } }));
   const { db } = fakeDb(day, undefined, {}, [], outbox);

@@ -15,11 +15,12 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Alert, AlertKind, Id } from '../data/api.ts';
+import type { Alert, Id } from '../data/api.ts';
 import { utcWhen } from '../log/lines.ts';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
+import { AlertIcon } from './AlertIcon.tsx';
 import { rowKey, useAlerts, type AlertsRead } from './useAlerts.ts';
 import { batchWords, targetKey, wordsFor, type Part, type Said, type WordsContext } from './words.ts';
 import './alerts.css';
@@ -46,24 +47,6 @@ const Words = ({ parts }: { readonly parts: readonly Part[] }) => (
   <>{parts.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <i key={i}>{p.em}</i>))}</>
 );
 
-/** The ink of each kind's icon: followed threads and quotes in the neon, cards, traps and rulings in the salty, settlements and hints in the ready, news in the pale. */
-const SHAPES: Readonly<Record<AlertKind, React.ReactNode>> = {
-  followed: <><path d="M6 7h20M6 13h20M6 19h13" strokeWidth="2.2" strokeLinecap="round" fill="none" /><circle cx="24" cy="22" r="4" fill="currentColor" stroke="none" /></>,
-  quote: <><path d="M6 9h20v12H15l-6 5v-5H6z" fill="none" strokeWidth="2.2" strokeLinejoin="round" /><path d="M11 14h10M11 17.5h6" strokeWidth="2" strokeLinecap="round" /></>,
-  cardOnYours: <><rect x="8" y="5" width="16" height="22" rx="2" fill="none" strokeWidth="2.2" /><path d="M12 12l8 8M20 12l-8 8" strokeWidth="2" strokeLinecap="round" /></>,
-  trapStruck: <><path d="M7 25h12M10 21h6M13 21V13" strokeWidth="2.2" strokeLinecap="round" fill="none" /><rect x="11" y="4" width="14" height="7" rx="1" transform="rotate(35 18 7.5)" fill="none" strokeWidth="2.2" /></>,
-  trapSprang: <><path d="M7 25h12M10 21h6M13 21V13" strokeWidth="2.2" strokeLinecap="round" fill="none" /><rect x="11" y="4" width="14" height="7" rx="1" transform="rotate(35 18 7.5)" fill="none" strokeWidth="2.2" /></>,
-  ruling: <><path d="M7 25h12M10 21h6M13 21V13" strokeWidth="2.2" strokeLinecap="round" fill="none" /><rect x="11" y="4" width="14" height="7" rx="1" transform="rotate(35 18 7.5)" fill="none" strokeWidth="2.2" /></>,
-  hint: <path d="M16 4c1 5 7 7 7 14a7 7 0 0 1-14 0c0-4 2-6 3-8 1 3 2 4 4 4-1-4-1-7 0-10z" fill="none" strokeWidth="2.2" strokeLinejoin="round" />,
-  settlement: <><circle cx="16" cy="16" r="10" fill="none" strokeWidth="2.2" /><path d="M16 10v6l4 3" strokeWidth="2.2" strokeLinecap="round" fill="none" /></>,
-  update: <><rect x="5" y="6" width="22" height="20" fill="none" strokeWidth="2.2" /><path d="M5 11h22M10 16h12M10 20h8" strokeWidth="2" strokeLinecap="round" /></>,
-  seasonNews: <path d="M9 5h14v6a7 7 0 0 1-14 0zM9 8H5a4 4 0 0 0 4 5M23 8h4a4 4 0 0 1-4 5M16 18v4M11 27h10M13 22h6" fill="none" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />,
-};
-
-function Icon({ kind }: { readonly kind: AlertKind }) {
-  return <svg className="kb-alerts-ico" aria-hidden="true" viewBox="0 0 32 32" stroke="currentColor">{SHAPES[kind]}</svg>;
-}
-
 interface RowProps {
   readonly item: Item;
   readonly said: Said;
@@ -78,7 +61,7 @@ function Row({ item, said, fresh, character, note, onUnfollow }: RowProps) {
   const row = item.rows[0]!;
   return (
     <li className="kb-alerts-row" tabIndex={-1} data-kb-kind={row.kind} data-kb-new={fresh ? '' : undefined} data-kb-key={item.key}>
-      <Icon kind={row.kind} />
+      <AlertIcon kind={row.kind} className="kb-alerts-ico" />
       <div>
         <p className="kb-alerts-line"><Words parts={said.line} /></p>
         <p className="kb-alerts-detail">

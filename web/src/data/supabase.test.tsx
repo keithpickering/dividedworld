@@ -1069,6 +1069,15 @@ describe('live', () => {
     expect(onPlay).toHaveBeenCalledWith(ACT);
   });
 
+  it('hears a settlement applied on reach as its id and time', async () => {
+    const s = stub();
+    const onSettled = vi.fn();
+    s.api.subscribeReach({ onSettled });
+    await settle();
+    s.channels[0]?.handlers.get('settled')?.({ payload: { id: 41, at: '2026-11-02T08:00:01Z' } });
+    expect(onSettled).toHaveBeenCalledWith({ id: '41', at: '2026-11-02T08:00:01Z' });
+  });
+
   it('hears news on reach as its public projection, and not as a play', async () => {
     const s = stub();
     const onPlay = vi.fn();

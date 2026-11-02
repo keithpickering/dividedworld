@@ -290,13 +290,36 @@ begin
   end if;
   if not exists (select 1 from broadcasts_due where topic = 'reach' and event = 'news' and payload ->> 'sub' = 'results')
      or not exists (select 1 from broadcasts_due where topic = 'reach' and event = 'news' and payload ->> 'sub' = 'tally')
-     or not exists (select 1 from broadcasts_due where topic = 'reach' and event = 'news' and payload ->> 'sub' = 'boss') then
-    raise exception 'results, tallies and the handover are each announced';
+     or not exists (select 1 from broadcasts_due where topic = 'reach' and event = 'news' and payload ->> 'sub' = 'bossArrived')
+     or not exists (select 1 from broadcasts_due where topic = 'reach' and event = 'news' and payload ->> 'sub' = 'bossLeft') then
+    raise exception 'results, tallies and the handover (the Boss who left, the Boss who arrived) are each announced, in the words the page reads: %', (select jsonb_agg(payload) from broadcasts_due where topic = 'reach');
   end if;
+  if exists (select 1 from broadcasts_due where topic = 'reach' and event = 'news' and payload ->> 'sub' = 'boss') then raise exception 'a handover is announced as bossLeft and bossArrived, never as boss'; end if;
   if exists (select 1 from broadcasts_due where topic = 'reach' and event = 'news' and (payload::text ~* 'owner|account')) then raise exception 'the broadcast is public'; end if;
 end $$;
 
 -- ---- The Boss's words are the handover's own: a Boss who said nothing then gets no quote, not a later unrelated post ----
+-- ---- A settlement landing is announced once on `reach`, public: its id and the time it was applied ----
+do $$
+declare
+  at1 timestamptz := (select min(starts_at) from seasons) - interval '4000 days';
+  sid bigint;
+begin
+  delete from broadcasts_due where event = 'settled';
+  insert into seasons (number, starts_at, ends_at) values (5001, at1, at1 + interval '2 days');
+  insert into settlements (starts_at, ends_at, season) select at1, at1 + interval '1 day', id from seasons where number = 5001 returning id into sid;
+  if (select count(*) from broadcasts_due where topic = 'reach' and event = 'settled') is distinct from 1::bigint then
+    raise exception 'a settlement is announced once on reach: %', (select jsonb_agg(payload) from broadcasts_due where topic = 'reach');
+  end if;
+  if (select payload ->> 'id' from broadcasts_due where event = 'settled') is distinct from sid::text
+     or (select payload ->> 'at' from broadcasts_due where event = 'settled') is null then
+    raise exception 'the announcement carries the settlement''s id and its time';
+  end if;
+  if exists (select 1 from broadcasts_due where event = 'settled' and (select count(*) from jsonb_object_keys(payload)) is distinct from 2::bigint) then raise exception 'the announcement carries nothing else: nothing of a player''s'; end if;
+  delete from broadcasts_due where event = 'settled';
+  delete from settlements where id = sid;
+end $$;
+
 -- The instance has lines for both, but a handover's announcement is best effort (say_in_announcements only warns), so one can have said nothing.
 do $$
 declare

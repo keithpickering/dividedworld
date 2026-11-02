@@ -837,6 +837,15 @@ export type LiveAlert = Pick<Alert, 'kind' | 'sub' | 'act' | 'character' | 'at'>
  */
 export type LiveNews = Pick<Alert, 'kind' | 'sub' | 'act' | 'at'>;
 
+/**
+ * A settlement applied, as the `reach` topic announces it (`settled`, supabase/migrations/0063_season_news.sql): its id and when it was applied. Public and
+ * the same for every listener (everyone sees the clock); whether it moved the listener's characters is read from the listener's own alerts.
+ */
+export interface LiveSettled {
+  readonly id: string;
+  readonly at: string;
+}
+
 export interface AccountListener {
   /** An alert for the player's own account, as it is written. May come twice: key by act and kind, or reread the list. */
   readonly onAlert?: (alert: LiveAlert) => void;
@@ -851,6 +860,8 @@ export interface ReachListener {
   readonly onPlay?: (play: Act) => void;
   /** An update or an item of season news, as it lands, for every signed-in player alike. May come twice: key by kind, sub, Act and time. */
   readonly onNews?: (news: LiveNews) => void;
+  /** A settlement was applied, for every signed-in player alike. May come twice: key by id. */
+  readonly onSettled?: (settled: LiveSettled) => void;
 }
 
 /* ---------------------------------------------------------------- the api ---- */

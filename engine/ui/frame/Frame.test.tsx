@@ -625,6 +625,22 @@ describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', (
       await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull());
     });
 
+    test('is judged afresh when the text size changes, with the word\'s width measured again and not the one kept from before', async () => {
+      width(boardSwitch(testGlass) - 1);
+      setup();
+      const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
+      name = 190;
+      await tell();
+      await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).not.toBeNull());
+      /* The word is wider at a larger size (the kept 90px would say 128 cuts nothing), and the bar itself reports nothing. */
+      name = 150;
+      picker = 240;
+      document.documentElement.setAttribute('data-kb-text-size', '125');
+      try {
+        await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull());
+      } finally { document.documentElement.removeAttribute('data-kb-text-size'); }
+    });
+
     test('the Main board\'s Menu is always its word', async () => {
       width(1440);
       setup();

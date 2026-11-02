@@ -13,7 +13,7 @@ const ACCOUNT = 'acc';
 const NOW = '2026-11-02T10:00:00Z';
 
 /** A backend that holds the listeners, so a test can send an alert or news as the server would. */
-function backend(options: { unread?: () => number; updates?: readonly Update[] } = {}) {
+function backend(options: { unread?: () => number; updates?: readonly Update[]; rows?: () => readonly Alert[] } = {}) {
   const heard: { account: AccountListener | null; reach: ReachListener | null; accountOff: number; reachOff: number } = { account: null, reach: null, accountOff: 0, reachOff: 0 };
   const api = {
     alertsUnread: vi.fn(async () => options.unread?.() ?? 0),
@@ -23,6 +23,7 @@ function backend(options: { unread?: () => number; updates?: readonly Update[] }
     characters: vi.fn(async () => []),
     thread: vi.fn(async () => null),
     updates: vi.fn(async () => options.updates ?? []),
+    alerts: vi.fn(async () => options.rows?.() ?? []),
   } as unknown as KayfaApi;
   return { api, heard };
 }
@@ -200,6 +201,52 @@ describe('the column', () => {
     expect(toasts()).toHaveLength(1);
     await act(async () => { b.heard.reach?.onNews?.({ kind: 'seasonNews', sub: 'tally', act: 't1', at: NOW }); });
     expect(toasts()).toHaveLength(1);
+  });
+});
+
+describe('a settlement', () => {
+  const row = (sub: string, count = 2): Alert => ({ kind: 'settlement', sub, act: null, character: null, at: '2026-11-02T08:00:01Z', thread: null, name: null, title: null, count });
+  const settled = (b: ReturnType<typeof backend>, id: string) => act(async () => { b.heard.reach?.onSettled?.({ id, at: '2026-11-02T08:00:01Z' }); });
+  beforeEach(() => { vi.spyOn(Math, 'random').mockReturnValue(0); });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  test('that moved the player\'s characters toasts when it is announced, in the Alerts row\'s words, and the count is read again', async () => {
+    let unread = 0;
+    let rows: readonly Alert[] = [];
+    const b = backend({ unread: () => unread, rows: () => rows });
+    mount(b);
+    unread = 1; rows = [row('7')];
+    await settled(b, '7');
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0]).toHaveTextContent('A settlement is in');
+    expect(toasts()[0]).toHaveTextContent('It moved 2 of your characters.');
+    expect(within(toasts()[0]!).getByRole('link', { name: 'Open it in My log' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('unread')).toHaveTextContent('1'));
+  });
+
+  test('that moved none of them toasts nothing, and one announced twice toasts once', async () => {
+    let rows: readonly Alert[] = [];
+    const b = backend({ rows: () => rows });
+    mount(b);
+    await settled(b, '8');
+    await waitFor(() => expect(b.api.alerts).toHaveBeenCalled());
+    expect(toasts()).toHaveLength(0);
+    rows = [row('9')];
+    await settled(b, '9');
+    await settled(b, '9');
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(toasts()).toHaveLength(1);
+    expect(b.api.alerts).toHaveBeenCalledTimes(2);
+  });
+
+  test('an alerts list that cannot be read toasts nothing and loses nothing', async () => {
+    const b = backend();
+    (b.api.alerts as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('down'));
+    mount(b);
+    await settled(b, '3');
+    await waitFor(() => expect(b.api.alerts).toHaveBeenCalled());
+    expect(toasts()).toHaveLength(0);
   });
 });
 

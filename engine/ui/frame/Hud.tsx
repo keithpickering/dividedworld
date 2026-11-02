@@ -50,7 +50,7 @@ import { facesOf, withCardEconomy } from '../cards/faces.ts';
 import { usePlay } from '../cards/play.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
-import { motionReduced } from '../appearance.ts';
+import { motionReduced, useTextSize } from '../appearance.ts';
 import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
 import { Toasts } from '../alerts/Toasts.tsx';
 import { useAlertFeed } from '../alerts/useAlertFeed.ts';
@@ -192,7 +192,15 @@ export function Hud() {
   const hudName = hud?.name ?? null;
   const shortened = useRef(false);
   shortened.current = compact;
+  /* A change of text size changes the word's width and every other: what was kept of the word's width is let go, Menu is drawn with its word, and judged again. */
+  const size = useTextSize();
+  const sizeJudged = useRef(size);
+  const [redraw, setRedraw] = useState(0);
   useEffect(() => {
+    if (sizeJudged.current !== size) {
+      sizeJudged.current = size;
+      if (shortened.current) { shortened.current = false; setCompact(false); setRedraw((n) => n + 1); return undefined; }
+    }
     const bar = section.current;
     const choose = picker.current;
     const word = probe.current;
@@ -211,7 +219,7 @@ export function Hud() {
     const watch = new ResizeObserver(judge);
     for (const el of [bar, choose, word]) watch.observe(el);
     return () => watch.disconnect();
-  }, [wide, hudName, board, scale]);
+  }, [wide, hudName, board, scale, size, redraw]);
 
   /* The opened hand takes focus, so the keyboard is in it at once. */
   useEffect(() => { if (handOpen) drawer.current?.focus(); }, [handOpen]);

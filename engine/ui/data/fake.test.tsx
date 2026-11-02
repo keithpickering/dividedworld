@@ -1725,6 +1725,29 @@ describe('the Alerts read and the count (my_alerts, my_alerts_unread, 0060)', ()
 });
 
 describe('live news on reach', () => {
+  test('a change of Boss is heard as the Boss who left and the Boss who arrived, in the words the page reads', async () => {
+    const { fake } = world();
+    fake.seed.staff('first', 'First Boss', 'boss');
+    fake.seed.staff('second', 'Second Boss', 'boss');
+    const heard: unknown[] = [];
+    fake.subscribeReach({ onNews: (n) => heard.push(n) });
+    fake.seed.handover({ outgoing: 'first', boss: 'second', at: Date.UTC(2026, 10, 2) });
+    await flush();
+    expect(heard).toEqual([
+      { kind: 'seasonNews', sub: 'bossLeft', act: null, at: '2026-11-02T00:00:00.000Z' },
+      { kind: 'seasonNews', sub: 'bossArrived', act: null, at: '2026-11-02T00:00:00.000Z' },
+    ]);
+  });
+  test('a settlement applied is heard once by every listener on reach, with its id and time and nothing of any player\'s', async () => {
+    const { fake } = world();
+    const me = fake.seed.account('settler');
+    const ch = fake.seed.character(me, 'Settled', 'face');
+    const heard: unknown[] = [];
+    fake.subscribeReach({ onSettled: (s) => heard.push(s) });
+    fake.seed.settle({ at: Date.UTC(2026, 10, 2, 8), ledger: [{ character: ch, reason: 'face.story', amount: 10 }] });
+    await flush();
+    expect(heard).toEqual([{ id: '1', at: '2026-11-02T08:00:01.000Z' }]);
+  });
   test('an update posted by an admin is heard by every listener on reach, once, with its Act and time', async () => {
     const { fake } = world();
     const admin = fake.seed.account('boss', { admin: true });
