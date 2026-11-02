@@ -1,11 +1,13 @@
 /*
- * Feelin' Fab (Effect.tsx): the rainbow sits behind the words in a layer that takes no pointer and no room, so the post reads and lays
- * out as it would bare. Colors come only from the palettes Effect.tsx sets on the box as custom properties (--dw-fab-light-N for the
- * light board, --dw-fab-dark-N for the dark), picked here for the mode the way the theme contract picks (tools/check-theme.mjs): light
- * on the base, dark under the device's setting unless the player chose light, and again when the player chose dark. The words keep a
- * text shadow in the board's ground. Animation moves only transform and opacity, on layers painted once (the rainbow is a gradient on an oversized layer the compositor slides inside the clipped ground; a twinkle is a drawn SVG star), never layout or paint, and is
- * paused while the post is out of view (data-kb-running) and off under reduced motion (data-kb-moving, which Effect.tsx reads as the player's setting, else the device's; no media query here, so a player's "full" holds).
- * Level 1 sits on the stop Effect.tsx chose (data-kb-still) when held still.
+ * Feelin' Fab (Effect.tsx): the rainbow sits behind the words in a layer that takes no pointer and no room, so the post reads
+ * and lays out as it would bare. Colors come only from the palettes Effect.tsx declares once per page on the root as custom
+ * properties (--dw-fab-light-N for the light board, --dw-fab-dark-N for the dark), picked here for the mode the way the theme
+ * contract picks (tools/check-theme.mjs): light on the base, dark under the device's setting unless the player chose light, and
+ * again when the player chose dark. The words keep a text shadow in the board's ground. Animation moves only transform and
+ * opacity, on layers painted once (the rainbow is a gradient on an oversized layer the compositor slides inside the clipped
+ * ground; a twinkle is a drawn SVG star), never layout or paint. It is paused while the post is out of view (data-kb-running)
+ * and off under reduced motion (data-kb-moving, which Effect.tsx reads as the player's setting, else the device's; no media
+ * query here, so a player's "full" holds). Level 1 sits on the stop Effect.tsx chose (data-kb-still) when held still.
  */
 .dw-fab {
   --dw-fab-1: var(--dw-fab-light-1);
@@ -45,18 +47,21 @@
   overflow: hidden;
   pointer-events: none;
 }
-/* The rainbow is painted once on a layer larger than the post; the compositor slides it, so no frame repaints it. */
+/* The rainbow is painted once on a layer larger than the post; the compositor slides it, so no frame repaints it. It is promoted
+   (will-change) only on a post that moves: a held one is a flat color and needs no layer of its own. */
 .dw-fab-layer {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  will-change: transform;
   animation-duration: 30s;
   animation-iteration-count: infinite;
   animation-direction: alternate;
   animation-timing-function: ease-in-out;
+}
+.dw-fab[data-kb-moving="true"] .dw-fab-layer {
+  will-change: transform;
 }
 .dw-fab-words {
   position: relative;
@@ -66,14 +71,18 @@
 /* Level 1: the whole background drifts slowly through the rainbow (a layer six boxes wide slid by five). */
 .dw-fab-cycle .dw-fab-layer {
   width: 600%;
-  background-image: linear-gradient(90deg, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6));
+  background-image: linear-gradient(
+    90deg, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6)
+  );
   animation-name: dw-fab-drift-6;
   animation-timing-function: linear;
 }
 /* Level 2: an animated linear rainbow. */
 .dw-fab-linear .dw-fab-layer {
   width: 300%;
-  background-image: linear-gradient(100deg, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6));
+  background-image: linear-gradient(
+    100deg, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6)
+  );
   animation-name: dw-fab-drift-3;
   animation-duration: 12s;
 }
@@ -81,7 +90,9 @@
 .dw-fab-radial .dw-fab-layer {
   width: 220%;
   height: 220%;
-  background-image: radial-gradient(circle at 50% 50%, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6));
+  background-image: radial-gradient(
+    circle at 50% 50%, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6)
+  );
   animation-name: dw-fab-spread;
   animation-duration: 14s;
 }
@@ -97,7 +108,8 @@
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(-54.5455%, -54.5455%, 0); }
 }
-/* Level 1 held still: the one stop chosen on this load. */
+/* Level 1 held still: the one stop chosen on this load, on a layer no wider than the post (a flat color needs no slide). */
+.dw-fab-cycle[data-kb-moving="false"] .dw-fab-layer { width: 100%; }
 .dw-fab-cycle[data-kb-still="1"] .dw-fab-layer { background-image: linear-gradient(var(--dw-fab-1), var(--dw-fab-1)); }
 .dw-fab-cycle[data-kb-still="2"] .dw-fab-layer { background-image: linear-gradient(var(--dw-fab-2), var(--dw-fab-2)); }
 .dw-fab-cycle[data-kb-still="3"] .dw-fab-layer { background-image: linear-gradient(var(--dw-fab-3), var(--dw-fab-3)); }
@@ -107,8 +119,11 @@
 .dw-fab-twinkle {
   position: absolute;
   fill: var(--dw-fab-twinkle);
-  /* Its own small layer always (promoting it only while in view costs a re-raster as posts scroll in), so the scale and fade are the compositor's. */
+  /* Each twinkle is its own small layer, always: up to ~10 per post (4, 8 or 10 by level). Promoting them only while the post is
+     in view re-rasterized worse as posts scrolled in (measured at light 4x: 14-19 dropped frames against 0-4), so the layer count
+     is the price of a scale and fade that are the compositor's alone. */
   will-change: transform, opacity;
+  animation-name: dw-fab-twinkle;
   animation-duration: 3s;
   animation-iteration-count: infinite;
   animation-timing-function: ease-in-out;

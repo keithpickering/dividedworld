@@ -61,8 +61,6 @@ describe("Feelin' Fab", () => {
       expect(box()).toHaveClass(`dw-fab-${['', 'cycle', 'linear', 'radial'][level]}`);
       expect(box().querySelector('[data-kb-words]')).toHaveTextContent('Hello there.');
       expect(box().querySelector('.dw-fab-ground')).toHaveAttribute('aria-hidden', 'true');
-      for (const [i, stop] of FAB_STOPS.light.entries()) expect(box().style.getPropertyValue(`--dw-fab-light-${i + 1}`)).toBe(stop);
-      for (const [i, stop] of FAB_STOPS.dark.entries()) expect(box().style.getPropertyValue(`--dw-fab-dark-${i + 1}`)).toBe(stop);
       seen.push(twinkles());
       unmount();
     }
@@ -71,6 +69,26 @@ describe("Feelin' Fab", () => {
     expect(seen[2]).toBeGreaterThanOrEqual(seen[1]!);
     expect(FAB_STOPS.light).toHaveLength(FAB_STOPS.dark.length);
     expect(FAB_STOPS.light.length).toBeGreaterThanOrEqual(6);
+  });
+
+  test('the palettes are one list in FAB_STOPS, passed as the post\'s style (the CSSOM), and no style element is ever created', () => {
+    const before = document.querySelectorAll('style').length;
+    render(<><FeelinFabEffect {...props(1)} /><FeelinFabEffect {...props(2)} /></>);
+    expect(document.querySelectorAll('style')).toHaveLength(before);
+    expect(document.querySelector('style[data-dw-fab-palette]')).toBeNull();
+    for (const b of document.querySelectorAll<HTMLElement>('[data-kb-fab]')) {
+      for (const [i, stop] of FAB_STOPS.light.entries()) expect(b.style.getPropertyValue(`--dw-fab-light-${i + 1}`)).toBe(stop);
+      for (const [i, stop] of FAB_STOPS.dark.entries()) expect(b.style.getPropertyValue(`--dw-fab-dark-${i + 1}`)).toBe(stop);
+      expect(b.style.getPropertyValue('--dw-fab-twinkle-light')).toBe(FAB_TWINKLE.light);
+      expect(b.style.getPropertyValue('--dw-fab-twinkle-dark')).toBe(FAB_TWINKLE.dark);
+    }
+  });
+
+  test('the reason is pinned: the site\'s style-src allows no inline style, so the palette cannot be a style element', () => {
+    const headers = read('../../../../web/headers.ts');
+    const styleSrc = /"(style-src[^"]*)"/u.exec(headers)?.[1] ?? '';
+    expect(styleSrc).toMatch(/^style-src 'self'/u);
+    expect(styleSrc).not.toContain("'unsafe-inline'");
   });
 
   test('a level is the number of Feelin\' Fabs up, and never more than three', () => {
@@ -90,7 +108,7 @@ describe("Feelin' Fab", () => {
     render(<FeelinFabEffect {...props(1)} />);
     expect(box()).toHaveAttribute('data-kb-moving', 'true');
     expect(box().style.getPropertyValue('--dw-fab-still')).toBe('');
-    for (const t of box().querySelectorAll<HTMLElement>('.dw-fab-twinkle')) expect(t.style.animationName).not.toBe('none');
+    for (const t of box().querySelectorAll<HTMLElement>('.dw-fab-twinkle')) expect(t.style.animationName).toBe('');
   });
 
   test('reduced motion holds still: level 1 sits on one of the stops chosen at random on each load, levels 2 and 3 stay gradients, twinkles stay', () => {
@@ -130,7 +148,7 @@ describe("Feelin' Fab", () => {
     expect(box()).toHaveAttribute('data-kb-moving', 'true');
     expect(box().style.getPropertyValue('--dw-fab-still')).toBe('');
     expect(box()).not.toHaveAttribute('data-kb-still');
-    for (const t of box().querySelectorAll<HTMLElement>('.dw-fab-twinkle')) expect(t.style.animationName).not.toBe('none');
+    for (const t of box().querySelectorAll<HTMLElement>('.dw-fab-twinkle')) expect(t.style.animationName).toBe('');
     const css = read('fab.css').replace(/\/\*[\s\S]*?\*\//gu, '');
     expect(css).not.toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{(?![^{]*:root:not\(\[data-kb-motion=)/u);
   });
@@ -196,7 +214,11 @@ describe("Feelin' Fab", () => {
     /* The gradient sits on a layer the compositor moves, and a twinkle is a drawn shape, not a clipped box. */
     expect(css).not.toMatch(/background-position/u);
     expect(css).not.toMatch(/clip-path/u);
-    expect(css).toMatch(/\.dw-fab-layer\s*\{[^}]*will-change:\s*transform/u);
+    /* The big layer is promoted only on a post that moves (a held one is a flat color); the twinkles stay promoted (see fab.css). */
+    expect(css).not.toMatch(/(^|\n)\.dw-fab-layer\s*\{[^}]*will-change/u);
+    expect(css).toMatch(/\.dw-fab\[data-kb-moving="true"\]\s*\.dw-fab-layer\s*\{[^}]*will-change:\s*transform/u);
+    expect(css).toMatch(/\.dw-fab-cycle\[data-kb-moving="false"\]\s*\.dw-fab-layer\s*\{[^}]*width:\s*100%/u);
+    expect(css).toMatch(/\.dw-fab-twinkle\s*\{[^}]*animation-name:\s*dw-fab-twinkle/u);
     expect(css).toMatch(/\.dw-fab-twinkle\s*\{[^}]*will-change:\s*transform,\s*opacity/u);
     expect(css).toMatch(/\.dw-fab-ground\s*\{[^}]*overflow:\s*hidden/u);
   });

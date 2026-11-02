@@ -1,21 +1,26 @@
 /**
- * Feelin' Fab's effect (docs/plans/2026-11-02-onboarding-design.md, sections 5 and 6): a rainbow under the post's words, by the count of
- * Feelin' Fabs up on the post, one to three. Level 1 cycles the rainbow's stops slowly; level 2 is an animated linear rainbow; level 3
- * an animated radial one; each with twinkles at spots placed from the plays' own ids, so every reader sees the same ones, and more of
- * them on the higher levels. It is decoration, never an obstacle: the words are drawn above the rainbow with a text shadow in the
- * board's ground, and every stop holds the theme's post text, links, visited links and muted words (a quote's byline) at 4.5:1 (`stopsAreReadable`, which the effect's test drives red). So its
- * accessible path is reduced motion alone ("An accessible path costs what the obstacle costs"): level 1 sits on one stop, chosen at
- * random on each load in the reader's own browser and never stored or sent; levels 2 and 3 stay gradients; the twinkles stay where
- * they are. The player's reduced motion is read live. The animation runs only while the post is in view (inView.ts), as a sliding
- * pre-painted layer and twinkling shapes (transform and opacity on the compositor), never layout or repaint.
+ * Feelin' Fab's effect (docs/plans/2026-11-02-onboarding-design.md, sections 5 and 6): a rainbow under the post's words, by the
+ * count of Feelin' Fabs up on the post, one to three. Level 1 cycles the rainbow's stops slowly; level 2 is an animated linear
+ * rainbow; level 3 an animated radial one; each with twinkles at spots placed from the plays' own ids, so every reader sees the
+ * same ones, and more of them on the higher levels. It is decoration, never an obstacle: the words are drawn above the rainbow
+ * with a text shadow in the board's ground, and every stop holds the theme's post text, links, visited links and muted words (a
+ * quote's byline) at 4.5:1 (`stopsAreReadable`, which the effect's test drives red). So its accessible path is reduced motion
+ * alone ("An accessible path costs what the obstacle costs"): level 1 sits on one stop, chosen at random on each load in the
+ * reader's own browser and never stored or sent; levels 2 and 3 stay gradients; the twinkles stay where they are. The player's
+ * reduced motion is read live. The animation runs only while the post is in view (inView.ts), as a sliding pre-painted layer
+ * and twinkling shapes (transform and opacity on the compositor), never layout or repaint.
  *
- * The palettes are the two the board has: pastels under black text on the light board, deep colors under white text on the dark one.
- * They reach the stylesheet as custom properties on the effect's own box, and fab.css picks the pair for the mode.
+ * The palettes are the two the board has: pastels under black text on the light board, deep colors under white text on the dark
+ * one. FAB_STOPS and FAB_TWINKLE stay in TypeScript as the one list, because the contrast test reads them against the theme's
+ * tokens. They reach the stylesheet as custom properties in the post's style prop, from one frozen object built once at module load
+ * (`PALETTE`), not as a style element: the site's CSP is `style-src 'self'` (web/headers.ts, netlify.toml), which blocks inline
+ * style elements but allows the CSSOM that React's style prop writes through. fab.css picks the pair for the mode.
  */
 import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ratio, type Mode, type Tokens } from '../../../../engine/ui/contrast.ts';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
+import { seeded } from '../seeded.ts';
 import { useInView } from './inView.ts';
 import './fab.css';
 
@@ -24,7 +29,8 @@ export const FAB_STOPS: { readonly light: readonly string[]; readonly dark: read
   light: Object.freeze(['#ffb9be', '#ffc09f', '#fff2a0', '#a8e6a1', '#9fd3ff', '#d8c0ff']),
   dark: Object.freeze(['#7f0c1e', '#682d06', '#4a3d00', '#0d471e', '#133b84', '#522191']),
 });
-/** The twinkles' ink on each board: white on the pastels, black on the deep colors, so a twinkle never lessens the text's contrast. */
+/** The twinkles' ink on each board: white on the pastels, black on the deep colors, so a twinkle never lessens the text's
+ * contrast. */
 export const FAB_TWINKLE = Object.freeze({ light: '#ffffff', dark: '#000000' });
 /** How many twinkles a level carries. */
 const TWINKLES = [0, 4, 8, 10] as const;
@@ -32,10 +38,20 @@ const TWINKLES = [0, 4, 8, 10] as const;
 const MOST = 3;
 const SHAPE = ['', 'cycle', 'linear', 'radial'] as const;
 
+/** The palettes as custom properties, built once from FAB_STOPS and FAB_TWINKLE and shared by every post's style prop. */
+const PALETTE: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries([
+    ['--dw-fab-twinkle-light', FAB_TWINKLE.light],
+    ['--dw-fab-twinkle-dark', FAB_TWINKLE.dark],
+    ...FAB_STOPS.light.map((c, i) => [`--dw-fab-light-${i + 1}`, c]),
+    ...FAB_STOPS.dark.map((c, i) => [`--dw-fab-dark-${i + 1}`, c]),
+  ]),
+);
+
 /** The tokens that color text inside a post: its words, links, visited links, and muted words such as a quote's byline. */
 const POST_INK = ['--kb-fg', '--kb-link', '--kb-link-visited', '--kb-muted'] as const;
 
-/** Every stop and twinkle of the palettes that fails 4.5:1 against any text color inside a post on its board, in words; none when all hold. */
+/** Every stop and twinkle that fails 4.5:1 against any text color inside a post on its board, in words; none when all hold. */
 export function stopsAreReadable(
   tokens: Readonly<Record<Mode, Tokens>>,
   stops: { readonly light: readonly string[]; readonly dark: readonly string[] },
@@ -48,23 +64,14 @@ export function stopsAreReadable(
       for (const mode of modes) {
         for (const token of POST_INK) {
           const r = ratio(tokens[mode][token]!, ink);
-          if (r < 4.5) failures.push(`${board} palette: ${ink} is ${r.toFixed(2)}:1 against ${token} in ${mode}, under 4.5:1`);
+          if (r < 4.5) {
+            failures.push(`${board} palette: ${ink} is ${r.toFixed(2)}:1 against ${token} in ${mode}, under 4.5:1`);
+          }
         }
       }
     }
   }
   return failures;
-}
-
-/** A small seeded sequence from the plays' ids: the same plays draw the same twinkles on every screen. */
-function seeded(seed: string): () => number {
-  let h = 2166136261;
-  for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-  return () => {
-    h = Math.imul(h ^ (h >>> 15), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    return ((h ^= h >>> 16) >>> 0) / 4294967296;
-  };
 }
 
 export function FeelinFabEffect({ post, plays, children }: EffectProps) {
@@ -85,22 +92,19 @@ export function FeelinFabEffect({ post, plays, children }: EffectProps) {
     }));
   }, [seed, level]);
   const held = !moving && level === 1;
-  const palette: Record<string, string> = { '--dw-fab-twinkle-light': FAB_TWINKLE.light, '--dw-fab-twinkle-dark': FAB_TWINKLE.dark };
-  FAB_STOPS.light.forEach((c, i) => { palette[`--dw-fab-light-${i + 1}`] = c; });
-  FAB_STOPS.dark.forEach((c, i) => { palette[`--dw-fab-dark-${i + 1}`] = c; });
-  if (held) palette['--dw-fab-still'] = String(still);
   return (
     <div
       ref={box} className={`dw-fab dw-fab-${SHAPE[level]}`} data-kb-fab="" data-kb-level={level}
-      data-kb-moving={moving ? 'true' : 'false'} data-kb-running={running ? 'true' : 'false'} data-kb-still={held ? still : undefined}
-      style={palette as CSSProperties}
+      data-kb-moving={moving ? 'true' : 'false'} data-kb-running={running ? 'true' : 'false'}
+      data-kb-still={held ? still : undefined}
+      style={(held ? { ...PALETTE, '--dw-fab-still': String(still) } : PALETTE) as CSSProperties}
     >
       <span className="dw-fab-ground" aria-hidden="true">
         <span className="dw-fab-layer" />
         {twinkles.map((t, i) => (
           <svg
             key={i} className="dw-fab-twinkle" viewBox="0 0 100 100" focusable="false"
-            style={{ left: t.left, top: t.top, width: t.size, height: t.size, animationName: moving ? 'dw-fab-twinkle' : 'none', animationDelay: t.delay } as CSSProperties}
+            style={{ left: t.left, top: t.top, width: t.size, height: t.size, animationDelay: t.delay }}
           >
             <polygon points="50,0 62,38 100,50 62,62 50,100 38,62 0,50 38,38" />
           </svg>
