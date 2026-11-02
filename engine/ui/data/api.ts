@@ -505,7 +505,7 @@ export interface Preferences {
   readonly textSize: 100 | 125 | 150 | 200;
   /**
    * The card kinds (their keys) this account has met: a kind's first mark on a page shows its callout until the kind is in this
-   * set. Changed only by `meetCard` and `forgetCardsMet`, never by `setPreferences`; at most 64, read by its own account alone.
+   * set. Changed only by `meetCard`, `forgetCardsMet` and `restoreTips`, never by `setPreferences`; at most 64, read by its own account alone.
    */
   readonly cardsMet: readonly string[];
   /**
@@ -529,7 +529,7 @@ export interface Preferences {
 }
 
 /**
- * What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `forgetCardsMet`) or the two marks.
+ * What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `forgetCardsMet`, `restoreTips`), the two marks, or the welcome and tips (their own calls).
  * A `toasts` of null puts the choice back to the instance's defaults; a key left out leaves the choice as it is.
  */
 export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet' | 'alertsSeenAt' | 'settlementSeen' | 'welcomedAt' | 'tips' | 'tipsSeen'>>;

@@ -4,7 +4,8 @@
  * This is the one place a Supabase client lives ("Portable by construction"), and it reads only
  * what tools/check-web-reads.mjs allows: public projections and the signed-in player's own rows.
  * Every write goes through the `act` function (it validates and sends the broadcasts) except the
- * nine rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, forget_cards_met, see_alerts, see_settlement, set_profile, release_effect, post_update, which is an admin's alone) and the
+ * fourteen rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, forget_cards_met, see_alerts, see_settlement, see_welcome, see_tip,
+ * skip_tips, restore_tips, replay_tour, set_profile, release_effect, post_update, which is an admin's alone) and the
  * avatar, which is a multipart form to the `avatar` function. Sign-in goes through the `account`
  * function only; Auth's own code endpoints are never called, and the session the `account` function
  * answers with is installed with `auth.setSession`.

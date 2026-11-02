@@ -649,7 +649,10 @@ describe('the account', () => {
     for (let i = 2; i < 64; i++) must(await fake.meetCard(`card-${i}`));
     expect(await fake.meetCard('one-too-many')).toEqual(refused('at most 64 cards are kept as met'));
     expect(must(await fake.meetCard('whoops')).cardsMet).toHaveLength(64);
-    expect(must(await fake.forgetCardsMet()).cardsMet).toEqual([]);
+    must(await fake.seeTip('grid'));
+    must(await fake.skipTips());
+    /* forget_cards_met is restore_tips until the Settings row is replaced: it forgets every card and tip and turns tips on. */
+    expect(must(await fake.forgetCardsMet())).toMatchObject({ cardsMet: [], tips: 'on', tipsSeen: [] });
     expect((await fake.preferences()).cardsMet).toEqual([]);
   });
   test('the tips: the welcome is seen once, a tip once, 64 at most, skipping and restoring and replaying undo each other', async () => {
