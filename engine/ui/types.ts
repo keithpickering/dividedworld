@@ -77,10 +77,11 @@ export interface UiCopy {
 /** The instance's words for the alerts that name something it invented. Each is plain and true: the glass describes the game, it never bluffs. */
 export interface AlertCopy {
   /**
-   * A hint's line and its detail by the pattern that fired (`leading:<quadrant>`, `divisive` or `thunder`, the alerts design's section 5);
-   * undefined for a pattern the instance has no words for, which is then said in the engine's plain words. May joke, may not mislead.
+   * A hint's line and its detail by the pattern that fired (`leading:<quadrant>`, `divisive` or `thunder`, the alerts design's section 5),
+   * and whether the Act it is about is a card play (`about.card`) and not a post: a hint can be about either, and for a thunder it says
+   * which side of the theft the player is on. Undefined for a pattern the instance has no words for, which is then said in the engine's plain words. May joke, may not mislead.
    */
-  readonly hint?: (pattern: string) => { readonly line: string; readonly detail: string } | undefined;
+  readonly hint?: (pattern: string, about: { readonly card: boolean }) => { readonly line: string; readonly detail: string } | undefined;
   /**
    * A season-news alert's line and detail by its sub (`results`, `tally`, `bossArrived`, `bossLeft`) and the row (the Boss's name, a count of names);
    * undefined for one the instance has no words for, which is then said in the engine's plain words. The link to the Season page is the engine's.

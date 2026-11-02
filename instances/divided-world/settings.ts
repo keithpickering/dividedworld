@@ -94,6 +94,12 @@ export const defaults: Settings = deepFreeze<Settings>({
   reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
   /** A character effect lasts at most a week; a thread's and a board's at most a day. */
   reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
+  /**
+   * Hints (the alerts design's section 5): a pattern needs a crowd (eight reactions in the window, so one stray reaction is never a trend),
+   * a clear lead (six in ten in one quadrant), and a real split (three in ten on each side to be divisive), counted over six hours.
+   * Starting points the season review replaces.
+   */
+  hints: { least: 8, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } },
   /** The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone. */
   cardSettings: { 'whoops.clean': 95 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */

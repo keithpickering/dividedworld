@@ -12,6 +12,7 @@
 import type { BeyondPost, CardRules, Rarity } from './cards.ts';
 import type { StockLineKey } from '../system/stock.ts';
 import type { Duty } from '../system/duties.ts';
+import type { HintSettings } from './hints.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
 
 /** Where a reaction sits on the two axes the classes read: how excited, how positive. */
@@ -36,7 +37,7 @@ export type Hundredths = number;
 
 /** A length of time in calendar units, so "3 months" stays three months in SQL too. */
 export interface Span {
-  /** Minutes only where a setting says it takes them (editGrace, presenceWindow); a window, a season and a cooldown count days or more. */
+  /** Minutes only where a setting says it takes them (editGrace, presenceWindow, hints.window); a window, a season and a cooldown count days or more. */
   readonly unit: 'minute' | 'day' | 'week' | 'month';
   readonly count: number;
 }
@@ -179,6 +180,11 @@ export interface Settings {
    * `demandCheckMinutes` allow: a met demand then ends a few minutes later. A starting point.
    */
   readonly demandChecksPerTick: number;
+  /**
+   * When a post's or a card's reactions earn their player a hint (the alerts design's section 5): the fewest reactions, the share
+   * that makes one quadrant lead, the share that makes it divisive, and how far back reactions count. Computed from public counts only.
+   */
+  readonly hints: HintSettings;
   /** The model each tier of a call uses (the meeting runs on `strong`, small lines on `light`), as the provider names it. */
   readonly modelTiers: { readonly strong: string; readonly light: string };
 }

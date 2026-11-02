@@ -55,6 +55,18 @@ function namedNumbers(v: unknown): string | null {
   return bad.length ? `an object of named numbers, and ${bad.map((k) => `"${k}"`).join(', ')} is not a number` : null;
 }
 
+/**
+ * The hints setting (engine/rules/hints.ts): a least of whole reactions, a share above one half (so no two quadrants can both
+ * lead), a split of at most one half (both sides cannot each hold more than half), and a window that may count minutes.
+ */
+function hintsRule(v: unknown): string | null {
+  const shape = 'an object giving least (a whole number of reactions, at least 1), share (above 0.5, at most 1), split (above 0, at most 0.5) and window (a span: a unit of minute, day, week or month and a whole count from 1 to 1000)';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const h = v as Record<string, unknown>;
+  const num = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+  return isWhole(h.least, 1) && num(h.share) && h.share > 0.5 && h.share <= 1 && num(h.split) && h.split > 0 && h.split <= 0.5 && isSpan(h.window, GRACE_UNITS) ? null : shape;
+}
+
 /** The phases setting: each phase holds its numbers as whole numbers, at least 1. */
 function phasesRule(v: unknown): string | null {
   const shape = 'an object of honeymoon, reign and meltdown, each holding its numbers (honeymoon and meltdown also their days) as whole numbers, at least 1';
@@ -113,6 +125,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
   meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   phases: phasesRule,
+  hints: hintsRule,
   inheritanceGraceDays: whole(0, 'days'),
   rosterRecentExcluded: whole(0, 'Bosses'),
   structuralHoldHours: whole(1, 'hours'),

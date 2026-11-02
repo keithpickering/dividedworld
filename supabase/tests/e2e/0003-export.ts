@@ -103,6 +103,8 @@ test('an instance exported and imported into a fresh database is the same instan
       -- A follow chosen over the default (0059), an alert written with the Act it is about (0058), and the account's two marks (0057).
       insert into thread_follows (account, thread, follow) values (bob, t, true), (ann, t, false);
       insert into alerts (account, kind, act, character) values (ann, 'quote', p, a);
+      -- A hint fired for Ann's post (0065): the pattern it fired once, carried so a hint is not fired again after an import.
+      insert into hints_fired (act, pattern) values (p, 'divisive');
       -- Presence: a mask browsing a thread, and a mask hidden from the online lists.
       insert into presence (character, place_kind, place, board, place_since, online_since, seen_at) values (b, 'thread', t, (select board from threads where id = t), now(), now(), now());
       insert into presence_hidden (character) values (a);

@@ -58,6 +58,7 @@ const settings: Settings = {
   setLasts: { unit: 'day', count: 7 },
   reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
   reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
+  hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } },
 };
 
 const bot: ModBotPersona = {
@@ -527,6 +528,19 @@ test('presence: a window that may count minutes, a most of names, and a poll bet
   }
   assert.deepEqual(settingsProblems({ ...settings, presenceWindow: { unit: 'day', count: 1 } }), []);
   assert.match(settingsProblems({ ...settings, presenceWindow: { unit: 'second', count: 300 } } as unknown as Settings).join('\n'), /presenceWindow/);
+});
+
+test('hints: a least of whole reactions, a share above a half, a split of at most a half, a window that may count minutes', () => {
+  const { hints: _gone, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "hints" is missing/);
+  assert.deepEqual(settingsProblems({ ...settings, hints: { ...settings.hints, least: 1, share: 1, split: 0.5 } }), []);
+  const bad = (over: Record<string, unknown>) => settingsProblems({ ...settings, hints: { ...settings.hints, ...over } as never }).join('\n');
+  for (const least of [0, 2.5, '10']) assert.match(bad({ least }), /setting "hints"/, `least ${least}`);
+  for (const share of [0.5, 0, 1.1, '0.6']) assert.match(bad({ share }), /setting "hints"/, `share ${share}`);
+  for (const split of [0, 0.51, 1, -0.1]) assert.match(bad({ split }), /setting "hints"/, `split ${split}`);
+  for (const window of [{ unit: 'second', count: 30 }, { unit: 'minute', count: 0 }, 360, null]) assert.match(bad({ window }), /setting "hints"/, JSON.stringify(window));
+  assert.match(settingsProblems({ ...settings, hints: [] as never }).join('\n'), /setting "hints"/);
+  assert.match(settingsProblems({ ...settings, hints: { least: 10, share: 0.6, split: 0.3 } as never }).join('\n'), /setting "hints"/, 'a missing window');
 });
 
 // The card mechanic's pairings (docs/plans/2026-11-01-card-plays-plan.md, Task 1): each refused, naming the card.

@@ -139,7 +139,7 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
       return { line: ['Your trap sprang'], detail: sentences(card ? [`The trap was ${card}, in `, ...(row.title ? [{ em: row.title }] : ['a thread']), '.'] : inTitle(row)), ways: postWay(post ?? act, row, ctx), who };
     }
     case 'hint': {
-      const own = row.sub === null ? undefined : ctx.ui.copy.alerts?.hint?.(row.sub);
+      const own = row.sub === null ? undefined : ctx.ui.copy.alerts?.hint?.(row.sub, { card: act?.kind === 'card' });
       const post = aboutPost(act, ctx);
       return {
         line: [own ? own.line : `A pattern in the reactions to ${ownPost(row.name)}`],

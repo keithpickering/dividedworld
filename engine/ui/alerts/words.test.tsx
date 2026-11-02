@@ -118,6 +118,13 @@ describe('a hint and a ruling', () => {
     expect(said(r, own)).toMatchObject({ line: 'Your post is picking up heat', detail: 'The crowd is into it.' });
     expect(said({ ...r, sub: 'thunder' }, own).line).toBe('A pattern in the reactions to Pipewrench\'s post');
   });
+  test('the instance is told whether the hint is about a card play, so a card is not called a post', () => {
+    const seen: [string, boolean][] = [];
+    const spy: WordsContext = { ...ctx([act('post4', { seq: 4 }), act('play', { kind: 'card', targetActId: 'post4', payload: { card: 'whoops', reach: 'post' } })]), ui: { copy: { siteName: 'T', siteTagline: 't', shopName: 'S', reducedMotionCard: 'x', alerts: { hint: (p, about) => { seen.push([p, about.card]); return undefined; } } } } };
+    wordsFor(r, spy);
+    wordsFor({ ...r, act: 'play', sub: 'thunder' }, spy);
+    expect(seen).toEqual([['leading:excitedNegative', false], ['thunder', true]]);
+  });
   test('a ruling is said generically, so a later build need only add its sub', () => {
     expect(said(row({ kind: 'ruling', sub: 'whatever', act: 'post4', character: 'c1', name: 'Pipewrench', title: 'Hobbies' }), c)).toEqual({
       line: 'A ruling landed on Pipewrench', detail: 'The ruling is public, on the board. In Hobbies.',
