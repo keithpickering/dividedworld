@@ -4,7 +4,7 @@
  * This is the one place a Supabase client lives ("Portable by construction"), and it reads only
  * what tools/check-web-reads.mjs allows: public projections and the signed-in player's own rows.
  * Every write goes through the `act` function (it validates and sends the broadcasts) except the
- * six rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, forget_cards_met, set_profile, release_effect) and the
+ * eight rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, forget_cards_met, see_alerts, see_settlement, set_profile, release_effect) and the
  * avatar, which is a multipart form to the `avatar` function. Sign-in goes through the `account`
  * function only; Auth's own code endpoints are never called, and the session the `account` function
  * answers with is installed with `auth.setSession`.
@@ -101,6 +101,7 @@ function toPreferences(r: Row): Preferences {
     theme: r['theme'] ?? d.theme, postbit: r['postbit'] ?? d.postbit, motion: r['motion'] ?? d.motion,
     smoke: r['smoke'] ?? d.smoke, contrast: r['contrast'] ?? d.contrast, textSize: num(r['text_size'], d.textSize) as Preferences['textSize'],
     cardsMet: Array.isArray(r['cards_met']) ? r['cards_met'].filter((k): k is string => typeof k === 'string') : d.cardsMet,
+    alertsSeenAt: str(r['alerts_seen_at']), settlementSeen: str(r['settlement_seen']),
   };
 }
 
@@ -870,7 +871,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return a.ok ? { ok: true, value: a.value['hidden'] === true } : a;
     },
     async preferences(): Promise<Preferences> {
-      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,cards_met').limit(1)))[0];
+      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,cards_met,alerts_seen_at,settlement_seen').limit(1)))[0];
       return r ? toPreferences(r) : DEFAULT_PREFERENCES;
     },
     async setPreferences(p) {
@@ -887,6 +888,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async forgetCardsMet() {
       const a = await rpcWrite(() => client.rpc('forget_cards_met'));
       return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    async seeAlerts(at) {
+      const a = await rpcWrite(() => client.rpc('see_alerts', { at }));
+      return a.ok ? { ok: true, value: str(a.value['seen']) ?? at } : a;
+    },
+    async seeSettlement(endsAt) {
+      const a = await rpcWrite(() => client.rpc('see_settlement', { ends_at: endsAt }));
+      return a.ok ? { ok: true, value: str(a.value['seen']) ?? endsAt } : a;
     },
     /*
      * A page of the player's own log: each of its own views read newest first, at or before the cursor and a page long, then the

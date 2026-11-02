@@ -503,13 +503,20 @@ export interface Preferences {
    * set. Changed only by `meetCard` and `forgetCardsMet`, never by `setPreferences`; at most 64, read by its own account alone.
    */
   readonly cardsMet: readonly string[];
+  /**
+   * When the account last opened Alerts (an ISO time), or null if it never has: what arrived after it is new, on every device. Changed
+   * only by `seeAlerts`, only forward; read by its own account alone.
+   */
+  readonly alertsSeenAt: string | null;
+  /** The end (an ISO time) of the last settlement whose summary the account has seen, or null. Changed only by `seeSettlement`, only forward. */
+  readonly settlementSeen: string | null;
 }
 
-/** What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `forgetCardsMet`). */
-export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet'>>;
+/** What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `forgetCardsMet`) or the two marks. */
+export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet' | 'alertsSeenAt' | 'settlementSeen'>>;
 
 /** What an account's preferences are before it has set any (account_preferences' defaults). */
-export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [] };
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null };
 
 export interface MyInvite {
   readonly id: number;
@@ -871,6 +878,13 @@ export interface KayfaApi {
   meetCard(card: string): Promise<Answer<Preferences>>;
   /** Empties the set of cards met, so every first-time callout shows again ("Show card tips again" in Settings). */
   forgetCardsMet(): Promise<Answer<Preferences>>;
+  /**
+   * Marks Alerts as opened at `at` (an ISO time) on the account, and answers the mark as it now stands. Only forward: an older time
+   * leaves the mark and answers it, and a time past the server's clock is taken as now.
+   */
+  seeAlerts(at: string): Promise<Answer<string>>;
+  /** Marks the settlement ending at `endsAt` (an ISO time) as seen on the account, as `seeAlerts` does: only forward; answers the mark. */
+  seeSettlement(endsAt: string): Promise<Answer<string>>;
   estimate(): Promise<Estimate>;
   /** A page of the player's own log (`Log`): the newest with no cursor, then each older page from the last one's `before`. */
   log(before?: string | null): Promise<Log>;

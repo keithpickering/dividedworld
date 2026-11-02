@@ -458,7 +458,7 @@ describe('reads and their rows', () => {
 
   it('answers preferences with the defaults when no row exists', async () => {
     const h = harness(() => rows([]));
-    expect(await h.api.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [] });
+    expect(await h.api.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null });
   });
 
   it('reads the glass\'s three preferences from their columns and sends them to set_preferences by its parameter names', async () => {
@@ -466,10 +466,23 @@ describe('reads and their rows', () => {
       if (r.url.pathname.endsWith('/rpc/set_preferences')) return json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', text_size: 200, cards_met: ['whoops'] });
       return rows([{ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150 }]);
     });
-    expect(await h.api.preferences()).toEqual({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, cardsMet: [] });
-    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,postbit,motion,smoke,contrast,text_size,cards_met');
-    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: ['whoops'] } });
+    expect(await h.api.preferences()).toEqual({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', textSize: 150, cardsMet: [], alertsSeenAt: null, settlementSeen: null });
+    expect(h.to('account_preferences')[0]?.url.searchParams.get('select')).toBe('theme,postbit,motion,smoke,contrast,text_size,cards_met,alerts_seen_at,settlement_seen');
+    expect(await h.api.setPreferences({ smoke: 'off', contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'dark', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, cardsMet: ['whoops'], alertsSeenAt: null, settlementSeen: null } });
     expect(h.to('rpc/set_preferences')[0]?.body).toEqual({ theme: null, postbit: null, motion: null, smoke: 'off', contrast: 'high', text_size: 200 });
+  });
+
+  it('reads the account\'s two marks and moves them by see_alerts and see_settlement, answering the mark as it stands', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/see_alerts')) return json({ seen: '2026-10-29T08:17:00+00:00' });
+      if (r.url.pathname.endsWith('/rpc/see_settlement')) return json({ seen: '2026-10-30T08:17:00+00:00' });
+      return rows([{ alerts_seen_at: '2026-10-29T08:17:00+00:00', settlement_seen: '2026-10-30T08:17:00+00:00' }]);
+    });
+    expect(await h.api.preferences()).toMatchObject({ alertsSeenAt: '2026-10-29T08:17:00+00:00', settlementSeen: '2026-10-30T08:17:00+00:00' });
+    expect(await h.api.seeAlerts('2026-10-01T00:00:00Z')).toEqual({ ok: true, value: '2026-10-29T08:17:00+00:00' });
+    expect(await h.api.seeSettlement('2026-10-30T08:17:00Z')).toEqual({ ok: true, value: '2026-10-30T08:17:00+00:00' });
+    expect(h.to('rpc/see_alerts')[0]?.body).toEqual({ at: '2026-10-01T00:00:00Z' });
+    expect(h.to('rpc/see_settlement')[0]?.body).toEqual({ ends_at: '2026-10-30T08:17:00Z' });
   });
 
   it('reads the cards met from their column and calls meet_card and forget_cards_met by their parameter names', async () => {

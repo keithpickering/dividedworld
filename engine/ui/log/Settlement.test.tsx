@@ -3,7 +3,7 @@
  * it): on the player's first load after a settlement they have not seen, a glass page with a tab per
  * character, the wallet before and after, each reason in the log's own words with its amount, a rank
  * change and a Turn that took effect, with Open my log and Back to the board. It reads the same rows
- * as the log and says nothing the log does not; the last settlement seen is kept on the device.
+ * as the log and says nothing the log does not; the last settlement seen is kept on the account (alerts plan, Task 2), so a second device does not show it again.
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
@@ -13,7 +13,7 @@ import { hudKey } from '../player.tsx';
 import { useLocation } from '../router.tsx';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { LogScreen } from './Log.tsx';
-import { SettlementOnLoad, SettlementScreen, seenKey, startLoad } from './Settlement.tsx';
+import { SettlementOnLoad, SettlementScreen, startLoad } from './Settlement.tsx';
 
 const at = (day: number, hour = 12, minute = 0) => Date.UTC(2026, 9, day, hour, minute);
 
@@ -48,6 +48,9 @@ function Where() {
   where = { path: l.path, state: l.state };
   return null;
 }
+
+/** The account's settlement mark, as the account keeps it (not the device). */
+const seenOf = async (fake: Fake) => (await fake.preferences()).settlementSeen;
 
 function openSummary(fake: Fake, me: string, hud: string) {
   localStorage.clear();
@@ -231,13 +234,28 @@ describe('the summary on the first load after a settlement', () => {
     localStorage.clear();
     const first = load(fake);
     await waitFor(() => expect(where.path).toBe('/log/settlement'));
-    expect(localStorage.getItem(seenKey(me))).toBe(new Date(at(29, 8, 17)).toISOString());
+    expect(await seenOf(fake)).toBe(new Date(at(29, 8, 17)).toISOString());
     first.unmount();
-    /* A new page load, on the same backend's data: only the device's mark keeps it from opening again. */
+    /* A new page load, on the same backend's data: only the account's mark keeps it from opening again. */
     startLoad();
     load(fake);
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(where.path).toBe('/');
+  });
+
+  test('a summary seen on one device is not shown on a second: the mark is the account\'s', async () => {
+    const { fake } = world();
+    localStorage.clear();
+    const first = load(fake);
+    await waitFor(() => expect(where.path).toBe('/log/settlement'));
+    first.unmount();
+    /* A second device: its storage is empty, the account is the same. */
+    localStorage.clear();
+    startLoad();
+    load(fake, '/');
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(where.path).toBe('/');
+    expect(Object.keys(localStorage).filter((k) => k.startsWith('kb-settled-seen'))).toEqual([]);
   });
 
   test('opens nothing before the first settlement, and nothing while it is not on (a glass page, signed out)', async () => {
@@ -255,14 +273,14 @@ describe('the summary on the first load after a settlement', () => {
     renderIn(later.fake, <><SettlementOnLoad active={false} /><Where /></>, { path: '/characters' });
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(where.path).toBe('/characters');
-    expect(localStorage.getItem(seenKey(later.me))).toBeNull();
+    expect(await seenOf(later.fake)).toBeNull();
   });
 
   test('opened by its address, the summary marks its settlement seen, so a load after does not open it again', async () => {
     const { fake, me, pipe } = world();
     openSummary(fake, me, pipe);
     await screen.findByRole('heading', { level: 1, name: 'While you were away' });
-    await waitFor(() => expect(localStorage.getItem(seenKey(me))).toBe(new Date(at(29, 8, 17)).toISOString()));
+    await waitFor(async () => expect(await seenOf(fake)).toBe(new Date(at(29, 8, 17)).toISOString()));
   });
 
   test('a newest settlement that held nothing of the player\'s does not open an older one that did', async () => {
@@ -272,7 +290,7 @@ describe('the summary on the first load after a settlement', () => {
     fake.seed.settle({ at: at(30, 8, 17), debut: false, turns: false, ledger: [{ character: glo, reason: 'heel.drewHeat', amount: 10 }] });
     localStorage.clear();
     load(fake);
-    await waitFor(() => expect(localStorage.getItem(seenKey(me))).toBe(new Date(at(30, 8, 17)).toISOString()));
+    await waitFor(async () => expect(await seenOf(fake)).toBe(new Date(at(30, 8, 17)).toISOString()));
     expect(where.path).toBe('/');
   });
 
@@ -296,7 +314,7 @@ describe('the summary on the first load after a settlement', () => {
       if (leave === 'unmounts') first.unmount();
       else act(() => setActive(false));
       await act(async () => { release(); await new Promise((r) => setTimeout(r, 20)); });
-      expect(localStorage.getItem(seenKey(me))).toBeNull();
+      expect(await seenOf(fake)).toBeNull();
       expect(where.path).toBe('/');
       if (leave === 'unmounts') load(fake);
       else act(() => setActive(true));
@@ -314,7 +332,7 @@ describe('the summary on the first load after a settlement', () => {
     fake.signInAs(me);
     localStorage.clear();
     load(fake);
-    await waitFor(() => expect(localStorage.getItem(seenKey(me))).toBe(new Date(at(29, 8, 17)).toISOString()));
+    await waitFor(async () => expect(await seenOf(fake)).toBe(new Date(at(29, 8, 17)).toISOString()));
     expect(where.path).toBe('/');
   });
 });

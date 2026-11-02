@@ -1404,6 +1404,23 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       account.prefs = { ...account.prefs, cardsMet: [] };
       return ok(account.prefs);
     },
+    seeAlerts(at) {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (!Number.isFinite(Date.parse(at))) return refuse('a mark is a time');
+      /* Only forward, as see_alerts (0057) keeps it. (Not held to the clock: this backend's seeded times and its clock are not one story.) */
+      const held = account.prefs.alertsSeenAt;
+      if (held === null || Date.parse(held) < Date.parse(at)) account.prefs = { ...account.prefs, alertsSeenAt: at };
+      return ok(account.prefs.alertsSeenAt!);
+    },
+    seeSettlement(endsAt) {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (!Number.isFinite(Date.parse(endsAt))) return refuse('a mark is a time');
+      const held = account.prefs.settlementSeen;
+      if (held === null || Date.parse(held) < Date.parse(endsAt)) account.prefs = { ...account.prefs, settlementSeen: endsAt };
+      return ok(account.prefs.settlementSeen!);
+    },
     estimate() {
       const account = me();
       if (!account) throw new Error('sign in to see your estimate');
