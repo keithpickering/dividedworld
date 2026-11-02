@@ -358,6 +358,13 @@ begin
   if (select array_agg(k order by k) from broadcasts_due b, jsonb_object_keys(b.payload) k where b.topic like 'account:%') is distinct from array['act', 'at', 'character', 'id', 'kind', 'sub'] then
     raise exception 'the broadcast holds more than the public projection: %', (select payload from broadcasts_due where topic like 'account:%');
   end if;
+  -- Masks: an alert's id says nothing of how many alerts were written for others (a shared counter's gaps would count them, and
+  -- a skipped alert, one for a target the actor owns, is a private fact). So it is not drawn from a sequence.
+  if (select format_type(a.atttypid, a.atttypmod) from pg_attribute a where a.attrelid = 'alerts'::regclass and a.attname = 'id') is distinct from 'uuid'
+     or (select pg_get_expr(d.adbin, d.adrelid) from pg_attrdef d join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum where d.adrelid = 'alerts'::regclass and a.attname = 'id') ~* 'nextval'
+     or exists (select 1 from pg_depend d where d.refobjid = 'alerts'::regclass and d.classid = 'pg_class'::regclass and d.deptype in ('a', 'i') and (select relkind from pg_class where oid = d.objid) = 'S') then
+    raise exception 'alerts.id is drawn from a sequence, so its gaps count the alerts written for everyone';
+  end if;
   if (select array_agg(c.column_name::text order by c.ordinal_position) from information_schema.columns c where c.table_name = 'alerts' and c.table_schema = 'public')
      is distinct from array['id', 'account', 'kind', 'sub', 'act', 'character', 'at'] then raise exception 'the alert row carries a column besides the account, kind, Act, character and time'; end if;
   if r::text ~ (bob::text || '|' || b1::text) or (select payload::text from broadcasts_due where topic like 'account:%') ~ (bob::text || '|' || b1::text) then

@@ -19,7 +19,9 @@
 -- alert's public projection: kind, sub, Act, character, time. It never names the caster or who reacted.
 
 create table alerts (
-  id bigint generated always as identity primary key,
+  -- Not a sequence: a shared counter's gaps would count the alerts written for everyone, and whether one was skipped (a target the
+  -- actor owns) is a private fact that a player who reads their own ids could measure.
+  id uuid primary key default gen_random_uuid(),
   account uuid not null references accounts (id),
   kind text not null check (kind in ('quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling')),
   sub text,

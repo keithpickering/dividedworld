@@ -92,15 +92,14 @@ revoke execute on function broadcasts_release(jsonb), broadcasts_renew(jsonb), b
 grant execute on function broadcasts_release(jsonb), broadcasts_renew(jsonb), broadcasts_dead(jsonb, text) to service_role;
 
 -- write_alert (0058), with the alert's own id in the account broadcast, so a client that hears an alert twice (a send is at least
--- once) or hears it and then reads the list can tell it is the same one, exactly. The id is a number from one sequence for
--- everyone's alerts, so an account's own ids have gaps: that says only that alerts were written for someone, which every
--- instance with players does, and never whose or for what. Everything else as 0058 wrote it.
+-- once) or hears it and then reads the list can tell it is the same one, exactly. The id is a random uuid (0058), never a
+-- sequence number, so it counts nothing. Everything else as 0058 wrote it.
 create or replace function write_alert(of_character uuid, kind text, sub text, about uuid, acting uuid default null) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   owner_of uuid;
   made timestamptz;
-  made_id bigint;
+  made_id uuid;
 begin
   if of_character is null then return; end if;
   select c.owner into owner_of from characters c where c.id = of_character;

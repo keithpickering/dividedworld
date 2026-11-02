@@ -752,8 +752,8 @@ export interface BoardListener {
 
 /** An alert as the private channel announces it (`account:<id>`, supabase/migrations/0058_alerts.sql): the public projection, with no caster, reactor, account or class. */
 export type LiveAlert = Pick<Alert, 'kind' | 'sub' | 'act' | 'character' | 'at'> & {
-  /** The alert's own id (`alerts.id`), so a client that hears one twice, or hears it and reads the list, can tell it is the same. */
-  readonly id: number;
+  /** The alert's own id (`alerts.id`, a uuid), so a client that hears one twice, or hears it and reads the list, can tell it is the same. */
+  readonly id: string;
 };
 
 export interface AccountListener {
