@@ -195,6 +195,10 @@
 
 /* ---- the Phone board's layout ---- */
 
+:where(:root[data-kb-layout='phone']) .kb-welcome-title {
+  font-size: var(--kb-glass-size-display-l);
+}
+
 :where(:root[data-kb-layout='phone']) .kb-welcome-cols {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -248,6 +252,7 @@
 :where(:root[data-kb-layout='phone']) .kb-welcome-button {
   justify-content: center;
   min-height: 56px;
-  padding: 0 16px;
+  /* The label wraps at large text sizes, and its ink runs past its line boxes, so the fill has room above and below it, in rem to grow with it. */
+  padding: 0.5rem 16px;
   font-size: var(--kb-glass-size-display-xs);
 }
