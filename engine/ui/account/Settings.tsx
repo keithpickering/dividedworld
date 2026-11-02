@@ -8,8 +8,9 @@
  * white, white on black, then the instance's own themes) and the post style, each a row of skewed
  * choices with its sentence. Each is saved to the account the moment it is chosen and applied to the
  * page at once (applyAppearance): the theme restyles the board only, the smoke, contrast and text
- * size the glass and the board together. Tips (a switch, Show tips again, Replay the HUD tour) calls the tips' own functions and the next board page behaves so. The thread reads the post style when it opens, so a change
- * shows on the next thread view with no reload.
+ * size the glass and the board together. The thread reads the post style when it opens, so a change
+ * shows on the next thread view with no reload. Tips (a switch, Show tips again, Replay the HUD tour) calls the tips' own functions,
+ * and the next board page behaves so.
  *
  * Account: the address the session signed in with, plainly and not as a field (it is changed nowhere
  * here), the player's invites (Invites.tsx), and Sign out at its foot. `/invites`, the page invites
@@ -119,7 +120,7 @@ function TipsRow({ on, change }: { readonly on: boolean; readonly change: (how: 
           <span className="kb-acct-seg-face kb-glass-skew" aria-hidden="true"><b className="kb-glass-upright">{on ? 'On' : 'Off'}</b></span>
         </label>
         <p id={`${id}-says`} className="kb-acct-row-sentence">
-          Tips are the small notes that explain the board as you meet it: the HUD tour, the grid and each card's marks. Off hides every tip and card note. On shows the ones you have not read yet.
+          Tips are the small notes that explain the board as you meet it: the HUD tour, the reaction grid, the ghost on your orbs and each card's marks. Off hides every tip and card note. On shows the ones you have not read yet.
           Show tips again also brings back the ones you have read, and turns tips on. Replay the HUD tour shows the three steps of the tour again and turns tips on.
         </p>
         <p>
