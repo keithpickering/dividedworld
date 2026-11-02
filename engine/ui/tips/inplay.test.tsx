@@ -14,7 +14,6 @@ import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { TipsProvider } from './Tips.tsx';
 
-vi.setConfig({ testTimeout: 20_000 });
 beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -51,7 +50,8 @@ describe('the grid tip', () => {
     expect(document.querySelector<HTMLElement>('.kb-tips-ring')).toHaveStyle({ left: '94px', top: '194px', width: '312px', height: '162px' });
     expect(tip.closest('.kb-tips')!.compareDocumentPosition(p.closest('.kb-glass-overlay')!) & Node.DOCUMENT_POSITION_PRECEDING, 'the tip is drawn after the picker, over it').toBeTruthy();
     expect(tip).toContainElement(document.activeElement as HTMLElement);
-    expect(await axeViolations(tip.closest('.kb-tips') as HTMLElement), describeViolations([])).toEqual([]);
+    const v = await axeViolations(tip.closest('.kb-tips') as HTMLElement);
+    expect(v, describeViolations(v)).toEqual([]);
     await gotIt(tip);
     await settle();
     expect(tipDialog('grid')).toBeNull();
@@ -114,8 +114,14 @@ describe('the ghost tip', () => {
 
   test('shows the first time an estimate is on the orbs, pointing at them', async () => {
     const fake = frame();
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const r = this.classList.contains('kb-hud-aura') ? { left: 400, top: 300, width: 120, height: 40 } : { left: 0, top: 0, width: 0, height: 0 };
+      return { ...r, x: r.left, y: r.top, right: r.left + r.width, bottom: r.top + r.height, toJSON: () => r } as DOMRect;
+    });
     show(fake);
     const tip = await screen.findByRole('dialog', { name: 'Title of ghost' });
+    const ring = document.querySelector<HTMLElement>('.kb-tips-ring')!;
+    expect([ring.style.left, ring.style.top, ring.style.width, ring.style.height], 'the ring is on the orbs').toEqual(['394px', '294px', '132px', '52px']);
     await gotIt(tip);
     await settle();
     expect((await fake.preferences()).tipsSeen).toEqual(['ghost']);

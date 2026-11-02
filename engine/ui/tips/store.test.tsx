@@ -70,3 +70,60 @@ describe('a tip and the modal layer', () => {
     expect(s.active()).toBeNull();
   });
 });
+
+describe('the callout line: unseen and note', () => {
+  const make = (see = vi.fn(async () => {})) => ({ see, store: createTipsStore({ see, skip: async () => {} }) });
+
+  test('unseen is false before load', () => {
+    expect(make().store.unseen('first-card')).toBe(false);
+  });
+
+  test('note is a no-op with the tips off', () => {
+    const { store, see } = make();
+    store.load({ tips: 'off', seen: [] });
+    store.note('first-card');
+    expect(see).not.toHaveBeenCalled();
+    expect(store.unseen('first-card')).toBe(false);
+  });
+
+  test('note is a no-op when the key is already seen', () => {
+    const { store, see } = make();
+    store.load({ tips: 'on', seen: ['first-card'] });
+    store.note('first-card');
+    expect(see).not.toHaveBeenCalled();
+    expect(store.unseen('first-card')).toBe(false);
+  });
+
+  test('the account is told once across two notes', () => {
+    const { store, see } = make();
+    store.load({ tips: 'on', seen: [] });
+    store.note('first-card');
+    store.note('first-card');
+    expect(see).toHaveBeenCalledTimes(1);
+    expect(see).toHaveBeenCalledWith('first-card');
+  });
+
+  test('a rejected see is swallowed', async () => {
+    const { store } = make(vi.fn(async () => { throw new Error('offline'); }));
+    store.load({ tips: 'on', seen: [] });
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    expect(() => store.note('first-card')).not.toThrow();
+    await new Promise((r) => setTimeout(r, 10));
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  test('a callout that moves to another mark keeps the line until Got it; a later load does not show it', () => {
+    const { store } = make();
+    store.load({ tips: 'on', seen: [] });
+    expect(store.unseen('first-card')).toBe(true);
+    store.note('first-card');
+    expect(store.unseen('first-card'), 'the bubble that mounts next, on another mark, still carries it').toBe(true);
+    store.done('first-card');
+    expect(store.unseen('first-card'), 'after Got it, the next callout does not').toBe(false);
+    const later = make().store;
+    later.load({ tips: 'on', seen: ['first-card'] });
+    expect(later.unseen('first-card')).toBe(false);
+  });
+});

@@ -120,6 +120,7 @@ export function Hud() {
   const tips = useTipsStore();
   const welcomed = useSyncExternalStore(tips.subscribe, tips.welcomed, tips.welcomed);
   useTour({ plate, orbs: aura, hand: handButton }, signedIn && player.loaded && hud !== null && welcomed);
+  /* Unlike the tour, the ghost tip is deliberately not gated on the welcome: the plan says the first estimate. */
   /* The ghost tip: the first time the orbs show an estimate (a pending amount), pointing at the orbs' box (the legend that says Ghost is in it). */
   useTip('ghost', aura, { when: signedIn && player.wallet !== null && player.pending !== 0 });
 

@@ -180,6 +180,7 @@ export function Callout({ id, kind, name, hint }: { readonly id: string; readonl
     /* The bubble goes with the press, so focus goes back to the mark it hung from (the sibling before it). */
     const mark = box.current?.previousElementSibling;
     if (mark instanceof HTMLElement) mark.focus();
+    tips.done('first-card');
     store.meet(kind);
   };
   return (
