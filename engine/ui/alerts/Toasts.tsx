@@ -9,9 +9,11 @@
  * that is there before anything arrives, so each toast is announced as it is added.
  *
  * While the hand is open (`hold`) the column is hidden, the hand fans through the same corner; the toasts stay where they are in the live region, so
- * closing the hand does not add them again and a screen reader does not say them twice, and their clocks stand still, so each keeps the time it had
- * left and nothing is lost to the hand. (One that arrives while the hand is open is added to a hidden region and may not be announced; it is on screen
- * when the hand closes and in Alerts.) A toast is a nudge, never a state: it names its way out (its dismiss button, or it fades by
+ * closing the hand does not draw them again, and their clocks stand still, so each keeps the time it had left and nothing is lost to the hand.
+ *
+ * What a screen reader is told is a region of its own, always drawn and visually hidden (a polite status), apart from the visual list: each toast is
+ * announced once, as "line. detail", when it becomes visible. That is on arrival, or for one that arrived while the hand was open, when the hand closes.
+ * Each announcement leaves the region after a couple of seconds, so it does not grow. A toast is a nudge, never a state: it names its way out (its dismiss button, or it fades by
  * itself) and everything it said is on the Alerts page. Only the kinds the player keeps on toast (toast-kinds.ts); every alert still counts.
  *
  * What a toast says is read for the alert alone: the Act it names and the Act that names, the thread's title and the character's public name, all public
@@ -32,6 +34,8 @@ import './toasts.css';
 /** How many show at once, and how long each stays (unpaused). */
 export const TOASTS_SHOWN = 3;
 export const TOAST_MS = 6000;
+/** How long an announcement stays in the status region. */
+export const SAID_MS = 2500;
 
 interface Toast {
   readonly id: string;
@@ -137,8 +141,31 @@ export function Toasts({ arrivals, hold, returnFocus }: ToastsProps) {
   const shown = queue.slice(0, TOASTS_SHOWN);
   const more = queue.length - shown.length;
 
+  /* Each toast that has become visible is said once. */
+  const [said, setSaid] = useState<readonly { readonly id: string; readonly text: string }[]>([]);
+  const told = useRef(new Set<string>());
+  const clears = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    if (hold) return;
+    const fresh = shown.filter((t) => !told.current.has(t.id));
+    if (fresh.length === 0) return;
+    for (const t of fresh) remember(told.current, t.id);
+    const entries = fresh.map((t) => ({ id: t.id, text: t.detail === '' ? t.line : `${t.line}. ${t.detail}` }));
+    setSaid((now) => [...now, ...entries]);
+    const timer = setTimeout(() => {
+      clears.current.delete(timer);
+      setSaid((now) => now.filter((e) => !entries.some((x) => x.id === e.id)));
+    }, SAID_MS);
+    clears.current.add(timer);
+  }, [hold, shown]);
+  useEffect(() => () => { for (const t of clears.current) clearTimeout(t); }, []);
+
   return (
-    <div ref={column} className="kb-toasts" role="status" aria-live="polite" aria-relevant="additions" aria-label="New alerts">
+    <>
+      <div className="kb-visually-hidden" role="status" aria-live="polite" aria-label="New alerts">
+        {said.map((e) => <p key={e.id}>{e.text}</p>)}
+      </div>
+      <div ref={column} className="kb-toasts">
       <div className="kb-toasts-list" hidden={hold}>
         {more > 0 && (
           <Link to="/alerts" className="kb-toasts-more kb-glass-skew" aria-label={`+${more} more alerts`} onClick={() => { setQueue([]); left.current.clear(); }}>
@@ -151,7 +178,8 @@ export function Toasts({ arrivals, hold, returnFocus }: ToastsProps) {
           ))}
         </AnimatePresence>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -563,3 +563,55 @@ describe('useAlertFeed on its own', () => {
     expect(result.current.arrivals.at(-1)?.id).toBe('id0');
   });
 });
+
+describe('what a screen reader is told', () => {
+  const said = () => Array.from(screen.getByRole('status', { name: 'New alerts' }).querySelectorAll('p')).map((p) => p.textContent);
+
+  test('a toast is announced once, on arrival, in a region that is never the visual list', async () => {
+    const b = backend();
+    mount(b);
+    expect(said()).toEqual([]);
+    await send(b, quote('1'));
+    expect(said()).toEqual(['your post was quoted']);
+    const region = screen.getByRole('status', { name: 'New alerts' });
+    expect(region).not.toHaveAttribute('hidden');
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region.querySelector('article')).toBeNull();
+    expect(toasts()[0]!.closest('[aria-live]')).toBeNull();
+  });
+
+  test('one that arrives while the hand is open is not announced until the hand closes, and then once', async () => {
+    const b = backend();
+    const view = mount(b, { hand: true });
+    await send(b, quote('1'));
+    expect(said()).toEqual([]);
+    view.again({ hand: false });
+    await waitFor(() => expect(said()).toEqual(['your post was quoted']));
+    view.again({ hand: true });
+    view.again({ hand: false });
+    expect(said()).toEqual(['your post was quoted']);
+  });
+
+  test('nothing is said twice, and the region empties after a couple of seconds', async () => {
+    vi.useFakeTimers();
+    const b = backend();
+    const view = mount(b);
+    await send(b, quote('1'));
+    await send(b, quote('1'));
+    view.again({ hand: true });
+    view.again({ hand: false });
+    expect(said()).toEqual(['your post was quoted']);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(said()).toEqual([]);
+    view.again({ hand: true });
+    view.again({ hand: false });
+    expect(said()).toEqual([]);
+  });
+
+  test('the line and its detail are said as one sentence each', async () => {
+    const b = backend({ updates: [{ act: 'u1', name: 'Dev', title: 'Traps bite', at: NOW } as Update] });
+    mount(b);
+    await send(b, { ...quote('1'), kind: 'settlement' as never, sub: '7' });
+    expect(said()[0]).toBe('A settlement is in. It moved your characters.');
+  });
+});
