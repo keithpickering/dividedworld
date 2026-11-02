@@ -3,7 +3,7 @@
  * out as it would bare. Colors come only from the palettes Effect.tsx sets on the box as custom properties (--dw-fab-light-N for the
  * light board, --dw-fab-dark-N for the dark), picked here for the mode the way the theme contract picks (tools/check-theme.mjs): light
  * on the base, dark under the device's setting unless the player chose light, and again when the player chose dark. The words keep a
- * text shadow in the board's ground. Animation moves a background position or a twinkle's opacity and scale, never layout, and is
+ * text shadow in the board's ground. Animation moves only transform and opacity, on layers painted once (the rainbow is a gradient on an oversized layer the compositor slides inside the clipped ground; a twinkle is a drawn SVG star), never layout or paint, and is
  * paused while the post is out of view (data-kb-running) and off under reduced motion (data-kb-moving, which Effect.tsx reads as the player's setting, else the device's; no media query here, so a player's "full" holds).
  * Level 1 sits on the stop Effect.tsx chose (data-kb-still) when held still.
  */
@@ -44,7 +44,15 @@
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background-repeat: no-repeat;
+}
+/* The rainbow is painted once on a layer larger than the post; the compositor slides it, so no frame repaints it. */
+.dw-fab-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  will-change: transform;
   animation-duration: 30s;
   animation-iteration-count: infinite;
   animation-direction: alternate;
@@ -55,46 +63,52 @@
   z-index: 1;
   text-shadow: 0 0 2px var(--kb-bg), 0 0 6px var(--kb-bg);
 }
-/* Level 1: the whole background drifts slowly through the rainbow. */
-.dw-fab-cycle .dw-fab-ground {
+/* Level 1: the whole background drifts slowly through the rainbow (a layer six boxes wide slid by five). */
+.dw-fab-cycle .dw-fab-layer {
+  width: 600%;
   background-image: linear-gradient(90deg, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6));
-  background-size: 600% 100%;
-  animation-name: dw-fab-drift;
+  animation-name: dw-fab-drift-6;
   animation-timing-function: linear;
 }
 /* Level 2: an animated linear rainbow. */
-.dw-fab-linear .dw-fab-ground {
+.dw-fab-linear .dw-fab-layer {
+  width: 300%;
   background-image: linear-gradient(100deg, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6));
-  background-size: 300% 100%;
-  animation-name: dw-fab-drift;
+  animation-name: dw-fab-drift-3;
   animation-duration: 12s;
 }
 /* Level 3: an animated radial rainbow. */
-.dw-fab-radial .dw-fab-ground {
+.dw-fab-radial .dw-fab-layer {
+  width: 220%;
+  height: 220%;
   background-image: radial-gradient(circle at 50% 50%, var(--dw-fab-1), var(--dw-fab-2), var(--dw-fab-3), var(--dw-fab-4), var(--dw-fab-5), var(--dw-fab-6));
-  background-size: 220% 220%;
   animation-name: dw-fab-spread;
   animation-duration: 14s;
 }
-@keyframes dw-fab-drift {
-  from { background-position: 0% 50%; }
-  to { background-position: 100% 50%; }
+@keyframes dw-fab-drift-6 {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-83.3333%, 0, 0); }
+}
+@keyframes dw-fab-drift-3 {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-66.6667%, 0, 0); }
 }
 @keyframes dw-fab-spread {
-  from { background-position: 0% 0%; }
-  to { background-position: 100% 100%; }
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-54.5455%, -54.5455%, 0); }
 }
 /* Level 1 held still: the one stop chosen on this load. */
-.dw-fab-cycle[data-kb-still="1"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-1), var(--dw-fab-1)); }
-.dw-fab-cycle[data-kb-still="2"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-2), var(--dw-fab-2)); }
-.dw-fab-cycle[data-kb-still="3"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-3), var(--dw-fab-3)); }
-.dw-fab-cycle[data-kb-still="4"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-4), var(--dw-fab-4)); }
-.dw-fab-cycle[data-kb-still="5"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-5), var(--dw-fab-5)); }
-.dw-fab-cycle[data-kb-still="6"] .dw-fab-ground { background-image: linear-gradient(var(--dw-fab-6), var(--dw-fab-6)); }
+.dw-fab-cycle[data-kb-still="1"] .dw-fab-layer { background-image: linear-gradient(var(--dw-fab-1), var(--dw-fab-1)); }
+.dw-fab-cycle[data-kb-still="2"] .dw-fab-layer { background-image: linear-gradient(var(--dw-fab-2), var(--dw-fab-2)); }
+.dw-fab-cycle[data-kb-still="3"] .dw-fab-layer { background-image: linear-gradient(var(--dw-fab-3), var(--dw-fab-3)); }
+.dw-fab-cycle[data-kb-still="4"] .dw-fab-layer { background-image: linear-gradient(var(--dw-fab-4), var(--dw-fab-4)); }
+.dw-fab-cycle[data-kb-still="5"] .dw-fab-layer { background-image: linear-gradient(var(--dw-fab-5), var(--dw-fab-5)); }
+.dw-fab-cycle[data-kb-still="6"] .dw-fab-layer { background-image: linear-gradient(var(--dw-fab-6), var(--dw-fab-6)); }
 .dw-fab-twinkle {
   position: absolute;
-  background: var(--dw-fab-twinkle);
-  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  fill: var(--dw-fab-twinkle);
+  /* Its own small layer always (promoting it only while in view costs a re-raster as posts scroll in), so the scale and fade are the compositor's. */
+  will-change: transform, opacity;
   animation-duration: 3s;
   animation-iteration-count: infinite;
   animation-timing-function: ease-in-out;
@@ -103,11 +117,11 @@
   0%, 100% { opacity: 0.15; transform: scale(0.5); }
   50% { opacity: 1; transform: scale(1); }
 }
-.dw-fab[data-kb-running="false"] .dw-fab-ground,
+.dw-fab[data-kb-running="false"] .dw-fab-layer,
 .dw-fab[data-kb-running="false"] .dw-fab-twinkle {
   animation-play-state: paused;
 }
-.dw-fab[data-kb-moving="false"] .dw-fab-ground,
+.dw-fab[data-kb-moving="false"] .dw-fab-layer,
 .dw-fab[data-kb-moving="false"] .dw-fab-twinkle {
   animation: none;
 }

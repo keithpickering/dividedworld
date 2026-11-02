@@ -184,11 +184,27 @@ describe("Feelin' Fab", () => {
     expect(box()).toHaveAttribute('data-kb-running', 'true');
   });
 
-  test('it animates a background position or a registered property, never layout', () => {
+  test('it animates only transform and opacity, so the compositor moves pre-painted layers and nothing is laid out or repainted', () => {
     const css = read('fab.css').replace(/\/\*[\s\S]*?\*\//gu, '');
-    const frames = [...css.matchAll(/@keyframes[^{]+\{([\s\S]*?)\n\}/gu)].map((m) => m[1]!).join('\n');
-    expect(frames).toMatch(/background-position|--dw-fab-angle|--dw-fab-hue|opacity|transform/u);
-    expect(frames).not.toMatch(/\b(width|height|top|left|right|bottom|margin|padding|font-size)\s*:/u);
+    const blocks = [...css.matchAll(/@keyframes[^{]+\{([\s\S]*?)\n\}/gu)].map((m) => m[1]!);
+    expect(blocks.length).toBeGreaterThan(0);
+    const frames = blocks.join('\n');
+    const props = new Set([...frames.matchAll(/([a-z-]+)\s*:/gu)].map((m) => m[1]!));
+    expect([...props].filter((p) => p !== 'opacity' && p !== 'transform')).toEqual([]);
+    expect(props.has('transform')).toBe(true);
+    expect(props.has('opacity')).toBe(true);
+    /* The gradient sits on a layer the compositor moves, and a twinkle is a drawn shape, not a clipped box. */
+    expect(css).not.toMatch(/background-position/u);
+    expect(css).not.toMatch(/clip-path/u);
+    expect(css).toMatch(/\.dw-fab-layer\s*\{[^}]*will-change:\s*transform/u);
+    expect(css).toMatch(/\.dw-fab-twinkle\s*\{[^}]*will-change:\s*transform,\s*opacity/u);
+    expect(css).toMatch(/\.dw-fab-ground\s*\{[^}]*overflow:\s*hidden/u);
+  });
+
+  test('the rainbow is a layer inside the clipping ground, and the post keeps its own layout', () => {
+    render(<FeelinFabEffect {...props(2)} />);
+    expect(box().querySelector('.dw-fab-ground > .dw-fab-layer')).not.toBeNull();
+    expect(box().querySelectorAll('.dw-fab-ground > .dw-fab-twinkle').length).toBeGreaterThan(0);
   });
 
   test('the words keep a text shadow, are drawn above the rainbow, and take no pointer from the ground', () => {

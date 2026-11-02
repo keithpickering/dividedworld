@@ -6,8 +6,8 @@
  * board's ground, and every stop holds the theme's post text, links, visited links and muted words (a quote's byline) at 4.5:1 (`stopsAreReadable`, which the effect's test drives red). So its
  * accessible path is reduced motion alone ("An accessible path costs what the obstacle costs"): level 1 sits on one stop, chosen at
  * random on each load in the reader's own browser and never stored or sent; levels 2 and 3 stay gradients; the twinkles stay where
- * they are. The player's reduced motion is read live. The animation runs only while the post is in view (inView.ts), as a moving
- * background position and never as layout.
+ * they are. The player's reduced motion is read live. The animation runs only while the post is in view (inView.ts), as a sliding
+ * pre-painted layer and twinkling shapes (transform and opacity on the compositor), never layout or repaint.
  *
  * The palettes are the two the board has: pastels under black text on the light board, deep colors under white text on the dark one.
  * They reach the stylesheet as custom properties on the effect's own box, and fab.css picks the pair for the mode.
@@ -96,11 +96,14 @@ export function FeelinFabEffect({ post, plays, children }: EffectProps) {
       style={palette as CSSProperties}
     >
       <span className="dw-fab-ground" aria-hidden="true">
+        <span className="dw-fab-layer" />
         {twinkles.map((t, i) => (
-          <span
-            key={i} className="dw-fab-twinkle"
+          <svg
+            key={i} className="dw-fab-twinkle" viewBox="0 0 100 100" focusable="false"
             style={{ left: t.left, top: t.top, width: t.size, height: t.size, animationName: moving ? 'dw-fab-twinkle' : 'none', animationDelay: t.delay } as CSSProperties}
-          />
+          >
+            <polygon points="50,0 62,38 100,50 62,62 50,100 38,62 0,50 38,38" />
+          </svg>
         ))}
       </span>
       <div className="dw-fab-words">{children}</div>
