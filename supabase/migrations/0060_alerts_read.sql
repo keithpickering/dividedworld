@@ -34,8 +34,10 @@
 -- settlements and their ties. The unread count reads each source with a limit of 10. The ledger is bounded by settlement ids drawn
 -- from the settlements that qualify by applied_at (the largest id applied before the cursor; the smallest id applied after the
 -- mark), so the bound is exact whatever order ids and times came in, and the comparison itself is on applied_at, through the join.
--- Only the order of the settlements within a page is by id: a settlement is applied under a lock with applied_at its own
--- transaction's time, so a later id is a later settlement. The statements keep their arguments as $1, $2
+-- Only the order of the settlements within a page is by id. A settlement is applied under a lock, but applied_at is its own
+-- transaction's start, so a transaction that waited on the lock can take a higher id with an earlier time: a sub-second
+-- inversion, which can misplace one settlement at a page's edge (it stays in the log and the summary). Ordering st_k by
+-- applied_at would cost a join per candidate ledger line; it is a follow-up on the plan's issue. The statements keep their arguments as $1, $2
 -- so that supabase/tests/0065-alerts-read.sql can plan exactly the text shipped here.
 --
 -- my_alerts_unread(): how many of those are newer than the account's alerts_seen_at (0057; never set means everything is new),
