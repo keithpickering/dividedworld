@@ -10,3 +10,11 @@ ostensibly invented the game": "information always accurate, even if it has char
 glass lying." And on the glass's copy: "it also opens up the opportunity for menu descriptions to have a bit of humor
 to them as long as they are still accurate, which itself is a bit of a 'video game tradition'." The rule gained its
 last sentence, bounding the one voice to admins' writing on the Updates page.
+
+The owner's words. In the onboarding design session of 2026-11-02 (`docs/plans/2026-11-02-onboarding-design.md`,
+section 9; #151). The session found that the rule's last sentence bounded the persona to the Updates page, written
+only by admins, while the owner had chosen a welcome page and a Strategy Guide in Gabe's voice, "true information, just
+sort of zazzed up." Asked, the owner accepted the rewording ("Yeah, that works for me") and widened it: "these little
+tooltips for onboarding technically could appear on any page, whatever page is relevant. And those should not be
+excluded from this developer persona voice either." The last sentence now names the welcome page, the guide and the
+tips, committed to the repository and approved by the owner in review.

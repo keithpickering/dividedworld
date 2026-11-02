@@ -103,9 +103,10 @@ The bluffing is the game. The log is what lets a frustrated friend step back and
 the log names which Act did a thing, what it changed and how much Aura moved, in plain words, and it never reveals
 what is hidden: who reacted, or anyone's class. Settings, the account, errors and anything about real moderation are
 written plainly and honestly, for a player's understanding, never in character. The glass never speaks as The System
-or as any character in play; its one voice is the instance's developer persona on its Updates page, written only by
-admins, never by a model, and always true, and the glass's copy may joke wherever it describes the game, but never
-bluffs.
+or as any character in play; its one voice is the instance's developer persona, always true. It speaks on the Updates
+page, written only by admins in the running instance and never by a model, and in the instance's own welcome page,
+Strategy Guide and onboarding tips (on whatever page a tip appears), which are committed to the repository and
+approved by the owner in review. The glass's copy may joke wherever it describes the game, but never bluffs.
 
 ## An accessible path costs what the obstacle costs
 
