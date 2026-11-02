@@ -386,9 +386,8 @@ begin
   perform tests.unbecome();
   perform set_config('request.jwt.claims', jsonb_build_object('sub', ivy, 'role', 'authenticated')::text, true);
   set local enable_seqscan = off;
-  for ln in explain (analyze, buffers) select my_alerts_unread() loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
-  -- The function's own statement, as shipped, so the plan shows the statement and not the call.
   plan := '';
+  -- The function's own statement, as shipped, so the plan shows the statement and not the call.
   execute format('prepare plan_heavy as %s', (select prosrc from pg_proc where proname = 'my_alerts_unread' and pronamespace = 'public'::regnamespace));
   for ln in execute 'explain (analyze, buffers) execute plan_heavy' loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   deallocate plan_heavy;
