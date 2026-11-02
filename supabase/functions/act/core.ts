@@ -13,7 +13,7 @@
  * PostgREST's detail, which can quote a row, nor a constraint's or a table's name.
  */
 import { decide } from '../../../engine/rules/actions.ts';
-import { hintFor, windowStart, type QuadrantCounts } from '../../../engine/rules/hints.ts';
+import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
 import { basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type CardEffect, type CardTarget, type EffectsAbove, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, postgrest, type Db } from '../_shared/rpc.ts';
@@ -212,35 +212,52 @@ const totalOf = (c: QuadrantCounts): number => c.excitedPositive + c.excitedNega
 /**
  * The hint a reaction may have earned (the alerts design's section 5): the window's public counts for the Act reacted to (and, for a
  * card played on a post, the post's), the engine's pick of at most one pattern, and fire_hint, which writes the hint alert for the Act's
- * own player once per Act and pattern. A card that outdraws its post is a hint for both: the post's player and the card's.
+ * own player once per Act and pattern. A card that outdraws its post is a hint for both: the post's player and the card's; once the
+ * card's thunder has been told, it is judged by its own reactions again. Answers whether any hint was written.
  *
  * It reads public counts and their times, never who reacted, and runs after the answer (handleAction), so the reactor's answer and
  * its timing cannot depend on whether a hint fired. A reaction sent again reads the same window and asks again, and SQL fires a
  * pattern once. A transport failure is retried by the connection (the calls are safe to repeat); a database error is a fact about
  * the request and is thrown at once, to be logged by the caller.
  */
-export async function fireHints(service: Db, instance: Instance, about: string, now: Date = new Date()): Promise<void> {
-  const { hints } = (await withDatabaseSettings(instance, service)).settings;
+export async function fireHints(service: Db, instance: Instance, about: string, now: Date = new Date()): Promise<boolean> {
+  const hints = await hintSettings(service, instance, now);
+  const fire = (on: string, pattern: string) => service.rpc<boolean>('fire_hint', { about: on, pattern });
   const since = windowStart(now, hints.window).toISOString();
   const read = await service.rpc<WindowCounts>('act_window_counts', { about, since });
-  if (read.cardOn) {
+  let fired = false;
+  // A card is compared with its post only once it has drawn the least: below it, no thunder is possible, and the post is not read.
+  if (read.cardOn && totalOf(read.counts) >= hints.least) {
     const post = await service.rpc<WindowCounts>('act_window_counts', { about: read.cardOn, since });
-    const pattern = hintFor(read.counts, hints, { cardCount: totalOf(read.counts), postCount: totalOf(post.counts) });
-    if (pattern === 'thunder') {
-      await service.rpc('fire_hint', { about, pattern });
-      await service.rpc('fire_hint', { about: read.cardOn, pattern });
-    } else if (pattern) await service.rpc('fire_hint', { about, pattern });
-    return;
+    if (hintFor(read.counts, hints, { cardCount: totalOf(read.counts), postCount: totalOf(post.counts) }) === 'thunder') {
+      const card = await fire(about, 'thunder');
+      const theirs = await fire(read.cardOn, 'thunder');
+      fired = card || theirs;
+      // A thunder fired once does not hide the card's own pattern for good: when it has already been told, the card is judged by its reactions.
+      if (card) return fired;
+    }
   }
   const pattern = hintFor(read.counts, hints);
-  if (pattern) await service.rpc('fire_hint', { about, pattern });
+  if (pattern) fired = (await fire(about, pattern)) || fired;
+  return fired;
+}
+
+/** The hint settings as the rows hold them, read at most once a minute per connection: a retune is felt within the minute, and a reaction costs no settings read. */
+const HINT_SETTINGS_FOR_MS = 60_000;
+const settingsSeen = new WeakMap<Db, { readonly at: number; readonly hints: HintSettings }>();
+async function hintSettings(service: Db, instance: Instance, now: Date): Promise<HintSettings> {
+  const seen = settingsSeen.get(service);
+  if (seen && now.getTime() - seen.at < HINT_SETTINGS_FOR_MS && now.getTime() >= seen.at) return seen.hints;
+  const { hints } = (await withDatabaseSettings(instance, service)).settings;
+  settingsSeen.set(service, { at: now.getTime(), hints });
+  return hints;
 }
 
 /**
  * An action, answered; then, after the answer and whatever it queued, the write's live updates and the drain of the outbox, handed
  * to `after` (afterTheAnswer in the edge). The drain runs after every action, a refused one included, whether or not the write
  * queued anything, so that no answer differs by it. A written reaction is also checked for a hint (fireHints) in that same later work,
- * before the drain, so the alert it writes is sent with the rest.
+ * after the first drain, with one more drain when a hint was written.
  */
 export async function handleAction(o: {
   readonly dbs: { player: Db; service: Db };
@@ -256,9 +273,10 @@ export async function handleAction(o: {
   const reacted = out.status === 200 && decision.ok && decision.rpc === 'react' && typeof (out.body as Row | null)?.act === 'string' ? (out.body as Row).act as string : null;
   o.after(async () => {
     if (out.broadcasts?.length) await o.send(out.broadcasts).catch((e) => console.error('broadcast threw', e));
-    // Before the drain, which sends the alert it queues. What it throws is logged and never stops the drain.
-    if (reacted) await fireHints(o.dbs.service, o.instance, reacted).catch((e) => console.error('hint check threw', e));
+    // The reaction's own alerts and broadcasts first, never held by the hint's reads; then the hint, and one more drain for the alert it
+    // wrote. What the hint work throws is logged and never stops a drain.
     await o.drain();
+    if (reacted && await fireHints(o.dbs.service, o.instance, reacted).catch((e) => { console.error('hint check threw', e); return false; })) await o.drain();
   });
   return out;
 }

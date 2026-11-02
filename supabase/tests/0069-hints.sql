@@ -39,6 +39,9 @@ begin
      or has_function_privilege('anon', 'act_window_counts(uuid,timestamptz)', 'execute') or has_function_privilege('authenticated', 'act_window_counts(uuid,timestamptz)', 'execute') then
     raise exception 'hints: an API role can execute fire_hint or act_window_counts';
   end if;
+  if not exists (select 1 from pg_indexes where tablename = 'reactions' and indexdef like '%(act, created_at) INCLUDE (kind)%') then
+    raise exception 'hints: the window read has no index on reactions (act, created_at) including kind';
+  end if;
   if not has_function_privilege('service_role', 'fire_hint(uuid,text)', 'execute') or not has_function_privilege('service_role', 'act_window_counts(uuid,timestamptz)', 'execute') then
     raise exception 'hints: the service cannot execute fire_hint or act_window_counts';
   end if;

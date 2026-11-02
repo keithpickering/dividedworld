@@ -424,21 +424,23 @@ const heat = { counts: { ...zero, excitedNegative: 12 }, cardOn: null };
 /** A Db answering by function and recording every call; `windows` answers act_window_counts by the Act asked about. */
 function hinting(windows: Record<string, unknown>, o: { fired?: boolean } = {}) {
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
+  /** Hint calls, sends and drains in the order they happened. */
+  const seq: string[] = [];
   const hints = { least: 8, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } };
   const db: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => {
     calls.push({ fn, args });
+    if (fn === 'act_window_counts' || fn === 'fire_hint') seq.push(`${fn}:${args.about}${args.pattern ? `:${args.pattern}` : ''}`);
     if (fn === 'react') return { act: target, thread: id, tally: { boo: 12 } } as T;
     if (fn === 'instance_settings') return { economy: instance.settings.economy, hints } as T;
     if (fn === 'act_window_counts') return (windows[args.about as string] ?? { counts: zero, cardOn: null }) as T;
     if (fn === 'fire_hint') return (o.fired ?? true) as T;
     return null as T;
   } };
-  return { db, calls };
+  return { db, calls, seq };
 }
 const hintCalls = (calls: { fn: string; args: Record<string, unknown> }[]) => calls.filter((c) => c.fn === 'act_window_counts' || c.fn === 'fire_hint');
-async function reactedWith(db: Db, request: unknown = reacting) {
+async function reactedWith(db: Db, request: unknown = reacting, log: string[] = []) {
   let later: (() => Promise<void>) | undefined;
-  const log: string[] = [];
   const answer = await handleAction({
     dbs: { player: db, service: db }, instance, body: request,
     send: async () => { log.push('send'); }, drain: async () => { log.push('drain'); }, after: (work) => { later = work; },
@@ -447,8 +449,8 @@ async function reactedWith(db: Db, request: unknown = reacting) {
 }
 
 test('a reaction whose window shows a pattern fires its hint, after the answer and before the drain', async () => {
-  const { db, calls } = hinting({ [target]: heat });
-  const { answer, later, log } = await reactedWith(db);
+  const { db, calls, seq } = hinting({ [target]: heat });
+  const { answer, later } = await reactedWith(db, reacting, seq);
   assert.deepEqual(calls.map((c) => c.fn), ['react'], 'the answer was made from the reaction alone');
   assert.equal(answer.status, 200);
   await later();
@@ -458,8 +460,8 @@ test('a reaction whose window shows a pattern fires its hint, after the answer a
     { fn: 'act_window_counts', args: { about: target, since } },
     { fn: 'fire_hint', args: { about: target, pattern: 'leading:excitedNegative' } },
   ]);
-  assert.deepEqual(log, ['send', 'drain'], 'the alert it queued is drained after it');
-  assert.ok(calls.findIndex((c) => c.fn === 'fire_hint') < calls.length, 'and it was written while the drain was still to come');
+  // The reaction's own broadcasts and alerts go out first, never held by the hint's reads; the hint's alert is drained once more.
+  assert.deepEqual(seq, ['send', 'drain', `act_window_counts:${target}`, `fire_hint:${target}:leading:excitedNegative`, 'drain']);
 });
 
 test('the answer is the same whether a hint fires or not, and made before any hint work', async () => {
@@ -555,4 +557,31 @@ test('a transport failure on the hint\'s calls is retried on the request itself,
   const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
   assert.equal(await dbs.service.rpc('fire_hint', { about: target, pattern: 'divisive' }), true);
   assert.deepEqual(seen, ['fire_hint', 'fire_hint', 'fire_hint']);
+});
+
+test('a card whose thunder has already fired is judged by its own reactions after that', async () => {
+  const card = { counts: { ...zero, excitedNegative: 10 }, cardOn: post };
+  const h = hinting({ [target]: card, [post]: { counts: { ...zero, calmPositive: 2 }, cardOn: null } });
+  const fired: Record<string, boolean> = { [`${target}:thunder`]: false, [`${post}:thunder`]: false };
+  const rpc = h.db.rpc;
+  const db: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => {
+    const told = fn === 'fire_hint' && `${args.about}:${args.pattern}` in fired;
+    if (told) h.seq.push(`fire_hint:${args.about}:${args.pattern}`);
+    return told ? (fired[`${args.about}:${args.pattern}`] as T) : rpc<T>(fn, args);
+  } };
+  await (await reactedWith(db, reacting, h.seq)).later();
+  assert.deepEqual(h.seq.filter((s) => s.startsWith('fire_hint')), [`fire_hint:${target}:thunder`, `fire_hint:${post}:thunder`, `fire_hint:${target}:leading:excitedNegative`]);
+});
+
+test('a card under the least is not compared: its post\'s window is not read', async () => {
+  const h = hinting({ [target]: { counts: { ...zero, excitedPositive: 3 }, cardOn: post } });
+  await (await reactedWith(h.db, reacting, h.seq)).later();
+  assert.deepEqual(h.seq.filter((s) => s.startsWith('act_window_counts')), [`act_window_counts:${target}`]);
+});
+
+test('the hint settings are read once a minute per connection, not once a reaction', async () => {
+  const h = hinting({ [target]: heat });
+  await (await reactedWith(h.db)).later();
+  await (await reactedWith(h.db)).later();
+  assert.equal(h.calls.filter((c) => c.fn === 'instance_settings').length, 1);
 });

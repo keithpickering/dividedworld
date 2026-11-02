@@ -24,6 +24,10 @@ create table hints_fired (
 alter table hints_fired enable row level security;
 revoke all on hints_fired from public, anon, authenticated, service_role;
 
+-- The window read (act_window_counts) is one range of an Act's reactions by time, counted by kind: this index answers it without
+-- touching the table, however many reactions an Act has drawn, and it costs one entry per reaction.
+create index reactions_window on reactions (act, created_at) include (kind);
+
 -- The public reaction counts of one Act since `since`, by quadrant, and, where the Act is a card played on a post, that post: the thunder
 -- compares a card with the post it landed on. A reaction exactly at `since` is inside the window. The counts are the four quadrants'
 -- and nothing finer (no kind, no account, no character), so what leaves is what a reader of the thread can add up. An Act nobody
