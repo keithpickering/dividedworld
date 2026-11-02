@@ -22,7 +22,7 @@ const day: SettlementInput = {
   reactions: [
     { act: 'p1', player: 'cat', character: 'ca', kind: 'tomato', at: FROM + 2 * H },
     { act: 'p1', player: 'dee', character: 'de', kind: 'tea', at: FROM + 3 * H },
-    { act: 'p1', player: 'dee', character: 'de', kind: 'angry', at: FROM + 3 * H + 1 },
+    { act: 'p1', player: 'dee', character: 'de', kind: 'nauseated', at: FROM + 3 * H + 1 },
     { act: 'p1', player: 'eve', character: 'ev', kind: 'tomato', at: FROM + 4 * H },
     { act: 'p1', player: 'fay', character: 'fa', kind: 'tomato', at: FROM + 5 * H },
   ],

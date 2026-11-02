@@ -520,6 +520,15 @@ describe('reads and their rows', () => {
     expect(h.to('rpc/see_settlement')[0]?.body).toEqual({ ends_at: '2026-10-30T08:17:00Z' });
   });
 
+  it('reads when the account was opened through my_account_opened, and rejects when it answers none', async () => {
+    let answer: unknown = '2026-10-29T08:17:00+00:00';
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/my_account_opened') ? json(answer) : undefined));
+    expect(await h.api.accountOpenedAt()).toBe('2026-10-29T08:17:00+00:00');
+    expect(h.to('rpc/my_account_opened')).toHaveLength(1);
+    answer = null;
+    await expect(h.api.accountOpenedAt()).rejects.toThrow();
+  });
+
   it('reads the Alerts through my_alerts, a page at a time from a cursor, and the count through my_alerts_unread, bounded', async () => {
     const written = { kind: 'quote', sub: null, act: A, character: B, at: '2026-10-29T08:17:00+00:00', thread: T, name: 'Ana Face', title: 'A title', count: null };
     const followed = { kind: 'followed', sub: null, act: null, character: null, at: '2026-10-29T09:00:00+00:00', thread: T, name: null, title: 'A title', count: 4 };

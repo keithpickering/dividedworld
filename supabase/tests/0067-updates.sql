@@ -15,9 +15,9 @@ end $$;
 -- `unread()` is the HUD's count less it.
 create function pg_temp.old_news() returns integer language sql security definer as $f$
   select (select count(*)::integer from (
-    select 1 from news_landed n where n.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
-    union all select 1 from season_boss_changes h where h.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
-    union all select 1 from season_boss_changes h where h.outgoing is not null and h.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    select 1 from news_landed n where n.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), (select a.created_at from accounts a where a.id = signed_in_account()))
+    union all select 1 from season_boss_changes h where h.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), (select a.created_at from accounts a where a.id = signed_in_account()))
+    union all select 1 from season_boss_changes h where h.outgoing is not null and h.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), (select a.created_at from accounts a where a.id = signed_in_account()))
   ) old)
 $f$;
 create function pg_temp.unread() returns integer language sql security definer as $f$ select my_alerts_unread() - pg_temp.old_news() $f$;
@@ -137,6 +137,13 @@ begin
   perform tests.become(cat);
   if (select count(*) from my_alerts() where kind = 'update') is distinct from 2 or pg_temp.unread() is distinct from 2 then
     raise exception 'a player who never opened Alerts has both new: % / %', (select count(*) from my_alerts() where kind = 'update'), pg_temp.unread();
+  end if;
+  perform tests.unbecome();
+  -- A player who joins after both updates (issue #148): they are in the list, and neither is new.
+  update accounts set created_at = now() + interval '1 second' where id = cat;
+  perform tests.become(cat);
+  if (select count(*) from my_alerts() where kind = 'update') is distinct from 2 or pg_temp.unread() is distinct from 0 then
+    raise exception 'news from before the account was opened is listed but not new: % / %', (select count(*) from my_alerts() where kind = 'update'), pg_temp.unread();
   end if;
   perform tests.unbecome();
 end $$;

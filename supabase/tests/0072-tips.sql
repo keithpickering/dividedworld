@@ -1,4 +1,4 @@
--- The tips' state on the account (supabase/migrations/0067_tips.sql; the onboarding plan's Task 3): the welcome mark, the tips switch and
+-- The tips' state on the account (supabase/migrations/0068_tips.sql; the onboarding plan's Task 3): the welcome mark, the tips switch and
 -- the tips seen, kept on the caller's own account_preferences row and changed by five functions alone. Each answers the whole preferences,
 -- each touches the caller's row only, a key that is not a key is refused in plain words, the set holds 64, and a visitor cannot call any.
 

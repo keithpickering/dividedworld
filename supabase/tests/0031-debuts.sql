@@ -63,7 +63,7 @@ begin
   end if;
 end $$;
 
--- ---- A debut that names the settlement waits, announced, with no tally yet (the default is Drop now since 0066, held by 0071) ----
+-- ---- A debut that names the settlement waits, announced, with no tally yet (the default is Drop now since 0067, held by 0071) ----
 do $$
 declare
   ann uuid := tests.account('debut-default');

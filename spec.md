@@ -93,7 +93,7 @@
 Any Act (except another reaction) can receive **anonymous emoji reactions**. Reactions are mapped onto Russell's Circumplex Model of Affect across four quadrants:
 
 > * **Quadrant 1 — High Arousal / Positive (Excited, Delighted, Happy):** e.g., 🔥, ❤️, 🙌, 🤩  
-> * **Quadrant 2 — High Arousal / Negative (Tense, Angry, Frustrated):** e.g., 🍅, 😡, 🤬, 👎  
+> * **Quadrant 2 — High Arousal / Negative (Tense, Angry, Disgusted):** e.g., 🍅, 🤢, 🤬, 👎  
 > * **Quadrant 3 — Low Arousal / Positive (Content, Relaxed, Calm):** e.g., 😌, ☕, 🤝, 🧘  
 > * **Quadrant 4 — Low Arousal / Negative (Depressed, Bored, Tired):** e.g., 💤, 🙄, 🗑️, 🥱
 

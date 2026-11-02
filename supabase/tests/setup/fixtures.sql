@@ -49,12 +49,13 @@ insert into pip_styles (key, name, full_image, empty_image) values ('default', '
 create schema tests;
 grant usage on schema tests to anon, authenticated, service_role;
 
--- A player: an auth user and their account.
+-- A player: an auth user and their account, opened when the fixture's season began, so what a test makes later arrived after the
+-- player joined (a mark that was never set counts from the account's opening: 0066). A test of joining sets created_at itself.
 create function tests.account(label text) returns uuid language plpgsql as $$
 declare id uuid;
 begin
   insert into auth.users (email) values (label || '@test.invalid') returning auth.users.id into id;
-  insert into accounts (id) values (id);
+  insert into accounts (id, created_at) values (id, '2000-01-01T00:00:00Z');
   return id;
 end $$;
 

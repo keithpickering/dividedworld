@@ -82,7 +82,7 @@ export const ALLOWED_READS = Object.freeze([
 export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string, count: string, why?: string }[]} */ ([]));
 
 /** The SQL functions a screen may call directly; every other write goes through the `act` function. */
-export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'see_welcome', 'see_tip', 'skip_tips', 'restore_tips', 'resume_tips', 'replay_tour', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'my_alerts', 'my_alerts_unread', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'move_progress', 'here', 'set_presence_hidden', 'effects_above', 'pinned_threads', 'updates', 'season_news', 'post_update']);
+export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'see_welcome', 'see_tip', 'skip_tips', 'restore_tips', 'resume_tips', 'replay_tour', 'my_account_opened', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'my_alerts', 'my_alerts_unread', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'move_progress', 'here', 'set_presence_hidden', 'effects_above', 'pinned_threads', 'updates', 'season_news', 'post_update']);
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);

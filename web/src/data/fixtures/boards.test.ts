@@ -253,7 +253,7 @@ describe('the thread', () => {
     const posts = (await postsOf(fake, thread)).slice(40, 43);
     const tallies = await fake.tallies(posts.map((a) => a.id));
     expect(tallies[posts[0]!.id]).toEqual({ fire: 4, 'eye-roll': 2, tea: 1 });
-    expect(tallies[posts[1]!.id]).toEqual({ angry: 3, tomato: 2, handshake: 1, tea: 1 });
+    expect(tallies[posts[1]!.id]).toEqual({ nauseated: 3, tomato: 2, handshake: 1, tea: 1 });
     expect(tallies[posts[2]!.id]).toEqual({});
     const later = await load('06-turn');
     const third = (await postsOf(later.fake, later.thread))[42]!;

@@ -278,7 +278,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
     seed.react(a3, r3, posts[41]!, 'tea');
   });
   when(POSTED[42] + 9 * MINUTE, () => {
-    for (const [account, character] of [[a1, r1], [a2, r2], [a3, r3]] as const) seed.react(account, character, posts[42]!, 'angry');
+    for (const [account, character] of [[a1, r1], [a2, r2], [a3, r3]] as const) seed.react(account, character, posts[42]!, 'nauseated');
     for (const [account, character] of [[a1, r1], [a2, r2]] as const) seed.react(account, character, posts[42]!, 'tomato');
     seed.react(a3, r3, posts[42]!, 'handshake');
     seed.react(rival, gloomba, posts[42]!, 'tea');
@@ -286,7 +286,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   when(utc(29, 22, 4), () => {
     seed.react(a1, r1, posts[43]!, 'tomato');
     seed.react(a2, r2, posts[43]!, 'tomato');
-    seed.react(a3, r3, posts[43]!, 'angry');
+    seed.react(a3, r3, posts[43]!, 'nauseated');
     seed.react(a4, r4, posts[43]!, 'cursing');
   });
 

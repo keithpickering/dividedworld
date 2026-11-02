@@ -1,4 +1,4 @@
--- "Drop now" is the default debut (supabase/migrations/0066_debut_now.sql): create_character(name, class) with no timing makes a character
+-- "Drop now" is the default debut (supabase/migrations/0067_debut_now.sql): create_character(name, class) with no timing makes a character
 -- that has debuted, at its creation, announced; asking for the settlement still makes one that waits. The onboarding plan, Task 1.
 
 do $$

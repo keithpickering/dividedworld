@@ -110,12 +110,14 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
     newestSettlement: data.rows.find((r) => r.kind === 'settlement')?.sub ?? null,
   };
   const shown = current === null ? data.rows : data.rows.filter((r) => characterOf(r) === current.id);
-  /* Without the mark nothing is new: no divider, and no batching, which is only among the new. */
-  const isFresh = (r: Alert) => data.markKnown && (data.mark === null || Date.parse(r.at) > Date.parse(data.mark));
+  /* Without the mark nothing is new: no divider, and no batching, which is only among the new. An account that has never looked counts
+     from when it joined (issue #148), as the HUD's count does (0066). */
+  const from = data.mark ?? data.joined;
+  const isFresh = (r: Alert) => data.markKnown && (from === null || Date.parse(r.at) > Date.parse(from));
   const items = itemsOf(shown, ctx, isFresh);
   const fresh = items.filter((i) => isFresh(i.rows[0]!));
   const earlier = items.filter((i) => !isFresh(i.rows[0]!));
-  const markAt = data.mark === null ? null : `${utcWhen(data.mark)} UTC`;
+  const sinceWords = data.mark !== null ? `since you last looked, ${utcWhen(data.mark)} UTC` : data.joined !== null ? `since you joined, ${utcWhen(data.joined)} UTC` : null;
 
   /*
    * Focus follows what the player did. After Older it goes to the first row that was loaded, so the keyboard is where the new rows begin; after an
@@ -184,11 +186,11 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
         {data.rows.length > 0 && current !== null && shown.length === 0 && <p className="kb-alerts-empty">Nothing for {current.name} yet. All shows everyone&apos;s.</p>}
         {fresh.length > 0 && (
           <>
-            <h2 className="kb-alerts-divider">{markAt === null ? 'New since you last looked' : `New since you last looked, ${markAt}`}</h2>
+            <h2 className="kb-alerts-divider">{sinceWords === null ? 'New since you last looked' : `New ${sinceWords}`}</h2>
             {rowsOf(fresh, true)}
           </>
         )}
-        {fresh.length === 0 && shown.length > 0 && data.markKnown && markAt !== null && <p className="kb-alerts-nothing">Nothing is new since you last looked, {markAt}.</p>}
+        {fresh.length === 0 && shown.length > 0 && data.markKnown && sinceWords !== null && <p className="kb-alerts-nothing">Nothing is new {sinceWords}.</p>}
         {earlier.length > 0 && (
           <>
             {data.markKnown && <h2 className="kb-alerts-divider kb-alerts-earlier">Earlier</h2>}

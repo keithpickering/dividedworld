@@ -1099,6 +1099,12 @@ export interface KayfaApi {
   /** How many alerts arrived after the account's mark (`my_alerts_unread`), at most `ALERTS_UNREAD_BOUND`; a result at the bound is shown "9+". Rejects when it cannot be read. */
   alertsUnread(): Promise<number>;
   /**
+   * When the caller's account was opened (an ISO time; accounts.created_at, read by its own account alone), or null where it is older
+   * than anything this backend holds: an account that has never opened Alerts counts as new only what arrived after it joined (issue
+   * #148), so the page's divider starts here when there is no mark. Rejects when it cannot be read.
+   */
+  accountOpenedAt(): Promise<string | null>;
+  /**
    * A page of the Updates, newest first, `UPDATES_PAGE` to a page: those older than `before` (an ISO time, exclusive; none for the
    * newest page). The developer persona's posts, which anyone signed in reads; they are the same for every reader.
    */

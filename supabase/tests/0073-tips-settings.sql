@@ -1,4 +1,4 @@
--- Settings' Tips row (supabase/migrations/0068_tips_settings.sql; the onboarding plan's Task 9): resume_tips turns tips on and forgets
+-- Settings' Tips row (supabase/migrations/0069_tips_settings.sql; the onboarding plan's Task 9): resume_tips turns tips on and forgets
 -- nothing; replay_tour also sets the welcome mark when it is empty and leaves a first time alone; forget_cards_met is gone.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
