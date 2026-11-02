@@ -10,6 +10,7 @@
 import type { Quadrant } from '../rules/types.ts';
 import type { CardUi } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
+import type { TipKey } from './tips/keys.ts';
 
 /**
  * A theme: a stylesheet that sets the `--kb-` tokens of engine/ui/tokens.css. `modes` says
@@ -241,4 +242,16 @@ export interface InstanceUi {
   readonly avatars?: Readonly<Record<string, string>>;
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
   readonly cards: readonly CardUi[];
+  /** The instance's onboarding words, in its developer persona's voice (docs/plans/2026-11-02-onboarding-plan.md, Task 4). */
+  readonly onboarding: OnboardingUi;
+}
+
+/**
+ * The words onboarding needs from an instance. `tips` has every tip key the engine knows and none it does not
+ * (`instanceUiProblems`, engine/ui/tips/problems.ts); each is a title (what the spotlight is headed) and a line. `letter` is the
+ * welcome page's letter, Markdown (Task 7 draws it).
+ */
+export interface OnboardingUi {
+  readonly tips: Readonly<Record<TipKey, { readonly title: string; readonly line: string }>>;
+  readonly letter: string;
 }

@@ -13,6 +13,7 @@ import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
 import gabe from './avatars/gabe.png?url';
 import { hintWords } from './hint-words.ts';
+import { onboarding } from './onboarding.ts';
 
 /** The font files, as URLs the bundler gives them, by their path under this folder. */
 const FONT_URLS = import.meta.glob<string>('./fonts/*.woff2', { query: '?url', import: 'default', eager: true });
@@ -94,4 +95,5 @@ export const instanceUi: InstanceUi = Object.freeze({
   avatars: Object.freeze({ gabe }),
   glass,
   cards: cardsUi,
+  onboarding,
 });

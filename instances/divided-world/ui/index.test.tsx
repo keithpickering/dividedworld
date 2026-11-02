@@ -6,6 +6,8 @@ import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
+import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
+import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
 import { instanceUi } from './index.ts';
 
@@ -14,6 +16,16 @@ describe('Divided World\'s developer persona', () => {
     expect(instance.developer).toEqual({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' });
     expect(typeof instanceUi.avatars?.[instance.developer!.avatar!], 'the persona\'s avatar key names a picture').toBe('string');
     expect(instanceUi.avatars!.gabe, 'Gabe\'s face is the sprite\'s PNG').toMatch(/^(data:image\/png|.*gabe.*\.png)/u);
+  });
+});
+
+describe('Divided World\'s onboarding words', () => {
+  test('fill the engine\'s tips exactly, and the check is run against the real instance', () => {
+    expect(instanceUiProblems(instanceUi)).toEqual([]);
+    expect(Object.keys(instanceUi.onboarding.tips).sort()).toEqual([...TIP_KEYS].sort());
+  });
+  test('the letter opens as Gabe\'s welcome does', () => {
+    expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);
   });
 });
 

@@ -52,7 +52,7 @@ function stateOf({ author, caster, over, away }: { author: boolean; caster: bool
   return 'Holds you on this post until you check the caster\'s sentence, or break free for this visit';
 }
 
-export function StickAroundEffect({ post, plays, released, reader, release, show, marks, children }: EffectProps) {
+export function StickAroundEffect({ post, plays, released, reader, release, show, holdScreen, marks, children }: EffectProps) {
   const stage = useContext(HoldStage);
   const away = useSyncExternalStore(subscribe, () => escaped.has(post.id), () => false);
   /* The first play the reader has not certified: its caster's sentence is the one they are asked to check. */
@@ -79,6 +79,8 @@ export function StickAroundEffect({ post, plays, released, reader, release, show
   const home = useRef<HTMLDivElement>(null);
   const slot = useRef<HTMLDivElement>(null);
   const inView = lifted && held && !!play;
+  /* While the view holds the reader, no tip is shown over it (the page's pacing, engine/ui/tips/store.ts). */
+  useEffect(() => { holdScreen(inView); }, [holdScreen, inView]);
   useLayoutEffect(() => {
     const into = inView ? slot.current : home.current;
     if (into && words.parentElement !== into) into.appendChild(words);
