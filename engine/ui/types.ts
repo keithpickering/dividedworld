@@ -244,6 +244,19 @@ export interface InstanceUi {
   readonly cards: readonly CardUi[];
   /** The instance's onboarding words, in its developer persona's voice (docs/plans/2026-11-02-onboarding-plan.md, Task 4). */
   readonly onboarding: OnboardingUi;
+  /** The instance's Strategy Guide: its prose, and Gabe's hint for each class (docs/plans/2026-11-02-onboarding-plan.md, Task 8). */
+  readonly guide: GuideUi;
+}
+
+/**
+ * The Strategy Guide's words from an instance. `markdown` is the guide's prose: the Markdown engine/ui/guide/markdown.ts reads, with its
+ * markers (the letter, the reaction grid, the classes, the cards) and `{{setting:<path>}}` for every number, so a retune keeps it true.
+ * `hints` is one line for each of the instance's classes, in the persona's voice, shown with the class's own description; the keys are
+ * exactly the instance's classes (tools/check-guide.mjs).
+ */
+export interface GuideUi {
+  readonly markdown: string;
+  readonly hints: Readonly<Record<string, string>>;
 }
 
 /**

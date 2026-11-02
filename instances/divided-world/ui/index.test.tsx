@@ -5,6 +5,7 @@ import { describe, expect, test } from 'vitest';
 import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
+import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
@@ -26,6 +27,15 @@ describe('Divided World\'s onboarding words', () => {
   });
   test('the letter opens as Gabe\'s welcome does', () => {
     expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);
+  });
+});
+
+describe('Divided World\'s Strategy Guide', () => {
+  test('is the guide folder\'s Markdown and hints, and the check holds them to the instance', async () => {
+    expect(instanceUi.guide.markdown).toMatch(/^<!--[\s\S]*?-->\s*## Welcome letter\s+<!-- kayfabb:letter -->/u);
+    expect(Object.keys(instanceUi.guide.hints).sort()).toEqual(instance.classes.map((c) => c.key).sort());
+    const real = await readInstance('divided-world');
+    expect(guideFaults(real)).toEqual([]);
   });
 });
 

@@ -42,7 +42,7 @@ export interface ClassCardsProps {
 /** The map's cells in the React picker's order: Heat and Hype on top, Groan and Calm below. */
 export const MAP: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
 
-function Marks({ marks, id }: { readonly marks: ClassMarks; readonly id: string }) {
+export function Marks({ marks, id }: { readonly marks: ClassMarks; readonly id: string }) {
   const cell = (q: Quadrant) => {
     if (marks.earns?.includes(q)) return <span key={q} className="kb-class-mark" data-kb-mark="earns">+</span>;
     if (marks.hurts?.includes(q)) return <span key={q} className="kb-class-mark" data-kb-mark="hurts">−</span>;

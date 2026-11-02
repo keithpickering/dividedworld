@@ -12,6 +12,7 @@ import { createFake, type Fake } from './data/fake.ts';
 import type { ScreenSettings } from './data/api.ts';
 import { PlayerProvider } from './player.tsx';
 import { TIP_KEYS } from './tips/keys.ts';
+import type { GuideUi } from './types.ts';
 import { RouterProvider } from './router.tsx';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 
@@ -80,7 +81,7 @@ const REASONS: Readonly<Record<string, string>> = {
 };
 const reasonWords = (reason: string) => REASONS[reason] ?? `Settled under "${reason}"`;
 
-const ui = { glass: testGlass, themes: [{ key: 'house', name: 'House', href: '/house.css', modes: 'both' }, { key: 'sepia', name: 'Sepia', href: '/sepia.css', modes: 'light' }], classLooks: { face: { color: 'currentColor', description: 'The crowd favorite: earns from cheers.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } }, heel: { color: 'currentColor', description: 'Earns heat: boos and tomatoes.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } } }, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, reasonWords, quadrantClasses: { excitedNegative: 'heel', excitedPositive: 'face' }, copy: { siteName: 'Test', siteTagline: 'test', shopName: 'Shop', reducedMotionCard: 'the test card still moves you, only instantly.' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } }, cards: [], onboarding: { tips: Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `Title of ${k}`, line: `The line of ${k}.` }])), letter: 'A letter.' } } as unknown as Kayfa['ui'];
+const ui = { glass: testGlass, themes: [{ key: 'house', name: 'House', href: '/house.css', modes: 'both' }, { key: 'sepia', name: 'Sepia', href: '/sepia.css', modes: 'light' }], classLooks: { face: { color: 'currentColor', description: 'The crowd favorite: earns from cheers.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } }, heel: { color: 'currentColor', description: 'Earns heat: boos and tomatoes.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } } }, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, reasonWords, quadrantClasses: { excitedNegative: 'heel', excitedPositive: 'face' }, copy: { siteName: 'Test', siteTagline: 'test', shopName: 'Shop', reducedMotionCard: 'the test card still moves you, only instantly.' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } }, cards: [], onboarding: { tips: Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `Title of ${k}`, line: `The line of ${k}.` }])), letter: 'A letter.' }, guide: { markdown: '## Welcome letter\n\n<!-- kayfabb:letter -->\n\n## Classes\n\n<!-- kayfabb:classes -->', hints: { face: 'Get behind the posts you like.', heel: 'Being hated is a living.' } } } as unknown as Kayfa['ui'];
 
 export interface WorldOptions {
   /** The address the screen opens at (a path, a query, a fragment). */
@@ -96,6 +97,8 @@ export interface WorldOptions {
   readonly cards?: Kayfa['ui']['cards'];
   /** The instance's pictures for its personas, by key (`InstanceUi.avatars`); none by default. */
   readonly avatars?: Readonly<Record<string, string>>;
+  /** A different Strategy Guide (its Markdown and hints) than the test world's small one. */
+  readonly guide?: GuideUi;
 }
 
 /** The backend alone, for a test that must do something asynchronous (a spin) before it renders. */
@@ -106,7 +109,7 @@ export function buildWorld(settingsOverride?: Partial<ScreenSettings>, instance:
 /** Render a screen on a backend made by `buildWorld`. */
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.avatars ? { ...ui, ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.avatars ? { avatars: options.avatars } : {}) } : ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.avatars || options.guide ? { ...ui, ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}) } : ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
   return {
     fake,
     ...render(

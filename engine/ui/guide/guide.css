@@ -1,0 +1,528 @@
+/*
+ * The Strategy Guide on the glass (Guide.tsx), as the Guide board draws it (docs/research/2026-11-02-onboarding/02-guide.html): the heading
+ * at the Updates board's 112px, the contents in a column of 300px at the left (a lede, then the sections, the one on screen lit with the
+ * neon along its left edge), and the instance's Markdown as one long article on a chamfered panel at the right, each section headed in
+ * Anton at 64px. The contents stay in view as the article scrolls. A class is its marks (the class card's own drawing, at the board's
+ * 50px cells), its chip, its description and Gabe's hint. The text stands in calms (calm.css) where it stands on the smoke, and the
+ * article is its own panel.
+ *
+ * Sizes are the boards' px or the glass's size tokens, in rem, never under the label (20px) on the Main board's layout
+ * (engine/ui/glass/board.test.tsx reads this file). On the Phone board's layout (04-phone.html) the columns stack, the contents fold
+ * into a menu under the heading, and the article is the phone's.
+ */
+.kb-guide {
+  padding-top: 32px;
+}
+
+.kb-guide-title {
+  margin: 0;
+  font-size: 7rem;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+.kb-guide-cols {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 24px 44px;
+  align-items: start;
+  margin-top: 1px;
+}
+
+.kb-guide-empty {
+  max-width: 680px;
+  margin: 28px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+/* ---- the contents ---- */
+
+/*
+ * They stay in view as the article scrolls; a list taller than the window scrolls within itself. The calm under the text feathers 32px past
+ * it (calm.css) and a scrolling box clips what is outside it, so the box has that 32px of its own padding, drawn back by the same margin.
+ */
+.kb-guide-side {
+  position: sticky;
+  top: 24px;
+  box-sizing: border-box;
+  max-height: calc(100vh - 48px + 64px);
+  margin: -32px;
+  padding: 32px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.kb-guide-lede {
+  margin: 20px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-guide-menu-button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  padding: 0 14px;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-phone-body);
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-hi);
+  background: var(--kb-glass-panel-strong);
+  border: 1px solid var(--kb-glass-neon);
+  cursor: pointer;
+}
+
+.kb-guide-menu-button svg {
+  flex: none;
+  color: var(--kb-glass-neon);
+}
+
+.kb-guide-menu-button[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.kb-guide-menu-button:focus-visible,
+.kb-guide-toc a:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-guide-toc {
+  list-style: none;
+  margin: 22px 0 0;
+  padding: 0;
+}
+
+.kb-guide-toc li {
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+}
+
+.kb-guide-toc a {
+  display: block;
+  padding: 12px 0;
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1.3;
+  text-decoration: none;
+  color: var(--kb-glass-text);
+}
+
+.kb-guide-toc a[aria-current='location'] {
+  padding-left: 14px;
+  color: var(--kb-glass-neon-text);
+  box-shadow: inset 3px 0 0 var(--kb-glass-neon);
+}
+
+/* The menu is the Phone board's; the Main board's contents are always open. */
+:where(:root[data-kb-layout='main']) .kb-guide-menu-button {
+  display: none;
+}
+
+/* ---- the article ---- */
+
+.kb-guide-article {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 32px 44px 40px;
+  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
+  outline-offset: -1px;
+  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+}
+
+/* A section scrolled to stops short of the window's top, which the contents' own top matches. */
+.kb-guide-section {
+  scroll-margin-top: 24px;
+}
+
+.kb-guide-section + .kb-guide-section {
+  margin-top: 48px;
+  padding-top: 40px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-guide-section-title {
+  margin: 0;
+  font-size: 4rem;
+  line-height: 1.02;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 24px color-mix(in srgb, var(--kb-glass-pale) 35%, transparent);
+}
+
+/* ---- the Markdown ---- */
+
+.kb-guide-prose {
+  font-size: 1.375rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-guide-prose > p,
+.kb-guide-prose > ul,
+.kb-guide-prose > ol,
+.kb-guide-prose > blockquote {
+  max-width: 780px;
+}
+
+.kb-guide-prose p {
+  margin: 16px 0 0;
+}
+
+.kb-guide-prose h3,
+.kb-guide-prose h4,
+.kb-guide-prose h5,
+.kb-guide-prose h6 {
+  margin: 28px 0 0;
+  font-family: var(--kb-glass-font-body);
+  font-size: 1.375rem;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-guide-prose ul,
+.kb-guide-prose ol {
+  margin: 16px 0 0;
+  padding-left: 28px;
+}
+
+.kb-guide-prose li {
+  margin: 6px 0;
+}
+
+.kb-guide-prose strong {
+  font-weight: 800;
+}
+
+.kb-guide-prose code {
+  padding: 0 0.3em;
+  font-family: var(--kb-glass-font-body);
+  background: var(--kb-glass-field);
+}
+
+.kb-guide-prose a {
+  color: var(--kb-glass-neon-text);
+  text-underline-offset: 3px;
+}
+
+.kb-guide-prose a:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-guide-prose blockquote {
+  margin: 16px 0 0;
+  padding-left: 18px;
+  color: var(--kb-glass-text-2);
+  box-shadow: inset 3px 0 0 var(--kb-glass-neon);
+}
+
+.kb-guide-prose blockquote p:first-child {
+  margin-top: 0;
+}
+
+.kb-guide-prose hr {
+  margin: 28px 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-guide-table-wrap {
+  margin-top: 20px;
+  overflow-x: auto;
+}
+
+.kb-guide-table-wrap:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-guide-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.kb-guide-table th,
+.kb-guide-table td {
+  padding: 10px 14px 10px 0;
+  vertical-align: top;
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-guide-table thead th {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-guide-table tbody th {
+  font-weight: 800;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-guide-flavor {
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- the reaction grid ---- */
+
+.kb-guide-grid {
+  margin-top: 20px;
+  border-collapse: separate;
+  border-spacing: 4px;
+}
+
+.kb-guide-grid th {
+  padding: 4px 10px 4px 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-guide-grid td {
+  min-width: 11rem;
+  padding: 10px 16px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 35%, transparent);
+}
+
+.kb-guide-grid thead td {
+  border: 0;
+}
+
+.kb-guide-grid-name {
+  display: block;
+  font-weight: 800;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-guide-grid-set {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+  font-size: 1.75rem;
+  line-height: 1.3;
+}
+
+/* ---- the classes ---- */
+
+.kb-guide-legend {
+  --kb-class-fill: var(--kb-glass-neon);
+  --kb-class-ink: var(--kb-glass-ink-neon);
+  margin-top: 20px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-guide-legend p {
+  margin: 0;
+}
+
+.kb-guide-legend ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-guide-legend li {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+}
+
+.kb-guide-legend .kb-class-mark {
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: var(--kb-glass-size-label);
+}
+
+.kb-guide-class {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  column-gap: 26px;
+  margin-top: 26px;
+  padding-top: 24px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-guide-class .kb-class-marks {
+  grid-template-columns: repeat(2, 3.125rem);
+  align-self: start;
+}
+
+.kb-guide-class .kb-class-mark {
+  height: 3.125rem;
+  font-size: 1.625rem;
+}
+
+.kb-guide-class-name {
+  margin: 0;
+  font-size: 1.375rem;
+}
+
+.kb-guide-class-name .kb-class-chip {
+  padding: 0 12px;
+  font-size: 1.375rem;
+  line-height: 1.5;
+}
+
+.kb-guide-class-words p {
+  margin: 8px 0 0;
+  max-width: 760px;
+}
+
+.kb-guide-class-words .kb-guide-hint {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-top: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-guide-hint-label {
+  flex: none;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- the Phone board's layout (04-phone.html) ---- */
+
+:where(:root[data-kb-layout='phone']) .kb-guide {
+  padding-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-title {
+  font-size: var(--kb-glass-size-display-l);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-cols {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 8px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-side {
+  position: static;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-lede {
+  margin-top: 0;
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+/* The sections are the menu's, which the button opens; the one on screen is named on the button. */
+:where(:root[data-kb-layout='phone']) .kb-guide-contents:not([data-open]) .kb-guide-toc {
+  display: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-toc {
+  margin-top: 4px;
+  padding: 0 14px;
+  background: var(--kb-glass-panel-strong);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-toc a {
+  min-height: 48px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-toc a[aria-current='location'] {
+  padding-left: 12px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-article {
+  padding: 20px 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-section {
+  scroll-margin-top: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-section + .kb-guide-section {
+  margin-top: 32px;
+  padding-top: 28px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-section-title {
+  font-size: var(--kb-glass-size-display-m);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-prose,
+:where(:root[data-kb-layout='phone']) .kb-guide-prose h3,
+:where(:root[data-kb-layout='phone']) .kb-guide-prose h4,
+:where(:root[data-kb-layout='phone']) .kb-guide-legend,
+:where(:root[data-kb-layout='phone']) .kb-guide-empty {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-class {
+  grid-template-columns: 52px minmax(0, 1fr);
+  column-gap: 14px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-class .kb-class-marks {
+  grid-template-columns: repeat(2, 24px);
+  gap: 2px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-class .kb-class-mark {
+  height: 24px;
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-class-name .kb-class-chip {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-grid td {
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-guide-hint-label,
+:where(:root[data-kb-layout='phone']) .kb-guide-table thead th,
+:where(:root[data-kb-layout='phone']) .kb-guide-grid th {
+  font-size: var(--kb-glass-size-phone-small);
+}

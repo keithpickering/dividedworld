@@ -26,6 +26,7 @@ import { Vending } from '../../engine/ui/vending/Vending.tsx';
 import { SeasonScreen, seasonAt } from '../../engine/ui/season/Season.tsx';
 import { AlertsScreen } from '../../engine/ui/alerts/Alerts.tsx';
 import { UpdatesScreen } from '../../engine/ui/updates/Updates.tsx';
+import { GuideScreen } from '../../engine/ui/guide/Guide.tsx';
 import { LogScreen } from '../../engine/ui/log/Log.tsx';
 import { SettlementOnLoad, SettlementScreen } from '../../engine/ui/log/Settlement.tsx';
 import { RouterProvider, useLocation, useNavigate } from '../../engine/ui/router.tsx';
@@ -47,6 +48,7 @@ const ROUTES: readonly Route[] = [
   { path: '/vending', render: () => <Vending /> },
   { path: '/alerts', render: () => <AlertsScreen /> },
   { path: '/updates', render: () => <UpdatesScreen /> },
+  { path: '/guide', render: () => <GuideScreen /> },
   { path: '/admin/queue', render: () => <QueueScreen /> },
   { path: '/log', render: () => <LogScreen /> },
   { path: '/log/settlement', render: () => <SettlementScreen /> },
@@ -80,6 +82,8 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/vending': 'vending',
   /* Updates stands on the page smoke of Settings, Log and Rankings: no surface of its own, so no instance must name another recipe. */
   '/updates': 'settings',
+  /* The Strategy Guide stands on the same page smoke, for the same reason. */
+  '/guide': 'settings',
   /* Alerts stands on the same page smoke as Updates, for the same reason: no surface of its own. */
   '/alerts': 'settings',
   '/admin/queue': 'settings',
