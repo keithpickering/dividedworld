@@ -384,7 +384,13 @@ begin
   perform tests.become(joiner);
   if pg_temp.unread() is distinct from 1 then raise exception 'with no mark, only what arrived after the account was opened is new: %', pg_temp.unread(); end if;
   if (select count(*) from my_alerts() where kind = 'settlement') is distinct from 2 then raise exception 'the list still holds what came before joining'; end if;
+  -- The page draws its divider from the same time, read through my_account_opened (0066): the caller's own, and nobody else's.
+  if my_account_opened() is distinct from joined then raise exception 'my_account_opened is when the account was opened: %', my_account_opened(); end if;
   perform tests.unbecome();
+  perform tests.become_anon();
+  if pg_temp.refusal('select my_account_opened()') is null then raise exception 'a visitor has no account to have opened'; end if;
+  perform tests.unbecome();
+  if has_function_privilege('anon', 'my_account_opened()', 'execute') then raise exception 'my_account_opened is not callable by anon'; end if;
 end $$;
 
 -- ---- Nothing the news stubs are reachable by an API role; nothing hides a thread from a player today ----

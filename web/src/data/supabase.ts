@@ -971,6 +971,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           thread: str(a['thread']), name: str(a['name']), title: str(a['title']), count: typeof a['count'] === 'number' ? a['count'] : null,
         }));
     },
+    async accountOpenedAt() {
+      /* The caller's own, through a function and not the accounts table, which a screen never reads (0066). */
+      const r = await read(() => client.rpc('my_account_opened'));
+      const at = str(r.data);
+      if (at === null) throw new Error('no account is open');
+      return at;
+    },
     async alertsUnread() {
       const r = await read(() => client.rpc('my_alerts_unread'));
       return Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(r.data))));

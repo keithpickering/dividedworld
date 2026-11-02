@@ -7,8 +7,12 @@
 -- stays null until see_alerts sets it, so it can still move to any time (see_alerts keeps the later of the two), and my_alerts, the
 -- list, still holds everything from before joining, since a list is history and only the count says what is new.
 --
--- "A response never proves a private fact": the count reads the caller's own account row and nothing of anyone else's. Cost: one
--- primary-key read of accounts per HUD load, beside the account_preferences read it replaces.
+-- my_account_opened() answers the same time to the Alerts page, which draws its "new since" divider at the mark, or, with none, at the
+-- account's opening ("New since you joined"), so the page and the HUD agree. It is a function and not a read of accounts, which the web
+-- app never reads (tools/check-web-reads.mjs): only the time leaves the server, and only the caller's.
+--
+-- "A response never proves a private fact": both read the caller's own account row and nothing of anyone else's. Cost: one
+-- primary-key read of accounts per HUD load, beside the account_preferences read it already made.
 --
 -- Its way out is 0060's: the count falls when the mark moves, and a followed thread falls out when it is read or unfollowed.
 
@@ -53,3 +57,11 @@ language sql stable security definer set search_path = public, pg_temp as $$
   )
   select least(10, sum(n))::integer from parts
 $$;
+
+create function my_account_opened() returns timestamptz
+language sql stable security definer set search_path = public, pg_temp as $$
+  select a.created_at from accounts a where a.id = signed_in_account()
+$$;
+
+revoke execute on function my_account_opened() from public, anon;
+grant execute on function my_account_opened() to authenticated;

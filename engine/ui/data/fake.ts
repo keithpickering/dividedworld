@@ -1668,6 +1668,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const floor = older.length >= ALERTS_PAGE ? Date.parse(older[ALERTS_PAGE - 1]!.at) : -Infinity;
       return older.filter((a) => Date.parse(a.at) >= floor);
     },
+    accountOpenedAt() {
+      const account = me();
+      if (!account) throw new Error('sign in with an account first');
+      return Number.isFinite(account.createdAt) ? iso(account.createdAt) : null;
+    },
     alertsUnread() {
       // my_alerts_unread (0060, 0066): what arrived after the account's mark (never set: since the account was opened), to the bound.
       const account = me();

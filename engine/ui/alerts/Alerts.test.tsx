@@ -26,10 +26,10 @@ const iso = (ms: number) => new Date(ms).toISOString();
  * Oldest to newest: a quote (2h), a follow (3h, the newest post in Pipewrench's thread), a card (4h), a hint (5h), a ruling on Mrs. Hooligan (6h), a
  * settlement (7h), an update (8h) and the Boss's arrival (9h).
  */
-function world(o: { mark?: number | null; cards?: number } = {}) {
+function world(o: { mark?: number | null; cards?: number; joinedAt?: number } = {}) {
   const fake = buildWorld();
   const { seed } = fake;
-  const me = seed.account('me');
+  const me = seed.account('me', o.joinedAt === undefined ? undefined : { joinedAt: o.joinedAt });
   const other = seed.account('other');
   const bo = seed.account('bo');
   const pipe = seed.character(me, 'Pipewrench', 'heel');
@@ -132,6 +132,16 @@ describe('the divider', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'New since you last looked' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { level: 2, name: 'Earlier' })).toBeNull();
     expect(rows()).toHaveLength(8);
+  });
+
+  test('an account that has never looked has what arrived since it joined new, and the rest under Earlier (issue #148)', async () => {
+    const w = world({ mark: null, joinedAt: T0 + 4.5 * H });
+    await show(w);
+    const fresh = await screen.findByRole('heading', { level: 2, name: 'New since you joined, Nov 2 · 04:30 UTC' });
+    const earlier = screen.getByRole('heading', { level: 2, name: 'Earlier' });
+    expect(screen.queryByRole('heading', { level: 2, name: /New since you last looked/ })).toBeNull();
+    expect(before(fresh, earlier)).toBe(true);
+    expect(rows().filter((r) => before(earlier, r))).toHaveLength(3);
   });
 
   test('with nothing new it says so plainly and lists everything under Earlier', async () => {
