@@ -232,6 +232,22 @@ describe('Settings, as board 11 draws it', () => {
     expect(tips).toBeChecked();
   });
 
+  test('a choice made while Show tips again is out does not leave the switch off once the account answers on', async () => {
+    const w = world();
+    await w.fake.skipTips();
+    const held: { settle: () => void }[] = [];
+    const restore = w.fake.restoreTips.bind(w.fake);
+    w.fake.restoreTips = () => new Promise((resolve) => { held.push({ settle: () => resolve(restore()) }); });
+    open(w.fake);
+    const tips = await screen.findByRole('switch', { name: 'Tips' });
+    expect(tips).not.toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'Show tips again' }));
+    await userEvent.click(radio('The board', 'White on black'));
+    held[0]!.settle();
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on' }));
+    await waitFor(() => expect(tips).toBeChecked());
+  });
+
   test('from the keyboard: Space flips the switch, Enter presses Show tips again and Replay the HUD tour', async () => {
     const w = world();
     await w.fake.seeTip('grid');

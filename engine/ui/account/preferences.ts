@@ -55,6 +55,8 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
   const line = useRef<Promise<void>>(Promise.resolve());
   /* The number of the last save queued: "Saved" is said only by the save that is last in line, never while a later one is still out. */
   const queued = useRef(0);
+  /* The number of the clicks on the Tips switch (skip, resume) alone: no other choice moves it, so an answer can tell a later switch click from a later theme. */
+  const switchClicks = useRef(0);
   /* The account the screen is for now, and null once it is gone: a save answered after either changed is that account's no longer. */
   const showing = useRef<string | null>(null);
   useEffect(() => {
@@ -111,11 +113,13 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
     const mine = ++queued.current;
     const asked = how === 'skip' ? 'off' : how === 'resume' ? 'on' : null;
     if (asked !== null) {
+      ++switchClicks.current;
       current.current = { ...current.current, tips: asked };
       setRead({ account: madeFor, prefs: current.current });
     }
     setRefusal(null);
     setSaved(null);
+    const clicks = switchClicks.current;
     const putBack = () => {
       if (asked !== null && current.current && confirmed.current && current.current.tips === asked) {
         current.current = { ...current.current, tips: confirmed.current.tips };
@@ -129,8 +133,8 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
       if (r.ok) {
         const kept = { cardsMet: r.value.cardsMet, tips: r.value.tips, tipsSeen: r.value.tipsSeen, welcomedAt: r.value.welcomedAt };
         confirmed.current = { ...confirmed.current!, ...kept };
-        /* A later click on the switch is still to be saved: the screen keeps what it shows for it. */
-        current.current = { ...current.current!, ...kept, tips: queued.current === mine ? kept.tips : current.current!.tips };
+        /* A later click on the switch (not on another choice) is still to be saved: the screen keeps what it shows for it. */
+        current.current = { ...current.current!, ...kept, tips: switchClicks.current === clicks ? kept.tips : current.current!.tips };
         setRead({ account: madeFor, prefs: current.current });
         if (queued.current === mine) setSaved(madeFor);
         return;
