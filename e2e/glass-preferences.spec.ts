@@ -61,8 +61,8 @@ async function linesOffGround(page: Page): Promise<string[]> {
 }
 
 /**
- * Every line of text cut off: past the window's sides, or past an ancestor that clips it. The menu bar's tab strip is left out: on the one-column layout
- * it is a strip that scrolls sideways by design (shell.css), and with the Alerts and Updates tabs the strip is wider than a 1280px window at 200% text.
+ * Every line of text cut off: past the window's sides, or past an ancestor that clips it. The menu bar's tab strip is left out only where it scrolls sideways
+ * by design (the one-column layout, shell.css, overflow auto), where with the Alerts and Updates tabs it is wider than a 1280px window at 200% text.
  */
 async function clipped(page: Page): Promise<string[]> {
   return page.evaluate(async () => {
@@ -73,7 +73,10 @@ async function clipped(page: Page): Promise<string[]> {
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const text = n.textContent?.trim();
       const el = n.parentElement;
-      if (!text || !el || el.closest('[aria-hidden="true"], .kb-visually-hidden, script, style, option, [hidden], .kb-glass-menu-list')) continue;
+      if (!text || !el || el.closest('[aria-hidden="true"], .kb-visually-hidden, script, style, option, [hidden]')) continue;
+      /* The menu's tab strip is left out only where it scrolls on its own (the one-column layout's, overflow auto); on the desk layout it is checked like any text. */
+      const strip = el.closest('.kb-glass-menu-list');
+      if (strip && ['auto', 'scroll'].includes(getComputedStyle(strip).overflowX)) continue;
       const range = document.createRange();
       range.selectNodeContents(n);
       for (const r of range.getClientRects()) {

@@ -110,6 +110,13 @@ describe('compareBoard: the rest of the rules', () => {
     expect(r[0]!.message).toContain('missing on the board');
   });
 
+  test('across compares x and width only, so a box moved down or made taller by a decision still holds its place and width across the page', () => {
+    const across = manifest(lm('line', { box: 'across' }));
+    expect(compareBoard(board, moved('line', { y: 80, height: 90 }), across)).toEqual([]);
+    expect(compareBoard(board, moved('line', { x: 20 }), across).map((m) => m.field)).toEqual(['x']);
+    expect(compareBoard(board, moved('line', { width: 30 }), across).map((m) => m.field)).toEqual(['width']);
+  });
+
   test('position compares x and y only; height compares y and height only; none compares no box', () => {
     const wide = moved('line', { width: 200, height: 50 });
     expect(compareBoard(board, wide, manifest(lm('line', { box: 'position' })))).toEqual([]);

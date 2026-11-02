@@ -66,7 +66,7 @@ const manifest: BoardManifest = {
      * REVISED by the alerts design (docs/plans/2026-11-02-alerts-design.md, section 7; docs/research/2026-11-02-alerts/04-season-news.html): Rankings is
      * the Season page's first tab, under the heading "Season 1" with the tabs beside it and the season's line beneath, so this board's heading and
      * line are not where the page now puts them, and the table sits 82px lower. This board is a record and is not edited: the heading, the line and
-     * the lead are found and compared by their type, and the table, its heads and every row are compared as they sit in the table (`origin`), as the
+     * the lead are found and compared by their type, and the table is compared by its x and width (`across`: the design revises only how far down it stands, and its height is the rows'), and its heads and every row as they sit in the table (`origin`), as the
      * Main board's posts are from their own corner. The page's heading, tabs and News tab are held by e2e/boards/04-season-news.ts.
      */
     { id: 'title', role: 'heading', name: 'Rankings', buildName: 'Season 1', box: 'none' },
@@ -74,7 +74,7 @@ const manifest: BoardManifest = {
     { id: 'lead', box: 'none', role: 'text', name: 'The season\'s standings, as the last settlement left them. Your own characters are marked, with their classes, which only you see here. Anyone else\'s class shows only once its player has revealed it.' },
 
     /* The table and its heads. */
-    { id: 'table', role: 'table', name: 'Season 1 rankings, highest standing first', type: false, box: 'size' },
+    { id: 'table', role: 'table', name: 'Season 1 rankings, highest standing first', type: false, box: 'across' },
     { id: 'head-place', role: 'columnheader', name: 'Place', within: 'table', origin: 'table' },
     { id: 'head-character', role: 'columnheader', name: 'Character', within: 'table', origin: 'table' },
     { id: 'head-rank', role: 'columnheader', name: 'Rank', within: 'table', origin: 'table' },
