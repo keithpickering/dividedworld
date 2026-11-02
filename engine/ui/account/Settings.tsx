@@ -9,8 +9,8 @@
  * choices with its sentence. Each is saved to the account the moment it is chosen and applied to the
  * page at once (applyAppearance): the theme restyles the board only, the smoke, contrast and text
  * size the glass and the board together. The thread reads the post style when it opens, so a change
- * shows on the next thread view with no reload. Tips (a switch, Show tips again, Replay the HUD tour) calls the tips' own functions,
- * and the next board page behaves so.
+ * shows on the next thread view with no reload. Tips has a switch, Show tips again and Replay the HUD tour, each calling its own tips function; the next board
+ * page shows the result.
  *
  * Account: the address the session signed in with, plainly and not as a field (it is changed nowhere
  * here), the player's invites (Invites.tsx), and Sign out at its foot. `/invites`, the page invites
@@ -107,7 +107,7 @@ function ToastSwitch({ title, sentence, byDefault, on, onChange }: {
 
 /**
  * Tips: a switch for whether they show at all, and two buttons. In the glass's own voice, so it says plainly what each does and what it leaves
- * alone. The switch shows what the account has, so a refused change leaves it where it was.
+ * alone. The switch shows a click at once and goes back to what the account has if the change is refused.
  */
 function TipsRow({ on, change }: { readonly on: boolean; readonly change: (how: TipsChange) => void }) {
   const id = useId();

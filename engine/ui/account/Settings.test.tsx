@@ -216,6 +216,43 @@ describe('Settings, as board 11 draws it', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('not now'));
   });
 
+  test('the switch clicked off and on again with the first save held: the switch shows each click at once and the account ends on', async () => {
+    const w = world();
+    const held: { settle: () => void }[] = [];
+    const skip = w.fake.skipTips.bind(w.fake);
+    w.fake.skipTips = () => new Promise((resolve) => { held.push({ settle: () => resolve(skip()) }); });
+    open(w.fake);
+    const tips = await screen.findByRole('switch', { name: 'Tips' });
+    await userEvent.click(tips);
+    expect(tips).not.toBeChecked();
+    await userEvent.click(tips);
+    expect(tips).toBeChecked();
+    held[0]!.settle();
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on' }));
+    expect(tips).toBeChecked();
+  });
+
+  test('from the keyboard: Space flips the switch, Enter presses Show tips again and Replay the HUD tour', async () => {
+    const w = world();
+    await w.fake.seeTip('grid');
+    open(w.fake);
+    const tips = await screen.findByRole('switch', { name: 'Tips' });
+    tips.focus();
+    await userEvent.keyboard(' ');
+    await waitFor(async () => expect((await w.fake.preferences()).tips).toBe('off'));
+    expect(tips).not.toBeChecked();
+    const again = screen.getByRole('button', { name: 'Show tips again' });
+    again.focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on', tipsSeen: [] }));
+    await w.fake.seeTip('tour-plate');
+    await w.fake.seeTip('grid');
+    const replay = screen.getByRole('button', { name: 'Replay the HUD tour' });
+    replay.focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ tips: 'on', tipsSeen: ['grid'] }));
+  });
+
   /** Text size changed twice before either save is answered: 100, then 125, then 150. */
   async function twice() {
     const w = world();

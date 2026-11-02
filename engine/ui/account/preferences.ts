@@ -34,7 +34,7 @@ export interface SavedPreferences {
   /**
    * Change the tips (Settings' Tips row), in its turn behind the choices before it: `skip` turns them off, `resume` on with nothing forgotten,
    * `restore` on with the tips seen and the cards met forgotten, `replay` on with the HUD tour's steps forgotten (and the welcome marked seen).
-   * Shown once the account has answered, not before.
+   * `skip` and `resume` are shown at once and put back on a refusal; `restore` and `replay` are shown once the account has answered.
    */
   readonly changeTips: (how: TipsChange) => void;
   /** Say a refusal of the screen's own (something other than a preference went wrong). */
@@ -100,27 +100,44 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
     });
   }, [api, ui, account]);
 
-  /* It waits its turn behind the choices before it, and the screen shows what the account answered; a refusal is said. */
+  /*
+   * It waits its turn behind the choices before it. `skip` and `resume` are shown at once, as `change` shows a choice, and put back on a
+   * refusal only while the switch still shows the refused value; so the last click wins. `restore` and `replay` change more than the switch
+   * and are shown once the account has answered. An answer never puts the switch back over a later click still to be saved.
+   */
   const changeTips = useCallback((how: TipsChange) => {
     const madeFor = account;
     if (madeFor === null || current.current === null) return;
     const mine = ++queued.current;
+    const asked = how === 'skip' ? 'off' : how === 'resume' ? 'on' : null;
+    if (asked !== null) {
+      current.current = { ...current.current, tips: asked };
+      setRead({ account: madeFor, prefs: current.current });
+    }
     setRefusal(null);
     setSaved(null);
+    const putBack = () => {
+      if (asked !== null && current.current && confirmed.current && current.current.tips === asked) {
+        current.current = { ...current.current, tips: confirmed.current.tips };
+        setRead({ account: madeFor, prefs: current.current });
+      }
+    };
     line.current = line.current.then(async () => {
       let r: Answer<Preferences>;
       try { r = await (how === 'skip' ? api.skipTips() : how === 'resume' ? api.resumeTips() : how === 'restore' ? api.restoreTips() : api.replayTour()); } catch { r = { ok: false, error: LOST_ANSWER }; }
       if (showing.current !== madeFor) return;
       if (r.ok) {
         const kept = { cardsMet: r.value.cardsMet, tips: r.value.tips, tipsSeen: r.value.tipsSeen, welcomedAt: r.value.welcomedAt };
-        current.current = { ...current.current!, ...kept };
         confirmed.current = { ...confirmed.current!, ...kept };
+        /* A later click on the switch is still to be saved: the screen keeps what it shows for it. */
+        current.current = { ...current.current!, ...kept, tips: queued.current === mine ? kept.tips : current.current!.tips };
         setRead({ account: madeFor, prefs: current.current });
         if (queued.current === mine) setSaved(madeFor);
         return;
       }
+      putBack();
       setRefusal({ account: madeFor, text: r.error });
-    }).catch(() => { if (showing.current === madeFor) setRefusal({ account: madeFor, text: LOST_ANSWER }); });
+    }).catch(() => { if (showing.current === madeFor) { putBack(); setRefusal({ account: madeFor, text: LOST_ANSWER }); } });
   }, [api, account]);
 
   const refuse = useCallback((text: string) => { if (account !== null) setRefusal({ account, text }); }, [account]);

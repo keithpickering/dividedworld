@@ -1,5 +1,5 @@
--- Settings' Tips row (the onboarding plan's Task 9; the onboarding design's section 7). Three changes, all on the caller's own
--- account_preferences row, answering the whole preferences as 0067's functions do (preferences_answer):
+-- Settings' Tips row (the onboarding plan's Task 9; the onboarding design's section 7). Two functions act on the caller's own
+-- account_preferences row, answering the whole preferences as 0067's functions do (preferences_answer), and a third is dropped:
 --  * resume_tips: the switch turned on. Tips are on again and nothing is forgotten: what was seen stays seen, so the tips that were
 --    skipped come back one at a time as they were and the ones already read do not repeat. (restore_tips, "Show tips again", is the
 --    one that forgets.) Undone by skip_tips.
@@ -7,7 +7,7 @@
 --    before the welcome existed has never seen it, so without this "Replay the HUD tour" would do nothing for it. Setting the mark
 --    is what seeing the welcome does (see_welcome), and an account that has it keeps its first time.
 --  * forget_cards_met (0040, 0057, 0064, 0067) is dropped: it was restore_tips under its old name for the old Card tips row, which
---    Settings no longer has.
+--    Settings no longer has. The client that stops calling forget_cards_met ships in the same deploy as this migration.
 
 create function resume_tips() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$

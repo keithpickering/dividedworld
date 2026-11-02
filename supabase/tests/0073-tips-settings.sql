@@ -48,6 +48,15 @@ begin
   if said ->> 'tips' is distinct from 'on' or (select count(*) from account_preferences) is distinct from 1 then raise exception 'resuming is the caller''s row alone'; end if;
   perform tests.unbecome();
 
+  -- An account with no preferences row yet: resume_tips makes the row (the insert branch), tips on, nothing seen.
+  perform tests.become(tests.account('tset-cy'));
+  if (select count(*) from account_preferences) is distinct from 0 then raise exception 'cy should start with no row'; end if;
+  said := resume_tips();
+  if said ->> 'tips' is distinct from 'on' or said -> 'tips_seen' is distinct from '[]'::jsonb or (select count(*) from account_preferences) is distinct from 1 then
+    raise exception 'resuming with no row makes one, on: %', said;
+  end if;
+  perform tests.unbecome();
+
   -- forget_cards_met is gone; a visitor cannot call resume_tips.
   if exists (select 1 from pg_proc where proname = 'forget_cards_met') then raise exception 'forget_cards_met still exists'; end if;
   perform tests.become_anon();
