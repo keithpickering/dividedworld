@@ -49,7 +49,9 @@ export interface TipsStore {
   /** The tip showing now, if any: a new object only when it changes. */
   active(): ActiveTip | null;
   /** What the account says: null while it is not read, or for a visitor (nothing shows). */
-  load(state: { readonly tips: 'on' | 'off'; readonly seen: readonly string[] } | null): void;
+  load(state: { readonly tips: 'on' | 'off'; readonly seen: readonly string[]; readonly welcomedAt?: string | null } | null): void;
+  /** Whether the account has seen the welcome (the HUD tour waits for it); false while the account is not read. */
+  welcomed(): boolean;
   /** Ask to show a tip this load; the returned function withdraws the request. */
   want(request: TipRequest): () => void;
   /** Whether a game effect holds the screen now. */
@@ -77,7 +79,7 @@ interface Entry { readonly id: number; readonly request: TipRequest; readonly gr
 
 export function createTipsStore(handlers: TipsHandlers, options: { readonly ungated?: boolean } = {}): TipsStore {
   const listeners = new Set<() => void>();
-  let prefs: { tips: 'on' | 'off'; seen: Set<string> } | null = null;
+  let prefs: { tips: 'on' | 'off'; seen: Set<string>; welcomed: boolean } | null = null;
   const queue: Entry[] = [];
   /* Keys decided this load, shown or dropped: asked again, they are not shown again before the next load. */
   const settled = new Set<string>();
@@ -114,7 +116,7 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
     /* A hold that begins while a tip is up hides it, unseen, until the hold lets go: no tip over a held screen, and none lost to one. */
     active: () => (holders.size > 0 ? null : current?.view ?? null),
     load(state) {
-      prefs = state === null ? null : { tips: state.tips, seen: new Set(state.seen) };
+      prefs = state === null ? null : { tips: state.tips, seen: new Set(state.seen), welcomed: Boolean(state.welcomedAt) };
       change();
     },
     want(request) {
@@ -130,6 +132,7 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
         if (changed) change();
       };
     },
+    welcomed: () => prefs?.welcomed ?? false,
     holding: () => holders.size > 0,
     hold(who, held) {
       if (held ? holders.has(who) : !holders.has(who)) return;

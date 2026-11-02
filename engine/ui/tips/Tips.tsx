@@ -35,7 +35,7 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     let live = true;
     store.load(null);
-    if (session.signedIn) void api.preferences().then((p) => { if (live) store.load({ tips: p.tips, seen: p.tipsSeen }); }, () => {});
+    if (session.signedIn) void api.preferences().then((p) => { if (live) store.load({ tips: p.tips, seen: p.tipsSeen, welcomedAt: p.welcomedAt }); }, () => {});
     return () => { live = false; };
   }, [api, store, session.signedIn]);
 

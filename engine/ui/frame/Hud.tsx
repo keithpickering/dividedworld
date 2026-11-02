@@ -38,7 +38,7 @@
  * at the window's scale below 1440px, and the Phone board's below that width. The glass pages
  * switch at the same width.
  */
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
@@ -60,6 +60,7 @@ import { pageEscape } from '../glass/keys.ts';
 import { GLASS_NAV } from '../glass/nav.ts';
 import { useBoard } from '../glass/useBoard.ts';
 import { useTour } from '../tips/tour.ts';
+import { useTipsStore } from '../tips/Tips.tsx';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
 const SLOPE = 28;
@@ -86,7 +87,6 @@ export function Hud() {
   const section = useRef<HTMLElement>(null);
   const aura = useRef<HTMLDivElement>(null);
   const plate = useRef<HTMLDivElement>(null);
-  const [welcomed, setWelcomed] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const picker = useRef<HTMLSelectElement>(null);
   const probe = useRef<HTMLSpanElement>(null);
@@ -116,13 +116,9 @@ export function Hud() {
   const feed = useAlertFeed(api, player.session.account, location.path);
   const unread = unreadText(feed.unread);
 
-  /* The HUD tour (engine/ui/tips/tour.ts) waits for the welcome to have been seen; the targets all exist once there is a character. */
-  useEffect(() => {
-    let live = true;
-    setWelcomed(false);
-    if (signedIn) void api.preferences().then((p) => { if (live) setWelcomed(Boolean(p.welcomedAt)); }, () => {});
-    return () => { live = false; };
-  }, [api, signedIn]);
+  /* The welcome is read once by the TipsProvider; the HUD tour's gate is the HUD's acting character (debuted, not retired), narrower than "the account has a character" because the plate and the hand need it. */
+  const tips = useTipsStore();
+  const welcomed = useSyncExternalStore(tips.subscribe, tips.welcomed, tips.welcomed);
   useTour({ plate, orbs: aura, hand: handButton }, signedIn && player.loaded && hud !== null && welcomed);
 
   const hudId = hud?.id ?? null;

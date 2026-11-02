@@ -15,11 +15,11 @@ afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-m
 
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 25)); });
 
-async function world(options: { welcomed?: boolean; character?: boolean } = {}): Promise<Fake> {
-  const { welcomed = true, character = true } = options;
+async function world(options: { welcomed?: boolean; character?: boolean; debuted?: boolean } = {}): Promise<Fake> {
+  const { welcomed = true, character = true, debuted = true } = options;
   const fake = buildWorld();
   const me = fake.seed.account('me');
-  if (character) fake.seed.character(me, 'Pipewrench', 'face');
+  if (character) fake.seed.character(me, 'Pipewrench', 'face', { debuted });
   fake.signInAs(me);
   if (welcomed) await fake.seeWelcome();
   return fake;
@@ -67,6 +67,45 @@ describe('the HUD tour', () => {
     board(fake);
     await settle();
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  test('Skip at step 2 stops step 3, and nothing shows on a reload', async () => {
+    const fake = await world();
+    const first = board(fake);
+    await gotIt(await screen.findByRole('dialog', { name: 'Title of tour-plate' }));
+    await screen.findByRole('dialog', { name: 'Title of tour-orbs' });
+    await userEvent.click(screen.getByRole('button', { name: 'Skip all tips' }));
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    first.unmount();
+    board(fake);
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  test('an account that had a character before the welcome shipped (no welcomedAt) sees no tour', async () => {
+    const fake = await world({ welcomed: false });
+    expect((await fake.preferences()).welcomedAt).toBeFalsy();
+    board(fake);
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  /* The tour's gate is the HUD's acting character (debuted, not retired): the plate and the hand need one. */
+  test('an account whose only character has not debuted sees no tour yet', async () => {
+    const fake = await world({ debuted: false });
+    board(fake);
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  /* The page's other readers (the alerts feed) make their own read; the tips and the tour together make one. Before, the HUD made a third. */
+  test('one preferences read per page load serves the tips and the tour', async () => {
+    const fake = await world();
+    const read = vi.spyOn(fake, 'preferences');
+    board(fake);
+    await screen.findByRole('dialog', { name: 'Title of tour-plate' });
+    expect(read).toHaveBeenCalledTimes(2);
   });
 
   test('nothing shows before the welcome is seen, or for an account with no character, or for a visitor', async () => {
