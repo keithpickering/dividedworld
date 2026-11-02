@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Alerts: the page</title>
+<!-- A board of the alerts design session (docs/plans/2026-11-02-alerts-design.md), 1440 by 1560: the Alerts page in the pause menu. A reference for the look, not code to copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+::selection{background:#19e3ff;color:#03141a}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 16px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#e4def7;white-space:nowrap}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.tab .n{display:inline-block;transform:skewX(10deg);margin-left:8px;background:#ffd93d;color:#14100a;padding:0 7px;font:800 20px/1.3 'Barlow Condensed',sans-serif}
+.cur{background:rgba(25,227,255,.16);box-shadow:inset 0 -3px 0 #19e3ff;color:#ffffff}
+.pill{border:1px solid rgba(241,236,255,.6)}
+.on{background:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.55)}
+h1{margin:0;font:112px/1 Anton,Impact,sans-serif;letter-spacing:1px;text-shadow:0 0 30px rgba(25,227,255,.35)}
+.lede{margin:0;max-width:720px;font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.lnk{color:#c9f8ff;text-underline-offset:3px}
+
+.list{list-style:none;margin:0;padding:0}
+.row{display:grid;grid-template-columns:52px 1fr 170px 150px;gap:18px;align-items:start;padding:16px 0;border-bottom:1px solid rgba(241,236,255,.2)}
+.row .ico{width:40px;height:40px;margin-top:2px}
+.row .line{margin:0;font:800 23px/1.3 'Barlow Condensed',sans-serif;letter-spacing:.3px;color:#f1ecff}
+.row .detail{margin:4px 0 0;max-width:760px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.row.new .line::before{content:"";display:inline-block;width:10px;height:10px;margin:0 10px 3px 0;background:var(--ink);transform:rotate(45deg);box-shadow:0 0 10px var(--ink)}
+.who{justify-self:start;transform:skewX(-10deg);border:1px solid rgba(201,248,255,.6);padding:2px 10px;font:700 20px 'Barlow Condensed',sans-serif;letter-spacing:1px;color:#c9f8ff;white-space:nowrap}
+.who.all{border-color:rgba(201,184,255,.6);color:#d9ceff}
+.row time{justify-self:end;font:600 21px 'Barlow Condensed',sans-serif;color:#e4def7;white-space:nowrap;font-variant-numeric:tabular-nums}
+.divider{display:flex;align-items:center;gap:16px;margin:26px 0 4px;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#ffd93d}
+.divider::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,#ffd93d,rgba(255,217,61,0))}
+.divider.old{color:#9ef4ff}.divider.old::after{background:linear-gradient(90deg,rgba(158,244,255,.7),rgba(158,244,255,0))}
+
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1560px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+  <svg aria-hidden="true" width="1440" height="1560" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="lA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="57"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="lB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="8"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="lsoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+      <mask id="lcalm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="1560"><rect width="1440" height="1560" fill="#ffffff"></rect><rect x="40" y="320" width="1360" height="1260" fill="#000000" opacity="0.92" filter="url(#lsoft)"></rect><rect x="40" y="100" width="1360" height="240" fill="#000000" opacity="0.6" filter="url(#lsoft)"></rect></mask>
+    </defs>
+    <g mask="url(#lcalm)"><rect width="1440" height="1560" filter="url(#lA)" opacity="0.95"></rect><rect width="1440" height="1560" filter="url(#lB)" opacity="0.5"></rect></g>
+  </svg>
+  <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 4px; padding: 0 32px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+  <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 14px"><b><kbd style="display: inline-block; margin-right: 10px; padding: 0 6px; border: 1px solid #ffffff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>BACK TO THE BOARD</b></a>
+  <a href="#" class="tab cur" aria-current="page"><b>ALERTS</b></a>
+  <a href="#" class="tab"><b>VENDING MACHINE</b></a>
+  <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+  <a href="#" class="tab"><b>SEASON</b></a>
+  <a href="#" class="tab"><b>MY LOG</b></a>
+  <a href="#" class="tab"><b>UPDATES</b></a>
+  <a href="#" class="tab"><b>SETTINGS</b></a>
+  </nav>
+  <header style="position: absolute; left: 64px; right: 64px; top: 116px; display: flex; justify-content: space-between; align-items: flex-end">
+    <h1>ALERTS</h1>
+    <nav aria-label="Whose alerts" style="display: flex; gap: 6px; margin-bottom: 12px">
+      <a href="#" class="tab on" aria-current="page"><b>ALL</b></a>
+      <a href="#" class="tab pill"><b>PIPEWRENCH</b></a>
+      <a href="#" class="tab pill"><b>MRS. HOOLIGAN</b></a>
+      <a href="#" class="tab pill"><b>SPRITEY</b></a>
+    </nav>
+  </header>
+  <div style="position: absolute; left: 64px; right: 64px; top: 250px; display: flex; justify-content: space-between; align-items: flex-start; gap: 40px">
+    <p class="lede">What happened to your characters, and what's new in the game. Every alert is true, and each one is also in your log or on the board. A thread drops off this list once you've read it.</p>
+    <p style="margin: 0; display: flex; gap: 10px">
+      <a href="#" class="tab pill"><b>THREADS YOU FOLLOW · 6</b></a>
+      <a href="#" class="tab pill"><b>ALERT SETTINGS</b></a>
+    </p>
+  </div>
+  <section style="position: absolute; left: 64px; right: 64px; top: 340px">
+    <h2 class="divider">NEW SINCE YOU LAST LOOKED, NOV 2 · 08:52</h2>
+    <ul class="list">
+      <li class="row new" style="--ink: #ffd93d"><svg class="ico" aria-hidden="true" viewBox="0 0 32 32"><path d="M16 4c1 5 7 7 7 14a7 7 0 0 1-14 0c0-4 2-6 3-8 1 3 2 4 4 4-1-4-1-7 0-10z" fill="none" stroke="#ffd93d" stroke-width="2.2" stroke-linejoin="round"/></svg><div><p class="line">Your post is picking up heat</p><p class="detail">Spritey's post #51 in <i>best ink color, final answer</i> drew 12 reactions in the last hour. The crowd is into it. <a class="lnk" href="#">Go to the post</a></p></div><span class="who">Spritey</span><time>Nov 2 · 09:41</time></li><li class="row new" style="--ink: #ff3d7f"><svg class="ico" aria-hidden="true" viewBox="0 0 32 32"><rect x="8" y="5" width="16" height="22" rx="2" fill="none" stroke="#ff3d7f" stroke-width="2.2"/><path d="M12 12l8 8M20 12l-8 8" stroke="#ff3d7f" stroke-width="2" stroke-linecap="round"/></svg><div><p class="line">Glitter Bomb was played on Spritey</p><p class="detail">It shows on Spritey for 7 days and ends by itself on Nov 9 at 09:38. <a class="lnk" href="#">See it in the Lens</a></p></div><span class="who">Spritey</span><time>Nov 2 · 09:38</time></li><li class="row new" style="--ink: #19e3ff"><svg class="ico" aria-hidden="true" viewBox="0 0 32 32"><path d="M6 9h20v12H15l-6 5v-5H6z" fill="none" stroke="#19e3ff" stroke-width="2.2" stroke-linejoin="round"/><path d="M11 14h10M11 17.5h6" stroke="#19e3ff" stroke-width="2" stroke-linecap="round"/></svg><div><p class="line">Mrs. Hooligan quoted Pipewrench</p><p class="detail">In <i>who keeps splatting my posts</i>, quoting post #43. <a class="lnk" href="#">Go to the post</a></p></div><span class="who">Pipewrench</span><time>Nov 2 · 09:36</time></li><li class="row new" style="--ink: #19e3ff"><svg class="ico" aria-hidden="true" viewBox="0 0 32 32"><path d="M6 7h20M6 13h20M6 19h13" stroke="#19e3ff" stroke-width="2.2" stroke-linecap="round"/><circle cx="24" cy="22" r="4" fill="#19e3ff"/></svg><div><p class="line">4 new posts in <i>best ink color, final answer</i></p><p class="detail">Since you last read it. You follow it because Spritey started it. <a class="lnk" href="#">First unread post</a> · <a class="lnk" href="#">Unfollow</a></p></div><span class="who">Spritey</span><time>Nov 2 · 09:30</time></li><li class="row new" style="--ink: #ff3d7f"><svg class="ico" aria-hidden="true" viewBox="0 0 32 32"><path d="M7 25h12M10 21h6M13 21V13" stroke="#ff3d7f" stroke-width="2.2" stroke-linecap="round"/><rect x="11" y="4" width="14" height="7" rx="1" transform="rotate(35 18 7.5)" fill="none" stroke="#ff3d7f" stroke-width="2.2"/></svg><div><p class="line">A warning landed on Pipewrench's post #43</p><p class="detail">Sgt. Snoot filed it, charging “suspicious lack of ink”. Pipewrench's warn bar is at 2 of 5 and drains one a day. You can appeal until Nov 4 at 09:20. <a class="lnk" href="#">Appeal</a> · <a class="lnk" href="#">Go to the post</a></p></div><span class="who">Pipewrench</span><time>Nov 2 · 09:20</time></li>
+    </ul>
+    <h2 class="divider old">EARLIER</h2>
+    <ul class="list">
+      <li class="row" style="--ink: #ffd93d"><svg class="ico" aria-hidden="true" viewBox="0 0 32 32"><circle cx="16" cy="16" r="10" fill="none" stroke="#ffd93d" stroke-width="2.2"/><path d="M16 10v6l4 3" stroke="#ffd93d" stroke-width="2.2" stroke-linecap="round"/></svg><div><p class="line">The settlement for Nov 1 is in</p><p class="detail">Your characters moved +0.42 Aura in all. Mrs. Hooligan ranked up. <a class="lnk" href="#">Open the summary</a></p></div><span class="who">All yours</span><time>Nov 2 · 08:17</time></li><li class="row" style="--ink: #c9b8ff"><svg class="ico" aria-hidden="true" viewBox="0 0 32 32"><rect x="5" y="6" width="22" height="20" fill="none" stroke="#c9b8ff" stroke-width="2.2"/><path d="M5 11h22M10 16h12M10 20h8" stroke="#c9b8ff" stroke-width="2" stroke-linecap="round"/></svg><div><p class="line">New update from Gabe: “Traps now bite board cards”</p><p class="detail">Two balance changes and a fix for the log naming the wrong post. <a class="lnk" href="#">Read it in Updates</a></p></div><span class="who all">Everyone</span><time>Nov 2 · 08:00</time></li><li class="row" style="--ink: #ff3d7f"><svg class="ico" aria-hidden="true" viewBox="0 0 32 32"><rect x="8" y="5" width="16" height="22" rx="2" fill="none" stroke="#ff3d7f" stroke-width="2.2"/><path d="M12 12l8 8M20 12l-8 8" stroke="#ff3d7f" stroke-width="2" stroke-linecap="round"/></svg><div><p class="line">Main Event was played on <i>Thwomp appreciation</i></p><p class="detail">Pipewrench started the thread. It is pinned above page 1 until Nov 2 at 22:10, then ends by itself. <a class="lnk" href="#">Go to the thread</a></p></div><span class="who">Pipewrench</span><time>Nov 1 · 22:10</time></li><li class="row" style="--ink: #c9b8ff"><svg class="ico" aria-hidden="true" viewBox="0 0 32 32"><path d="M9 5h14v6a7 7 0 0 1-14 0zM9 8H5a4 4 0 0 0 4 5M23 8h4a4 4 0 0 1-4 5M16 18v4M11 27h10M13 22h6" fill="none" stroke="#c9b8ff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/></svg><div><p class="line">Season 2 has begun, and the Boss has arrived</p><p class="detail"><a class="lnk" href="#">Read it on the Season page</a></p></div><span class="who all">Everyone</span><time>Nov 1 · 08:17</time></li>
+    </ul>
+  </section>
+</div>
+</body>
+</html>

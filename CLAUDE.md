@@ -102,7 +102,10 @@ their characters is always true, and the out-of-character screens speak plainly.
 The bluffing is the game. The log is what lets a frustrated friend step back and see that a game is being played. So
 the log names which Act did a thing, what it changed and how much Aura moved, in plain words, and it never reveals
 what is hidden: who reacted, or anyone's class. Settings, the account, errors and anything about real moderation are
-written plainly and honestly, for a player's understanding, never in character.
+written plainly and honestly, for a player's understanding, never in character. The glass never speaks as The System
+or as any character in play; its one voice is the instance's developer persona on its Updates page, written only by
+admins, never by a model, and always true, and the glass's copy may joke wherever it describes the game, but never
+bluffs.
 
 ## An accessible path costs what the obstacle costs
 

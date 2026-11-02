@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1760">
+<title>Alerts on a phone</title>
+<!-- A board of the alerts design session (docs/plans/2026-11-02-alerts-design.md): four phone screens at 390 by 844
+     side by side (the board with toasts over the HUD, Alerts, Updates, and the season page's News). The menu bar is
+     the phone's, as engine/ui/glass/shell.css draws it: Back on its own row, the tabs a strip that scrolls sideways.
+     A reference for the look, not code to copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#2a2633}
+a{color:inherit}
+:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.frame{position:absolute;top:40px;width:390px;height:844px;overflow:hidden;box-shadow:0 0 0 1px #000,0 20px 40px rgba(0,0,0,.5)}
+.cap{position:absolute;top:8px;margin:0;font:700 18px 'Barlow Condensed',sans-serif;letter-spacing:1px;color:#e4def7}
+.g{font-family:'Barlow Condensed',sans-serif;color:#f1ecff}
+.mbar{position:relative;z-index:2;background:rgba(7,5,13,.92);border-bottom:1px solid rgba(201,248,255,.5);box-shadow:0 1px 12px rgba(25,227,255,.35);padding:10px 16px 0}
+.back{display:inline-flex;align-items:center;min-height:48px;padding:0 14px;transform:skewX(-10deg);border:1px solid #fff;text-decoration:none;font:800 17px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#fff}
+.back b,.ptab b{display:inline-block;transform:skewX(10deg)}
+.strip{display:flex;gap:2px;overflow:hidden;margin:8px -16px 0;padding:0 16px;white-space:nowrap}
+.ptab{display:inline-flex;align-items:center;min-height:48px;padding:0 12px;transform:skewX(-10deg);text-decoration:none;font:800 17px 'Barlow Condensed',sans-serif;letter-spacing:1.2px;color:#e4def7;flex:none}
+.ptab.cur{background:rgba(25,227,255,.16);box-shadow:inset 0 -3px 0 #19e3ff;color:#fff}
+.ph1{margin:18px 16px 0;font:56px/1 Anton,Impact,sans-serif;letter-spacing:.5px;text-shadow:0 0 22px rgba(25,227,255,.35)}
+.plede{margin:8px 16px 0;font:600 17px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.lnk{color:#c9f8ff;text-underline-offset:3px}
+.prow{display:grid;grid-template-columns:30px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid rgba(241,236,255,.2)}
+.prow svg{width:28px;height:28px}
+.prow .l{margin:0;font:800 19px/1.3 'Barlow Condensed',sans-serif}
+.prow .d{margin:3px 0 0;font:500 17px/1.45 'Barlow Condensed',sans-serif;color:#e4def7}
+.prow .m{margin:4px 0 0;font:600 16px 'Barlow Condensed',sans-serif;color:#c9f8ff;letter-spacing:.5px}
+.pdiv{display:flex;align-items:center;gap:10px;margin:16px 0 0;font:800 17px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#ffd93d}
+.pdiv::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,#ffd93d,rgba(255,217,61,0))}
+.ptoast{display:grid;grid-template-columns:30px 1fr 44px;gap:10px;align-items:start;padding:10px 10px 10px 12px;background:rgba(10,6,20,.96);clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));outline:1px solid var(--ink);outline-offset:-1px}
+.ptoast svg.i{width:28px;height:28px}
+.ptoast b{display:block;font:800 18px/1.25 'Barlow Condensed',sans-serif}
+.ptoast span{display:block;font:600 16px/1.35 'Barlow Condensed',sans-serif;color:#e4def7}
+.ptoast button{width:44px;height:44px;background:transparent;border:1px solid rgba(241,236,255,.45);display:flex;align-items:center;justify-content:center}
+.pill{display:inline-flex;align-items:center;min-height:48px;padding:0 12px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);text-decoration:none;font:800 17px 'Barlow Condensed',sans-serif;letter-spacing:1.2px;color:#f1ecff}
+.pill b{display:inline-block;transform:skewX(10deg)}
+.pill.on{background:#19e3ff;color:#03141a;border-color:#19e3ff}
+
+</style>
+</head>
+<body>
+<div style="position: relative; width: 1760px; height: 924px">
+<p class="cap" style="left: 40px">BOARD · TOASTS OVER THE HUD</p><p class="cap" style="left: 470px">ALERTS</p><p class="cap" style="left: 900px">UPDATES</p><p class="cap" style="left: 1330px">SEASON · NEWS</p>
+<div class="frame" style="left: 40px; background: #fff; color: #000; font: 13px/1.5 Verdana, Geneva, sans-serif">
+  <header style="display: flex; justify-content: space-between; align-items: center; padding: 6px 16px; border-bottom: 1px solid #000"><a href="#" style="font: bold 17px 'Courier New', Courier, monospace; letter-spacing: 1px; text-decoration: none">DIVIDED WORLD</a></header>
+  <p style="margin: 8px 16px 4px; font-size: 11px"><a href="#">General</a> » who keeps splatting my posts</p>
+  <h1 style="margin: 0 16px 8px; font: bold 16px 'Courier New', Courier, monospace">who keeps splatting my posts</h1>
+  <article style="margin: 0 16px; border: 1px solid #000">
+    <div style="display: flex; justify-content: space-between; padding: 4px 8px; border-bottom: 1px solid #000; font-size: 11px"><b><a href="#">Mrs. Hooligan</a></b><span style="color: #555">Oct 29, 9:20 pm · #42</span></div>
+    <div style="padding: 8px">
+      <blockquote style="margin: 0 0 8px; border: 1px solid #000; background: #f2f2f2; padding: 4px 8px; font-size: 11px"><b>Pipewrench wrote:</b><br>Can confirm Mrs. Hooligan has never once been seen in the same thread as a bucket of ink.</blockquote>
+      <p style="margin: 0 0 8px">Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I'm not.</p>
+      <p style="margin: 0">Also you double-posted the changelog in the other thread so honestly it's a public service.</p>
+    </div>
+    <div style="display: flex; gap: 6px; padding: 4px 8px; border-top: 1px solid #000; font-size: 11px"><span style="border: 1px solid #000; padding: 0 5px">😡 3</span><span style="border: 1px solid #000; padding: 0 5px">🍅 2</span><button style="font: 11px Verdana; background: #fff; border: 1px solid #000; min-height: 32px">React</button></div>
+  </article>
+  <section class="g" aria-label="New alerts" style="position: absolute; left: 16px; right: 16px; bottom: 136px; z-index: 6; display: flex; flex-direction: column; gap: 8px">
+    <a href="#" style="align-self: flex-end; transform: skewX(-10deg); padding: 4px 12px; background: rgba(10,6,20,.94); border: 1px solid #ffd93d; font: 800 16px 'Barlow Condensed', sans-serif; letter-spacing: 1.2px; color: #ffd93d; text-decoration: none"><span style="display: inline-block; transform: skewX(10deg)">+3 MORE</span></a>
+    <article class="ptoast" style="--ink: #ff3d7f"><svg class="i" aria-hidden="true" viewBox="0 0 32 32"><rect x="8" y="5" width="16" height="22" rx="2" fill="none" stroke="#ff3d7f" stroke-width="2.2"/><path d="M12 12l8 8M20 12l-8 8" stroke="#ff3d7f" stroke-width="2" stroke-linecap="round"/></svg><p style="margin: 0"><b>Glitter Bomb was played on Spritey</b><span>For 7 days. <u style="color: #c9f8ff">See it in the Lens</u></span></p><button aria-label="Dismiss"><svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14"><path d="M3 3l10 10M13 3L3 13" stroke="#e4def7" stroke-width="2" stroke-linecap="round"/></svg></button></article>
+    <article class="ptoast" style="--ink: #ffd93d"><svg class="i" aria-hidden="true" viewBox="0 0 32 32"><path d="M16 4c1 5 7 7 7 14a7 7 0 0 1-14 0c0-4 2-6 3-8 1 3 2 4 4 4-1-4-1-7 0-10z" fill="none" stroke="#ffd93d" stroke-width="2.2" stroke-linejoin="round"/></svg><p style="margin: 0"><b>Your post is picking up heat</b><span>Spritey's #51: 12 reactions this hour.</span></p><button aria-label="Dismiss"><svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14"><path d="M3 3l10 10M13 3L3 13" stroke="#e4def7" stroke-width="2" stroke-linecap="round"/></svg></button></article>
+  </section>
+  <section class="g" aria-label="Game HUD" style="position: absolute; left: 0; right: 0; bottom: 0; height: 124px; z-index: 5; border-top: 1.5px solid #c9f8ff; box-shadow: 0 -2px 18px rgba(25,227,255,.6); overflow: hidden; background: #07050d">
+    <svg aria-hidden="true" width="390" height="124" style="position: absolute; left: 0; top: 0">
+      <defs>
+        <filter id="a9" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.009" numOctaves="4" seed="66"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>
+        <filter id="b9" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="3" seed="8"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>
+        <filter id="s9" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="40"></feGaussianBlur></filter>
+        <mask id="m9" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="124"><rect width="390" height="124" fill="#ffffff"></rect><rect x="60" y="-60" width="400" height="244" fill="#000000" opacity="0.85" filter="url(#s9)"></rect></mask>
+      </defs>
+      <rect width="390" height="124" fill="#07050d"></rect>
+      <g mask="url(#m9)"><rect width="390" height="124" filter="url(#a9)" opacity="0.95"></rect><rect width="390" height="124" filter="url(#b9)" opacity="0.5"></rect></g>
+    </svg>
+    <div style="position: relative; display: flex; gap: 8px; align-items: center; padding: 8px 16px 0">
+      <div style="width: 44px; height: 44px; flex: none; border: 2px solid #19e3ff; box-shadow: 0 0 12px rgba(25,227,255,.6); background: repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 5px, transparent 5px 10px), #120b22"></div>
+      <label style="flex: 1; min-width: 0"><span style="display: block; font: 600 16px 'Barlow Condensed', sans-serif; letter-spacing: 1.2px; color: #e4def7">POSTING AS</span>
+        <select style="width: 100%; font: 19px/1 Anton, Impact, sans-serif; color: #f1ecff; background: transparent; border: 0; border-bottom: 1px solid #19e3ff; padding: 0; min-height: 44px"><option>PIPEWRENCH</option></select></label>
+      <a href="#" aria-label="Alerts, 5 new" style="flex: none; position: relative; width: 52px; height: 48px; transform: skewX(-10deg); background: rgba(10,6,20,.88); border: 1px solid #ffd93d; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 14px rgba(255,217,61,.45)">
+        <svg aria-hidden="true" width="22" height="24" viewBox="0 0 22 24" style="transform: skewX(10deg)"><path d="M11 2.5c-3.6 0-6.2 2.8-6.2 6.4v4.6L2.5 17.6h17l-2.3-4.1V8.9c0-3.6-2.6-6.4-6.2-6.4z" fill="none" stroke="#ffd93d" stroke-width="2" stroke-linejoin="round"/><path d="M8.2 20.2a2.9 2.9 0 0 0 5.6 0" fill="none" stroke="#ffd93d" stroke-width="2" stroke-linecap="round"/></svg>
+        <span style="position: absolute; right: -8px; top: -9px; transform: skewX(10deg); background: #ffd93d; color: #14100a; font: 800 16px/1.2 'Barlow Condensed', sans-serif; padding: 0 6px">5</span>
+      </a>
+      <button aria-label="Menu" style="flex: none; min-width: 60px; height: 48px; transform: skewX(-10deg); background: rgba(10,6,20,.88); border: 1px solid #19e3ff; color: #f1ecff; box-shadow: 0 0 12px rgba(25,227,255,.5)"><span style="display: inline-block; transform: skewX(10deg); font: 17px/1 Anton, Impact, sans-serif">MENU</span></button>
+      <button aria-label="Hand, 3 postcards" style="flex: none; min-width: 60px; height: 48px; transform: skewX(-10deg); background: #ff3d7f; border: 0; color: #14030a; box-shadow: 0 0 18px rgba(255,61,127,.7)"><span style="display: inline-block; transform: skewX(10deg); font: 17px/1 Anton, Impact, sans-serif">HAND 3</span></button>
+    </div>
+    <div style="position: relative; display: flex; gap: 8px; align-items: center; padding: 10px 16px 0; font: 600 16px 'Barlow Condensed', sans-serif; color: #e4def7">AURA · six orbs, as now <span style="margin-left: auto; font: 26px/1 Anton, Impact, sans-serif; color: #f1ecff">4.62</span><span style="font: 700 17px 'Barlow Condensed', sans-serif; color: #ffc48a">+0.30 EST.</span></div>
+  </section>
+</div>
+<div class="frame g" style="left: 470px">
+  <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+      <defs>
+        <filter id="a1" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.009" numOctaves="4" seed="10"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>
+        <filter id="b1" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="3" seed="8"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>
+        <filter id="s1" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="40"></feGaussianBlur></filter>
+        <mask id="m1" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844"><rect width="390" height="844" fill="#ffffff"></rect><rect x="0" y="120" width="390" height="724" fill="#000000" opacity="0.9" filter="url(#s1)"></rect></mask>
+      </defs>
+      <rect width="390" height="844" fill="#07050d"></rect>
+      <g mask="url(#m1)"><rect width="390" height="844" filter="url(#a1)" opacity="0.95"></rect><rect width="390" height="844" filter="url(#b1)" opacity="0.5"></rect></g>
+    </svg>
+  <div style="position: relative">
+  <nav aria-label="Menu" class="mbar"><a href="#" class="back"><b>‹ BACK TO THE BOARD</b></a><div class="strip"><a href="#" class="ptab cur"><b>ALERTS</b></a><a href="#" class="ptab"><b>VENDING MACHINE</b></a><a href="#" class="ptab"><b>MY CHARACTERS</b></a><a href="#" class="ptab"><b>SEASON</b></a><a href="#" class="ptab"><b>MY LOG</b></a><a href="#" class="ptab"><b>UPDATES</b></a><a href="#" class="ptab"><b>SETTINGS</b></a></div></nav>
+  <h1 class="ph1">ALERTS</h1>
+  <div style="display: flex; gap: 6px; margin: 12px 16px 0; overflow: hidden"><a href="#" class="pill on"><b>ALL</b></a><a href="#" class="pill"><b>PIPEWRENCH</b></a><a href="#" class="pill"><b>MRS. HOOLIGAN</b></a></div>
+  <div style="margin: 0 16px">
+    <h2 class="pdiv">NEW SINCE NOV 2 · 08:52</h2>
+    <div class="prow"><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M16 4c1 5 7 7 7 14a7 7 0 0 1-14 0c0-4 2-6 3-8 1 3 2 4 4 4-1-4-1-7 0-10z" fill="none" stroke="#ffd93d" stroke-width="2.2" stroke-linejoin="round"/></svg><div><p class="l">Your post is picking up heat</p><p class="d">Spritey's post #51 drew 12 reactions in the last hour. <a class="lnk" href="#">Go to the post</a></p><p class="m">SPRITEY · 09:41</p></div></div>
+    <div class="prow"><svg aria-hidden="true" viewBox="0 0 32 32"><rect x="8" y="5" width="16" height="22" rx="2" fill="none" stroke="#ff3d7f" stroke-width="2.2"/><path d="M12 12l8 8M20 12l-8 8" stroke="#ff3d7f" stroke-width="2" stroke-linecap="round"/></svg><div><p class="l">Glitter Bomb was played on Spritey</p><p class="d">On Spritey for 7 days; ends by itself Nov 9. <a class="lnk" href="#">See it in the Lens</a></p><p class="m">SPRITEY · 09:38</p></div></div>
+    <div class="prow"><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M6 9h20v12H15l-6 5v-5H6z" fill="none" stroke="#19e3ff" stroke-width="2.2" stroke-linejoin="round"/><path d="M11 14h10M11 17.5h6" stroke="#19e3ff" stroke-width="2" stroke-linecap="round"/></svg><div><p class="l">Mrs. Hooligan quoted Pipewrench</p><p class="d">In <i>who keeps splatting my posts</i>. <a class="lnk" href="#">Go to the post</a></p><p class="m">PIPEWRENCH · 09:36</p></div></div>
+    <div class="prow"><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M6 7h20M6 13h20M6 19h13" stroke="#19e3ff" stroke-width="2.2" stroke-linecap="round"/><circle cx="24" cy="22" r="4" fill="#19e3ff"/></svg><div><p class="l">4 new posts in <i>best ink color, final answer</i></p><p class="d"><a class="lnk" href="#">First unread post</a> · <a class="lnk" href="#">Unfollow</a></p><p class="m">SPRITEY · 09:30</p></div></div>
+    <div class="prow"><svg aria-hidden="true" viewBox="0 0 32 32"><path d="M7 25h12M10 21h6M13 21V13" stroke="#ff3d7f" stroke-width="2.2" stroke-linecap="round"/><rect x="11" y="4" width="14" height="7" rx="1" transform="rotate(35 18 7.5)" fill="none" stroke="#ff3d7f" stroke-width="2.2"/></svg><div><p class="l">A warning landed on Pipewrench's post #43</p><p class="d">Warn bar 2 of 5, drains one a day. Appeal until Nov 4. <a class="lnk" href="#">Appeal</a></p><p class="m">PIPEWRENCH · 09:20</p></div></div>
+  </div></div>
+</div>
+<div class="frame g" style="left: 900px">
+  <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+      <defs>
+        <filter id="a2" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.009" numOctaves="4" seed="17"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>
+        <filter id="b2" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="3" seed="8"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>
+        <filter id="s2" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="40"></feGaussianBlur></filter>
+        <mask id="m2" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844"><rect width="390" height="844" fill="#ffffff"></rect><rect x="0" y="120" width="390" height="724" fill="#000000" opacity="0.9" filter="url(#s2)"></rect></mask>
+      </defs>
+      <rect width="390" height="844" fill="#07050d"></rect>
+      <g mask="url(#m2)"><rect width="390" height="844" filter="url(#a2)" opacity="0.95"></rect><rect width="390" height="844" filter="url(#b2)" opacity="0.5"></rect></g>
+    </svg>
+  <div style="position: relative">
+  <nav aria-label="Menu" class="mbar"><a href="#" class="back"><b>‹ BACK TO THE BOARD</b></a><div class="strip"><a href="#" class="ptab"><b>MY LOG</b></a><a href="#" class="ptab cur"><b>UPDATES</b></a><a href="#" class="ptab"><b>SETTINGS</b></a></div></nav>
+  <div style="margin: 18px 16px 0; display: flex; gap: 12px; align-items: center">
+    <div style="width: 52px; height: 52px; border: 2px solid #c9b8ff; background: repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 5px, transparent 5px 10px), #120b22; display: flex; align-items: center; justify-content: center; font: 600 16px 'Barlow Condensed', sans-serif; color: #e4def7">GABE</div>
+    <div><b style="display: block; font: 24px/1 Anton, Impact, sans-serif">GABE</b><span style="font: 600 17px 'Barlow Condensed', sans-serif; color: #e4def7">Made this. Sorry.</span></div>
+  </div>
+  <h1 style="margin: 14px 16px 0; font: 38px/1.04 Anton, Impact, sans-serif">Traps now bite board cards</h1>
+  <p style="margin: 6px 16px 0; font: 700 17px 'Barlow Condensed', sans-serif; letter-spacing: 1px; color: #d9ceff">NOV 2 · 08:00 UTC</p>
+  <p class="plede">Somebody played Main Event on a thread called “why is my thread pinned” and it stayed pinned for a full day while a perfectly good Trap Card sat underneath it doing nothing. As of this morning it can do something about it.</p>
+  <h2 style="margin: 16px 16px 4px; font: 800 17px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px; color: #9ef4ff">WHAT CHANGED</h2>
+  <ul style="margin: 0 16px; padding-left: 20px; font: 500 17px/1.45 'Barlow Condensed', sans-serif; color: #e4def7">
+    <li><b style="color: #f1ecff">Trap Card</b> can now catch a card played on a thread or a board.</li>
+    <li><b style="color: #f1ecff">Main Event</b> lasts 18 hours instead of 24.</li>
+    <li><b style="color: #f1ecff">Fixed:</b> the log names the character, thread or board a card was played on.</li>
+  </ul>
+  <div style="display: flex; gap: 6px; flex-wrap: wrap; margin: 16px 16px 0">
+    <span class="pill"><b>🔥 9</b></span><span class="pill"><b>🍅 4</b></span>
+    <a href="#" class="pill on"><b>REACT AS PIPEWRENCH</b></a>
+    <a href="#" class="pill" style="border-color: #19e3ff"><b>SPIN A THREAD</b></a>
+  </div>
+  <p style="margin: 18px 16px 0"><a href="#" class="lnk" style="font: 700 17px 'Barlow Condensed', sans-serif">Earlier updates (3)</a></p>
+  </div>
+</div>
+<div class="frame g" style="left: 1330px">
+  <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+      <defs>
+        <filter id="a3" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.009" numOctaves="4" seed="24"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>
+        <filter id="b3" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="3" seed="8"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>
+        <filter id="s3" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="40"></feGaussianBlur></filter>
+        <mask id="m3" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844"><rect width="390" height="844" fill="#ffffff"></rect><rect x="0" y="120" width="390" height="724" fill="#000000" opacity="0.9" filter="url(#s3)"></rect></mask>
+      </defs>
+      <rect width="390" height="844" fill="#07050d"></rect>
+      <g mask="url(#m3)"><rect width="390" height="844" filter="url(#a3)" opacity="0.95"></rect><rect width="390" height="844" filter="url(#b3)" opacity="0.5"></rect></g>
+    </svg>
+  <div style="position: relative">
+  <nav aria-label="Menu" class="mbar"><a href="#" class="back"><b>‹ BACK TO THE BOARD</b></a><div class="strip"><a href="#" class="ptab"><b>MY CHARACTERS</b></a><a href="#" class="ptab cur"><b>SEASON</b></a><a href="#" class="ptab"><b>MY LOG</b></a><a href="#" class="ptab"><b>UPDATES</b></a><a href="#" class="ptab"><b>SETTINGS</b></a></div></nav>
+  <h1 class="ph1">SEASON 2</h1>
+  <div style="display: flex; gap: 6px; margin: 12px 16px 0"><a href="#" class="pill"><b>RANKINGS</b></a><a href="#" class="pill on"><b>NEWS</b></a></div>
+  <div style="margin: 6px 16px 0">
+    <div class="prow" style="grid-template-columns: 1fr"><div><p class="m" style="color:#d9ceff">NOV 2 · 08:17</p><p style="margin: 2px 0 0; font: 28px/1.05 Anton, Impact, sans-serif">PIPEWRENCH TURNED</p><p class="d">Announced with its old class: it was a <span style="background:#ff3d57;color:#14030a;padding:0 6px;font-weight:800">HEEL</span>. <span style="color:#9ef4ff">One of yours.</span></p></div></div>
+    <div class="prow" style="grid-template-columns: 1fr"><div><p class="m" style="color:#d9ceff">NOV 1 · 08:17</p><p style="margin: 2px 0 0; font: 28px/1.05 Anton, Impact, sans-serif">THE BOSS HAS ARRIVED</p><p class="d">Mister Spreadsheet runs Season 2.</p><p class="d" style="border-left: 1px solid #c9b8ff; padding-left: 12px; font-style: italic; font-weight: 700; color: #f1ecff">“Efficiency is a virtue. So is fear.”</p><p class="d"><a class="lnk" href="#">Read its post on the board</a></p></div></div>
+    <div class="prow" style="grid-template-columns: 1fr"><div><p class="m" style="color:#d9ceff">NOV 1 · 08:17</p><p style="margin: 2px 0 0; font: 28px/1.05 Anton, Impact, sans-serif">SEASON 1 RESULTS</p><p class="d"><b style="color:#ffd93d">1.</b> Spritey 9.85, was a Face <span style="color:#9ef4ff">· yours</span><br><b style="color:#ffd93d">2.</b> Gloomba 8.40, was a Heel<br><b style="color:#ffd93d">3.</b> Mrs. Hooligan 7.95, was a Lurker <span style="color:#9ef4ff">· yours</span></p><p class="d"><a class="lnk" href="#">All 14 characters and their classes</a></p></div></div>
+  </div></div>
+</div>
+</div>
+</body>
+</html>

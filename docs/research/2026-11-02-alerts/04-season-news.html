@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Season: the news tab</title>
+<!-- A board of the alerts design session (docs/plans/2026-11-02-alerts-design.md), 1440 by 1500: Rankings grown into the season page, its News tab open. The Rankings tab is two-worlds board 13 under this header. A reference for the look, not code to copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+::selection{background:#19e3ff;color:#03141a}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 16px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#e4def7;white-space:nowrap}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.tab .n{display:inline-block;transform:skewX(10deg);margin-left:8px;background:#ffd93d;color:#14100a;padding:0 7px;font:800 20px/1.3 'Barlow Condensed',sans-serif}
+.cur{background:rgba(25,227,255,.16);box-shadow:inset 0 -3px 0 #19e3ff;color:#ffffff}
+.pill{border:1px solid rgba(241,236,255,.6)}
+.on{background:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.55)}
+h1{margin:0;font:112px/1 Anton,Impact,sans-serif;letter-spacing:1px;text-shadow:0 0 30px rgba(25,227,255,.35)}
+.lede{margin:0;max-width:720px;font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.lnk{color:#c9f8ff;text-underline-offset:3px}
+
+.feed{list-style:none;margin:0;padding:0}
+.item{display:grid;grid-template-columns:180px 1fr;gap:28px;padding:22px 0;border-bottom:1px solid rgba(241,236,255,.2)}
+.item time{font:700 21px 'Barlow Condensed',sans-serif;color:#d9ceff;letter-spacing:1px;padding-top:6px}
+.item h3{margin:0;font:40px/1.05 Anton,Impact,sans-serif;letter-spacing:.5px}
+.item p{margin:8px 0 0;max-width:820px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.q{margin:12px 0 0;max-width:820px;padding:10px 0 10px 18px;border-left:1px solid #c9b8ff;font:italic 700 23px/1.4 'Barlow Condensed',sans-serif;color:#f1ecff}
+.cls{display:inline-block;transform:skewX(-10deg);padding:0 8px;font:800 20px 'Barlow Condensed',sans-serif;letter-spacing:1px}
+.res{margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:900px}
+.podium{padding:16px 18px;background:rgba(8,5,16,.86);clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));outline:1px solid rgba(255,217,61,.55);outline-offset:-1px}
+.podium .pl{font:800 20px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#ffd93d}
+.podium b{display:block;margin:4px 0;font:34px/1 Anton,Impact,sans-serif}
+.podium span{font:600 21px 'Barlow Condensed',sans-serif;color:#e4def7}
+.mine{color:#9ef4ff}
+
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1500px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+  <svg aria-hidden="true" width="1440" height="1500" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="lA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="57"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="lB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="8"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="lsoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+      <mask id="lcalm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="1500"><rect width="1440" height="1500" fill="#ffffff"></rect><rect x="40" y="100" width="1360" height="1380" fill="#000000" opacity="0.88" filter="url(#lsoft)"></rect></mask>
+    </defs>
+    <g mask="url(#lcalm)"><rect width="1440" height="1500" filter="url(#lA)" opacity="0.95"></rect><rect width="1440" height="1500" filter="url(#lB)" opacity="0.5"></rect></g>
+  </svg>
+  <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 4px; padding: 0 32px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+  <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 14px"><b><kbd style="display: inline-block; margin-right: 10px; padding: 0 6px; border: 1px solid #ffffff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>BACK TO THE BOARD</b></a>
+  <a href="#" class="tab"><b>ALERTS</b></a>
+  <a href="#" class="tab"><b>VENDING MACHINE</b></a>
+  <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+  <a href="#" class="tab cur" aria-current="page"><b>SEASON</b></a>
+  <a href="#" class="tab"><b>MY LOG</b></a>
+  <a href="#" class="tab"><b>UPDATES</b></a>
+  <a href="#" class="tab"><b>SETTINGS</b></a>
+  </nav>
+  <header style="position: absolute; left: 64px; right: 64px; top: 116px; display: flex; justify-content: space-between; align-items: flex-end">
+    <h1>SEASON 2</h1>
+    <nav aria-label="Season" style="display: flex; gap: 6px; margin-bottom: 12px">
+      <a href="#" class="tab pill"><b>RANKINGS</b></a>
+      <a href="#" class="tab on" aria-current="page"><b>NEWS</b></a>
+    </nav>
+  </header>
+  <p class="lede" style="position: absolute; left: 64px; top: 250px">Day 2 of 28. The Boss this season is Mister Spreadsheet. Everything here is public: results, debuts, Turns, and the Boss coming and going.</p>
+  <section style="position: absolute; left: 64px; right: 64px; top: 330px">
+    <ul class="feed">
+      <li class="item"><time>NOV 2 · 08:17</time><div>
+        <h3>THWOMPSON DEBUTED</h3>
+        <p>A new character joins the board. Its class is its own secret until it says otherwise. <a class="lnk" href="#">Thwompson's profile</a></p></div></li>
+      <li class="item"><time>NOV 2 · 08:17</time><div>
+        <h3>PIPEWRENCH TURNED</h3>
+        <p>Announced with its old class: Pipewrench was a <span class="cls" style="background:#ff3d57;color:#14030a">HEEL</span>. What it is now, it isn't saying. <span class="mine">One of yours.</span></p></div></li>
+      <li class="item"><time>NOV 1 · 08:17</time><div>
+        <h3>THE BOSS HAS ARRIVED</h3>
+        <p>Mister Spreadsheet runs the board for Season 2. Its first words, on The System's board:</p>
+        <p class="q">“Efficiency is a virtue. So is fear. I have reviewed your posting cadence.”</p>
+        <p><a class="lnk" href="#">Read its post on the board</a></p></div></li>
+      <li class="item"><time>NOV 1 · 08:17</time><div>
+        <h3>SEASON 1 RESULTS</h3>
+        <p>The final standings, and every character's class this season. Never who played them.</p>
+        <div class="res">
+          <div class="podium"><div class="pl">FIRST</div><b>SPRITEY</b><span>9.85 · was a <span class="cls" style="background:#3db8ff;color:#03141a">FACE</span></span> <span class="mine">· yours</span></div>
+          <div class="podium"><div class="pl">SECOND</div><b>GLOOMBA</b><span>8.40 · was a <span class="cls" style="background:#ff3d57;color:#14030a">HEEL</span></span></div>
+          <div class="podium"><div class="pl">THIRD</div><b>MRS. HOOLIGAN</b><span>7.95 · was a <span class="cls" style="background:#2ef0a0;color:#03140c">LURKER</span></span> <span class="mine">· yours</span></div>
+        </div>
+        <p><a class="lnk" href="#">All 14 characters and their classes</a></p></div></li>
+      <li class="item"><time>NOV 1 · 08:17</time><div>
+        <h3>LADY LEDGER HAS LEFT</h3>
+        <p>Season 1's Boss is gone until a later season hires it back. Its last words are still on The System's board. <a class="lnk" href="#">Read them</a></p></div></li>
+    </ul>
+  </section>
+</div>
+</body>
+</html>
