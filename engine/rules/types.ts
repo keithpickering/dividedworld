@@ -13,6 +13,7 @@ import type { BeyondPost, CardRules, Rarity } from './cards.ts';
 import type { StockLineKey } from '../system/stock.ts';
 import type { Duty } from '../system/duties.ts';
 import type { HintSettings } from './hints.ts';
+import type { AlertKind } from './alerts.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
 
 /** Where a reaction sits on the two axes the classes read: how excited, how positive. */
@@ -185,6 +186,11 @@ export interface Settings {
    * that makes one quadrant lead, the share that makes it divisive, and how far back reactions count. Computed from public counts only.
    */
   readonly hints: HintSettings;
+  /**
+   * The alert kinds that toast for a player who has not chosen (Settings › Notifications; the alerts design's section 8). A kind that does not
+   * toast still counts and still has its row in Alerts, and a player's own choice replaces this list whole.
+   */
+  readonly toastDefaults: readonly AlertKind[];
   /** The model each tier of a call uses (the meeting runs on `strong`, small lines on `light`), as the provider names it. */
   readonly modelTiers: { readonly strong: string; readonly light: string };
 }

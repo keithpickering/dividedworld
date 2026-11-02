@@ -12,6 +12,12 @@ test('the defaults hold every setting the engine reads, in range', () => {
   assert.deepEqual(settingsProblems(defaults), []);
 });
 
+test('the toast defaults are the alerts design\'s section 8: news of your own characters toasts, followed threads, hints and season news do not', () => {
+  assert.deepEqual([...defaults.toastDefaults].sort(), ['cardOnYours', 'quote', 'ruling', 'settlement', 'trapSprang', 'trapStruck', 'update']);
+  assert.deepEqual(playtest.toastDefaults, defaults.toastDefaults);
+  assert.deepEqual(settingsProblems({ ...defaults, toastDefaults: ['quote', 'quote'] }).length > 0, true, 'a kind named twice is a problem');
+});
+
 test('the playtest settings hold every setting the engine reads, in range', () => {
   assert.deepEqual(settingsProblems(playtest), []);
 });

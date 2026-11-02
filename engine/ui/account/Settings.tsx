@@ -1,7 +1,7 @@
 /**
  * Settings, on the glass, as the Settings board draws it (docs/research/2026-10-29-two-worlds/11-settings.html;
  * the glass plan, sections 7 and 8, and its choices 2, 3 and 4): the heading, a navigation of its
- * sections, Account and Accessibility (the board's Notifications, Privacy and Export my data wait
+ * sections, Account, Accessibility and Notifications (the board's Privacy and Export my data wait
  * for a design), and the section beside it.
  *
  * Accessibility: motion (its sentence naming the instance's own card, `InstanceUi.copy`), smoke, contrast, text size, the board's colors (the device's, black on
@@ -15,6 +15,9 @@
  * here), the player's invites (Invites.tsx), and Sign out at its foot. `/invites`, the page invites
  * had before, opens this section (web/src/App.tsx).
  *
+ * Notifications: one switch for each kind of alert, saved the moment it is flipped, for whether that kind also toasts (it counts and waits in Alerts
+ * either way). A player who has not chosen sees the instance's defaults, said plainly, and "Reset to defaults" puts a choice back to them.
+ *
  * The section is the address's `?section=`, so the menu bar's Settings stays current on both and the
  * page does not move its focus from the link the player chose.
  */
@@ -22,6 +25,9 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import { LOST_ANSWER, type Answer, type Preferences, type PreferencesPatch } from '../data/api.ts';
 import { applyAppearance } from '../appearance.ts';
+import { ALERT_KINDS, type AlertKind } from '../../rules/alerts.ts';
+import { announceToastChoice } from '../alerts/toast-choice.ts';
+import { toastDefaultKinds } from '../alerts/toast-kinds.ts';
 import { Link, useLocation, useNavigate } from '../router.tsx';
 import { Invites } from './Invites.tsx';
 import { useSession } from './session.ts';
@@ -49,10 +55,28 @@ const POSTBIT: readonly Option<Preferences['postbit']>[] = [
   { value: 'stacked', label: 'Stacked' },
 ];
 
-type Section = 'account' | 'accessibility';
+/**
+ * Each kind of alert, in plain words: what it is called here and the event it tells of. These are the glass's own voice, out of character and
+ * true; the in-character words of an alert are the instance's. Kinds the instance has no use for still have a switch, as the engine has them.
+ */
+const NOTIFICATIONS: readonly { readonly kind: AlertKind; readonly title: string; readonly sentence: string }[] = [
+  { kind: 'quote', title: 'Quotes', sentence: 'A post quotes one of your characters.' },
+  { kind: 'cardOnYours', title: 'Cards on yours', sentence: 'A card is played on one of your posts.' },
+  { kind: 'trapStruck', title: 'Traps that hit', sentence: 'A trap struck one of your posts.' },
+  { kind: 'trapSprang', title: 'Traps you set', sentence: 'A trap you set sprang.' },
+  { kind: 'ruling', title: 'Rulings', sentence: 'A ruling lands on one of your characters.' },
+  { kind: 'settlement', title: 'Settlements', sentence: 'A settlement is in and moved your characters.' },
+  { kind: 'update', title: 'Updates', sentence: 'The developer posts an update.' },
+  { kind: 'followed', title: 'Followed threads', sentence: 'A thread you follow has new posts.' },
+  { kind: 'hint', title: 'Hints', sentence: 'A hint says one of your posts or cards is drawing a pattern of reactions.' },
+  { kind: 'seasonNews', title: 'Season news', sentence: 'The season has news: results, debuts and Turns, a new Boss.' },
+];
+
+type Section = 'account' | 'accessibility' | 'notifications';
 const SECTIONS: readonly { readonly key: Section; readonly label: string }[] = [
   { key: 'account', label: 'Account' },
   { key: 'accessibility', label: 'Accessibility' },
+  { key: 'notifications', label: 'Notifications' },
 ];
 const sectionHref = (s: Section) => (s === 'accessibility' ? '/settings' : `/settings?section=${s}`);
 
@@ -92,6 +116,25 @@ function Choice<V extends string | number>({ legend, options, value, onChange, s
   );
 }
 
+/** One kind of alert: its name in the label column, and a switch (a checkbox read as one) with its sentence and what it does until a player chooses. */
+function ToastSwitch({ title, sentence, byDefault, on, onChange }: {
+  readonly title: string; readonly sentence: string; readonly byDefault: boolean; readonly on: boolean; readonly onChange: (on: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="kb-acct-row">
+      <h3 id={`${id}-name`} className="kb-acct-row-label">{title}</h3>
+      <div className="kb-acct-row-body">
+        <label className="kb-acct-seg-option">
+          <input type="checkbox" role="switch" checked={on} onChange={(e) => onChange(e.target.checked)} aria-labelledby={`${id}-name`} aria-describedby={`${id}-says`} />
+          <span className="kb-acct-seg-face kb-glass-skew" aria-hidden="true"><b className="kb-glass-upright">{on ? 'Toasts' : 'Quiet'}</b></span>
+        </label>
+        <p id={`${id}-says`} className="kb-acct-row-sentence">{sentence} {byDefault ? 'Toasts by default.' : 'Quiet by default.'}</p>
+      </div>
+    </div>
+  );
+}
+
 /** The Settings board's frame: the heading, the sections' navigation, and the section. */
 function Frame({ section, children }: { readonly section: Section | null; readonly children: ReactNode }) {
   return (
@@ -118,11 +161,12 @@ function Frame({ section, children }: { readonly section: Section | null; readon
 }
 
 export function SettingsScreen() {
-  const { api, ui } = useKayfa();
+  const { api, ui, settings } = useKayfa();
   const session = useSession(api);
   const navigate = useNavigate();
   const { query } = useLocation();
-  const section: Section = query.get('section') === 'account' ? 'account' : 'accessibility';
+  const asked = query.get('section');
+  const section: Section = asked === 'account' || asked === 'notifications' ? asked : 'accessibility';
   const account = session?.account ?? null;
   /*
    * What the screen read, each kept with the account it was read for and drawn only while that
@@ -195,7 +239,13 @@ export function SettingsScreen() {
       let r: Answer<Preferences>;
       try { r = await api.setPreferences(patch); } catch { r = { ok: false, error: LOST_ANSWER }; }
       if (showing.current !== madeFor) return;
-      if (r.ok) { confirmed.current = { ...confirmed.current!, [key]: r.value[key] }; setSaved(madeFor); return; }
+      if (r.ok) {
+        confirmed.current = { ...confirmed.current!, [key]: r.value[key] };
+        setSaved(madeFor);
+        /* The HUD read the choice when it mounted; it hears this one as the account has it. */
+        if (key === 'toasts') announceToastChoice(r.value.toasts);
+        return;
+      }
       if (current.current![key] === asked) show({ ...current.current!, [key]: confirmed.current![key] });
       setRefusal({ account: madeFor, text: r.error });
     }).catch(() => {
@@ -262,6 +312,30 @@ export function SettingsScreen() {
           <Row label="Sign out" sentence="Ends this session on this device. Your characters and settings stay with your account.">
             <p><button type="button" className="kb-acct-button kb-glass-skew" onClick={() => void signOut()}><b className="kb-glass-upright">Sign out</b></button></p>
           </Row>
+        </section>
+      </Frame>
+    );
+  }
+
+  if (section === 'notifications') {
+    const defaultKinds = toastDefaultKinds(settings.toastDefaults);
+    const keptOn = prefs.toasts ?? defaultKinds;
+    const flip = (kind: AlertKind, on: boolean) => change({ toasts: ALERT_KINDS.filter((k) => (k === kind ? on : keptOn.includes(k))) });
+    return (
+      <Frame section={section}>
+        <section className="kb-settings-section kb-calm" aria-labelledby="kb-settings-notifications">
+          <h2 id="kb-settings-notifications" className="kb-acct-section-title kb-glass-display">Notifications</h2>
+          <p className="kb-acct-lead">Every alert still counts and waits in Alerts. These switches choose which kinds also pop up as a toast while you read.</p>
+          <div role="group" aria-label="Which alerts toast">
+            {NOTIFICATIONS.map((n) => (
+              <ToastSwitch key={n.kind} title={n.title} sentence={n.sentence} byDefault={defaultKinds.includes(n.kind)} on={keptOn.includes(n.kind)} onChange={(on) => flip(n.kind, on)} />
+            ))}
+          </div>
+          <Row label="Defaults" sentence={prefs.toasts === null ? 'You have not chosen, so the defaults hold.' : 'You have chosen your own. This puts every switch back to this board\'s defaults.'}>
+            <p><button type="button" className="kb-acct-button kb-glass-skew" aria-disabled={prefs.toasts === null} onClick={() => { if (prefs.toasts !== null) change({ toasts: null }); }}><b className="kb-glass-upright">Reset to defaults</b></button></p>
+          </Row>
+          {said}
+          <p className="kb-acct-foot">Changes save as you make them.</p>
         </section>
       </Frame>
     );

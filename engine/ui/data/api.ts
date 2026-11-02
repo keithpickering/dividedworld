@@ -73,6 +73,8 @@ export interface ScreenSettings {
    * the keys its rules read, from the economy row an admin tunes. A key it lacks is the compiled economy's (`withCardEconomy`).
    */
   readonly cardEconomy: Readonly<Record<string, number>>;
+  /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
+  readonly toastDefaults: readonly AlertKind[];
 }
 
 /* ------------------------------------------------------------- public reads ---- */
@@ -511,13 +513,21 @@ export interface Preferences {
   readonly alertsSeenAt: string | null;
   /** The end (an ISO time) of the last settlement whose summary the account has seen, or null. Changed only by `seeSettlement`, only forward. */
   readonly settlementSeen: string | null;
+  /**
+   * The alert kinds the player keeps on toast (Settings › Notifications), exactly those; an empty list is a choice (nothing toasts). Null means
+   * they never chose, and the instance's `toastDefaults` hold. Changed by `setPreferences` (null there puts it back); read by its own account alone.
+   */
+  readonly toasts: readonly AlertKind[] | null;
 }
 
-/** What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `forgetCardsMet`) or the two marks. */
+/**
+ * What `setPreferences` takes: the choices a player makes in Settings, not the set of cards met (`meetCard`, `forgetCardsMet`) or the two marks.
+ * A `toasts` of null puts the choice back to the instance's defaults; a key left out leaves the choice as it is.
+ */
 export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet' | 'alertsSeenAt' | 'settlementSeen'>>;
 
 /** What an account's preferences are before it has set any (account_preferences' defaults). */
-export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null };
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null };
 
 export interface MyInvite {
   readonly id: number;

@@ -3,6 +3,7 @@
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
 import { QUADRANTS } from './types.ts';
+import { ALERT_KINDS } from './alerts.ts';
 import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, StaffSeed, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
@@ -67,6 +68,15 @@ function hintsRule(v: unknown): string | null {
   return isWhole(h.least, 1) && num(h.share) && h.share > 0.5 && h.share <= 1 && num(h.split) && h.split > 0 && h.split <= 0.5 && isSpan(h.window, GRACE_UNITS) ? null : shape;
 }
 
+/** The toast defaults: a list of alert kinds, each named once (none at all is a choice: nothing toasts until a player says so). */
+function toastDefaultsRule(v: unknown): string | null {
+  const shape = `a list of the kinds of alert that toast (${ALERT_KINDS.join(', ')}), each named once`;
+  if (!Array.isArray(v)) return shape;
+  const unknown = v.filter((k) => !(ALERT_KINDS as readonly unknown[]).includes(k));
+  if (unknown.length) return `${shape}; ${unknown.map((k) => JSON.stringify(k)).join(', ')} ${unknown.length === 1 ? 'is' : 'are'} not one`;
+  return new Set(v).size === v.length ? null : `${shape}; one is named twice`;
+}
+
 /** The phases setting: each phase holds its numbers as whole numbers, at least 1. */
 function phasesRule(v: unknown): string | null {
   const shape = 'an object of honeymoon, reign and meltdown, each holding its numbers (honeymoon and meltdown also their days) as whole numbers, at least 1';
@@ -126,6 +136,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   phases: phasesRule,
   hints: hintsRule,
+  toastDefaults: toastDefaultsRule,
   inheritanceGraceDays: whole(0, 'days'),
   rosterRecentExcluded: whole(0, 'Bosses'),
   structuralHoldHours: whole(1, 'hours'),

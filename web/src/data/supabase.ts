@@ -103,6 +103,8 @@ function toPreferences(r: Row): Preferences {
     smoke: r['smoke'] ?? d.smoke, contrast: r['contrast'] ?? d.contrast, textSize: num(r['text_size'], d.textSize) as Preferences['textSize'],
     cardsMet: Array.isArray(r['cards_met']) ? r['cards_met'].filter((k): k is string => typeof k === 'string') : d.cardsMet,
     alertsSeenAt: str(r['alerts_seen_at']), settlementSeen: str(r['settlement_seen']),
+    /* A kind this build does not know (a newer server's) is no kind here; a choice never made stays null, which is not an empty one. */
+    toasts: Array.isArray(r['toasts']) ? r['toasts'].filter((k): k is AlertKind => (ALERT_KINDS as readonly unknown[]).includes(k)) : null,
   };
 }
 
@@ -925,13 +927,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return a.ok ? { ok: true, value: a.value['hidden'] === true } : a;
     },
     async preferences(): Promise<Preferences> {
-      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,cards_met,alerts_seen_at,settlement_seen').limit(1)))[0];
+      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,cards_met,alerts_seen_at,settlement_seen,toasts').limit(1)))[0];
       return r ? toPreferences(r) : DEFAULT_PREFERENCES;
     },
     async setPreferences(p) {
       const a = await rpcWrite(() => client.rpc('set_preferences', {
         theme: p.theme ?? null, postbit: p.postbit ?? null, motion: p.motion ?? null,
         smoke: p.smoke ?? null, contrast: p.contrast ?? null, text_size: p.textSize ?? null,
+        toasts: p.toasts ?? null, toasts_default: p.toasts === null,
       }));
       return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
     },

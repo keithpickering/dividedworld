@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { ALERT_KINDS, WRITTEN_KINDS, DERIVED_KINDS, EVERYONE_KINDS, RULING_SUBS, isWritten, isForEveryone } from './alerts.ts';
 
 // The alerts design, section 2's catalog, as the plan's Task 3 names its keys.
@@ -34,4 +36,11 @@ test('the settlement and followed threads are derived when read, never stored; e
 
 test('no ruling has a build yet, so none has a sub-key', () => {
   assert.deepEqual([...RULING_SUBS], []);
+});
+
+test('the kinds in TypeScript are the kinds set_preferences accepts as toasts, in the column\'s check and in the function (the lists are one list)', () => {
+  const sql = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0064_toast_kinds.sql'), 'utf8');
+  const lists = [...sql.matchAll(/array\[((?:'[A-Za-z]+',?\s*)+)\]/g)].map((m) => [...m[1]!.matchAll(/'([A-Za-z]+)'/g)].map((k) => k[1]!).sort());
+  assert.equal(lists.length, 2, 'the check and the function each list the kinds');
+  for (const list of lists) assert.deepEqual(list, [...ALERT_KINDS].sort());
 });

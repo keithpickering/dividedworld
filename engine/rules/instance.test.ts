@@ -59,6 +59,7 @@ const settings: Settings = {
   reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
   reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
   hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } },
+  toastDefaults: ['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'ruling', 'settlement', 'update'],
 };
 
 const bot: ModBotPersona = {
@@ -541,6 +542,17 @@ test('hints: a least of whole reactions, a share above a half, a split of at mos
   for (const window of [{ unit: 'second', count: 30 }, { unit: 'minute', count: 0 }, 360, null]) assert.match(bad({ window }), /setting "hints"/, JSON.stringify(window));
   assert.match(settingsProblems({ ...settings, hints: [] as never }).join('\n'), /setting "hints"/);
   assert.match(settingsProblems({ ...settings, hints: { least: 10, share: 0.6, split: 0.3 } as never }).join('\n'), /setting "hints"/, 'a missing window');
+});
+
+test('toastDefaults: the kinds that toast until a player chooses, each a kind of alert named once; none at all is allowed', () => {
+  const { toastDefaults: _gone, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "toastDefaults" is missing/);
+  assert.deepEqual(settingsProblems({ ...settings, toastDefaults: [] }), []);
+  assert.deepEqual(settingsProblems({ ...settings, toastDefaults: ['seasonNews', 'hint'] }), []);
+  for (const bad of [['confetti'], ['quote', 'quote'], 'quote', null, [1], ['quote', null], { quote: true }]) {
+    assert.match(settingsProblems({ ...settings, toastDefaults: bad as never }).join('\n'), /setting "toastDefaults"/, JSON.stringify(bad));
+  }
+  assert.match(settingsProblems({ ...settings, toastDefaults: ['quote', 'confetti'] as never }).join('\n'), /confetti/, 'the unknown kind is named');
 });
 
 // The card mechanic's pairings (docs/plans/2026-11-01-card-plays-plan.md, Task 1): each refused, naming the card.

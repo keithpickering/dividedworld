@@ -22,7 +22,7 @@ import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
-import { isWritten, type WrittenKind } from '../../rules/alerts.ts';
+import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
@@ -279,7 +279,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
-    presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow,
+    presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
     cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
   };
@@ -1600,9 +1600,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p.smoke !== undefined && !['full', 'low', 'off'].includes(p.smoke)) return refuse('the smoke is full, low or off');
       if (p.contrast !== undefined && p.contrast !== 'standard' && p.contrast !== 'high') return refuse('contrast is standard or high');
       if (p.textSize !== undefined && ![100, 125, 150, 200].includes(p.textSize)) return refuse('text size is 100, 125, 150 or 200 percent');
+      /* As set_preferences (0064) keeps the toasts: the kinds of alert there are, each once in the order first named, null for the defaults. */
+      let toasts = account.prefs.toasts;
+      if (p.toasts === null) toasts = null;
+      else if (p.toasts !== undefined) {
+        const unknown = [...new Set(p.toasts.filter((k) => !(ALERT_KINDS as readonly string[]).includes(k)))];
+        if (unknown.length) return refuse(`not a kind of alert: ${unknown.join(', ')}`);
+        toasts = [...new Set(p.toasts)];
+      }
       /* The set of cards met is no parameter of set_preferences: a stray one in a patch is ignored, as the server would. */
-      const { cardsMet: _ignored, ...choices } = p as PreferencesPatch & { cardsMet?: unknown };
-      account.prefs = { ...account.prefs, ...choices };
+      const { cardsMet: _ignored, toasts: _toasts, ...choices } = p as PreferencesPatch & { cardsMet?: unknown };
+      account.prefs = { ...account.prefs, ...choices, toasts };
       return ok(account.prefs);
     },
     meetCard(card) {
