@@ -1,6 +1,6 @@
 /*
  * Feelin' Fab (Effect.tsx): the rainbow sits behind the words in a layer that takes no pointer and no room, so the post reads
- * and lays out as it would bare. Colors come only from the palettes Effect.tsx declares once per page on the root as custom
+ * and lays out as it would bare. Colors come only from the palettes Effect.tsx sets on each post's box from one shared object, as custom
  * properties (--dw-fab-light-N for the light board, --dw-fab-dark-N for the dark), picked here for the mode the way the theme
  * contract picks (tools/check-theme.mjs): light on the base, dark under the device's setting unless the player chose light, and
  * again when the player chose dark. The words keep a text shadow in the board's ground. Animation moves only transform and
@@ -121,13 +121,13 @@
   fill: var(--dw-fab-twinkle);
   /* Each twinkle is its own small layer, always: up to ~10 per post (4, 8 or 10 by level). Promoting them only while the post is
      in view re-rasterized worse as posts scrolled in (measured at light 4x: 14-19 dropped frames against 0-4), so the layer count
-     is the price of a scale and fade that are the compositor's alone. */
-  will-change: transform, opacity;
+     is the price of a scale and fade that are the compositor's alone. A post held still has none: its twinkles do not move. */
   animation-name: dw-fab-twinkle;
   animation-duration: 3s;
   animation-iteration-count: infinite;
   animation-timing-function: ease-in-out;
 }
+.dw-fab[data-kb-moving="true"] .dw-fab-twinkle { will-change: transform, opacity; }
 @keyframes dw-fab-twinkle {
   0%, 100% { opacity: 0.15; transform: scale(0.5); }
   50% { opacity: 1; transform: scale(1); }

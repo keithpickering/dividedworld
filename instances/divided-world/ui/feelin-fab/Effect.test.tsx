@@ -219,7 +219,8 @@ describe("Feelin' Fab", () => {
     expect(css).toMatch(/\.dw-fab\[data-kb-moving="true"\]\s*\.dw-fab-layer\s*\{[^}]*will-change:\s*transform/u);
     expect(css).toMatch(/\.dw-fab-cycle\[data-kb-moving="false"\]\s*\.dw-fab-layer\s*\{[^}]*width:\s*100%/u);
     expect(css).toMatch(/\.dw-fab-twinkle\s*\{[^}]*animation-name:\s*dw-fab-twinkle/u);
-    expect(css).toMatch(/\.dw-fab-twinkle\s*\{[^}]*will-change:\s*transform,\s*opacity/u);
+    expect(css).not.toMatch(/(^|\n)\.dw-fab-twinkle\s*\{[^}]*will-change/u);
+    expect(css).toMatch(/\.dw-fab\[data-kb-moving="true"\]\s*\.dw-fab-twinkle\s*\{[^}]*will-change:\s*transform,\s*opacity/u);
     expect(css).toMatch(/\.dw-fab-ground\s*\{[^}]*overflow:\s*hidden/u);
   });
 
