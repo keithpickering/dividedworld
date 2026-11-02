@@ -216,10 +216,10 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
 
   /* ---- who: always here, the season began on Oct 1 ---- */
   seed.season({ number: 1, startsAt: new Date(utc(1, 0, 0)).toISOString() });
-  const player = seed.account('player', { email: EMAILS.player });
-  const rival = seed.account('rival', { email: EMAILS.rival });
-  const reader = seed.account('reader', { email: EMAILS.reader });
-  const crowd = [1, 2, 3, 4].map((n) => seed.account(`ringside-${n}`, { email: `ringside-${n}@boards.test` }));
+  const player = seed.account('player', { email: EMAILS.player, seasoned: true });
+  const rival = seed.account('rival', { email: EMAILS.rival, seasoned: true });
+  const reader = seed.account('reader', { email: EMAILS.reader, seasoned: true });
+  const crowd = [1, 2, 3, 4].map((n) => seed.account(`ringside-${n}`, { email: `ringside-${n}@boards.test`, seasoned: true }));
   const pipewrench = seed.character(player, 'Pipewrench', 'heel', { at: utc(1, 12, 0) });
   const hooligan = seed.character(player, 'Mrs. Hooligan', 'face', { at: utc(2, 12, 0) });
   const spritey = seed.character(player, 'Spritey', 'jabroni', { at: utc(3, 12, 0) });

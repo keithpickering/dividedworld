@@ -21,9 +21,14 @@ const manifest: BoardManifest = {
     { id: 'menu-characters', role: 'link', name: 'My characters', within: 'menu' },
     { id: 'menu-season', role: 'link', name: 'Season', within: 'menu' },
     { id: 'menu-log', role: 'link', name: 'My log', within: 'menu' },
-    { id: 'menu-updates', role: 'link', name: 'Updates', within: 'menu' },
+    /*
+     * The build's menu gains a Guide tab before Updates (the onboarding plan, Task 8; the Strategy Guide's page) that this board, drawn before the guide,
+     * does not have. So Updates and Settings, which follow it, stand one tab's width further right than the board draws them: each is compared by its
+     * y and height and its type, not its x and width. Every tab before the Guide is still held in full.
+     */
+    { id: 'menu-updates', role: 'link', name: 'Updates', within: 'menu', box: 'height' },
     /* The board draws Settings twice at the end of its menu (a slip of the board's own); the first is compared. */
-    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu', nth: 0 },
+    { id: 'menu-settings', role: 'link', name: 'Settings', within: 'menu', nth: 0, box: 'height' },
 
     { id: 'title', role: 'heading', name: 'Season 2', type: false },
     /* The two tabs are a real tab list in the build (one selected, each controlling the panel), where the board draws a nav of two links. */

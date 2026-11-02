@@ -212,6 +212,12 @@
   font-weight: 800;
 }
 
+/* Emphasis is drawn in a face the glass loads: the prose's 500 has no italic, and a browser's synthesized slant is no face the contrast guard can measure. */
+.kb-guide-prose em {
+  font-style: italic;
+  font-weight: 700;
+}
+
 .kb-guide-prose code {
   padding: 0 0.3em;
   font-family: var(--kb-glass-font-body);

@@ -121,12 +121,16 @@ for (const how of ['Back', 'Esc'] as const) {
  */
 type E2eWindow = typeof globalThis & { readonly __kbFake: Fake; readonly __kbDemo: Demo };
 
-/** Signs in a new account with no characters, so the reply box offers "Make a character". */
+/**
+ * Signs in an account with no characters, so the reply box offers "Make a character". It is a seasoned one (it has seen the welcome): a new
+ * account with no character is sent to /welcome from a board page, once (the onboarding plan's Task 7), and these tests are about Back
+ * from the glass page the reply box leads to, not the welcome.
+ */
 async function signInWithNoCharacters(page: Page): Promise<void> {
   await page.waitForFunction(() => '__kbFake' in globalThis);
   await page.evaluate(() => {
     const w = globalThis as E2eWindow;
-    w.__kbFake.signInAs(w.__kbFake.seed.account('e2e-no-characters'));
+    w.__kbFake.signInAs(w.__kbFake.seed.account('e2e-no-characters', { seasoned: true }));
   });
 }
 

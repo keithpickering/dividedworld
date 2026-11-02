@@ -26,7 +26,7 @@ import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts'
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
-import { TOUR_KEYS } from '../tips/keys.ts';
+import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
@@ -37,6 +37,9 @@ import type {
 
 /** The tour's tips, which `replayTour` forgets alone: the engine's one list, which the SQL's replay_tour is held to (engine/ui/tips/keys.test.ts). */
 const TOUR_TIPS: readonly string[] = TOUR_KEYS;
+
+/** When a seasoned account (`Seed.account`) saw the welcome: fixed, so nothing about it moves with a scene's clock. */
+const SEASONED_WELCOME = '2026-10-01T00:00:00.000Z';
 
 /** The code `verifyCode` accepts for any address. */
 export const TEST_CODE = '123456';
@@ -53,7 +56,11 @@ export interface LiveEvent {
 }
 
 export interface Seed {
-  account(name: string, options?: { email?: string; admin?: boolean }): Id;
+  /**
+   * An account. `seasoned` makes its player a veteran of the forum: the welcome seen (at a fixed time, so a scene does not
+   * move with the clock) and every onboarding tip seen, so no spotlight or tour waits on the board. Tips stay 'on'.
+   */
+  account(name: string, options?: { email?: string; admin?: boolean; seasoned?: boolean }): Id;
   admin(account: Id, on?: boolean): void;
   /** A character of an account; debuted unless said otherwise. */
   character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; loudness?: DebutLoudness; at?: number }): Id;
@@ -1919,6 +1926,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const email = (o?.email ?? `${name.toLowerCase()}@example.test`).toLowerCase();
       const a = addAccount(email);
       a.admin = o?.admin === true;
+      if (o?.seasoned === true) a.prefs = { ...a.prefs, welcomedAt: SEASONED_WELCOME, tipsSeen: [...TIP_KEYS] };
       return a.id;
     },
     admin(account, on = true) { accounts.get(account)!.admin = on; },

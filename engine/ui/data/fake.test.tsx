@@ -8,6 +8,7 @@ import { describe, expect, test } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
 import { landsOn, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import type { Act, Refusal, Tally } from './api.ts';
+import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 import { LOG_ROWS, micros } from './log-page.ts';
 import { systemSettings, testSystem } from '../../rules/test-system.ts';
@@ -679,6 +680,16 @@ describe('the account', () => {
     for (let i = 0; i < 64; i++) must(await fake.seeTip(`tip-${i}`));
     expect(await fake.seeTip('one-too-many')).toEqual(refused('at most 64 tips are kept as seen'));
     expect(must(await fake.seeTip('tip-0')).tipsSeen).toHaveLength(64);
+  });
+  test('a seasoned account has seen the welcome and every tip, keeps tips on, and an unseasoned one has seen none', async () => {
+    const { fake } = world();
+    const vet = fake.seed.account('vet', { seasoned: true });
+    fake.signInAs(vet);
+    expect(await fake.preferences()).toMatchObject({ welcomedAt: '2026-10-01T00:00:00.000Z', tips: 'on', tipsSeen: [...TIP_KEYS] });
+    fake.clock.advance(60_000);
+    expect((await fake.preferences()).welcomedAt).toBe('2026-10-01T00:00:00.000Z');
+    fake.signInAs(fake.seed.account('newcomer'));
+    expect(await fake.preferences()).toMatchObject({ welcomedAt: null, tips: 'on', tipsSeen: [] });
   });
   test('replaying the tour marks the welcome seen when it never was, and keeps a first time', async () => {
     const { fake } = world();
