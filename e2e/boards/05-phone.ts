@@ -24,9 +24,13 @@ const manifest: BoardManifest = {
     { id: 'hud', role: 'region', name: 'Game HUD', type: false, box: 'size' },
     /* The select is the phone's display size (20px) where the board draws 19px, so its type is not compared; its width is what the row leaves it. */
     { id: 'hud-swap', role: 'combobox', name: 'Posting as', within: 'hud', origin: 'hud', box: 'position', type: false },
-    { id: 'hud-alerts', role: 'link', name: 'Alerts, 5 new', buildName: 'Alerts 5 new', within: 'hud', origin: 'hud', type: false },
+    /* The bell, Menu and Hand sit in auto columns, each as wide as its words, so the bell's x is the sum of Menu's and Hand's widths to its right.
+       02-phone holds Menu and Hand whole (size and place); here the bell is held in its row and its size, and Hand by its place: a renderer that
+       sets "Hand" a few pixels wider (CI's headless shell drew it 4.25px wider than this board, and the bell 8.25px left) moves no rule this
+       board decides. */
+    { id: 'hud-alerts', role: 'link', name: 'Alerts, 5 new', buildName: 'Alerts 5 new', within: 'hud', origin: 'hud', type: false, box: 'height' },
     { id: 'hud-menu', role: 'button', name: 'Menu', within: 'hud', origin: 'hud', type: false },
-    { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', within: 'hud', origin: 'hud', type: false },
+    { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', within: 'hud', origin: 'hud', type: false, box: 'position' },
     { id: 'dismiss-1', role: 'button', name: 'Dismiss', nth: 0, box: 'size', type: false },
     { id: 'dismiss-2', role: 'button', name: 'Dismiss', nth: 1, box: 'size', type: false },
   ],
