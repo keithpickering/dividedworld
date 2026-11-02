@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Strategy Guide: the glass page</title>
+<!-- A board of the onboarding design session (docs/plans/2026-11-02-onboarding-design.md), 1440 by 1380: the Strategy
+     Guide, scrolled to Classes. The contents stay in view and mark the section on screen; the article is the
+     instance's Markdown in Gabe's voice. Each class's color, name, description and grid marks are drawn from the class
+     card's own entry (instances/divided-world/ui/index.ts); only the hint line is the guide's. The copy is a draft for
+     the owner's review. A reference for the look, not code to copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+::selection{background:#19e3ff;color:#03141a}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 16px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#e4def7;white-space:nowrap}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.cur{background:rgba(25,227,255,.16);box-shadow:inset 0 -3px 0 #19e3ff;color:#ffffff}
+h1{margin:0;font:112px/1 Anton,sans-serif;letter-spacing:1px;text-shadow:0 0 30px rgba(25,227,255,.35)}
+.lede{margin:0;font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.toc{list-style:none;margin:0;padding:0}
+.toc li{border-bottom:1px solid rgba(241,236,255,.2)}
+.toc a{display:block;padding:12px 0;text-decoration:none;font:800 22px/1.3 'Barlow Condensed',sans-serif;color:#f1ecff}
+.toc .cur{background:none;box-shadow:none}
+.toc .cur a{color:#9ef4ff;box-shadow:inset 3px 0 0 #19e3ff;padding-left:14px}
+.post{background:rgba(8,5,16,.86);clip-path:polygon(0 0,calc(100% - 24px) 0,100% 24px,100% 100%,24px 100%,0 calc(100% - 24px));padding:32px 44px 40px;outline:1px solid rgba(201,184,255,.55);outline-offset:-1px}
+.post h2{margin:0;font:64px/1.02 Anton,sans-serif;letter-spacing:.5px;text-shadow:0 0 24px rgba(201,184,255,.35)}
+.post > p{max-width:780px;margin:16px 0 0;font:500 22px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.cls{display:grid;grid-template-columns:116px 1fr;column-gap:26px;padding:24px 0;border-top:1px solid rgba(241,236,255,.22)}
+.cls:first-of-type{margin-top:26px}
+.grid{display:grid;grid-template-columns:50px 50px;grid-template-rows:50px 50px;gap:4px;align-self:start}
+.grid span{display:flex;align-items:center;justify-content:center;border:1px solid rgba(241,236,255,.35);font:800 26px/1 'Barlow Condensed',sans-serif;color:#e4def7}
+.grid .e{background:rgba(255,217,61,.2);border-color:#ffd93d;color:#ffd93d}
+.grid .h{background:rgba(255,61,127,.16);border-color:#ff7aa5;color:#ff9cc0}
+.grid .c{border-style:dashed;border-color:#9ef4ff;color:#9ef4ff}
+.name{display:flex;align-items:center;gap:14px}
+.chip{transform:skewX(-10deg);padding:0 12px;font:800 22px/1.5 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.chip b{display:inline-block;transform:skewX(10deg)}
+.cls p{margin:8px 0 0;max-width:760px;font:500 22px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.hint{display:flex;gap:12px;align-items:baseline;margin-top:10px;font:700 22px/1.4 'Barlow Condensed',sans-serif;color:#9ef4ff}
+.hint i{font-style:normal;flex:none;font:800 20px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#c9b8ff}
+.legend{display:flex;gap:26px;margin-top:20px;font:600 21px 'Barlow Condensed',sans-serif;color:#e4def7}
+.legend span{display:inline-flex;gap:8px;align-items:center}
+.legend s{display:inline-block;width:18px;height:18px;text-decoration:none}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1380px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+  <svg aria-hidden="true" width="1440" height="1380" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="lA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="77"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="lB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="5"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="lsoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+      <mask id="lcalm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="1380"><rect width="1440" height="1380" fill="#ffffff"></rect><rect x="40" y="230" width="1360" height="1130" fill="#000000" opacity="0.85" filter="url(#lsoft)"></rect></mask>
+    </defs>
+    <g mask="url(#lcalm)"><rect width="1440" height="1380" filter="url(#lA)" opacity="0.95"></rect><rect width="1440" height="1380" filter="url(#lB)" opacity="0.5"></rect></g>
+  </svg>
+
+  <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 4px; padding: 0 32px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+    <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 14px"><b><kbd style="display: inline-block; margin-right: 10px; padding: 0 6px; border: 1px solid #ffffff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>ALERTS</b></a>
+    <a href="#" class="tab"><b>VENDING MACHINE</b></a>
+    <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+    <a href="#" class="tab"><b>SEASON</b></a>
+    <a href="#" class="tab"><b>MY LOG</b></a>
+    <a href="#" class="tab cur" aria-current="page"><b>GUIDE</b></a>
+    <a href="#" class="tab"><b>UPDATES</b></a>
+    <a href="#" class="tab"><b>SETTINGS</b></a>
+  </nav>
+
+  <header style="position: absolute; left: 64px; top: 116px"><h1>STRATEGY GUIDE</h1></header>
+
+  <!-- the contents stay in view as the article scrolls; the section on screen is marked, and each is a link a
+       tip, an alert or another page can open the guide at -->
+  <nav aria-label="Guide contents" style="position: absolute; left: 64px; top: 262px; width: 300px">
+    <p class="lede">How the game works, from the people who made it. The voice is Gabe's; every fact in it is true, and every number is today's.</p>
+    <ul class="toc" style="margin-top: 22px">
+      <li><a href="#">Welcome letter</a></li>
+      <li><a href="#">The metagame</a></li>
+      <li><a href="#">Reactions</a></li>
+      <li><a href="#">Aura</a></li>
+      <li class="cur"><a href="#" aria-current="location">Classes</a></li>
+      <li><a href="#">Turns and reveals</a></li>
+      <li><a href="#">Cards</a></li>
+      <li><a href="#">The masks</a></li>
+      <li><a href="#">The System</a></li>
+      <li><a href="#">Coming attractions</a></li>
+    </ul>
+  </nav>
+
+  <article class="post" style="position: absolute; left: 408px; right: 64px; top: 236px">
+    <h2>Classes</h2>
+    <p>Every character has one, and only you can see it. A class decides which corners of the reaction grid pay your character and which ones cost it. Reactions to a card you play count for you too, read through your class.</p>
+    <p>Pick the one that sounds like how you already post, or one that sounds like a bad idea. You can Turn later.</p>
+    <div class="legend" aria-hidden="true">
+      <span>top row excited, bottom calm; left negative, right positive</span>
+      <span><s style="background: rgba(255,217,61,.2); border: 1px solid #ffd93d"></s>earns</span>
+      <span><s style="background: rgba(255,61,127,.16); border: 1px solid #ff7aa5"></s>hurts</span>
+      <span><s style="border: 1px dashed #9ef4ff"></s>earns by calling it early</span>
+    </div>
+
+    <section class="cls" aria-labelledby="c-face">
+      <div class="grid" role="img" aria-label="Earns from hype, hurt by the groan"><span></span><span class="e">+</span><span class="h">−</span><span></span></div>
+      <div>
+        <div class="name"><span class="chip" id="c-face" style="background: #2e86de; color: #ffffff"><b>FACE</b></span></div>
+        <p>The crowd's favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.</p>
+        <p class="hint"><i>GABE'S HINT</i>Get behind the posts you like.</p>
+      </div>
+    </section>
+    <section class="cls" aria-labelledby="c-heel">
+      <div class="grid" role="img" aria-label="Earns from heat, hurt by the calm"><span class="e">+</span><span></span><span></span><span class="h">−</span></div>
+      <div>
+        <div class="name"><span class="chip" id="c-heel" style="background: #c0392b; color: #ffffff"><b>HEEL</b></span></div>
+        <p>Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on. Hurt by the polite shrug, calm and positive.</p>
+        <p class="hint"><i>GABE'S HINT</i>Being hated is a living.</p>
+      </div>
+    </section>
+    <section class="cls" aria-labelledby="c-jabroni">
+      <div class="grid" role="img" aria-label="Earns from the groan, hurt by hype"><span></span><span class="h">−</span><span class="e">+</span><span></span></div>
+      <div>
+        <div class="name"><span class="chip" id="c-jabroni" style="background: #d4ac0d; color: #14100a"><b>JABRONI</b></span></div>
+        <p>Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts. Hurt by being taken sincerely, excited and positive.</p>
+        <p class="hint"><i>GABE'S HINT</i>Commit to the bit. Especially when nobody laughs.</p>
+      </div>
+    </section>
+    <section class="cls" aria-labelledby="c-tech">
+      <div class="grid" role="img" aria-label="Earns from the calm, hurt by heat"><span class="h">−</span><span></span><span></span><span class="e">+</span></div>
+      <div>
+        <div class="name"><span class="chip" id="c-tech" style="background: #1e8449; color: #ffffff"><b>TECHNICIAN</b></span></div>
+        <p>The respected regular. Earns from calm, positive reactions to its posts and cards, and more when an old post of its own still draws them. Hurt by heat: excited, negative reactions.</p>
+        <p class="hint"><i>GABE'S HINT</i>Write the reply people come back to.</p>
+      </div>
+    </section>
+    <section class="cls" aria-labelledby="c-lurker">
+      <div class="grid" role="img" aria-label="Earns by calling where any post ends up"><span class="c">•</span><span class="c">•</span><span class="c">•</span><span class="c">•</span></div>
+      <div>
+        <div class="name"><span class="chip" id="c-lurker" style="background: #7f8c8d; color: #0c0f10"><b>LURKER</b></span></div>
+        <p>Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards. Hurt by posting more than three times a day.</p>
+        <p class="hint"><i>GABE'S HINT</i>Watch first. Say less.</p>
+      </div>
+    </section>
+  </article>
+</div>
+</body>
+</html>
