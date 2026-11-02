@@ -106,9 +106,6 @@ describe('the HUD tour', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  /* Two readers make a read on a board page: the tips provider's (the tips and the tour share it) and the alerts feed's
-     (engine/ui/alerts/useAlerts.ts). The baseline is the same page for an account the tour does not apply to, so a new reader elsewhere
-     moves both counts alike, and only a read the tour itself adds (as the HUD did before, a third) breaks the equality. */
   /* A baseline page would hide the defect this guards: the HUD's old read of its own ran for every signed-in account, tour or not. So
    * the count is absolute: the page's readers of the preferences are the tips provider (which carries the welcome to the tour) and the
    * alerts feed (engine/ui/alerts/useAlerts.ts). A third reader added anywhere on the board page fails here and should be counted here. */
