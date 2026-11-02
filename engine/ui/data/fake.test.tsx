@@ -642,6 +642,16 @@ describe('the account', () => {
     expect(must(await fake.forgetCardsMet()).cardsMet).toEqual([]);
     expect((await fake.preferences()).cardsMet).toEqual([]);
   });
+  test('the two marks move only forward, refuse what is not a time, and are the account\'s', async () => {
+    const { fake } = world();
+    for (const [see, key] of [[fake.seeAlerts, 'alertsSeenAt'], [fake.seeSettlement, 'settlementSeen']] as const) {
+      expect(await see('2026-10-30T08:00:00.000Z')).toEqual({ ok: true, value: '2026-10-30T08:00:00.000Z' });
+      expect(await see('2026-10-29T08:00:00.000Z')).toEqual({ ok: true, value: '2026-10-30T08:00:00.000Z' });
+      expect(await see('2026-10-31T08:00:00.000Z')).toEqual({ ok: true, value: '2026-10-31T08:00:00.000Z' });
+      expect(await see('yesterday')).toEqual(refused('a mark is a time'));
+      expect((await fake.preferences())[key]).toBe('2026-10-31T08:00:00.000Z');
+    }
+  });
   test('the wallet is the settled balance under its cap', async () => {
     const { fake, ana } = world();
     expect(await fake.wallet()).toEqual({ balance: 0, cap: 600 });
