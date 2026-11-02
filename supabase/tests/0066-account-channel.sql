@@ -13,16 +13,23 @@ begin
   perform tests.commit($sql$
     delete from broadcasts_due;
     insert into broadcasts_due (topic, event, payload) values ('reach', 'effect', '{"n": 1}'), ('reach', 'effect', '{"n": 2}');
+    drop table if exists race_claims;
     create table race_claims (racer text, id bigint);
     grant all on race_claims to service_role;
   $sql$);
-  said := tests.race_service(
-    $s$insert into race_claims select 'a', (x ->> 'id')::bigint from jsonb_array_elements(due_broadcasts(1)) x$s$,
-    $s$insert into race_claims select 'b', (x ->> 'id')::bigint from jsonb_array_elements(due_broadcasts(1)) x$s$);
-  -- Read in a session of its own, so this transaction holds no lock on the table and it can be dropped: nothing is left behind.
-  select jsonb_agg(jsonb_build_array(r.racer, r.id)) into claims
-  from extensions.dblink(current_setting('kayfabb.scratch_url'), 'select racer, id from race_claims') as r(racer text, id bigint);
-  perform tests.commit($sql$ drop table race_claims; delete from broadcasts_due; $sql$);
+  begin
+    said := tests.race_service(
+      $s$insert into race_claims select 'a', (x ->> 'id')::bigint from jsonb_array_elements(due_broadcasts(1)) x$s$,
+      $s$insert into race_claims select 'b', (x ->> 'id')::bigint from jsonb_array_elements(due_broadcasts(1)) x$s$);
+    -- Read in a session of its own, so this transaction holds no lock on the table and it can be dropped.
+    select jsonb_agg(jsonb_build_array(r.racer, r.id)) into claims
+    from extensions.dblink(current_setting('kayfabb.scratch_url'), 'select racer, id from race_claims') as r(racer text, id bigint);
+  exception when others then
+    -- Nothing is left behind, whatever went wrong.
+    perform tests.commit($sql$ drop table if exists race_claims; delete from broadcasts_due; $sql$);
+    raise;
+  end;
+  perform tests.commit($sql$ drop table if exists race_claims; delete from broadcasts_due; $sql$);
   if said[1] is not null or said[2] is not null then raise exception 'a racing drain failed: %', said; end if;
   if (select count(*) from jsonb_array_elements(coalesce(claims, '[]')) c where c ->> 0 = 'a') is distinct from 1
      or (select count(*) from jsonb_array_elements(coalesce(claims, '[]')) c where c ->> 0 = 'b') is distinct from 1 then
@@ -150,6 +157,12 @@ begin
   update broadcasts_due set claimed_until = clock_timestamp() + interval '1 second';
   perform broadcasts_renew(jsonb_build_array(row_id));
   if (select claimed_until - clock_timestamp() from broadcasts_due where id = row_id) < interval '90 seconds' then raise exception 'a renewed claim holds the lease again'; end if;
+  -- Isolated failures are counted apart from claims: a row claimed many times in an outage has failed alone none.
+  update broadcasts_due set claimed_until = null;
+  if (due_broadcasts(10) -> 0 ->> 'failures')::integer is distinct from 0 then raise exception 'claims are not failures'; end if;
+  perform broadcasts_failed(jsonb_build_array(row_id));
+  perform broadcasts_failed(jsonb_build_array(row_id));
+  if (select failures from broadcasts_due where id = row_id) is distinct from 2 then raise exception 'a row that failed alone twice counts 2 failures, not %', (select failures from broadcasts_due where id = row_id); end if;
   -- Dead: kept in full, never handed out, and sending the others clears nothing of it.
   perform broadcasts_dead(jsonb_build_array(row_id), 'refused');
   update broadcasts_due set claimed_until = null;
@@ -159,5 +172,9 @@ begin
     raise exception 'a dead row keeps its record';
   end if;
   delete from broadcasts_due;
+  -- The claim does not walk dead rows: its predicate has an index of its own.
+  if not exists (select 1 from pg_indexes where tablename = 'broadcasts_due' and indexdef ~* '\(id\) WHERE \(?dead_at IS NULL') then
+    raise exception 'the claim has no partial index on live rows: %', (select string_agg(indexdef, '; ') from pg_indexes where tablename = 'broadcasts_due');
+  end if;
 end $$;
 

@@ -34,12 +34,18 @@ end $$;
 -- the attempts (5 seconds, then 10, up to the lease), so a row is tried again soon and not at once. A drain doing a long
 -- one-at-a-time pass renews the lease it holds (broadcasts_renew). A row the drain gives up on is not deleted:
 -- broadcasts_dead keeps it, with its payload and why, out of every claim, so nothing waits behind it and the record stays
--- (supabase/functions/_shared/outbox.ts says when a row is given up). Dead rows are an admin's to read and clear; there is
--- no screen for them yet, and a row there harms no player: its Act is on the board for the next load.
+-- (supabase/functions/_shared/outbox.ts says when a row is given up). Dead rows are an admin's to read and clear, and they
+-- stay until then: an admin view and a retention step are a follow-up, and a row there harms no player, since its Act is on
+-- the board for the next load.
 alter table broadcasts_due add column claimed_until timestamptz;
 alter table broadcasts_due add column attempts integer not null default 0;
 alter table broadcasts_due add column dead_at timestamptz;
 alter table broadcasts_due add column dead_why text;
+-- Counted apart from attempts: an attempt is a claim, which an outage piles up on every waiting row; a failure is a send of this row
+-- alone that failed while others went through, which is what says the row itself is the trouble.
+alter table broadcasts_due add column failures integer not null default 0;
+-- The claim reads live rows in order; dead ones, which stay, are not walked.
+create index broadcasts_due_live on broadcasts_due (id) where dead_at is null;
 
 create or replace function due_broadcasts(most integer default 500) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -52,9 +58,9 @@ begin
       select w.id from broadcasts_due w
       where w.dead_at is null and (w.claimed_until is null or w.claimed_until < clock_timestamp())
       order by w.id limit greatest(most, 0) for update skip locked)
-    returning b.id, b.topic, b.event, b.payload, b.attempts
+    returning b.id, b.topic, b.event, b.payload, b.attempts, b.failures
   )
-  select jsonb_agg(jsonb_build_object('id', t.id, 'topic', t.topic, 'event', t.event, 'payload', t.payload, 'attempts', t.attempts) order by t.id) into claimed from taken t;
+  select jsonb_agg(jsonb_build_object('id', t.id, 'topic', t.topic, 'event', t.event, 'payload', t.payload, 'attempts', t.attempts, 'failures', t.failures) order by t.id) into claimed from taken t;
   return coalesce(claimed, '[]');
 end $$;
 
@@ -78,6 +84,16 @@ begin
   return changed;
 end $$;
 
+create function broadcasts_failed(ids jsonb) returns integer
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare changed integer;
+begin
+  update broadcasts_due set failures = failures + 1
+  where dead_at is null and id in (select (x #>> '{}')::bigint from jsonb_array_elements(coalesce(ids, '[]')) x);
+  get diagnostics changed = row_count;
+  return changed;
+end $$;
+
 create function broadcasts_dead(ids jsonb, why text) returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare changed integer;
@@ -88,8 +104,8 @@ begin
   return changed;
 end $$;
 
-revoke execute on function broadcasts_release(jsonb), broadcasts_renew(jsonb), broadcasts_dead(jsonb, text) from public, anon, authenticated;
-grant execute on function broadcasts_release(jsonb), broadcasts_renew(jsonb), broadcasts_dead(jsonb, text) to service_role;
+revoke execute on function broadcasts_release(jsonb), broadcasts_renew(jsonb), broadcasts_failed(jsonb), broadcasts_dead(jsonb, text) from public, anon, authenticated;
+grant execute on function broadcasts_release(jsonb), broadcasts_renew(jsonb), broadcasts_failed(jsonb), broadcasts_dead(jsonb, text) to service_role;
 
 -- write_alert (0058), with the alert's own id in the account broadcast, so a client that hears an alert twice (a send is at least
 -- once) or hears it and then reads the list can tell it is the same one, exactly. The id is a random uuid (0058), never a

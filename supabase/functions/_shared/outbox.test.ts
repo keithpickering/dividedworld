@@ -4,14 +4,14 @@ import type { Broadcast, Delivery } from './broadcast.ts';
 import { sendWaiting } from './outbox.ts';
 import type { Db } from './rpc.ts';
 
-type Row = { id: number; topic: string; event: string; payload: { n: number }; attempts: number; dead?: string };
+type Row = { id: number; topic: string; event: string; payload: { n: number }; attempts: number; failures: number; dead?: string };
 
 /** The outbox as 0061_account_channel.sql keeps it: claims bump attempts, release and renew and dead and sent act on ids. */
 function outbox(n: number) {
-  const rows: Row[] = Array.from({ length: n }, (_, i) => ({ id: i + 1, topic: 'reach', event: 'effect', payload: { n: i + 1 }, attempts: 0 }));
+  const rows: Row[] = Array.from({ length: n }, (_, i) => ({ id: i + 1, topic: 'reach', event: 'effect', payload: { n: i + 1 }, attempts: 0, failures: 0 }));
   const claimed = new Set<number>();
   let last = n;
-  const add = () => { const id = ++last; rows.push({ id, topic: 'reach', event: 'effect', payload: { n: id }, attempts: 0 }); };
+  const add = () => { const id = ++last; rows.push({ id, topic: 'reach', event: 'effect', payload: { n: id }, attempts: 0, failures: 0 }); };
   const log: string[] = [];
   const db: Db = {
     rpc: async <T>(fn: string, args: Record<string, unknown>) => {
@@ -23,6 +23,7 @@ function outbox(n: number) {
       }
       log.push(`${fn}:${ids.join(',')}${fn === 'broadcasts_dead' ? `:${args.why}` : ''}`);
       if (fn === 'broadcasts_sent') for (const id of ids) rows.splice(rows.findIndex((r) => r.id === id), 1);
+      if (fn === 'broadcasts_failed') for (const id of ids) rows.find((r) => r.id === id)!.failures++;
       if (fn === 'broadcasts_release') for (const id of ids) claimed.delete(id);
       if (fn === 'broadcasts_dead') for (const id of ids) { rows.find((r) => r.id === id)!.dead = String(args.why); claimed.delete(id); }
       return ids.length as T;
@@ -78,4 +79,35 @@ test('the lease is renewed as a one-at-a-time fallback goes on, and the fallback
   // 30 seconds each: the fallback gives way before its 90 seconds, releasing what it has not sent.
   const sent = log.filter((l) => l.startsWith('broadcasts_sent')).length;
   assert.ok(sent < 5 && log.some((l) => l.startsWith('broadcasts_release')), log.join('\n'));
+});
+
+test('a good row claimed many times in an outage is not killed by one flaky send in a pass where others go through', async () => {
+  const { db, rows } = outbox(4);
+  for (const r of rows) r.attempts = 10; // ten claims, none of them its own fault
+  let flaky = true;
+  const deliver = async (m: readonly Broadcast[]): Promise<Delivery> => {
+    if (m.length > 1) return 'unreachable';
+    return flaky && (m[0] as unknown as { payload: { n: number } }).payload.n === 2 ? (flaky = false, 'unreachable') : 'sent';
+  };
+  await sendWaiting(db, deliver);
+  assert.deepEqual(rows.map((r) => [r.id, r.dead ?? null, r.failures]), [[2, null, 1]], 'it is released and counted one failure, alive');
+});
+
+test('a one-at-a-time pass renews the lease every 20 sends, not before each', async () => {
+  const { db, log } = outbox(45);
+  await sendWaiting(db, async (m) => (m.length > 1 ? 'refused' : 'sent'), { clock: () => 0 });
+  const renews = log.filter((l) => l.startsWith('broadcasts_renew'));
+  assert.equal(renews.length, 3, log.filter((l) => !l.startsWith('broadcasts_sent')).join('\n'));
+  assert.equal(renews[0]!.split(':')[1]!.split(',').length, 45);
+  assert.equal(renews[1]!.split(':')[1]!.split(',').length, 25);
+});
+
+test('a pass stops after three single failures in a row with nothing sent, releasing the rest', async () => {
+  const { db, log, rows } = outbox(10);
+  for (const r of rows) r.attempts = 5;
+  let calls = 0;
+  await sendWaiting(db, async (m) => { if (m.length === 1) calls++; return 'unreachable'; });
+  assert.equal(calls, 3, 'three single sends, then it gives way');
+  assert.ok(log.some((l) => l.startsWith('broadcasts_release:') && l.split(':')[1]!.split(',').length === 10), log.join('\n'));
+  assert.deepEqual(rows.map((r) => r.dead ?? null), Array(10).fill(null));
 });
