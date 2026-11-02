@@ -126,8 +126,9 @@ export function WelcomeScreen() {
 /**
  * The session listener that sends a new account to the welcome: a signed-in account with no `welcomedAt` and no character at all (a
  * waiting or a retired one counts, so a player who has played is never sent), on a board page (`active`; the sign-in pages and the glass
- * pages are let through, and it waits for the first board page after them). It decides once for each account a session holds, at the first
- * board page after the player's rows are read, and never again (and an answer that comes after the player has moved to a glass page sends nobody): so the welcome shows once and no page after it pays for the question.
+ * pages are let through, and it waits for the first board page after them). It decides once for each account while it stays mounted, at the
+ * first board page after the player's rows are read (and an answer that comes after the player has moved to a glass page sends nobody), so the
+ * welcome shows once. A glass page unmounts it, so an account with no character asks again on its next board page; a player with one never asks.
  *
  * It reads nothing for an account that has a character, which is every player after the first. For one that has none it reads the
  * preferences and the roster once, at that first board page: the roster again because a roster that failed to load reads as empty in the
