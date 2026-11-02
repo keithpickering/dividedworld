@@ -63,7 +63,7 @@ begin
   end if;
 end $$;
 
--- ---- The defaults are create_character(name, class) as it was: waiting, announced, no tally ----
+-- ---- A debut that names the settlement waits, announced, with no tally yet (the default is Drop now since 0066, held by 0071) ----
 do $$
 declare
   ann uuid := tests.account('debut-default');
@@ -71,7 +71,7 @@ declare
   tallies bigint := (select count(*) from acts where kind = 'tally');
 begin
   perform tests.become(ann);
-  made := create_character('Default Debut', 'alpha');
+  made := create_character('Default Debut', 'alpha', 'tally');
   perform tests.unbecome();
   if not (made ->> 'waiting')::boolean or made ->> 'loudness' is distinct from 'announced' or made -> 'announcement' <> 'null'::jsonb then raise exception 'the defaults wait to be announced at the tally: %', made; end if;
   if (select (debuted_at, debut_loudness) from characters where id = (made ->> 'id')::uuid) is distinct from (null::timestamptz, 'announced'::text) then raise exception 'a default character waits'; end if;
@@ -151,7 +151,7 @@ declare
 begin
   perform tests.become(ann);
   shy := (create_character('Shy Debut', 'alpha', 'tally', 'silent') ->> 'id')::uuid;
-  loud := (create_character('Loud Debut', 'alpha') ->> 'id')::uuid;
+  loud := (create_character('Loud Debut', 'alpha', 'tally') ->> 'id')::uuid;
   perform tests.unbecome();
   first_tally := masks_change(now() + interval '1 minute');
   if (select count(*) from characters where id in (shy, loud) and debuted_at = now() + interval '1 minute') is distinct from 2::bigint then raise exception 'both debut at the settlement'; end if;
@@ -409,7 +409,7 @@ begin
   if not exists (select 1 from broadcasts_due where event = 'act' and payload ->> 'id' = u.id::text) then raise exception 'the settlement sends a debut''s unmask live, through its outbox'; end if;
   -- A waiting character's loudness may become "with its class", and back.
   perform tests.become(ann);
-  quiet := (create_character('Changes Its Mind', 'alpha') ->> 'id')::uuid;
+  quiet := (create_character('Changes Its Mind', 'alpha', 'tally') ->> 'id')::uuid;
   if (set_debut(quiet, 'tally', 'with_class') ->> 'loudness') is distinct from 'with_class' then raise exception 'a waiting character may be set to debut with its class'; end if;
   if pg_temp.refusal('select create_character(''Odd Loudness Again'', ''alpha'', ''now'', ''shouted'')') is distinct from 'a debut is silent, announced, or announced with its class' then raise exception 'a loudness outside the three'; end if;
   perform tests.unbecome();

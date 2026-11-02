@@ -40,7 +40,7 @@ declare
   settled jsonb;
 begin
   perform tests.become(ann);
-  made := create_character('Fresh Face', 'alpha');
+  made := create_character('Fresh Face', 'alpha', 'tally');
   fresh := (made ->> 'id')::uuid;
   if not (made ->> 'waiting')::boolean then raise exception 'a new character says it waits to debut: %', made; end if;
   -- Its player sees it, waiting.
@@ -179,7 +179,7 @@ declare
   tallies integer;
 begin
   perform tests.become(ann);
-  perform create_character('Outboxed', 'alpha');
+  perform create_character('Outboxed', 'alpha', 'tally');
   perform tests.unbecome();
   delete from broadcasts_due;
   -- A row from a send that failed a run ago (a day, at a daily cron) is still sent.
