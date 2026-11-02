@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, runAction } from './core.ts';
+import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, afterTheAnswer, handleAction, runAction } from './core.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 import { landsOn } from '../../../engine/rules/cards.ts';
@@ -313,4 +313,85 @@ test('a target card_target_reach does not find is refused in its reach\'s words'
   const { dbs } = pair({ whoami, card_target_reach: null });
   const out = await runAction(dbs, reaching, { action: 'playCard', card: 'sparkle', character: id, reach: 'character', target, post: target });
   assert.deepEqual(out.body, { field: 'target', error: 'there is no such character' });
+});
+
+// The drain after every write (docs/plans/2026-11-02-alerts-plan.md, Task 6): an alert is queued in the outbox by the write itself,
+// and sent from there after the answer. What a player sees of an action, and when, must not tell whether it queued an alert (which
+// exists only when the quoted or targeted character has an owner), so the answer is made before the drain starts, and the drain
+// is never awaited by the answer, with or without a runtime that lets work outlive it.
+const quoting = { action: 'post', thread: id, character: id, body: 'Hello.', quote: target };
+const wait = (ms = 0) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+test('the answer to a quoting post is made before the drain starts, and is the same whether the drain finds an alert or nothing', async () => {
+  const outcomes: { answer: string; before: string[] }[] = [];
+  for (const waiting of [[], [{ id: 1, topic: `account:${whoami}`, event: 'alert', payload: { kind: 'quote' } }]]) {
+    const log: string[] = [];
+    const db: Db = { rpc: async <T>(fn: string) => { log.push(`rpc:${fn}`); return { id: 'q', kind: 'post', thread: id } as T; } };
+    let later: (() => Promise<void>) | undefined;
+    const answer = await handleAction({
+      dbs: { player: db, service: db }, instance, body: quoting,
+      send: async () => { log.push('send'); },
+      drain: async () => { log.push(`drain:${waiting.length}`); },
+      after: (work) => { later = work; },
+    });
+    const before = [...log];
+    assert.ok(later, 'the drain is handed on to run after the answer');
+    await later();
+    outcomes.push({ answer: JSON.stringify(answer), before });
+    assert.deepEqual(log.slice(before.length), ['send', `drain:${waiting.length}`], 'the live updates go out, then the outbox is drained');
+  }
+  assert.equal(outcomes[0]!.answer, outcomes[1]!.answer, 'the answer is byte for byte the same');
+  assert.deepEqual(outcomes[0]!.before, ['rpc:post']);
+  assert.deepEqual(outcomes[0]!.before, outcomes[1]!.before, 'nothing the drain does has happened when the answer is made');
+});
+
+test('a write that is refused is drained after too, so that no answer differs by whether anything was queued', async () => {
+  const db: Db = { rpc: async () => { throw new DatabaseError('post: no', '42501', 403, 'no', REFUSAL_HINT); } };
+  let later = 0;
+  const answer = await handleAction({ dbs: { player: db, service: db }, instance, body: quoting, send: async () => {}, drain: async () => {}, after: () => { later++; } });
+  assert.equal(answer.status, 403);
+  assert.equal(later, 1);
+});
+
+test('after the answer, the work starts on a later turn, and without EdgeRuntime the answer does not wait for it', async () => {
+  // The local runtime has no waitUntil: the answer must not be held by a drain that finds an alert (a slower drain) any more than by
+  // one that finds nothing.
+  for (const takes of [0, 50]) {
+    const log: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    afterTheAnswer(async () => { log.push('started'); if (takes) await gate; log.push('finished'); });
+    assert.deepEqual(log, [], 'not started in the same turn as the answer');
+    await Promise.resolve();
+    assert.deepEqual(log, [], 'nor in a microtask after it');
+    await wait(5);
+    assert.deepEqual(log, takes ? ['started'] : ['started', 'finished'], 'it runs on, with nothing awaiting it');
+    release();
+    await wait();
+  }
+});
+
+test('with a runtime that lets work outlive the answer, the work is handed to it whole, and nothing it throws reaches anyone', async () => {
+  const handed: Promise<unknown>[] = [];
+  const logged: unknown[][] = [];
+  const was = console.error;
+  console.error = (...a: unknown[]) => { logged.push(a); };
+  try {
+    afterTheAnswer(async () => { throw new Error('realtime is down'); }, { waitUntil: (p) => { handed.push(p); } });
+    assert.equal(handed.length, 1);
+    await handed[0]; // settles, and does not reject
+  } finally { console.error = was; }
+  assert.equal(logged.length, 1);
+  assert.match(String(logged[0]![0]), /after the answer/);
+});
+
+test('a play beyond a post is also sent on reach, as the public Act and nothing more; a play on a post is not', async () => {
+  const thread = '44444444-4444-4444-8444-444444444444';
+  const play = { id: 'k', kind: 'card', thread, payload: { card: 'sparkle', reach: 'character', character: target, ends: '2026-11-09T00:00:00Z', targetName: 'Ann' } };
+  const { dbs } = pair({ whoami, card_target_reach: { reach: 'character', character: target, effects: [], above: {} }, play_card: play });
+  const out = await runAction(dbs, reaching, { action: 'playCard', card: 'sparkle', character: id, reach: 'character', target, post: id });
+  assert.deepEqual(out.broadcasts, [{ topic: `thread:${thread}`, event: 'act', payload: play }, { topic: 'reach', event: 'effect', payload: play }]);
+  const onPost = pair({ whoami, card_target_reach: { act: target, kind: 'post', length: 10, effects: [] }, play_card: { id: 'c', kind: 'card', thread, payload: { card: 'whoops' } } });
+  const plain = await runAction(onPost.dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } });
+  assert.ok(!plain.broadcasts?.some((b) => b.topic === 'reach'));
 });

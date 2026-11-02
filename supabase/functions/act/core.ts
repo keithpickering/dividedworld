@@ -39,6 +39,17 @@ const withSprung = (a: Row, own: Broadcast[]): Broadcast[] => {
   const { struck, ...spring } = sprung;
   return [...own, ...act(spring), ...act(struck)];
 };
+/**
+ * A play beyond a post (a character, a thread or a board; 0055) is also heard on `reach`, which every signed-in player hears
+ * (0061_account_channel.sql): a page that shows the character, or a board's banner, is on another thread's topic. It is the same
+ * public Act the thread's topic carries, sent as `effect`; a play on a post is a tag on that post and the thread's topic reaches
+ * everyone who shows it.
+ */
+const onReach = (a: Row): Broadcast[] => {
+  const payload = a.payload as Row | undefined;
+  return payload && typeof payload === 'object' && (payload.reach === 'character' || payload.reach === 'thread' || payload.reach === 'board')
+    ? [{ topic: 'reach', event: 'effect', payload: a }] : [];
+};
 const without = (a: Row, key: string): Row => { const { [key]: _gone, ...rest } = a; return rest; };
 const thread = (t: unknown): Broadcast[] => (t && typeof t === 'object' && (t as Row).board ? [{ topic: `board:${(t as Row).board}`, event: 'thread', payload: t }] : []);
 
@@ -62,7 +73,7 @@ const announcement = (a: Row): Broadcast[] => {
 const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   post: (a) => withSprung(a, act(without(a, 'sprung'))),
   edit_post: (a) => act(a),
-  play_card: (a) => withSprung(a, act(without(a, 'sprung'))),
+  play_card: (a) => withSprung(a, [...act(without(a, 'sprung')), ...onReach(without(a, 'sprung'))]),
   // A card back: the set Act names no card, so neither does what is sent.
   set_card: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
@@ -169,4 +180,45 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     console.error('act failed', decision.rpc, e);
     return { status: 500, body: { error: 'the action could not be completed; try again' } };
   }
+}
+
+/**
+ * Work that runs once the answer has gone: the live updates the write sent, and the drain of the outbox (an alert is queued by the
+ * write that made it, and sent from there; supabase/functions/_shared/outbox.ts). It runs on a later turn than the one that built
+ * the answer, so the answer is never shaped by it, and it is never awaited by the answer, with or without a runtime that lets
+ * work outlive it (`waitUntil`, Supabase's EdgeRuntime; the local runtime has none). So neither the answer nor its timing tells
+ * whether the write queued an alert, which exists only where the target has an owner (a private fact). Nothing it throws escapes.
+ */
+export interface Afterwards {
+  readonly waitUntil?: (work: Promise<unknown>) => void;
+  /** Runs a function on a later turn; a timer by default. */
+  readonly defer?: (run: () => void) => void;
+}
+export function afterTheAnswer(work: () => Promise<unknown>, o: Afterwards = {}): void {
+  const defer = o.defer ?? ((run: () => void) => { setTimeout(run, 0); });
+  const running = new Promise<void>((resolve) => {
+    defer(() => { work().catch((e) => console.error('work after the answer threw', e)).finally(resolve); });
+  });
+  o.waitUntil?.(running);
+}
+
+/**
+ * An action, answered; then, after the answer and whatever it queued, the write's live updates and the drain of the outbox, handed
+ * to `after` (afterTheAnswer in the edge). The drain runs after every action, a refused one included, whether or not the write
+ * queued anything, so that no answer differs by it.
+ */
+export async function handleAction(o: {
+  readonly dbs: { player: Db; service: Db };
+  readonly instance: Instance;
+  readonly body: unknown;
+  readonly send: (messages: readonly Broadcast[]) => Promise<unknown>;
+  readonly drain: () => Promise<void>;
+  readonly after: (work: () => Promise<void>) => void;
+}): Promise<ActionAnswer> {
+  const out = await runAction(o.dbs, o.instance, o.body);
+  o.after(async () => {
+    if (out.broadcasts?.length) await o.send(out.broadcasts).catch((e) => console.error('broadcast threw', e));
+    await o.drain();
+  });
+  return out;
 }

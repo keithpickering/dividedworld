@@ -402,6 +402,22 @@ function ThreadView({ thread }: { readonly thread: Id }) {
     return api.subscribeThread(thread, listener);
   }, [api, thread, ensurePeople, tallies, plays, effects]);
 
+  /* A play beyond a post is announced on `reach`, which every signed-in page hears, since it is played from a post in some other thread
+     as often as this one (a character's) and on The System's announcements thread (a board's). This page keeps the plays whose target it
+     shows: this thread, this thread's board, or a character with a post in view; the rest are dropped, so its memory is its screen's.
+     It then reads the play as it reads one on its own thread (the caster's name first), so the mark is drawn the same. */
+  useEffect(() => api.subscribeReach({
+    onPlay(a) {
+      if (a.kind !== 'card') return;
+      const reach = a.payload.reach;
+      const shown = reach === 'thread' ? a.payload.thread === thread
+        : reach === 'board' ? boardOf.current !== null && a.payload.board === boardOf.current
+        : reach === 'character' ? typeof a.payload.character === 'string' && people.current.has(a.payload.character) : false;
+      if (!shown) return;
+      void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); });
+    },
+  }), [api, thread, ensurePeople, plays, effects]);
+
   /* At the bottom of the last page, held Acts come in, sliding. */
   useEffect(() => {
     if (feed.ready && atBottom && feed.tailLoaded && feed.held.size > 0) dispatch({ type: 'release', slide: !motionReduced(), force: false });

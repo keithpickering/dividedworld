@@ -1,0 +1,72 @@
+/**
+ * A play beyond a post, live (issue 140's live item): a card on a character is played from one of its posts in some other thread,
+ * so it is announced on that thread's topic, which this page is not on. The `reach` topic is heard by every signed-in page, and a
+ * page keeps the plays whose target it shows: a character with a post in view, or the thread itself. A play on anyone else is
+ * dropped, so the page's memory is its own screen's. The cards are the engine's own test cards.
+ */
+import { screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
+import type { Instance } from '../../rules/types.ts';
+import { createFake } from '../data/fake.ts';
+import { Frame } from '../frame/Frame.tsx';
+import { renderIn, testInstance } from '../test-world.tsx';
+import { ThreadScreen } from './Thread.tsx';
+
+const base = { priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
+const reaching = (key: string, name: string, rarity: CardRules['rarity'], reaches: CardRules['reaches']): CardRules => ({
+  ...base, key, name, alignment: 'pepperoni', rarity, reaches, lasts: { unit: 'day', count: 1 }, canApply: (t, e) => landsOn({ key, reaches }, t, e),
+});
+const instance: Instance = { ...testInstance, cards: [reaching('sparkle', 'Sparkle', 'uncommon', ['character']), reaching('beacon', 'Beacon', 'rare', ['thread'])], settings: { ...testInstance.settings, economy: { 'test.price': 100 } } };
+
+vi.setConfig({ testTimeout: 20_000 });
+class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
+beforeEach(() => {
+  vi.stubGlobal('IntersectionObserver', Observer);
+  Element.prototype.scrollIntoView = vi.fn();
+  localStorage.clear();
+  window.history.replaceState(null, '', '/');
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+async function open() {
+  const fake = createFake({ instance, now: () => Date.now() });
+  const me = fake.seed.account('me');
+  const other = fake.seed.account('other');
+  const spritey = fake.seed.character(other, 'Spritey', 'face');
+  const gloomba = fake.seed.character(other, 'Gloomba', 'heel');
+  const here = fake.seed.thread('general', spritey, 'Glitter everywhere', 'the first post');
+  const elsewhere = fake.seed.thread('general', spritey, 'Somewhere else', 'a post over there');
+  const gloombaThere = fake.seed.post(elsewhere.thread, gloomba, 'gloomba over there');
+  fake.signInAs(me);
+  renderIn(fake, <Frame><ThreadScreen thread={here.thread} /></Frame>, { path: `/t/${here.thread}`, instance });
+  await screen.findByRole('article', { name: /^Post 1 /u });
+  return { fake, spritey, gloomba, here, elsewhere, gloombaThere };
+}
+const postbit = (seq: number) => document.getElementById(`post-${seq}`)!.querySelector('.kb-postbit') as HTMLElement;
+const sparkleMark = (el: HTMLElement) => within(el).queryByRole('button', { name: /^Sparkle, 1 play\b/u });
+
+describe('a play beyond a post, heard on reach', () => {
+  test('a play on a character shown here, played from a post in another thread, is drawn on its postbit', async () => {
+    const w = await open();
+    expect(sparkleMark(postbit(1))).toBeNull();
+    w.fake.seed.reach(w.spritey, 'character', w.spritey, 'sparkle', { post: w.elsewhere.act, live: true, ends: Date.now() + 60_000 });
+    await waitFor(() => expect(sparkleMark(postbit(1))).not.toBeNull());
+  });
+
+  test('a play on a character this page does not show is dropped', async () => {
+    const w = await open();
+    w.fake.seed.reach(w.gloomba, 'character', w.gloomba, 'sparkle', { post: w.gloombaThere, live: true, ends: Date.now() + 60_000 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(sparkleMark(postbit(1))).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Sparkle, 1 play\b/u })).toBeNull();
+  });
+
+  test('a play heard twice is one play', async () => {
+    const w = await open();
+    w.fake.broadcast.hold();
+    w.fake.seed.reach(w.spritey, 'character', w.spritey, 'sparkle', { post: w.elsewhere.act, live: true, ends: Date.now() + 60_000 });
+    w.fake.broadcast.flush({ twice: true });
+    await waitFor(() => expect(sparkleMark(postbit(1))).not.toBeNull());
+  });
+});

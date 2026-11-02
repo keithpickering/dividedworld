@@ -946,7 +946,7 @@ describe('live', () => {
     const removed: string[] = [];
     const order: string[] = [];
     const client = {
-      auth: { getSession: async () => ({ data: { session: { access_token: JWT } } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) },
+      auth: { getSession: async () => ({ data: { session: { access_token: JWT, user: { id: A } } } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) },
       realtime: { setAuth: vi.fn(async (t: string) => { order.push(`auth:${t === JWT}`); }) },
       channel(topic: string, opts: unknown) {
         const ch = { topic, opts, handlers: new Map<string, (m: { payload: unknown }) => void>(), subscribed: false };
@@ -1016,6 +1016,37 @@ describe('live', () => {
     early.api.subscribeBoard(C, { onThread })();
     await settle();
     expect(early.channels.filter((c) => c.subscribed)).toEqual([]);
+  });
+
+  it('opens the signed-in account\'s own channel for alerts, and maps an alert broadcast', async () => {
+    const s = stub();
+    const onAlert = vi.fn();
+    const off = s.api.subscribeAccount({ onAlert });
+    await settle();
+    expect(s.channels.map((c) => c.topic)).toEqual([`account:${A}`]);
+    expect(s.channels[0]?.opts).toEqual({ config: { private: true } });
+    expect(s.order).toEqual([`channel:account:${A}`, 'auth:true', `subscribe:account:${A}`]);
+    s.channels[0]?.handlers.get('alert')?.({ payload: { kind: 'quote', sub: null, act: B, character: C, at: '2026-11-02T10:00:00Z' } });
+    expect(onAlert).toHaveBeenCalledWith({ kind: 'quote', sub: null, act: B, character: C, at: '2026-11-02T10:00:00Z' });
+    off();
+    expect(s.client.removeChannel).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens nothing for an account when unsubscribed before the session was read', async () => {
+    const s = stub();
+    s.api.subscribeAccount({ onAlert: vi.fn() })();
+    await settle();
+    expect(s.channels).toEqual([]);
+  });
+
+  it('hears plays beyond a post on reach, as the public Act', async () => {
+    const s = stub();
+    const onPlay = vi.fn();
+    s.api.subscribeReach({ onPlay });
+    await settle();
+    expect(s.channels.map((c) => c.topic)).toEqual(['reach']);
+    s.channels[0]?.handlers.get('effect')?.({ payload: ACT_ROW });
+    expect(onPlay).toHaveBeenCalledWith(ACT);
   });
 });
 

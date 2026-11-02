@@ -750,6 +750,23 @@ export interface BoardListener {
   readonly onThread?: (thread: { readonly id: Id; readonly board: Id; readonly title: string; readonly originActId: Id | null; readonly createdAt: string }) => void;
 }
 
+/** An alert as the private channel announces it (`account:<id>`, supabase/migrations/0058_alerts.sql): the public projection, with no caster, reactor, account or class. */
+export type LiveAlert = Pick<Alert, 'kind' | 'sub' | 'act' | 'character' | 'at'>;
+
+export interface AccountListener {
+  /** An alert for the player's own account, as it is written. May come twice: key by act and kind, or reread the list. */
+  readonly onAlert?: (alert: LiveAlert) => void;
+}
+
+export interface ReachListener {
+  /**
+   * A card played beyond a post (a character, a thread or a board; the card reach design), as the public Act it is, wherever the
+   * page is. May come twice or out of order: key by id. Every signed-in player hears every one, so a page keeps the plays whose
+   * target it shows and drops the rest.
+   */
+  readonly onPlay?: (play: Act) => void;
+}
+
 /* ---------------------------------------------------------------- the api ---- */
 
 /** A thread pinned to the top of its board's list by a live thread play whose card pins (pinned_threads, 0055): the thread, its play's Act, and when the pin ends. */
@@ -994,4 +1011,8 @@ export interface KayfaApi {
   /* Live: Acts, tallies and saved effects on a thread; new threads on a board. Each returns its unsubscribe. */
   subscribeThread(thread: Id, listener: ThreadListener): () => void;
   subscribeBoard(board: Id, listener: BoardListener): () => void;
+  /** Live: the signed-in player's own alerts (their private channel); nothing while signed out. Returns its unsubscribe. */
+  subscribeAccount(listener: AccountListener): () => void;
+  /** Live: plays beyond a post, for every page that shows their target (issue 140). Returns its unsubscribe. */
+  subscribeReach(listener: ReachListener): () => void;
 }

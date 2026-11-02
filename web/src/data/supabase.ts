@@ -1052,6 +1052,25 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         l.onThread?.({ id: p['id'], board: p['board'], title: p['title'], originActId: p['origin_act_id'] ?? null, createdAt: p['created_at'] });
       });
     },
+    /* The player's own channel, `account:<their id>` (supabase/migrations/0061_account_channel.sql lets only that account hear it). It is
+       opened for the account signed in when this is called; a caller that follows sign-in changes subscribes again after one. */
+    subscribeAccount(l) {
+      let off: (() => void) | null = null;
+      let closed = false;
+      void (async () => {
+        let id: string | undefined;
+        try { id = (await client.auth.getSession()).data.session?.user.id; } catch { /* no session: nothing to hear */ }
+        if (!id || closed) return;
+        off = join(`account:${id}`, ['alert'], (_event, p) => {
+          l.onAlert?.({ kind: p['kind'], sub: p['sub'] ?? null, act: p['act'] ?? null, character: p['character'] ?? null, at: p['at'] });
+        });
+      })();
+      return () => { closed = true; off?.(); };
+    },
+    /* Plays beyond a post, on `reach`: every signed-in player hears every one, and the Act is the public one the play's thread carries. */
+    subscribeReach(l) {
+      return join('reach', ['effect'], (_event, p) => { l.onPlay?.(toAct(p)); });
+    },
   };
   return api;
 }

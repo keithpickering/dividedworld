@@ -28,9 +28,9 @@ import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
-  Act, ActKind, Alert, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
+  Act, AccountListener, ActKind, Alert, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Presence, PresencePlace, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
+  Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
 /** The code `verifyCode` accepts for any address. */
@@ -44,7 +44,7 @@ const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'alert';
 }
 
 export interface Seed {
@@ -250,7 +250,7 @@ const ok = <T,>(value: T): Answer<T> => ({ ok: true, value });
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /** The methods that are not a promise of something: everything else is made one. */
-const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard']);
+const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
 type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R> ? (...a: A) => R : T[K] };
 
 /**
@@ -323,6 +323,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* ----------------------------------------------------------------------- live ---- */
   const threadListeners = new Map<Id, Set<ThreadListener>>();
   const boardListeners = new Map<Id, Set<BoardListener>>();
+  const accountListeners = new Map<Id, Set<AccountListener>>();
+  const reachListeners = new Set<ReachListener>();
   const log: LiveEvent[] = [];
   let held: (() => void)[] | null = null;
   let muted = false;
@@ -335,6 +337,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const sendAct = (act: ActRec) => {
     const shown = publicAct(act);
     send(`thread:${act.thread}`, 'act', () => { for (const l of [...(threadListeners.get(act.thread) ?? [])]) l.onAct?.(shown); });
+  };
+  /* A play beyond a post is also heard on `reach` by every signed-in page (act/core.ts's BROADCASTS.play_card). */
+  const sendReach = (act: ActRec) => {
+    const shown = publicAct(act);
+    send('reach', 'effect', () => { for (const l of [...reachListeners]) l.onPlay?.(shown); });
   };
   const sendThread = (t: ThreadRec) => {
     const shown = { id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at) };
@@ -814,6 +821,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
+    sendReach(written);
     return ok(publicAct(written));
   }
 
@@ -1537,6 +1545,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       boardListeners.set(board, set.add(listener));
       return () => { set.delete(listener); };
     },
+    subscribeAccount(listener) {
+      // The private channel is the signed-in account's own; signed out, there is none to hear.
+      const account = session.account;
+      if (account === null) return () => {};
+      const set = accountListeners.get(account) ?? new Set();
+      accountListeners.set(account, set.add(listener));
+      return () => { set.delete(listener); };
+    },
+    subscribeReach(listener) {
+      reachListeners.add(listener);
+      return () => { reachListeners.delete(listener); };
+    },
   };
 
   const api = Object.fromEntries(
@@ -1732,7 +1752,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!isWritten(a.kind) || a.kind === 'quote' || a.kind === 'cardOnYours') throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);
       if (!acts.has(a.act)) throw new Error('an alert is about an Act that exists');
       if (a.character !== undefined && characters.get(a.character)?.owner !== account) throw new Error('an alert concerns a character of the account\'s');
-      seededAlerts.push({ account, kind: a.kind, sub: a.sub ?? null, act: a.act, character: a.character ?? null, at: a.at ?? now() });
+      const line = { account, kind: a.kind, sub: a.sub ?? null, act: a.act, character: a.character ?? null, at: a.at ?? now() };
+      seededAlerts.push(line);
+      send(`account:${account}`, 'alert', () => { for (const l of [...(accountListeners.get(account) ?? [])]) l.onAlert?.({ kind: line.kind, sub: line.sub, act: line.act, character: line.character, at: iso(line.at) }); });
     },
     cards(account, held) { seeded(account).cards = { ...held }; },
     wallet(account, balance) { setWallet(account, balance); },
@@ -1866,7 +1888,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const endsAt = o?.ends ?? at + Math.min(rules?.lasts ? span(rules.lasts) : bound, bound);
       const written = asAt(ownerOf(character), at, () => write({ character, kind: 'card', thread, target: on, at, payload: { card, message: o?.message ?? '', config: o?.config ?? {}, reach, [reach]: target, ends: iso(endsAt) } }));
       reachPlays.set(written.id, { reach, target, endsAt });
-      if (o?.live) sendAct(written);
+      if (o?.live) { sendAct(written); sendReach(written); }
       return written.id;
     },
     set(character, target, card, o) {
