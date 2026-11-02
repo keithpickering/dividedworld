@@ -21,6 +21,7 @@ import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { useLocated } from '../thread/locate.tsx';
 import { Link } from '../router.tsx';
+import { ChangedList, Prose, updateOf } from '../updates/UpdateWords.tsx';
 import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import { primeSpun, spunCount, takeOrigin } from './spun.ts';
@@ -124,7 +125,10 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   const drafts = useSpinDrafts();
   const backHref = summary.originSeq !== null && summary.originTitle !== null ? threadHref(summary.originThread!, pageOf(summary.originSeq, perPage), summary.originSeq) : null;
-  const back = backHref !== null ? <Link to={backHref}>#{summary.originSeq} in {summary.originTitle}</Link> : null;
+  /* An update is read on the Updates page: the thread it was posted in is never listed, so the link goes to the page, to that update. */
+  const isUpdate = act?.kind === 'update';
+  const back = isUpdate ? <Link to={`/updates?update=${encodeURIComponent(originId)}`}>Updates</Link>
+    : backHref !== null ? <Link to={backHref}>#{summary.originSeq} in {summary.originTitle}</Link> : null;
 
   /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
   const marks = act && (act.kind === 'card' ? cardPlay !== null : holdsEffects(act.kind)) ? (
@@ -150,6 +154,18 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     }
     const name = nameOf(act.character);
     switch (act.kind) {
+      case 'update': {
+        /* The developer persona's update: its headline, words and What changed list as the Updates page shows them, under a link back to that page (the thread it was posted in is one the board never lists). */
+        const u = updateOf(act);
+        return (
+          <>
+            <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
+            <p className="kb-origin-update-title"><b>{u.title}</b></p>
+            <Prose body={u.body} />
+            {u.changes.length > 0 && <ChangedList changes={u.changes} />}
+          </>
+        );
+      }
       case 'card': return cardPlay ? null : <p className="kb-small kb-muted">A card was played here.</p>;
       case 'unmask': return <UnmaskLine act={act} name={name} />;
       case 'tally':

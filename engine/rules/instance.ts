@@ -3,7 +3,7 @@
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
 import { QUADRANTS } from './types.ts';
-import type { EconomyRead, Instance, Settings, QuizQuestion, Span, StaffSeed, SystemContent } from './types.ts';
+import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, StaffSeed, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
@@ -159,6 +159,31 @@ function duplicates<T>(items: readonly T[], key: (t: T) => string): string[] {
   return [...twice];
 }
 
+/** The most a developer's name or tagline may be: a character's name, and what a profile's title holds (0043, 0062). */
+export const DEVELOPER_NAME_MAX = 40;
+export const DEVELOPER_TAGLINE_MAX = 40;
+
+/** The staff key the developer persona is seeded under (supabase/migrations/0062_updates.sql): reserved, so no Boss or Mod Bot has it. */
+export const DEVELOPER_STAFF_KEY = 'developer';
+
+/** The developer persona an instance gets when it names none: plain, as the engine is. */
+export const DEFAULT_DEVELOPER: DeveloperPersona = Object.freeze({ name: 'The developers', tagline: '' });
+
+/** Problems with `instance.developer`, each a sentence naming what is wrong; none when it is left out. */
+function developerProblems(d: Instance['developer']): string[] {
+  if (d === undefined) return [];
+  const out: string[] = [];
+  if (typeof d.name !== 'string' || d.name.trim() === '') out.push('the developer has no name');
+  else {
+    if (d.name !== d.name.trim()) out.push('the developer name has a space at its start or end; a character\'s name has none');
+    if (d.name.length > DEVELOPER_NAME_MAX) out.push(`the developer name is ${d.name.length} characters; a character\'s name is at most ${DEVELOPER_NAME_MAX}`);
+  }
+  if (typeof d.tagline !== 'string') out.push('the developer tagline is not text');
+  else if (d.tagline.length > DEVELOPER_TAGLINE_MAX) out.push(`the developer tagline is ${d.tagline.length} characters; the seed keeps at most ${DEVELOPER_TAGLINE_MAX} and cuts the rest in silence`);
+  if (d.avatar !== undefined && (typeof d.avatar !== 'string' || d.avatar.trim() === '')) out.push('the developer avatar is blank; leave it out for none, or name the instance\'s picture');
+  return out;
+}
+
 export function instanceProblems(instance: Instance): string[] {
   const out: string[] = [];
   const lists = ['classes', 'cards', 'reactions', 'boards', 'ranks', 'pipStyles'] as const;
@@ -182,6 +207,7 @@ export function instanceProblems(instance: Instance): string[] {
   if (!systems.length) out.push('no board is The System\'s: exactly one board sets system: true, where The System posts');
   if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
+  out.push(...developerProblems(instance.developer));
   if (!instance.ranks.length) out.push('the instance has no rank');
   instance.ranks.forEach((r, i) => {
     if (typeof r.name !== 'string' || r.name.trim() === '') out.push('a rank has no name');
@@ -332,6 +358,9 @@ function systemProblems(instance: Instance): string[] {
   for (const k of duplicates(bots, (b) => b.key)) out.push(`Mod Bot key "${k}" is used twice`);
   const bossKeys = new Set(bosses.map((b) => b.key));
   const botKeys = new Set(bots.map((b) => b.key));
+  /* The developer persona's staff key is the engine's (0062): a roster member under it would be the character the persona is seeded as, or be left unmade. */
+  if (bossKeys.has(DEVELOPER_STAFF_KEY)) out.push(`Boss key "${DEVELOPER_STAFF_KEY}" is reserved for the developer persona, which a model never plays`);
+  if (botKeys.has(DEVELOPER_STAFF_KEY)) out.push(`Mod Bot key "${DEVELOPER_STAFF_KEY}" is reserved for the developer persona, which a model never plays`);
   for (const k of bossKeys) if (botKeys.has(k)) out.push(`"${k}" is both a Boss and a Mod Bot; a staff key is one or the other`);
   for (const b of bosses) {
     staff('Boss', b, b.persona);

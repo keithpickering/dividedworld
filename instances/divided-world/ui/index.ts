@@ -11,6 +11,7 @@ import { cardsUi } from './cards.ts';
 import theme from './theme.css?url';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
+import gabe from './avatars/gabe.svg?url';
 
 /** The font files, as URLs the bundler gives them, by their path under this folder. */
 const FONT_URLS = import.meta.glob<string>('./fonts/*.woff2', { query: '?url', import: 'default', eager: true });
@@ -86,6 +87,8 @@ export const instanceUi: InstanceUi = Object.freeze({
     reducedMotionCard: 'Stick Around still snaps you back, only instantly.',
   }),
   pips: Object.freeze({ default: { full: pipFull, empty: pipEmpty } }),
+  /* The developer persona's picture, by the key the instance's rules name (index.ts, `developer`). */
+  avatars: Object.freeze({ gabe }),
   glass,
   cards: cardsUi,
 });

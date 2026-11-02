@@ -9,6 +9,13 @@ import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { instance } from '../index.ts';
 import { instanceUi } from './index.ts';
 
+describe('Divided World\'s developer persona', () => {
+  test('is Gabe, with his tagline, and his picture is one the UI has', () => {
+    expect(instance.developer).toEqual({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' });
+    expect(typeof instanceUi.avatars?.[instance.developer!.avatar!], 'the persona\'s avatar key names a picture').toBe('string');
+  });
+});
+
 describe('Divided World\'s InstanceUi covers its rules', () => {
   test('every class has a look and a description', () => {
     for (const c of instance.classes) {

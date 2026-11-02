@@ -108,7 +108,7 @@ describe('what the adapter may request', () => {
     await Promise.allSettled([
       api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.cardsOn(A, 10), api.cardsOnMany([A], 10), api.effectStates([A]), api.myReleases([A]), api.releaseEffect(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.characterReveals(B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
-      api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A),
+      api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
@@ -1529,3 +1529,37 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     await expect(refused.api.adminQueue()).rejects.toThrow('that could not be read right now; try again');
   });
 });
+
+describe('Updates', () => {
+  const ROW = {
+    act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.',
+    changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2,
+  };
+  const UPDATE = { act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2 };
+
+  it('reads a page through updates, from a cursor, and takes what a row holds as it is', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/updates') ? json([ROW, { ...ROW, act: C, avatar: null, changes: null, tagline: null, seq: 1 }]) : undefined));
+    expect(await h.api.updates()).toEqual([UPDATE, { ...UPDATE, act: C, avatar: null, changes: [], tagline: '', seq: 1 }]);
+    await h.api.updates('2026-11-02T08:00:00+00:00');
+    expect(h.to('rpc/updates').map((r) => r.body)).toEqual([{ before: null, most: 20 }, { before: '2026-11-02T08:00:00+00:00', most: 20 }]);
+  });
+
+  it('writes through post_update by its parameter names, and answers the update as it reads it', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/post_update') ? json(ROW) : undefined));
+    expect(await h.api.postUpdate('Traps bite', 'The trap was offended.', [{ label: 'Trap Card', text: 'catches more.' }])).toEqual({ ok: true, value: UPDATE });
+    expect(h.to('rpc/post_update')[0]?.body).toEqual({ title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }] });
+    const refused = harness(() => json({ code: '22023', message: 'change 2 has a label and no text; give it a text, or leave the row out', hint: 'kayfabb.refusal' }, 400));
+    expect(await refused.api.postUpdate('T', 'B', [])).toEqual({ ok: false, error: 'change 2 has a label and no text; give it a text, or leave the row out' });
+    const lost = harness(() => new Error('network'));
+    expect(await lost.api.postUpdate('T', 'B', [])).toMatchObject({ ok: false, uncertain: true });
+  });
+
+  it('knows the developer as a staff kind of its own', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Gabe', joined: '2026-10-01', staff: 'developer', staff_kind: 'developer' }], 1);
+      return rows([], 0);
+    });
+    expect((await h.api.characters([B]))[0]).toMatchObject({ name: 'Gabe', staff: 'developer', staffKind: 'developer' });
+  });
+});
+

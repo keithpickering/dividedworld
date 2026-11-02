@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="">
+  <!-- A placeholder portrait for Gabe, the developer persona: a round head, round glasses and a beard, in the house palette. The owner's art replaces it. -->
+  <rect width="160" height="160" fill="#120b22"/>
+  <circle cx="80" cy="70" r="40" fill="#c9b8ff"/>
+  <path d="M40 88 Q80 150 120 88 Q120 128 80 142 Q40 128 40 88Z" fill="#7b5cc4"/>
+  <circle cx="64" cy="66" r="13" fill="none" stroke="#120b22" stroke-width="5"/>
+  <circle cx="96" cy="66" r="13" fill="none" stroke="#120b22" stroke-width="5"/>
+  <path d="M77 66h6" stroke="#120b22" stroke-width="5"/>
+  <path d="M62 92Q80 100 98 92" fill="none" stroke="#120b22" stroke-width="4" stroke-linecap="round"/>
+</svg>

@@ -1766,3 +1766,140 @@ describe('a play on a post is not announced on reach', () => {
     expect(w.fake.broadcast.log.filter((e) => e.topic === 'reach')).toEqual([]);
   });
 });
+
+describe('Updates: the developer persona\'s posts (updates, post_update, 0062)', () => {
+  const T0 = Date.parse('2026-11-01T00:00:00Z');
+  const H = 3_600_000;
+  const gabe = { name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' };
+
+  function updatesWorld(persona?: typeof gabe) {
+    /* The clock is after every update the world seeds, so one posted now is the newest. */
+    const fake = createFake({ instance: persona ? { ...instance, developer: persona } : instance, now: () => T0 + 100 * H });
+    const admin = fake.seed.account('admin', {});
+    fake.seed.admin(admin);
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const cy = fake.seed.account('cy');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const first = fake.seed.update({ title: 'Playtest begins', body: 'Hello.', at: T0 });
+    const second = fake.seed.update({ title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: T0 + 2 * H });
+    return { fake, admin, ana, bo, cy, anaFace, boFace, first, second };
+  }
+
+  test('a page is the updates newest first, each with the persona: the instance\'s, or the engine\'s plain one', async () => {
+    const w = updatesWorld(gabe);
+    w.fake.signInAs(w.ana);
+    const rows = await w.fake.updates();
+    expect(rows.map((r) => [r.act, r.title, r.seq])).toEqual([[w.second, 'Traps bite', 2], [w.first, 'Playtest begins', 1]]);
+    expect(rows[0]).toMatchObject({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: new Date(T0 + 2 * H).toISOString() });
+    expect(rows[1]!.changes).toEqual([]);
+    const plain = updatesWorld();
+    plain.fake.signInAs(plain.ana);
+    expect((await plain.fake.updates())[0]).toMatchObject({ name: 'The developers', tagline: '', avatar: null });
+    // The persona is a staff character of its own kind, known to be staff, and no player's.
+    const [character] = await w.fake.characters([rows[0]!.character]);
+    expect(character).toMatchObject({ name: 'Gabe', title: 'Made this. Sorry.', staff: 'developer', staffKind: 'developer' });
+  });
+
+  test('a page is bounded and pages back by `before`, exclusive', async () => {
+    const w = updatesWorld(gabe);
+    for (let i = 0; i < 25; i++) w.fake.seed.update({ title: `Update ${i}`, body: 'x', at: T0 + 10 * H + i * H });
+    w.fake.signInAs(w.ana);
+    const page = await w.fake.updates();
+    expect(page).toHaveLength(20);
+    const next = await w.fake.updates(page.at(-1)!.at);
+    expect(next).toHaveLength(7);
+    expect(next.map((r) => r.act)).not.toContain(page.at(-1)!.act);
+    expect((await w.fake.updates(new Date(T0 + 1).toISOString())).map((r) => r.act)).toEqual([w.first]);
+  });
+
+  test('the board never lists the updates thread, and counts it nowhere', async () => {
+    const w = updatesWorld(gabe);
+    w.fake.signInAs(w.ana);
+    const system = (await w.fake.boards()).find((b) => b.isSystem)!;
+    const before = system.threadCount;
+    const rows = await w.fake.updates();
+    expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).threads.map((t) => t.id)).not.toContain(rows[0]!.thread);
+    expect(await w.fake.thread(rows[0]!.thread)).toBeNull();
+    expect(before).toBe(0);
+    // The announcements thread (a Boss's moves) is still the first thread of that board, however the updates came first.
+    w.fake.seed.staff('boss', 'The Boss', 'boss');
+    w.fake.seed.move('boss', { board: 'general', name: 'Renamed' });
+    const after = (await w.fake.boards()).find((b) => b.isSystem)!;
+    expect(after.threadCount).toBe(1);
+    expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).total).toBe(1);
+  });
+
+  test('only an admin posts one, as the developer; a refusal is in the server\'s words and leaves nothing', async () => {
+    const w = updatesWorld(gabe);
+    w.fake.signInAs(w.ana);
+    expect(await w.fake.postUpdate('Mine', 'A player\'s.', [])).toEqual(refused('only an admin writes an update'));
+    w.fake.signOut();
+    expect(await w.fake.postUpdate('Visitor', 'x', [])).toEqual(refused('only an admin writes an update'));
+    w.fake.signInAs(w.admin);
+    const wrote = must(await w.fake.postUpdate('Third', 'Body three.', [{ label: '  Fixed:  ', text: '  the log.  ' }, { label: '', text: ' ' }, { label: '', text: 'no label' }]));
+    expect(wrote).toMatchObject({ title: 'Third', body: 'Body three.', name: 'Gabe', seq: 3, changes: [{ label: 'Fixed:', text: 'the log.' }, { label: '', text: 'no label' }] });
+    expect((await w.fake.updates())[0]!.act).toBe(wrote.act);
+    const act = (await w.fake.act(wrote.act))!;
+    expect(act).toMatchObject({ kind: 'update', character: wrote.character, thread: wrote.thread });
+    const refusals: [string, string, readonly { label: string; text: string }[], string][] = [
+      ['', 'x', [], 'title is empty'],
+      ['T', ' ', [], 'body is empty'],
+      ['T', 'B', [{ label: 'Orphan', text: ' ' }], 'change 1 has a label and no text; give it a text, or leave the row out'],
+      ['T', 'B', [{ label: 'x'.repeat(81), text: 'fine' }], 'change 1 has a label of at most 80 characters'],
+      ['T', 'B', [{ label: 'L', text: 'x'.repeat(601) }], 'change 1 has a text of 1 to 600 characters'],
+      ['T', 'B', Array.from({ length: 31 }, (_, i) => ({ label: 'L', text: `row ${i}` })), 'an update lists at most 30 changes'],
+    ];
+    for (const [title, body, changes, error] of refusals) expect(await w.fake.postUpdate(title, body, changes), error).toEqual(refused(error));
+    expect(await w.fake.postUpdate('x'.repeat(21), 'B', [])).toEqual(refused('title is longer than 20 characters'));
+    expect(await w.fake.postUpdate('T', 'x'.repeat(51), [])).toEqual(refused('body is longer than 50 characters'));
+    expect(await w.fake.updates()).toHaveLength(3);
+  });
+
+  test('a player reacts to one (the developer has no owner to hold them apart from) and spins a thread from it onto the players\' board', async () => {
+    const w = updatesWorld(gabe);
+    w.fake.signInAs(w.ana);
+    expect(must(await w.fake.react(w.second, w.anaFace, 'fire')).tally).toEqual({ fire: 1 });
+    w.fake.signInAs(w.bo);
+    expect(must(await w.fake.react(w.second, w.boFace, 'fire')).tally).toEqual({ fire: 2 });
+    const spun = must(await w.fake.spin(w.second, w.boFace, 'About the trap', 'Discuss.'));
+    expect(spun.thread).toMatchObject({ originActId: w.second, originTitle: 'Updates', originSeq: 2 });
+    const board = (await w.fake.boards()).find((b) => b.id === spun.thread.board)!;
+    expect(board.isSystem).toBe(false);
+    expect((await w.fake.spunFrom(w.second)).map((t) => t.id)).toEqual([spun.thread.id]);
+  });
+
+  test('no player acts as the developer', async () => {
+    const w = updatesWorld(gabe);
+    w.fake.signInAs(w.ana);
+    const dev = (await w.fake.updates())[0]!.character;
+    const { thread } = w.fake.seed.thread('general', w.anaFace, 'Mine', 'x');
+    expect(await w.fake.post(thread, dev, 'As the developer', null)).toEqual(refused('you do not play that character'));
+    expect(await w.fake.react(w.second, dev, 'fire')).toEqual(refused('you do not play that character'));
+  });
+
+  test('every player has one `update` alert per update, the same for each, whatever else they have', async () => {
+    const w = updatesWorld(gabe);
+    const read = async (account: string) => { w.fake.signInAs(account); return { rows: await w.fake.alerts(), unread: await w.fake.alertsUnread() }; };
+    const ana = await read(w.ana);
+    const cy = await read(w.cy); // no character at all
+    const bo = await read(w.bo);
+    for (const r of [ana, cy, bo]) {
+      expect(r.rows.filter((a) => a.kind === 'update')).toHaveLength(2);
+      expect(r.unread).toBe(2);
+    }
+    expect(cy.rows).toEqual(ana.rows);
+    expect(bo.rows).toEqual(ana.rows);
+    const newest = ana.rows[0]!;
+    expect(newest).toEqual({ kind: 'update', sub: null, act: w.second, character: null, at: new Date(T0 + 2 * H).toISOString(), thread: (await w.fake.updates())[0]!.thread, name: 'Gabe', title: 'Traps bite', count: null });
+    // The mark moves the count.
+    w.fake.signInAs(w.ana);
+    must(await w.fake.seeAlerts(new Date(T0 + H).toISOString()));
+    expect(await w.fake.alertsUnread()).toBe(1);
+    // A new update is an alert for all at once.
+    w.fake.signInAs(w.admin);
+    must(await w.fake.postUpdate('Fourth', 'Body.', []));
+    for (const account of [w.ana, w.cy, w.bo]) { w.fake.signInAs(account); expect((await w.fake.alerts()).filter((a) => a.kind === 'update')).toHaveLength(3); }
+  });
+});

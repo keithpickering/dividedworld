@@ -23,12 +23,13 @@ import { decide } from '../../rules/actions.ts';
 import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { isWritten, type WrittenKind } from '../../rules/alerts.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX } from './api.ts';
+import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
-  Act, AccountListener, ActKind, Alert, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
+  Act, AccountListener, ActKind, Alert, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -82,6 +83,11 @@ export interface Seed {
    * is refused. `act` is the Act it is about, `character` the account's character it concerns, `at` an epoch (else now).
    */
   alert(account: Id, alert: { kind: WrittenKind; act: Id; character?: Id; sub?: string; at?: number }): void;
+  /**
+   * An update by the developer persona (what `post_update` writes, 0062), dated `at` (else now): the developer character is made on its first
+   * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
+   */
+  update(update: { title: string; body: string; changes?: readonly UpdateChange[]; at?: number }): Id;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
   wallet(account: Id, balance: number): void;
@@ -216,7 +222,7 @@ interface CharRec {
   squareFrame: Frame | null;
   portraitFrame: Frame | null;
   /** Set for a staff character. */
-  staff?: { readonly key: string; readonly kind: 'boss' | 'bot' };
+  staff?: { readonly key: string; readonly kind: 'boss' | 'bot' | 'developer' };
 }
 interface ActRec {
   readonly id: Id;
@@ -308,6 +314,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
   const moveKeeps = new Map<Id, string>();
   const playersBoard = boards.find((b) => !b.isSystem);
+  /* The developer persona and its updates thread (0062), made at the first update; the board never lists that thread. */
+  let developerId: Id | null = null;
+  let updatesThreadId: Id | null = null;
 
   let session: { email: string | null; account: Id | null } = { email: null, account: null };
   const sessionListeners = new Set<(s: Session) => void>();
@@ -472,7 +481,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function announcements(): Id {
     const board = boards.find((b) => b.isSystem);
     if (!board) throw new Error('the instance has no System board');
-    const found = [...threads.values()].find((t) => t.board === board.id);
+    const found = [...threads.values()].find((t) => t.board === board.id && t.id !== updatesThreadId);
     return found ? found.id : openThread(board.id, 'Announcements', null).id;
   }
   const staffId = (key: string): Id => {
@@ -518,6 +527,66 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const r of reactions) if (r.act === act) counts[r.kind] = (counts[r.kind] ?? 0) + 1;
     return counts;
   };
+
+  /* -------------------------------------------------------------------- updates ---- */
+  /** The developer persona's staff character, made when it is first needed: the instance's persona, else the engine's plain one (seed_instance, 0062). */
+  function developer(): CharRec {
+    if (developerId !== null) return characters.get(developerId)!;
+    const persona = options.instance.developer ?? DEFAULT_DEVELOPER;
+    const at = now();
+    const c: CharRec = {
+      id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
+      title: persona.tagline.slice(0, 40), signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+      square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key: 'developer', kind: 'developer' },
+    };
+    characters.set(c.id, c);
+    developerId = c.id;
+    return c;
+  }
+  /** The updates thread on The System's board, which no list of that board holds. */
+  function updatesThread(): ThreadRec {
+    if (updatesThreadId !== null) return threads.get(updatesThreadId)!;
+    const board = boards.find((b) => b.isSystem);
+    if (!board) throw new Error('the instance has no System board');
+    updatesThreadId = openThread(board.id, 'Updates', null).id;
+    return threads.get(updatesThreadId)!;
+  }
+  const listed = (t: ThreadRec) => t.id !== updatesThreadId;
+  /** `within` (0005): text that is something and no longer than the setting, in the server's words. */
+  const within = (field: string, value: string, most: number): string | null =>
+    /^[\s\u200b-\u200d\u2060]*$/u.test(value) ? `${field} is empty` : [...value].length > most ? `${field} is longer than ${most} characters` : null;
+  /** One update, with the persona that wrote it (the `updates` read). */
+  function updateOf(a: ActRec): Update {
+    const c = characters.get(a.character!)!;
+    return {
+      act: a.id, thread: a.thread, character: c.id, name: c.name, tagline: c.title, avatar: (options.instance.developer ?? DEFAULT_DEVELOPER).avatar ?? null,
+      title: String(a.payload['title']), body: String(a.payload['body']), changes: a.payload['changes'] as UpdateChange[], at: iso(a.at), seq: a.seq!,
+    };
+  }
+  const updateActs = () => [...acts.values()].filter((a) => a.kind === 'update').sort((a, b) => b.at - a.at || b.order - a.order);
+  /**
+   * post_update (0062) past its admin check, which `postUpdate` makes (a seed is the database's own hand): an update. The words are held as a post's are; the changes are repaired where they can be (the space
+   * around words, a row with neither label nor text) and refused, naming the predicate and the change's number, where they cannot.
+   */
+  function writeUpdate(title: string, body: string, changes: readonly UpdateChange[], at: number | undefined): Answer<Update> {
+    const bad = within('title', title, settings.titleMaxLength) ?? within('body', body, settings.postMaxLength);
+    if (bad) return refuse(bad);
+    const fixed: UpdateChange[] = [];
+    for (const [i, c] of (changes ?? []).entries()) {
+      const label = String(c?.label ?? '').replace(/^\s+|\s+$/g, '');
+      const text = String(c?.text ?? '').replace(/^\s+|\s+$/g, '');
+      if (label === '' && text === '') continue;
+      if (text === '') return refuse(`change ${i + 1} has a label and no text; give it a text, or leave the row out`);
+      fixed.push({ label, text });
+    }
+    if (fixed.length > 30) return refuse('an update lists at most 30 changes');
+    for (const [i, c] of fixed.entries()) {
+      if ([...c.label].length > 80) return refuse(`change ${i + 1} has a label of at most 80 characters`);
+      if ([...c.text].length > 600) return refuse(`change ${i + 1} has a text of 1 to 600 characters`);
+    }
+    const written = write({ character: developer().id, kind: 'update', thread: updatesThread().id, payload: { title, body, changes: fixed }, at });
+    return ok(updateOf(written));
+  }
 
   /* -------------------------------------------------------------------- writing ---- */
   let order = 0;
@@ -1082,10 +1151,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     signOut() { setSession({ email: null, account: null }); },
     signInAddress: () => session.email,
     isAdmin: () => me()?.admin ?? false,
+    updates(before) {
+      const until = before == null ? Infinity : Date.parse(before);
+      return updateActs().filter((a) => a.at < until).slice(0, UPDATES_PAGE).map(updateOf);
+    },
+    postUpdate: (title, body, changes) => (me()?.admin ? writeUpdate(title, body, changes, undefined) : refuse('only an admin writes an update')),
     settings: () => screen,
 
     boards: () => boards.map((b): BoardSummary => {
-      const mine = [...threads.values()].filter((t) => t.board === b.id).map(summary);
+      const mine = [...threads.values()].filter((t) => t.board === b.id && listed(t)).map(summary);
       const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
       return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null };
     }),
@@ -1194,11 +1268,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return ok({ act, endedBy: end.id });
     },
     threads(board, page) {
-      const all = [...threads.values()].filter((t) => t.board === board).map(summary)
+      const all = [...threads.values()].filter((t) => t.board === board && listed(t)).map(summary)
         .sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id));
       return { threads: all.slice(page.offset, page.offset + page.limit), total: all.length };
     },
-    thread: (id) => (threads.has(id) ? summary(threads.get(id)!) : null),
+    thread: (id) => (threads.has(id) && listed(threads.get(id)!) ? summary(threads.get(id)!) : null),
     acts: (thread, from, to) => placed(thread).filter((a) => a.seq! >= from && a.seq! <= to).map(publicAct),
     act: (id) => (acts.has(id) ? publicAct(acts.get(id)!) : null),
     actsById: (ids) => [...new Set(ids)].filter((id) => acts.has(id)).map((id) => publicAct(acts.get(id)!)),
@@ -1688,10 +1762,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * its characters. Every player's news joins in the updates and season-news builds.
    */
   function alertsOf(account: AccountRec): Alert[] {
-    const line = (a: Pick<Alert, 'kind' | 'sub' | 'act' | 'character'> & { at: number; thread?: Id | null; count?: number | null; title?: string | null }): Alert => {
+    const line = (a: Pick<Alert, 'kind' | 'sub' | 'act' | 'character'> & { at: number; thread?: Id | null; count?: number | null; title?: string | null; name?: string | null }): Alert => {
       const thread = a.thread ?? (a.act === null ? null : acts.get(a.act)?.thread ?? null);
       return { kind: a.kind, sub: a.sub, act: a.act, character: a.character, at: iso(a.at), thread,
-        name: a.character === null ? null : characters.get(a.character)?.name ?? null,
+        name: a.name !== undefined ? a.name : a.character === null ? null : characters.get(a.character)?.name ?? null,
         title: a.title !== undefined ? a.title : thread === null ? null : threads.get(thread)?.title ?? null, count: a.count ?? null };
     };
     const ownerOfCharacter = (c: Id | null | undefined) => (c == null ? undefined : characters.get(c)?.owner);
@@ -1703,6 +1777,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     for (const w of seededAlerts) if (w.account === account.id) out.push(line({ kind: w.kind, sub: w.sub, act: w.act, character: w.character, at: w.at }));
     for (const f of followedFor(account)) out.push(line({ kind: 'followed', sub: null, act: null, character: null, at: Date.parse(f.newestAt), thread: f.thread, title: f.title, count: f.newPosts }));
+    /* Every player's news, the same for each (alerts_news, 0062): one line per update, and nothing of the player's in it. Season news joins here. */
+    for (const u of updateActs()) out.push(line({ kind: 'update', sub: null, act: u.id, character: null, at: u.at, thread: u.thread, title: String(u.payload['title']), name: characters.get(u.character!)?.name ?? null }));
     for (const x of settlements) {
       const mine = x.lines.filter((l) => l.account === account.id);
       if (mine.length > 0) out.push(line({ kind: 'settlement', sub: String(x.id), act: null, character: null, at: x.endsAt + APPLIED_AFTER, count: new Set(mine.map((l) => l.character)).size }));
@@ -1777,6 +1853,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const line = { account, kind: a.kind, sub: a.sub ?? null, act: a.act, character: a.character ?? null, at: a.at ?? now() };
       seededAlerts.push(line);
       send(`account:${account}`, 'alert', () => { for (const l of [...(accountListeners.get(account) ?? [])]) l.onAlert?.({ id: crypto.randomUUID(), kind: line.kind, sub: line.sub, act: line.act, character: line.character, at: iso(line.at) }); });
+    },
+    update(u) {
+      const wrote = writeUpdate(u.title, u.body, u.changes ?? [], u.at);
+      if (!wrote.ok) throw new Error(`a seeded update is refused: ${wrote.error}`);
+      return wrote.value.act;
     },
     cards(account, held) { seeded(account).cards = { ...held }; },
     wallet(account, balance) { setWallet(account, balance); },

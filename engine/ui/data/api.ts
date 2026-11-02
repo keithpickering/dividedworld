@@ -130,7 +130,7 @@ export interface ThreadSummary {
   readonly originSeq: number | null;
 }
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring';
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update';
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -183,8 +183,8 @@ export interface Character {
   readonly joined: string;
   /** Set only for a staff character (a Boss or a Mod Bot): the instance's key for it. A staff member is known to be staff, signed in or not. */
   readonly staff?: string;
-  /** A Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR. Set with `staff`. */
-  readonly staffKind?: 'boss' | 'bot';
+  /** A Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; the developer persona (the Updates page's author) has no badge. Set with `staff`. */
+  readonly staffKind?: 'boss' | 'bot' | 'developer';
 }
 
 /** A character's season standing and its place, as a page of the standings lists it (standings_page). */
@@ -647,6 +647,33 @@ export interface Alert {
   readonly title: string | null;
   readonly count: number | null;
 }
+/** One line of an update's plain "What changed" list: a bold label (it may be empty) and the words after it. */
+export interface UpdateChange {
+  readonly label: string;
+  readonly text: string;
+}
+
+/**
+ * One update, a post of the instance's developer persona (`updates`, supabase/migrations/0062_updates.sql), with the persona that wrote it.
+ * Public: it says nothing that depends on who reads. `avatar` is an asset key the instance's UI turns into a picture (null: none).
+ * `act` is the Act to react to and to spin a thread from; `thread` is the updates thread's id, which the board never lists.
+ */
+export interface Update {
+  readonly act: Id;
+  readonly thread: Id;
+  readonly character: Id;
+  readonly name: string;
+  readonly tagline: string;
+  readonly avatar: string | null;
+  readonly title: string;
+  readonly body: string;
+  readonly changes: readonly UpdateChange[];
+  readonly at: string;
+  readonly seq: number;
+}
+/** A page of Updates holds at most this many. */
+export const UPDATES_PAGE = 20;
+
 /** A page of the Alerts is at least this many lines (more only to keep lines that share an instant together). */
 export const ALERTS_PAGE = 30;
 /** The count `alertsUnread` stops at: a result at the bound means that many or more, and a screen says "9+". */
@@ -802,6 +829,12 @@ export interface KayfaApi {
   isAdmin(): Promise<boolean>;
   /** The moves waiting to land, in force, and ended or held in the last 30 days. An admin's alone; anyone else is refused (the call throws). */
   adminQueue(): Promise<AdminQueue>;
+  /**
+   * An admin's update, written as the developer persona. The title and body are held to the limits a post is; `changes` is the plain
+   * list under "What changed": a blank row is dropped and the words are trimmed, and a label with no text, a text over 600 characters,
+   * a label over 80 or more than 30 changes is refused naming which. An admin's alone, and written by no model.
+   */
+  postUpdate(title: string, body: string, changes: readonly UpdateChange[]): Promise<Answer<Update>>;
   /** Holds a move that is waiting: it never lands. An admin's alone, and it cannot be taken back. */
   holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */
@@ -965,6 +998,11 @@ export interface KayfaApi {
   alerts(before?: string | null): Promise<readonly Alert[]>;
   /** How many alerts arrived after the account's mark (`my_alerts_unread`), at most `ALERTS_UNREAD_BOUND`; a result at the bound is shown "9+". Rejects when it cannot be read. */
   alertsUnread(): Promise<number>;
+  /**
+   * A page of the Updates, newest first, `UPDATES_PAGE` to a page: those older than `before` (an ISO time, exclusive; none for the
+   * newest page). The developer persona's posts, which anyone signed in reads; they are the same for every reader.
+   */
+  updates(before?: string | null): Promise<readonly Update[]>;
   estimate(): Promise<Estimate>;
   /** A page of the player's own log (`Log`): the newest with no cursor, then each older page from the last one's `before`. */
   log(before?: string | null): Promise<Log>;

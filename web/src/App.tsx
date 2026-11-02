@@ -24,6 +24,7 @@ import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
 import { Vending } from '../../engine/ui/vending/Vending.tsx';
 import { RankingsScreen } from '../../engine/ui/rankings/Rankings.tsx';
+import { UpdatesScreen } from '../../engine/ui/updates/Updates.tsx';
 import { LogScreen } from '../../engine/ui/log/Log.tsx';
 import { SettlementOnLoad, SettlementScreen } from '../../engine/ui/log/Settlement.tsx';
 import { StandingsScreen } from '../../engine/ui/standings/Standings.tsx';
@@ -42,6 +43,7 @@ const ROUTES: readonly Route[] = [
   { path: '/standings', render: () => <StandingsScreen /> },
   { path: '/rankings', render: () => <RankingsScreen /> },
   { path: '/vending', render: () => <Vending /> },
+  { path: '/updates', render: () => <UpdatesScreen /> },
   { path: '/admin/queue', render: () => <QueueScreen /> },
   { path: '/log', render: () => <LogScreen /> },
   { path: '/log/settlement', render: () => <SettlementScreen /> },
@@ -70,6 +72,8 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/register': 'account',
   '/rankings': 'rankings',
   '/vending': 'vending',
+  /* Updates stands on the page smoke of Settings, Log and Rankings: no surface of its own, so no instance must name another recipe. */
+  '/updates': 'settings',
   '/admin/queue': 'settings',
   '/log': 'log',
   '/log/settlement': 'settlement',

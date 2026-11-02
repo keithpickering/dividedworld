@@ -136,6 +136,18 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into staff_profiles (staff, meeting, interests, favorites, mood, signature) select 'exp-boss', max(id), '{pie}', array[a], 'smug', 'It is decided.' from meetings;
       insert into move_bank (staff, balance, as_of) values ('exp-boss', 3.5, now());
       perform write_staff_act('exp-boss', 'post', t, null, '{"body": "Carried across, with no account behind it."}');
+      -- The developer persona (0062): a staff character of its own kind, its avatar key, the updates thread The System's board never lists (updatesThread),
+      -- and an update by it, written as post_update writes one.
+      perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'reactions', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+        'developer', jsonb_build_object('name', 'Exported Gabe', 'title', 'Made this. Sorry.', 'avatar', 'gabe')));
+      perform set_config('kayfabb.staff_writer', 'on', true);
+      perform set_config('kayfabb.update_writer', 'on', true);
+      insert into acts (character, kind, thread, payload)
+      select c.id, 'update', (select (v.value #>> '{}')::uuid from settings v where v.key = 'updatesThread'),
+             '{"title": "Exported update", "body": "Carried across.", "changes": [{"label": "Export", "text": "round-trips."}]}'
+      from characters c where c.staff_kind = 'developer';
+      perform set_config('kayfabb.staff_writer', '', true);
+      perform set_config('kayfabb.update_writer', '', true);
       -- The moves it can make and the demands it can set (0046, seeded as the engine lists them), a rename ended and one in force with
       -- its queue entry, so that the catalogs, the queue and the moves in force are carried across with the Acts that name them.
       insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;

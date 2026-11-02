@@ -4,7 +4,7 @@
  * This is the one place a Supabase client lives ("Portable by construction"), and it reads only
  * what tools/check-web-reads.mjs allows: public projections and the signed-in player's own rows.
  * Every write goes through the `act` function (it validates and sends the broadcasts) except the
- * eight rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, forget_cards_met, see_alerts, see_settlement, set_profile, release_effect) and the
+ * nine rpcs that have no `act` equivalent (mark_read, set_preferences, meet_card, forget_cards_met, see_alerts, see_settlement, set_profile, release_effect, post_update, which is an admin's alone) and the
  * avatar, which is a multipart form to the `avatar` function. Sign-in goes through the `account`
  * function only; Auth's own code endpoints are never called, and the session the `account` function
  * answers with is installed with `auth.setSession`.
@@ -32,12 +32,12 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE } from '../../../engine/ui/data/api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  Alert, EffectState, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, EffectState, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
 
@@ -123,6 +123,17 @@ function toAct(r: Row): Act {
     currentPayload: r['current_payload'] ?? r['payload'] ?? {},
     editedAt: r['edited_at'] ?? null,
     shownEditedAt: r['shown_edited_at'] ?? null,
+  };
+}
+
+/** One row of `updates`, or post_update's answer, which is the same row. A change that is not a { label, text } of words is no line. */
+function toUpdate(r: Row): Update {
+  const changes = Array.isArray(r['changes']) ? (r['changes'] as Row[]) : [];
+  return {
+    act: r['act'], thread: r['thread'], character: r['character'], name: String(r['name'] ?? ''), tagline: String(r['tagline'] ?? ''), avatar: str(r['avatar']),
+    title: String(r['title'] ?? ''), body: String(r['body'] ?? ''),
+    changes: changes.filter((c) => typeof c?.['text'] === 'string').map((c) => ({ label: typeof c['label'] === 'string' ? c['label'] : '', text: String(c['text']) })),
+    at: String(r['at']), seq: num(r['seq']),
   };
 }
 
@@ -400,7 +411,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     portraitFrame: toFrame(p?.['portrait_frame']),
     pipStyle: p?.['pip_style'] ?? 'default',
     joined: c['joined'] ?? '',
-    ...(typeof c['staff'] === 'string' ? { staff: c['staff'], staffKind: c['staff_kind'] === 'bot' ? ('bot' as const) : ('boss' as const) } : {}),
+    ...(typeof c['staff'] === 'string' ? { staff: c['staff'], staffKind: c['staff_kind'] === 'bot' ? ('bot' as const) : c['staff_kind'] === 'developer' ? ('developer' as const) : ('boss' as const) } : {}),
   });
 
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
@@ -621,6 +632,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, ended: more['ended'] === true },
         roster: rows(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
       };
+    },
+    /* A page of the Updates (`updates`, 0062): public, the same for every reader, newest first. */
+    async updates(before) {
+      const r = await read(() => client.rpc('updates', { before: before ?? null, most: UPDATES_PAGE }));
+      return (Array.isArray(r.data) ? (r.data as Row[]) : []).map(toUpdate);
+    },
+    /* An admin's update, written as the developer persona; the answer is the update as `updates` reads it. */
+    async postUpdate(title, body, changes) {
+      const a = await rpcWrite(() => client.rpc('post_update', { title, body, changes: changes.map((c) => ({ label: c.label, text: c.text })) }));
+      return a.ok ? { ok: true, value: toUpdate(a.value) } : a;
     },
     async holdMove(id) {
       const a = await rpcWrite(() => client.rpc('hold_move', { id }));

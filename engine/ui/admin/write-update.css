@@ -1,0 +1,140 @@
+/*
+ * Write an update (WriteUpdate.tsx), on the Updates page for an admin: plain glass controls, no board's chrome. The fields are the glass's
+ * field color with the pale rule, labels in the label size, every control at least 52px tall on the Main board's layout. Sizes are the
+ * glass's tokens, never px (engine/ui/glass/board.test.tsx reads this file); on the Phone board's layout the rows stack.
+ */
+.kb-write-update {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+  margin: 0 0 32px;
+  padding: 24px 28px;
+  background: color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
+}
+
+.kb-write-update-note,
+.kb-write-update-hint {
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-write-update-field {
+  display: grid;
+  gap: 6px;
+}
+
+.kb-write-update-field > label,
+.kb-write-update-changes > legend {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-write-update-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  color: var(--kb-glass-text);
+  background: var(--kb-glass-field);
+  border: 1.5px solid color-mix(in srgb, var(--kb-glass-pale) 60%, transparent);
+}
+
+.kb-write-update-input:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 2px;
+}
+
+.kb-write-update-count {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-write-update-changes {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kb-write-update-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.kb-write-update-button {
+  min-height: 52px;
+  padding: 0 20px;
+  font: inherit;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+  background: transparent;
+  border: 1.5px solid color-mix(in srgb, var(--kb-glass-pale) 70%, transparent);
+  cursor: pointer;
+}
+
+.kb-write-update-button:disabled {
+  cursor: default;
+  color: var(--kb-glass-text-2);
+  border-style: dashed;
+}
+
+.kb-write-update-button:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 2px;
+}
+
+.kb-write-update-post:not(:disabled) {
+  color: var(--kb-glass-ink-neon);
+  background: var(--kb-glass-neon);
+  border-color: var(--kb-glass-neon);
+}
+
+.kb-write-update-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.kb-write-update-status,
+.kb-write-update-refusal {
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  color: var(--kb-glass-text);
+}
+
+.kb-write-update-refusal {
+  color: var(--kb-glass-loss);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-write-update {
+  padding: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-write-update-note,
+:where(:root[data-kb-layout='phone']) .kb-write-update-hint,
+:where(:root[data-kb-layout='phone']) .kb-write-update-input,
+:where(:root[data-kb-layout='phone']) .kb-write-update-status,
+:where(:root[data-kb-layout='phone']) .kb-write-update-refusal {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-write-update-row {
+  grid-template-columns: minmax(0, 1fr);
+}

@@ -572,6 +572,18 @@ export interface SystemContent {
   readonly nameStyleBrief: string;
 }
 
+/**
+ * The instance's developer persona (the alerts design, section 3): the one in-character voice the glass has, on the Updates page. It
+ * is written by the instance's admins and never by a model, so it is no part of `system`, which is all a model reads. `name` is the
+ * staff character's; `tagline` is its profile title (at most 40 characters, which a profile holds); `avatar` is a key the instance's UI
+ * turns into a picture (`InstanceUi.avatars`), as a pip style's key is. An instance with none stands on the engine's plain default.
+ */
+export interface DeveloperPersona {
+  readonly name: string;
+  readonly tagline: string;
+  readonly avatar?: string;
+}
+
 export interface Instance {
   readonly key: string;
   readonly name: string;
@@ -584,4 +596,6 @@ export interface Instance {
   readonly ranks: readonly Rank[];
   readonly pipStyles: readonly PipStyle[];
   readonly system: SystemContent;
+  /** The developer persona; left out, the engine's default ("The developers", no tagline, no avatar). */
+  readonly developer?: DeveloperPersona;
 }
