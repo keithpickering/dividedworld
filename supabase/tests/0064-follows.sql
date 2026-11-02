@@ -127,6 +127,36 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- The cap, and a staff character's post ----
+do $$
+declare
+  dee uuid := tests.account('follow-dee');
+  eli uuid := tests.account('follow-eli');
+  d1 uuid; e1 uuid; boss uuid; t uuid; s uuid; i integer; got record;
+begin
+  d1 := tests.character(dee, 'Follow Dee');
+  e1 := tests.character(eli, 'Follow Eli');
+  t := tests.thread('Capped');
+  perform tests.post(d1, t, 'opening');
+  for i in 1..101 loop perform tests.post(e1, t, 'reply ' || i); end loop;
+  perform tests.become(dee);
+  select * into got from my_followed_threads where thread = t;
+  if got.new_posts is distinct from 100 then raise exception '101 posts by others are counted to the cap of 100: %', got.new_posts; end if;
+  perform tests.unbecome();
+
+  -- A staff character has no owner, so its post in a followed thread is another's and is counted.
+  s := tests.thread('Staff speaks');
+  perform tests.post(d1, s, 'opening');
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Follow Boss', 'follow-boss', 'boss', now()) returning id into boss;
+  perform tests.become_service();
+  perform write_staff_act('follow-boss', 'post', s, null, '{"body": "It is decided."}');
+  perform tests.unbecome();
+  perform tests.become(dee);
+  select * into got from my_followed_threads where thread = s;
+  if got.new_posts is distinct from 1 then raise exception 'a staff character''s post in a followed thread is counted: %', got.new_posts; end if;
+  perform tests.unbecome();
+end $$;
+
 -- ---- Scale: an account that follows 500 threads reads them by index ----
 -- 500 threads one of Ann's characters started, each with a handful of posts by others, and Ann has read some of them.
 do $$
@@ -147,6 +177,11 @@ begin
   t := tests.thread('Scale elsewhere');
   perform tests.post(o1, t, 'opening');
   for i in 1..2000 loop perform tests.post(h1, t, 'reply ' || i); end loop;
+  -- A thread the hog started, with a long run of their own posts past their place: the backward read steps over them by the same index.
+  t := tests.thread('Own run');
+  perform tests.post(h1, t, 'opening');
+  perform tests.post(o1, t, 'one reply');
+  for i in 1..2000 loop perform tests.post(h1, t, 'my own ' || i); end loop;
   insert into thread_follows (account, thread, follow)
     select hog, t.id, true from threads t where t.title like 'Scale %' and t.id in (select thread from acts where character = o1 and seq = 2 limit 100);
   analyze acts; analyze threads; analyze reading; analyze thread_follows; analyze characters;

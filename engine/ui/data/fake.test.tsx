@@ -1618,3 +1618,21 @@ describe('a card beyond a post, and the effects above a page', () => {
     expect(await fake.effectsAbove([boFace], thread, board)).toEqual([]);
   });
 });
+
+describe('followed threads (my_followed_threads, 0059)', () => {
+  test('a count stops at the cap, counts others\' posts alone, and a thread read to its end leaves', async () => {
+    const fake = createFake({ instance });
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    const mine = fake.seed.character(me, 'Mine', 'face');
+    const theirs = fake.seed.character(other, 'Theirs', 'heel');
+    const { thread } = fake.seed.thread('general', mine, 'Capped', 'opening');
+    for (let i = 0; i < 101; i++) fake.seed.post(thread, theirs, `reply ${i}`);
+    fake.seed.post(thread, mine, 'my own');
+    fake.signInAs(me);
+    const rows = await fake.followed();
+    expect(rows.map((r) => [r.thread, r.newPosts])).toEqual([[thread, 100]]);
+    await fake.markRead(thread, 200, null);
+    expect(await fake.followed()).toEqual([]);
+  });
+});

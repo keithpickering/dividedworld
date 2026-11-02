@@ -11,7 +11,7 @@
 --
 -- my_followed_threads is the caller's followed threads that have posts past their own place (reading.furthest_seq, 0018), by
 -- characters they do not own, with how many (counted to 100, a cap that keeps a busy thread's count one bounded index range; a
--- screen words 100 as "99+") and the newest such post's time; newest first, at most 50. Only threads with a count above nought
+-- screen words 100 as "100+") and the newest such post's time; newest first, at most 50. Only threads with a count above nought
 -- are rows, so a thread read to its end leaves the list by itself and nothing is stored to clear. The count is computed from
 -- public posts and the caller's own ownership and place alone; no other account's follows or ownership enter it, and nothing
 -- here changes a public read. "By characters they do not own" is the caller's own masks only: a staff character, whose owner is
@@ -24,7 +24,8 @@
 -- key, a thread's place by reading's key, and each thread's new posts by acts' (thread, seq) key, read from the newest back and
 -- stopped at 100. A thread with nothing past the caller's place is skipped from its own row (next_seq) without reading its Acts.
 -- The one cost that is not bounded by the cap is a run of the caller's own posts past their place, which the backward read steps
--- over; reading the thread, as posting does, ends it.
+-- over (an index walk that reads one Act and one character each, with no other bound). That is the accepted bound: the run ends
+-- when the thread page marks the thread read (mark_read, 0018), which posting does not do.
 
 create table thread_follows (
   account uuid not null references accounts (id),
