@@ -173,7 +173,7 @@ const OWN: readonly [string, () => HTMLElement][] = [
   ['/characters/new', () => screen.getByRole('button', { name: 'Make the character' })],
   ['/characters/edit', () => screen.getByRole('heading', { level: 1, name: /^Edit / })],
   ['/settings', () => screen.getByRole('radiogroup', { name: 'Smoke' })],
-  ['/rankings', () => screen.getByRole('heading', { level: 1, name: 'Rankings' })],
+  ['/season', () => screen.getByRole('heading', { level: 1, name: /^Season/u })],
   ['/log', () => screen.getByRole('heading', { level: 1, name: 'My log' })],
 ];
 
@@ -203,17 +203,33 @@ for (const path of ['/characters', '/characters/new', '/characters/edit', '/sett
   });
 }
 
-test('/rankings is drawn on the glass with no board panel, and its menu bar tab is the current page', async () => {
-  window.history.pushState(null, '', '/rankings');
+test('/season is drawn on the glass with no board panel, and its menu bar tab is the current page', async () => {
+  window.history.pushState(null, '', '/season');
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
   render(<App api={fake} />);
   const bar = await screen.findByRole('navigation', { name: 'Menu' });
-  await screen.findByRole('heading', { level: 1, name: 'Rankings' });
+  await screen.findByRole('heading', { level: 1, name: /^Season/u });
   expect(screen.getByRole('main').querySelector('.kb-glass-content-panel')).toBeNull();
   expect(screen.getByRole('main').closest('[data-kb-surface]')).toHaveAttribute('data-kb-surface', 'rankings');
-  expect(within(bar).getByRole('link', { name: 'Rankings' })).toHaveAttribute('aria-current', 'page');
+  expect(within(bar).getByRole('link', { name: 'Season' })).toHaveAttribute('aria-current', 'page');
 });
+
+/* The old addresses open the season page's Rankings tab in their place (the alerts design, section 7); a page asked for goes with them. */
+for (const [from, to] of [['/rankings', '/season?tab=rankings'], ['/standings', '/season?tab=rankings'], ['/rankings?page=2', '/season?tab=rankings&page=2'], ['/standings?page=3', '/season?tab=rankings&page=3']] as const) {
+  test(`${from} goes to ${to}, on the glass, and Back does not return to it`, async () => {
+    window.history.pushState(null, '', from);
+    const fake = createFake({ instance, settings: fallbackSettings });
+    seedDemo(fake);
+    render(<App api={fake} />);
+    const bar = await screen.findByRole('navigation', { name: 'Menu' });
+    await screen.findByRole('heading', { level: 1, name: /^Season/u });
+    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe(to));
+    expect(screen.getByRole('tab', { name: 'Rankings' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(bar).getByRole('link', { name: 'Season' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('banner')).toBeNull();
+  });
+}
 
 test('/log stands on the log\'s smoke, and its menu bar tab is the current page', async () => {
   window.history.pushState(null, '', '/log');

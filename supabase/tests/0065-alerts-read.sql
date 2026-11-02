@@ -11,6 +11,20 @@ exception when others then
   return sqlerrm;
 end $$;
 
+-- A suite shares one database, and 0031 commits tallies of its own, which are news for every player (0063). The counts below are of what this
+-- file makes, so season news is counted apart (0068 holds it): `old_news()` is the season news newer than the signed-in account's mark, and
+-- `unread()` is the HUD's count less it.
+create function pg_temp.old_news() returns integer language sql security definer as $f$
+  select (select count(*)::integer from (
+    select 1 from seasons s join acts a on a.id = s.reveal_act where a.created_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    union all select 1 from acts a where a.kind = 'tally' and tally_names(a.payload) > 0 and a.created_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    union all select 1 from season_boss_changes h where h.at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    union all select 1 from season_boss_changes h where h.outgoing is not null and h.at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+  ) old)
+$f$;
+create function pg_temp.unread() returns integer language sql security definer as $f$ select my_alerts_unread() - pg_temp.old_news() $f$;
+
+
 -- The migration exists at all (so a missing one fails here, on an assertion, and not on a missing function below).
 do $$
 begin
@@ -61,9 +75,9 @@ begin
       raise exception 'each source appears once with its kind: % appears % times', k, (select count(*) from my_alerts() where kind = k);
     end if;
   end loop;
-  if (select count(*) from my_alerts()) is distinct from 8 then raise exception 'six written, one followed thread and one settlement make eight: %', (select count(*) from my_alerts()); end if;
-  if (select string_agg(kind, ',' order by at desc, kind) from my_alerts()) is distinct from 'followed,settlement,ruling,hint,trapSprang,trapStruck,cardOnYours,quote' then
-    raise exception 'newest first: %', (select string_agg(kind, ',') from my_alerts());
+  if (select count(*) from my_alerts() where kind <> 'seasonNews') is distinct from 8 then raise exception 'six written, one followed thread and one settlement make eight: %', (select count(*) from my_alerts()); end if;
+  if (select string_agg(kind, ',' order by at desc, kind) from my_alerts() where kind <> 'seasonNews') is distinct from 'followed,settlement,ruling,hint,trapSprang,trapStruck,cardOnYours,quote' then
+    raise exception 'newest first: %', (select string_agg(kind, ',') from my_alerts() where kind <> 'seasonNews');
   end if;
   -- The rows carry the public words' inputs.
   select * into got from my_alerts() where kind = 'quote';
@@ -86,29 +100,29 @@ begin
   if exists (select 1 from my_alerts() where title = 'Not followed') then raise exception 'a thread not followed is no alert'; end if;
 
   -- The count: everything is new until the mark is set; the mark moves it.
-  if my_alerts_unread() is distinct from 8 then raise exception 'with no mark set, all eight are new: %', my_alerts_unread(); end if;
+  if my_alerts_unread() is distinct from least(10, 8 + pg_temp.old_news()) then raise exception 'with no mark set, all eight are new: %', my_alerts_unread(); end if;
   perform see_alerts(base + interval '5 hours');
-  if my_alerts_unread() is distinct from 3 then
-    raise exception 'after the mark at +5h, the alerts at +6h (one) and the settlement and thread are new: %', my_alerts_unread();
+  if pg_temp.unread() is distinct from 3 then
+    raise exception 'after the mark at +5h, the alerts at +6h (one) and the settlement and thread are new: %', pg_temp.unread();
   end if;
   perform see_alerts(base + interval '7 hours' + interval '1 second');
-  if my_alerts_unread() is distinct from 1 then raise exception 'after the mark past the settlement only the followed thread is new: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 1 then raise exception 'after the mark past the settlement only the followed thread is new: %', pg_temp.unread(); end if;
   perform see_alerts(now());
-  if my_alerts_unread() is distinct from 0 then raise exception 'after the mark at now nothing is new: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 0 then raise exception 'after the mark at now nothing is new: %', pg_temp.unread(); end if;
   -- Seeing never removes a row: the list is the same.
-  if (select count(*) from my_alerts()) is distinct from 8 then raise exception 'the list does not shrink when seen'; end if;
+  if (select count(*) from my_alerts() where kind <> 'seasonNews') is distinct from 8 then raise exception 'the list does not shrink when seen'; end if;
   -- A new alert, a new post and a new settlement each move the count by one (rows are added by the writers, here by the owner).
   perform tests.unbecome();
   insert into alerts (account, kind, act, character, at) values (ann, 'quote', quoted, a1, now() + interval '1 minute');
   perform tests.become(ann);
-  if my_alerts_unread() is distinct from 1 then raise exception 'a written alert after the mark is new: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 1 then raise exception 'a written alert after the mark is new: %', pg_temp.unread(); end if;
   perform tests.unbecome();
   perform tests.post(c1, mine, 'cat 1', now() + interval '2 minutes');
   insert into settlements (starts_at, ends_at, season, applied_at)
   values (base + interval '1 day', base + interval '1 day' + interval '6 hours', (select min(id) from seasons), now() + interval '3 minutes') returning id into sid2;
   insert into ledger (settlement, account, character, reason, amount) values (sid2, ann, a1, 'post.reacted', 10);
   perform tests.become(ann);
-  if my_alerts_unread() is distinct from 3 then raise exception 'a post by another in a followed thread and a settlement after the mark are new too: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 3 then raise exception 'a post by another in a followed thread and a settlement after the mark are new too: %', pg_temp.unread(); end if;
   select * into got from my_alerts() where kind = 'followed';
   if got.count is distinct from 3 then raise exception 'the thread now holds three posts by others: %', got; end if;
   if (select count(*) from my_alerts() where kind = 'settlement') is distinct from 2 then raise exception 'each settlement is one row'; end if;
@@ -116,15 +130,15 @@ begin
   -- A followed thread read to its end leaves the list, and the count with it.
   perform mark_read(mine, 100, a1);
   if exists (select 1 from my_alerts() where kind = 'followed') then raise exception 'a followed thread read to its end leaves the list'; end if;
-  if my_alerts_unread() is distinct from 2 then raise exception 'and the count: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 2 then raise exception 'and the count: %', pg_temp.unread(); end if;
 
   -- ---- Another account sees none of Ann's ----
   perform tests.become(cat);
-  if exists (select 1 from my_alerts()) then raise exception 'another account reads none of the caller''s alerts: %', (select count(*) from my_alerts()); end if;
-  if my_alerts_unread() is distinct from 0 then raise exception 'and counts none: %', my_alerts_unread(); end if;
+  if exists (select 1 from my_alerts() where kind <> 'seasonNews') then raise exception 'another account reads none of the caller''s alerts: %', (select count(*) from my_alerts() where kind <> 'seasonNews'); end if;
+  if pg_temp.unread() is distinct from 0 then raise exception 'and counts none: %', pg_temp.unread(); end if;
   perform tests.become(bob);
   -- His own quote, his own settlement, and the thread he started that Cat posted in.
-  if (select string_agg(kind, ',' order by kind) from my_alerts()) is distinct from 'followed,quote,settlement' then raise exception 'Bob reads his own alerts alone: %', (select string_agg(kind, ',') from my_alerts()); end if;
+  if (select string_agg(kind, ',' order by kind) from my_alerts() where kind <> 'seasonNews') is distinct from 'followed,quote,settlement' then raise exception 'Bob reads his own alerts alone: %', (select string_agg(kind, ',') from my_alerts() where kind <> 'seasonNews'); end if;
   if (select count from my_alerts() where kind = 'settlement') is distinct from 1 then raise exception 'Bob''s settlement counts his own character alone'; end if;
   if exists (select 1 from my_alerts() where kind = 'quote' and act is distinct from played) then raise exception 'Bob reads his own quote alert'; end if;
 
@@ -140,7 +154,8 @@ do $$
 declare
   dee uuid := tests.account('ar-dee');
   d1 uuid; t uuid; i integer; prior timestamptz; got integer; pages integer := 0; seen_acts uuid[] := '{}'; page uuid[];
-  base timestamptz := now() - interval '20 hours';
+  -- In the future, newer than any season news the suite's earlier files left, which therefore falls on the last page and is set aside.
+  base timestamptz := now() + interval '30 days';
 begin
   d1 := tests.character(dee, 'Ar Dee');
   t := tests.thread('Dee''s');
@@ -153,10 +168,10 @@ begin
   -- A page of ten ends after the tie here, so none is split; the second set below puts the tie across the edge.
   perform tests.become(dee);
   if my_alerts_unread() is distinct from 10 then raise exception 'the count stops at its bound of 10 with 25 new: %', my_alerts_unread(); end if;
-  if (select count(*) from my_alerts(null, 100)) is distinct from 25 then raise exception 'the list holds all 25'; end if;
+  if (select count(*) from my_alerts(null, 100) where kind <> 'seasonNews') is distinct from 25 then raise exception 'the list holds all 25'; end if;
   prior := null;
   loop
-    select array_agg(p.act order by p.at desc, p.act), min(p.at) into page, prior from my_alerts(prior, 10) p;
+    select array_agg(p.act order by p.at desc, p.act) filter (where p.kind <> 'seasonNews'), min(p.at) into page, prior from my_alerts(prior, 10) p;
     exit when page is null;
     pages := pages + 1;
     if seen_acts && page then raise exception 'paging with before repeats a row on page %', pages; end if;
@@ -254,7 +269,7 @@ declare
   prior timestamptz; got text[] := '{}'; page text[]; pages integer := 0;
 begin
   loop
-    select array_agg(p.kind || '|' || coalesce(p.sub, '') || '|' || coalesce(p.act::text, '') || '|' || coalesce(p.thread::text, '') || '|' || p.at::text), min(p.at)
+    select array_agg(p.kind || '|' || coalesce(p.sub, '') || '|' || coalesce(p.act::text, '') || '|' || coalesce(p.thread::text, '') || '|' || p.at::text) filter (where p.kind <> 'seasonNews'), min(p.at)
       into page, prior from my_alerts(prior, size) p;
     exit when page is null;
     pages := pages + 1;
@@ -265,7 +280,7 @@ begin
   return got;
 end $$;
 create function pg_temp.whole() returns text[] language sql as $$
-  select array_agg(p.kind || '|' || coalesce(p.sub, '') || '|' || coalesce(p.act::text, '') || '|' || coalesce(p.thread::text, '') || '|' || p.at::text) from my_alerts(null, 100) p
+  select array_agg(p.kind || '|' || coalesce(p.sub, '') || '|' || coalesce(p.act::text, '') || '|' || coalesce(p.thread::text, '') || '|' || p.at::text) from my_alerts(null, 100) p where p.kind <> 'seasonNews'
 $$;
 
 do $$
@@ -297,7 +312,8 @@ begin
   for i in 1..9 loop
     t := tests.thread('Ar followed ' || i);
     perform tests.post(f1, t, 'opening', base);
-    perform tests.post(g1, t, 'later', base + (case when i = 4 then 5 else i end) * interval '1 day');
+    -- Newer than any season news the suite's earlier files left, which therefore falls after these rows.
+    perform tests.post(g1, t, 'later', now() + interval '60 days' + (case when i = 4 then 5 else i end) * interval '1 day');
     -- Fay started it and Gus replied; the thread is Fay's.
   end loop;
   perform tests.become(fay);
@@ -346,11 +362,11 @@ begin
   values (now() - interval '8 days', now() - interval '8 days' + interval '6 hours', (select min(id) from seasons), at_mark + interval '1 microsecond') returning id into sid2;
   insert into ledger (settlement, account, character, reason, amount) values (sid, hal, h1, 'post.reacted', 10), (sid2, hal, h1, 'post.quoted', 10);
   perform tests.become(hal);
-  if my_alerts_unread() is distinct from 2 then raise exception 'with no mark, both settlements are new: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 2 then raise exception 'with no mark, both settlements are new: %', pg_temp.unread(); end if;
   perform see_alerts(at_mark);
-  if my_alerts_unread() is distinct from 1 then raise exception 'a settlement applied at the mark is seen, one an instant after it is new: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 1 then raise exception 'a settlement applied at the mark is seen, one an instant after it is new: %', pg_temp.unread(); end if;
   perform see_alerts(at_mark + interval '1 microsecond');
-  if my_alerts_unread() is distinct from 0 then raise exception 'and seen once the mark reaches it: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 0 then raise exception 'and seen once the mark reaches it: %', pg_temp.unread(); end if;
   perform tests.unbecome();
 end $$;
 
@@ -416,9 +432,9 @@ begin
   if (select count(*) from my_alerts() where kind = 'settlement') is distinct from 2 then
     raise exception 'both settlements are found though a later-applied one has a lower id: %', (select count(*) from my_alerts() where kind = 'settlement');
   end if;
-  if my_alerts_unread() is distinct from 2 then raise exception 'with no mark both are new: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 2 then raise exception 'with no mark both are new: %', pg_temp.unread(); end if;
   perform see_alerts(now() - interval '1 day');
-  if my_alerts_unread() is distinct from 1 then raise exception 'the settlement applied after the mark is new, whatever its id: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 1 then raise exception 'the settlement applied after the mark is new, whatever its id: %', pg_temp.unread(); end if;
   if (select count(*) from my_alerts(now() - interval '1 day', 10) where kind = 'settlement') is distinct from 1 then raise exception 'a page before the cursor finds the older one'; end if;
   perform tests.unbecome();
 end $$;

@@ -1,11 +1,12 @@
 /**
- * Where the glass's menu bar goes (the glass plan, section 7, board 02): My characters, Rankings,
+ * Where the glass's menu bar goes (the glass plan, section 7, board 02): My characters, Season (Rankings grown into the season page),
  * My log and Settings, in that order after Back to the board. Updates (the alerts plan, Task 7) has its address here and joins the menu's order with the menu's own task. The Vending Machine is the bar's first
  * page after Back, as the boards draw it.
  */
 export interface GlassNav {
   readonly characters: string;
-  readonly rankings: string;
+  /** The season page: Rankings and News. `/rankings` and `/standings` open it. */
+  readonly season: string;
   readonly log: string;
   readonly settings: string;
   readonly vending: string;
@@ -18,7 +19,7 @@ export interface GlassNav {
 export const GLASS_NAV: GlassNav = {
   vending: '/vending',
   characters: '/characters',
-  rankings: '/rankings',
+  season: '/season',
   log: '/log',
   settings: '/settings',
   updates: '/updates',

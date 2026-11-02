@@ -674,6 +674,54 @@ export interface Update {
 /** A page of Updates holds at most this many. */
 export const UPDATES_PAGE = 20;
 
+/** What a player made public of a character's class in a season (the reveal's `shown`): its reveals and its announced Turns, in order. */
+export interface SeasonShown {
+  readonly kind: 'reveal' | 'turn';
+  readonly act: Id;
+  readonly at: string;
+  /** A reveal: the class it named. */
+  readonly class: string | null;
+  /** A Turn announced with its old class: the class it left. */
+  readonly was: string | null;
+}
+/** One of the season's top three (the reveal's Acts), with its final place and standing. Public; the server marks no one's own. */
+export interface SeasonResult {
+  readonly character: Id;
+  readonly name: string;
+  readonly place: number;
+  readonly standing: number;
+  readonly shown: readonly SeasonShown[];
+}
+/** A name a tally Act holds: a debut, or a Turn (with the class it left where its player announced that, and the class it took where announced). */
+export interface TallyName {
+  readonly character: Id;
+  readonly name: string;
+  readonly class: string | null;
+  readonly was: string | null;
+}
+export type SeasonNewsKind = 'results' | 'tally' | 'bossArrived' | 'bossLeft';
+/**
+ * One item of season news (`season_news`, supabase/migrations/0063_season_news.sql): public, and the same for every reader. `act`, `thread` and
+ * `seq` name the Act to link (the reveal's header, the tally, or the Boss's post, which is null where the instance wrote no line for it).
+ * `results` carries the top three and `count`, the characters ranked; `tally` its debuts and Turns; a Boss row its `name` and the `quote` of its post.
+ */
+export interface SeasonNewsItem {
+  readonly kind: SeasonNewsKind;
+  readonly act: Id | null;
+  readonly thread: Id | null;
+  readonly seq: number | null;
+  readonly at: string;
+  readonly season: number;
+  readonly name: string | null;
+  readonly quote: string | null;
+  readonly count: number | null;
+  readonly top: readonly SeasonResult[];
+  readonly debuts: readonly TallyName[];
+  readonly turns: readonly TallyName[];
+}
+/** A page of season news holds at least this many (more only to keep the items of one instant together). */
+export const SEASON_NEWS_PAGE = 20;
+
 /** A page of the Alerts is at least this many lines (more only to keep lines that share an instant together). */
 export const ALERTS_PAGE = 30;
 /** The count `alertsUnread` stops at: a result at the bound means that many or more, and a screen says "9+". */
@@ -1003,6 +1051,12 @@ export interface KayfaApi {
    * newest page). The developer persona's posts, which anyone signed in reads; they are the same for every reader.
    */
   updates(before?: string | null): Promise<readonly Update[]>;
+  /**
+   * A page of the season's news (`season_news`), newest first: the newest `SEASON_NEWS_PAGE` older than `before` (an ISO time, exclusive; none
+   * for the newest page) and every item sharing the instant of the last. Public: the same for every reader, and no character is marked as the
+   * player's own (a screen marks them from `myCharacters`).
+   */
+  seasonNews(before?: string | null): Promise<readonly SeasonNewsItem[]>;
   estimate(): Promise<Estimate>;
   /** A page of the player's own log (`Log`): the newest with no cursor, then each older page from the last one's `before`. */
   log(before?: string | null): Promise<Log>;

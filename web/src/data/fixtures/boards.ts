@@ -106,7 +106,7 @@ export const MOMENTS = Object.freeze({
   '11-settings': moment(SETTLE_2 + 13 * MINUTE, 'player', () => '/settings'),
   '12-log': moment(SETTLE_2 + 13 * MINUTE, 'player', () => '/log'),
   // Rankings, at the Roster board's time: the standings as the Oct 30 settlement left them.
-  '13-rankings': moment(SETTLE_2 + 13 * MINUTE, 'player', () => '/rankings'),
+  '13-rankings': moment(SETTLE_2 + 13 * MINUTE, 'player', () => '/season?tab=rankings'),
 });
 export type MomentName = keyof typeof MOMENTS;
 

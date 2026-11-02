@@ -6,7 +6,7 @@ import { controlsWithoutFocusIndicator, focusedIndicator } from './focus.ts';
 /* These specs inject axe and poison styles into the page; the site's policy (e2e/csp.spec.ts holds it) would block them. */
 test.use({ bypassCSP: true });
 
-const PAGES = ['/', '/b/general', '/characters', '/standings', '/settings'];
+const PAGES = ['/', '/b/general', '/characters', '/settings'];
 /* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
 const GLASS = new Set(['/characters', '/settings']);
 
@@ -185,11 +185,11 @@ test('a link out of the glass forgets the thread, and Back lands on the one the 
   await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
   await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
   /*
-   * Out of the glass by a link that is not Back: a character's name on Rankings, which opens its
+   * Out of the glass by a link that is not Back: a character's name on the season page's Rankings tab, which opens its
    * profile on the board. (My characters' crumb, then the Rankings tab while it stood in on the
    * board's standings, were this link until the glass build's Tasks 2.2 and 2.3.)
    */
-  await page.getByRole('navigation', { name: 'Menu' }).getByRole('link', { name: 'Rankings' }).click();
+  await page.getByRole('navigation', { name: 'Menu' }).getByRole('link', { name: 'Season' }).click();
   await page.getByRole('main').getByRole('table').getByRole('link').first().click();
   await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Menu' })).toHaveCount(0);

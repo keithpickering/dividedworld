@@ -24,12 +24,12 @@ import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, 
 import { sameName } from '../../rules/names.ts';
 import { isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
-  Act, AccountListener, ActKind, Alert, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
+  Act, AccountListener, ActKind, Alert, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -83,6 +83,12 @@ export interface Seed {
    * is refused. `act` is the Act it is about, `character` the account's character it concerns, `at` an epoch (else now).
    */
   alert(account: Id, alert: { kind: WrittenKind; act: Id; character?: Id; sub?: string; at?: number }): void;
+  /**
+   * A change of Boss at a season's roll-over (a `season_handovers` row, 0051): the outgoing Boss (null at the first) and the arriving one, by staff key,
+   * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread from
+   * `at` on (`staffPost`), as the server finds it.
+   */
+  handover(handover: { outgoing?: string | null; boss: string; at?: number }): void;
   /**
    * An update by the developer persona (what `post_update` writes, 0062), dated `at` (else now): the developer character is made on its first
    * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
@@ -551,7 +557,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     updatesThreadId = openThread(board.id, 'Updates', null).id;
     return threads.get(updatesThreadId)!;
   }
-  const listed = (t: ThreadRec) => t.id !== updatesThreadId;
+  /* A board's list leaves out the updates thread and the season's reveal and Turns threads (thread_list, 0063); thread() opens any of them by id (thread_open). */
+  const seasonThreads = (): Set<Id> => new Set(seasons.flatMap((s) => [s.turnsThread, s.revealAct === null ? null : acts.get(s.revealAct)?.thread ?? null]).filter((x): x is Id => x !== null));
+  const listed = (t: ThreadRec) => t.id !== updatesThreadId && !seasonThreads().has(t.id);
   /** `within` (0005): text that is something and no longer than the setting, in the server's words. */
   const within = (field: string, value: string, most: number): string | null =>
     /^[\s\u200b-\u200d\u2060]*$/u.test(value) ? `${field} is empty` : [...value].length > most ? `${field} is longer than ${most} characters` : null;
@@ -562,6 +570,58 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       act: a.id, thread: a.thread, character: c.id, name: c.name, tagline: c.title, avatar: (options.instance.developer ?? DEFAULT_DEVELOPER).avatar ?? null,
       title: String(a.payload['title']), body: String(a.payload['body']), changes: a.payload['changes'] as UpdateChange[], at: iso(a.at), seq: a.seq!,
     };
+  }
+  /* ------------------------------------------------------------------ season news ---- */
+  /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
+  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number }[] = [];
+  const staffByKey = (key: string) => [...characters.values()].find((c) => c.staff?.key === key);
+  /** The first post of a staff member in the announcements thread from `at` on: what the Boss said as it came or went. */
+  function bossPost(key: string, at: number): ActRec | undefined {
+    const who = staffByKey(key);
+    if (!who) return undefined;
+    const board = boards.find((b) => b.isSystem);
+    const home = board ? [...threads.values()].find((t) => t.board === board.id && t.id !== updatesThreadId && !seasonThreads().has(t.id)) : undefined;
+    return [...acts.values()].filter((a) => a.kind === 'post' && a.character === who.id && a.thread === home?.id && a.at >= at).sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0))[0];
+  }
+  const names = (v: unknown): TallyName[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []).map((e) => ({
+    character: String(e['character']), name: String(e['name']), class: typeof e['class'] === 'string' ? e['class'] : null, was: typeof e['was'] === 'string' ? e['was'] : null }));
+  /** `season_news` (0063) over the Acts the fake holds: the reveal's header and top three, each tally with names, the Boss's arrival and farewell. */
+  function newsItems(): SeasonNewsItem[] {
+    const out: SeasonNewsItem[] = [];
+    const base = { act: null, thread: null, seq: null, name: null, quote: null, count: null, top: [], debuts: [], turns: [] } as const;
+    for (const s of seasons) {
+      const h = s.revealAct === null ? undefined : acts.get(s.revealAct);
+      if (!h) continue;
+      const top = [...acts.values()].filter((a) => a.thread === h.thread && a.kind === 'reveal' && typeof a.payload['character'] === 'string').sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0) || x.order - y.order).slice(0, 3)
+        .map((a) => ({ character: String(a.payload['character']), name: String(a.payload['name']), place: Number(a.payload['place']), standing: Number(a.payload['standing']),
+          shown: ((a.payload['shown'] ?? []) as Record<string, unknown>[]).map((x): SeasonShown => ({ kind: x['kind'] === 'turn' ? 'turn' : 'reveal', act: String(x['act']), at: String(x['at']), class: typeof x['class'] === 'string' ? x['class'] : null, was: typeof x['was'] === 'string' ? x['was'] : null })) }));
+      out.push({ ...base, kind: 'results', act: h.id, thread: h.thread, seq: h.seq, at: iso(h.at), season: Number(h.payload['season'] ?? s.number), count: Number(h.payload['characters'] ?? 0), top });
+    }
+    for (const a of acts.values()) {
+      if (a.kind !== 'tally') continue;
+      const debuts = names(a.payload['debuts']);
+      const turns = names(a.payload['turns']);
+      if (debuts.length + turns.length === 0) continue;
+      out.push({ ...base, kind: 'tally', act: a.id, thread: a.thread, seq: a.seq, at: iso(a.at), season: Number(a.payload['season'] ?? 0), count: debuts.length + turns.length, debuts, turns });
+    }
+    for (const h of handovers) {
+      if (h.boss === h.outgoing) continue;
+      const number = [...seasons].filter((s) => Date.parse(s.startsAt) <= h.at).sort((x, y) => y.number - x.number)[0]?.number ?? 1;
+      const arrived = bossPost(h.boss, h.at);
+      out.push({ ...base, kind: 'bossArrived', act: arrived?.id ?? null, thread: arrived?.thread ?? null, seq: arrived?.seq ?? null, at: iso(h.at), season: number, name: staffByKey(h.boss)?.name ?? h.boss, quote: arrived ? String(arrived.payload['body'] ?? '') : null });
+      if (h.outgoing !== null) {
+        const left = bossPost(h.outgoing, h.at);
+        out.push({ ...base, kind: 'bossLeft', act: left?.id ?? null, thread: left?.thread ?? null, seq: left?.seq ?? null, at: iso(h.at), season: number - 1, name: staffByKey(h.outgoing)?.name ?? h.outgoing, quote: left ? String(left.payload['body'] ?? '') : null });
+      }
+    }
+    return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || String(a.act ?? '').localeCompare(String(b.act ?? '')));
+  }
+  /** A page as `season_news` cuts it: the newest `most` older than `before`, with every item sharing the instant of the last. */
+  function newsPage(before: string | null | undefined, most: number): SeasonNewsItem[] {
+    const until = before == null ? Infinity : Date.parse(before);
+    const older = newsItems().filter((n) => Date.parse(n.at) < until);
+    const last = older[Math.min(most, older.length) - 1];
+    return last === undefined ? [] : older.filter((n) => Date.parse(n.at) >= Date.parse(last.at));
   }
   const updateActs = () => [...acts.values()].filter((a) => a.kind === 'update').sort((a, b) => b.at - a.at || b.order - a.order);
   /**
@@ -1155,6 +1215,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const until = before == null ? Infinity : Date.parse(before);
       return updateActs().filter((a) => a.at < until).slice(0, UPDATES_PAGE).map(updateOf);
     },
+    seasonNews: (before) => newsPage(before, SEASON_NEWS_PAGE),
     postUpdate: (title, body, changes) => (me()?.admin ? writeUpdate(title, body, changes, undefined) : refuse('only an admin writes an update')),
     settings: () => screen,
 
@@ -1272,7 +1333,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id));
       return { threads: all.slice(page.offset, page.offset + page.limit), total: all.length };
     },
-    thread: (id) => (threads.has(id) && listed(threads.get(id)!) ? summary(threads.get(id)!) : null),
+    thread: (id) => (threads.has(id) && id !== updatesThreadId ? summary(threads.get(id)!) : null),
     acts: (thread, from, to) => placed(thread).filter((a) => a.seq! >= from && a.seq! <= to).map(publicAct),
     act: (id) => (acts.has(id) ? publicAct(acts.get(id)!) : null),
     actsById: (ids) => [...new Set(ids)].filter((id) => acts.has(id)).map((id) => publicAct(acts.get(id)!)),
@@ -1778,6 +1839,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const w of seededAlerts) if (w.account === account.id) out.push(line({ kind: w.kind, sub: w.sub, act: w.act, character: w.character, at: w.at }));
     for (const f of followedFor(account)) out.push(line({ kind: 'followed', sub: null, act: null, character: null, at: Date.parse(f.newestAt), thread: f.thread, title: f.title, count: f.newPosts }));
     /* Every player's news, the same for each (alerts_news, 0062): one line per update, and nothing of the player's in it. Season news joins here. */
+    for (const n of newsItems()) out.push(line({ kind: 'seasonNews', sub: n.kind, act: n.act, character: null, at: Date.parse(n.at), thread: n.thread, title: null, name: n.name, count: n.count }));
     for (const u of updateActs()) out.push(line({ kind: 'update', sub: null, act: u.id, character: null, at: u.at, thread: u.thread, title: String(u.payload['title']), name: characters.get(u.character!)?.name ?? null }));
     for (const x of settlements) {
       const mine = x.lines.filter((l) => l.account === account.id);
@@ -1853,6 +1915,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const line = { account, kind: a.kind, sub: a.sub ?? null, act: a.act, character: a.character ?? null, at: a.at ?? now() };
       seededAlerts.push(line);
       send(`account:${account}`, 'alert', () => { for (const l of [...(accountListeners.get(account) ?? [])]) l.onAlert?.({ id: crypto.randomUUID(), kind: line.kind, sub: line.sub, act: line.act, character: line.character, at: iso(line.at) }); });
+    },
+    handover(h) {
+      if (h.outgoing !== null && h.outgoing !== undefined) staffId(h.outgoing);
+      staffId(h.boss);
+      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now() });
     },
     update(u) {
       const wrote = writeUpdate(u.title, u.body, u.changes ?? [], u.at);

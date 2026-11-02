@@ -202,7 +202,27 @@ describe('reads and their rows', () => {
     const h = harness(() => rows([origin]));
     const row = await h.api.thread(T);
     expect([row?.originActId, row?.originThread, row?.originTitle, row?.originSeq]).toEqual([A, C, 'Where it came from', 7]);
-    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['thread_list']);
+    /* By its id, from thread_open: thread_list leaves the season's reveal and Turns threads out of a board's list, and a link to one still opens it. */
+    expect(h.rest().map((r) => r.url.pathname.replace(`${REST}/`, ''))).toEqual(['thread_open']);
+  });
+
+  it('reads a page of the season\'s news, newest first, and keeps only what the shape holds', async () => {
+    const top = [{ character: A, name: 'Spritey', place: 1, standing: 985, shown: [{ kind: 'reveal', act: B, at: '2026-10-03T13:00:00Z', class: 'face' }, { kind: 'odd', act: B, at: 'x' }] }, { name: 'no id' }];
+    const h = harness(() => rows([
+      { kind: 'results', act: B, thread: C, seq: 1, at: '2026-10-28T12:00:00Z', season: 1, name: null, quote: null, count: 4, detail: { top } },
+      { kind: 'tally', act: A, thread: C, seq: 2, at: '2026-10-26T08:00:00Z', season: 1, name: null, quote: null, count: 2,
+        detail: { debuts: [{ character: A, name: 'Thwompson' }, { name: 'no id' }], turns: [{ character: B, name: 'Pipewrench', was: 'heel' }] } },
+      { kind: 'bossArrived', act: null, thread: null, seq: null, at: '2026-10-28T12:00:00Z', season: 2, name: 'Mister Spreadsheet', quote: null, count: null, detail: null },
+    ]));
+    const news = await h.api.seasonNews('2026-11-01T00:00:00Z');
+    const [req] = h.to('rpc/season_news');
+    expect(req?.method).toBe('POST');
+    expect(req?.body).toEqual({ before: '2026-11-01T00:00:00Z', most: 20 });
+    expect(news.map((n) => n.kind)).toEqual(['results', 'tally', 'bossArrived']);
+    expect(news[0]?.top).toEqual([{ character: A, name: 'Spritey', place: 1, standing: 985, shown: [{ kind: 'reveal', act: B, at: '2026-10-03T13:00:00Z', class: 'face', was: null }] }]);
+    expect(news[1]?.debuts).toEqual([{ character: A, name: 'Thwompson', class: null, was: null }]);
+    expect(news[1]?.turns).toEqual([{ character: B, name: 'Pipewrench', class: null, was: 'heel' }]);
+    expect(news[2]).toMatchObject({ act: null, thread: null, seq: null, quote: null, name: 'Mister Spreadsheet', top: [], debuts: [], turns: [] });
   });
 
   it('counts a character\'s posts, spins and cards from its one counter row, never from its Acts', async () => {

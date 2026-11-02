@@ -32,7 +32,7 @@ begin
   perform tests.thread('Bounded one');
   perform tests.thread('Bounded two');
   if (select threads from board_counts where board = general) is distinct from before_general + 2 then raise exception 'a thread started on a board counts: %', (select threads from board_counts where board = general); end if;
-  if (select threads from board_counts where board = system) is distinct from (select count(*)::integer from threads where board = system) then raise exception 'another board''s count does not move'; end if;
+  if (select threads from board_counts where board = system) is distinct from (select count(*)::integer from thread_list where board = system) then raise exception 'another board''s count does not move'; end if;
   -- A board made later has its counter too.
   insert into boards (slug, name) values ('later', 'Later');
   if (select threads from board_counts where board = (select id from boards where slug = 'later')) is distinct from 0 then raise exception 'a new board counts from 0'; end if;
@@ -47,7 +47,7 @@ begin
   -- Zeroed and replayed, the backfill says what the trigger kept.
   update board_thread_counts set threads = 0;
   perform backfill_board_counts();
-  if exists (select 1 from boards b where (select threads from board_counts c where c.board = b.id) is distinct from (select count(*)::integer from threads t where t.board = b.id)) then
+  if exists (select 1 from boards b where (select threads from board_counts c where c.board = b.id) is distinct from (select count(*)::integer from thread_list t where t.board = b.id)) then
     raise exception 'the backfill counts every board''s threads: %', (select jsonb_agg(to_jsonb(c)) from board_counts c);
   end if;
 end $$;

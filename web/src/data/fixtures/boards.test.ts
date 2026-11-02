@@ -64,7 +64,7 @@ describe('the moments', () => {
     '10-roster': /^\/characters$/,
     '11-settings': /^\/settings$/,
     '12-log': /^\/log$/,
-    '13-rankings': /^\/rankings$/,
+    '13-rankings': /^\/season\?tab=rankings$/,
   };
   const WHO: Record<MomentName, readonly string[]> = {
     '01-main': ['Mrs. Hooligan', 'Pipewrench', 'Spritey'],

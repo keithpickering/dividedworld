@@ -10,6 +10,20 @@ exception when others then
   return sqlstate || ': ' || sqlerrm;
 end $$;
 
+-- A suite shares one database, and 0031 commits tallies of its own, which are news for every player (0063). The counts below are of what this
+-- file makes, so season news is counted apart (0068 holds it): `old_news()` is the season news newer than the signed-in account's mark, and
+-- `unread()` is the HUD's count less it.
+create function pg_temp.old_news() returns integer language sql security definer as $f$
+  select (select count(*)::integer from (
+    select 1 from seasons s join acts a on a.id = s.reveal_act where a.created_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    union all select 1 from acts a where a.kind = 'tally' and tally_names(a.payload) > 0 and a.created_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    union all select 1 from season_boss_changes h where h.at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    union all select 1 from season_boss_changes h where h.outgoing is not null and h.at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+  ) old)
+$f$;
+create function pg_temp.unread() returns integer language sql security definer as $f$ select my_alerts_unread() - pg_temp.old_news() $f$;
+
+
 -- The migration exists at all (so a missing one fails here, on an assertion, and not on a missing function below).
 do $$
 begin
@@ -83,7 +97,7 @@ begin
   insert into admins (account) values (adm);
   -- A player with no character at all gets it too: it is nothing of theirs.
   perform tests.become(ann);
-  if (select count(*) from my_alerts() where kind = 'update') is distinct from 0 or my_alerts_unread() is distinct from 0 then raise exception 'no update, no alert'; end if;
+  if (select count(*) from my_alerts() where kind = 'update') is distinct from 0 or pg_temp.unread() is distinct from 0 then raise exception 'no update, no alert'; end if;
   perform tests.unbecome();
 
   perform tests.become(adm);
@@ -92,11 +106,11 @@ begin
 
   perform tests.become(ann);
   select coalesce(jsonb_agg(to_jsonb(x) order by x.at, x.act), '[]') into ann_rows from my_alerts() x where x.kind = 'update';
-  if my_alerts_unread() is distinct from 1 then raise exception 'the count includes the update: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 1 then raise exception 'the count includes the update: %', pg_temp.unread(); end if;
   perform tests.unbecome();
   perform tests.become(bob);
   select coalesce(jsonb_agg(to_jsonb(x) order by x.at, x.act), '[]') into bob_rows from my_alerts() x where x.kind = 'update';
-  if my_alerts_unread() is distinct from 1 then raise exception 'the count includes the update for every player'; end if;
+  if pg_temp.unread() is distinct from 1 then raise exception 'the count includes the update for every player'; end if;
   perform tests.unbecome();
   if jsonb_array_length(ann_rows) is distinct from 1 then raise exception 'each player gets one update alert: %', ann_rows; end if;
   if ann_rows is distinct from bob_rows then raise exception 'an update alert is the same for every player: % vs %', ann_rows, bob_rows; end if;
@@ -110,20 +124,20 @@ begin
   -- The count moves with the mark, and a second update is a second alert, for a player who never looked as for one who did.
   perform tests.become(ann);
   perform see_alerts(now());
-  if my_alerts_unread() is distinct from 0 then raise exception 'the count falls when the mark moves: %', my_alerts_unread(); end if;
+  if pg_temp.unread() is distinct from 0 then raise exception 'the count falls when the mark moves: %', pg_temp.unread(); end if;
   perform tests.unbecome();
   perform tests.become(adm);
   perform post_update('Second news', 'Body two.', '[]');
   perform tests.unbecome();
   update account_preferences set alerts_seen_at = now() - interval '1 second' where account = ann;
   perform tests.become(ann);
-  if (select count(*) from my_alerts() where kind = 'update') is distinct from 2 or my_alerts_unread() is distinct from 2 then
-    raise exception 'two updates, two alerts, both after the mark: % / %', (select count(*) from my_alerts() where kind = 'update'), my_alerts_unread();
+  if (select count(*) from my_alerts() where kind = 'update') is distinct from 2 or pg_temp.unread() is distinct from 2 then
+    raise exception 'two updates, two alerts, both after the mark: % / %', (select count(*) from my_alerts() where kind = 'update'), pg_temp.unread();
   end if;
   perform tests.unbecome();
   perform tests.become(cat);
-  if (select count(*) from my_alerts() where kind = 'update') is distinct from 2 or my_alerts_unread() is distinct from 2 then
-    raise exception 'a player who never opened Alerts has both new: % / %', (select count(*) from my_alerts() where kind = 'update'), my_alerts_unread();
+  if (select count(*) from my_alerts() where kind = 'update') is distinct from 2 or pg_temp.unread() is distinct from 2 then
+    raise exception 'a player who never opened Alerts has both new: % / %', (select count(*) from my_alerts() where kind = 'update'), pg_temp.unread();
   end if;
   perform tests.unbecome();
 end $$;

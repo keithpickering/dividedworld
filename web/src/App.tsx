@@ -23,11 +23,10 @@ import { IndexScreen } from '../../engine/ui/index/Index.tsx';
 import { PlayerProvider, usePlayer } from '../../engine/ui/player.tsx';
 import { ProfileEdit } from '../../engine/ui/profile-edit/ProfileEdit.tsx';
 import { Vending } from '../../engine/ui/vending/Vending.tsx';
-import { RankingsScreen } from '../../engine/ui/rankings/Rankings.tsx';
+import { SeasonScreen, seasonAt } from '../../engine/ui/season/Season.tsx';
 import { UpdatesScreen } from '../../engine/ui/updates/Updates.tsx';
 import { LogScreen } from '../../engine/ui/log/Log.tsx';
 import { SettlementOnLoad, SettlementScreen } from '../../engine/ui/log/Settlement.tsx';
-import { StandingsScreen } from '../../engine/ui/standings/Standings.tsx';
 import { RouterProvider, useLocation, useNavigate } from '../../engine/ui/router.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
@@ -40,8 +39,10 @@ const ROUTES: readonly Route[] = [
   { path: '/characters', render: () => <Characters /> },
   { path: '/characters/new', render: () => <NewCharacter /> },
   { path: '/characters/edit', render: () => <ProfileEdit /> },
-  { path: '/standings', render: () => <StandingsScreen /> },
-  { path: '/rankings', render: () => <RankingsScreen /> },
+  { path: '/season', render: () => <SeasonScreen /> },
+  /* The standings and the rankings are the season page's Rankings tab (the alerts design, section 7); `?page=` goes with them. */
+  { path: '/standings', render: () => <MovedToRankings /> },
+  { path: '/rankings', render: () => <MovedToRankings /> },
   { path: '/vending', render: () => <Vending /> },
   { path: '/updates', render: () => <UpdatesScreen /> },
   { path: '/admin/queue', render: () => <QueueScreen /> },
@@ -70,7 +71,10 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/settings': 'settings',
   '/sign-in': 'account',
   '/register': 'account',
+  '/season': 'rankings',
+  /* The old addresses are glass too, so a move to the season page stays on the glass. */
   '/rankings': 'rankings',
+  '/standings': 'rankings',
   '/vending': 'vending',
   /* Updates stands on the page smoke of Settings, Log and Rankings: no surface of its own, so no instance must name another recipe. */
   '/updates': 'settings',
@@ -95,6 +99,13 @@ function Moved({ to }: { readonly to: string }) {
   const navigate = useNavigate();
   useEffect(() => { navigate(to, { replace: true }); }, [navigate, to]);
   return null;
+}
+
+/** `/rankings` and `/standings`: the season page's Rankings tab, keeping the page asked for. */
+function MovedToRankings() {
+  const { query } = useLocation();
+  const page = Number.parseInt(query.get('page') ?? '', 10);
+  return <Moved to={seasonAt('rankings', Number.isFinite(page) ? page : undefined)} />;
 }
 
 /**

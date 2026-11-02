@@ -32,12 +32,12 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  Alert, EffectState, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
 
@@ -134,6 +134,27 @@ function toUpdate(r: Row): Update {
     title: String(r['title'] ?? ''), body: String(r['body'] ?? ''),
     changes: changes.filter((c) => typeof c?.['text'] === 'string').map((c) => ({ label: typeof c['label'] === 'string' ? c['label'] : '', text: String(c['text']) })),
     at: String(r['at']), seq: num(r['seq']),
+  };
+}
+
+/** The names a tally Act holds under `key`; an entry with no id or name is no line. A class is kept only where the entry says it. */
+function toTallyNames(v: unknown): TallyName[] {
+  return (Array.isArray(v) ? (v as Row[]) : []).flatMap((e) => (typeof e?.['character'] === 'string' && typeof e['name'] === 'string'
+    ? [{ character: e['character'], name: e['name'], class: str(e['class']), was: str(e['was']) }] : []));
+}
+/** One row of `season_news` (0063). Its public detail is read as the Acts wrote it; what is not in the shape is left out. */
+function toSeasonNews(r: Row): SeasonNewsItem {
+  const detail = (r['detail'] ?? {}) as Row;
+  const top = (Array.isArray(detail['top']) ? (detail['top'] as Row[]) : []).flatMap((t): SeasonResult[] => (typeof t?.['character'] === 'string'
+    ? [{
+      character: t['character'], name: String(t['name'] ?? ''), place: num(t['place']), standing: num(t['standing']),
+      shown: (Array.isArray(t['shown']) ? (t['shown'] as Row[]) : []).flatMap((x): SeasonShown[] => (x?.['kind'] === 'reveal' || x?.['kind'] === 'turn'
+        ? [{ kind: x['kind'], act: String(x['act']), at: String(x['at']), class: str(x['class']), was: str(x['was']) }] : [])),
+    }] : []));
+  return {
+    kind: r['kind'], act: r['act'] ?? null, thread: r['thread'] ?? null, seq: r['seq'] === null || r['seq'] === undefined ? null : num(r['seq']), at: String(r['at']),
+    season: num(r['season']), name: str(r['name']), quote: str(r['quote']), count: r['count'] === null || r['count'] === undefined ? null : num(r['count']),
+    top, debuts: toTallyNames(detail['debuts']), turns: toTallyNames(detail['turns']),
   };
 }
 
@@ -638,6 +659,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const r = await read(() => client.rpc('updates', { before: before ?? null, most: UPDATES_PAGE }));
       return (Array.isArray(r.data) ? (r.data as Row[]) : []).map(toUpdate);
     },
+    /* A page of the season's news (`season_news`, 0063): public, the same for every reader, newest first. */
+    async seasonNews(before) {
+      const r = await read(() => client.rpc('season_news', { before: before ?? null, most: SEASON_NEWS_PAGE }));
+      return (Array.isArray(r.data) ? (r.data as Row[]) : []).map(toSeasonNews);
+    },
     /* An admin's update, written as the developer persona; the answer is the update as `updates` reads it. */
     async postUpdate(title, body, changes) {
       const a = await rpcWrite(() => client.rpc('post_update', { title, body, changes: changes.map((c) => ({ label: c.label, text: c.text })) }));
@@ -670,7 +696,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return { threads: rows.map(toThread), total: all };
     },
     async thread(id) {
-      const r = await list(() => client.from('thread_list').select('*').eq('id', id).limit(1));
+      /* thread_open: every thread by its id, the reveal and Turns threads (which thread_list leaves out of a board's list) included. */
+      const r = await list(() => client.from('thread_open').select('*').eq('id', id).limit(1));
       return r[0] ? toThread(r[0]) : null;
     },
     async acts(thread, fromSeq, toSeq) {

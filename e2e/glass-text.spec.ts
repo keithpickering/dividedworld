@@ -103,7 +103,7 @@ const PAGES: readonly Screen[] = [
   { name: 'My characters', path: '/characters' },
   { name: 'New character', path: '/characters/new' },
   { name: 'Edit profile', path: '/characters/edit' },
-  { name: 'Rankings', path: '/rankings' },
+  { name: 'Rankings', path: '/season?tab=rankings' },
   { name: 'My log, before anything has settled', path: '/log' },
   { name: 'The Vending Machine', path: '/vending' },
   { name: 'The hand, open', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
@@ -360,7 +360,7 @@ test.describe('under high contrast', () => {
   test('the poison: a line in a color the high key does not name is named', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await chooseHighContrast(page);
-    await open(page, PAGES.find((p) => p.path === '/rankings')!);
+    await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);
     /* The standard key's --kb-glass-text-2, which the high key lifts to #f1ecff. */
     await plant(page, '.kb-rankings-lead { color: #e4def7 !important; }');
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): its color rgb\(228, 222, 247\) is not one of the glass's text colors in the high key$/u));
@@ -369,7 +369,7 @@ test.describe('under high contrast', () => {
   test('the poison: a line on solid ground too bright for its color at 7:1 is named', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await chooseHighContrast(page);
-    await open(page, PAGES.find((p) => p.path === '/rankings')!);
+    await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);
     /* The lead's calm is the solid ground under high contrast; drawn white, it is still solid, and far too bright for the high key's white text. */
     await plant(page, '.kb-rankings-lead.kb-calm::before { background: #ffffff !important; }');
     expect(await measure(page)).toContainEqual(expect.stringMatching(/ p\.kb-rankings-lead \(surface rankings\): under high contrast its brightest pixel, luminance 1\.0000, is not under the 7:1 ceiling 0\.1 for its color, rgb\(255, 255, 255\)$/u));
@@ -378,7 +378,7 @@ test.describe('under high contrast', () => {
   test('the poison: one line left on the smoke is named', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await chooseHighContrast(page);
-    await open(page, PAGES.find((p) => p.path === '/rankings')!);
+    await open(page, PAGES.find((p) => p.path === '/season?tab=rankings')!);
     /* One line of the page's own, left on its smoke below the column, with no ground under it. */
     await page.locator('.kb-glass-page').evaluate((glassPage) => {
       const p = document.createElement('p');
@@ -447,7 +447,7 @@ test.describe('the picked slot and the armed card in forced colors', () => {
 
 test.describe('the poisons, planted in a real page', () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
-  const rankings = PAGES.find((p) => p.path === '/rankings')!;
+  const rankings = PAGES.find((p) => p.path === '/season?tab=rankings')!;
 
   test('a calm moved off its text', async ({ page }) => {
     await open(page, rankings);
