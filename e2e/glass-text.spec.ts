@@ -149,6 +149,8 @@ const PAGES: readonly Screen[] = [
 const debut = (button: string, dialog: string) => async (page: Page) => {
   await page.getByLabel(/name/iu).first().fill('Waiting Wanda');
   await page.getByRole('radio').first().check();
+  /* Drop now is the default (the onboarding plan's Task 1), so a character that waits chooses the settlement. */
+  await page.getByRole('radio', { name: 'Debut at the settlement' }).check();
   await page.getByRole('button', { name: 'Make the character' }).click();
   await page.getByRole('button', { name: button }).click();
   await expect(page.getByRole('dialog', { name: dialog })).toBeVisible();

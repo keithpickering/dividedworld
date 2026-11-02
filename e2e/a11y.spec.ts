@@ -238,6 +238,8 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.goto('/characters/new');
         await page.getByLabel(/name/iu).first().fill('Waiting Wanda');
         await page.getByRole('radio').first().check();
+        /* Drop now is the default (the onboarding plan's Task 1), so a character that waits chooses the settlement. */
+        await page.getByRole('radio', { name: 'Debut at the settlement' }).check();
         await page.getByRole('button', { name: 'Make the character' }).click();
         await page.getByRole('button', { name: 'Drop Waiting Wanda now' }).click();
         await expect(page.getByRole('dialog', { name: 'Drop Waiting Wanda now' })).toBeVisible();
