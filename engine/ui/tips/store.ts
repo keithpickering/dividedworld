@@ -6,7 +6,8 @@
  * group is dropped for the load, and one of the same group (the HUD tour's three steps) queues behind it. A request is also dropped,
  * for the load, when it is decided while focus is in a text field or a contenteditable, while a game effect holds the screen
  * (`hold`), or while a modal is open. A hold that begins under the tip already showing does not drop it: `active()` returns null (the
- * spotlight hides, unseen) until the hold lets go, and then the same tip shows again. "A tip that cannot show waits for the next load": a dropped key is not asked again. A tip withdrawn after it was
+ * spotlight hides, unseen) until the hold lets go, and then the same tip shows again. A modal being open does not drop a tip whose target
+ * stands inside the top modal itself (the reaction grid, in the open picker): the tip is about that layer, and its spotlight is drawn above it. "A tip that cannot show waits for the next load": a dropped key is not asked again. A tip withdrawn after it was
  * decided (its component unmounts, or its `when` goes false) is settled for the load all the same: if it was showing it goes, unseen,
  * and it is not asked again.
  *
@@ -18,7 +19,7 @@
  * active or able to show (a spotlight first), and the first callout shown spends the budget as the group `callout`, which no
  * spotlight shares. A store with no provider is `open` and gates nothing.
  */
-import { modalOpen } from '../modal.tsx';
+import { modalOpen, topModalHolds } from '../modal.tsx';
 import type { TipKey } from './keys.ts';
 
 /** Where in a sequence a tip is: "2 of 3". */
@@ -54,6 +55,10 @@ export interface TipsStore {
   welcomed(): boolean;
   /** Ask to show a tip this load; the returned function withdraws the request. */
   want(request: TipRequest): () => void;
+  /** Whether the account's tips are on and `key` is not among those seen: a callout asks it before it adds a tip's line. False while the account is not read. */
+  unseen(key: TipKey): boolean;
+  /** `key` is seen without a spotlight (its line went out with a callout): the account is told, and it is not asked again. */
+  note(key: TipKey): void;
   /** Whether a game effect holds the screen now. */
   holding(): boolean;
   /** A game effect holds the screen (Stick Around's view) or lets it go; `who` names the effect. */
@@ -91,7 +96,8 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
   const notify = () => { for (const l of [...listeners]) l(); };
   const eligible = (e: Entry) => prefs !== null && prefs.tips === 'on' && !prefs.seen.has(e.request.key) && !settled.has(e.request.key);
   /* A step of the group already showing carries on from the layer it is leaving, which is still open as its Got it is pressed. */
-  const blocked = (carriesOn: boolean) => holders.size > 0 || (!carriesOn && (typing() || modalOpen()));
+  const blocked = (carriesOn: boolean, target: HTMLElement | null = null) =>
+    holders.size > 0 || (!carriesOn && (typing() || (modalOpen() && !topModalHolds(target))));
 
   /* Decide every request that can be, in the order asked. */
   const decide = () => {
@@ -101,7 +107,7 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
       if (current) { if (current.entry.group !== e.group) drop(e); continue; }
       if (spent !== null && spent !== e.group) { drop(e); continue; }
       const target = e.request.target();
-      if (blocked(spent === e.group) || !target?.isConnected) { drop(e); continue; }
+      if (blocked(spent === e.group, target) || !target?.isConnected) { drop(e); continue; }
       queue.splice(queue.indexOf(e), 1);
       settled.add(e.request.key);
       spent = e.group;
@@ -133,6 +139,13 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
       };
     },
     welcomed: () => prefs?.welcomed ?? false,
+    unseen: (key) => prefs !== null && prefs.tips === 'on' && !prefs.seen.has(key),
+    note(key) {
+      if (prefs === null || prefs.tips === 'off' || prefs.seen.has(key)) return;
+      prefs.seen.add(key);
+      void Promise.resolve(handlers.see(key)).catch(() => {});
+      change();
+    },
     holding: () => holders.size > 0,
     hold(who, held) {
       if (held ? holders.has(who) : !holders.has(who)) return;
@@ -160,7 +173,7 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
       if (current) return false;
       if (spent !== null && spent !== 'callout') return false;
       /* A spotlight that can show comes first. */
-      return !queue.some((e) => eligible(e) && !blocked(false));
+      return !queue.some((e) => eligible(e) && !blocked(false, e.request.target()));
     },
     spend(group) {
       if (spent === null) { spent = group; notify(); }

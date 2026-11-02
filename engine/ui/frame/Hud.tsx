@@ -60,7 +60,7 @@ import { pageEscape } from '../glass/keys.ts';
 import { GLASS_NAV } from '../glass/nav.ts';
 import { useBoard } from '../glass/useBoard.ts';
 import { useTour } from '../tips/tour.ts';
-import { useTipsStore } from '../tips/Tips.tsx';
+import { useTip, useTipsStore } from '../tips/Tips.tsx';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
 const SLOPE = 28;
@@ -120,6 +120,8 @@ export function Hud() {
   const tips = useTipsStore();
   const welcomed = useSyncExternalStore(tips.subscribe, tips.welcomed, tips.welcomed);
   useTour({ plate, orbs: aura, hand: handButton }, signedIn && player.loaded && hud !== null && welcomed);
+  /* The ghost tip: the first time the orbs show an estimate (a pending amount), pointing at the orbs' box (the legend that says Ghost is in it). */
+  useTip('ghost', aura, { when: signedIn && player.wallet !== null && player.pending !== 0 });
 
   const hudId = hud?.id ?? null;
   useEffect(() => {
