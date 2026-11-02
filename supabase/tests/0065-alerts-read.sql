@@ -16,9 +16,9 @@ end $$;
 -- `unread()` is the HUD's count less it.
 create function pg_temp.old_news() returns integer language sql security definer as $f$
   select (select count(*)::integer from (
-    select 1 from news_landed n where n.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
-    union all select 1 from season_boss_changes h where h.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
-    union all select 1 from season_boss_changes h where h.outgoing is not null and h.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    select 1 from news_landed n where n.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), (select a.created_at from accounts a where a.id = signed_in_account()))
+    union all select 1 from season_boss_changes h where h.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), (select a.created_at from accounts a where a.id = signed_in_account()))
+    union all select 1 from season_boss_changes h where h.outgoing is not null and h.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), (select a.created_at from accounts a where a.id = signed_in_account()))
   ) old)
 $f$;
 create function pg_temp.unread() returns integer language sql security definer as $f$ select my_alerts_unread() - pg_temp.old_news() $f$;
@@ -366,6 +366,24 @@ begin
   if pg_temp.unread() is distinct from 1 then raise exception 'a settlement applied at the mark is seen, one an instant after it is new: %', pg_temp.unread(); end if;
   perform see_alerts(at_mark + interval '1 microsecond');
   if pg_temp.unread() is distinct from 0 then raise exception 'and seen once the mark reaches it: %', pg_temp.unread(); end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- An account that never looked counts from when it was opened, not from the instance's start (issue #148) ----
+do $$
+declare
+  joiner uuid := tests.account('ar-joiner'); i1 uuid; sid bigint; sid2 bigint; joined timestamptz := now() - interval '5 days';
+begin
+  update accounts set created_at = joined where id = joiner;
+  i1 := tests.character(joiner, 'Ar Joiner');
+  insert into settlements (starts_at, ends_at, season, applied_at)
+  values (now() - interval '19 days', now() - interval '19 days' + interval '6 hours', (select min(id) from seasons), joined - interval '1 day') returning id into sid;
+  insert into settlements (starts_at, ends_at, season, applied_at)
+  values (now() - interval '18 days', now() - interval '18 days' + interval '6 hours', (select min(id) from seasons), joined + interval '1 day') returning id into sid2;
+  insert into ledger (settlement, account, character, reason, amount) values (sid, joiner, i1, 'post.reacted', 10), (sid2, joiner, i1, 'post.quoted', 10);
+  perform tests.become(joiner);
+  if pg_temp.unread() is distinct from 1 then raise exception 'with no mark, only what arrived after the account was opened is new: %', pg_temp.unread(); end if;
+  if (select count(*) from my_alerts() where kind = 'settlement') is distinct from 2 then raise exception 'the list still holds what came before joining'; end if;
   perform tests.unbecome();
 end $$;
 

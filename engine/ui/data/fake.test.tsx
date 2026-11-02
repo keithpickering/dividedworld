@@ -1703,6 +1703,17 @@ describe('the Alerts read and the count (my_alerts, my_alerts_unread, 0060)', ()
     expect(await busy.alertsUnread()).toBe(10);
   });
 
+  test('an account that never looked counts from when it was opened, and still lists what came before (issue #148)', async () => {
+    const { fake, opener } = alertsWorld();
+    const dee = fake.seed.account('dee', { joinedAt: T0 + 4.5 * H });
+    const deeFace = fake.seed.character(dee, 'Dee Face', 'face');
+    fake.seed.alert(dee, { kind: 'ruling', act: opener, character: deeFace, sub: 'before', at: T0 + 3 * H });
+    fake.seed.alert(dee, { kind: 'ruling', act: opener, character: deeFace, sub: 'after', at: T0 + 5 * H });
+    fake.signInAs(dee);
+    expect(await fake.alertsUnread()).toBe(1);
+    expect((await fake.alerts()).length).toBe(2);
+  });
+
   test('another account sees none of the caller\'s, and a visitor reads nothing', async () => {
     const { fake, cy, bo, anaHeel } = alertsWorld();
     fake.signInAs(cy);
