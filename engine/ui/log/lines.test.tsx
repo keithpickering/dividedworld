@@ -301,4 +301,13 @@ describe('a play beyond a post, in the caster\'s and the target\'s logs', () => 
     const [row] = logRows(data({ log, mine, acts: new Map([post, elsewhere, play].map((a) => [a.id, a])), names, titles }), w, 600, null);
     expect(row!.characters).toEqual(['g']);
   });
+
+  test('a thread whose title could not be read is said plainly, with no quotes', () => {
+    const rows = logRows(data({ log: { ...empty, cards: [{ card: 'event', kind: 'played' as const, act: 'k2', price: 0, at }] }, mine: caster, acts: new Map([post, plays.thread].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(rows[1]!.what).toBe('You played Main Event on a thread');
+    const mine = [char('g', 'Gloomba', 'face')];
+    const log = { ...empty, playsOnMine: [{ play: 'k2', post: 'post1', at, reach: 'thread' as const, targetName: null, targetCharacter: 'g' }] };
+    const [row] = logRows(data({ log, mine, acts: new Map([post, plays.thread].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(text(row!)).toBe('Main Event was played on a thread.');
+  });
 });

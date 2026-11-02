@@ -75,14 +75,21 @@ async function around(api: KayfaApi, log: Log, before?: LogData): Promise<LogDat
     for (const a of await api.actsById(followed)) acts.set(a.id, a);
   }
   const names = new Map(own.names);
-  /* A play beyond a post names its target by id alone: the character's name, the thread's title, the board's name, read like the rest. */
-  const placed = (key: string, reach: string) => [...acts.values()].filter((a) => a.kind === 'card' && a.payload.reach === reach).map((a) => a.payload[key]).filter((v): v is Id => typeof v === 'string');
-  const others = [...new Set([...acts.values()].map((a) => a.character).concat(placed('character', 'character')).filter((c): c is Id => c !== null && !ids.includes(c) && !names.has(c)))];
+  /* A play beyond a post carries its target's name (play_card, 0056); one written without reads it as it stands, so only those are asked
+     for: their characters' names, threads' titles and boards' names, in one pass over the card Acts. */
+  const unnamed: { character: Id[]; thread: Id[]; board: Id[] } = { character: [], thread: [], board: [] };
+  for (const a of acts.values()) {
+    const reach = a.payload.reach;
+    if (a.kind !== 'card' || typeof a.payload.targetName === 'string' || (reach !== 'character' && reach !== 'thread' && reach !== 'board')) continue;
+    const target = a.payload[reach];
+    if (typeof target === 'string') unnamed[reach].push(target);
+  }
+  const others = [...new Set([...acts.values()].map((a) => a.character).concat(unnamed.character).filter((c): c is Id => c !== null && !ids.includes(c) && !names.has(c)))];
   for (const part of await Promise.all(inChunks(others).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) names.set(c.id, c.name);
   const titles = new Map(own.titles);
-  const threads = [...new Set(own.turns.map((t) => acts.get(t.act)?.thread).concat(placed('thread', 'thread')).filter((t): t is Id => t !== undefined && !titles.has(t)))];
+  const threads = [...new Set(own.turns.map((t) => acts.get(t.act)?.thread).concat(unnamed.thread).filter((t): t is Id => t !== undefined && !titles.has(t)))];
   for (const t of await Promise.all(threads.map((id) => orElse(api.thread(id), null)))) if (t) titles.set(t.id, t.title);
-  const boards = [...new Set(placed('board', 'board'))].filter((b) => !titles.has(b));
+  const boards = [...new Set(unnamed.board)].filter((b) => !titles.has(b));
   for (const b of await Promise.all(boards.map((id) => orElse(api.board(id), null)))) if (b) titles.set(b.id, b.name);
   const states = new Map(own.states);
   for (const [play, s] of Object.entries(saved as Readonly<Record<Id, EffectState>>)) states.set(play, s.state);

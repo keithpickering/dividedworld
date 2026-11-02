@@ -149,7 +149,7 @@ export function placeOf(play: Act, data: Pick<LogData, 'names' | 'mine'> & Parti
   const said = typeof play.payload.targetName === 'string' && play.payload.targetName !== '' ? play.payload.targetName : null;
   switch (play.payload.reach) {
     case 'character': { const c = id('character'); return said ?? (c && (data.mine.find((m) => m.id === c)?.name ?? data.names.get(c))) ?? 'a character'; }
-    case 'thread': { const t = id('thread'); return `'${said ?? (t && data.titles?.get(t)) ?? 'a thread'}'`; }
+    case 'thread': { const t = id('thread'); const title = said ?? (t ? data.titles?.get(t) : undefined); return title ? `'${title}'` : 'a thread'; }
     case 'board': { const b = id('board'); const name = said ?? (b ? data.titles?.get(b) : undefined); return name ? `the ${name} board` : 'a board'; }
     default: return null;
   }
@@ -408,7 +408,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const message = typeof play?.payload.message === 'string' && play.payload.message.trim() !== '' ? play.payload.message.trim() : null;
     /* A play on one of the player's characters or on a thread one of them started: named by the target, and by no caster. */
     if (p.reach !== 'post') {
-      const target = p.reach === 'thread' ? `'${p.targetName ?? 'a thread'}'` : p.targetName ?? 'a character';
+      const target = p.reach === 'thread' ? (p.targetName ? `'${p.targetName}'` : 'a thread') : p.targetName ?? 'a character';
       rows.push({
         key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: `A card on your ${p.reach}`,
         details: [`${cardName(play?.payload.card)} was played on ${target}${message ? `, with the message “${message}”` : ''}.`],

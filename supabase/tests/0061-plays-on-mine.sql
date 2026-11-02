@@ -24,7 +24,7 @@ declare
   hoo uuid := tests.character(bob, 'Pom Hoo'); kit uuid := tests.character(cat, 'Pom Kit');
   t uuid := tests.thread('Pom Thwomp'); mine_t uuid := tests.thread('Pom Pipe''s thread');
   hoo_post uuid; pipe_post uuid; pipe2_post uuid; own_post uuid;
-  on_hoo uuid; on_thread uuid; on_board uuid; on_post uuid; by_hoo uuid; own_play uuid;
+  nameless uuid; on_hoo uuid; on_thread uuid; on_board uuid; on_post uuid; by_hoo uuid; own_play uuid;
   brd uuid; r record;
 begin
   perform pg_temp.cards();
@@ -59,7 +59,12 @@ begin
   if (select payload ->> 'targetName' from acts where id = on_board) is distinct from (select name from boards_now where id = brd) then raise exception 'the name is the one boards_now gives'; end if;
   update boards set name = 'Pom Board Renamed' where id = brd;
   update threads set title = 'Pom Thwomp Renamed' where id = t;
+  update characters set name = 'Pom Hoo Renamed' where id = hoo;
   if (select payload ->> 'targetName' from acts where id = on_board) is distinct from 'Pom Board' then raise exception 'renaming the board changes no play'; end if;
+  -- A play written without a name (before 0056) reads the target as it stands.
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (pipe, 'card', t, hoo_post, jsonb_build_object('card', 'glint', 'reach', 'character', 'character', hoo, 'ends', now() + interval '1 day')) returning id into nameless;
+  insert into play_reach (play, reach, character, ends_at) values (nameless, 'character', hoo, now() + interval '1 day');
 
   -- Bob reads the plays on his Hoo and on the thread Hoo started, with their reach and their public names.
   perform tests.become(bob);
@@ -75,10 +80,12 @@ begin
   if r.reach is distinct from 'thread' or r.target_name is distinct from 'Pom Thwomp' then
     raise exception 'a thread play carries its reach and the thread''s title: %', to_jsonb(r);
   end if;
+  select * into r from my_posts_played_on where play = nameless;
+  if r.target_name is distinct from 'Pom Hoo Renamed' then raise exception 'a play with no name reads the character as it stands: %', to_jsonb(r); end if;
   if exists (select 1 from my_posts_played_on where play = on_board) then raise exception 'a board has no owner: its play is no one''s row'; end if;
   if exists (select 1 from my_posts_played_on where play = by_hoo) then raise exception 'a play by Bob''s own mask is not a row of his'; end if;
-  if (select count(*) from my_posts_played_on) is distinct from 2::bigint then
-    raise exception 'Bob reads the two plays on his, read %', (select jsonb_agg(to_jsonb(x)) from my_posts_played_on x);
+  if (select count(*) from my_posts_played_on) is distinct from 3::bigint then
+    raise exception 'Bob reads the three plays on his, read %', (select jsonb_agg(to_jsonb(x)) from my_posts_played_on x);
   end if;
   perform tests.unbecome();
 
