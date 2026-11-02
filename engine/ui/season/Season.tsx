@@ -142,9 +142,9 @@ function Boss({ item, perPage }: { readonly item: SeasonNewsItem; readonly perPa
       <h3>{name} has {arrived ? 'arrived' : 'left'}</h3>
       {arrived
         ? <p>{name} runs the board for Season {item.season}.{words !== '' && ' Its first words, on The System’s board:'}</p>
-        : <p>Season {item.season}&apos;s Boss is gone until a later season hires it back.{words !== '' && ' Its last words are still on The System’s board.'}</p>}
+        : <p>Season {item.season}&apos;s Boss has left.{words !== '' && ' Its last words are still on The System’s board.'}</p>}
       {words !== '' && <blockquote className="kb-season-quote">{'“'}{words}{'”'}</blockquote>}
-      {post !== null && <p><Link className="kb-season-link" to={post}>{arrived ? 'Read its post on the board' : 'Read them'}</Link></p>}
+      {post !== null && <p><Link className="kb-season-link" to={post}>{arrived ? 'Read its post on the board' : 'Read its last post on the board'}</Link></p>}
     </>
   );
 }

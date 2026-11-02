@@ -16,10 +16,9 @@ end $$;
 -- `unread()` is the HUD's count less it.
 create function pg_temp.old_news() returns integer language sql security definer as $f$
   select (select count(*)::integer from (
-    select 1 from seasons s join acts a on a.id = s.reveal_act where a.created_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
-    union all select 1 from acts a where a.kind = 'tally' and tally_names(a.payload) > 0 and a.created_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
-    union all select 1 from season_boss_changes h where h.at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
-    union all select 1 from season_boss_changes h where h.outgoing is not null and h.at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    select 1 from news_landed n where n.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    union all select 1 from season_boss_changes h where h.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
+    union all select 1 from season_boss_changes h where h.outgoing is not null and h.landed_at > coalesce((select p.alerts_seen_at from account_preferences p where p.account = signed_in_account()), '-infinity')
   ) old)
 $f$;
 create function pg_temp.unread() returns integer language sql security definer as $f$ select my_alerts_unread() - pg_temp.old_news() $f$;

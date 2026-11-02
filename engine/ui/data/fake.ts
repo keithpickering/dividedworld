@@ -85,8 +85,8 @@ export interface Seed {
   alert(account: Id, alert: { kind: WrittenKind; act: Id; character?: Id; sub?: string; at?: number }): void;
   /**
    * A change of Boss at a season's roll-over (a `season_handovers` row, 0051): the outgoing Boss (null at the first) and the arriving one, by staff key,
-   * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread from
-   * `at` on (`staffPost`), as the server finds it.
+   * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
+   * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words.
    */
   handover(handover: { outgoing?: string | null; boss: string; at?: number }): void;
   /**
@@ -575,13 +575,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
   const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number }[] = [];
   const staffByKey = (key: string) => [...characters.values()].find((c) => c.staff?.key === key);
-  /** The first post of a staff member in the announcements thread from `at` on: what the Boss said as it came or went. */
+  /** The first post of a staff member in the announcements thread dated at the handover's instant: what the Boss said as it came or went (a later remark is not it). */
   function bossPost(key: string, at: number): ActRec | undefined {
     const who = staffByKey(key);
     if (!who) return undefined;
     const board = boards.find((b) => b.isSystem);
     const home = board ? [...threads.values()].find((t) => t.board === board.id && t.id !== updatesThreadId && !seasonThreads().has(t.id)) : undefined;
-    return [...acts.values()].filter((a) => a.kind === 'post' && a.character === who.id && a.thread === home?.id && a.at >= at).sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0))[0];
+    return [...acts.values()].filter((a) => a.kind === 'post' && a.character === who.id && a.thread === home?.id && a.at === at).sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0))[0];
   }
   const names = (v: unknown): TallyName[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []).map((e) => ({
     character: String(e['character']), name: String(e['name']), class: typeof e['class'] === 'string' ? e['class'] : null, was: typeof e['was'] === 'string' ? e['was'] : null }));

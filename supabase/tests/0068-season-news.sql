@@ -125,6 +125,40 @@ begin
   if n.act is distinct from a_post or n.name is distinct from 'Sn A' or n.quote is distinct from 'Farewell from Sn A.' then raise exception 'the departure: %', to_jsonb(n); end if;
 end $$;
 
+-- ---- The news is dated when it landed, not at its window's end ----
+-- A tally and a reveal are dated at the window they close (`created_at`), which can be long before the settlement that writes them lands. A
+-- player who opens Alerts in between moves the mark past them; the news must still be new to them when it lands.
+do $$
+declare
+  dan uuid := tests.account('sn-dan');
+  t0 timestamptz := (select starts_at from seasons where number = 1);
+  base integer := (select count(*) from news_before);
+begin
+  if (select min(created_at) from acts where id in (select act from pg_temp.sn() where kind = 'tally')) >= now() - interval '1 day' then raise exception 'the tallies are dated at their window, long before they landed'; end if;
+  if (select count(*) from pg_temp.sn() where at is distinct from now()) is distinct from 0 then
+    raise exception 'each item is dated when it landed (this transaction), not at its window: %', (select jsonb_agg(to_jsonb(x)) from pg_temp.sn() x);
+  end if;
+  perform tests.become(dan);
+  perform see_alerts(t0 + interval '5 hours');
+  if my_alerts_unread() is distinct from least(10, 5 + base) then
+    raise exception 'a mark after the window''s end and before the settlement landed still counts the news as new: %', my_alerts_unread();
+  end if;
+  perform tests.unbecome();
+end $$;
+
+-- Spread over time, so that order and pages have something to show: the debut tally landed three hours ago, the Turn tally two, the results one;
+-- the Boss's arrival and departure landed with the handover, now.
+do $$
+begin
+  update news_landed set landed_at = now() - interval '3 hours' where act = (select act from pg_temp.sn() where kind = 'tally' and detail #>> '{debuts,0,name}' = 'Mrs. Hooligan');
+  update news_landed set landed_at = now() - interval '2 hours' where act = (select act from pg_temp.sn() where kind = 'tally' and detail #>> '{turns,0,name}' = 'Pipewrench');
+  update news_landed set landed_at = now() - interval '1 hour' where act = (select act from pg_temp.sn() where kind = 'results');
+  if (select array_agg(kind) from pg_temp.sn()) is distinct from array['bossArrived', 'bossLeft', 'results', 'tally', 'tally'] then
+    raise exception 'newest first by when each landed: %', (select array_agg(kind || ' ' || at) from pg_temp.sn());
+  end if;
+  if (select detail #>> '{turns,0,name}' from pg_temp.sn() where kind = 'tally' limit 1) is distinct from 'Pipewrench' then raise exception 'the Turn tally landed after the debut tally'; end if;
+end $$;
+
 -- ---- A page: newest first, ties kept together, `before` is exclusive ----
 do $$
 declare
@@ -215,6 +249,8 @@ declare
   a_rows jsonb; b_rows jsonb; c_rows jsonb;
   stored bigint := (select count(*) from alerts);
   total integer := (select count(*) from season_news(null, 50));
+  mark timestamptz;
+  n0 integer;
 begin
   perform tests.become(ann);
   select coalesce(jsonb_agg(to_jsonb(x) order by x.at, x.sub, x.act nulls first), '[]') into a_rows from my_alerts(null, 100) x where x.kind = 'seasonNews';
@@ -234,9 +270,15 @@ begin
   perform tests.unbecome();
   if (select count(*) from alerts) is distinct from stored then raise exception 'season news is written as no row per player'; end if;
   -- A new item after the mark is one more.
+  mark := now() - interval '30 minutes';
+  update account_preferences set alerts_seen_at = mark where account = cat;
+  n0 := (select count(*) from season_news(null, 50) where at > mark);
+  perform tests.become(cat);
+  if my_alerts_unread() is distinct from least(10, n0) then raise exception 'what landed after the mark is new: % of %', my_alerts_unread(), n0; end if;
+  perform tests.unbecome();
   perform post_tally((select id from seasons where ends_at is null), '[]'::jsonb, jsonb_build_array(jsonb_build_object('character', (select id from characters where name = 'Gloomba'), 'name', 'Gloomba', 'loudness', 'announced')), now() + interval '1 hour');
   perform tests.become(cat);
-  if my_alerts_unread() is distinct from 1 then raise exception 'a new tally is one new alert: %', my_alerts_unread(); end if;
+  if my_alerts_unread() is distinct from least(10, n0 + 1) then raise exception 'a new tally is one new alert: %', my_alerts_unread(); end if;
   perform tests.unbecome();
 end $$;
 
@@ -252,4 +294,132 @@ begin
     raise exception 'results, tallies and the handover are each announced';
   end if;
   if exists (select 1 from broadcasts_due where topic = 'reach' and event = 'news' and (payload::text ~* 'owner|account')) then raise exception 'the broadcast is public'; end if;
+end $$;
+
+-- ---- The Boss's words are the handover's own: a Boss who said nothing then gets no quote, not a later unrelated post ----
+-- The instance has lines for both, but a handover's announcement is best effort (say_in_announcements only warns), so one can have said nothing.
+do $$
+declare
+  at0 timestamptz := (select min(starts_at) from seasons) - interval '3000 days';
+  n record;
+begin
+  insert into seasons (number, starts_at, ends_at) values (5000, at0, at0 + interval '1 day');
+  insert into season_handovers (season, outgoing, boss, how, at, landed_at) select id, 'sn-a', 'sn-b', 'rotation', at0, at0 from seasons where number = 5000;
+  -- Both Bosses speak later, about something else.
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, payload, created_at)
+  select c.id, 'post', pg_temp.ann(), '{"body": "A later, unrelated remark."}', at0 + interval '1 hour' from characters c where c.staff in ('sn-a', 'sn-b');
+  perform set_config('kayfabb.staff_writer', '', true);
+  for n in select * from season_news(null, 50) x where x.kind in ('bossArrived', 'bossLeft') and x.season in (5000, 4999) loop
+    if n.act is not null or n.quote is not null or n.thread is not null or n.seq is not null then
+      raise exception 'a Boss who said nothing at its handover has no quote and no post to link, whatever it said later: %', to_jsonb(n);
+    end if;
+  end loop;
+  if (select count(*) from season_news(null, 50) x where x.kind in ('bossArrived', 'bossLeft') and x.season in (5000, 4999)) is distinct from 2 then raise exception 'the handover is news all the same'; end if;
+end $$;
+
+-- ---- The read costs a page, however many seasons and however long the announcements thread ----
+-- 300 seasons that each changed Boss, and 5,000 posts in the announcements thread (and a post at each handover). A page of twenty looks up
+-- the words of the rows on the page, from an index, and no more.
+create function pg_temp.buffers(q text) returns bigint language plpgsql as $$
+declare j json;
+begin
+  execute 'explain (analyze, buffers, format json) ' || q into j;
+  return (j -> 0 -> 'Plan' ->> 'Shared Hit Blocks')::bigint + (j -> 0 -> 'Plan' ->> 'Shared Read Blocks')::bigint;
+end $$;
+do $$
+declare
+  a uuid := (select id from characters where staff = 'sn-a');
+  b uuid := (select id from characters where staff = 'sn-b');
+  first_start timestamptz := (select min(starts_at) from seasons) - interval '2000 days';
+  used bigint;
+begin
+  insert into seasons (number, starts_at, ends_at)
+  select 1000 + g, first_start + g * interval '2 days', first_start + g * interval '2 days' + interval '1 day' from generate_series(1, 300) g;
+  insert into season_handovers (season, outgoing, boss, how, at, landed_at)
+  select s.id, 'sn-a', 'sn-b', 'rotation', s.starts_at, s.starts_at from seasons s where s.number between 1001 and 1300;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, payload, created_at)
+  select a, 'post', pg_temp.ann(), jsonb_build_object('body', 'Remark ' || g), first_start + g * (interval '2 days' * 300 / 4400) from generate_series(1, 4400) g;
+  insert into acts (character, kind, thread, payload, created_at)
+  select case when w = 0 then b else a end, 'post', pg_temp.ann(), jsonb_build_object('body', 'Handover ' || w), s.starts_at
+  from seasons s cross join generate_series(0, 1) w where s.number between 1001 and 1300;
+  perform set_config('kayfabb.staff_writer', '', true);
+  analyze acts; analyze season_handovers; analyze seasons;
+  -- (Rows older than the newest handovers are costed too: the newest page reads the newest rows, and the page after it the next.)
+  used := pg_temp.buffers('select * from season_news(null, 20)');
+  if used > 1500 then raise exception 'a page of season news costs a page (% buffers), not a walk of every handover and a scan of the thread', used; end if;
+  used := pg_temp.buffers(format('select * from season_news(%L, 20)', first_start + interval '400 days'));
+  if used > 1500 then raise exception 'an older page costs a page too (% buffers)', used; end if;
+  used := pg_temp.buffers('select * from alerts_news(''infinity'', 30)');
+  if used > 2000 then raise exception 'the alerts read costs a page (% buffers)', used; end if;
+  if (select count(*) from season_news(null, 20) where kind = 'bossArrived' and quote like 'Handover%') < 1 then raise exception 'a page still quotes the words said at its handover'; end if;
+end $$;
+
+-- ---- Netting a thread out of the list is idempotent, and the counter replays to the list ----
+do $$
+declare
+  sys uuid := system_board();
+  rthread uuid := (select a.thread from seasons s join acts a on a.id = s.reveal_act where s.number = 1);
+  tthread uuid := (select turns_thread from seasons where number = 1);
+  counter integer := (select threads from board_counts where board = sys);
+  marked bigint := (select count(*) from unlisted_threads);
+begin
+  -- The season's row written again, and the netting asked for again: nothing moves.
+  update seasons set reveal_act = reveal_act, turns_thread = turns_thread where number = 1;
+  perform net_unlisted_thread(rthread);
+  perform net_unlisted_thread(rthread);
+  perform net_unlisted_thread(tthread);
+  if (select threads from board_counts where board = sys) is distinct from counter or (select count(*) from unlisted_threads) is distinct from marked then
+    raise exception 'netting a thread twice moved the counter (% to %)', counter, (select threads from board_counts where board = sys);
+  end if;
+  -- A season's row pointed at a thread it already named, or cleared and set again, nets once.
+  update seasons set turns_thread = null where number = 1;
+  update seasons set turns_thread = tthread where number = 1;
+  if (select threads from board_counts where board = sys) is distinct from counter then raise exception 'clearing and setting the Turns thread netted it again'; end if;
+  -- Replayed from the threads, the counter is the list.
+  perform backfill_board_counts();
+  if (select threads from board_counts where board = sys) is distinct from (select count(*)::integer from thread_list where board = sys) then
+    raise exception 'the backfill counts the list: % of %', (select threads from board_counts where board = sys), (select count(*) from thread_list where board = sys);
+  end if;
+end $$;
+
+-- ---- The migration's backfill, over seasons that existed before it ----
+-- A database that predates 0063 has seasons with a reveal and a Turns thread, tallies and a reveal header without a landing time, and a counter that
+-- counted every thread but the updates thread. One file cannot be that database, so it is made here: the new tables emptied and the counter put
+-- back as it stood, then the two functions the migration runs for the old rows.
+do $$
+declare
+  sys uuid := system_board();
+  listed integer := (select count(*)::integer from thread_list where board = sys);
+  gone integer;
+begin
+  with gone as (
+    delete from unlisted_threads where thread in (
+      select turns_thread from seasons where turns_thread is not null union select r.thread from seasons s join acts r on r.id = s.reveal_act)
+    returning thread
+  )
+  select count(*) into gone from gone g;
+  delete from news_landed;
+  update board_thread_counts set threads = threads + gone where board = sys and shard = 0;
+  if (select threads from board_counts where board = sys) is not distinct from listed then
+    raise exception 'the staged old database counts the reveal and Turns threads (the test would prove nothing)';
+  end if;
+  perform backfill_unlisted_threads();
+  perform backfill_news_landed();
+  if (select threads from board_counts where board = sys) is distinct from listed or (select count(*)::integer from thread_list where board = sys) is distinct from listed then
+    raise exception 'the backfill nets the old reveal and Turns threads out of the counter: % of %', (select threads from board_counts where board = sys), listed;
+  end if;
+  if (select count(*) from unlisted_threads where thread in (
+        select turns_thread from seasons where turns_thread is not null union select r.thread from seasons s join acts r on r.id = s.reveal_act)) is distinct from gone then
+    raise exception 'every season thread is recorded as unlisted again';
+  end if;
+  if (select count(*) from news_landed) is distinct from (select count(*) from acts where (kind = 'tally' and tally_names(payload) > 0) or (kind = 'reveal' and not (payload ? 'character'))) then
+    raise exception 'every old tally and reveal header gets a landing time';
+  end if;
+  if exists (select 1 from news_landed n join acts a on a.id = n.act where n.landed_at is distinct from a.created_at) then raise exception 'an old item landed when it is dated'; end if;
+  -- Run again, it changes nothing.
+  perform backfill_unlisted_threads();
+  perform backfill_news_landed();
+  if (select threads from board_counts where board = sys) is distinct from (select count(*)::integer from thread_list where board = sys) then raise exception 'the backfill is idempotent'; end if;
 end $$;

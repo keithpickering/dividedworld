@@ -11,8 +11,12 @@
 -- One tally Act is one item however many names it holds (a settlement writes them in parts of at most a hundred), so a page stays a
 -- page at a busy instance; the screen draws its debuts and its Turns from the Act's own lists. Every item is one `seasonNews` alert
 -- (alert_row.sub says which: results, tally, bossArrived, bossLeft), read from this same function, so the alert and the page cannot
--- differ, and the same for every player. The counts read indexes: seasons (one row each) for the reveals, `acts_tallies` for tallies,
--- and season_handovers (one row per season).
+-- differ, and the same for every player. An item is dated when it landed, not at its window's end: a tally
+-- and a reveal are dated (`created_at`) at the window they close, which can be long before the settlement that writes them lands, and a player
+-- who opened Alerts in between would have moved the mark past news they had never seen. `news_landed` records when each one landed (the
+-- trigger below writes it as the Act is inserted), and season_handovers gains `landed_at` the same way; both are what the page orders by and
+-- what the alerts' mark compares with. The reads are index ranges: news_landed by kind and time, and season_handovers (one row per season),
+-- whose Boss rows look their words up only for the page's rows, by the Boss's own character index (acts_character) at the handover's instant.
 --
 -- The reveal and Turns threads leave The System's board's list. thread_list (0062) was the one door to a thread by id as well as to
 -- a board's list, so a thread it hides could not be opened; `thread_open` is the same row for every thread but the updates
@@ -80,17 +84,18 @@ end $$;
 create trigger seasons_net_threads after update of turns_thread, reveal_act on seasons for each row execute function seasons_net_threads();
 revoke execute on function seasons_net_threads() from public, anon, authenticated;
 
--- The threads already made: recorded and netted once, in the counter's first shard (the board's count is the sum of its shards).
-with found as (
-  select s.turns_thread as thread from seasons s where s.turns_thread is not null
-  union
-  select r.thread from seasons s join acts r on r.id = s.reveal_act
-), made as (
-  insert into unlisted_threads (thread) select f.thread from found f on conflict do nothing returning thread
-)
-update board_thread_counts c set threads = c.threads - x.n
-from (select t.board, count(*) as n from made m join threads t on t.id = m.thread group by t.board) x
-where c.board = x.board and c.shard = 0;
+-- The threads already made, for a database that predates this migration: recorded and netted once each (a function so a test can stage an old
+-- database and replay it; the migration calls it below, and it changes nothing the second time).
+create function backfill_unlisted_threads() returns void
+language sql security definer set search_path = public, pg_temp as $$
+  select net_unlisted_thread(f.thread) from (
+    select s.turns_thread as thread from seasons s where s.turns_thread is not null
+    union
+    select r.thread from seasons s join acts r on r.id = s.reveal_act
+  ) f
+$$;
+revoke execute on function backfill_unlisted_threads() from public, anon, authenticated;
+select backfill_unlisted_threads();
 
 -- backfill_board_counts (0030), counting the list a board has and not every thread it holds, so a replay of the counters agrees with the
 -- triggers: the unlisted threads (and the updates thread, 0062) are in no board's count.
@@ -109,22 +114,50 @@ language sql immutable set search_path = public, pg_temp as $$
 $$;
 revoke execute on function tally_names(jsonb) from public, anon, authenticated;
 
--- Tallies, newest first, for the news and its count.
+-- Tallies by time (the migration's first form read the news from this index, and it stays: it is small, partial, and serves any read of the newest
+-- tallies, a repair's or an admin's). The suite's bound on `my_alerts_unread` for 500 followed threads (0065) was found to hold only with it present.
 create index acts_tallies on acts (created_at desc, id desc) where kind = 'tally';
+
+-- When each tally with names and each reveal header landed: the transaction that wrote it (now(), which is also the instant the Boss's lines
+-- are dated at in a handover). Not an Act's column, since an Act is never edited and a column would have to be filled for every Act.
+create table news_landed (
+  act uuid primary key references acts (id),
+  kind text not null check (kind in ('results', 'tally')),
+  landed_at timestamptz not null default now()
+);
+create index news_landed_by_kind on news_landed (kind, landed_at desc, act desc);
+alter table news_landed enable row level security;
+revoke all on news_landed from public, anon, authenticated;
+
+-- The old rows, for a database that predates this migration: they landed when they are dated. A function so a test can stage that database.
+create function backfill_news_landed() returns void
+language sql security definer set search_path = public, pg_temp as $$
+  insert into news_landed (act, kind, landed_at)
+  select a.id, case when a.kind = 'reveal' then 'results' else 'tally' end, a.created_at from acts a
+  where (a.kind = 'tally' and tally_names(a.payload) > 0) or (a.kind = 'reveal' and not (a.payload ? 'character'))
+  on conflict (act) do nothing
+$$;
+revoke execute on function backfill_news_landed() from public, anon, authenticated;
+select backfill_news_landed();
+
+-- A handover's row gains the instant it was written, which is the instant of its transaction's lines in the announcements thread.
+alter table season_handovers add column landed_at timestamptz;
+update season_handovers set landed_at = at;
+alter table season_handovers alter column landed_at set default now(), alter column landed_at set not null;
 
 -- A Boss changed at a handover: the Boss it ended with is not the one it began with, by nomination or rotation.
 create view season_boss_changes as
-  select h.season, s.number, h.outgoing, h.boss, h.at
+  select h.season, s.number, h.outgoing, h.boss, h.at, h.landed_at
   from season_handovers h join seasons s on s.id = h.season
   where h.boss is not null and h.boss is distinct from h.outgoing and h.how in ('nomination', 'rotation');
 revoke all on season_boss_changes from public, anon, authenticated;
 
 create type season_news_row as (
   kind text,         -- results | tally | bossArrived | bossLeft
-  act uuid,          -- the Act to link: the reveal's header, the tally, the Boss's post (null where the instance wrote no line)
+  act uuid,          -- the Act to link: the reveal's header, the tally, the Boss's post (null where it said nothing at its handover)
   thread uuid,       -- the Act's thread
   seq integer,       -- the Act's place in it (a link to the post names its page and number)
-  at timestamptz,
+  at timestamptz,    -- when it landed
   season integer,    -- the season's number (for a Boss row, the season it began or ended)
   name text,         -- a Boss row: the Boss's name
   quote text,        -- a Boss row: its post's first words
@@ -132,62 +165,64 @@ create type season_news_row as (
   detail jsonb       -- results: { top: [{ character, name, place, standing, shown }] }; tally: { debuts, turns }
 );
 
--- A page of season news, newest first: the newest `most` (1 to 50, 20 by default) older than `before` (exclusive; none for the newest
--- page), and every item sharing the instant of the last, so a later page never repeats one or loses one.
+-- A page of season news, newest first by when it landed: the newest `most` (1 to 50, 20 by default) older than `before` (exclusive; none for
+-- the newest page), and every item sharing the instant of the last, so a later page never repeats one or loses one.
 create function season_news(before timestamptz default null, most integer default 20) returns setof season_news_row
 language sql stable security definer set search_path = public, pg_temp as $$
   with
   lim as (select coalesce($1, 'infinity'::timestamptz) as b, greatest(1, least(coalesce($2, 20), 50)) as k),
   ann as (select (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements') as thread),
   r_floor as (
-    select coalesce((select a.created_at from seasons s join acts a on a.id = s.reveal_act
-                     where a.created_at < (select b from lim) order by a.created_at desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz) as at
+    select coalesce((select n.landed_at from news_landed n where n.kind = 'results' and n.landed_at < (select b from lim)
+                     order by n.landed_at desc, n.act desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz) as at
   ),
   results as (
-    select 'results'::text as kind, a.id as act, a.thread, a.seq, a.created_at as at, (a.payload ->> 'season')::integer as season,
+    select 'results'::text as kind, a.id as act, a.thread, a.seq, n.landed_at as at, (a.payload ->> 'season')::integer as season,
            null::text as name, null::text as quote, (a.payload ->> 'characters')::integer as count,
            jsonb_build_object('top', (
              select coalesce(jsonb_agg(jsonb_build_object('character', t.payload -> 'character', 'name', t.payload -> 'name', 'place', t.payload -> 'place',
                                                           'standing', t.payload -> 'standing', 'shown', coalesce(t.payload -> 'shown', '[]'::jsonb)) order by t.seq), '[]'::jsonb)
              from (select r.* from acts r where r.thread = a.thread and r.kind = 'reveal' and r.payload ? 'character' order by r.seq limit 3) t)) as detail
-    from seasons s join acts a on a.id = s.reveal_act
-    where a.created_at < (select b from lim) and a.created_at >= (select at from r_floor)
+    from news_landed n join acts a on a.id = n.act
+    where n.kind = 'results' and n.landed_at < (select b from lim) and n.landed_at >= (select at from r_floor)
   ),
   t_floor as (
-    select coalesce((select a.created_at from acts a where a.kind = 'tally' and a.created_at < (select b from lim)
-                     order by a.created_at desc, a.id desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz) as at
+    select coalesce((select n.landed_at from news_landed n where n.kind = 'tally' and n.landed_at < (select b from lim)
+                     order by n.landed_at desc, n.act desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz) as at
   ),
   tallies as (
-    select 'tally'::text as kind, a.id as act, a.thread, a.seq, a.created_at as at, (a.payload ->> 'season')::integer as season,
+    select 'tally'::text as kind, a.id as act, a.thread, a.seq, n.landed_at as at, (a.payload ->> 'season')::integer as season,
            null::text as name, null::text as quote, tally_names(a.payload) as count,
            jsonb_build_object('debuts', case when jsonb_typeof(a.payload -> 'debuts') = 'array' then a.payload -> 'debuts' else '[]'::jsonb end,
                               'turns', case when jsonb_typeof(a.payload -> 'turns') = 'array' then a.payload -> 'turns' else '[]'::jsonb end) as detail
-    from acts a
-    where a.kind = 'tally' and a.created_at < (select b from lim) and a.created_at >= (select at from t_floor) and tally_names(a.payload) > 0
+    from news_landed n join acts a on a.id = n.act
+    where n.kind = 'tally' and n.landed_at < (select b from lim) and n.landed_at >= (select at from t_floor)
   ),
-  -- The Boss's words are said by say_in_announcements (0051) in the handover's own transaction, if the instance wrote a line for it:
-  -- the first post of that Boss in the announcements thread from the handover's instant on.
+  -- The Boss rows: the cheap rows of season_boss_changes first (older than `before`, and no more than the page and its ties), and only for those the
+  -- words said at the handover. They are said by say_in_announcements (0051) in the handover's own transaction, if the instance wrote a line for it, so
+  -- they are the Boss's post in the announcements thread dated at the handover's instant exactly; a Boss that said nothing then has no quote.
   boss_all as materialized (
-    select x.kind, p.id as act, p.thread, p.seq, c.at, x.season, x.name, left(p.body, 600) as quote, null::integer as count, null::jsonb as detail
-    from (
-      select 'bossArrived'::text as kind, h.boss as who, h.at, h.number as season, 'bossArrival'::text as line from season_boss_changes h
-      union all
-      select 'bossLeft', h.outgoing, h.at, h.number - 1, 'bossFarewell' from season_boss_changes h where h.outgoing is not null
-    ) c0
-    cross join lateral (select c0.kind, c0.season, (select ch.name from characters ch where ch.staff = c0.who) as name) x
-    cross join lateral (select c0.at as at) c
-    left join lateral (
-      select a.id, a.thread, a.seq, a.payload ->> 'body' as body
-      from acts a join characters ch on ch.id = a.character
-      where a.thread = (select thread from ann) and ch.staff = c0.who and a.kind = 'post' and a.created_at >= c0.at
-        and exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> c0.line) = 'array' and jsonb_array_length(s.value -> c0.line) > 0)
-      order by a.seq limit 1
-    ) p on true
-    where c.at < (select b from lim)
+    select 'bossArrived'::text as kind, h.boss as who, h.landed_at as at, h.number as season, 'bossArrival'::text as line from season_boss_changes h
+    where h.landed_at < (select b from lim)
+    union all
+    select 'bossLeft', h.outgoing, h.landed_at, h.number - 1, 'bossFarewell' from season_boss_changes h
+    where h.outgoing is not null and h.landed_at < (select b from lim)
+  ),
+  boss_page as (
+    select * from boss_all c
+    where c.at >= coalesce((select c2.at from boss_all c2 order by c2.at desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz)
   ),
   bosses as (
-    select * from boss_all b
-    where b.at >= coalesce((select b2.at from boss_all b2 order by b2.at desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz)
+    select c.kind, p.id as act, p.thread, p.seq, c.at, c.season, (select ch.name from characters ch where ch.staff = c.who) as name,
+           left(p.body, 600) as quote, null::integer as count, null::jsonb as detail
+    from boss_page c
+    left join lateral (
+      select a.id, a.thread, a.seq, a.payload ->> 'body' as body
+      from characters ch join acts a on a.character = ch.id
+      where ch.staff = c.who and a.created_at = c.at and a.kind = 'post' and a.thread = (select thread from ann)
+        and exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> c.line) = 'array' and jsonb_array_length(s.value -> c.line) > 0)
+      order by a.seq limit 1
+    ) p on true
   ),
   merged as (
     select * from results union all select * from tallies union all select * from bosses
@@ -204,7 +239,8 @@ grant execute on function season_news(timestamptz, integer) to authenticated;
 
 -- alerts_news and alerts_news_unread (0062), now with season news as well: every player's, the same for each. An update row as 0062 has it;
 -- a season-news row is `seasonNews` with the news item's kind as its sub, the Act to link, its thread, and a Boss's name or a count of names
--- (title and character are null: it is nobody's of the player's). Read from season_news itself, so an alert is exactly an item of the page.
+-- (title and character are null: it is nobody's of the player's). Read from season_news itself, so an alert is exactly an item of the page, dated
+-- when it landed: a mark set after a window's end and before its settlement landed leaves the news new.
 create or replace function alerts_news(before timestamptz, most integer) returns setof alert_row
 language sql stable as $$
   with
@@ -225,35 +261,36 @@ $$;
 create or replace function alerts_news_unread(seen timestamptz) returns integer
 language sql stable as $$
   select (select count(*) from (select 1 from acts a where a.kind = 'update' and a.created_at > $1 limit 10) u)::integer
-       + (select count(*) from (select 1 from seasons s join acts a on a.id = s.reveal_act where a.created_at > $1 limit 10) r)::integer
-       + (select count(*) from (select 1 from acts a where a.kind = 'tally' and a.created_at > $1 and tally_names(a.payload) > 0 limit 10) t)::integer
+       + (select count(*) from (select 1 from news_landed n where n.landed_at > $1 limit 10) r)::integer
        + (select count(*) from (
-           select 1 from season_boss_changes h where h.at > $1
+           select 1 from season_boss_changes h where h.landed_at > $1
            union all
-           select 1 from season_boss_changes h where h.at > $1 and h.outgoing is not null
+           select 1 from season_boss_changes h where h.landed_at > $1 and h.outgoing is not null
            limit 10) b)::integer
 $$;
 revoke execute on function alerts_news(timestamptz, integer), alerts_news_unread(timestamptz) from public, anon, authenticated, service_role;
 
 -- ----------------------------------------------------------------------------- live ----
 
--- A new item of news is announced on `reach` (every signed-in player hears it) as it is written. The payload is the public projection of
--- what alert_row says: kind, sub, the Act, and its time. No account, no character of a player's.
+-- A new item of news is announced on `reach` (every signed-in player hears it) as it is written, and a tally or a reveal header records when it
+-- landed. The payload is the public projection of what alert_row says: kind, sub, the Act, and its time. No account, no character of a player's.
 create function news_announce() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if tg_table_name = 'season_handovers' then
     if new.boss is not null and new.boss is distinct from new.outgoing and new.how in ('nomination', 'rotation') then
-      perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'boss', 'act', null, 'at', new.at));
+      perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'boss', 'act', null, 'at', new.landed_at));
     end if;
   elsif new.kind = 'update' then
     perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'update', 'sub', null, 'act', new.id, 'at', new.created_at));
   elsif new.kind = 'tally' then
     if tally_names(new.payload) > 0 then
-      perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'tally', 'act', new.id, 'at', new.created_at));
+      insert into news_landed (act, kind) values (new.id, 'tally');
+      perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'tally', 'act', new.id, 'at', now()));
     end if;
   elsif new.kind = 'reveal' and not (new.payload ? 'character') then
-    perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'results', 'act', new.id, 'at', new.created_at));
+    insert into news_landed (act, kind) values (new.id, 'results');
+    perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'results', 'act', new.id, 'at', now()));
   end if;
   return new;
 end $$;

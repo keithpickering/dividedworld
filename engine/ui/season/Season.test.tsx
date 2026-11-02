@@ -45,8 +45,8 @@ function world() {
   seed.season({ number: 1, endsAt: new Date(at(28)).toISOString(), turnsThread: turns.thread, revealAct: reveal.act });
   seed.season({ number: 2, startsAt: new Date(at(28)).toISOString() });
   /* The Boss changed at the roll-over, and each said a line in the announcements thread. */
-  seed.staffPost(bossA, announcements.thread, 'My [b]ledger[/b] is closed. Goodbye.', { at: at(28, 13) });
-  seed.staffPost(bossB, announcements.thread, 'Efficiency is a virtue. So is fear.', { at: at(28, 14) });
+  seed.staffPost(bossA, announcements.thread, 'My [b]ledger[/b] is closed. Goodbye.', { at: at(28) });
+  seed.staffPost(bossB, announcements.thread, 'Efficiency is a virtue. So is fear.', { at: at(28) });
   seed.handover({ outgoing: 'lady-ledger', boss: 'mister-spreadsheet', at: at(28) });
   seed.settle({ at: at(29, 8), debut: false, standings: { [spritey]: 50, [pipe]: 30 } });
   fake.signInAs(me);
@@ -208,15 +208,19 @@ describe('the News tab', () => {
     expect(post.getAttribute('href')).toMatch(new RegExp(`^/t/${w.announcements.thread}\\?page=1#post-\\d+$`, 'u'));
     const left = itemOf('Lady Ledger has left');
     expect(within(left).getByText(/My ledger is closed\. Goodbye\./u)).toBeInTheDocument();
-    expect(within(left).getByRole('link', { name: 'Read them' })).toHaveAttribute('href', expect.stringContaining(`/t/${w.announcements.thread}`));
+    expect(left).toHaveTextContent('Lady Ledger has left');
+    expect(left).toHaveTextContent("Season 1's Boss has left.");
+    expect(within(left).getByRole('link', { name: 'Read its last post on the board' })).toHaveAttribute('href', expect.stringContaining(`/t/${w.announcements.thread}`));
     /* The glass quotes; it does not speak as the Boss. */
     expect(arrived).not.toHaveTextContent(/^Mister Spreadsheet:/u);
   });
 
   test('a Boss with no post to quote has none quoted and no link, and the item still stands', async () => {
     const w = world();
-    w.fake.seed.staff('new-boss', 'Quiet Boss', 'boss', { at: at(29) });
+    const newBoss = w.fake.seed.staff('new-boss', 'Quiet Boss', 'boss', { at: at(29) });
     w.fake.seed.handover({ outgoing: 'mister-spreadsheet', boss: 'new-boss', at: at(29) });
+    /* It speaks later, about something else: not its handover's words. */
+    w.fake.seed.staffPost(newBoss, w.announcements.thread, 'Unrelated.', { at: at(30) });
     show(w.fake);
     const arrived = await waitFor(() => itemOf('Quiet Boss has arrived'));
     expect(within(arrived).queryByRole('link')).toBeNull();
