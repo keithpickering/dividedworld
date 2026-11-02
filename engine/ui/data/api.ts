@@ -18,6 +18,7 @@
  */
 import type { Quadrant, Span } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
+import type { AlertKind } from '../../rules/alerts.ts';
 
 export type Id = string;
 
@@ -625,6 +626,32 @@ export interface FollowedThread {
 /** The most new posts a followed thread counts (supabase/migrations/0059_follows.sql): a screen words a count at it as "100+". */
 export const FOLLOWED_COUNT_CAP = 100;
 
+export type { AlertKind };
+
+/**
+ * One line of the player's Alerts (`my_alerts`, supabase/migrations/0060_alerts_read.sql): the kind, and the inputs of the words a
+ * screen says. Never a caster, a reactor, an account or a class. `at` is when it arrived: a written alert's time, a followed
+ * thread's newest new post, the time a settlement was applied. `sub` is a ruling's sub-key, or a settlement's id as text. `act` is
+ * the public Act a written alert is about (null for a followed thread and a settlement), `character` the player's character it
+ * concerns, `thread` and `title` the thread to open and its title, `name` that character's public name, `count` the new posts of a
+ * followed thread (to `FOLLOWED_COUNT_CAP`) or the characters a settlement moved. Any of them is null where it does not apply.
+ */
+export interface Alert {
+  readonly kind: AlertKind;
+  readonly sub: string | null;
+  readonly act: Id | null;
+  readonly character: Id | null;
+  readonly at: string;
+  readonly thread: Id | null;
+  readonly name: string | null;
+  readonly title: string | null;
+  readonly count: number | null;
+}
+/** A page of the Alerts is at least this many lines (more only to keep lines that share an instant together). */
+export const ALERTS_PAGE = 30;
+/** The count `alertsUnread` stops at: a result at the bound means that many or more, and a screen says "9+". */
+export const ALERTS_UNREAD_BOUND = 10;
+
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
 export interface EffectSaved {
   readonly play: Id;
@@ -909,6 +936,15 @@ export interface KayfaApi {
   follow(thread: Id, on: boolean): Promise<Answer<boolean>>;
   /** The threads the player follows that have posts past their place, newest first, at most 50 (`my_followed_threads`). */
   followed(): Promise<readonly FollowedThread[]>;
+  /**
+   * A page of the player's Alerts (`my_alerts`), newest first: the newest `ALERTS_PAGE` lines older than `before` (an ISO time,
+   * exclusive; none for the newest page), and every line sharing the instant of the last, so a later page never repeats one. The
+   * next page is read from the oldest `at` of this one. Written alerts, followed threads with new posts and settlements that moved
+   * the player's characters; every player's news joins it in the updates and season-news builds. Rejects when it cannot be read.
+   */
+  alerts(before?: string | null): Promise<readonly Alert[]>;
+  /** How many alerts arrived after the account's mark (`my_alerts_unread`), at most `ALERTS_UNREAD_BOUND`; a result at the bound is shown "9+". Rejects when it cannot be read. */
+  alertsUnread(): Promise<number>;
   estimate(): Promise<Estimate>;
   /** A page of the player's own log (`Log`): the newest with no cursor, then each older page from the last one's `before`. */
   log(before?: string | null): Promise<Log>;

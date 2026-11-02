@@ -22,12 +22,13 @@ import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
-import { DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX } from './api.ts';
+import { isWritten, type WrittenKind } from '../../rules/alerts.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
+  Act, ActKind, Alert, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -74,6 +75,13 @@ export interface Seed {
   season(season: Partial<Season>): void;
   nextSettlementAt(at: number | null): void;
   views(thread: Id, count: number): void;
+  /**
+   * An alert the writers of the Acts would have written for `account` (`write_alert`, 0058), of a kind that is not read from the Acts
+   * themselves: a trap struck or sprung, a hint, a ruling. A quote and a card on the account's post, character or thread are alerts
+   * here as the Acts that make them are (a post that quotes theirs, a card played on theirs by another player), so seeding either
+   * is refused. `act` is the Act it is about, `character` the account's character it concerns, `at` an epoch (else now).
+   */
+  alert(account: Id, alert: { kind: WrittenKind; act: Id; character?: Id; sub?: string; at?: number }): void;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
   wallet(account: Id, balance: number): void;
@@ -354,6 +362,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return opening?.character != null && characters.get(opening.character)?.owner === account.id;
   };
   const placed = (threadId: Id) => [...acts.values()].filter((a) => a.thread === threadId && a.seq !== null).sort((a, b) => a.seq! - b.seq!);
+
+  /** The account's followed threads with posts past its place by characters it does not own, newest first, at most 50 (my_followed_threads, 0059). */
+  function followedFor(account: AccountRec): FollowedThread[] {
+    const out: FollowedThread[] = [];
+    for (const t of threads.values()) {
+      if (!follows(account, t.id)) continue;
+      const past = placed(t.id).filter((a) => a.kind === 'post' && a.seq! > (account.reading.get(t.id) ?? 0) && a.character !== null && characters.get(a.character)?.owner !== account.id);
+      if (past.length === 0) continue;
+      out.push({ thread: t.id, board: t.board, title: t.title, newPosts: Math.min(past.length, FOLLOWED_COUNT_CAP), newestAt: iso(Math.max(...past.map((a) => a.at))) });
+    }
+    return out.sort((a, b) => Date.parse(b.newestAt) - Date.parse(a.newestAt)).slice(0, 50);
+  }
 
   function summary(t: ThreadRec): ThreadSummary {
     const all = placed(t.id);
@@ -1435,17 +1455,24 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return ok(on);
     },
     followed() {
-      // my_followed_threads (0059): the followed threads with posts past the account's place by characters it does not own, newest first, at most 50.
       const account = me();
-      if (!account) return [];
-      const out: FollowedThread[] = [];
-      for (const t of threads.values()) {
-        if (!follows(account, t.id)) continue;
-        const past = placed(t.id).filter((a) => a.kind === 'post' && a.seq! > (account.reading.get(t.id) ?? 0) && a.character !== null && characters.get(a.character)?.owner !== account.id);
-        if (past.length === 0) continue;
-        out.push({ thread: t.id, board: t.board, title: t.title, newPosts: Math.min(past.length, FOLLOWED_COUNT_CAP), newestAt: iso(Math.max(...past.map((a) => a.at))) });
-      }
-      return out.sort((a, b) => Date.parse(b.newestAt) - Date.parse(a.newestAt)).slice(0, 50);
+      return account ? followedFor(account) : [];
+    },
+    alerts(before) {
+      // my_alerts (0060): the newest page of the list older than `before`, extended to every line sharing the instant of its last.
+      const account = me();
+      if (!account) throw new Error('sign in with an account first');
+      const until = before == null ? Infinity : Date.parse(before);
+      const older = alertsOf(account).filter((a) => Date.parse(a.at) < until);
+      const floor = older.length >= ALERTS_PAGE ? Date.parse(older[ALERTS_PAGE - 1]!.at) : -Infinity;
+      return older.filter((a) => Date.parse(a.at) >= floor);
+    },
+    alertsUnread() {
+      // my_alerts_unread (0060): what arrived after the account's mark (never set: everything), to the bound.
+      const account = me();
+      if (!account) throw new Error('sign in with an account first');
+      const seen = account.prefs.alertsSeenAt === null ? -Infinity : Date.parse(account.prefs.alertsSeenAt);
+      return Math.min(ALERTS_UNREAD_BOUND, alertsOf(account).filter((a) => Date.parse(a.at) > seen).length);
     },
     seeSettlement(endsAt) {
       const account = me();
@@ -1602,6 +1629,45 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
   }
 
+  /* The written alerts the fake's seeds hold (`alerts`, 0058): a trap, a hint, a ruling. A quote and a card on an account's own are read from the Acts. */
+  const seededAlerts: { readonly account: Id; readonly kind: WrittenKind; readonly sub: string | null; readonly act: Id; readonly character: Id | null; readonly at: number }[] = [];
+
+  /**
+   * Every alert of the account, newest first, as `my_alerts` (0060) unions them: written (a quote of its post, a card on its post,
+   * character or thread by another player, and the seeded kinds), its followed threads with new posts, and the settlements that moved
+   * its characters. Every player's news joins in the updates and season-news builds.
+   */
+  function alertsOf(account: AccountRec): Alert[] {
+    const line = (a: Pick<Alert, 'kind' | 'sub' | 'act' | 'character'> & { at: number; thread?: Id | null; count?: number | null; title?: string | null }): Alert => {
+      const thread = a.thread ?? (a.act === null ? null : acts.get(a.act)?.thread ?? null);
+      return { kind: a.kind, sub: a.sub, act: a.act, character: a.character, at: iso(a.at), thread,
+        name: a.character === null ? null : characters.get(a.character)?.name ?? null,
+        title: a.title !== undefined ? a.title : thread === null ? null : threads.get(thread)?.title ?? null, count: a.count ?? null };
+    };
+    const ownerOfCharacter = (c: Id | null | undefined) => (c == null ? undefined : characters.get(c)?.owner);
+    const out: Alert[] = [];
+    for (const a of acts.values()) {
+      if (a.character === null || ownerOfCharacter(a.character) === account.id) continue;
+      if (a.kind === 'post' && a.target !== null) {
+        const quoted = acts.get(a.target);
+        if (quoted?.kind === 'post' && ownerOfCharacter(quoted.character) === account.id) out.push(line({ kind: 'quote', sub: null, act: a.id, character: quoted.character, at: a.at }));
+      } else if (a.kind === 'card' && a.target !== null && a.payload.spring === undefined) {
+        const reach = (a.payload.reach ?? 'post') as string;
+        const target = reach === 'post' ? acts.get(a.target)?.character
+          : reach === 'character' ? String(a.payload.character)
+          : reach === 'thread' ? [...acts.values()].find((x) => x.thread === a.payload.thread && x.seq === 1)?.character : null;
+        if (target != null && ownerOfCharacter(target) === account.id) out.push(line({ kind: 'cardOnYours', sub: null, act: a.id, character: target, at: a.at }));
+      }
+    }
+    for (const w of seededAlerts) if (w.account === account.id) out.push(line({ kind: w.kind, sub: w.sub, act: w.act, character: w.character, at: w.at }));
+    for (const f of followedFor(account)) out.push(line({ kind: 'followed', sub: null, act: null, character: null, at: Date.parse(f.newestAt), thread: f.thread, title: f.title, count: f.newPosts }));
+    for (const x of settlements) {
+      const mine = x.lines.filter((l) => l.account === account.id);
+      if (mine.length > 0) out.push(line({ kind: 'settlement', sub: String(x.id), act: null, character: null, at: x.endsAt + APPLIED_AFTER, count: new Set(mine.map((l) => l.character)).size }));
+    }
+    return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || String(a.sub ?? '').localeCompare(String(b.sub ?? '')) || String(a.act ?? '').localeCompare(String(b.act ?? '')));
+  }
+
   const seed: Seed = {
     account(name, o) {
       const email = (o?.email ?? `${name.toLowerCase()}@example.test`).toLowerCase();
@@ -1661,6 +1727,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     nextSettlementAt(at) { nextSettlement = at; },
     views(thread, count) { views.set(thread, count); },
+    alert(account, a) {
+      seeded(account);
+      if (!isWritten(a.kind) || a.kind === 'quote' || a.kind === 'cardOnYours') throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);
+      if (!acts.has(a.act)) throw new Error('an alert is about an Act that exists');
+      if (a.character !== undefined && characters.get(a.character)?.owner !== account) throw new Error('an alert concerns a character of the account\'s');
+      seededAlerts.push({ account, kind: a.kind, sub: a.sub ?? null, act: a.act, character: a.character ?? null, at: a.at ?? now() });
+    },
     cards(account, held) { seeded(account).cards = { ...held }; },
     wallet(account, balance) { setWallet(account, balance); },
     buy(account, card, o) { accepted(asAt(account, o?.at, () => buyCard(card))); },

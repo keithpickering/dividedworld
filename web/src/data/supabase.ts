@@ -32,11 +32,12 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
-import { MOVES_LOG_PAGE } from '../../../engine/ui/data/api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE } from '../../../engine/ui/data/api.ts';
+import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  EffectState, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, EffectState, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
 
@@ -903,6 +904,20 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async followed() {
       return (await list(() => client.from('my_followed_threads').select('thread,board,title,new_posts,newest_at').order('newest_at', { ascending: false }).limit(50)))
         .map((r): FollowedThread => ({ thread: r['thread'], board: r['board'], title: String(r['title'] ?? ''), newPosts: num(r['new_posts']), newestAt: String(r['newest_at']) }));
+    },
+    async alerts(before) {
+      const r = await read(() => client.rpc('my_alerts', { before: before ?? null, most: ALERTS_PAGE }));
+      return (Array.isArray(r.data) ? (r.data as Row[]) : [])
+        /* A kind this build does not know (a newer server's) is no line, rather than a line a screen cannot word. */
+        .filter((a) => (ALERT_KINDS as readonly string[]).includes(String(a['kind'])))
+        .map((a): Alert => ({
+          kind: a['kind'] as AlertKind, sub: str(a['sub']), act: str(a['act']), character: str(a['character']), at: String(a['at']),
+          thread: str(a['thread']), name: str(a['name']), title: str(a['title']), count: typeof a['count'] === 'number' ? a['count'] : null,
+        }));
+    },
+    async alertsUnread() {
+      const r = await read(() => client.rpc('my_alerts_unread'));
+      return Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(r.data))));
     },
     async seeSettlement(endsAt) {
       const a = await rpcWrite(() => client.rpc('see_settlement', { ends_at: endsAt }));

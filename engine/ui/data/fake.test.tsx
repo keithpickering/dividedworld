@@ -1636,3 +1636,89 @@ describe('followed threads (my_followed_threads, 0059)', () => {
     expect(await fake.followed()).toEqual([]);
   });
 });
+
+describe('the Alerts read and the count (my_alerts, my_alerts_unread, 0060)', () => {
+  const T0 = Date.parse('2026-11-01T00:00:00Z');
+  const H = 3_600_000;
+
+  /** Ana plays Ana Face (who started "Mine") and Ana Heel; Bo plays Bo Face; Cy plays Cy Face. Each source holds one line for Ana. */
+  function alertsWorld() {
+    const fake = createFake({ instance });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const cy = fake.seed.account('cy');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const anaHeel = fake.seed.character(ana, 'Ana Heel', 'heel');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const cyFace = fake.seed.character(cy, 'Cy Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Mine', 'opening', { at: T0 });
+    const quote = fake.seed.post(thread, boFace, 'quoting', { quote: opener, at: T0 + H });
+    const card = fake.seed.card(boFace, opener, 'whoops', { at: T0 + 2 * H });
+    fake.seed.alert(ana, { kind: 'trapSprang', act: quote, character: anaFace, at: T0 + 3 * H });
+    fake.seed.alert(ana, { kind: 'hint', act: opener, character: anaFace, at: T0 + 4 * H });
+    fake.seed.alert(ana, { kind: 'ruling', act: opener, character: anaFace, sub: 'x', at: T0 + 5 * H });
+    fake.seed.settle({ at: T0 + 6 * H - 1000, ledger: [{ character: anaFace, reason: 'face.shone', amount: 5 }, { character: anaHeel, reason: 'heel.drewHeat', amount: 4 }, { character: boFace, reason: 'face.shone', amount: 3 }] });
+    fake.seed.post(thread, cyFace, 'another', { at: T0 + 7 * H });
+    return { fake, ana, bo, cy, anaFace, anaHeel, boFace, thread, opener, quote, card };
+  }
+
+  test('each source is one line with its kind, newest first, and carries the words\' inputs', async () => {
+    const { fake, ana, thread, opener, quote, card, anaFace } = alertsWorld();
+    fake.signInAs(ana);
+    const rows = await fake.alerts();
+    expect(rows.map((r) => r.kind)).toEqual(['followed', 'settlement', 'ruling', 'hint', 'trapSprang', 'cardOnYours', 'quote']);
+    expect(rows[0]).toEqual({ kind: 'followed', sub: null, act: null, character: null, at: new Date(T0 + 7 * H).toISOString(), thread, name: null, title: 'Mine', count: 2 });
+    expect(rows[1]).toMatchObject({ kind: 'settlement', act: null, count: 2 });
+    expect(rows[1]!.sub).toBe('1');
+    expect(rows[2]).toMatchObject({ kind: 'ruling', sub: 'x', act: opener, character: anaFace, name: 'Ana Face', thread, title: 'Mine' });
+    expect(rows[5]).toMatchObject({ kind: 'cardOnYours', act: card, character: anaFace, name: 'Ana Face' });
+    expect(rows[6]).toMatchObject({ kind: 'quote', act: quote, character: anaFace, name: 'Ana Face', title: 'Mine', count: null });
+  });
+
+  test('the count moves with the mark and stops at its bound; a followed thread read to its end leaves', async () => {
+    const { fake, ana, thread } = alertsWorld();
+    fake.signInAs(ana);
+    expect(await fake.alertsUnread()).toBe(7);
+    must(await fake.seeAlerts(new Date(T0 + 4.5 * H).toISOString()));
+    expect(await fake.alertsUnread()).toBe(3);
+    must(await fake.seeAlerts(new Date(T0 + 8 * H).toISOString()));
+    expect(await fake.alertsUnread()).toBe(0);
+    expect((await fake.alerts()).length).toBe(7);
+    await fake.markRead(thread, 100, null);
+    expect((await fake.alerts()).map((r) => r.kind)).not.toContain('followed');
+    // Many alerts: the count stops at 10.
+    const { fake: busy, ana: busyAna, anaFace, opener } = alertsWorld();
+    for (let i = 0; i < 20; i++) busy.seed.alert(busyAna, { kind: 'hint', act: opener, character: anaFace, at: T0 + 10 * H + i * MINUTE });
+    busy.signInAs(busyAna);
+    expect(await busy.alertsUnread()).toBe(10);
+  });
+
+  test('another account sees none of the caller\'s, and a visitor reads nothing', async () => {
+    const { fake, cy, bo, anaHeel } = alertsWorld();
+    fake.signInAs(cy);
+    // Cy posted in Ana's thread; nothing in it is Cy's: Cy started nothing, follows nothing, has no settlement line.
+    expect(await fake.alerts()).toEqual([]);
+    expect(await fake.alertsUnread()).toBe(0);
+    fake.signInAs(bo);
+    // Bo has his own settlement line and nothing of Ana's.
+    expect((await fake.alerts()).map((r) => r.kind)).toEqual(['settlement']);
+    expect((await fake.alerts())[0]!.count).toBe(1);
+    expect(anaHeel).toBeTruthy();
+    fake.signOut();
+    await expect(fake.alerts()).rejects.toThrow();
+    await expect(fake.alertsUnread()).rejects.toThrow();
+  });
+
+  test('paging with before returns the next page without repeats, and keeps a tie whole', async () => {
+    const { fake, ana, anaFace, opener } = alertsWorld();
+    // 40 more: the 29th, 30th and 31st newest share an instant, across the edge of the first page of 30.
+    for (let i = 0; i < 40; i++) fake.seed.alert(ana, { kind: 'hint', act: opener, character: anaFace, sub: `h${i}`, at: T0 + 100 * H + (i === 9 || i === 10 || i === 11 ? 11 : i) * MINUTE });
+    fake.signInAs(ana);
+    const first = await fake.alerts();
+    expect(first.length).toBe(31);
+    const second = await fake.alerts(first.at(-1)!.at);
+    const key = (r: { kind: string; sub: string | null; act: string | null; at: string }) => `${r.kind} ${r.sub} ${r.act} ${r.at}`;
+    expect(second.map(key).filter((k) => first.map(key).includes(k))).toEqual([]);
+    expect(first.length + second.length + (await fake.alerts(second.at(-1)!.at)).length).toBe(47);
+  });
+});

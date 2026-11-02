@@ -485,6 +485,24 @@ describe('reads and their rows', () => {
     expect(h.to('rpc/see_settlement')[0]?.body).toEqual({ ends_at: '2026-10-30T08:17:00Z' });
   });
 
+  it('reads the Alerts through my_alerts, a page at a time from a cursor, and the count through my_alerts_unread, bounded', async () => {
+    const written = { kind: 'quote', sub: null, act: A, character: B, at: '2026-10-29T08:17:00+00:00', thread: T, name: 'Ana Face', title: 'A title', count: null };
+    const followed = { kind: 'followed', sub: null, act: null, character: null, at: '2026-10-29T09:00:00+00:00', thread: T, name: null, title: 'A title', count: 4 };
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_alerts')) return json([followed, written, { ...written, kind: 'someFutureKind' }]);
+      if (r.url.pathname.endsWith('/rpc/my_alerts_unread')) return json(r.method === 'POST' ? 27 : 0);
+      return undefined;
+    });
+    expect(await h.api.alerts()).toEqual([
+      { kind: 'followed', sub: null, act: null, character: null, at: '2026-10-29T09:00:00+00:00', thread: T, name: null, title: 'A title', count: 4 },
+      { kind: 'quote', sub: null, act: A, character: B, at: '2026-10-29T08:17:00+00:00', thread: T, name: 'Ana Face', title: 'A title', count: null },
+    ]);
+    await h.api.alerts('2026-10-29T08:17:00+00:00');
+    expect(h.to('rpc/my_alerts').map((r) => r.body)).toEqual([{ before: null, most: 30 }, { before: '2026-10-29T08:17:00+00:00', most: 30 }]);
+    /* A server that answered more than the bound is still read at it. */
+    expect(await h.api.alertsUnread()).toBe(10);
+  });
+
   it('maps the marks an answer carries (set_preferences, meet_card, forget_cards_met) into the preferences', async () => {
     const marks = { alerts_seen_at: '2026-10-29T08:17:00+00:00', settlement_seen: '2026-10-30T08:17:00+00:00' };
     const h = harness((r) => json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150, cards_met: ['whoops'], ...marks }));
