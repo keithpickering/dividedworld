@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { ALERTS_PAGE } from '../data/api.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
+
+const must = <T,>(a: { readonly ok: boolean; readonly value?: T }) => { expect(a.ok).toBe(true); return a.value as T; };
 import { AlertsScreen } from './Alerts.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -148,10 +150,20 @@ describe('opening the page', () => {
     const see = vi.spyOn(w.fake, 'seeAlerts');
     await show(w);
     await screen.findByText('A settlement is in');
-    await waitFor(() => expect(see).toHaveBeenLastCalledWith(iso(T0 + 9 * H)));
+    await waitFor(() => expect(see).toHaveBeenCalledTimes(2), { timeout: 1500 }); // the test's own setting of the mark, then the page's
+    expect(see.mock.calls.at(-1)?.[0]).toBe(iso(T0 + 9 * H));
     expect((await w.fake.preferences()).alertsSeenAt).toBe(iso(T0 + 9 * H));
     expect(await w.fake.alertsUnread()).toBe(0);
     expect(screen.getByRole('heading', { level: 2, name: 'New since you last looked, Nov 2 · 04:30 UTC' })).toBeInTheDocument();
+  });
+
+  test('for an account that never looked, the first time passed is the newest row\'s, not the oldest', async () => {
+    const w = world({ mark: null });
+    const see = vi.spyOn(w.fake, 'seeAlerts');
+    await show(w);
+    await screen.findByText('A settlement is in');
+    await waitFor(() => expect(see).toHaveBeenCalledTimes(1), { timeout: 1500 });
+    expect(see.mock.calls[0]![0]).toBe(iso(T0 + 9 * H));
   });
 
   test('never moves it backward: a page whose newest row is not past the mark does not ask', async () => {
@@ -179,6 +191,9 @@ describe('batching', () => {
     const w = world({ cards: 3, mark: T0 + 3.5 * H });
     await show(w);
     await screen.findByText('A settlement is in');
+    const lines = rows().map((r) => r.querySelector('.kb-alerts-line')!.textContent);
+    expect(lines).toContain('Whoops! and 2 more were played on Pipewrench\'s post #1');
+    expect(lines.filter((l) => l!.startsWith('Whoops!'))).toHaveLength(1);
     const row = rowWith('and 2 more');
     expect(row.querySelector('.kb-alerts-line')).toHaveTextContent('Whoops! and 2 more were played on Pipewrench\'s post #1');
     expect(within(row).getByText('3 cards in all.', { exact: false })).toBeInTheDocument();
@@ -208,7 +223,7 @@ describe('the filters', () => {
     expect(within(nav).getByRole('button', { name: 'Mrs. Hooligan' })).toHaveAttribute('aria-pressed', 'true');
     await userEvent.click(within(nav).getByRole('button', { name: 'Pipewrench' }));
     expect(rows().map((r) => r.querySelector('.kb-alerts-line')!.textContent)).toEqual([
-      'A pattern in the reactions to Pipewrench\'s post', 'Whoops! was played on Pipewrench\'s post #1', 'Pipewrench\'s post was quoted',
+      'A pattern in the reactions to Pipewrench\'s post', 'Whoops! was played on Pipewrench\'s post #1', '2 new posts in who keeps splatting my posts', 'Pipewrench\'s post was quoted',
     ]);
     await userEvent.click(within(nav).getByRole('button', { name: 'All' }));
     expect(rows()).toHaveLength(8);
@@ -226,13 +241,52 @@ describe('the filters', () => {
 });
 
 describe('a followed thread', () => {
+  test('started by one of the player\'s characters: tagged with it, says so, and shows under its filter', async () => {
+    const w = world();
+    const opening = vi.spyOn(w.fake, 'openingActs');
+    await show(w);
+    await screen.findByText('A settlement is in');
+    const row = rowWith('new posts in');
+    expect(within(row).getByText('Pipewrench')).toHaveClass('kb-alerts-who');
+    expect(row).toHaveTextContent('You follow it because Pipewrench started it.');
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Whose alerts' })).getByRole('button', { name: 'Mrs. Hooligan' }));
+    expect(screen.queryByText(/new posts in/u)).toBeNull();
+    // One read for all the followed rows on the page, never one per row.
+    expect(opening).toHaveBeenCalledTimes(1);
+  });
+
+  test('followed by choice, a thread someone else started stays "Followed" and says nothing about who started it', async () => {
+    const w = world();
+    const ink = w.fake.seed.thread('general', w.spritey, 'best ink color', 'Defend it.', { at: T0 + 5.5 * H });
+    w.fake.seed.post(ink.thread, w.boFace, 'Defending it.', { at: T0 + 5.6 * H });
+    w.fake.signInAs(w.me);
+    must(await w.fake.follow(ink.thread, true));
+    const opening = vi.spyOn(w.fake, 'openingActs');
+    await show(w);
+    await screen.findByText('A settlement is in');
+    const row = rowWith('best ink color');
+    expect(within(row).getByText('Followed')).toHaveClass('kb-alerts-who');
+    expect(row).not.toHaveTextContent('because');
+    expect(opening).toHaveBeenCalledTimes(1);
+    expect(opening.mock.calls[0]![0]).toHaveLength(2);
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Whose alerts' })).getByRole('button', { name: 'Pipewrench' }));
+    expect(screen.queryByText(/best ink color/u)).toBeNull();
+  });
+
+  test('Unfollow is named for its thread, so each row\'s own is told apart, and "this thread" when the title is missing', async () => {
+    const w = world();
+    await show(w);
+    await screen.findByText('A settlement is in');
+    expect(within(rowWith('new posts in')).getByRole('button', { name: 'Unfollow \u2018who keeps splatting my posts\u2019' })).toHaveTextContent(/^Unfollow$/u);
+  });
+
   test('has Unfollow on its row, which unfollows it and takes the row off the list', async () => {
     const w = world();
     await show(w);
     await screen.findByText('A settlement is in');
     const follow = vi.spyOn(w.fake, 'follow');
     expect(await w.fake.following(w.thread)).toBe(true);
-    await userEvent.click(within(rowWith('new posts in')).getByRole('button', { name: 'Unfollow' }));
+    await userEvent.click(within(rowWith('new posts in')).getByRole('button', { name: 'Unfollow \u2018who keeps splatting my posts\u2019' }));
     await waitFor(() => expect(screen.queryByText(/new posts in/u)).toBeNull());
     expect(follow).toHaveBeenCalledWith(w.thread, false);
     expect(await w.fake.following(w.thread)).toBe(false);
@@ -244,7 +298,7 @@ describe('a followed thread', () => {
     await show(w);
     await screen.findByText('A settlement is in');
     vi.spyOn(w.fake, 'follow').mockResolvedValue({ ok: false, error: 'No such thread.' } as never);
-    await userEvent.click(within(rowWith('new posts in')).getByRole('button', { name: 'Unfollow' }));
+    await userEvent.click(within(rowWith('new posts in')).getByRole('button', { name: 'Unfollow \u2018who keeps splatting my posts\u2019' }));
     expect(await within(rowWith('new posts in')).findByRole('alert')).toHaveTextContent('No such thread.');
     expect(rowWith('new posts in')).toBeTruthy();
   });
@@ -254,8 +308,19 @@ describe('a followed thread', () => {
     await show(w);
     await screen.findByText('A settlement is in');
     vi.spyOn(w.fake, 'follow').mockRejectedValue(new Error('offline'));
-    await userEvent.click(within(rowWith('new posts in')).getByRole('button', { name: 'Unfollow' }));
+    await userEvent.click(within(rowWith('new posts in')).getByRole('button', { name: 'Unfollow \u2018who keeps splatting my posts\u2019' }));
     expect(await within(rowWith('new posts in')).findByRole('alert')).toHaveTextContent('That did not go through. Try again.');
+  });
+});
+
+describe('a followed row with no title', () => {
+  test('names its Unfollow "this thread"', async () => {
+    const w = world();
+    const real = await w.fake.alerts();
+    vi.spyOn(w.fake, 'alerts').mockResolvedValue(real.map((r) => (r.kind === 'followed' ? { ...r, title: null } : r)));
+    await show(w);
+    await screen.findByText('A settlement is in');
+    expect(within(rowWith('new posts in')).getByRole('button', { name: 'Unfollow this thread' })).toBeInTheDocument();
   });
 });
 

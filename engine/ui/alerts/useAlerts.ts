@@ -20,6 +20,8 @@ export interface AlertsRead {
   readonly acts: ReadonlyMap<Id, Act>;
   /** The furthest seq read in each followed thread; null where it could not be read. */
   readonly reading: Readonly<Record<Id, number>> | null;
+  /** Followed thread -> the player's own character that started it (from the thread's first post, a public fact); a thread followed by choice is absent. */
+  readonly started: ReadonlyMap<Id, Id>;
   /** Whether an older page may exist. */
   readonly more: boolean;
 }
@@ -49,6 +51,16 @@ async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyM
   return acts;
 }
 
+/** The followed threads among these rows that one of the player's characters started, from one read of their first posts. A failed read leaves them tagged "Followed". */
+async function startedAmong(api: KayfaApi, rows: readonly Alert[], mine: readonly MyCharacter[], held: ReadonlyMap<Id, Id>): Promise<Map<Id, Id>> {
+  const started = new Map(held);
+  const threads = [...new Set(rows.filter((r) => r.kind === 'followed' && r.thread !== null).map((r) => r.thread!))];
+  if (threads.length === 0) return started;
+  const own = new Set(mine.map((c) => c.id));
+  for (const a of await orElse(api.openingActs(threads), [] as readonly Act[])) if (a.character !== null && own.has(a.character)) started.set(a.thread, a.character);
+  return started;
+}
+
 export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null) {
   const [read, setRead] = useState<State>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -61,8 +73,9 @@ export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null)
     setRead({ status: 'loading' });
     (async () => {
       const [rows, prefs, mine] = await Promise.all([api.alerts(), api.preferences(), api.myCharacters()]);
-      const [acts, reading] = await Promise.all([
+      const [acts, started, reading] = await Promise.all([
         actsAround(api, rows, new Map()),
+        startedAmong(api, rows, mine, new Map()),
         (async () => {
           const threads = [...new Set(rows.filter((r) => r.kind === 'followed' && r.thread !== null).map((r) => r.thread!))];
           return threads.length === 0 ? {} : orElse(api.reading(threads), null);
@@ -71,7 +84,7 @@ export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null)
       /* Opening the page moves the mark to the newest row's time, never backward (the server keeps it so as well). A failure leaves the mark where it was. */
       const newest = rows[0]?.at;
       if (newest !== undefined && (prefs.alertsSeenAt === null || Date.parse(newest) > Date.parse(prefs.alertsSeenAt))) void Promise.resolve(api.seeAlerts(newest)).catch(() => { /* seen again next time */ });
-      return { rows, mark: prefs.alertsSeenAt, mine, acts, reading, more: rows.length >= ALERTS_PAGE } satisfies AlertsRead;
+      return { rows, mark: prefs.alertsSeenAt, mine, acts, started, reading, more: rows.length >= ALERTS_PAGE } satisfies AlertsRead;
     })().then(
       (data) => { if (live) setRead({ status: 'ready', key, data, older: 'idle' }); },
       () => { if (live) setRead({ status: 'failed', key }); },
@@ -89,8 +102,9 @@ export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null)
       const page = await api.alerts(last.at);
       const have = new Set(data.rows.map(rowKey));
       const fresh = page.filter((r) => !have.has(rowKey(r)));
-      const [acts, reading] = await Promise.all([
+      const [acts, started, reading] = await Promise.all([
         actsAround(api, fresh, data.acts),
+        startedAmong(api, fresh, data.mine, data.started),
         (async () => {
           const threads = [...new Set(fresh.filter((r) => r.kind === 'followed' && r.thread !== null).map((r) => r.thread!))];
           if (threads.length === 0) return data.reading;
@@ -98,7 +112,7 @@ export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null)
           return more === null || data.reading === null ? null : { ...data.reading, ...more };
         })(),
       ]);
-      return { ...data, rows: [...data.rows, ...fresh], acts, reading, more: page.length >= ALERTS_PAGE } satisfies AlertsRead;
+      return { ...data, rows: [...data.rows, ...fresh], acts, started, reading, more: page.length >= ALERTS_PAGE } satisfies AlertsRead;
     })().then(
       (next) => setRead((now) => (now.status === 'ready' && now.key === key ? { status: 'ready', key, data: next, older: 'idle' } : now)),
       () => setRead((now) => (now.status === 'ready' && now.key === key ? { ...now, older: 'failed' } : now)),

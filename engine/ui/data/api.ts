@@ -918,6 +918,8 @@ export interface KayfaApi {
   act(id: Id): Promise<Act | null>;
   /** Several Acts by id in one read; an id that is not an Act (or none the reader may see) is left out. Order is not promised. */
   actsById(ids: readonly Id[]): Promise<readonly Act[]>;
+  /** The first post (seq 1) of each of these threads, in one read; a thread with none the reader may see is left out. Order is not promised. */
+  openingActs(threads: readonly Id[]): Promise<readonly Act[]>;
   /** A post's every version, the original first, each as it was written. */
   history(post: Id): Promise<readonly Act[]>;
   /** The threads spun from an Act, oldest first, at most `limit` (default `SPUN_FROM_MAX`): a result as long as the limit may be cut. */

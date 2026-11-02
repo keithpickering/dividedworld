@@ -28,6 +28,8 @@ export interface WordsContext {
   readonly acts: ReadonlyMap<Id, Act>;
   /** The furthest seq read in each followed thread (a thread never read is absent); null where it could not be read. */
   readonly reading: Readonly<Record<Id, number>> | null;
+  /** Followed thread -> the name of the player's own character that started it (a public fact, the thread's first post); absent for a thread followed by choice. */
+  readonly startedBy: ReadonlyMap<Id, string>;
   readonly perPage: number;
   /** The settlement id (a row's `sub`) of the newest settlement, which `/log/settlement` shows. */
   readonly newestSettlement: string | null;
@@ -162,11 +164,12 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
       const count = n >= FOLLOWED_COUNT_CAP ? `${FOLLOWED_COUNT_CAP}+` : String(n);
       const thread = row.thread;
       const first = ctx.reading === null || thread === null ? null : (ctx.reading[thread] ?? 0) + 1;
+      const by = thread === null ? undefined : ctx.startedBy.get(thread);
       return {
         line: [`${count} new ${n === 1 ? 'post' : 'posts'} in `, { em: row.title ?? 'a thread' }],
-        detail: ['Since you last read it.'],
+        detail: [by === undefined ? 'Since you last read it.' : `Since you last read it. You follow it because ${by} started it.`],
         ways: thread === null ? [] : first === null ? threadWay(row) : [{ text: 'First unread post', to: threadHref(thread, pageOf(first, ctx.perPage), first) }],
-        who: 'Followed',
+        who: by ?? 'Followed',
       };
     }
     case 'update':
@@ -177,6 +180,8 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
     case 'seasonNews': {
       const ways = [{ text: 'Read it on the Season page', to: '/season?tab=news' }];
       const n = row.count;
+      const own = row.sub === null ? undefined : ctx.ui.copy.alerts?.seasonNews?.(row.sub, row);
+      if (own) return { line: [own.line], detail: own.detail === '' ? [] : [own.detail], ways, who: 'Everyone' };
       switch (row.sub) {
         case 'results': return { line: ['The season\'s results are in'], detail: n === null ? [] : [`${n} characters ranked.`], ways, who: 'Everyone' };
         case 'tally': return { line: ['New debuts and Turns are in'], detail: n === null ? [] : [`${n} ${n === 1 ? 'character is' : 'characters are'} named.`], ways, who: 'Everyone' };

@@ -9,6 +9,7 @@
  */
 import type { Quadrant } from '../rules/types.ts';
 import type { CardUi } from './cards/types.ts';
+import type { Alert } from './data/api.ts';
 
 /**
  * A theme: a stylesheet that sets the `--kb-` tokens of engine/ui/tokens.css. `modes` says
@@ -80,6 +81,11 @@ export interface AlertCopy {
    * undefined for a pattern the instance has no words for, which is then said in the engine's plain words. May joke, may not mislead.
    */
   readonly hint?: (pattern: string) => { readonly line: string; readonly detail: string } | undefined;
+  /**
+   * A season-news alert's line and detail by its sub (`results`, `tally`, `bossArrived`, `bossLeft`) and the row (the Boss's name, a count of names);
+   * undefined for one the instance has no words for, which is then said in the engine's plain words. The link to the Season page is the engine's.
+   */
+  readonly seasonNews?: (sub: string, row: Alert) => { readonly line: string; readonly detail: string } | undefined;
 }
 
 /**

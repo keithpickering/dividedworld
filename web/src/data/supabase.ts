@@ -713,6 +713,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (wanted.length === 0) return [];
       return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('id', part)))).map(toAct);
     },
+    async openingActs(threads) {
+      const wanted = [...new Set(threads)].filter(idOk);
+      if (wanted.length === 0) return [];
+      return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('thread', part).eq('seq', 1)))).map(toAct);
+    },
     async history(post) {
       if (!idOk(post)) return [];
       const rows = await list(() => client.from('acts_public').select('*').or(`id.eq.${post},and(kind.eq.edit,target_act_id.eq.${post})`).order('created_at', { ascending: true }));

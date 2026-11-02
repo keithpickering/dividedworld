@@ -18,6 +18,7 @@ function ctx(acts: readonly Act[] = [], o: Partial<WordsContext> = {}): WordsCon
     ui: { copy: { siteName: 'T', siteTagline: 't', shopName: 'S', reducedMotionCard: 'x' } },
     acts: new Map(acts.map((a) => [a.id, a])),
     reading: null,
+    startedBy: new Map(),
     perPage: 20,
     newestSettlement: null,
     ...o,
@@ -145,6 +146,11 @@ describe('a followed thread', () => {
     expect(s.ways).toEqual([{ text: 'First unread post', to: '/t/t1?page=3#post-52' }]);
     expect(s.who).toBe('Followed');
   });
+  test('a thread one of the player\'s characters started is tagged with that character and says why it is followed', () => {
+    const s = wordsFor(r(4), ctx([], { reading: { t1: 51 }, startedBy: new Map([['t1', 'Spritey']]) }));
+    expect(s.who).toBe('Spritey');
+    expect(plainText(s.detail)).toBe('Since you last read it. You follow it because Spritey started it.');
+  });
   test('one is "1 new post", and a count at the cap is "100+"', () => {
     expect(plainText(wordsFor(r(1), ctx()).line)).toBe('1 new post in best ink color');
     expect(plainText(wordsFor(r(100), ctx()).line)).toBe('100+ new posts in best ink color');
@@ -171,5 +177,12 @@ describe('every player\'s news', () => {
     expect(news('bossLeft', { name: 'Gloomba Prime' })).toMatchObject({ line: 'The Boss, Gloomba Prime, has left', ways: way });
     expect(news('bossArrived').line).toBe('A new Boss has arrived');
     expect(news('somethingNew').line).toBe('There is news for the season');
+  });
+  test('the instance\'s words for season news are used where it gives them, by sub and row, with the engine\'s way', () => {
+    const base = ctx();
+    const own: WordsContext = { ...base, ui: { copy: { ...base.ui.copy, alerts: { seasonNews: (sub, r) => (sub === 'bossArrived' ? { line: `${r.name} takes the chair`, detail: 'Mind the stapler.' } : undefined) } } } };
+    const arrived = said(row({ kind: 'seasonNews', sub: 'bossArrived', name: 'Gloomba Prime' }), own);
+    expect(arrived).toMatchObject({ line: 'Gloomba Prime takes the chair', detail: 'Mind the stapler.', ways: [{ text: 'Read it on the Season page', to: '/season?tab=news' }], who: 'Everyone' });
+    expect(said(row({ kind: 'seasonNews', sub: 'results', count: 12 }), own).line).toBe('The season\'s results are in');
   });
 });

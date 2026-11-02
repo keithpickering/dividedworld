@@ -69,11 +69,13 @@ interface RowProps {
   readonly item: Item;
   readonly said: Said;
   readonly fresh: boolean;
+  /** The player's character the row is tagged with, or null for a row that is no character's. */
+  readonly character: Id | null;
   readonly note: string | undefined;
   readonly onUnfollow: (thread: Id) => void;
 }
 
-function Row({ item, said, fresh, note, onUnfollow }: RowProps) {
+function Row({ item, said, fresh, character, note, onUnfollow }: RowProps) {
   const row = item.rows[0]!;
   return (
     <li className="kb-alerts-row" data-kb-kind={row.kind} data-kb-new={fresh ? '' : undefined} data-kb-key={item.key}>
@@ -89,12 +91,12 @@ function Row({ item, said, fresh, note, onUnfollow }: RowProps) {
             </span>
           ))}
           {row.kind === 'followed' && row.thread !== null && (
-            <span>{said.ways.length > 0 || said.detail.length > 0 ? ' · ' : ''}<button type="button" className="kb-alerts-unfollow" onClick={() => onUnfollow(row.thread!)}>Unfollow</button></span>
+            <span>{said.ways.length > 0 || said.detail.length > 0 ? ' · ' : ''}<button type="button" className="kb-alerts-unfollow" aria-label={row.title ? `Unfollow \u2018${row.title}\u2019` : 'Unfollow this thread'} onClick={() => onUnfollow(row.thread!)}>Unfollow</button></span>
           )}
         </p>
         {note !== undefined && <p className="kb-alerts-note" role="alert">{note}</p>}
       </div>
-      <span className="kb-alerts-who" data-kb-all={row.character === null ? '' : undefined}>{said.who}</span>
+      <span className="kb-alerts-who" data-kb-all={character === null ? '' : undefined}>{said.who}</span>
       <time dateTime={row.at}>{utcWhen(row.at)} UTC</time>
     </li>
   );
@@ -117,11 +119,14 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
   const since = (c: { readonly debutedAt: string | null }) => (c.debutedAt === null ? Infinity : Date.parse(c.debutedAt));
   const mine = [...data.mine].sort((a, b) => since(a) - since(b) || a.name.localeCompare(b.name));
   const current = mine.find((c) => c.id === picked) ?? null;
+  /* A followed thread is the character's that started it, where one of the player's did. */
+  const startedBy = new Map([...data.started].flatMap(([thread, c]) => { const name = data.mine.find((m) => m.id === c)?.name; return name === undefined ? [] : [[thread, name] as const]; }));
+  const characterOf = (r: Alert): Id | null => r.character ?? (r.kind === 'followed' && r.thread !== null ? data.started.get(r.thread) ?? null : null);
   const ctx: WordsContext = {
-    instance, ui, acts: data.acts, reading: data.reading, perPage: settings.postsPerPage,
+    instance, ui, acts: data.acts, reading: data.reading, startedBy, perPage: settings.postsPerPage,
     newestSettlement: data.rows.find((r) => r.kind === 'settlement')?.sub ?? null,
   };
-  const shown = current === null ? data.rows : data.rows.filter((r) => r.character === current.id);
+  const shown = current === null ? data.rows : data.rows.filter((r) => characterOf(r) === current.id);
   const items = itemsOf(shown, ctx, data.mark);
   const isNew = (i: Item) => data.mark === null || Date.parse(i.rows[0]!.at) > Date.parse(data.mark);
   const fresh = items.filter(isNew);
@@ -142,7 +147,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
       {group.map((item) => {
         const first = item.rows[0]!;
         const said = item.rows.length > 1 ? batchWords(item.rows, ctx) : wordsFor(first, ctx);
-        return <Row key={item.key} item={item} said={said} fresh={isFresh} note={first.thread === null ? undefined : notes.get(first.thread)} onUnfollow={onUnfollow} />;
+        return <Row key={item.key} item={item} said={said} fresh={isFresh} character={characterOf(first)} note={first.thread === null ? undefined : notes.get(first.thread)} onUnfollow={onUnfollow} />;
       })}
     </ul>
   );
