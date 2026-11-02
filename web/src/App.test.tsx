@@ -1,6 +1,6 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createFake } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
@@ -383,4 +383,112 @@ test('a player has no ADMIN tab and is told the queue is for admins', async () =
   render(<App api={fake} />);
   expect(await screen.findByText('The admin queue is for admins.')).toBeInTheDocument();
   expect(within(screen.getByRole('navigation', { name: 'Menu' })).queryByRole('link', { name: 'Admin' })).toBeNull();
+});
+
+/*
+ * The welcome (the onboarding plan's Task 7): the session listener sends a signed-in account with no welcomedAt and no character at all to
+ * /welcome from a board page, once; the sign-in pages and the glass pages are let through, and an account with any character is never sent.
+ */
+describe('the welcome', () => {
+  /** An account the invite opened just now, on a board page: the state `openAccount` leaves. */
+  async function newAccount() {
+    const fake = createFake({ instance, settings: { ...fallbackSettings, registrationMode: 'invite' } });
+    fake.signInAs(fake.seed.account('host'));
+    const invite = await fake.createInvite();
+    if (!invite.ok) throw new Error('the host could not invite');
+    fake.signInAs(null);
+    await fake.requestCode('new@example.test', null);
+    await fake.verifyCode('new@example.test', '123456');
+    window.history.pushState(null, '', '/');
+    return { fake, code: invite.value.code };
+  }
+
+  test('a new account lands on /welcome after openAccount, and the page marks the welcome seen', async () => {
+    const { fake, code } = await newAccount();
+    render(<App api={fake} />);
+    expect(await screen.findByRole('heading', { level: 2, name: 'You are signed in, with no account yet' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/');
+    await fake.openAccount(code);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Welcome' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/welcome');
+    expect(screen.getByRole('heading', { level: 2, name: 'After nine years of development' })).toBeInTheDocument();
+    await waitFor(async () => expect((await fake.preferences()).welcomedAt).not.toBeNull());
+  }, 15_000);
+
+  test('changing motion there changes the account\'s preferences, and the button opens New character', async () => {
+    const { fake, code } = await newAccount();
+    render(<App api={fake} />);
+    await screen.findByRole('heading', { level: 2, name: 'You are signed in, with no account yet' });
+    await fake.openAccount(code);
+    const before = await screen.findByRole('region', { name: 'Before you start' });
+    await userEvent.click(await within(before).findByRole('radio', { name: 'Reduced' }));
+    await waitFor(async () => expect((await fake.preferences()).motion).toBe('reduce'));
+    await userEvent.click(screen.getByRole('link', { name: 'Make your first character' }));
+    expect(await screen.findByRole('textbox', { name: /name/iu })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/characters/new');
+  }, 15_000);
+
+  test('a second visit to the board goes nowhere: the welcome shows once', async () => {
+    const { fake, code } = await newAccount();
+    render(<App api={fake} />);
+    await screen.findByRole('heading', { level: 2, name: 'You are signed in, with no account yet' });
+    await fake.openAccount(code);
+    await screen.findByRole('heading', { level: 1, name: 'Welcome' });
+    await waitFor(async () => expect((await fake.preferences()).welcomedAt).not.toBeNull());
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Back to the board' }));
+    await screen.findByRole('region', { name: 'Game HUD' });
+    expect(window.location.pathname).not.toBe('/welcome');
+    await userEvent.click(within(screen.getByRole('banner')).getAllByRole('link')[0]!);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(window.location.pathname).not.toBe('/welcome');
+  }, 15_000);
+
+  test('a load of the board by an account that has seen the welcome and has no character goes nowhere', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    fake.signInAs(fake.seed.account('seen'));
+    await fake.seeWelcome();
+    render(<App api={fake} />);
+    await screen.findByRole('region', { name: 'Game HUD' });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(window.location.pathname).toBe('/');
+  });
+
+  test('an account with a character is never sent there, though it has not seen the welcome; one with only a waiting or a retired character is not either', async () => {
+    for (const options of [{}, { debuted: false }, { retired: true }]) {
+      cleanup();
+      window.history.pushState(null, '', '/');
+      const fake = createFake({ instance, settings: fallbackSettings });
+      const me = fake.seed.account('veteran');
+      fake.seed.character(me, 'Old Hand', 'heel', options);
+      fake.signInAs(me);
+      expect((await fake.preferences()).welcomedAt).toBeNull();
+      render(<App api={fake} />);
+      await screen.findByRole('region', { name: 'Game HUD' });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(window.location.pathname).toBe('/');
+    }
+  }, 15_000);
+
+  test('a glass page is let through: an account with no character that opens Settings first is not sent, and is sent from the board after', async () => {
+    window.history.pushState(null, '', '/settings');
+    const fake = createFake({ instance, settings: fallbackSettings });
+    fake.signInAs(fake.seed.account('settings-first'));
+    render(<App api={fake} />);
+    await screen.findByRole('heading', { level: 1, name: 'Settings' });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(window.location.pathname).toBe('/settings');
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Back to the board' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Welcome' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/welcome');
+  }, 15_000);
+
+  test('the welcome page has the menu, so every tab is a way out', async () => {
+    window.history.pushState(null, '', '/welcome');
+    const fake = createFake({ instance, settings: fallbackSettings });
+    fake.signInAs(fake.seed.account('tabs'));
+    render(<App api={fake} />);
+    const menu = await screen.findByRole('navigation', { name: 'Menu' });
+    expect(within(menu).getByRole('link', { name: 'Back to the board' })).toBeInTheDocument();
+    for (const tab of ['Alerts', 'Vending Machine', 'My characters', 'Season', 'My log', 'Guide', 'Updates', 'Settings']) expect(await within(menu).findByRole('link', { name: new RegExp(`^${tab}`, 'iu') })).toBeInTheDocument();
+  });
 });

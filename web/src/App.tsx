@@ -27,6 +27,7 @@ import { SeasonScreen, seasonAt } from '../../engine/ui/season/Season.tsx';
 import { AlertsScreen } from '../../engine/ui/alerts/Alerts.tsx';
 import { UpdatesScreen } from '../../engine/ui/updates/Updates.tsx';
 import { GuideScreen } from '../../engine/ui/guide/Guide.tsx';
+import { SendToWelcome, WelcomeScreen } from '../../engine/ui/welcome/Welcome.tsx';
 import { LogScreen } from '../../engine/ui/log/Log.tsx';
 import { SettlementOnLoad, SettlementScreen } from '../../engine/ui/log/Settlement.tsx';
 import { RouterProvider, useLocation, useNavigate } from '../../engine/ui/router.tsx';
@@ -49,6 +50,7 @@ const ROUTES: readonly Route[] = [
   { path: '/alerts', render: () => <AlertsScreen /> },
   { path: '/updates', render: () => <UpdatesScreen /> },
   { path: '/guide', render: () => <GuideScreen /> },
+  { path: '/welcome', render: () => <WelcomeScreen /> },
   { path: '/admin/queue', render: () => <QueueScreen /> },
   { path: '/log', render: () => <LogScreen /> },
   { path: '/log/settlement', render: () => <SettlementScreen /> },
@@ -84,6 +86,8 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/updates': 'settings',
   /* The Strategy Guide stands on the same page smoke, for the same reason. */
   '/guide': 'settings',
+  /* The welcome stands on the same page smoke, for the same reason. */
+  '/welcome': 'settings',
   /* Alerts stands on the same page smoke as Updates, for the same reason: no surface of its own. */
   '/alerts': 'settings',
   '/admin/queue': 'settings',
@@ -161,6 +165,8 @@ function Shell() {
       <Routes key={mountedFor.n} routes={ROUTES} />
       {/* The first load of a board page after a settlement the device has not seen opens its summary (engine/ui/log/Settlement.tsx). */}
       <SettlementOnLoad active={!surface} />
+      {/* A new account, with no character and the welcome unseen, is sent to it from its first board page (engine/ui/welcome/Welcome.tsx). */}
+      <SendToWelcome active={!surface} />
     </AccountGate>
   );
   return surface ? <GlassPage surface={surface} menu={!NO_MENU.has(path)}>{content}</GlassPage> : <Frame>{content}</Frame>;

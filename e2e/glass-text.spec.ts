@@ -108,6 +108,7 @@ const PAGES: readonly Screen[] = [
   { name: 'Alerts', path: '/alerts' },
   { name: 'Updates', path: '/updates' },
   { name: 'Strategy Guide', path: '/guide' },
+  { name: 'Welcome', path: '/welcome' },
   { name: 'My log, before anything has settled', path: '/log' },
   { name: 'The Vending Machine', path: '/vending' },
   { name: 'The hand, open', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },

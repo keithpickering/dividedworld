@@ -1,0 +1,251 @@
+/*
+ * The welcome page on the glass (Welcome.tsx), as the Welcome board draws it (docs/research/2026-11-02-onboarding/01-welcome.html): the
+ * heading at the Settings board's 112px, a column of 340px at the left that says what happens next, and at the right the persona's letter as
+ * a post on a chamfered panel (the Updates page's frame; its byline is that page's), the headline in Anton, the prose, Before you start under
+ * a rule, and under another the one button and a quieter link. The text stands in calms (calm.css) where it stands on the smoke, and the post
+ * is its own panel.
+ *
+ * Sizes are the boards' px or the glass's size tokens, never under the label (20px) on the Main board's layout (engine/ui/glass/board.test.tsx
+ * reads this file). On the Phone board's layout (04-phone.html) the columns stack, the post first and what happens next after it, at the
+ * phone's sizes; the setting rows are the account screens' own (account.css), which fold themselves.
+ */
+.kb-welcome {
+  padding-top: 32px;
+}
+
+.kb-welcome-title {
+  margin: 0;
+  font-size: 7rem;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+.kb-welcome-cols {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 24px 44px;
+  align-items: start;
+  margin-top: 1px;
+}
+
+.kb-welcome-side {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.kb-welcome-post {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  /* The post sits 30px below the lede's top, as the board sets it. */
+  margin-top: 20px;
+  padding: 36px 44px 40px;
+  background: color-mix(in srgb, var(--kb-glass-ground) 86%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
+  outline-offset: -1px;
+  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+}
+
+.kb-welcome-empty {
+  max-width: 680px;
+  margin: 28px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+/* ---- what happens next ---- */
+
+.kb-welcome-lede {
+  margin: 20px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-welcome-next {
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-welcome-next li {
+  padding: 14px 0;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 20%, transparent);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-welcome-next b {
+  display: block;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+}
+
+/* ---- the letter ---- */
+
+.kb-welcome-headline {
+  margin: 26px 0 0;
+  font-size: 4rem;
+  line-height: 1.02;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+  text-shadow: 0 0 24px color-mix(in srgb, var(--kb-glass-pale) 35%, transparent);
+}
+
+.kb-welcome-prose p {
+  max-width: 760px;
+  margin: 18px 0 0;
+  font-size: 1.375rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+/* The last line is the signature. */
+.kb-welcome-prose p:last-child {
+  font-style: italic;
+  font-weight: 700;
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- before you start ---- */
+
+.kb-welcome-setup {
+  margin-top: 34px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
+}
+
+.kb-welcome-setup-title {
+  margin: 28px 0 4px;
+  font-size: var(--kb-glass-size-display-m);
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--kb-glass-text);
+}
+
+.kb-welcome-setup-lede {
+  margin: 8px 0 6px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+/* The board's label column is 170px. */
+.kb-welcome-setup.kb-acct .kb-acct-row {
+  grid-template-columns: 170px minmax(0, 1fr);
+  column-gap: 28px;
+  padding: 16px 0;
+}
+
+/* ---- the way on ---- */
+
+.kb-welcome-go {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px 28px;
+  margin-top: 34px;
+  padding-top: 30px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
+}
+
+.kb-welcome-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 68px;
+  padding: 0 34px;
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-display-s);
+  line-height: 1;
+  letter-spacing: 1.5px;
+  text-decoration: none;
+  text-transform: uppercase;
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  box-shadow: 0 0 26px color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+}
+
+.kb-welcome-button > b {
+  font-weight: 400;
+}
+
+.kb-welcome-button:focus-visible,
+.kb-welcome-link:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-welcome-link {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--kb-glass-neon-text);
+  text-underline-offset: 4px;
+}
+
+/* ---- the Phone board's layout ---- */
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-cols {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-side,
+:where(:root[data-kb-layout='phone']) .kb-welcome-post {
+  grid-column: 1;
+  grid-row: auto;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-post {
+  margin-top: 0;
+  padding: 20px 16px 20px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-lede,
+:where(:root[data-kb-layout='phone']) .kb-welcome-next li,
+:where(:root[data-kb-layout='phone']) .kb-welcome-setup-lede,
+:where(:root[data-kb-layout='phone']) .kb-welcome-prose p,
+:where(:root[data-kb-layout='phone']) .kb-welcome-link,
+:where(:root[data-kb-layout='phone']) .kb-welcome-empty {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-lede {
+  margin-top: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-headline {
+  margin-top: 18px;
+  font-size: var(--kb-glass-size-display-m);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-setup {
+  margin-top: 20px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-setup-title {
+  margin-top: 16px;
+  font-size: var(--kb-glass-size-display-s);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-go {
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: 20px;
+  padding-top: 20px;
+  text-align: center;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-welcome-button {
+  justify-content: center;
+  min-height: 56px;
+  padding: 0 16px;
+  font-size: var(--kb-glass-size-display-xs);
+}
