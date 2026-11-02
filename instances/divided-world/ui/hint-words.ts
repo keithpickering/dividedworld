@@ -17,16 +17,16 @@ const LEADING: Readonly<Record<string, { post: Words; card: Words }>> = {
     card: { line: 'Your card is popping off', detail: `Most of the reactions it has drawn lately are the excited, positive kind. That play landed. ${COUNTED}` },
   },
   'leading:calmPositive': {
-    post: { line: 'Your post is getting polite shrugs', detail: `Most of the reactions it has drawn lately are the calm, positive kind: a nod, a cup of tea. Nobody is angry, and nobody is losing their mind either. ${COUNTED}` },
-    card: { line: 'Your card is getting polite shrugs', detail: `Most of the reactions it has drawn lately are the calm, positive kind: a nod, a cup of tea. Nobody is angry, and nobody is losing their mind either. ${COUNTED}` },
+    post: { line: 'Your post is getting polite shrugs', detail: `Most of the reactions it has drawn lately are the calm, positive kind: a nod, a cup of tea. ${COUNTED}` },
+    card: { line: 'Your card is getting polite shrugs', detail: `Most of the reactions it has drawn lately are the calm, positive kind: a nod, a cup of tea. ${COUNTED}` },
   },
   'leading:boredNegative': {
     post: { line: 'Your post is getting groans', detail: `Most of the reactions it has drawn lately are the bored, negative kind. It might be exactly what you were going for. ${COUNTED}` },
     card: { line: 'Your card is getting groans', detail: `Most of the reactions it has drawn lately are the bored, negative kind. It might be exactly what you were going for. ${COUNTED}` },
   },
   divisive: {
-    post: { line: 'Your post is dividing the room', detail: `A real share of the reactions it has drawn lately are positive and a real share are negative. Half the room is cheering and the other half is not. ${COUNTED}` },
-    card: { line: 'Your card is dividing the room', detail: `A real share of the reactions it has drawn lately are positive and a real share are negative. Half the room is cheering and the other half is not. ${COUNTED}` },
+    post: { line: 'Your post is dividing the room', detail: `A real share of the reactions it has drawn lately are positive and a real share are negative. Part of the room is cheering and part of it is not. ${COUNTED}` },
+    card: { line: 'Your card is dividing the room', detail: `A real share of the reactions it has drawn lately are positive and a real share are negative. Part of the room is cheering and part of it is not. ${COUNTED}` },
   },
   thunder: {
     post: { line: 'A card is stealing your post\'s thunder', detail: 'A card played on your post has drawn more reactions than the post itself has. The card is the main event now.' },

@@ -146,3 +146,12 @@ test('hints: a post is never called a card, nor a card a post, and the thunder s
   assert.match(hintWords('thunder', { card: false })!.line, /post/i);
   assert.match(hintWords('thunder', { card: true })!.line, /card/i);
 });
+
+test('hints: the words claim no more than the threshold proves (a lead is "most", a split is "a real share", never "nobody" or "half")', () => {
+  for (const pattern of hintPatterns) {
+    for (const card of [false, true]) {
+      const w = hintWords(pattern, { card })!;
+      assert.doesNotMatch(w.line + ' ' + w.detail, /\b(nobody|no one|everyone|half the|all of)\b/i, `${pattern} (card ${card}) overstates what fired it: ${w.detail}`);
+    }
+  }
+});
