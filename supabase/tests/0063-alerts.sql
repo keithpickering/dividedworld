@@ -54,10 +54,10 @@ do $$
 declare
   ann uuid := tests.account('al-ann'); bob uuid := tests.account('al-bob'); cat uuid := tests.account('al-cat');
   a1 uuid := tests.character(ann, 'Al Ann One'); a2 uuid := tests.character(ann, 'Al Ann Two');
-  b1 uuid := tests.character(bob, 'Al Bob One'); c1 uuid := tests.character(cat, 'Al Cat One');
+  b1 uuid := tests.character(bob, 'Al Bob One'); b2 uuid := tests.character(bob, 'Al Bob Two'); c1 uuid := tests.character(cat, 'Al Cat One');
   staff uuid;
   t uuid := tests.thread('Al thread'); mine_t uuid := tests.thread('Al Ann''s thread'); t_staff uuid := tests.thread('Al staff thread');
-  a1_first uuid; a1_post uuid; a2_post uuid; staff_post uuid; b1_post uuid;
+  b2_post uuid; a1_first uuid; a1_post uuid; a2_post uuid; staff_post uuid; b1_post uuid;
   said jsonb; before_rows bigint; r record; brd uuid; announce uuid;
   trapped uuid; trapped2 uuid; reply uuid; sprung_act uuid;
 begin
@@ -73,6 +73,7 @@ begin
   a1_post := tests.post(a1, t, 'Ann One posts.');
   a2_post := tests.post(a2, t, 'Ann Two posts.');
   b1_post := tests.post(b1, t, 'Bob One posts.');
+  b2_post := tests.post(b2, t, 'Bob Two posts.');
   perform pg_temp.hand(bob, 'sweetie', 'sweetie', 'sweetie', 'glint', 'glint', 'glint', 'marquee', 'quake');
   perform pg_temp.hand(ann, 'sweetie', 'quoter', 'quoter', 'marquee');
   insert into wallets (account, balance) values (ann, 600), (bob, 600);
@@ -155,9 +156,23 @@ begin
   if (select count(*) from alerts where kind = 'trapSprang') <> 1 or r.account <> ann or r.character <> a1 or r.act <> sprung_act then
     raise exception 'a trap sprung is the setter''s, about the spring: %', to_jsonb(r);
   end if;
-  if exists (select 1 from alerts where kind = 'trapStruck') then raise exception 'the actor, struck by the trap their own post sprang, was written an alert'; end if;
-  if (select count(*) from broadcasts_due where topic like 'account:%') <> 2 then raise exception 'a quote that sprang a trap queued % broadcasts, not 2', pg_temp.queued(); end if;
+  -- The replier's post was struck by a trap another account set: the replier's own trapStruck, about the card that struck. It goes
+  -- to the replier's own account, so it tells no one else anything.
+  select * into r from alerts where kind = 'trapStruck';
+  if (select count(*) from alerts where kind = 'trapStruck') <> 1 or r.account <> bob or r.character <> b1 or r.act <> (said -> 'sprung' -> 'struck' ->> 'id')::uuid then
+    raise exception 'a trap set off against another player''s is the replier''s trapStruck: %', (select jsonb_agg(to_jsonb(x)) from alerts x);
+  end if;
+  if (select count(*) from broadcasts_due where topic like 'account:%') <> 3 then raise exception 'a quote that sprang a trap queued % broadcasts, not 3', pg_temp.queued(); end if;
   delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+
+  -- A trap Bob set on his other mask's post, set off by his Bob One: his own doing to himself, so no alert at all.
+  perform pg_temp.hand(bob, 'quoter');
+  perform set_card(bob, 'quoter', b2, b2_post, '{}', 0);
+  perform tests.become(bob);
+  said := post(t, b1, 'Bob quotes his own trap.', b2_post);
+  perform tests.unbecome();
+  if said -> 'sprung' is null then raise exception 'the quote did not spring the own-mask trap: %', said; end if;
+  if exists (select 1 from alerts) or pg_temp.queued() <> 0 then raise exception 'a trap of one''s own mask set off by oneself wrote % alerts', (select count(*) from alerts); end if;
 
   -- A strike that lands on a post whose author is not the one acting (a path the rules do not take today, but spring_traps takes
   -- the post it strikes as given) is that author's trapStruck, about the card that struck.

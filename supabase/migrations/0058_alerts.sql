@@ -238,8 +238,11 @@ begin
 end $$;
 
 -- spring_traps (0055), with an alert for the setter whose trap sprang (about the spring) and, where a strike lands, for the author of
--- the struck post (about the card that struck). The acting account is the caster of a cast and else the signed-in player, so the
--- one who set it off is told by their answer, not by an alert. Everything else as 0055 wrote it.
+-- the struck post (about the card that struck). The trap's setter is who did it to the struck post, so trapStruck skips only where
+-- the setter's owner is the struck post's own owner ("what your own other masks did to your characters" is never alerted), and a
+-- reply or quote that sets off another player's trap writes the replier a trapStruck: their own account's, so it tells no one else
+-- anything. trapSprang skips the account that set the trap off (the caster of a cast, else the signed-in player), who has their
+-- answer. Everything else as 0055 wrote it.
 create or replace function spring_traps(trigger text, post uuid, by_act uuid, quadrant text default null, incoming_rarity text default null,
                              caster uuid default null, price integer default 0) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -299,7 +302,8 @@ begin
       'config', case when struck.seeded then fd.config - 'seed' else fd.config end)
       || case when struck.seeded then jsonb_build_object('seed', floor(random() * 2147483648)::bigint) else '{}'::jsonb end
     from acts a where a.id = by_act returning id into struck_play;
-    perform write_alert((select a.character from acts a where a.id = by_act), 'trapStruck', null, struck_play, coalesce(caster, auth.uid()));
+    perform write_alert((select a.character from acts a where a.id = by_act), 'trapStruck', null, struck_play,
+      (select c.owner from characters c where c.id = setter_character));
     -- The struck card's play goes out with the spring, so it reaches readers live as the spring does.
     return act_projection(sprung) || jsonb_build_object('struck', act_projection(struck_play));
   end if;
