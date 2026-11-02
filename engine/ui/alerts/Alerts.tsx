@@ -27,9 +27,8 @@ import './alerts.css';
 /** One line of the list: a single alert, or the cards played on one target among the new. */
 interface Item { readonly key: string; readonly rows: readonly Alert[] }
 
-/** The rows in order, with the cards on one target among the new ones (after `mark`) gathered into the place of the newest. */
-export function itemsOf(rows: readonly Alert[], ctx: WordsContext, mark: string | null): Item[] {
-  const fresh = (r: Alert) => mark === null || Date.parse(r.at) > Date.parse(mark);
+/** The rows in order, with the cards on one target among the new ones (`fresh`) gathered into the place of the newest. */
+export function itemsOf(rows: readonly Alert[], ctx: WordsContext, fresh: (row: Alert) => boolean): Item[] {
   const items: { key: string; rows: Alert[] }[] = [];
   const batches = new Map<string, { key: string; rows: Alert[] }>();
   for (const r of rows) {
@@ -78,7 +77,7 @@ interface RowProps {
 function Row({ item, said, fresh, character, note, onUnfollow }: RowProps) {
   const row = item.rows[0]!;
   return (
-    <li className="kb-alerts-row" data-kb-kind={row.kind} data-kb-new={fresh ? '' : undefined} data-kb-key={item.key}>
+    <li className="kb-alerts-row" tabIndex={-1} data-kb-kind={row.kind} data-kb-new={fresh ? '' : undefined} data-kb-key={item.key}>
       <Icon kind={row.kind} />
       <div>
         <p className="kb-alerts-line"><Words parts={said.line} /></p>
@@ -106,7 +105,8 @@ export interface AlertsProps {
   readonly data: AlertsRead;
   readonly older: 'idle' | 'loading' | 'failed';
   readonly onOlder: () => void;
-  readonly onUnfollow: (thread: Id) => void;
+  /** Unfollows the thread; says whether it was, so focus can move on from the row that left. */
+  readonly onUnfollow: (thread: Id) => Promise<boolean>;
   /** Why an Unfollow was refused, by the row's thread. */
   readonly notes: ReadonlyMap<Id, string>;
 }
@@ -127,27 +127,52 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
     newestSettlement: data.rows.find((r) => r.kind === 'settlement')?.sub ?? null,
   };
   const shown = current === null ? data.rows : data.rows.filter((r) => characterOf(r) === current.id);
-  const items = itemsOf(shown, ctx, data.mark);
-  const isNew = (i: Item) => data.mark === null || Date.parse(i.rows[0]!.at) > Date.parse(data.mark);
-  const fresh = items.filter(isNew);
-  const earlier = items.filter((i) => !isNew(i));
+  /* Without the mark nothing is new: no divider, and no batching, which is only among the new. */
+  const isFresh = (r: Alert) => data.markKnown && (data.mark === null || Date.parse(r.at) > Date.parse(data.mark));
+  const items = itemsOf(shown, ctx, isFresh);
+  const fresh = items.filter((i) => isFresh(i.rows[0]!));
+  const earlier = items.filter((i) => !isFresh(i.rows[0]!));
   const markAt = data.mark === null ? null : `${utcWhen(data.mark)} UTC`;
 
-  /* Older goes once the last page is read: focus moves to the list it filled, never to the page's top. */
+  /*
+   * Focus follows what the player did. After Older it goes to the first row that was loaded, so the keyboard is where the new rows begin; after an
+   * Unfollow it goes to the first control of the row that took the place of the one that left (else the one before it), or the list when none is
+   * left. It is never left on the control that is gone, nor sent to the top of the page.
+   */
   const list = useRef<HTMLDivElement>(null);
-  const reading = useRef(false);
+  const known = useRef<ReadonlySet<string> | null>(null);
+  const pending = useRef<{ readonly key: string | null } | null>(null);
   useEffect(() => {
-    if (data.more || !reading.current) return;
-    reading.current = false;
-    list.current?.focus();
-  }, [data.more]);
+    const root = list.current;
+    if (!root) return;
+    const lis = [...root.querySelectorAll<HTMLElement>('li[data-kb-key]')];
+    if (pending.current) {
+      const { key } = pending.current;
+      pending.current = null;
+      const li = key === null ? undefined : lis.find((l) => l.getAttribute('data-kb-key') === key);
+      (li?.querySelector<HTMLElement>('a, button') ?? li ?? root).focus();
+    } else if (known.current) {
+      const before = known.current;
+      known.current = null;
+      lis.find((l) => !before.has(l.getAttribute('data-kb-key')!))?.focus();
+    }
+  }, [data.rows]);
+  const unfollow = async (thread: Id) => {
+    const order = [...fresh, ...earlier];
+    const at = order.findIndex((i) => i.rows[0]!.kind === 'followed' && i.rows[0]!.thread === thread);
+    const next = order[at + 1] ?? order[at - 1];
+    pending.current = { key: at < 0 || next === undefined ? null : next.key };
+    const ok = await onUnfollow(thread);
+    if (!ok) pending.current = null;
+    return ok;
+  };
 
-  const rowsOf = (group: readonly Item[], isFresh: boolean) => (
+  const rowsOf = (group: readonly Item[], fresh: boolean) => (
     <ul className="kb-alerts-list">
       {group.map((item) => {
         const first = item.rows[0]!;
         const said = item.rows.length > 1 ? batchWords(item.rows, ctx) : wordsFor(first, ctx);
-        return <Row key={item.key} item={item} said={said} fresh={isFresh} character={characterOf(first)} note={first.thread === null ? undefined : notes.get(first.thread)} onUnfollow={onUnfollow} />;
+        return <Row key={item.key} item={item} said={said} fresh={fresh} character={characterOf(first)} note={first.thread === null ? undefined : notes.get(first.thread)} onUnfollow={(t) => void unfollow(t)} />;
       })}
     </ul>
   );
@@ -168,32 +193,29 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
       <p className="kb-alerts-lede kb-calm">
         What happened to your characters, and what&apos;s new in the game. Every alert is true, and each one is also in your log or on the board. A thread drops off this list once you&apos;ve read it.
       </p>
-      {data.rows.length === 0
-        ? <p className="kb-alerts-empty kb-calm">Nothing here yet. When something happens to one of your characters, or the game has news, it shows up here.</p>
-        : (
-          <div ref={list} className="kb-alerts-board kb-calm" tabIndex={-1}>
-            {current !== null && shown.length === 0 && <p className="kb-alerts-empty">Nothing for {current.name} yet. All shows everyone&apos;s.</p>}
-            {fresh.length > 0 && (
-              <>
-                <h2 className="kb-alerts-divider">{markAt === null ? 'New since you last looked' : `New since you last looked, ${markAt}`}</h2>
-                {rowsOf(fresh, true)}
-              </>
-            )}
-            {fresh.length === 0 && shown.length > 0 && markAt !== null && <p className="kb-alerts-nothing">Nothing is new since you last looked, {markAt}.</p>}
-            {earlier.length > 0 && (
-              <>
-                <h2 className="kb-alerts-divider kb-alerts-earlier">Earlier</h2>
-                {rowsOf(earlier, false)}
-              </>
-            )}
-            {data.more && (
-              <p className="kb-alerts-older">
-                <button type="button" className="kb-alerts-tab kb-glass-skew" onClick={() => { reading.current = true; onOlder(); }} aria-disabled={older === 'loading' || undefined}><span className="kb-glass-upright">Older</span></button>
-                {older === 'failed' && <span className="kb-alerts-older-failed"> The older alerts could not be read. Try again.</span>}
-              </p>
-            )}
-          </div>
+      <div ref={list} role="group" aria-label="Your alerts" className="kb-alerts-board kb-calm" tabIndex={-1}>
+        {data.rows.length === 0 && <p className="kb-alerts-empty">Nothing here yet. When something happens to one of your characters, or the game has news, it shows up here.</p>}
+        {data.rows.length > 0 && current !== null && shown.length === 0 && <p className="kb-alerts-empty">Nothing for {current.name} yet. All shows everyone&apos;s.</p>}
+        {fresh.length > 0 && (
+          <>
+            <h2 className="kb-alerts-divider">{markAt === null ? 'New since you last looked' : `New since you last looked, ${markAt}`}</h2>
+            {rowsOf(fresh, true)}
+          </>
         )}
+        {fresh.length === 0 && shown.length > 0 && data.markKnown && markAt !== null && <p className="kb-alerts-nothing">Nothing is new since you last looked, {markAt}.</p>}
+        {earlier.length > 0 && (
+          <>
+            {data.markKnown && <h2 className="kb-alerts-divider kb-alerts-earlier">Earlier</h2>}
+            {rowsOf(earlier, false)}
+          </>
+        )}
+        {data.more && (
+          <p className="kb-alerts-older">
+            <button type="button" className="kb-alerts-tab kb-glass-skew" onClick={() => { known.current = new Set(items.map((i) => i.key)); onOlder(); }} aria-disabled={older === 'loading' || undefined}><span className="kb-glass-upright">Older</span></button>
+            {older === 'failed' && <span className="kb-alerts-older-failed" role="alert"> The older alerts could not be read. Try again.</span>}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -206,20 +228,22 @@ export function AlertsScreen() {
   const { state, older, dropFollowed, retry } = useAlerts(api, signedIn, session.account);
   const [notes, setNotes] = useState<ReadonlyMap<Id, string>>(new Map());
   const note = (thread: Id, text: string | null) => setNotes((was) => { const next = new Map(was); if (text === null) next.delete(thread); else next.set(thread, text); return next; });
-  const unfollow = (thread: Id) => {
+  const unfollow = async (thread: Id): Promise<boolean> => {
     note(thread, null);
-    api.follow(thread, false).then(
-      (a) => { if (a.ok) dropFollowed(thread); else note(thread, a.error); },
-      () => note(thread, 'That did not go through. Try again.'),
-    );
+    try {
+      const a = await api.follow(thread, false);
+      if (a.ok) { dropFollowed(thread); return true; }
+      note(thread, a.error);
+    } catch { note(thread, 'That did not go through. Try again.'); }
+    return false;
   };
   if (signedIn === false) return <div className="kb-alerts"><div className="kb-alerts-empty kb-calm"><SignInPrompt /></div></div>;
-  if (signedIn === null || state.status === 'loading') return <div className="kb-alerts" aria-busy="true" />;
+  if (signedIn === null || state.status === 'loading') return <div className="kb-alerts" role="status"><p className="kb-visually-hidden">Reading your alerts</p></div>;
   if (state.status === 'failed') {
     return (
       <div className="kb-alerts">
         <h1 className="kb-alerts-title kb-glass-display">Alerts</h1>
-        <p className="kb-alerts-empty kb-calm">
+        <p className="kb-alerts-empty kb-calm" role="alert">
           Your alerts could not be read. Nothing is lost; they are still in your log and on the board.{' '}
           <button type="button" className="kb-alerts-unfollow" onClick={retry}>Try again</button>
         </p>

@@ -7,7 +7,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
-import { ALERTS_PAGE } from '../data/api.ts';
+import { ALERTS_PAGE, type Alert } from '../data/api.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 
 const must = <T,>(a: { readonly ok: boolean; readonly value?: T }) => { expect(a.ok).toBe(true); return a.value as T; };
@@ -356,11 +356,141 @@ describe('Older', () => {
     await screen.findByRole('button', { name: 'Older' });
     const read = vi.spyOn(w.fake, 'alerts').mockRejectedValueOnce(new Error('offline'));
     await userEvent.click(screen.getByRole('button', { name: 'Older' }));
-    expect(await screen.findByText('The older alerts could not be read. Try again.')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('The older alerts could not be read. Try again.');
     expect(rows()).toHaveLength(ALERTS_PAGE);
     read.mockRestore();
     await userEvent.click(screen.getByRole('button', { name: 'Older' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Older' })).toBeNull());
+  });
+});
+
+const deferred = <T,>() => { let release!: (v: T) => void; const promise = new Promise<T>((r) => { release = r; }); return { promise, release }; };
+/** A hint row with nothing to open, older than the world's rows (`n` minutes before it began). */
+const filler = (n: number, pipe: string): Alert => ({ kind: 'hint', sub: `f${n}`, act: null, character: pipe, at: iso(T0 - n * MIN), thread: null, name: 'Pipewrench', title: null, count: null });
+
+describe('a page that is left or changed while it loads', () => {
+  test('a row unfollowed while Older loads does not come back with the page', async () => {
+    const w = world({ mark: null });
+    const real = await w.fake.alerts();
+    const followed = real.find((r) => r.kind === 'followed')!;
+    const page = deferred<readonly Alert[]>();
+    vi.spyOn(w.fake, 'alerts')
+      .mockResolvedValueOnce([...real, ...Array.from({ length: ALERTS_PAGE - real.length }, (_, i) => filler(i + 1, w.pipe))])
+      .mockReturnValueOnce(page.promise);
+    await show(w);
+    await screen.findByText('A settlement is in');
+    await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+    await userEvent.click(within(rowWith('new posts in')).getByRole('button', { name: /^Unfollow/u }));
+    await waitFor(() => expect(screen.queryByText(/new posts in/u)).toBeNull());
+    page.release([filler(99, w.pipe), followed]);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Older' })).toBeNull());
+    expect(screen.queryByText(/new posts in/u)).toBeNull();
+    expect(rows().filter((r) => r.getAttribute('data-kb-key')!.includes('f99'))).toHaveLength(1);
+  });
+
+  test('a page left before it was read does not move the mark', async () => {
+    const w = world({ mark: null });
+    const page = deferred<readonly Alert[]>();
+    const real = await w.fake.alerts();
+    const read = vi.spyOn(w.fake, 'alerts').mockReturnValueOnce(page.promise);
+    const see = vi.spyOn(w.fake, 'seeAlerts');
+    const shown = await show(w);
+    await waitFor(() => expect(read).toHaveBeenCalled());
+    shown.unmount();
+    page.release(real);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(see).not.toHaveBeenCalled();
+  });
+});
+
+describe('a page that cannot read everything', () => {
+  test('without the mark there is no divider and the mark is not moved', async () => {
+    const w = world({ mark: null });
+    vi.spyOn(w.fake, 'preferences').mockRejectedValue(new Error('offline'));
+    const see = vi.spyOn(w.fake, 'seeAlerts');
+    await show(w);
+    await screen.findByText('A settlement is in');
+    expect(rows()).toHaveLength(8);
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull();
+    expect(see).not.toHaveBeenCalled();
+  });
+
+  test('without the player\'s characters there are no filters, and the rows are all there', async () => {
+    const w = world();
+    vi.spyOn(w.fake, 'myCharacters').mockRejectedValue(new Error('offline'));
+    await show(w);
+    await screen.findByText('A settlement is in');
+    expect(screen.queryByRole('navigation', { name: 'Whose alerts' })).toBeNull();
+    expect(rows()).toHaveLength(8);
+  });
+
+  test('without the first posts a followed row is tagged "Followed"', async () => {
+    const w = world();
+    vi.spyOn(w.fake, 'openingActs').mockRejectedValue(new Error('offline'));
+    await show(w);
+    await screen.findByText('A settlement is in');
+    expect(within(rowWith('new posts in')).getByText('Followed')).toHaveClass('kb-alerts-who');
+    expect(rowWith('new posts in')).not.toHaveTextContent('because');
+  });
+
+  test('without the Acts or the reading places the page still renders, linking the threads', async () => {
+    const w = world();
+    vi.spyOn(w.fake, 'actsById').mockRejectedValue(new Error('offline'));
+    vi.spyOn(w.fake, 'reading').mockRejectedValue(new Error('offline'));
+    await show(w);
+    await screen.findByText('A settlement is in');
+    expect(rows()).toHaveLength(8);
+    expect(within(rowWith('new posts in')).getByRole('link', { name: 'Go to the thread' })).toHaveAttribute('href', `/t/${w.thread}`);
+  });
+});
+
+describe('what is announced', () => {
+  test('a page being read is a status, "Reading your alerts"', async () => {
+    const w = world();
+    const page = deferred<readonly Alert[]>();
+    vi.spyOn(w.fake, 'alerts').mockReturnValueOnce(page.promise);
+    await show(w);
+    expect(await screen.findByRole('status')).toHaveTextContent('Reading your alerts');
+    page.release([]);
+    await screen.findByText(/Nothing here yet/u);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+describe('where focus goes', () => {
+  test('after Unfollow, to the first control of the next row', async () => {
+    const w = world();
+    await show(w);
+    await screen.findByText('A settlement is in');
+    await userEvent.click(within(rowWith('new posts in')).getByRole('button', { name: /^Unfollow/u }));
+    await waitFor(() => expect(screen.queryByText(/new posts in/u)).toBeNull());
+    expect(document.activeElement).toBe(within(rowWith('was quoted')).getByRole('link', { name: 'Go to the post' }));
+  });
+
+  test('after Unfollow of the last row on the page, to the list', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    const spritey = fake.seed.character(other, 'Spritey', 'face');
+    const { thread } = fake.seed.thread('general', pipe, 'Mine', 'opening', { at: T0 });
+    fake.seed.post(thread, spritey, 'a reply', { at: T0 + H });
+    fake.signInAs(me);
+    renderIn(fake, <AlertsScreen />, { path: '/alerts' });
+    await userEvent.click(await screen.findByRole('button', { name: /^Unfollow/u }));
+    await screen.findByText(/Nothing here yet/u);
+    expect(document.activeElement).toBe(screen.getByRole('group', { name: 'Your alerts' }));
+  });
+
+  test('on Older, to the first row that was loaded', async () => {
+    const w = world({ mark: null });
+    for (let i = 0; i < 40; i++) w.fake.seed.alert(w.me, { kind: 'hint', act: w.opener, character: w.pipe, sub: `h${i}`, at: T0 + 100 * H + i * MIN });
+    await show(w);
+    await screen.findByRole('button', { name: 'Older' });
+    await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+    await waitFor(() => expect(rows().length).toBeGreaterThan(ALERTS_PAGE));
+    expect(document.activeElement).toBe(rows()[ALERTS_PAGE]);
+    expect(rows()[ALERTS_PAGE]).toHaveAttribute('tabindex', '-1');
   });
 });
 
@@ -377,7 +507,7 @@ describe('the states', () => {
     const w = world();
     vi.spyOn(w.fake, 'alerts').mockRejectedValueOnce(new Error('offline'));
     await show(w);
-    expect(await screen.findByText('Your alerts could not be read.', { exact: false })).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your alerts could not be read.');
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('A settlement is in')).toBeInTheDocument();
     expect(screen.queryByText(/could not be read/u)).toBeNull();
