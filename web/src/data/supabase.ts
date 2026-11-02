@@ -105,6 +105,8 @@ function toPreferences(r: Row): Preferences {
     alertsSeenAt: str(r['alerts_seen_at']), settlementSeen: str(r['settlement_seen']),
     /* A kind this build does not know (a newer server's) is no kind here; a choice never made stays null, which is not an empty one. */
     toasts: Array.isArray(r['toasts']) ? r['toasts'].filter((k): k is AlertKind => (ALERT_KINDS as readonly unknown[]).includes(k)) : null,
+    welcomedAt: str(r['welcomed_at']), tips: r['tips'] === 'off' ? 'off' : d.tips,
+    tipsSeen: Array.isArray(r['tips_seen']) ? r['tips_seen'].filter((k): k is string => typeof k === 'string') : d.tipsSeen,
   };
 }
 
@@ -927,7 +929,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return a.ok ? { ok: true, value: a.value['hidden'] === true } : a;
     },
     async preferences(): Promise<Preferences> {
-      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,cards_met,alerts_seen_at,settlement_seen,toasts').limit(1)))[0];
+      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,cards_met,alerts_seen_at,settlement_seen,toasts,welcomed_at,tips,tips_seen').limit(1)))[0];
       return r ? toPreferences(r) : DEFAULT_PREFERENCES;
     },
     async setPreferences(p) {
@@ -944,6 +946,26 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async forgetCardsMet() {
       const a = await rpcWrite(() => client.rpc('forget_cards_met'));
+      return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    async seeWelcome() {
+      const a = await rpcWrite(() => client.rpc('see_welcome'));
+      return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    async seeTip(key) {
+      const a = await rpcWrite(() => client.rpc('see_tip', { key }));
+      return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    async skipTips() {
+      const a = await rpcWrite(() => client.rpc('skip_tips'));
+      return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    async restoreTips() {
+      const a = await rpcWrite(() => client.rpc('restore_tips'));
+      return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
+    },
+    async replayTour() {
+      const a = await rpcWrite(() => client.rpc('replay_tour'));
       return a.ok ? { ok: true, value: toPreferences(a.value) } : a;
     },
     async seeAlerts(at) {

@@ -34,6 +34,9 @@ import type {
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
+/** The tour's tips, which `replayTour` forgets alone (0067). */
+const TOUR_TIPS: readonly string[] = ['tour-plate', 'tour-orbs', 'tour-hand'];
+
 /** The code `verifyCode` accepts for any address. */
 export const TEST_CODE = '123456';
 
@@ -1625,10 +1628,46 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }
       return ok(account.prefs);
     },
+    /* Settings' old row, until the tips' row replaces it: the server's forget_cards_met is restore_tips. */
     forgetCardsMet() {
       const account = me();
       if (!account) return refuse('sign in with an account first');
-      account.prefs = { ...account.prefs, cardsMet: [] };
+      account.prefs = { ...account.prefs, tips: 'on', tipsSeen: [], cardsMet: [] };
+      return ok(account.prefs);
+    },
+    seeWelcome() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (account.prefs.welcomedAt === null) account.prefs = { ...account.prefs, welcomedAt: iso(now()) };
+      return ok(account.prefs);
+    },
+    seeTip(key) {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (!/^[a-z][a-z0-9-]{0,39}$/.test(key)) return refuse('a tip is named in lowercase words joined by hyphens');
+      const seen = account.prefs.tipsSeen;
+      if (!seen.includes(key)) {
+        if (seen.length >= 64) return refuse('at most 64 tips are kept as seen');
+        account.prefs = { ...account.prefs, tipsSeen: [...seen, key] };
+      }
+      return ok(account.prefs);
+    },
+    skipTips() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      account.prefs = { ...account.prefs, tips: 'off' };
+      return ok(account.prefs);
+    },
+    restoreTips() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      account.prefs = { ...account.prefs, tips: 'on', tipsSeen: [], cardsMet: [] };
+      return ok(account.prefs);
+    },
+    replayTour() {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      account.prefs = { ...account.prefs, tips: 'on', tipsSeen: account.prefs.tipsSeen.filter((k) => !TOUR_TIPS.includes(k)) };
       return ok(account.prefs);
     },
     seeAlerts(at) {
