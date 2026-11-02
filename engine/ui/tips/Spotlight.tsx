@@ -118,6 +118,8 @@ export function Spotlight({ tipKey, title, line, step, target, persona, onGotIt,
       ref={overlay}
       className="kb-tips"
       data-kb-tips-place={below ? 'below' : 'above'}
+      /* The fade as chosen, said where a test can read it: the inline opacity is gone once Motion finishes, which a slow machine reaches first. */
+      data-kb-fade={reduced ? 'none' : 'in'}
       initial={reduced ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: reduced ? 0 : 0.32, ease: [0.16, 1, 0.3, 1] }}

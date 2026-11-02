@@ -170,7 +170,9 @@ describe('the HUD tour', () => {
   });
 
   /* The overlay fades in from opacity 0 unless motion is reduced. The pair shows the check can see a fade: the same page, not reduced, has it. */
-  const startsHidden = (dialog: HTMLElement) => /opacity:\s*0(?![.\d])/u.test(dialog.closest<HTMLElement>('.kb-tips')?.getAttribute('style') ?? '');
+  /* Whether the overlay fades in: Spotlight says so on the overlay from the same choice that sets Motion's starting opacity. The inline
+     opacity itself cannot be read reliably, since on a slow machine Motion has finished before the dialog is found. */
+  const startsHidden = (dialog: HTMLElement) => dialog.closest<HTMLElement>('.kb-tips')?.getAttribute('data-kb-fade') === 'in';
 
   test('without reduced motion the dialog fades in from opacity 0', async () => {
     const fake = await world();
