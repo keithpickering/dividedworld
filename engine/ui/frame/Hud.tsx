@@ -59,6 +59,7 @@ import { Smoke, useSurfaceStyle } from '../glass/Smoke.tsx';
 import { pageEscape } from '../glass/keys.ts';
 import { GLASS_NAV } from '../glass/nav.ts';
 import { useBoard } from '../glass/useBoard.ts';
+import { useTour } from '../tips/tour.ts';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
 const SLOPE = 28;
@@ -84,6 +85,8 @@ export function Hud() {
   const drawer = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null);
   const aura = useRef<HTMLDivElement>(null);
+  const plate = useRef<HTMLDivElement>(null);
+  const [welcomed, setWelcomed] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const picker = useRef<HTMLSelectElement>(null);
   const probe = useRef<HTMLSpanElement>(null);
@@ -112,6 +115,15 @@ export function Hud() {
   const signedIn = player.session.signedIn;
   const feed = useAlertFeed(api, player.session.account, location.path);
   const unread = unreadText(feed.unread);
+
+  /* The HUD tour (engine/ui/tips/tour.ts) waits for the welcome to have been seen; the targets all exist once there is a character. */
+  useEffect(() => {
+    let live = true;
+    setWelcomed(false);
+    if (signedIn) void api.preferences().then((p) => { if (live) setWelcomed(Boolean(p.welcomedAt)); }, () => {});
+    return () => { live = false; };
+  }, [api, signedIn]);
+  useTour({ plate, orbs: aura, hand: handButton }, signedIn && player.loaded && hud !== null && welcomed);
 
   const hudId = hud?.id ?? null;
   useEffect(() => {
@@ -294,7 +306,7 @@ export function Hud() {
             <polyline className="kb-glass-seam-core" points={seam} />
           </svg>
           <div className="kb-hud-bar">
-            <div className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
+            <div ref={plate} className={`kb-hud-plate${signedIn && player.loaded && hud ? ' kb-hud-plate--cast kb-calm' : ''}`}>
               <div className="kb-hud-plate-in">
                 {!signedIn ? (
                   <Link to={signInHref(location.path, searchOf(location.query))} className="kb-hud-sign-in kb-glass-cut-button">Sign in</Link>
