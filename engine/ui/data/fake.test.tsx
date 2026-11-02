@@ -1231,7 +1231,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     fake.signInAs(bo);
     expect((await fake.log()).playsOnMine).toEqual([]);
     fake.signInAs(ana);
-    expect((await fake.log()).playsOnMine).toEqual([{ play: theirs, post: mine, at, reach: 'post', targetName: null }]);
+    expect((await fake.log()).playsOnMine).toEqual([{ play: theirs, post: mine, at, reach: 'post', targetName: null, targetCharacter: expect.any(String) }]);
     expect((await fake.log()).saves).toEqual([]);
     fake.clock.advance(MINUTE);
     must(await fake.saveEffect(theirs, anaFace, { clean: true }));

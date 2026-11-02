@@ -145,10 +145,12 @@ export function actLink(act: Act | undefined, data: Pick<LogData, 'acts' | 'name
  */
 export function placeOf(play: Act, data: Pick<LogData, 'names' | 'mine'> & Partial<Pick<LogData, 'titles'>>): string | null {
   const id = (key: string) => (typeof play.payload[key] === 'string' ? play.payload[key] as Id : null);
+  /* The name the card was played with is the name the line uses (play_card writes it, 0056); a play without one reads the name as it stands. */
+  const said = typeof play.payload.targetName === 'string' && play.payload.targetName !== '' ? play.payload.targetName : null;
   switch (play.payload.reach) {
-    case 'character': { const c = id('character'); return (c && (data.mine.find((m) => m.id === c)?.name ?? data.names.get(c))) || 'a character'; }
-    case 'thread': { const t = id('thread'); return `'${(t && data.titles?.get(t)) || 'a thread'}'`; }
-    case 'board': { const b = id('board'); const name = b ? data.titles?.get(b) : undefined; return name ? `the ${name} board` : 'a board'; }
+    case 'character': { const c = id('character'); return said ?? (c && (data.mine.find((m) => m.id === c)?.name ?? data.names.get(c))) ?? 'a character'; }
+    case 'thread': { const t = id('thread'); return `'${said ?? (t && data.titles?.get(t)) ?? 'a thread'}'`; }
+    case 'board': { const b = id('board'); const name = said ?? (b ? data.titles?.get(b) : undefined); return name ? `the ${name} board` : 'a board'; }
     default: return null;
   }
 }
@@ -410,7 +412,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       rows.push({
         key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: `A card on your ${p.reach}`,
         details: [`${cardName(play?.payload.card)} was played on ${target}${message ? `, with the message “${message}”` : ''}.`],
-        aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
+        aura: 0, wallet: null, characters: p.targetCharacter ? [p.targetCharacter] : [],
       });
       continue;
     }

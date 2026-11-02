@@ -599,6 +599,8 @@ export interface PlayOnMine {
   readonly at: string;
   readonly reach: 'post' | 'character' | 'thread';
   readonly targetName: string | null;
+  /** The player's character the row is about: the one played on, the thread's starter, or the post's author. */
+  readonly targetCharacter: Id | null;
 }
 
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */

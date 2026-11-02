@@ -1186,6 +1186,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             default: return undefined;
           }
         };
+        const targetCharacter = (a: ActRec): Id | null => reachOf(a) === 'post' ? acts.get(a.target ?? '')?.character ?? null
+          : reachOf(a) === 'character' ? String(a.payload.character) : [...acts.values()].find((x) => x.thread === a.payload.thread && x.seq === 1)?.character ?? null;
         const targetName = (a: ActRec): string | null => reachOf(a) === 'character' ? characters.get(String(a.payload.character))?.name ?? null
           : reachOf(a) === 'thread' ? threads.get(String(a.payload.thread))?.title ?? null : null;
         const onMine = [...acts.values()].filter((a) => a.kind === 'card' && a.target !== null && a.character !== null
@@ -1195,7 +1197,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           shares,
           wallet: newest(walletEvents.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           cards: newest(cardLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
-          playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a) })),
+          playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
           /* The in-memory backend sets no card face down and springs no trap: the setter's and the caster's lines are the adapter's (my_face_down, my_caught). */

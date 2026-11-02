@@ -52,15 +52,26 @@ begin
   perform pg_temp.hand(ann, 'marquee');
   perform play_card(ann, 'marquee', pipe2, mine_t, '{}', 0, '', 'thread');
 
+  -- The play's Act carries the target's public name as it was when the card was played, so a later rename changes no line.
+  if (select payload ->> 'targetName' from acts where id = on_hoo) is distinct from 'Pom Hoo' then raise exception 'a character play carries the name: %', (select payload from acts where id = on_hoo); end if;
+  if (select payload ->> 'targetName' from acts where id = on_thread) is distinct from 'Pom Thwomp' then raise exception 'a thread play carries the title'; end if;
+  if (select payload ->> 'targetName' from acts where id = on_board) is distinct from 'Pom Board' then raise exception 'a board play carries the board''s name: %', (select payload from acts where id = on_board); end if;
+  if (select payload ->> 'targetName' from acts where id = on_board) is distinct from (select name from boards_now where id = brd) then raise exception 'the name is the one boards_now gives'; end if;
+  update boards set name = 'Pom Board Renamed' where id = brd;
+  update threads set title = 'Pom Thwomp Renamed' where id = t;
+  if (select payload ->> 'targetName' from acts where id = on_board) is distinct from 'Pom Board' then raise exception 'renaming the board changes no play'; end if;
+
   -- Bob reads the plays on his Hoo and on the thread Hoo started, with their reach and their public names.
   perform tests.become(bob);
   select * into r from my_posts_played_on where play = on_hoo;
   if r.play is null then raise exception 'a play on Bob''s character is a row of his: %', (select jsonb_agg(to_jsonb(x)) from my_posts_played_on x); end if;
+  if r.target_character is distinct from hoo then raise exception 'a character play is about the character it landed on: %', to_jsonb(r); end if;
   if r.reach is distinct from 'character' or r.target_name is distinct from 'Pom Hoo' or r.post is distinct from hoo_post then
     raise exception 'a character play carries its reach and the character''s name: %', to_jsonb(r);
   end if;
   select * into r from my_posts_played_on where play = on_thread;
   if r.play is null then raise exception 'a play on the thread Bob''s mask started is a row of his'; end if;
+  if r.target_character is distinct from hoo then raise exception 'a thread play is about the character that started the thread: %', to_jsonb(r); end if;
   if r.reach is distinct from 'thread' or r.target_name is distinct from 'Pom Thwomp' then
     raise exception 'a thread play carries its reach and the thread''s title: %', to_jsonb(r);
   end if;
