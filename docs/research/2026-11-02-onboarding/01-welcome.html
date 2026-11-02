@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Welcome: the first glass page</title>
+<!-- A board of the onboarding design session (docs/plans/2026-11-02-onboarding-design.md), 1440 by 1320: the welcome
+     page a new account opens on, once, before New character. Gabe's letter in the Updates page's post frame, the three
+     settings that change how the game looks, and one way on. The copy is a draft for the owner's review. A reference
+     for the look, not code to copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+/* Glass type at game sizes (XAG 101/102 at 1080p): nothing under 20px; blocks past two lines under 80 characters at 1.5. */
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+::selection{background:#19e3ff;color:#03141a}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 16px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#e4def7;white-space:nowrap}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+h1{margin:0;font:112px/1 Anton,sans-serif;letter-spacing:1px;text-shadow:0 0 30px rgba(25,227,255,.35)}
+.lede{margin:0;font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.post{background:rgba(8,5,16,.86);clip-path:polygon(0 0,calc(100% - 24px) 0,100% 24px,100% 100%,24px 100%,0 calc(100% - 24px));padding:36px 44px 40px;outline:1px solid rgba(201,184,255,.55);outline-offset:-1px}
+.by{display:flex;gap:18px;align-items:center}
+.ava{width:76px;height:76px;border:2px solid #c9b8ff;box-shadow:0 0 16px rgba(201,184,255,.5);background:repeating-linear-gradient(45deg,rgba(255,255,255,.08) 0 6px,transparent 6px 12px),#120b22;display:flex;align-items:center;justify-content:center;font:600 20px 'Barlow Condensed',sans-serif;color:#e4def7}
+.ava img{display:block;width:100%;height:100%;image-rendering:pixelated}
+.by b{display:block;font:34px/1 Anton,sans-serif;letter-spacing:.5px}
+.by span{font:600 21px 'Barlow Condensed',sans-serif;color:#e4def7}
+.post h2{margin:26px 0 0;font:64px/1.02 Anton,sans-serif;letter-spacing:.5px;text-shadow:0 0 24px rgba(201,184,255,.35)}
+.post p{max-width:760px;margin:18px 0 0;font:500 22px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.post p.sign{font-style:italic;font-weight:700;color:#e4def7}
+.setup{margin-top:34px;border-top:1px solid rgba(241,236,255,.3)}
+.setup h3{margin:28px 0 4px;font:40px/1 Anton,sans-serif;letter-spacing:.5px}
+.setup > p{margin:8px 0 6px;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.row{display:grid;grid-template-columns:170px 1fr;column-gap:28px;align-items:center;padding:16px 0;border-top:1px solid rgba(241,236,255,.18);margin:0;border-left:0;border-right:0;border-bottom:0}
+.row legend{float:left;padding:0;font:800 24px/1.1 'Barlow Condensed',sans-serif;letter-spacing:1.5px}
+.seg{display:flex;flex-wrap:wrap;gap:10px}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:inline-flex;align-items:center;min-height:52px;padding:0 20px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#f1ecff}
+.seg span b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.seg input:checked + span{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.seg input:focus-visible + span{outline:3px solid #ffffff;outline-offset:3px}
+.go{display:flex;align-items:center;gap:28px;margin-top:34px;padding-top:30px;border-top:1px solid rgba(241,236,255,.3)}
+.btn{display:inline-flex;align-items:center;min-height:68px;padding:0 34px;transform:skewX(-10deg);font:30px/1 Anton,sans-serif;letter-spacing:1.5px;text-decoration:none;color:#03141a;background:#19e3ff;box-shadow:0 0 26px rgba(25,227,255,.6)}
+.btn b{display:inline-block;transform:skewX(10deg);font-weight:400}
+.lnk{font:700 22px 'Barlow Condensed',sans-serif;color:#c9f8ff;text-underline-offset:4px}
+.aside{margin:0;padding:0;list-style:none}
+.aside li{padding:14px 0;border-top:1px solid rgba(241,236,255,.2);font:600 21px/1.45 'Barlow Condensed',sans-serif;color:#e4def7}
+.aside b{display:block;color:#f1ecff;font-weight:800;letter-spacing:.5px}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1320px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; font-family: 'Barlow Condensed', sans-serif">
+  <svg aria-hidden="true" width="1440" height="1320" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="lA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="31"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="lB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="14"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="lsoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+      <mask id="lcalm" maskUnits="userSpaceOnUse" x="0" y="0" width="1440" height="1320"><rect width="1440" height="1320" fill="#ffffff"></rect><rect x="40" y="230" width="1360" height="990" fill="#000000" opacity="0.85" filter="url(#lsoft)"></rect></mask>
+    </defs>
+    <g mask="url(#lcalm)"><rect width="1440" height="1320" filter="url(#lA)" opacity="0.95"></rect><rect width="1440" height="1320" filter="url(#lB)" opacity="0.5"></rect></g>
+  </svg>
+
+  <!-- the menu bar every glass page shares; Guide is its one new tab. With no character yet, Back to the board
+       opens a board whose HUD says Make a character, so the welcome is never a trap. -->
+  <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 84px; z-index: 5; display: flex; align-items: center; gap: 4px; padding: 0 32px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+    <a href="#" class="tab" aria-keyshortcuts="Escape" style="border: 1px solid #ffffff; color: #ffffff; margin-right: 14px"><b><kbd style="display: inline-block; margin-right: 10px; padding: 0 6px; border: 1px solid #ffffff; font: 800 20px/1.25 'Barlow Condensed', sans-serif; letter-spacing: 1px">ESC</kbd>BACK TO THE BOARD</b></a>
+    <a href="#" class="tab"><b>ALERTS</b></a>
+    <a href="#" class="tab"><b>VENDING MACHINE</b></a>
+    <a href="#" class="tab"><b>MY CHARACTERS</b></a>
+    <a href="#" class="tab"><b>SEASON</b></a>
+    <a href="#" class="tab"><b>MY LOG</b></a>
+    <a href="#" class="tab"><b>GUIDE</b></a>
+    <a href="#" class="tab"><b>UPDATES</b></a>
+    <a href="#" class="tab"><b>SETTINGS</b></a>
+  </nav>
+
+  <header style="position: absolute; left: 64px; top: 116px">
+    <h1>WELCOME</h1>
+  </header>
+
+  <!-- beside the letter: what happens next, said plainly, so the one button is never a leap -->
+  <aside style="position: absolute; left: 64px; top: 260px; width: 340px">
+    <p class="lede">You're in. One letter, three settings, then your first character.</p>
+    <ul class="aside" style="margin-top: 26px">
+      <li><b>Your first character</b>A name, a class, and how it arrives. It can post as soon as you make it.</li>
+      <li><b>A welcome gift</b>One orb in your wallet and a card in your hand, picked for the class you choose.</li>
+      <li><b>Change anything later</b>These settings live in Settings › Accessibility, and this page is in the Guide.</li>
+    </ul>
+  </aside>
+
+  <article class="post" style="position: absolute; left: 448px; right: 64px; top: 230px">
+    <div class="by"><div class="ava"><img src="assets/gabe-avatar.png" alt="Gabe"></div><div><b>GABE</b><span>Made this. Sorry.</span></div></div>
+    <h2>After nine years of development</h2>
+    <p>…hopefully it would have been worth the wait.</p>
+    <p>This is Divided World. It looks like a message board from 2003, and it is one. It is also a game. You'll play up to six characters, each behind a mask, each with a secret class that decides which reactions make it stronger. Nobody else can see which masks are yours.</p>
+    <p>Everything anyone does here is public. Who's doing it isn't. Work it out, or don't.</p>
+    <p class="sign">We left something in your wallet. Go make somebody.</p>
+
+    <section class="setup" aria-labelledby="setup-h">
+      <h3 id="setup-h">BEFORE YOU START</h3>
+      <p>How the board and the glass look and move. None of it changes how the game plays.</p>
+      <fieldset class="row"><legend>THEME</legend>
+        <div class="seg" role="radiogroup" aria-label="Theme">
+          <label><input type="radio" name="t" checked><span><b>FOLLOW MY DEVICE</b></span></label>
+          <label><input type="radio" name="t"><span><b>BLACK ON WHITE</b></span></label>
+          <label><input type="radio" name="t"><span><b>WHITE ON BLACK</b></span></label>
+        </div>
+      </fieldset>
+      <fieldset class="row"><legend>MOTION</legend>
+        <div class="seg" role="radiogroup" aria-label="Motion">
+          <label><input type="radio" name="m" checked><span><b>FOLLOW MY DEVICE</b></span></label>
+          <label><input type="radio" name="m"><span><b>REDUCED</b></span></label>
+          <label><input type="radio" name="m"><span><b>FULL</b></span></label>
+        </div>
+      </fieldset>
+      <fieldset class="row"><legend>TEXT SIZE</legend>
+        <div class="seg" role="radiogroup" aria-label="Text size">
+          <label><input type="radio" name="s" checked><span><b>100%</b></span></label>
+          <label><input type="radio" name="s"><span><b>125%</b></span></label>
+          <label><input type="radio" name="s"><span><b>150%</b></span></label>
+          <label><input type="radio" name="s"><span><b>200%</b></span></label>
+        </div>
+      </fieldset>
+    </section>
+
+    <div class="go">
+      <a href="#" class="btn"><b>MAKE YOUR FIRST CHARACTER</b></a>
+      <a href="#" class="lnk">Read the Strategy Guide first</a>
+    </div>
+  </article>
+</div>
+</body>
+</html>
