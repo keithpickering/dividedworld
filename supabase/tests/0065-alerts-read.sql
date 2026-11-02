@@ -400,22 +400,23 @@ begin
   perform tests.unbecome();
   perform set_config('request.jwt.claims', jsonb_build_object('sub', ivy, 'role', 'authenticated')::text, true);
   set local enable_seqscan = off;
-  -- Not an index-only scan: the 500 threads were made in this transaction, so none of their rows is in the visibility map, and an index-only scan
-  -- of them is a heap fetch, and a buffer access, per row (476 buffers, against 6 and a bitmap's pages) whenever the planner's estimate (25 rows, for
-  -- 500) happens to favour it, which depends on when autovacuum last ran. That is the shape of a fresh transaction and not of the probe: committed
-  -- rows are all-visible and the same scan reads the index alone. So the plan measured is the one the visible rows get.
-  set local enable_indexonlyscan = off;
+  -- What the bound holds. The probe lists the threads Ivy follows (her 500 openers, from acts_thread_openers), then stops at the tenth with a
+  -- new post. Listing them costs at most a buffer per opener in this test: the 500 rows were made in this transaction, so none is in the
+  -- visibility map, and whichever index path the planner picks (a plain or an index-only scan, at one heap fetch per row, or a bitmap over
+  -- the heap's pages, which depends on its estimate and on when autovacuum last ran) reads up to one heap page per row. Committed rows are
+  -- all-visible, and there the same listing reads the index alone. So the bound is a buffer per followed thread plus a page of slack, which
+  -- holds for every plan; probing each thread's posts in full, the defect this guards (7,055 buffers here), does not fit it.
   plan := '';
   -- The function's own statement, as shipped, so the plan shows the statement and not the call.
   execute format('prepare plan_heavy as %s', (select prosrc from pg_proc where proname = 'my_alerts_unread' and pronamespace = 'public'::regnamespace));
   for ln in execute 'explain (analyze, buffers) execute plan_heavy' loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   deallocate plan_heavy;
   set local enable_seqscan = on;
-  set local enable_indexonlyscan = on;
   perform set_config('request.jwt.claims', '', true);
   bufs := (regexp_match(plan, 'Buffers: shared hit=(\d+)'))[1]::integer;
   raise notice 'followed-heavy my_alerts_unread reads % buffers', bufs;
-  if bufs > 400 then raise exception 'the count of 500 followed threads stops at its bound and reads few buffers, not %: %', bufs, plan; end if;
+  if bufs > 500 + 300 then raise exception 'the count of 500 followed threads stops at its bound and reads at most a buffer per followed thread and a page of slack, not %: %', bufs, plan; end if;
+  if plan ~ 'Seq Scan' then raise exception 'the count of 500 followed threads reads by index: %', plan; end if;
 end $$;
 
 -- ---- The ledger is bounded exactly, whatever order settlement ids and times came in ----
