@@ -31,9 +31,11 @@
 -- bounded before the union: written alerts are one range of alerts_by_account (account, at) read from the newest back, the first
 -- `most` rows and their ties; followed threads are my_followed_threads (at most 50, each a bounded probe, 0059); settlements are
 -- the caller's ledger lines read from the newest back by ledger_account (account, settlement), grouped as they stream, `most`
--- settlements and their ties. The unread count reads each source with a limit of 10. The ledger is bounded by the settlement's id
--- as a stand-in for its time (a settlement is applied after the one before it, so ids and applied_at go the same way, as they do
--- here by construction); the exact comparison is on applied_at, through the join. The statements keep their arguments as $1, $2
+-- settlements and their ties. The unread count reads each source with a limit of 10. The ledger is bounded by settlement ids drawn
+-- from the settlements that qualify by applied_at (the largest id applied before the cursor; the smallest id applied after the
+-- mark), so the bound is exact whatever order ids and times came in, and the comparison itself is on applied_at, through the join.
+-- Only the order of the settlements within a page is by id: a settlement is applied under a lock with applied_at its own
+-- transaction's time, so a later id is a later settlement. The statements keep their arguments as $1, $2
 -- so that supabase/tests/0065-alerts-read.sql can plan exactly the text shipped here.
 --
 -- my_alerts_unread(): how many of those are newer than the account's alerts_seen_at (0057; never set means everything is new),
@@ -99,8 +101,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
     from f v where v.newest_at >= (select at from f_floor)
   ),
   -- Settlements: the caller's ledger lines from the newest settlement back, grouped as they stream, k settlements.
+  -- The ledger is read up to the newest settlement applied before the cursor: the largest id among them, so no settlement that
+  -- qualifies is cut whatever order the ids came in (a stand-in for time that assumed they go together broke where a committed
+  -- settlement was applied later than a newer id). Without a cursor it is the largest id there is, from the key alone.
   hi as (
-    select coalesce((select s.id from settlements s where s.applied_at < (select before from lim) order by s.applied_at desc, s.id desc limit 1), 0) as id
+    select coalesce(case when (select before from lim) = 'infinity'::timestamptz then (select max(s.id) from settlements s)
+                         else (select max(s.id) from settlements s where s.applied_at < (select before from lim)) end, 0) as id
   ),
   st_k as (
     select s.id, s.applied_at, count(distinct l.character)::integer as n
@@ -167,7 +173,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     select (select count(*) from (
       select 1 from ledger l join settlements s on s.id = l.settlement
       where l.account = (select id from me)
-        and l.settlement > coalesce((select s0.id from settlements s0 where s0.applied_at <= (select at from seen) order by s0.applied_at desc, s0.id desc limit 1), 0)
+        and l.settlement >= coalesce((select min(s0.id) from settlements s0 where s0.applied_at > (select at from seen)), 9223372036854775807)
         and s.applied_at > (select at from seen)
       group by l.settlement order by l.settlement desc limit 10) x)
     union all

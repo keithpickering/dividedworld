@@ -277,8 +277,7 @@ begin
   e1 := tests.character(eva, 'Ar Eva'); f1 := tests.character(fay, 'Ar Fay'); g1 := tests.character(gus, 'Ar Gus');
 
   -- (a) More settlements than a page, two of them applied at one instant across the page's edge (the 5th and 6th newest of 9).
-  -- Applied in order, later than every settlement before in this file (a server's ids go the way its applied_at does, and the
-  -- ledger is bounded by id, 0060's header), so the later id is the newer.
+  -- Applied in order, later than every settlement before in this file, so the later id is the newer (a page is ordered by id).
   for i in 1..9 loop
     insert into settlements (starts_at, ends_at, season, applied_at)
     values (base + i * interval '1 day', base + i * interval '1 day' + interval '6 hours', (select min(id) from seasons),
@@ -396,4 +395,30 @@ begin
   bufs := (regexp_match(plan, 'Buffers: shared hit=(\d+)'))[1]::integer;
   raise notice 'followed-heavy my_alerts_unread reads % buffers', bufs;
   if bufs > 400 then raise exception 'the count of 500 followed threads stops at its bound and reads few buffers, not %: %', bufs, plan; end if;
+end $$;
+
+-- ---- The ledger is bounded exactly, whatever order settlement ids and times came in ----
+-- A settlement committed earlier (a race test's, in the full suite) can be applied later than one with a higher id; the read
+-- must still find every settlement that qualifies by applied_at.
+do $$
+declare
+  kim uuid := tests.account('ar-kim'); k1 uuid; w bigint; x bigint; v bigint;
+begin
+  k1 := tests.character(kim, 'Ar Kim');
+  insert into settlements (starts_at, ends_at, season, applied_at)
+  values (now() - interval '400 days', now() - interval '400 days' + interval '6 hours', (select min(id) from seasons), now() - interval '12 hours') returning id into w;
+  insert into settlements (starts_at, ends_at, season, applied_at)
+  values (now() - interval '401 days', now() - interval '401 days' + interval '6 hours', (select min(id) from seasons), now() + interval '500 days') returning id into x;
+  insert into settlements (starts_at, ends_at, season, applied_at)
+  values (now() - interval '402 days', now() - interval '402 days' + interval '6 hours', (select min(id) from seasons), now() - interval '3 days') returning id into v;
+  insert into ledger (settlement, account, character, reason, amount) values (w, kim, k1, 'post.reacted', 10), (v, kim, k1, 'post.reacted', 10);
+  perform tests.become(kim);
+  if (select count(*) from my_alerts() where kind = 'settlement') is distinct from 2 then
+    raise exception 'both settlements are found though a later-applied one has a lower id: %', (select count(*) from my_alerts() where kind = 'settlement');
+  end if;
+  if my_alerts_unread() is distinct from 2 then raise exception 'with no mark both are new: %', my_alerts_unread(); end if;
+  perform see_alerts(now() - interval '1 day');
+  if my_alerts_unread() is distinct from 1 then raise exception 'the settlement applied after the mark is new, whatever its id: %', my_alerts_unread(); end if;
+  if (select count(*) from my_alerts(now() - interval '1 day', 10) where kind = 'settlement') is distinct from 1 then raise exception 'a page before the cursor finds the older one'; end if;
+  perform tests.unbecome();
 end $$;
