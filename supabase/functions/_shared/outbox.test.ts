@@ -107,7 +107,29 @@ test('a pass stops after three single failures in a row with nothing sent, relea
   for (const r of rows) r.attempts = 5;
   let calls = 0;
   await sendWaiting(db, async (m) => { if (m.length === 1) calls++; return 'unreachable'; });
-  assert.equal(calls, 3, 'three single sends, then it gives way');
+  assert.equal(calls, 4, 'three single sends and one probe from the tail, then it gives way');
   assert.ok(log.some((l) => l.startsWith('broadcasts_release:') && l.split(':')[1]!.split(',').length === 10), log.join('\n'));
   assert.deepEqual(rows.map((r) => r.dead ?? null), Array(10).fill(null));
+});
+
+test('three poison rows at the head do not block the good rows behind them: a probe from the tail lets the pass go on, and the poison rows die', async () => {
+  const { db, rows, add } = outbox(3);
+  for (const r of rows) r.attempts = 5;
+  const deliver = async (m: readonly Broadcast[]): Promise<Delivery> =>
+    (m as readonly { payload: { n: number } }[]).some((x) => x.payload.n <= 3) ? 'unreachable' : 'sent';
+  for (let drain = 0; drain < 4; drain++) {
+    for (let i = 0; i < 5; i++) add();
+    await sendWaiting(db, deliver);
+    assert.deepEqual(rows.filter((r) => r.id > 3).map((r) => r.id), [], `drain ${drain}: every good row behind them went`);
+  }
+  assert.deepEqual(rows.map((r) => [r.id, r.dead ?? null]), [[1, 'unreachable'], [2, 'unreachable'], [3, 'unreachable']], 'the poison rows are dead, with their records');
+});
+
+test('with nothing at all going through, the probe fails too and the pass gives way: nothing is counted, nothing dies', async () => {
+  const { db, rows } = outbox(8);
+  for (const r of rows) r.attempts = 5;
+  let singles = 0;
+  for (let drain = 0; drain < 6; drain++) await sendWaiting(db, async (m) => { if (m.length === 1) singles++; return 'unreachable'; });
+  assert.equal(singles, 6 * 4, 'three singles and one probe a pass');
+  assert.deepEqual(rows.map((r) => [r.dead ?? null, r.failures]), Array(8).fill([null, 0]));
 });

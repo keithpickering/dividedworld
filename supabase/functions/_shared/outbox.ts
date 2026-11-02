@@ -17,9 +17,19 @@
  *   claims on every waiting row), so an outage kills nothing and one flaky send kills no good row. A message given up
  *   is kept, dead, with its payload and why (broadcasts_dead); nothing is deleted unsent. Its Act
  *   is on the board for the next load.
- * - The one-at-a-time pass renews its lease every 20 sends and stops short of the lease (a minute),
- *   so another drain never finds the rows it still holds; it gives way after three single sends
- *   in a row fail with none sent (Realtime is down, not the rows), and releases what it did not reach.
+ * - The one-at-a-time pass gives way after three single sends in a row fail with none sent, but
+ *   first probes once with the last row it has not reached: if that goes through, Realtime is up
+ *   and the head is the trouble, so the pass goes on past it (a few poison rows at the head never
+ *   hold up the good rows behind them, and their failures count); if the probe fails too, it
+ *   releases what it did not reach.
+ * - The lease margin. A claim holds a row for 120 seconds (the SQL's lease). A pass starts no send
+ *   after FALLBACK_MS (60 s) and a send takes at most 10.25 s (two tries of 5 s and a 250 ms wait,
+ *   broadcast.ts), so a pass ends within about 71 s of its claim, inside the lease. That cap is
+ *   what holds the margin; the renewal every RENEW_EVERY sends is a second line, and by itself
+ *   would not do (20 sends can take 205 s). So what must stay true is
+ *   FALLBACK_MS + 10.25 s < the lease, or else RENEW_EVERY x 10.25 s < the lease (RENEW_EVERY <= 11
+ *   at 120 s) with a renewal before each stretch. Change the lease, FALLBACK_MS, RENEW_EVERY or
+ *   broadcast.ts's timeouts together.
  */
 import type { Broadcast, Delivery } from './broadcast.ts';
 import type { Db } from './rpc.ts';
@@ -72,9 +82,24 @@ async function oneAtATime(
   const unreached: Waiting[] = [];
   const stuck: Waiting[] = [];
   let inARow = 0;
-  for (const [i, m] of due.entries()) {
-    if (clock() - began >= FALLBACK_MS || (!anySent && inARow >= GIVE_WAY_AFTER)) { unreached.push(...due.slice(i)); break; }
-    if (i % RENEW_EVERY === 0) await db.rpc('broadcasts_renew', { ids: ids(due.slice(i)) });
+  let probed = false;
+  const handled = new Set<number>();
+  for (let i = 0; i < due.length; i++) {
+    const m = due[i]!;
+    if (handled.has(m.id)) continue;
+    const rest = () => due.slice(i).filter((r) => !handled.has(r.id));
+    if (clock() - began >= FALLBACK_MS) { unreached.push(...rest()); break; }
+    if (!anySent && inARow >= GIVE_WAY_AFTER) {
+      // Three failures and nothing sent: Realtime is down, or the head is poison. One probe from the tail tells which.
+      const tail = rest().at(-1)!;
+      if (probed || tail.id === m.id) { unreached.push(...rest()); break; }
+      probed = true;
+      const result = await deliver([shape(tail)]);
+      if (result !== 'sent') { unreached.push(...rest()); break; }
+      anySent = true; inARow = 0; handled.add(tail.id);
+      await db.rpc('broadcasts_sent', { ids: [tail.id] });
+    }
+    if (i % RENEW_EVERY === 0) await db.rpc('broadcasts_renew', { ids: ids(rest()) });
     const one = await deliver([shape(m)]);
     if (one === 'sent') { anySent = true; inARow = 0; await db.rpc('broadcasts_sent', { ids: [m.id] }); }
     else if (one === 'refused') {
