@@ -15,11 +15,11 @@ afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-m
 
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 25)); });
 
-async function world(options: { welcomed?: boolean; character?: boolean; debuted?: boolean } = {}): Promise<Fake> {
-  const { welcomed = true, character = true, debuted = true } = options;
+async function world(options: { welcomed?: boolean; character?: boolean; debuted?: boolean; retired?: boolean } = {}): Promise<Fake> {
+  const { welcomed = true, character = true, debuted = true, retired = false } = options;
   const fake = buildWorld();
   const me = fake.seed.account('me');
-  if (character) fake.seed.character(me, 'Pipewrench', 'face', { debuted });
+  if (character) fake.seed.character(me, 'Pipewrench', 'face', { debuted, retired });
   fake.signInAs(me);
   if (welcomed) await fake.seeWelcome();
   return fake;
@@ -99,13 +99,68 @@ describe('the HUD tour', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  /* The page's other readers (the alerts feed) make their own read; the tips and the tour together make one. Before, the HUD made a third. */
-  test('one preferences read per page load serves the tips and the tour', async () => {
+  test('an account whose only character is retired sees no tour', async () => {
+    const fake = await world({ retired: true });
+    board(fake);
+    await settle();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  /* Two readers make a read on a board page: the tips provider's (the tips and the tour share it) and the alerts feed's
+     (engine/ui/alerts/useAlerts.ts). The baseline is the same page for an account the tour does not apply to, so a new reader elsewhere
+     moves both counts alike, and only a read the tour itself adds (as the HUD did before, a third) breaks the equality. */
+  /* A baseline page would hide the defect this guards: the HUD's old read of its own ran for every signed-in account, tour or not. So
+   * the count is absolute: the page's readers of the preferences are the tips provider (which carries the welcome to the tour) and the
+   * alerts feed (engine/ui/alerts/useAlerts.ts). A third reader added anywhere on the board page fails here and should be counted here. */
+  test('the tour adds no preferences read of its own to the page load', async () => {
     const fake = await world();
     const read = vi.spyOn(fake, 'preferences');
     board(fake);
     await screen.findByRole('dialog', { name: 'Title of tour-plate' });
-    expect(read).toHaveBeenCalledTimes(2);
+    await settle();
+    expect(read, 'the tips provider\'s read and the alerts feed\'s, and no third').toHaveBeenCalledTimes(2);
+  });
+
+  /* Each step cuts out its own element: the rects below differ, and the ring takes the one of the element the step points at. */
+  describe('each step points at its own element', () => {
+    const rects: Record<string, { left: number; top: number; width: number; height: number }> = {
+      'kb-hud-plate': { left: 100, top: 100, width: 200, height: 60 },
+      'kb-hud-aura': { left: 400, top: 300, width: 120, height: 40 },
+      'kb-hud-hand': { left: 600, top: 500, width: 80, height: 30 },
+    };
+    const ringOf = (name: string) => {
+      const r = rects[name]!;
+      return [`${r.left - 6}px`, `${r.top - 6}px`, `${r.width + 12}px`, `${r.height + 12}px`];
+    };
+    const ring = () => {
+      const el = document.querySelector<HTMLElement>('.kb-tips-ring')!;
+      return [el.style.left, el.style.top, el.style.width, el.style.height];
+    };
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const key = Object.keys(rects).find((k) => this.classList.contains(k));
+        const r = key ? rects[key]! : { left: 0, top: 0, width: 0, height: 0 };
+        return { ...r, x: r.left, y: r.top, right: r.left + r.width, bottom: r.top + r.height, toJSON: () => r } as DOMRect;
+      });
+    });
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    test('step 1 the plate, step 2 the orbs, step 3 the Hand button', async () => {
+      const fake = await world();
+      board(fake);
+      const one = await screen.findByRole('dialog', { name: 'Title of tour-plate' });
+      expect(ring(), 'the rects distinguish the elements: the plate is not the orbs').not.toEqual(ringOf('kb-hud-aura'));
+      expect(ring()).toEqual(ringOf('kb-hud-plate'));
+      await gotIt(one);
+      await screen.findByRole('dialog', { name: 'Title of tour-orbs' });
+      expect(ring()).not.toEqual(ringOf('kb-hud-hand'));
+      expect(ring()).toEqual(ringOf('kb-hud-aura'));
+      await gotIt(screen.getByRole('dialog'));
+      await screen.findByRole('dialog', { name: 'Title of tour-hand' });
+      expect(ring()).not.toEqual(ringOf('kb-hud-plate'));
+      expect(ring()).toEqual(ringOf('kb-hud-hand'));
+      expect(document.querySelector('.kb-hud-hand')).toBe(screen.getByRole('button', { name: /^Hand,/u }));
+    });
   });
 
   test('nothing shows before the welcome is seen, or for an account with no character, or for a visitor', async () => {
@@ -117,12 +172,25 @@ describe('the HUD tour', () => {
     }
   });
 
+  /* The overlay fades in from opacity 0 unless motion is reduced. The pair shows the check can see a fade: the same page, not reduced, has it. */
+  const startsHidden = (dialog: HTMLElement) => /opacity:\s*0(?![.\d])/u.test(dialog.closest<HTMLElement>('.kb-tips')?.getAttribute('style') ?? '');
+
+  test('without reduced motion the dialog fades in from opacity 0', async () => {
+    const fake = await world();
+    board(fake);
+    const one = await screen.findByRole('dialog', { name: 'Title of tour-plate' });
+    expect(one.closest('.kb-tips'), 'the overlay wrapper is found').not.toBeNull();
+    expect(startsHidden(one)).toBe(true);
+  });
+
   test('under reduced motion the dialog appears at once, without a fade', async () => {
     const fake = await world();
     await fake.setPreferences({ motion: 'reduce' });
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     board(fake);
     const one = await screen.findByRole('dialog', { name: 'Title of tour-plate' });
-    expect(one.closest('[style*="opacity"]')?.getAttribute('style') ?? '').not.toMatch(/opacity:\s*0(?![.\d])/u);
+    const wrapper = one.closest<HTMLElement>('.kb-tips');
+    expect(wrapper, 'the overlay wrapper is found, so the check below is not vacuous').not.toBeNull();
+    expect(startsHidden(one)).toBe(false);
   });
 });
