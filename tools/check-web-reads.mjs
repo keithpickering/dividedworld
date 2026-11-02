@@ -68,7 +68,7 @@ export const ALLOWED_READS = Object.freeze([
   // The season a screen names beside them, by the same rule; seasons itself is not here, for the same reason.
   'current_season',
   // The player's own.
-  'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_cards', 'my_reactions', 'my_invites', 'reading',
+  'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_cards', 'my_reactions', 'my_invites', 'reading', 'my_followed_threads',
   'account_preferences', 'effect_releases',
   // The player's own cards set face down and plays a trap caught (0054_card_plays.sql): each filtered to auth.uid() on the server.
   'my_face_down', 'my_caught',
@@ -82,7 +82,7 @@ export const ALLOWED_READS = Object.freeze([
 export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string, count: string, why?: string }[]} */ ([]));
 
 /** The SQL functions a screen may call directly; every other write goes through the `act` function. */
-export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'forget_cards_met', 'see_alerts', 'see_settlement', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'move_progress', 'here', 'set_presence_hidden', 'effects_above', 'pinned_threads']);
+export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'forget_cards_met', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'move_progress', 'here', 'set_presence_hidden', 'effects_above', 'pinned_threads']);
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);

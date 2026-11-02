@@ -610,6 +610,21 @@ export interface PlayOnMine {
   readonly targetCharacter: Id | null;
 }
 
+/**
+ * A thread the player follows that has posts past their place (`my_followed_threads`). `newPosts` is the count of posts by
+ * characters the player does not own, counted up to `FOLLOWED_COUNT_CAP` (a count at the cap means that many or more); `newestAt`
+ * is the newest such post's time.
+ */
+export interface FollowedThread {
+  readonly thread: Id;
+  readonly board: Id;
+  readonly title: string;
+  readonly newPosts: number;
+  readonly newestAt: string;
+}
+/** The most new posts a followed thread counts (supabase/migrations/0059_follows.sql): a screen words a count at it as "100+". */
+export const FOLLOWED_COUNT_CAP = 100;
+
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
 export interface EffectSaved {
   readonly play: Id;
@@ -885,6 +900,15 @@ export interface KayfaApi {
   seeAlerts(at: string): Promise<Answer<string>>;
   /** Marks the settlement ending at `endsAt` (an ISO time) as seen on the account, as `seeAlerts` does: only forward; answers the mark. */
   seeSettlement(endsAt: string): Promise<Answer<string>>;
+  /**
+   * Whether the player follows the thread: their own choice, else whether one of their characters started it (`following_thread`).
+   * Rejects when it cannot be read or nobody is signed in; it is the player's own fact and appears in no public read.
+   */
+  following(thread: Id): Promise<boolean>;
+  /** Follows the thread (`on` true) or stops following it, and answers the state now. Refused for a thread that does not exist or no one signed in. */
+  follow(thread: Id, on: boolean): Promise<Answer<boolean>>;
+  /** The threads the player follows that have posts past their place, newest first, at most 50 (`my_followed_threads`). */
+  followed(): Promise<readonly FollowedThread[]>;
   estimate(): Promise<Estimate>;
   /** A page of the player's own log (`Log`): the newest with no cursor, then each older page from the last one's `before`. */
   log(before?: string | null): Promise<Log>;

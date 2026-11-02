@@ -36,7 +36,7 @@ import { MOVES_LOG_PAGE } from '../../../engine/ui/data/api.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  EffectState, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  EffectState, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
 
@@ -892,6 +892,17 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async seeAlerts(at) {
       const a = await rpcWrite(() => client.rpc('see_alerts', { at }));
       return a.ok ? { ok: true, value: str(a.value['seen']) ?? at } : a;
+    },
+    async following(thread) {
+      return (await read(() => client.rpc('following_thread', { in_thread: thread }))).data === true;
+    },
+    async follow(thread, on) {
+      const a = await rpcWrite(() => client.rpc('follow_thread', { in_thread: thread, on_: on }));
+      return a.ok ? { ok: true, value: a.value['following'] === true } : a;
+    },
+    async followed() {
+      return (await list(() => client.from('my_followed_threads').select('thread,board,title,new_posts,newest_at').order('newest_at', { ascending: false }).limit(50)))
+        .map((r): FollowedThread => ({ thread: r['thread'], board: r['board'], title: String(r['title'] ?? ''), newPosts: num(r['new_posts']), newestAt: String(r['newest_at']) }));
     },
     async seeSettlement(endsAt) {
       const a = await rpcWrite(() => client.rpc('see_settlement', { ends_at: endsAt }));

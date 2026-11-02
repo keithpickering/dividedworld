@@ -22,13 +22,13 @@ import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { atOrBelow, basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX } from './api.ts';
+import { DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SPUN_FROM_MAX } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
-  DebutTiming, Estimate, EstimateLine, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
+  DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -230,6 +230,8 @@ interface AccountRec {
   wallet: number;
   cards: Record<string, number>;
   reading: Map<Id, number>;
+  /** The account's follow choices over the default (thread_follows, 0059). */
+  follows: Map<Id, boolean>;
   estimate: { entries: Estimate['entries']; lines: readonly EstimateLine[] };
   asked: Estimate | null;
 }
@@ -344,6 +346,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     };
   }
 
+  /** Whether the account follows the thread: its choice, else whether one of its characters started it (following_thread, 0059). */
+  const follows = (account: AccountRec, threadId: Id): boolean => {
+    const chosen = account.follows.get(threadId);
+    if (chosen !== undefined) return chosen;
+    const opening = placed(threadId)[0];
+    return opening?.character != null && characters.get(opening.character)?.owner === account.id;
+  };
   const placed = (threadId: Id) => [...acts.values()].filter((a) => a.thread === threadId && a.seq !== null).sort((a, b) => a.seq! - b.seq!);
 
   function summary(t: ThreadRec): ThreadSummary {
@@ -962,7 +971,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   function addAccount(email: string): AccountRec {
     const a: AccountRec = {
-      id: uuid(), email, admin: false, prefs: DEFAULT_PREFERENCES, wallet: 0, cards: {}, reading: new Map(),
+      id: uuid(), email, admin: false, prefs: DEFAULT_PREFERENCES, wallet: 0, cards: {}, reading: new Map(), follows: new Map(),
       estimate: { entries: [], lines: [] }, asked: null,
     };
     accounts.set(a.id, a);
@@ -1412,6 +1421,31 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const held = account.prefs.alertsSeenAt;
       if (held === null || Date.parse(held) < Date.parse(at)) account.prefs = { ...account.prefs, alertsSeenAt: at };
       return ok(account.prefs.alertsSeenAt!);
+    },
+    following(thread) {
+      const account = me();
+      if (!account) throw new Error('sign in with an account first');
+      return follows(account, thread);
+    },
+    follow(thread, on) {
+      const account = me();
+      if (!account) return refuse('sign in with an account first');
+      if (!threads.has(thread)) return refuse('there is no such thread');
+      account.follows.set(thread, on);
+      return ok(on);
+    },
+    followed() {
+      // my_followed_threads (0059): the followed threads with posts past the account's place by characters it does not own, newest first, at most 50.
+      const account = me();
+      if (!account) return [];
+      const out: FollowedThread[] = [];
+      for (const t of threads.values()) {
+        if (!follows(account, t.id)) continue;
+        const past = placed(t.id).filter((a) => a.kind === 'post' && a.seq! > (account.reading.get(t.id) ?? 0) && a.character !== null && characters.get(a.character)?.owner !== account.id);
+        if (past.length === 0) continue;
+        out.push({ thread: t.id, board: t.board, title: t.title, newPosts: Math.min(past.length, FOLLOWED_COUNT_CAP), newestAt: iso(Math.max(...past.map((a) => a.at))) });
+      }
+      return out.sort((a, b) => Date.parse(b.newestAt) - Date.parse(a.newestAt)).slice(0, 50);
     },
     seeSettlement(endsAt) {
       const account = me();

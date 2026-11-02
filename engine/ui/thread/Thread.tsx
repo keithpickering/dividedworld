@@ -48,6 +48,7 @@ import { returnOf } from '../glass/back.ts';
 import { emptyFeed, feedReducer, newer, ordered, shownEnd, waitingPosts } from './feed.ts';
 import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageEndsThread, pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
+import { FollowControl } from './Follow.tsx';
 import { ActArticle, ThreadHead } from './Post.tsx';
 import { ThreadCtx, type ThreadContext } from './context.ts';
 import { text } from './lines.tsx';
@@ -538,6 +539,7 @@ function ThreadView({ thread }: { readonly thread: Id }) {
   return (
     <div className="kb-thread" data-kb-thread={thread} data-kb-known={feed.knownLast} aria-busy={busy || undefined}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {summary.title}</p>
+      {player.session.signedIn && <FollowControl thread={thread} />}
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
           <CalloutProvider met={player.session.signedIn ? cardsMet : null}>
