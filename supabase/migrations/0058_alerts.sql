@@ -38,6 +38,9 @@ grant select on alerts to authenticated;
 -- One alert for the owner of `of_character`, about the Act `about`; none where the character has no owner (staff) or its owner is
 -- `acting`, the account that did the thing. `acting` is null where the writer cannot name one. Called inside the writers, after the
 -- Act it points at is written; no API role calls it.
+-- An owned target costs one more indexed insert and one outbox row than a staff, board or own-mask target. Staff and boards are public,
+-- and the own-mask difference is seen only by the account that owns both, which knows (design, section 10): so no response differs
+-- with a private fact.
 create function write_alert(of_character uuid, kind text, sub text, about uuid, acting uuid default null) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
