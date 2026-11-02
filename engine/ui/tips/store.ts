@@ -100,7 +100,8 @@ export function createTipsStore(handlers: TipsHandlers, options: { readonly unga
   /* Keys decided this load, shown or dropped: asked again, they are not shown again before the next load. */
   const settled = new Set<string>();
   const holders = new Set<string>();
-  /* Lines noted this load and not yet dismissed: the callout showing them may move to another mark. */
+  /* Lines noted this load and not yet dismissed with Got it: the callout showing them may move to another mark, and a callout closed
+     another way (its card opened or played) leaves the line to the next callout this load, so it is read once before it goes. */
   const carried = new Set<string>();
   let current: { readonly entry: Entry; readonly view: ActiveTip } | null = null;
   let spent: string | null = null;
