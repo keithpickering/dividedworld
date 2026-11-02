@@ -831,6 +831,12 @@ export type LiveAlert = Pick<Alert, 'kind' | 'sub' | 'act' | 'character' | 'at'>
   readonly id: string;
 };
 
+/**
+ * News for everyone as the `reach` topic announces it (`news`, supabase/migrations/0063_season_news.sql): an update or an item of season news as it lands. Public, and the same for every
+ * listener; no account, no character of a player's. It has no id of its own: its kind, sub, Act and time are its identity, so one heard twice is one.
+ */
+export type LiveNews = Pick<Alert, 'kind' | 'sub' | 'act' | 'at'>;
+
 export interface AccountListener {
   /** An alert for the player's own account, as it is written. May come twice: key by act and kind, or reread the list. */
   readonly onAlert?: (alert: LiveAlert) => void;
@@ -843,6 +849,8 @@ export interface ReachListener {
    * target it shows and drops the rest.
    */
   readonly onPlay?: (play: Act) => void;
+  /** An update or an item of season news, as it lands, for every signed-in player alike. May come twice: key by kind, sub, Act and time. */
+  readonly onNews?: (news: LiveNews) => void;
 }
 
 /* ---------------------------------------------------------------- the api ---- */

@@ -17,6 +17,7 @@ const settings: Settings = {
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
+  hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } },
   postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, cardSettings: {}, economy: {}, ...systemSettings,
 };
 
@@ -1720,6 +1721,20 @@ describe('the Alerts read and the count (my_alerts, my_alerts_unread, 0060)', ()
     const key = (r: { kind: string; sub: string | null; act: string | null; at: string }) => `${r.kind} ${r.sub} ${r.act} ${r.at}`;
     expect(second.map(key).filter((k) => first.map(key).includes(k))).toEqual([]);
     expect(first.length + second.length + (await fake.alerts(second.at(-1)!.at)).length).toBe(47);
+  });
+});
+
+describe('live news on reach', () => {
+  test('an update posted by an admin is heard by every listener on reach, once, with its Act and time', async () => {
+    const { fake } = world();
+    const admin = fake.seed.account('boss', { admin: true });
+    const heard: unknown[] = [];
+    fake.subscribeReach({ onNews: (n) => heard.push(n) });
+    fake.signInAs(admin);
+    const update = must(await fake.postUpdate('Traps bite', 'Two fixes.', []));
+    await flush();
+    expect(heard).toEqual([{ kind: 'update', sub: null, act: update.act, at: expect.any(String) }]);
+    expect(fake.broadcast.log.filter((e) => e.topic === 'reach' && e.event === 'news')).toHaveLength(1);
   });
 });
 

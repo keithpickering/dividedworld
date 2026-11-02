@@ -1120,9 +1120,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       })();
       return () => { closed = true; off?.(); };
     },
-    /* Plays beyond a post, on `reach`: every signed-in player hears every one, and the Act is the public one the play's thread carries. */
+    /* Plays beyond a post, and news, on `reach`: every signed-in player hears every one. A play's Act is the public one its thread carries; news is an update or an item of season news, as 0063 announces it. */
     subscribeReach(l) {
-      return join('reach', ['effect'], (_event, p) => { l.onPlay?.(toAct(p)); });
+      return join('reach', ['effect', 'news'], (event, p) => {
+        if (event === 'news') l.onNews?.({ kind: p['kind'], sub: p['sub'] ?? null, act: p['act'] ?? null, at: p['at'] });
+        else l.onPlay?.(toAct(p));
+      });
     },
   };
   return api;

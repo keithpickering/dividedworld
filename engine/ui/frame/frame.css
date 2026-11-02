@@ -450,6 +450,67 @@
   justify-content: space-between;
 }
 
+/*
+ * Alerts, above Hand and beside the clock (board 01-board-toasts.html): the bell, its word and a gold count of what is new, in a skewed panel with
+ * a border in the ready color. Hand and Menu stay where they are below it. Same 170 by 52 as Hand, and over it.
+ */
+.kb-hud-alerts {
+  position: absolute;
+  top: 2.5rem;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 170px;
+  height: 3.25rem;
+  color: var(--kb-glass-text);
+  text-decoration: none;
+  background: var(--kb-glass-panel-strong);
+  border: 1px solid var(--kb-glass-ready);
+}
+
+.kb-hud-alerts-word {
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-lead);
+  line-height: 1;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.kb-hud-bell {
+  color: var(--kb-glass-ready);
+}
+
+.kb-hud-alerts-count {
+  padding: 2px 8px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--kb-glass-ink-ready);
+  background: var(--kb-glass-ready);
+}
+
+.kb-hud-alerts:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+/* The mask's name set in the picker's face, unseen, so the HUD can tell whether the picker would cut it (Hud.tsx). */
+.kb-hud-name-probe {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-phone-display);
+  text-transform: uppercase;
+}
+
+.kb-hud-menu-glyph {
+  display: block;
+}
+
 /* The HUD's buttons: skewed (base.css), their words set upright, at the boards' sizes. */
 .kb-hud-menu,
 .kb-hud-hand {
@@ -833,7 +894,7 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-bar {
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   grid-template-rows: auto auto;
   align-items: center;
   gap: 8px 10px;
@@ -859,9 +920,14 @@
   justify-self: start;
 }
 
+:where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-hud .kb-hud-alerts {
+  grid-row: 2;
+  grid-column: 3;
+}
+
 :where(:root[data-kb-layout='phone'][data-kb-text-size]:not([data-kb-text-size='100'])) .kb-hud .kb-hud-hand {
   grid-row: 2;
-  grid-column: 3 / -1;
+  grid-column: 4 / -1;
   justify-self: end;
 }
 
@@ -958,12 +1024,12 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-menu {
-  grid-column: 3;
+  grid-column: 4;
   box-shadow: 0 0 12px color-mix(in srgb, var(--kb-glass-neon) 50%, transparent);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-hand {
-  grid-column: 4;
+  grid-column: 5;
   gap: 0.25em;
   box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-salty) 70%, transparent);
 }
@@ -972,6 +1038,32 @@
 :where(:root[data-kb-layout='phone']) .kb-hud-hand > span:first-child {
   font-size: 1.125rem;
   letter-spacing: 0.5px;
+}
+
+/*
+ * The phone's bell (board 05-phone.html): 52 by 48, between "Posting as" and Menu, the count on its corner, the word for a screen reader alone.
+ */
+:where(:root[data-kb-layout='phone']) .kb-hud-alerts {
+  position: relative;
+  grid-row: 1;
+  grid-column: 3;
+  width: 52px;
+  height: 48px;
+  gap: 0;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-glass-ready) 45%, transparent);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-alerts-word {
+  display: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-alerts-count {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  padding: 0 6px;
+  font-size: var(--kb-glass-size-phone-small);
+  line-height: 1.2;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-hud-hand-count {

@@ -40,3 +40,32 @@ const hiddenWorld: World = (fake, instance) => {
   void fake.myCharacters().then((mine) => { const first = mine[0]; if (first) void fake.setPresenceHidden(first.id, true); });
 };
 export const HiddenFromOnlineLists: Story = { parameters: { world: hiddenWorld } };
+
+/*
+ * The HUD's Alerts button and the toasts above its seam (the alerts plan, Task 10; boards 01-board-toasts.html and 05-phone.html). The alerts
+ * arrive a moment after the story opens, as they would live: three stay in the column, any more fold into "+N more", and the Alerts button shows
+ * the count of what is new. Open the hand to see them wait.
+ */
+const arriving = (count: number): World => (fake, instance) => {
+  playerWorld(fake, instance);
+  const { seed } = fake;
+  const friend = seed.account('story-friend');
+  const theirs = seed.character(friend, 'Spritey', instance.classes[0]!.key);
+  const kinds = ['ruling', 'trapStruck', 'trapSprang', 'ruling', 'trapStruck'] as const;
+  const opening = seed.thread('general', theirs, 'who keeps splatting my posts', 'Somebody is doing it again.');
+  void Promise.all([fake.session(), fake.myCharacters()]).then(([session, mine]) => {
+    const account = session.account;
+    const own = mine[0];
+    if (!account || !own) return;
+    setTimeout(() => {
+      for (let i = 0; i < count; i++) seed.alert(account, { kind: kinds[i % kinds.length]!, act: opening.act, character: own.id, sub: i === 0 ? 'warning' : undefined });
+    }, 1200);
+  });
+};
+export const WithToasts: Story = { name: 'Alerts button and three toasts (owner review)', parameters: { world: arriving(3) } };
+export const WithMoreToasts: Story = { name: 'Alerts button, three toasts and "+2 more" (owner review)', parameters: { world: arriving(5) } };
+export const WithToastsOnThePhone: Story = {
+  name: 'Alerts bell and toasts on the Phone board (owner review)',
+  parameters: { world: arriving(4) },
+  globals: { viewport: { value: 'glassPhone390', isRotated: false } },
+};

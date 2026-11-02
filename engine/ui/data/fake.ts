@@ -45,7 +45,7 @@ const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'alert';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'alert' | 'news';
 }
 
 export interface Seed {
@@ -387,6 +387,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (act.payload.reach !== 'character' && act.payload.reach !== 'thread' && act.payload.reach !== 'board') return;
     const shown = publicAct(act);
     send('reach', 'effect', () => { for (const l of [...reachListeners]) l.onPlay?.(shown); });
+  };
+  /* An update is announced on `reach` to every signed-in page as it is written (news_announce, 0063); a seed is the database's own hand and says nothing. */
+  const sendNews = (a: ActRec) => {
+    const news = { kind: 'update' as const, sub: null, act: a.id, at: iso(a.at) };
+    send('reach', 'news', () => { for (const l of [...reachListeners]) l.onNews?.(news); });
   };
   const sendThread = (t: ThreadRec) => {
     const shown = { id: t.id, board: t.board, title: t.title, originActId: t.origin, createdAt: iso(t.at) };
@@ -1216,7 +1221,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return updateActs().filter((a) => a.at < until).slice(0, UPDATES_PAGE).map(updateOf);
     },
     seasonNews: (before) => newsPage(before, SEASON_NEWS_PAGE),
-    postUpdate: (title, body, changes) => (me()?.admin ? writeUpdate(title, body, changes, undefined) : refuse('only an admin writes an update')),
+    postUpdate: (title, body, changes) => {
+      if (!me()?.admin) return refuse('only an admin writes an update');
+      const written = writeUpdate(title, body, changes, undefined);
+      if (written.ok) sendNews(acts.get(written.value.act)!);
+      return written;
+    },
     settings: () => screen,
 
     boards: () => boards.map((b): BoardSummary => {

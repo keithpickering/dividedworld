@@ -1,0 +1,188 @@
+/*
+ * The toasts (Toasts.tsx), as boards 01-board-toasts.html and 05-phone.html draw them: a column above the HUD's seam at the right on the Main board's
+ * layout (470px), across the foot of the window with a 16px gutter on the Phone board's. "+N more" on top, in the ready color; then each toast, a
+ * chamfered panel in its kind's ink (the rows' inks, alerts.css): an icon, the line in the heavy body over its detail and its one link, and at the
+ * right the time over a dismiss button of 44px. Sizes are the boards' glass sizes, never under the label (20px) on the Main board's layout.
+ *
+ * The column is outside the HUD (it is not drawn at the board's scale), and stands on the HUD's measured height (Hud.tsx sets --kb-hud-measured).
+ * It lets a press through wherever there is no toast.
+ */
+.kb-toasts {
+  position: fixed;
+  right: 34px;
+  bottom: calc(var(--kb-hud-measured, 0px) + 16px);
+  z-index: 29;
+  box-sizing: border-box;
+  width: min(470px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: transparent;
+  pointer-events: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-toasts {
+  left: 16px;
+  right: 16px;
+  width: auto;
+  gap: 8px;
+}
+
+.kb-toasts > * {
+  pointer-events: auto;
+}
+
+.kb-toasts-more {
+  align-self: flex-end;
+  padding: 6px 14px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--kb-glass-ready-text);
+  background: var(--kb-glass-panel-strong);
+  border: 1px solid var(--kb-glass-ready);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-toasts-more {
+  padding: 4px 12px;
+  font-size: var(--kb-glass-size-phone-small);
+  letter-spacing: 1.2px;
+}
+
+.kb-toast {
+  --kb-toast-ink: var(--kb-glass-neon);
+  --kb-cut: var(--kb-glass-chamfer-3);
+  --kb-border: 1.5px;
+  --kb-cut-in: calc(var(--kb-cut) - var(--kb-border) * 0.5858);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 14px 18px 14px 16px;
+  color: var(--kb-glass-text);
+  background: var(--kb-toast-ink);
+  clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, 0 100%);
+}
+
+.kb-toast::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: var(--kb-border);
+  background: var(--kb-glass-panel-strong);
+  clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, 0 100%);
+}
+
+.kb-toast[data-kb-kind='cardOnYours'],
+.kb-toast[data-kb-kind='trapStruck'],
+.kb-toast[data-kb-kind='trapSprang'],
+.kb-toast[data-kb-kind='ruling'] {
+  --kb-toast-ink: var(--kb-glass-salty);
+}
+
+.kb-toast[data-kb-kind='settlement'],
+.kb-toast[data-kb-kind='hint'] {
+  --kb-toast-ink: var(--kb-glass-ready);
+}
+
+.kb-toast[data-kb-kind='update'],
+.kb-toast[data-kb-kind='seasonNews'] {
+  --kb-toast-ink: var(--kb-glass-pale);
+}
+
+.kb-toast-ico {
+  width: 40px;
+  height: 40px;
+  color: var(--kb-toast-ink);
+}
+
+.kb-toast-said {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+}
+
+.kb-toast-line {
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 0.3px;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-toast-detail {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-toast-way {
+  align-self: flex-start;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  color: var(--kb-glass-pale);
+  text-underline-offset: 3px;
+}
+
+.kb-toast-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.kb-toast-side time {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-toast-x {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: var(--kb-glass-text-2);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 45%, transparent);
+  cursor: pointer;
+}
+
+.kb-toasts-more:focus-visible,
+.kb-toast-way:focus-visible,
+.kb-toast-x:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+/* On the phone the toast is the board's smaller one: the icon, the line and the button on one row; the time beside the button. */
+:where(:root[data-kb-layout='phone']) .kb-toast {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-toast-ico {
+  width: 32px;
+  height: 32px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-toast-line {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-toast-detail,
+:where(:root[data-kb-layout='phone']) .kb-toast-way,
+:where(:root[data-kb-layout='phone']) .kb-toast-side time {
+  font-size: var(--kb-glass-size-phone-small);
+}

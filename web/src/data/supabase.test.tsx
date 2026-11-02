@@ -1068,6 +1068,21 @@ describe('live', () => {
     s.channels[0]?.handlers.get('effect')?.({ payload: ACT_ROW });
     expect(onPlay).toHaveBeenCalledWith(ACT);
   });
+
+  it('hears news on reach as its public projection, and not as a play', async () => {
+    const s = stub();
+    const onPlay = vi.fn();
+    const onNews = vi.fn();
+    s.api.subscribeReach({ onPlay, onNews });
+    await settle();
+    s.channels[0]?.handlers.get('news')?.({ payload: { kind: 'seasonNews', sub: 'tally', act: B, at: '2026-11-02T10:00:00Z' } });
+    s.channels[0]?.handlers.get('news')?.({ payload: { kind: 'update', sub: null, act: C, at: '2026-11-02T11:00:00Z' } });
+    expect(onNews.mock.calls.map((c) => c[0])).toEqual([
+      { kind: 'seasonNews', sub: 'tally', act: B, at: '2026-11-02T10:00:00Z' },
+      { kind: 'update', sub: null, act: C, at: '2026-11-02T11:00:00Z' },
+    ]);
+    expect(onPlay).not.toHaveBeenCalled();
+  });
 });
 
 export type { KayfaApi };
