@@ -18,6 +18,11 @@ export interface AlertsRead {
   readonly mark: string | null;
   /** Whether the mark could be read; if not, the page draws no divider and does not move it. */
   readonly markKnown: boolean;
+  /**
+   * When the account was opened (an ISO time), or null where the backend holds nothing older: with no mark, what arrived after it is new
+   * and what came before is Earlier (issue #148), as the HUD's count has it. Not read means the mark is not known.
+   */
+  readonly joined: string | null;
   /** The player's own characters; empty where they could not be read (no filters). */
   readonly mine: readonly MyCharacter[];
   readonly acts: ReadonlyMap<Id, Act>;
@@ -81,7 +86,9 @@ export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null)
     unfollowed.current = new Set();
     (async () => {
       /* The rows are the page; the mark and the characters only dress it: a failed read of either is a page without them. */
-      const [rows, prefs, mine] = await Promise.all([api.alerts(), orElse(api.preferences(), null), orElse(api.myCharacters(), [] as readonly MyCharacter[])]);
+      const [rows, prefs, joined, mine] = await Promise.all([
+        api.alerts(), orElse(api.preferences(), null), orElse<string | null | undefined>(api.accountOpenedAt(), undefined), orElse(api.myCharacters(), [] as readonly MyCharacter[]),
+      ]);
       const [acts, started, reading] = await Promise.all([
         actsAround(api, rows, new Map()),
         startedAmong(api, rows, mine, new Map()),
@@ -90,7 +97,7 @@ export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null)
           return threads.length === 0 ? {} : orElse(api.reading(threads), null);
         })(),
       ]);
-      return { rows, mark: prefs === null ? null : prefs.alertsSeenAt, markKnown: prefs !== null, mine, acts, started, reading, more: rows.length >= ALERTS_PAGE } satisfies AlertsRead;
+      return { rows, mark: prefs === null ? null : prefs.alertsSeenAt, markKnown: prefs !== null && joined !== undefined, joined: joined ?? null, mine, acts, started, reading, more: rows.length >= ALERTS_PAGE } satisfies AlertsRead;
     })().then(
       (data) => {
         if (!live) return;

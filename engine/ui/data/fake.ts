@@ -49,7 +49,8 @@ export interface LiveEvent {
 }
 
 export interface Seed {
-  account(name: string, options?: { email?: string; admin?: boolean }): Id;
+  /** `joinedAt` is when the account was opened (accounts.created_at); a seeded player was here before anything seeded, unless a test says when they joined. */
+  account(name: string, options?: { email?: string; admin?: boolean; joinedAt?: number }): Id;
   admin(account: Id, on?: boolean): void;
   /** A character of an account; debuted unless said otherwise. */
   character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; loudness?: DebutLoudness; at?: number }): Id;
@@ -245,6 +246,8 @@ interface ThreadRec { readonly id: Id; readonly board: Id; readonly title: strin
 interface AccountRec {
   readonly id: Id;
   readonly email: string;
+  /** When the account was opened (accounts.created_at, 0001): a mark never set counts from here (0066). */
+  readonly createdAt: number;
   admin: boolean;
   prefs: Preferences;
   wallet: number;
@@ -1167,9 +1170,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { account: account.id };
   }
 
-  function addAccount(email: string): AccountRec {
+  function addAccount(email: string, createdAt = now()): AccountRec {
     const a: AccountRec = {
-      id: uuid(), email, admin: false, prefs: DEFAULT_PREFERENCES, wallet: 0, cards: {}, reading: new Map(), follows: new Map(),
+      id: uuid(), email, createdAt, admin: false, prefs: DEFAULT_PREFERENCES, wallet: 0, cards: {}, reading: new Map(), follows: new Map(),
       estimate: { entries: [], lines: [] }, asked: null,
     };
     accounts.set(a.id, a);
@@ -1665,11 +1668,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const floor = older.length >= ALERTS_PAGE ? Date.parse(older[ALERTS_PAGE - 1]!.at) : -Infinity;
       return older.filter((a) => Date.parse(a.at) >= floor);
     },
-    alertsUnread() {
-      // my_alerts_unread (0060): what arrived after the account's mark (never set: everything), to the bound.
+    accountOpenedAt() {
       const account = me();
       if (!account) throw new Error('sign in with an account first');
-      const seen = account.prefs.alertsSeenAt === null ? -Infinity : Date.parse(account.prefs.alertsSeenAt);
+      return Number.isFinite(account.createdAt) ? iso(account.createdAt) : null;
+    },
+    alertsUnread() {
+      // my_alerts_unread (0060, 0066): what arrived after the account's mark (never set: since the account was opened), to the bound.
+      const account = me();
+      if (!account) throw new Error('sign in with an account first');
+      const seen = account.prefs.alertsSeenAt === null ? account.createdAt : Date.parse(account.prefs.alertsSeenAt);
       return Math.min(ALERTS_UNREAD_BOUND, alertsOf(account).filter((a) => Date.parse(a.at) > seen).length);
     },
     seeSettlement(endsAt) {
@@ -1877,7 +1885,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const seed: Seed = {
     account(name, o) {
       const email = (o?.email ?? `${name.toLowerCase()}@example.test`).toLowerCase();
-      const a = addAccount(email);
+      const a = addAccount(email, o?.joinedAt ?? -Infinity);
       a.admin = o?.admin === true;
       return a.id;
     },
