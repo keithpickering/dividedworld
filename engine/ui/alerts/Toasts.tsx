@@ -8,22 +8,24 @@
  * and fades it; under reduced motion it appears and leaves without moving at all (a plain element, no transform). The column is a polite live region
  * that is there before anything arrives, so each toast is announced as it is added.
  *
- * While the hand is open (`hold`) nothing is drawn, the hand fans through the same corner; toasts that arrived wait, and those on screen keep the time
- * they had left, and all of them rise when the hand closes. A toast is a nudge, never a state: it names its way out (its dismiss button, or it fades by
+ * While the hand is open (`hold`) the column is hidden, the hand fans through the same corner; the toasts stay where they are in the live region, so
+ * closing the hand does not add them again and a screen reader does not say them twice, and their clocks stand still, so each keeps the time it had
+ * left and nothing is lost to the hand. (One that arrives while the hand is open is added to a hidden region and may not be announced; it is on screen
+ * when the hand closes and in Alerts.) A toast is a nudge, never a state: it names its way out (its dismiss button, or it fades by
  * itself) and everything it said is on the Alerts page. Only the kinds the player keeps on toast (toast-kinds.ts); every alert still counts.
  *
  * What a toast says is read for the alert alone: the Act it names and the Act that names, the thread's title and the character's public name, all public
  * reads, and a read that fails leaves the plain words ("your post was quoted") and a toast all the same.
  */
-import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion, useIsPresent } from 'motion/react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Alert, Id, KayfaApi } from '../data/api.ts';
 import { useMotionReduced } from '../appearance.ts';
 import { Link } from '../router.tsx';
 import { AlertIcon } from './AlertIcon.tsx';
 import { useToastKinds } from './toast-kinds.ts';
-import type { Arrival } from './useAlertFeed.ts';
+import { remember, type Arrival } from './useAlertFeed.ts';
 import { plainText, wordsFor, type Way, type WordsContext } from './words.ts';
 import './toasts.css';
 
@@ -105,44 +107,50 @@ export function Toasts({ arrivals, hold, returnFocus }: ToastsProps) {
   useEffect(() => {
     for (const a of arrivals) {
       if (taken.current.has(a.id)) continue;
-      taken.current.add(a.id);
+      remember(taken.current, a.id);
       if (!choice.current(a.kind)) continue;
       const mine = ++order.current;
       void read(api, a, { instance, ui, perPage: settings.postsPerPage }).then(({ row, ctx }) => {
         if (!live.current) return;
         const said = wordsFor(row, ctx);
         const toast: Toast = { id: a.id, order: mine, kind: a.kind, line: plainText(said.line), detail: plainText(said.detail), way: said.ways[0] ?? null, at: a.at };
+        left.current.set(toast.id, TOAST_MS);
         setQueue((q) => (q.some((t) => t.id === toast.id) ? q : [...q, toast].sort((x, y) => x.order - y.order)));
       });
     }
   }, [arrivals, api, instance, ui, settings.postsPerPage]);
 
-  const drop = (id: string) => { left.current.delete(id); setQueue((q) => q.filter((t) => t.id !== id)); };
+  /* A dropped toast leaves the map, so its card's cleanup does not write it back. */
+  const drop = useCallback((id: string) => { left.current.delete(id); setQueue((q) => q.filter((t) => t.id !== id)); }, []);
 
   /* The toast that had focus is going: focus goes to a neighbor's dismiss button, else where the caller says. */
-  const dismiss = (id: string, card: HTMLElement | null) => {
+  const back = useRef(returnFocus);
+  back.current = returnFocus;
+  const dismiss = useCallback((id: string, card: HTMLElement | null) => {
     if (card?.contains(document.activeElement)) {
       const next = (card.nextElementSibling ?? card.previousElementSibling)?.querySelector<HTMLElement>('.kb-toast-x') ?? null;
-      if (next) next.focus(); else returnFocus?.();
+      if (next) next.focus(); else back.current?.();
     }
     drop(id);
-  };
+  }, [drop]);
 
-  const shown = hold ? [] : queue.slice(0, TOASTS_SHOWN);
-  const more = hold ? 0 : queue.length - shown.length;
+  const shown = queue.slice(0, TOASTS_SHOWN);
+  const more = queue.length - shown.length;
 
   return (
     <div ref={column} className="kb-toasts" role="status" aria-live="polite" aria-relevant="additions" aria-label="New alerts">
-      {more > 0 && (
-        <Link to="/alerts" className="kb-toasts-more kb-glass-skew" onClick={() => { setQueue([]); left.current.clear(); }}>
-          <span className="kb-glass-upright">+{more} more</span>
-        </Link>
-      )}
-      <AnimatePresence initial={false}>
-        {shown.map((t) => (
-          <Card key={t.id} toast={t} reduced={reduced} left={left.current} onDismiss={dismiss} onGone={drop} />
-        ))}
-      </AnimatePresence>
+      <div className="kb-toasts-list" hidden={hold}>
+        {more > 0 && (
+          <Link to="/alerts" className="kb-toasts-more kb-glass-skew" aria-label={`+${more} more alerts`} onClick={() => { setQueue([]); left.current.clear(); }}>
+            <span className="kb-glass-upright">+{more} more</span>
+          </Link>
+        )}
+        <AnimatePresence initial={false}>
+          {shown.map((t) => (
+            <Card key={t.id} toast={t} reduced={reduced} held={hold} left={left.current} onDismiss={dismiss} onGone={drop} />
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
@@ -150,25 +158,30 @@ export function Toasts({ arrivals, hold, returnFocus }: ToastsProps) {
 interface CardProps {
   readonly toast: Toast;
   readonly reduced: boolean;
+  /** The hand is open: the clock stands still. */
+  readonly held: boolean;
   readonly left: Map<string, number>;
   readonly onDismiss: (id: string, card: HTMLElement | null) => void;
   readonly onGone: (id: string) => void;
 }
 
-function Card({ toast, reduced, left, onDismiss, onGone }: CardProps) {
+function Card({ toast, reduced, held, left, onDismiss, onGone }: CardProps) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const el = useRef<HTMLElement>(null);
   const lineId = `kb-toast-${toast.id}`;
-  const paused = hovered || focused;
+  /* A card on its way out (dismissed, its exit playing) has no clock either. */
+  const present = useIsPresent();
+  const paused = hovered || focused || held || !present;
 
   /* The clock runs while neither pointer nor focus is on the toast, and what it had left is kept when it stops or the toast is taken off for the hand. */
   useEffect(() => {
     if (paused) return undefined;
-    const remaining = left.get(toast.id) ?? TOAST_MS;
+    const remaining = left.get(toast.id);
+    if (remaining === undefined) return undefined;
     const started = Date.now();
     const t = setTimeout(() => onGone(toast.id), remaining);
-    return () => { clearTimeout(t); left.set(toast.id, Math.max(0, remaining - (Date.now() - started))); };
+    return () => { clearTimeout(t); if (left.has(toast.id)) left.set(toast.id, Math.max(0, remaining - (Date.now() - started))); };
   }, [paused, toast.id, left, onGone]);
 
   const props = {
@@ -176,8 +189,9 @@ function Card({ toast, reduced, left, onDismiss, onGone }: CardProps) {
     className: 'kb-toast kb-glass-cut',
     'data-kb-kind': toast.kind,
     'aria-labelledby': lineId,
-    onMouseEnter: () => setHovered(true),
-    onMouseLeave: () => setHovered(false),
+    /* Only a mouse holds a toast by hovering: a tap on a touch screen is not a pointer resting on it. */
+    onPointerEnter: (e: React.PointerEvent<HTMLElement>) => { if (e.pointerType === 'mouse') setHovered(true); },
+    onPointerLeave: () => setHovered(false),
     onFocus: () => setFocused(true),
     onBlur: (e: React.FocusEvent<HTMLElement>) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false); },
   };

@@ -1,19 +1,20 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { AccountListener, Alert, KayfaApi, ReachListener, Update } from '../data/api.ts';
+import { DEFAULT_PREFERENCES, type AccountListener, type Alert, type KayfaApi, type Preferences, type ReachListener, type Update } from '../data/api.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { RouterProvider } from '../router.tsx';
 import { testGlass } from '../test-world.tsx';
 import { Toasts } from './Toasts.tsx';
 import { TOAST_DEFAULTS, toastsOn } from './toast-kinds.ts';
+import { announceToastChoice } from './toast-choice.ts';
 import { useAlertFeed } from './useAlertFeed.ts';
 
 const ACCOUNT = 'acc';
 const NOW = '2026-11-02T10:00:00Z';
 
 /** A backend that holds the listeners, so a test can send an alert or news as the server would. */
-function backend(options: { unread?: () => number; updates?: readonly Update[]; rows?: () => readonly Alert[] } = {}) {
+function backend(options: { unread?: () => number; updates?: readonly Update[]; rows?: () => readonly Alert[]; toasts?: Preferences['toasts'] } = {}) {
   const heard: { account: AccountListener | null; reach: ReachListener | null; accountOff: number; reachOff: number } = { account: null, reach: null, accountOff: 0, reachOff: 0 };
   const api = {
     alertsUnread: vi.fn(async () => options.unread?.() ?? 0),
@@ -24,6 +25,7 @@ function backend(options: { unread?: () => number; updates?: readonly Update[]; 
     thread: vi.fn(async () => null),
     updates: vi.fn(async () => options.updates ?? []),
     alerts: vi.fn(async () => options.rows?.() ?? []),
+    preferences: vi.fn(async () => ({ ...DEFAULT_PREFERENCES, toasts: options.toasts ?? null })),
   } as unknown as KayfaApi;
   return { api, heard };
 }
@@ -31,19 +33,20 @@ function backend(options: { unread?: () => number; updates?: readonly Update[]; 
 const quote = (id: string, over: Partial<{ kind: Alert['kind']; sub: string | null; act: string | null; at: string }> = {}) =>
   ({ id, kind: 'quote' as const, sub: null, act: null, character: null, at: NOW, ...over });
 
+const focusBack = vi.fn();
 function Harness({ api, hand = false, path = '/' }: { readonly api: KayfaApi; readonly hand?: boolean; readonly path?: string }) {
   const feed = useAlertFeed(api, ACCOUNT, path);
   return (
     <>
       <output data-testid="unread">{feed.unread === null ? 'none' : feed.unread}</output>
-      <Toasts arrivals={feed.arrivals} hold={hand} />
+      <Toasts arrivals={feed.arrivals} hold={hand} returnFocus={focusBack} />
     </>
   );
 }
 
-function mount(b: ReturnType<typeof backend>, props: { hand?: boolean; path?: string } = {}) {
+function mount(b: ReturnType<typeof backend>, props: { hand?: boolean; path?: string; toastDefaults?: readonly Alert['kind'][] } = {}) {
   const kayfa = {
-    api: b.api, instance: { cards: [] }, ui: { glass: testGlass, copy: {} }, settings: { postsPerPage: 20, walletCap: 600 },
+    api: b.api, instance: { cards: [] }, ui: { glass: testGlass, copy: {} }, settings: { postsPerPage: 20, walletCap: 600, ...(props.toastDefaults ? { toastDefaults: props.toastDefaults } : {}) },
   } as unknown as Kayfa;
   const tree = (hand: boolean, path: string) => (
     <RouterProvider><KayfaProvider value={kayfa}><Harness api={b.api} hand={hand} path={path} /></KayfaProvider></RouterProvider>
@@ -57,7 +60,7 @@ const send = async (b: ReturnType<typeof backend>, a: ReturnType<typeof quote>) 
 const toasts = () => screen.queryAllByRole('article');
 const reduceMotion = (on: boolean) => { if (on) document.documentElement.setAttribute('data-kb-motion', 'reduce'); else document.documentElement.setAttribute('data-kb-motion', 'full'); };
 
-beforeEach(() => { window.history.replaceState(null, '', '/'); reduceMotion(true); });
+beforeEach(() => { window.history.replaceState(null, '', '/'); reduceMotion(true); focusBack.mockClear(); });
 afterEach(() => { vi.useRealTimers(); document.documentElement.removeAttribute('data-kb-motion'); });
 
 describe('which kinds toast', () => {
@@ -87,7 +90,7 @@ describe('the column', () => {
     mount(b);
     for (const id of ['1', '2', '3', '4', '5']) await send(b, quote(id));
     expect(toasts()).toHaveLength(3);
-    const more = screen.getByRole('link', { name: '+2 more' });
+    const more = screen.getByRole('link', { name: '+2 more alerts' });
     expect(more).toHaveAttribute('href', '/alerts');
     await userEvent.click(more);
     expect(window.location.pathname).toBe('/alerts');
@@ -106,7 +109,7 @@ describe('the column', () => {
     expect(dismiss.className).toContain('kb-toast-x');
     await userEvent.click(dismiss);
     await waitFor(() => expect(toasts()).toHaveLength(3));
-    expect(screen.queryByRole('link', { name: /more/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /more alerts/ })).toBeNull();
   });
 
   test('fades by itself after about six seconds, and the next one rises', async () => {
@@ -131,10 +134,10 @@ describe('the column', () => {
     await send(b, quote('1'));
     const card = toasts()[0]!;
     await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
-    fireEvent.mouseEnter(card);
+    fireEvent.pointerEnter(card, { pointerType: 'mouse' });
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(toasts()).toHaveLength(1);
-    fireEvent.mouseLeave(card);
+    fireEvent.pointerLeave(card, { pointerType: 'mouse' });
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     expect(toasts()).toHaveLength(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
@@ -185,12 +188,57 @@ describe('the column', () => {
     unread = 1;
     await send(b, quote('1', { kind: 'hint', sub: 'leading:x' }));
     expect(toasts()).toHaveLength(0);
-    expect(screen.queryByRole('link', { name: /more/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /more alerts/ })).toBeNull();
     await waitFor(() => expect(screen.getByTestId('unread')).toHaveTextContent('1'));
     unread = 2;
     await send(b, quote('2', { kind: 'seasonNews', sub: 'tally' }));
     await waitFor(() => expect(screen.getByTestId('unread')).toHaveTextContent('2'));
     expect(toasts()).toHaveLength(0);
+  });
+
+  test('the kinds the player chose toast, whatever the instance\'s defaults say; the rest count and wait in Alerts', async () => {
+    let unread = 0;
+    const b = backend({ unread: () => unread, toasts: ['hint'] });
+    mount(b);
+    await act(async () => {});
+    unread = 1;
+    await send(b, quote('1'));
+    expect(toasts()).toHaveLength(0);
+    await waitFor(() => expect(screen.getByTestId('unread')).toHaveTextContent('1'));
+    unread = 2;
+    await send(b, quote('2', { kind: 'hint', sub: 'leading:x' }));
+    expect(toasts()).toHaveLength(1);
+    await waitFor(() => expect(screen.getByTestId('unread')).toHaveTextContent('2'));
+  });
+
+  test('a player who never chose gets the instance\'s defaults, and a choice of nothing silences every kind', async () => {
+    const instanceOnly = backend({ toasts: null });
+    const first = mount(instanceOnly, { toastDefaults: ['seasonNews'] });
+    await act(async () => {});
+    await send(instanceOnly, quote('1'));
+    expect(toasts()).toHaveLength(0);
+    await send(instanceOnly, quote('2', { kind: 'seasonNews', sub: 'tally' }));
+    expect(toasts()).toHaveLength(1);
+    first.unmount();
+    const silent = backend({ toasts: [] });
+    mount(silent);
+    await act(async () => {});
+    await send(silent, quote('3'));
+    expect(toasts()).toHaveLength(0);
+  });
+
+  test('a change made in Settings reaches the toasts with no reload, and a reset goes back to the instance\'s defaults', async () => {
+    const b = backend({ toasts: null });
+    mount(b);
+    await act(async () => {});
+    await send(b, quote('1', { kind: 'hint', sub: 'leading:x' }));
+    expect(toasts()).toHaveLength(0);
+    await act(async () => { announceToastChoice(['hint']); });
+    await send(b, quote('2', { kind: 'hint', sub: 'leading:y' }));
+    expect(toasts()).toHaveLength(1);
+    await act(async () => { announceToastChoice(null); });
+    await send(b, quote('3', { kind: 'hint', sub: 'leading:z' }));
+    expect(toasts()).toHaveLength(1);
   });
 
   test('news that lands on reach toasts when its kind is on, once however often it is heard', async () => {
@@ -322,5 +370,196 @@ describe('the account', () => {
     view.unmount();
     expect(b.heard.accountOff).toBe(1);
     expect(b.heard.reachOff).toBe(1);
+  });
+});
+
+describe('from the quality review of Task 10', () => {
+  const pointer = (type: 'mouse' | 'touch') => ({ pointerType: type });
+  const ms = (n: number) => act(async () => { await vi.advanceTimersByTimeAsync(n); });
+
+  test('a toast tapped on a touch device is not held by the tap and still times out; a mouse over it holds it', async () => {
+    vi.useFakeTimers();
+    const b = backend();
+    mount(b);
+    await send(b, quote('1'));
+    const card = toasts()[0]!;
+    fireEvent.pointerEnter(card, pointer('touch'));
+    await ms(6_500);
+    expect(toasts()).toHaveLength(0);
+    await send(b, quote('2'));
+    const second = toasts()[0]!;
+    fireEvent.pointerEnter(second, pointer('mouse'));
+    await ms(30_000);
+    expect(toasts()).toHaveLength(1);
+    fireEvent.pointerLeave(second, pointer('mouse'));
+    await ms(6_500);
+    expect(toasts()).toHaveLength(0);
+  });
+
+  test('hovered and focused together, leaving one while the other holds keeps the toast, and leaving both lets it go', async () => {
+    vi.useFakeTimers();
+    const b = backend();
+    mount(b);
+    await send(b, quote('1'));
+    const card = toasts()[0]!;
+    const dismiss = within(card).getByRole('button', { name: 'Dismiss' });
+    fireEvent.pointerEnter(card, pointer('mouse'));
+    act(() => dismiss.focus());
+    fireEvent.pointerLeave(card, pointer('mouse'));
+    await ms(30_000);
+    expect(toasts()).toHaveLength(1);
+    fireEvent.pointerEnter(card, pointer('mouse'));
+    act(() => dismiss.blur());
+    await ms(30_000);
+    expect(toasts()).toHaveLength(1);
+    fireEvent.pointerLeave(card, pointer('mouse'));
+    await ms(6_500);
+    expect(toasts()).toHaveLength(0);
+  });
+
+  test('a toast with under 200ms left when the hand opens survives it and rises after, with its 100ms', async () => {
+    reduceMotion(false);
+    vi.useFakeTimers();
+    const b = backend();
+    const view = mount(b);
+    await send(b, quote('1'));
+    await ms(5_900);
+    view.again({ hand: true });
+    await ms(1_000);
+    view.again({ hand: false });
+    expect(toasts()).toHaveLength(1);
+    await ms(50);
+    expect(toasts()).toHaveLength(1);
+    await ms(100);
+    await ms(600);
+    expect(toasts()).toHaveLength(0);
+  });
+
+  test('a hand opened and closed does not draw the toasts again: the same elements, so a live region does not say them twice', async () => {
+    const b = backend();
+    const view = mount(b);
+    await send(b, quote('1'));
+    const before = toasts()[0]!;
+    view.again({ hand: true });
+    expect(toasts()).toHaveLength(0);
+    view.again({ hand: false });
+    expect(toasts()[0]).toBe(before);
+  });
+
+  test('an arrival does not restart the clock of a toast already on screen', async () => {
+    vi.useFakeTimers();
+    const b = backend();
+    mount(b);
+    await send(b, quote('1'));
+    await ms(3_000);
+    /* (Wrapped by hand and put back as it was: a spy's restore would leave the fake clock's function behind.) */
+    const real = globalThis.setTimeout;
+    const delays: unknown[] = [];
+    globalThis.setTimeout = ((fn: () => void, delay?: number, ...rest: unknown[]) => { delays.push(delay); return (real as (...a: unknown[]) => unknown)(fn, delay, ...rest); }) as typeof setTimeout;
+    try {
+      await send(b, quote('2'));
+      await ms(10);
+    } finally { globalThis.setTimeout = real; }
+    expect(delays.filter((d) => d === 3_000)).toHaveLength(0);
+  });
+
+  test('"+N more" is named for what it opens, and it and a toast\'s link are 44px targets', async () => {
+    const b = backend({ updates: [{ act: 'u1', name: 'Dev', title: 'T', at: NOW } as Update] });
+    mount(b);
+    await send(b, quote('1', { kind: 'update', act: 'u1' }));
+    for (const id of ['2', '3', '4']) await send(b, quote(id));
+    expect(screen.getByRole('link', { name: '+1 more alerts' }).textContent).toBe('+1 more');
+    expect(getComputedStyle(screen.getByRole('link', { name: '+1 more alerts' })).minHeight).toBe('44px');
+    expect(getComputedStyle(screen.getByRole('link', { name: 'Read it in Updates' })).minHeight).toBe('44px');
+  });
+
+  test('dismissing the toast that has focus moves it to the next toast\'s dismiss button, and to the caller when none is left', async () => {
+    const b = backend();
+    mount(b);
+    await send(b, quote('1'));
+    await send(b, quote('2'));
+    const [first, second] = toasts();
+    const one = within(first!).getByRole('button', { name: 'Dismiss' });
+    one.focus();
+    await userEvent.click(one);
+    expect(within(second!).getByRole('button', { name: 'Dismiss' })).toHaveFocus();
+    expect(focusBack).not.toHaveBeenCalled();
+    const last = within(second!).getByRole('button', { name: 'Dismiss' });
+    await userEvent.click(last);
+    expect(focusBack).toHaveBeenCalledTimes(1);
+  });
+
+  test('the device\'s own reduced-motion setting is honored when the player has made no choice', async () => {
+    document.documentElement.removeAttribute('data-kb-motion');
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('prefers-reduced-motion'), media: q, addEventListener: () => {}, removeEventListener: () => {} }));
+    try {
+      const b = backend();
+      mount(b);
+      await send(b, quote('1'));
+      expect(toasts()[0]!.style.transform === '' || toasts()[0]!.style.transform === 'none').toBe(true);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  test('a burst of arrivals reads the count once, a little after the last', async () => {
+    const b = backend();
+    mount(b);
+    await waitFor(() => expect(b.api.alertsUnread).toHaveBeenCalledTimes(1));
+    for (const id of ['1', '2', '3', '4']) await send(b, quote(id));
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(b.api.alertsUnread).toHaveBeenCalledTimes(2));
+    await act(async () => { await new Promise((r) => setTimeout(r, 400)); });
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(2);
+  });
+
+  test('a settlement that moved none of the player\'s characters reads no count', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const b = backend();
+    mount(b);
+    await waitFor(() => expect(b.api.alertsUnread).toHaveBeenCalledTimes(1));
+    await act(async () => { b.heard.reach?.onSettled?.({ id: '5', at: NOW }); });
+    await waitFor(() => expect(b.api.alerts).toHaveBeenCalled());
+    await act(async () => { await new Promise((r) => setTimeout(r, 400)); });
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(1);
+    vi.restoreAllMocks();
+  });
+
+  test('the settled read is spread over about ten seconds', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    const b = backend();
+    mount(b);
+    await act(async () => { b.heard.reach?.onSettled?.({ id: '6', at: NOW }); });
+    await ms(9_000);
+    expect(b.api.alerts).not.toHaveBeenCalled();
+    await ms(1_500);
+    expect(b.api.alerts).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+});
+
+describe('useAlertFeed on its own', () => {
+  test('an account change clears what was heard and counted, closes the old channels and opens new ones', async () => {
+    const b = backend({ unread: () => 4 });
+    const { result, rerender } = renderHook(({ account }) => useAlertFeed(b.api, account, '/'), { initialProps: { account: 'a' as string | null } });
+    await waitFor(() => expect(result.current.unread).toBe(4));
+    await act(async () => { b.heard.account?.onAlert?.(quote('x')); });
+    expect(result.current.arrivals).toHaveLength(1);
+    rerender({ account: 'b' });
+    expect(b.heard.accountOff).toBe(1);
+    expect(b.heard.reachOff).toBe(1);
+    expect(b.api.subscribeAccount).toHaveBeenCalledTimes(2);
+    expect(result.current.arrivals).toEqual([]);
+    expect(result.current.unread).toBeNull();
+    await act(async () => { b.heard.account?.onAlert?.(quote('x')); });
+    expect(result.current.arrivals).toHaveLength(1);
+  });
+
+  test('what it remembers having heard is bounded: after more than it keeps, the oldest may toast again', async () => {
+    const b = backend();
+    const { result } = renderHook(() => useAlertFeed(b.api, 'a', '/'));
+    await act(async () => { for (let i = 0; i < 150; i++) b.heard.account?.onAlert?.(quote(`id${i}`)); });
+    expect(result.current.arrivals).toHaveLength(100);
+    await act(async () => { b.heard.account?.onAlert?.(quote('id0')); });
+    expect(result.current.arrivals.at(-1)?.id).toBe('id0');
   });
 });

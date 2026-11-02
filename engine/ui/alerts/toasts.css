@@ -14,17 +14,27 @@
   z-index: 29;
   box-sizing: border-box;
   width: min(470px, calc(100vw - 32px));
+  background: transparent;
+  pointer-events: none;
+}
+
+.kb-toasts-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: transparent;
-  pointer-events: none;
+}
+
+.kb-toasts-list[hidden] {
+  display: none;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-toasts {
   left: 16px;
   right: 16px;
   width: auto;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-toasts-list {
   gap: 8px;
 }
 
@@ -34,6 +44,9 @@
 
 .kb-toasts-more {
   align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 6px 14px;
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
@@ -125,6 +138,9 @@
 
 .kb-toast-way {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-size: var(--kb-glass-size-label);
   font-weight: 700;
   color: var(--kb-glass-pale);

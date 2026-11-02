@@ -10,7 +10,7 @@
  * Followed threads are derived when read and pushed to no one ("a post would otherwise fan out to every follower live"), so they count at the next
  * page and never toast. A settlement is announced to everyone alike on `reach` (`onSettled`: its id and time, nothing of any player's); each client then
  * reads its own head of `alerts()` and toasts the settlement only if it moved this account's characters, once by the settlement's id. The reads are
- * spread over a few seconds, so a busy instance's players do not all ask in the same instant.
+ * spread over about ten seconds, so a busy instance's players do not all ask in the same instant.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AlertKind } from '../../rules/alerts.ts';
@@ -29,10 +29,19 @@ export interface Arrival {
 }
 
 /** The longest a client waits before reading its own alerts after a settlement is announced; each picks a moment of its own within it. */
-export const SETTLED_SPREAD_MS = 3000;
+export const SETTLED_SPREAD_MS = 10_000;
 
-/** Arrivals kept at most: the column folds past three, and a long-open page must not grow without end. */
-const KEPT = 100;
+/** Arrivals kept at most: the column folds past three, and a long-open page must not grow without end. What is remembered of having heard one is kept in step. */
+export const KEPT = 100;
+
+/** Adds `key` to a set that holds the latest `KEPT` keys it was given, dropping the oldest. */
+export function remember(set: Set<string>, key: string): void {
+  set.add(key);
+  while (set.size > KEPT) set.delete(set.values().next().value as string);
+}
+
+/** A burst of arrivals reads the count once, this long after the last. */
+export const COUNT_AFTER_MS = 250;
 
 export const newsKey = (n: LiveNews) => `news|${n.kind}|${n.sub ?? ''}|${n.act ?? ''}|${n.at}`;
 
@@ -40,6 +49,7 @@ export function useAlertFeed(api: KayfaApi, account: Id | null, path: string): {
   const [held, setHeld] = useState<{ readonly account: Id | null; readonly unread: number | null; readonly arrivals: readonly Arrival[] }>({ account, unread: null, arrivals: [] });
   const seen = useRef(new Set<string>());
   const asked = useRef(0);
+  const soon = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* The count again, the latest answer winning, and an answer that cannot be read leaves the count as it was. */
   const count = useCallback(() => {
@@ -51,28 +61,33 @@ export function useAlertFeed(api: KayfaApi, account: Id | null, path: string): {
     );
   }, [api, account]);
 
+  /* The count a little after the last arrival of a burst. */
+  const countSoon = useCallback(() => {
+    if (soon.current !== null) clearTimeout(soon.current);
+    soon.current = setTimeout(() => { soon.current = null; count(); }, COUNT_AFTER_MS);
+  }, [count]);
+
   useEffect(() => {
     seen.current = new Set();
     setHeld({ account, unread: null, arrivals: [] });
     if (account === null) return undefined;
     const heard = (a: Arrival) => {
       if (seen.current.has(a.id)) return;
-      seen.current.add(a.id);
+      remember(seen.current, a.id);
       setHeld((h) => (h.account === account ? { ...h, arrivals: [...h.arrivals, a].slice(-KEPT) } : h));
-      count();
+      countSoon();
     };
     const settledSeen = new Set<string>();
     const timers = new Set<ReturnType<typeof setTimeout>>();
     let live = true;
     const settled = (s: LiveSettled) => {
       if (settledSeen.has(s.id)) return;
-      settledSeen.add(s.id);
+      remember(settledSeen, s.id);
       const timer = setTimeout(() => {
         timers.delete(timer);
         void Promise.resolve().then(() => api.alerts()).then(
           (rows) => {
             if (!live) return;
-            count();
             const mine = rows.find((r) => r.kind === 'settlement' && r.sub === s.id);
             if (mine) heard({ id: `settlement|${s.id}`, kind: 'settlement', sub: mine.sub, act: null, character: null, at: mine.at, count: mine.count });
           },
@@ -86,8 +101,13 @@ export function useAlertFeed(api: KayfaApi, account: Id | null, path: string): {
       onNews: (n) => heard({ id: newsKey(n), kind: n.kind, sub: n.sub, act: n.act, character: null, at: n.at }),
       onSettled: settled,
     });
-    return () => { live = false; for (const t of timers) clearTimeout(t); offAccount(); offReach(); };
-  }, [api, account, count]);
+    return () => {
+      live = false;
+      for (const t of timers) clearTimeout(t);
+      if (soon.current !== null) { clearTimeout(soon.current); soon.current = null; }
+      offAccount(); offReach();
+    };
+  }, [api, account, countSoon]);
 
   /* Each page read. */
   useEffect(() => { count(); }, [count, path]);
