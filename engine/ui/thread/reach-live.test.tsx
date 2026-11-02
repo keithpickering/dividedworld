@@ -11,6 +11,7 @@ import type { Instance } from '../../rules/types.ts';
 import { createFake } from '../data/fake.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { renderIn, testInstance } from '../test-world.tsx';
+import type { CardUi } from '../cards/types.ts';
 import { ThreadScreen } from './Thread.tsx';
 
 const base = { priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
@@ -29,7 +30,9 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-async function open() {
+const cards: CardUi[] = [{ key: 'sparkle', art: { color: '#ffd23f', ink: '#1a1300' }, describe: () => 'Sparkle.', Effect: ({ children }) => <div>{children}</div> }];
+
+async function open(withCards = false) {
   const fake = createFake({ instance, now: () => Date.now() });
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
@@ -39,7 +42,7 @@ async function open() {
   const elsewhere = fake.seed.thread('general', spritey, 'Somewhere else', 'a post over there');
   const gloombaThere = fake.seed.post(elsewhere.thread, gloomba, 'gloomba over there');
   fake.signInAs(me);
-  renderIn(fake, <Frame><ThreadScreen thread={here.thread} /></Frame>, { path: `/t/${here.thread}`, instance });
+  renderIn(fake, <Frame><ThreadScreen thread={here.thread} /></Frame>, { path: `/t/${here.thread}`, instance, ...(withCards ? { cards } : {}) });
   await screen.findByRole('article', { name: /^Post 1 /u });
   return { fake, spritey, gloomba, here, elsewhere, gloombaThere };
 }
@@ -68,5 +71,19 @@ describe('a play beyond a post, heard on reach', () => {
     w.fake.seed.reach(w.spritey, 'character', w.spritey, 'sparkle', { post: w.elsewhere.act, live: true, ends: Date.now() + 60_000 });
     w.fake.broadcast.flush({ twice: true });
     await waitFor(() => expect(sparkleMark(postbit(1))).not.toBeNull());
+  });
+
+  test('a play whose read goes wrong is dropped quietly, never an unhandled rejection', async () => {
+    const w = await open(true);
+    const loose: unknown[] = [];
+    const heard = (e: unknown) => { loose.push(e); };
+    process.on('unhandledRejection', heard);
+    try {
+      /* A reply that is not the map of saved states: the page's own handling of it throws. */
+      w.fake.effectStates = (async () => null) as never;
+      w.fake.seed.reach(w.spritey, 'character', w.spritey, 'sparkle', { post: w.elsewhere.act, live: true, ends: Date.now() + 60_000 });
+      await new Promise((r) => setTimeout(r, 100));
+    } finally { process.off('unhandledRejection', heard); }
+    expect(loose).toEqual([]);
   });
 });

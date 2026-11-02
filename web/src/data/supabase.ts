@@ -1062,7 +1062,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         try { id = (await client.auth.getSession()).data.session?.user.id; } catch { /* no session: nothing to hear */ }
         if (!id || closed) return;
         off = join(`account:${id}`, ['alert'], (_event, p) => {
-          l.onAlert?.({ kind: p['kind'], sub: p['sub'] ?? null, act: p['act'] ?? null, character: p['character'] ?? null, at: p['at'] });
+          l.onAlert?.({ id: p['id'], kind: p['kind'], sub: p['sub'] ?? null, act: p['act'] ?? null, character: p['character'] ?? null, at: p['at'] });
         });
       })();
       return () => { closed = true; off?.(); };

@@ -1026,8 +1026,8 @@ describe('live', () => {
     expect(s.channels.map((c) => c.topic)).toEqual([`account:${A}`]);
     expect(s.channels[0]?.opts).toEqual({ config: { private: true } });
     expect(s.order).toEqual([`channel:account:${A}`, 'auth:true', `subscribe:account:${A}`]);
-    s.channels[0]?.handlers.get('alert')?.({ payload: { kind: 'quote', sub: null, act: B, character: C, at: '2026-11-02T10:00:00Z' } });
-    expect(onAlert).toHaveBeenCalledWith({ kind: 'quote', sub: null, act: B, character: C, at: '2026-11-02T10:00:00Z' });
+    s.channels[0]?.handlers.get('alert')?.({ payload: { id: 7, kind: 'quote', sub: null, act: B, character: C, at: '2026-11-02T10:00:00Z' } });
+    expect(onAlert).toHaveBeenCalledWith({ id: 7, kind: 'quote', sub: null, act: B, character: C, at: '2026-11-02T10:00:00Z' });
     off();
     expect(s.client.removeChannel).toHaveBeenCalledTimes(1);
   });

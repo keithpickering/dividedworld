@@ -5,7 +5,7 @@
  * the call is made as the player; the service key, for a card's writes and the live updates
  * that follow each write; a bound on the body; and the headers a browser's preflight asks for.
  */
-import { actDbs, afterTheAnswer, handleAction } from './core.ts';
+import { actDbs, afterTheAnswer, coalesced, handleAction } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';
 import { CORS, boundedJson, environment } from '../_shared/serve.ts';
 import { broadcaster } from '../_shared/broadcast.ts';
@@ -16,6 +16,9 @@ const MOST_BYTES = 512 * 1024;
 
 const answer = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
+
+/** One drain at a time in this isolate (coalesced says why); the service connection it uses carries no player's session. */
+let drainOutbox: (() => Promise<void>) | undefined;
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
@@ -37,7 +40,7 @@ Deno.serve(async (request) => {
   const out = await handleAction({
     dbs, instance: chooseInstance(Deno.env.get('KAYFABB_PROFILE')), body,
     send: live.send,
-    drain: () => sendWaiting(dbs.service, live.deliver),
+    drain: (drainOutbox ??= coalesced(() => sendWaiting(dbs.service, live.deliver))),
     after: (work) => afterTheAnswer(work, { waitUntil: typeof EdgeRuntime !== 'undefined' && EdgeRuntime ? (p) => EdgeRuntime.waitUntil(p) : undefined }),
   });
   return answer(out.status, out.body);

@@ -323,6 +323,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* ----------------------------------------------------------------------- live ---- */
   const threadListeners = new Map<Id, Set<ThreadListener>>();
   const boardListeners = new Map<Id, Set<BoardListener>>();
+  let alertId = 0;
   const accountListeners = new Map<Id, Set<AccountListener>>();
   const reachListeners = new Set<ReachListener>();
   const log: LiveEvent[] = [];
@@ -341,7 +342,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
        for the account that did it. */
     const alert = derivedAlert(act);
     if (alert === null) return;
-    const live = { kind: alert.kind, sub: null, act: act.id, character: alert.character, at: iso(act.at) };
+    const live = { id: ++alertId, kind: alert.kind, sub: null, act: act.id, character: alert.character, at: iso(act.at) };
     send(`account:${alert.account}`, 'alert', () => { for (const l of [...(accountListeners.get(alert.account) ?? [])]) l.onAlert?.(live); });
   };
   /**
@@ -1776,7 +1777,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (a.character !== undefined && characters.get(a.character)?.owner !== account) throw new Error('an alert concerns a character of the account\'s');
       const line = { account, kind: a.kind, sub: a.sub ?? null, act: a.act, character: a.character ?? null, at: a.at ?? now() };
       seededAlerts.push(line);
-      send(`account:${account}`, 'alert', () => { for (const l of [...(accountListeners.get(account) ?? [])]) l.onAlert?.({ kind: line.kind, sub: line.sub, act: line.act, character: line.character, at: iso(line.at) }); });
+      send(`account:${account}`, 'alert', () => { for (const l of [...(accountListeners.get(account) ?? [])]) l.onAlert?.({ id: ++alertId, kind: line.kind, sub: line.sub, act: line.act, character: line.character, at: iso(line.at) }); });
     },
     cards(account, held) { seeded(account).cards = { ...held }; },
     wallet(account, balance) { setWallet(account, balance); },

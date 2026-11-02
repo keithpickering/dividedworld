@@ -2,6 +2,35 @@
 -- `reach`, where a play beyond a post is sent (supabase/migrations/0061_account_channel.sql). Realtime authorizes a listener
 -- by reading realtime.messages under the policies, with the topic it joined set; the shim stands in for that table.
 
+-- First in the file: the racers commit in sessions of their own, so nothing before this may hold a lock on the outbox.
+-- Two drains at the same instant, in two sessions, take different rows: with one row each wanted, each gets its own and none
+-- is taken twice or missed. (A claim without skip locked makes the second wait for the first and leave with nothing.)
+do $$
+declare
+  said text[];
+  claims jsonb;
+begin
+  perform tests.commit($sql$
+    delete from broadcasts_due;
+    insert into broadcasts_due (topic, event, payload) values ('reach', 'effect', '{"n": 1}'), ('reach', 'effect', '{"n": 2}');
+    create table race_claims (racer text, id bigint);
+    grant all on race_claims to service_role;
+  $sql$);
+  said := tests.race_service(
+    $s$insert into race_claims select 'a', (x ->> 'id')::bigint from jsonb_array_elements(due_broadcasts(1)) x$s$,
+    $s$insert into race_claims select 'b', (x ->> 'id')::bigint from jsonb_array_elements(due_broadcasts(1)) x$s$);
+  -- Read in a session of its own, so this transaction holds no lock on the table and it can be dropped: nothing is left behind.
+  select jsonb_agg(jsonb_build_array(r.racer, r.id)) into claims
+  from extensions.dblink(current_setting('kayfabb.scratch_url'), 'select racer, id from race_claims') as r(racer text, id bigint);
+  perform tests.commit($sql$ drop table race_claims; delete from broadcasts_due; $sql$);
+  if said[1] is not null or said[2] is not null then raise exception 'a racing drain failed: %', said; end if;
+  if (select count(*) from jsonb_array_elements(coalesce(claims, '[]')) c where c ->> 0 = 'a') is distinct from 1
+     or (select count(*) from jsonb_array_elements(coalesce(claims, '[]')) c where c ->> 0 = 'b') is distinct from 1 then
+    raise exception 'each of two drains at once takes its own row: %', claims;
+  end if;
+  if (select count(distinct c ->> 1) from jsonb_array_elements(coalesce(claims, '[]')) c) is distinct from 2 then raise exception 'two drains at once took one row twice'; end if;
+end $$;
+
 do $$
 declare
   ann uuid := tests.account('ann');
@@ -93,3 +122,42 @@ begin
   perform broadcasts_sent((select jsonb_agg(id) from broadcasts_due));
   if (select count(*) from broadcasts_due) is distinct from 0 then raise exception 'a sent broadcast is still waiting'; end if;
 end $$;
+
+-- A claim counts: each claim of a row is an attempt, a drain whose send failed releases its rows with a backoff that grows
+-- with the attempts (so a row is not tried again at once, and not given the full lease), a drain mid-way through a long
+-- fallback renews its lease, and a row given up is kept, dead, with its payload and why, and is never handed out again.
+do $$
+declare
+  one jsonb;
+  row_id bigint;
+begin
+  delete from broadcasts_due;
+  perform broadcast_later('reach', 'effect', '{"n": 1}');
+  one := due_broadcasts(10);
+  row_id := (one -> 0 ->> 'id')::bigint;
+  if (one -> 0 ->> 'attempts')::integer is distinct from 1 then raise exception 'a first claim is attempt 1: %', one; end if;
+  -- Released: not due at once, due again after the backoff, and the next claim is attempt 2.
+  perform broadcasts_release(jsonb_build_array(row_id));
+  if (select claimed_until from broadcasts_due where id = row_id) is not distinct from null then raise exception 'a released row keeps a backoff'; end if;
+  if (select claimed_until - clock_timestamp() from broadcasts_due where id = row_id) > interval '1 minute' then raise exception 'the first backoff is short, not the lease'; end if;
+  if jsonb_array_length(due_broadcasts(10)) is distinct from 0 then raise exception 'a released row was due again inside its backoff'; end if;
+  update broadcasts_due set claimed_until = clock_timestamp() - interval '1 second';
+  if (due_broadcasts(10) -> 0 ->> 'attempts')::integer is distinct from 2 then raise exception 'the second claim is attempt 2'; end if;
+  -- A later attempt backs off longer.
+  perform broadcasts_release(jsonb_build_array(row_id));
+  if (select claimed_until - clock_timestamp() from broadcasts_due where id = row_id) <= (interval '4 seconds') then raise exception 'a later attempt backs off longer'; end if;
+  -- Renewed: the lease is the full lease again.
+  update broadcasts_due set claimed_until = clock_timestamp() + interval '1 second';
+  perform broadcasts_renew(jsonb_build_array(row_id));
+  if (select claimed_until - clock_timestamp() from broadcasts_due where id = row_id) < interval '90 seconds' then raise exception 'a renewed claim holds the lease again'; end if;
+  -- Dead: kept in full, never handed out, and sending the others clears nothing of it.
+  perform broadcasts_dead(jsonb_build_array(row_id), 'refused');
+  update broadcasts_due set claimed_until = null;
+  if jsonb_array_length(due_broadcasts(10)) is distinct from 0 then raise exception 'a dead row was handed out'; end if;
+  if (select payload from broadcasts_due where id = row_id) is distinct from '{"n": 1}' or (select dead_why from broadcasts_due where id = row_id) is distinct from 'refused'
+     or (select dead_at from broadcasts_due where id = row_id) is null then
+    raise exception 'a dead row keeps its record';
+  end if;
+  delete from broadcasts_due;
+end $$;
+

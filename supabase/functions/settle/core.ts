@@ -67,7 +67,9 @@ export const MOST_RUN_MS = 60_000;
 
 export async function runSettlement(db: Db, instance: Instance, until: string, options: RunOptions = {}): Promise<SettlementOutcome> {
   const clock = options.clock ?? Date.now;
-  const deliver = options.deliver ?? (async (): Promise<Delivery> => 'unreachable');
+  // With no sender nothing is claimed from the outbox: a claim that is never sent holds its rows for its lease, away from the next run that sends.
+  const deliver = options.deliver;
+  const sendOutbox = async () => { if (deliver) await sendWaiting(db, deliver); };
   if (Number.isNaN(Date.parse(until))) throw new Error(`settle: until is not a time: ${JSON.stringify(until)}`);
   const windows: (Window & { applied: boolean; entries: number; masks?: string; reveal?: string })[] = [];
   const started = clock();
@@ -79,7 +81,7 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     const window = await db.rpc<Window | null>('next_settlement_window', { until });
     if (!window) break;
     if (windows.length === MOST_WINDOWS_PER_RUN || (windows.length && clock() - started >= MOST_RUN_MS)) {
-      await sendWaiting(db, deliver);
+      await sendOutbox();
       return outcome(windows, true);
     }
     tuned ??= await withDatabaseSettings(instance, db);
@@ -102,7 +104,7 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     if (applied.reveal) console.error('settle: the season was not revealed at', window.end, applied.reveal);
     windows.push({ ...window, applied: applied.applied, entries: result.entries.length, ...(applied.masks ? { masks: applied.masks } : {}), ...(applied.reveal ? { reveal: applied.reveal } : {}) });
   }
-  await sendWaiting(db, deliver);
+  await sendOutbox();
   return windows.length ? outcome(windows, false) : { status: 'nothing to settle', until };
 }
 

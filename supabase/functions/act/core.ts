@@ -222,3 +222,24 @@ export async function handleAction(o: {
   });
   return out;
 }
+/**
+ * Makes a drain of the outbox one at a time per isolate. Every write starts a drain (so that none differs by what was queued), which
+ * at a busy instance is a drain per write, each a database call and, when it finds something, a send. With one in flight, a write
+ * that comes meanwhile only marks that another is due, and one follow-up runs when the first ends, so whatever any write queued is
+ * sent by a drain that began after it, and a burst costs two drains, not one per write. The callers' promises settle when the
+ * drain that covers them has, so a runtime that waits on one (waitUntil) stays up for the work. What a drain throws is logged.
+ */
+export function coalesced(run: () => Promise<void>): () => Promise<void> {
+  let running: Promise<void> | null = null;
+  let again = false;
+  return () => {
+    if (running) { again = true; return running; }
+    running = (async () => {
+      do {
+        again = false;
+        await run().catch((e) => console.error('drain threw', e));
+      } while (again);
+    })().finally(() => { running = null; });
+    return running;
+  };
+}

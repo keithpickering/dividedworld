@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, afterTheAnswer, handleAction, runAction } from './core.ts';
+import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, afterTheAnswer, coalesced, handleAction, runAction } from './core.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 import { landsOn } from '../../../engine/rules/cards.ts';
@@ -394,4 +394,24 @@ test('a play beyond a post is also sent on reach, as the public Act and nothing 
   const onPost = pair({ whoami, card_target_reach: { act: target, kind: 'post', length: 10, effects: [] }, play_card: { id: 'c', kind: 'card', thread, payload: { card: 'whoops' } } });
   const plain = await runAction(onPost.dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } });
   assert.ok(!plain.broadcasts?.some((b) => b.topic === 'reach'));
+});
+
+test('drains started while one is in flight are one follow-up, not one each; a drain that throws does not stop the next', async () => {
+  let runs = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const drain = coalesced(async () => { runs++; await gate; });
+  const first = drain();
+  await wait();
+  assert.equal(runs, 1);
+  const many = [drain(), drain(), drain(), drain()];
+  await wait();
+  assert.equal(runs, 1, 'writes during a drain start no drain of their own');
+  release();
+  await Promise.all([first, ...many]);
+  assert.equal(runs, 2, 'one follow-up covers every write that came meanwhile');
+  const quiet = coalesced(async () => { throw new Error('realtime is down'); });
+  const log = console.error;
+  console.error = () => {};
+  try { await quiet(); await quiet(); } finally { console.error = log; }
 });

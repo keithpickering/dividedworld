@@ -91,7 +91,7 @@ begin
     raise exception 'a quote is Ann''s, about Bob''s new post and her character: %', to_jsonb(r);
   end if;
   if (select count(*) from broadcasts_due where topic = 'account:' || ann) is distinct from 1 then raise exception 'a quote queued % broadcasts on Ann''s channel', (select count(*) from broadcasts_due where topic = 'account:' || ann); end if;
-  if (select payload from broadcasts_due where topic = 'account:' || ann) is distinct from jsonb_build_object('kind', 'quote', 'sub', null, 'act', r.act, 'character', a1, 'at', r.at)
+  if (select payload from broadcasts_due where topic = 'account:' || ann) is distinct from jsonb_build_object('id', r.id, 'kind', 'quote', 'sub', null, 'act', r.act, 'character', a1, 'at', r.at)
      or (select event from broadcasts_due where topic = 'account:' || ann) is distinct from 'alert' then
     raise exception 'the broadcast is the alert''s public projection: %', (select to_jsonb(x) from broadcasts_due x where topic = 'account:' || ann);
   end if;
@@ -355,7 +355,7 @@ begin
     raise exception 'a reaction that springs a trap is the setter''s one trapSprang: %', (select jsonb_agg(to_jsonb(x)) from alerts x);
   end if;
   if (select count(*) from broadcasts_due where topic like 'account:%') is distinct from 1 then raise exception 'the spring queued % broadcasts, not 1', pg_temp.queued(); end if;
-  if (select array_agg(k order by k) from broadcasts_due b, jsonb_object_keys(b.payload) k where b.topic like 'account:%') is distinct from array['act', 'at', 'character', 'kind', 'sub'] then
+  if (select array_agg(k order by k) from broadcasts_due b, jsonb_object_keys(b.payload) k where b.topic like 'account:%') is distinct from array['act', 'at', 'character', 'id', 'kind', 'sub'] then
     raise exception 'the broadcast holds more than the public projection: %', (select payload from broadcasts_due where topic like 'account:%');
   end if;
   if (select array_agg(c.column_name::text order by c.ordinal_position) from information_schema.columns c where c.table_name = 'alerts' and c.table_schema = 'public')

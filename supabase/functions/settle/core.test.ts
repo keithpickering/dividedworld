@@ -49,6 +49,9 @@ function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, u
       if (fn === 'instance_settings') return databaseSettings as T;
       if (fn === 'due_broadcasts') return outbox.slice(0, Number(args.most)) as T;
       if (fn === 'broadcasts_sent') { const ids = args.ids as number[]; outbox.splice(0, outbox.length, ...outbox.filter((m) => !ids.includes(m.id))); return ids.length as T; }
+      // A release keeps the rows waiting; a row given up is dead, which the SQL keeps but no longer hands out (0061_account_channel.sql).
+      if (fn === 'broadcasts_release' || fn === 'broadcasts_renew') return (args.ids as number[]).length as T;
+      if (fn === 'broadcasts_dead') { const ids = args.ids as number[]; outbox.splice(0, outbox.length, ...outbox.filter((m) => !ids.includes(m.id))); return ids.length as T; }
       if (fn === 'apply_settlement') {
         const key = `${args.window_start}/${args.window_end}`;
         // Another run applied this window first.
@@ -68,7 +71,8 @@ test('a run settles the next window: reads its input, runs the instance\'s class
   const { db, calls } = fakeDb();
   const out = await runSettlement(db, instance, new Date(TO).toISOString());
   assert.equal(out.status, 'applied');
-  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement', 'next_settlement_window', 'due_broadcasts']);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement', 'next_settlement_window']);
+  // With no sender, the outbox is not even claimed: a claim nobody sends would hold the rows for its lease (a run that sends comes after).
   const apply = calls[3]!.args;
   assert.deepEqual(apply.entries, [
     // Heat: Cat's, Eve's and Fay's whole votes and half of Dee's; a shrug: the other half of Dee's.
@@ -121,7 +125,7 @@ test('a database with no economy row is refused, never settled on the code\'s nu
 test('a run with nothing to settle reads no settings, and sends what still waits to be sent', async () => {
   const { db, calls } = fakeDb();
   await runSettlement(db, instance, new Date(FROM).toISOString());
-  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'due_broadcasts']);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window']);
 });
 
 test('what a settlement posted is sent live from the outbox, then cleared; a failed send leaves it for the next run', async () => {
