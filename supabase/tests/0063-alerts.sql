@@ -15,11 +15,12 @@ end $$;
 
 create function pg_temp.cards() returns void language plpgsql as $$
 begin
-  update settings set value = value || '{"glint.price": 100, "marquee.price": 100, "quake.price": 100, "quoter.price": 100, "sweetie.price": 10}' where key = 'economy';
+  update settings set value = value || '{"glint.price": 100, "marquee.price": 100, "quake.price": 100, "quoter.price": 100, "catcher.price": 100, "sweetie.price": 10}' where key = 'economy';
   insert into card_kinds (key, name, alignment, price_setting, rarity, play, reaches, lasts, trap) values
     ('glint', 'Glint', 'pepperoni', 'glint.price', 'uncommon', 'cast', '{character}', interval '7 days', null),
     ('marquee', 'Marquee', 'sweet', 'marquee.price', 'rare', 'cast', '{thread}', interval '1 day', null),
     ('quake', 'Quake', 'salty', 'quake.price', 'legendary', 'cast', '{board}', interval '1 day', null),
+    ('catcher', 'Catcher', 'salty', 'catcher.price', 'rare', 'set', '{post}', null, '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}'),
     ('quoter', 'Quoter', 'salty', 'quoter.price', 'uncommon', 'set', '{post}', null, '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "sweetie"}}')
   on conflict (key) do nothing;
 end $$;
@@ -244,6 +245,83 @@ begin
   if (select array_agg(k order by k) from jsonb_object_keys(said_owned) k) is distinct from (select array_agg(k order by k) from jsonb_object_keys(said_staff) k) then
     raise exception 'the answers differ in their keys';
   end if;
+end $$;
+
+-- ---- A card on a thread: the same answer whoever started it ----
+do $$
+declare
+  ann uuid := tests.account('th-ann'); bob uuid := tests.account('th-bob');
+  a1 uuid := tests.character(ann, 'Th Ann One'); b1 uuid := tests.character(bob, 'Th Bob One'); b2 uuid := tests.character(bob, 'Th Bob Two');
+  staff uuid;
+  t_owned uuid := tests.thread('Th owned'); t_staff uuid := tests.thread('Th staff'); t_mine uuid := tests.thread('Th mine');
+  said_owned jsonb; said_staff jsonb; said_mine jsonb;
+begin
+  perform pg_temp.cards();
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Th Bot', 'th-bot', 'bot', now()) returning id into staff;
+  perform tests.post(a1, t_owned, 'Ann starts.');
+  perform tests.post(b2, t_mine, 'Bob Two starts.');
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  perform tests.post(staff, t_staff, 'The bot starts.');
+  perform set_config('kayfabb.staff_writer', '', true);
+  perform pg_temp.hand(bob, 'marquee', 'marquee', 'marquee');
+  said_owned := play_card(bob, 'marquee', b1, t_owned, '{}', 0, '', 'thread');
+  said_staff := play_card(bob, 'marquee', b1, t_staff, '{}', 0, '', 'thread');
+  said_mine := play_card(bob, 'marquee', b1, t_mine, '{}', 0, '', 'thread');
+  if pg_temp.shape(said_owned) is distinct from pg_temp.shape(said_staff) or pg_temp.shape(said_owned) is distinct from pg_temp.shape(said_mine) then
+    raise exception 'the answer from play_card on a thread differs with who started it: % / % / %', pg_temp.shape(said_owned), pg_temp.shape(said_staff), pg_temp.shape(said_mine);
+  end if;
+  if said_owned::text ~* 'alert' or said_staff::text ~* 'alert' or said_mine::text ~* 'alert' then raise exception 'play_card''s answer on a thread holds the alert'; end if;
+  if (select count(*) from alerts where account = ann and act = (said_owned ->> 'id')::uuid) <> 1
+     or exists (select 1 from alerts where act in ((said_staff ->> 'id')::uuid, (said_mine ->> 'id')::uuid)) then
+    raise exception 'only the thread owned by another account wrote an alert';
+  end if;
+end $$;
+
+-- ---- A trap sprung by a cast, and one sprung with no one named as acting ----
+do $$
+declare
+  ann uuid := tests.account('cs-ann'); bob uuid := tests.account('cs-bob');
+  a1 uuid := tests.character(ann, 'Cs Ann One'); a2 uuid := tests.character(ann, 'Cs Ann Two');
+  b1 uuid := tests.character(bob, 'Cs Bob One'); b2 uuid := tests.character(bob, 'Cs Bob Two');
+  t uuid := tests.thread('Cs');
+  anns uuid; bobs uuid; third uuid; reply uuid; said jsonb; r record;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'catcher', 'quoter', 'sweetie');
+  perform pg_temp.hand(bob, 'catcher', 'sweetie');
+  insert into wallets (account, balance) values (ann, 600), (bob, 600);
+  anns := tests.post(a1, t, 'Ann''s trapped post.');
+  bobs := tests.post(b2, t, 'Bob Two''s trapped post.');
+  perform set_card(ann, 'catcher', a1, anns, '{}', 0);
+  perform set_card(bob, 'catcher', b2, bobs, '{}', 0);
+
+  -- Bob's cast on Ann's trapped post springs her trap: her trapSprang (about the spring), beside her cardOnYours.
+  said := play_card(bob, 'sweetie', b1, anns, '{}', 0);
+  if said -> 'sprung' is null then raise exception 'the cast did not spring the trap: %', said; end if;
+  select * into r from alerts where kind = 'trapSprang' and account = ann;
+  if (select count(*) from alerts where kind = 'trapSprang') <> 1 or r.character <> a1 or r.act <> (said -> 'sprung' ->> 'id')::uuid then
+    raise exception 'a cast that springs another''s trap is the setter''s trapSprang: %', (select jsonb_agg(to_jsonb(x)) from alerts x where kind = 'trapSprang');
+  end if;
+  delete from broadcasts_due where topic like 'account:%'; delete from alerts;
+
+  -- Bob's other mask casts on Bob's own trapped post: his own doing, no alert at all.
+  perform pg_temp.hand(bob, 'sweetie');
+  said := play_card(bob, 'sweetie', b1, bobs, '{}', 0);
+  if said -> 'sprung' is null then raise exception 'the own-mask cast did not spring the trap: %', said; end if;
+  if exists (select 1 from alerts) or pg_temp.queued() <> 0 then raise exception 'a cast on one''s own mask''s trap wrote % alerts', (select count(*) from alerts); end if;
+
+  -- With no caster and no signed-in player (the rules name no actor), the setter is still told: the one thing it cannot know is
+  -- that the account setting it off is the setter's own, so this pins that it writes the setter's trapSprang and, since the
+  -- setter's owner is the struck post's owner, no trapStruck.
+  third := tests.post(a1, t, 'A third trapped post.');
+  perform set_card(ann, 'quoter', a1, third, '{}', 0);
+  reply := tests.post(a2, t, 'Ann Two replies.');
+  said := spring_traps('quote', third, reply);
+  if said is null then raise exception 'the direct spring did not spring: %', said; end if;
+  if (select count(*) from alerts where kind = 'trapSprang' and account = ann and act = (said ->> 'id')::uuid) <> 1 then
+    raise exception 'a spring with no named actor writes the setter''s trapSprang: %', (select jsonb_agg(to_jsonb(x)) from alerts x);
+  end if;
+  if exists (select 1 from alerts where kind = 'trapStruck') then raise exception 'the setter''s owner was written a trapStruck for their own mask''s doing'; end if;
 end $$;
 
 -- ---- Who reads a row, and who may write one ----
