@@ -119,7 +119,28 @@ describe("Feelin' Fab", () => {
     }
     const css = read('fab.css').replace(/\/\*[\s\S]*?\*\//gu, '');
     expect(css).toMatch(/\.dw-fab\[data-kb-moving="false"\][^{]*\{[^}]*animation:\s*none/u);
-    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/u);
+    /* The device's setting is read once, by useMotionReduced (the player's override first); no bare media query may stop the animation past a player's "full". */
+    expect(css).not.toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{(?![^{]*:root:not\(\[data-kb-motion=)/u);
+  });
+
+  test('a player who chose full motion moves under a device that asks for reduced motion', () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('prefers-reduced-motion'), media: q, addEventListener: () => {}, removeEventListener: () => {} }));
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    render(<FeelinFabEffect {...props(1)} />);
+    expect(box()).toHaveAttribute('data-kb-moving', 'true');
+    expect(box().style.getPropertyValue('--dw-fab-still')).toBe('');
+    expect(box()).not.toHaveAttribute('data-kb-still');
+    for (const t of box().querySelectorAll<HTMLElement>('.dw-fab-twinkle')) expect(t.style.animationName).not.toBe('none');
+    const css = read('fab.css').replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(css).not.toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{(?![^{]*:root:not\(\[data-kb-motion=)/u);
+  });
+
+  test('with no choice made, the device\'s reduced motion holds the post still', () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('prefers-reduced-motion'), media: q, addEventListener: () => {}, removeEventListener: () => {} }));
+    document.documentElement.removeAttribute('data-kb-motion');
+    render(<FeelinFabEffect {...props(1)} />);
+    expect(box()).toHaveAttribute('data-kb-moving', 'false');
+    expect(box().style.getPropertyValue('--dw-fab-still')).toMatch(/^\d+$/u);
   });
 
   test('the still stop is picked in the reader\'s own browser: it is never sent, stored or read from the play', () => {
@@ -191,6 +212,18 @@ describe("Feelin' Fab's palettes", () => {
     for (const mode of lightModes) expect(ratio(tokens[mode]['--kb-fg']!, FAB_TWINKLE.light), `${mode} twinkle`).toBeGreaterThanOrEqual(4.5);
     for (const mode of darkModes) expect(ratio(tokens[mode]['--kb-fg']!, FAB_TWINKLE.dark), `${mode} twinkle`).toBeGreaterThanOrEqual(4.5);
     expect(stopsAreReadable(tokens, FAB_STOPS, FAB_TWINKLE)).toEqual([]);
+  });
+
+  test('the post\'s links, visited links and muted words (a quote\'s byline) hold 4.5:1 on every stop and twinkle too, in both themes', () => {
+    const words = ['--kb-link', '--kb-link-visited', '--kb-muted'] as const;
+    const bad: string[] = [];
+    for (const [board, modes] of [['light', lightModes], ['dark', darkModes]] as const) {
+      for (const mode of modes) for (const w of words) for (const ink of [...FAB_STOPS[board], FAB_TWINKLE[board]]) {
+        const r = ratio(tokens[mode][w]!, ink);
+        if (r < 4.5) bad.push(`${mode}: ${w} ${tokens[mode][w]} on ${ink} is ${r.toFixed(2)}:1`);
+      }
+    }
+    expect(bad).toEqual([]);
   });
 
   test('the check is red on a stop that fails, and names it', () => {

@@ -4,7 +4,7 @@
  * light board, --dw-fab-dark-N for the dark), picked here for the mode the way the theme contract picks (tools/check-theme.mjs): light
  * on the base, dark under the device's setting unless the player chose light, and again when the player chose dark. The words keep a
  * text shadow in the board's ground. Animation moves a background position or a twinkle's opacity and scale, never layout, and is
- * paused while the post is out of view (data-kb-running) and off under reduced motion (data-kb-moving, or the device's own setting).
+ * paused while the post is out of view (data-kb-running) and off under reduced motion (data-kb-moving, which Effect.tsx reads as the player's setting, else the device's; no media query here, so a player's "full" holds).
  * Level 1 sits on the stop Effect.tsx chose (data-kb-still) when held still.
  */
 .dw-fab {
@@ -110,10 +110,4 @@
 .dw-fab[data-kb-moving="false"] .dw-fab-ground,
 .dw-fab[data-kb-moving="false"] .dw-fab-twinkle {
   animation: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .dw-fab-ground,
-  .dw-fab-twinkle {
-    animation: none;
-  }
 }

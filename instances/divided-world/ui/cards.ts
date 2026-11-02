@@ -142,6 +142,6 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     hint: "A Feelin' Fab: the more of them on a post, the more it glows.",
     summary: 'Gives a post a rainbow behind its words. Up to three can stack, and each makes it grander.',
     describe: (settings: Settings) =>
-      `A Sweet card, common. It gives a post a rainbow behind its words, which stay as readable as ever. One makes the whole post's background drift slowly through the rainbow; two make it an animated rainbow band; three make it an animated rainbow that spreads out from a point. A few twinkles come with it. Up to three can be on one post, and it stays as long as the post does. It costs ${orbs(settings.economy['feelinFab.price'] ?? 0)} to buy, and nothing more to play.`,
+      `A Sweet card, common. It gives a post a rainbow behind its words, which stay as readable as ever. One makes the whole post's background drift slowly through the rainbow; two make it an animated rainbow band; three make it an animated radial rainbow, with the colors spreading out from the middle. A few twinkles come with it. Up to three can be on one post, and it stays as long as the post does. It costs ${orbs(settings.economy['feelinFab.price'] ?? 0)} to buy, and nothing more to play.`,
   },
 ] satisfies CardUi[]);

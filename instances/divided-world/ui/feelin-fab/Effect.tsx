@@ -3,7 +3,7 @@
  * Feelin' Fabs up on the post, one to three. Level 1 cycles the rainbow's stops slowly; level 2 is an animated linear rainbow; level 3
  * an animated radial one; each with twinkles at spots placed from the plays' own ids, so every reader sees the same ones, and more of
  * them on the higher levels. It is decoration, never an obstacle: the words are drawn above the rainbow with a text shadow in the
- * board's ground, and every stop holds the theme's post text at 4.5:1 (`stopsAreReadable`, which the effect's test drives red). So its
+ * board's ground, and every stop holds the theme's post text, links, visited links and muted words (a quote's byline) at 4.5:1 (`stopsAreReadable`, which the effect's test drives red). So its
  * accessible path is reduced motion alone ("An accessible path costs what the obstacle costs"): level 1 sits on one stop, chosen at
  * random on each load in the reader's own browser and never stored or sent; levels 2 and 3 stay gradients; the twinkles stay where
  * they are. The player's reduced motion is read live. The animation runs only while the post is in view (inView.ts), as a moving
@@ -21,8 +21,8 @@ import './fab.css';
 
 /** The rainbow's stops, red to violet, for each board: pastels under black text, deep colors under white. */
 export const FAB_STOPS: { readonly light: readonly string[]; readonly dark: readonly string[] } = Object.freeze({
-  light: Object.freeze(['#ff9aa2', '#ffc09f', '#fff2a0', '#a8e6a1', '#9fd3ff', '#d0b3ff']),
-  dark: Object.freeze(['#b0102a', '#a4470a', '#6e5a00', '#146c2e', '#1a4fb0', '#6a2bbd']),
+  light: Object.freeze(['#ffb9be', '#ffc09f', '#fff2a0', '#a8e6a1', '#9fd3ff', '#d8c0ff']),
+  dark: Object.freeze(['#7f0c1e', '#682d06', '#4a3d00', '#0d471e', '#133b84', '#522191']),
 });
 /** The twinkles' ink on each board: white on the pastels, black on the deep colors, so a twinkle never lessens the text's contrast. */
 export const FAB_TWINKLE = Object.freeze({ light: '#ffffff', dark: '#000000' });
@@ -32,7 +32,10 @@ const TWINKLES = [0, 4, 8, 10] as const;
 const MOST = 3;
 const SHAPE = ['', 'cycle', 'linear', 'radial'] as const;
 
-/** Every stop and twinkle of the palettes that fails 4.5:1 against the post text of its board, in words; none when all hold. */
+/** The tokens that color text inside a post: its words, links, visited links, and muted words such as a quote's byline. */
+const POST_INK = ['--kb-fg', '--kb-link', '--kb-link-visited', '--kb-muted'] as const;
+
+/** Every stop and twinkle of the palettes that fails 4.5:1 against any text color inside a post on its board, in words; none when all hold. */
 export function stopsAreReadable(
   tokens: Readonly<Record<Mode, Tokens>>,
   stops: { readonly light: readonly string[]; readonly dark: readonly string[] },
@@ -43,8 +46,10 @@ export function stopsAreReadable(
   for (const [board, modes] of boards) {
     for (const ink of [...stops[board], twinkle[board]]) {
       for (const mode of modes) {
-        const r = ratio(tokens[mode]['--kb-fg']!, ink);
-        if (r < 4.5) failures.push(`${board} palette: ${ink} is ${r.toFixed(2)}:1 against the post text in ${mode}, under 4.5:1`);
+        for (const token of POST_INK) {
+          const r = ratio(tokens[mode][token]!, ink);
+          if (r < 4.5) failures.push(`${board} palette: ${ink} is ${r.toFixed(2)}:1 against ${token} in ${mode}, under 4.5:1`);
+        }
       }
     }
   }
