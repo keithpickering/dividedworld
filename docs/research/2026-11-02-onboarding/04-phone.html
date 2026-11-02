@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1330">
+<title>Onboarding on a phone</title>
+<!-- A board of the onboarding design session (docs/plans/2026-11-02-onboarding-design.md): three phone screens at
+     390 by 844, drawn over the alerts session's 05-phone.html: the HUD tour's last step docked as a sheet above the
+     HUD with the cut-out over Hand, the welcome page stacked, and the Strategy Guide with its contents folded into a
+     menu. The copy is a draft for the owner's review. A reference for the look, not code to copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#2a2633}
+a{color:inherit}
+:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.frame{position:absolute;top:40px;width:390px;height:844px;overflow:hidden;box-shadow:0 0 0 1px #000,0 20px 40px rgba(0,0,0,.5)}
+.cap{position:absolute;top:8px;margin:0;font:700 18px 'Barlow Condensed',sans-serif;letter-spacing:1px;color:#e4def7}
+.g{font-family:'Barlow Condensed',sans-serif;color:#f1ecff}
+.mbar{position:relative;z-index:2;background:rgba(7,5,13,.92);border-bottom:1px solid rgba(201,248,255,.5);box-shadow:0 1px 12px rgba(25,227,255,.35);padding:10px 16px 0}
+.back{display:inline-flex;align-items:center;min-height:48px;padding:0 14px;transform:skewX(-10deg);border:1px solid #fff;text-decoration:none;font:800 17px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#fff}
+.back b,.ptab b{display:inline-block;transform:skewX(10deg)}
+.strip{display:flex;gap:2px;overflow:hidden;margin:8px -16px 0;padding:0 16px;white-space:nowrap}
+.ptab{display:inline-flex;align-items:center;min-height:48px;padding:0 12px;transform:skewX(-10deg);text-decoration:none;font:800 17px 'Barlow Condensed',sans-serif;letter-spacing:1.2px;color:#e4def7;flex:none}
+.ptab.cur{background:rgba(25,227,255,.16);box-shadow:inset 0 -3px 0 #19e3ff;color:#fff}
+.ph1{margin:18px 16px 0;font:56px/1 Anton,Impact,sans-serif;letter-spacing:.5px;text-shadow:0 0 22px rgba(25,227,255,.35)}
+.plede{margin:8px 16px 0;font:600 17px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.lnk{color:#c9f8ff;text-underline-offset:3px}
+.prow{display:grid;grid-template-columns:30px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid rgba(241,236,255,.2)}
+.prow svg{width:28px;height:28px}
+.prow .l{margin:0;font:800 19px/1.3 'Barlow Condensed',sans-serif}
+.prow .d{margin:3px 0 0;font:500 17px/1.45 'Barlow Condensed',sans-serif;color:#e4def7}
+.prow .m{margin:4px 0 0;font:600 16px 'Barlow Condensed',sans-serif;color:#c9f8ff;letter-spacing:.5px}
+.pdiv{display:flex;align-items:center;gap:10px;margin:16px 0 0;font:800 17px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#ffd93d}
+.pdiv::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,#ffd93d,rgba(255,217,61,0))}
+.ptoast{display:grid;grid-template-columns:30px 1fr 44px;gap:10px;align-items:start;padding:10px 10px 10px 12px;background:rgba(10,6,20,.96);clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));outline:1px solid var(--ink);outline-offset:-1px}
+.ptoast svg.i{width:28px;height:28px}
+.ptoast b{display:block;font:800 18px/1.25 'Barlow Condensed',sans-serif}
+.ptoast span{display:block;font:600 16px/1.35 'Barlow Condensed',sans-serif;color:#e4def7}
+.ptoast button{width:44px;height:44px;background:transparent;border:1px solid rgba(241,236,255,.45);display:flex;align-items:center;justify-content:center}
+.pill{display:inline-flex;align-items:center;min-height:48px;padding:0 12px;transform:skewX(-10deg);border:1px solid rgba(241,236,255,.6);text-decoration:none;font:800 17px 'Barlow Condensed',sans-serif;letter-spacing:1.2px;color:#f1ecff}
+.pill b{display:inline-block;transform:skewX(10deg)}
+.pill.on{background:#19e3ff;color:#03141a;border-color:#19e3ff}
+
+.pdim{position:absolute;inset:0;z-index:20;background:rgba(3,2,8,.72);backdrop-filter:blur(5px) saturate(.7);-webkit-backdrop-filter:blur(5px) saturate(.7);clip-path:path(evenodd,'M0 0H390V844H0Z M304 722H382V782H304Z')}
+.pring{position:absolute;z-index:21;left:304px;top:722px;width:78px;height:60px;box-sizing:border-box;border:2px solid #c9f8ff;box-shadow:0 0 0 1px #19e3ff,0 0 18px rgba(25,227,255,.7)}
+.psheet{position:absolute;z-index:22;left:8px;right:8px;bottom:152px;background:rgba(10,6,20,.97);clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));outline:1px solid #c9b8ff;outline-offset:-1px;padding:16px 16px 14px}
+.psheet .who{display:flex;gap:10px;align-items:center}
+.pava{width:46px;height:46px;flex:none;border:2px solid #c9b8ff;box-shadow:0 0 10px rgba(201,184,255,.5)}
+.pava img{display:block;width:100%;height:100%;image-rendering:pixelated}
+.psheet h2{margin:0;font:26px/1 Anton,sans-serif}
+.psheet .who span{display:block;font:700 16px 'Barlow Condensed',sans-serif;letter-spacing:1.2px;color:#d9ceff}
+.psheet p{margin:10px 0 0;font:500 18px/1.45 'Barlow Condensed',sans-serif}
+.psheet .acts{display:flex;gap:8px;align-items:center;margin-top:12px}
+.psheet .acts .s{margin-right:auto;font:700 17px 'Barlow Condensed',sans-serif;letter-spacing:1.5px;color:#e4def7}
+.parrow{position:absolute;z-index:22;left:331px;top:692px;border-left:12px solid transparent;border-right:12px solid transparent;border-top:14px solid #c9b8ff}
+.wseg{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.wrow{padding:10px 0;border-top:1px solid rgba(241,236,255,.2)}
+.wrow b{display:block;font:800 18px 'Barlow Condensed',sans-serif;letter-spacing:1.2px}
+.bigbtn{display:flex;align-items:center;justify-content:center;min-height:56px;transform:skewX(-10deg);background:#19e3ff;color:#03141a;font:22px/1 Anton,sans-serif;letter-spacing:1px;text-decoration:none;box-shadow:0 0 20px rgba(25,227,255,.55)}
+.bigbtn b{display:inline-block;transform:skewX(10deg);font-weight:400}
+.gm{display:grid;grid-template-columns:24px 24px;grid-template-rows:24px 24px;gap:3px;flex:none}
+.gm span{border:1px solid rgba(241,236,255,.35);display:flex;align-items:center;justify-content:center;font:800 16px/1 'Barlow Condensed',sans-serif}
+.gm .e{background:rgba(255,217,61,.2);border-color:#ffd93d;color:#ffd93d}.gm .h{background:rgba(255,61,127,.16);border-color:#ff7aa5;color:#ff9cc0}
+</style>
+</head>
+<body>
+<div style="position: relative; width: 1330px; height: 924px">
+<p class="cap" style="left: 40px">BOARD · THE HUD TOUR, STEP 3</p><p class="cap" style="left: 470px">WELCOME</p><p class="cap" style="left: 900px">STRATEGY GUIDE</p>
+<div class="frame" style="left: 40px; background: #fff; color: #000; font: 13px/1.5 Verdana, Geneva, sans-serif">
+  <header style="display: flex; justify-content: space-between; align-items: center; padding: 6px 16px; border-bottom: 1px solid #000"><a href="#" style="font: bold 17px 'Courier New', Courier, monospace; letter-spacing: 1px; text-decoration: none">DIVIDED WORLD</a></header>
+  <p style="margin: 8px 16px 4px; font-size: 11px"><a href="#">General</a> » who keeps splatting my posts</p>
+  <h1 style="margin: 0 16px 8px; font: bold 16px 'Courier New', Courier, monospace">who keeps splatting my posts</h1>
+  <article style="margin: 0 16px; border: 1px solid #000">
+    <div style="display: flex; justify-content: space-between; padding: 4px 8px; border-bottom: 1px solid #000; font-size: 11px"><b><a href="#">Mrs. Hooligan</a></b><span style="color: #555">Oct 29, 9:20 pm · #42</span></div>
+    <div style="padding: 8px">
+      <blockquote style="margin: 0 0 8px; border: 1px solid #000; background: #f2f2f2; padding: 4px 8px; font-size: 11px"><b>Pipewrench wrote:</b><br>Can confirm Mrs. Hooligan has never once been seen in the same thread as a bucket of ink.</blockquote>
+      <p style="margin: 0 0 8px">Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I'm not.</p>
+      <p style="margin: 0">Also you double-posted the changelog in the other thread so honestly it's a public service.</p>
+    </div>
+    <div style="display: flex; gap: 6px; padding: 4px 8px; border-top: 1px solid #000; font-size: 11px"><span style="border: 1px solid #000; padding: 0 5px">😡 3</span><span style="border: 1px solid #000; padding: 0 5px">🍅 2</span><button style="font: 11px Verdana; background: #fff; border: 1px solid #000; min-height: 32px">React</button></div>
+  </article>
+  <section class="g" aria-label="Game HUD" style="position: absolute; left: 0; right: 0; bottom: 0; height: 124px; z-index: 5; border-top: 1.5px solid #c9f8ff; box-shadow: 0 -2px 18px rgba(25,227,255,.6); overflow: hidden; background: #07050d">
+    <svg aria-hidden="true" width="390" height="124" style="position: absolute; left: 0; top: 0">
+      <defs>
+        <filter id="a9" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.009" numOctaves="4" seed="66"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>
+        <filter id="b9" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="3" seed="8"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="12"></feGaussianBlur></filter>
+        <filter id="s9" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="40"></feGaussianBlur></filter>
+        <mask id="m9" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="124"><rect width="390" height="124" fill="#ffffff"></rect><rect x="60" y="-60" width="400" height="244" fill="#000000" opacity="0.85" filter="url(#s9)"></rect></mask>
+      </defs>
+      <rect width="390" height="124" fill="#07050d"></rect>
+      <g mask="url(#m9)"><rect width="390" height="124" filter="url(#a9)" opacity="0.95"></rect><rect width="390" height="124" filter="url(#b9)" opacity="0.5"></rect></g>
+    </svg>
+    <div style="position: relative; display: flex; gap: 8px; align-items: center; padding: 8px 16px 0">
+      <div style="width: 44px; height: 44px; flex: none; border: 2px solid #19e3ff; box-shadow: 0 0 12px rgba(25,227,255,.6); background: repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 5px, transparent 5px 10px), #120b22"></div>
+      <label style="flex: 1; min-width: 0"><span style="display: block; font: 600 16px 'Barlow Condensed', sans-serif; letter-spacing: 1.2px; color: #e4def7">POSTING AS</span>
+        <select style="width: 100%; font: 19px/1 Anton, Impact, sans-serif; color: #f1ecff; background: transparent; border: 0; border-bottom: 1px solid #19e3ff; padding: 0; min-height: 44px"><option>PIPEWRENCH</option></select></label>
+      <a href="#" aria-label="Alerts" style="flex: none; position: relative; width: 52px; height: 48px; transform: skewX(-10deg); background: rgba(10,6,20,.88); border: 1px solid #ffd93d; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 14px rgba(255,217,61,.45)">
+        <svg aria-hidden="true" width="22" height="24" viewBox="0 0 22 24" style="transform: skewX(10deg)"><path d="M11 2.5c-3.6 0-6.2 2.8-6.2 6.4v4.6L2.5 17.6h17l-2.3-4.1V8.9c0-3.6-2.6-6.4-6.2-6.4z" fill="none" stroke="#ffd93d" stroke-width="2" stroke-linejoin="round"/><path d="M8.2 20.2a2.9 2.9 0 0 0 5.6 0" fill="none" stroke="#ffd93d" stroke-width="2" stroke-linecap="round"/></svg>
+        
+      </a>
+      <button aria-label="Menu" style="flex: none; min-width: 60px; height: 48px; transform: skewX(-10deg); background: rgba(10,6,20,.88); border: 1px solid #19e3ff; color: #f1ecff; box-shadow: 0 0 12px rgba(25,227,255,.5)"><span style="display: inline-block; transform: skewX(10deg); font: 17px/1 Anton, Impact, sans-serif">MENU</span></button>
+      <button aria-label="Hand, 1 card" style="flex: none; min-width: 60px; height: 48px; transform: skewX(-10deg); background: #ff3d7f; border: 0; color: #14030a; box-shadow: 0 0 18px rgba(255,61,127,.7)"><span style="display: inline-block; transform: skewX(10deg); font: 17px/1 Anton, Impact, sans-serif">HAND 1</span></button>
+    </div>
+    <div style="position: relative; display: flex; gap: 8px; align-items: center; padding: 10px 16px 0; font: 600 16px 'Barlow Condensed', sans-serif; color: #e4def7">AURA · one orb, the welcome gift <span style="margin-left: auto; font: 26px/1 Anton, Impact, sans-serif; color: #f1ecff">1.00</span></div>
+  </section>
+  <div class="pdim" aria-hidden="true"></div>
+  <div class="pring" aria-hidden="true"></div>
+  <div class="parrow" aria-hidden="true"></div>
+  <section class="psheet g" role="dialog" aria-modal="true" aria-labelledby="ps-h">
+    <div class="who"><div class="pava"><img src="assets/gabe-avatar.png" alt=""></div><div><h2 id="ps-h">THIS IS YOUR HAND</h2><span>GABE · THE HUD, 3 OF 3</span></div></div>
+    <p>Cards live here, shared by all your characters. We put one in to start. Open it, arm a card, and pick where it lands.</p>
+    <div class="acts"><span class="s">3 OF 3</span><a href="#" class="pill"><b>SKIP ALL TIPS</b></a><a href="#" class="pill on"><b>GOT IT</b></a></div>
+  </section>
+</div>
+<div class="frame g" style="left: 470px">
+  <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0"><defs><filter id="a1" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.009" numOctaves="4" seed="31"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="14"></feGaussianBlur></filter><filter id="s1" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="40"></feGaussianBlur></filter><mask id="m1" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844"><rect width="390" height="844" fill="#ffffff"></rect><rect x="0" y="120" width="390" height="724" fill="#000000" opacity="0.9" filter="url(#s1)"></rect></mask></defs><rect width="390" height="844" fill="#07050d"></rect><g mask="url(#m1)"><rect width="390" height="844" filter="url(#a1)" opacity="0.95"></rect></g></svg>
+  <div style="position: relative">
+  <nav aria-label="Menu" class="mbar"><a href="#" class="back"><b>‹ BACK TO THE BOARD</b></a><div class="strip"><a href="#" class="ptab"><b>MY LOG</b></a><a href="#" class="ptab"><b>GUIDE</b></a><a href="#" class="ptab"><b>UPDATES</b></a><a href="#" class="ptab"><b>SETTINGS</b></a></div></nav>
+  <h1 class="ph1">WELCOME</h1>
+  <div style="margin: 14px 16px 0; display: flex; gap: 12px; align-items: center"><div class="pava" style="width:52px;height:52px"><img src="assets/gabe-avatar.png" alt="Gabe"></div><div><b style="display: block; font: 24px/1 Anton, sans-serif">GABE</b><span style="font: 600 17px 'Barlow Condensed', sans-serif; color: #e4def7">Made this. Sorry.</span></div></div>
+  <h2 style="margin: 12px 16px 0; font: 34px/1.04 Anton, sans-serif">After nine years of development</h2>
+  <p class="plede">…hopefully it would have been worth the wait. This is Divided World: a message board from 2003, and a game. Up to six characters, each behind a mask, each with a secret class. Nobody else can see which masks are yours.</p>
+  <div style="margin: 14px 16px 0">
+    <h3 style="margin: 0 0 4px; font: 26px/1 Anton, sans-serif">BEFORE YOU START</h3>
+    <div class="wrow"><b>THEME</b><div class="wseg"><span class="pill on"><b>DEVICE</b></span><span class="pill"><b>BLACK ON WHITE</b></span><span class="pill"><b>WHITE ON BLACK</b></span></div></div>
+    <div class="wrow"><b>MOTION</b><div class="wseg"><span class="pill on"><b>DEVICE</b></span><span class="pill"><b>REDUCED</b></span><span class="pill"><b>FULL</b></span></div></div>
+    <div class="wrow"><b>TEXT SIZE</b><div class="wseg"><span class="pill on"><b>100%</b></span><span class="pill"><b>125%</b></span><span class="pill"><b>150%</b></span><span class="pill"><b>200%</b></span></div></div>
+  </div>
+  <div style="margin: 14px 16px 0"><a href="#" class="bigbtn"><b>MAKE YOUR FIRST CHARACTER</b></a></div>
+  <p style="margin: 10px 16px 0; text-align: center"><a href="#" class="lnk" style="font: 700 17px 'Barlow Condensed', sans-serif">Read the Strategy Guide first</a></p>
+  </div>
+</div>
+<div class="frame g" style="left: 900px">
+  <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0"><defs><filter id="a2" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.009" numOctaves="4" seed="77"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="14"></feGaussianBlur></filter><filter id="s2" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="40"></feGaussianBlur></filter><mask id="m2" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844"><rect width="390" height="844" fill="#ffffff"></rect><rect x="0" y="120" width="390" height="724" fill="#000000" opacity="0.9" filter="url(#s2)"></rect></mask></defs><rect width="390" height="844" fill="#07050d"></rect><g mask="url(#m2)"><rect width="390" height="844" filter="url(#a2)" opacity="0.95"></rect></g></svg>
+  <div style="position: relative">
+  <nav aria-label="Menu" class="mbar"><a href="#" class="back"><b>‹ BACK TO THE BOARD</b></a><div class="strip"><a href="#" class="ptab"><b>MY LOG</b></a><a href="#" class="ptab cur"><b>GUIDE</b></a><a href="#" class="ptab"><b>UPDATES</b></a><a href="#" class="ptab"><b>SETTINGS</b></a></div></nav>
+  <h1 class="ph1" style="font-size: 48px">STRATEGY GUIDE</h1>
+  <button style="margin: 12px 16px 0; width: calc(100% - 32px); display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 0 14px; background: rgba(10,6,20,.9); border: 1px solid #19e3ff; color: #f1ecff; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: 1.2px" aria-expanded="false">CONTENTS · CLASSES <svg aria-hidden="true" width="14" height="10" viewBox="0 0 14 10"><path d="M1 2l6 6 6-6" fill="none" stroke="#19e3ff" stroke-width="2"/></svg></button>
+  <h2 style="margin: 16px 16px 0; font: 38px/1 Anton, sans-serif">Classes</h2>
+  <p class="plede">Every character has one, and only you can see it. A class decides which corners of the reaction grid pay your character and which ones cost it.</p>
+  <div style="margin: 8px 16px 0">
+  <div class="prow" style="grid-template-columns: 52px 1fr"><div class="gm" role="img"><span></span><span class="e">+</span><span class="h">−</span><span></span></div><div><span style="display:inline-block;transform:skewX(-10deg);background:#2e86de;color:#fff;padding:0 8px;font:800 18px/1.5 'Barlow Condensed',sans-serif;letter-spacing:1.2px"><b style="display:inline-block;transform:skewX(10deg)">FACE</b></span><p class="d">The crowd's favorite. Earns from excited, positive reactions… Hurt by bored reactions.</p><p class="d" style="color:#9ef4ff;font-weight:700"><span style="color:#c9b8ff;letter-spacing:1.5px;font-weight:800">GABE'S HINT</span> Get behind the posts you like.</p></div></div>
+  <div class="prow" style="grid-template-columns: 52px 1fr"><div class="gm" role="img"><span class="e">+</span><span></span><span></span><span class="h">−</span></div><div><span style="display:inline-block;transform:skewX(-10deg);background:#c0392b;color:#fff;padding:0 8px;font:800 18px/1.5 'Barlow Condensed',sans-serif;letter-spacing:1.2px"><b style="display:inline-block;transform:skewX(10deg)">HEEL</b></span><p class="d">Earns heat: excited, negative reactions. Hurt by the polite shrug, calm and positive.</p><p class="d" style="color:#9ef4ff;font-weight:700"><span style="color:#c9b8ff;letter-spacing:1.5px;font-weight:800">GABE'S HINT</span> Being hated is a living.</p></div></div>
+  <div class="prow" style="grid-template-columns: 52px 1fr"><div class="gm" role="img"><span></span><span class="h">−</span><span class="e">+</span><span></span></div><div><span style="display:inline-block;transform:skewX(-10deg);background:#d4ac0d;color:#14100a;padding:0 8px;font:800 18px/1.5 'Barlow Condensed',sans-serif;letter-spacing:1.2px"><b style="display:inline-block;transform:skewX(10deg)">JABRONI</b></span><p class="d">Anti-comedy: posts built to bomb. Earns from bored, negative reactions.</p><p class="d" style="color:#9ef4ff;font-weight:700"><span style="color:#c9b8ff;letter-spacing:1.5px;font-weight:800">GABE'S HINT</span> Commit to the bit.</p></div></div>
+  </div></div>
+</div>
+</div>
+</body>
+</html>

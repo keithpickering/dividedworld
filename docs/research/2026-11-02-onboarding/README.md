@@ -13,3 +13,5 @@ copy. Their copy is a draft for the owner's review.
   with the welcome gift's orb, and Gabe's tip panel.
 - `assets/gabe-sprite.gif`: the owner's Gabe sprite. `assets/gabe-avatar.png` is its head and shoulders, cropped to a
   210px square, scaled 2x nearest-neighbor onto a violet matte.
+- `04-phone.html`: three phone screens at 390 by 844: the HUD tour's last step as a sheet docked above the HUD with
+  the cut-out over Hand, the welcome page stacked, and the guide with its contents folded into a menu.
