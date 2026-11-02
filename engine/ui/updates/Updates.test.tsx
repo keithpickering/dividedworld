@@ -50,7 +50,7 @@ const article = () => screen.getByRole('article');
 
 describe('the persona\'s picture', () => {
   test('is drawn pixelated, so a sprite stays crisp', () => {
-    const css = fs.readFileSync('engine/ui/updates/updates.css', 'utf8');
+    const css = fs.readFileSync('engine/ui/updates/persona.css', 'utf8');
     const rule = /\.kb-updates-ava img\s*\{([^}]*)\}/u.exec(css)?.[1] ?? '';
     expect(rule).toMatch(/image-rendering:\s*pixelated/u);
   });

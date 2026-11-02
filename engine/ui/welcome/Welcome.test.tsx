@@ -4,11 +4,11 @@
  * controls, saved as they change), Make your first character and Read the Strategy Guide first. It marks the welcome seen when it opens, so
  * it shows once whatever the player does next. The redirect that sends a new account here is held in web/src/App.test.tsx.
  */
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Instance } from '../../rules/types.ts';
-import { renderInWorld, testInstance } from '../test-world.tsx';
+import { buildWorld, renderIn, renderInWorld, testInstance } from '../test-world.tsx';
 import { Welcome, WelcomeScreen } from './Welcome.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -29,11 +29,43 @@ describe('the welcome page', () => {
     expect(within(letter).getByText('A letter.')).toBeInTheDocument();
   });
 
+  test('a letter without a heading has no headline and the post carries no name from one', async () => {
+    page();
+    const letter = await screen.findByRole('article');
+    expect(within(letter).queryByRole('heading', { level: 2 })).toBeNull();
+    expect(letter).not.toHaveAttribute('aria-labelledby');
+  });
+
+  test('an instance with no developer persona gets the plain default: its name, no tagline, and its first letter for a picture', async () => {
+    renderInWorld(<WelcomeScreen />, { path: '/welcome', seed: signedIn });
+    const letter = await screen.findByRole('article');
+    expect(within(letter).getByText('The developers')).toBeInTheDocument();
+    expect(letter.querySelector('.kb-updates-tagline')).toBeNull();
+    expect(letter.querySelector('img')).toBeNull();
+    expect(letter.querySelector('.kb-updates-ava-none')).toHaveTextContent('T');
+  });
+
+  test('a persona whose picture the instance does not hold gets its first letter too', async () => {
+    renderInWorld(<WelcomeScreen />, { path: '/welcome', instance, avatars: {}, seed: signedIn });
+    const letter = await screen.findByRole('article');
+    expect(letter.querySelector('img')).toBeNull();
+    expect(letter.querySelector('.kb-updates-ava-none')).toHaveTextContent('G');
+  });
+
+  test('the row labels sit one level under Before you start', async () => {
+    page();
+    const before = await screen.findByRole('region', { name: 'Before you start' });
+    await within(before).findAllByRole('radiogroup');
+    expect(within(before).getByRole('heading', { level: 3, name: 'Before you start' })).toBeInTheDocument();
+    expect(within(before).getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(['Theme', 'Motion', 'Text size']);
+  });
+
   test('Before you start holds theme, motion and text size, as Settings draws them, and no other row', async () => {
     page();
     const before = await screen.findByRole('region', { name: 'Before you start' });
     await within(before).findAllByRole('radiogroup');
-    expect(within(before).getAllByRole('radiogroup').map((g) => g.getAttribute('aria-label'))).toEqual(['Theme', 'Motion', 'Text size']);
+    expect(within(before).getAllByRole('radiogroup').map((g) => within(g).getByRole('heading').textContent)).toEqual(['Theme', 'Motion', 'Text size']);
+    expect(within(before).getByRole('radiogroup', { name: 'Motion' })).toBeInTheDocument();
     expect(within(before).getByText(/Reduced stops the drifting smoke/u)).toBeInTheDocument();
   });
 
@@ -92,5 +124,69 @@ describe('the welcome page', () => {
   test('Welcome without a screen around it draws the same page', async () => {
     renderInWorld(<Welcome />, { path: '/welcome', instance, seed: signedIn });
     expect(await screen.findByRole('link', { name: 'Make your first character' })).toBeInTheDocument();
+  });
+
+  /** A signed-in world whose backend the test tampers with before the page renders. */
+  function tamper(setup: (fake: ReturnType<typeof buildWorld>) => void) {
+    const fake = buildWorld(undefined, instance);
+    fake.signInAs(fake.seed.account('me'));
+    setup(fake);
+    renderIn(fake, <WelcomeScreen />, { path: '/welcome', instance, avatars: { gabe: 'gabe.png' } });
+    return fake;
+  }
+
+  test('a save the account refuses says so in an alert, and puts the choice back', async () => {
+    const fake = tamper((f) => { vi.spyOn(f, 'setPreferences').mockResolvedValue({ ok: false, error: 'The account would not take that.' }); });
+    const before = await screen.findByRole('region', { name: 'Before you start' });
+    await userEvent.click(await within(before).findByRole('radio', { name: 'Reduced' }));
+    expect(await within(before).findByRole('alert')).toHaveTextContent('The account would not take that.');
+    await waitFor(() => expect(within(within(before).getByRole('radiogroup', { name: 'Motion' })).getByRole('radio', { name: 'Follow my device' })).toBeChecked());
+    expect(within(before).getByRole('radio', { name: 'Reduced' })).not.toBeChecked();
+    expect(screen.queryByText('Saved to your account.')).toBeNull();
+    expect((await fake.preferences()).motion).toBe('system');
+  });
+
+  test('while the preferences are being read the section is busy and holds no control; a read that fails says so and stops being busy', async () => {
+    let release: (v: Awaited<ReturnType<ReturnType<typeof buildWorld>['preferences']>>) => void = () => undefined;
+    const fake = tamper((f) => {
+      const real = f.preferences.bind(f);
+      vi.spyOn(f, 'preferences').mockImplementationOnce(() => new Promise((r) => { release = r as typeof release; })).mockImplementation(real);
+    });
+    const before = await screen.findByRole('region', { name: 'Before you start' });
+    expect(before.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(within(before).queryAllByRole('radio')).toHaveLength(0);
+    release(await fake.preferences());
+    await within(before).findByRole('radio', { name: 'Reduced' });
+    expect(before.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  test('a read of the preferences that fails is said in an alert, and the section is no longer busy', async () => {
+    tamper((f) => { vi.spyOn(f, 'preferences').mockRejectedValue(new Error('down')); });
+    const before = await screen.findByRole('region', { name: 'Before you start' });
+    expect(await within(before).findByRole('alert')).toHaveTextContent(/could not be read/u);
+    expect(before.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  test('Saved to your account waits for the last save in line, not the first', async () => {
+    let releaseFirst: () => void = () => undefined;
+    let releaseSecond: () => void = () => undefined;
+    let firstAnswered = false;
+    let secondStarted = false;
+    tamper((f) => {
+      const real = f.setPreferences.bind(f);
+      vi.spyOn(f, 'setPreferences')
+        .mockImplementationOnce(async (patch) => { await new Promise<void>((r) => { releaseFirst = r; }); const r = await real(patch); firstAnswered = true; return r; })
+        .mockImplementationOnce(async (patch) => { secondStarted = true; await new Promise<void>((r) => { releaseSecond = r; }); return real(patch); });
+    });
+    const before = await screen.findByRole('region', { name: 'Before you start' });
+    /* Two choices made while the first save is still out. */
+    await userEvent.click(await within(before).findByRole('radio', { name: 'Reduced' }));
+    await userEvent.click(within(before).getByRole('radio', { name: 'Full' }));
+    releaseFirst();
+    await waitFor(() => { expect(firstAnswered).toBe(true); expect(secondStarted).toBe(true); });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText('Saved to your account.')).toBeNull();
+    releaseSecond();
+    expect(await screen.findByText('Saved to your account.')).toBeInTheDocument();
   });
 });

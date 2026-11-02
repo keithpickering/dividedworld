@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createFake } from '../../engine/ui/data/fake.ts';
@@ -390,6 +390,31 @@ test('a player has no ADMIN tab and is told the queue is for admins', async () =
  * /welcome from a board page, once; the sign-in pages and the glass pages are let through, and an account with any character is never sent.
  */
 describe('the welcome', () => {
+  type Fake = ReturnType<typeof createFake>;
+  /**
+   * Count the reads `SendToWelcome` makes (and the player's own, which come first) as they settle, so a test waits for the answer it is
+   * about and then looks at the page, instead of waiting a while and finding nothing. `hold` makes one read wait to be released.
+   */
+  function watchReads(fake: Fake, how: { readonly characters?: (call: number, real: () => ReturnType<Fake['myCharacters']>) => ReturnType<Fake['myCharacters']>; readonly preferences?: (call: number, real: () => ReturnType<Fake['preferences']>) => ReturnType<Fake['preferences']> } = {}) {
+    const seen = { characters: 0, preferences: 0, settledCharacters: 0, settledPreferences: 0 };
+    const realCharacters = fake.myCharacters.bind(fake);
+    const realPreferences = fake.preferences.bind(fake);
+    vi.spyOn(fake, 'myCharacters').mockImplementation(async () => {
+      const call = ++seen.characters;
+      try { return await (how.characters ? how.characters(call, realCharacters) : realCharacters()); } finally { seen.settledCharacters += 1; }
+    });
+    vi.spyOn(fake, 'preferences').mockImplementation(async () => {
+      const call = ++seen.preferences;
+      try { return await (how.preferences ? how.preferences(call, realPreferences) : realPreferences()); } finally { seen.settledPreferences += 1; }
+    });
+    return seen;
+  }
+  /** Let what the settled reads set going run to its end: every microtask, then a render. */
+  const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  /** The player's own read is the first of each; the second is `SendToWelcome`'s. */
+  const sendersReadsSettled = (seen: ReturnType<typeof watchReads>) => vi.waitFor(() => { expect(seen.settledCharacters).toBeGreaterThanOrEqual(2); expect(seen.settledPreferences).toBeGreaterThanOrEqual(2); });
+  const move = (path: string) => act(() => { window.history.pushState(null, '', path); window.dispatchEvent(new PopStateEvent('popstate')); });
+
   /** An account the invite opened just now, on a board page: the state `openAccount` leaves. */
   async function newAccount() {
     const fake = createFake({ instance, settings: { ...fallbackSettings, registrationMode: 'invite' } });
@@ -413,7 +438,7 @@ describe('the welcome', () => {
     expect(window.location.pathname).toBe('/welcome');
     expect(screen.getByRole('heading', { level: 2, name: 'After nine years of development' })).toBeInTheDocument();
     await waitFor(async () => expect((await fake.preferences()).welcomedAt).not.toBeNull());
-  }, 15_000);
+  });
 
   test('changing motion there changes the account\'s preferences, and the button opens New character', async () => {
     const { fake, code } = await newAccount();
@@ -426,7 +451,7 @@ describe('the welcome', () => {
     await userEvent.click(screen.getByRole('link', { name: 'Make your first character' }));
     expect(await screen.findByRole('textbox', { name: /name/iu })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/characters/new');
-  }, 15_000);
+  });
 
   test('a second visit to the board goes nowhere: the welcome shows once', async () => {
     const { fake, code } = await newAccount();
@@ -438,19 +463,70 @@ describe('the welcome', () => {
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Back to the board' }));
     await screen.findByRole('region', { name: 'Game HUD' });
     expect(window.location.pathname).not.toBe('/welcome');
+    /* It has decided for this account; going to another board page asks nothing and sends nobody. */
+    const asked = vi.spyOn(fake, 'preferences');
     await userEvent.click(within(screen.getByRole('banner')).getAllByRole('link')[0]!);
-    await new Promise((r) => setTimeout(r, 50));
+    await screen.findByRole('region', { name: 'Game HUD' });
+    await flush();
+    expect(asked).not.toHaveBeenCalled();
     expect(window.location.pathname).not.toBe('/welcome');
-  }, 15_000);
+  });
 
   test('a load of the board by an account that has seen the welcome and has no character goes nowhere', async () => {
     const fake = createFake({ instance, settings: fallbackSettings });
     fake.signInAs(fake.seed.account('seen'));
     await fake.seeWelcome();
+    const seen = watchReads(fake);
     render(<App api={fake} />);
     await screen.findByRole('region', { name: 'Game HUD' });
-    await new Promise((r) => setTimeout(r, 50));
+    await sendersReadsSettled(seen);
+    await flush();
     expect(window.location.pathname).toBe('/');
+  });
+
+  test('a read that fails sends nobody', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    fake.signInAs(fake.seed.account('unread'));
+    const seen = watchReads(fake, { preferences: (call, real) => (call >= 2 ? Promise.reject(new Error('down')) : real()) });
+    render(<App api={fake} />);
+    await screen.findByRole('region', { name: 'Game HUD' });
+    await sendersReadsSettled(seen);
+    await flush();
+    expect(window.location.pathname).toBe('/');
+    expect(screen.queryByRole('heading', { level: 1, name: 'Welcome' })).toBeNull();
+  });
+
+  test('a player whose rows failed to load but who has characters is not sent: the roster is read again', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    const me = fake.seed.account('veteran');
+    fake.seed.character(me, 'Old Hand', 'heel');
+    fake.signInAs(me);
+    /* The player's own read fails, so its rows read as empty; the sender's read is the one that tells. */
+    const seen = watchReads(fake, { characters: (call, real) => (call === 1 ? Promise.reject(new Error('down')) : real()) });
+    render(<App api={fake} />);
+    await screen.findByRole('region', { name: 'Game HUD' });
+    await sendersReadsSettled(seen);
+    expect((await fake.preferences()).welcomedAt).toBeNull();
+    await flush();
+    expect(window.location.pathname).toBe('/');
+  });
+
+  test('an answer that arrives after the player opened Settings does not pull them away from it', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    fake.signInAs(fake.seed.account('quick'));
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => { release = r; });
+    const seen = watchReads(fake, { characters: async (call, real) => { if (call >= 2) await held; return real(); } });
+    render(<App api={fake} />);
+    await screen.findByRole('region', { name: 'Game HUD' });
+    await vi.waitFor(() => expect(seen.characters).toBeGreaterThanOrEqual(2));
+    await move('/settings');
+    await screen.findByRole('heading', { level: 1, name: 'Settings' });
+    release();
+    await sendersReadsSettled(seen);
+    await flush();
+    expect(window.location.pathname).toBe('/settings');
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
   });
 
   test('an account with a character is never sent there, though it has not seen the welcome; one with only a waiting or a retired character is not either', async () => {
@@ -462,12 +538,16 @@ describe('the welcome', () => {
       fake.seed.character(me, 'Old Hand', 'heel', options);
       fake.signInAs(me);
       expect((await fake.preferences()).welcomedAt).toBeNull();
+      /* It reads nothing for an account that has a character: the player's own read of the roster is the only one. */
+      const seen = watchReads(fake);
       render(<App api={fake} />);
       await screen.findByRole('region', { name: 'Game HUD' });
-      await new Promise((r) => setTimeout(r, 50));
+      await vi.waitFor(() => expect(seen.settledCharacters).toBeGreaterThanOrEqual(1));
+      await flush();
+      expect(seen.characters).toBe(1);
       expect(window.location.pathname).toBe('/');
     }
-  }, 15_000);
+  });
 
   test('a glass page is let through: an account with no character that opens Settings first is not sent, and is sent from the board after', async () => {
     window.history.pushState(null, '', '/settings');
@@ -475,12 +555,12 @@ describe('the welcome', () => {
     fake.signInAs(fake.seed.account('settings-first'));
     render(<App api={fake} />);
     await screen.findByRole('heading', { level: 1, name: 'Settings' });
-    await new Promise((r) => setTimeout(r, 50));
+    await flush();
     expect(window.location.pathname).toBe('/settings');
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Back to the board' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Welcome' })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/welcome');
-  }, 15_000);
+  });
 
   test('the welcome page has the menu, so every tab is a way out', async () => {
     window.history.pushState(null, '', '/welcome');

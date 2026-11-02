@@ -30,6 +30,8 @@
   margin-top: 1px;
 }
 
+/* The aside follows the letter in the DOM, so a screen reader reads the letter first; on a wide screen it sits first, at the left, by
+   * its grid column and row (intended: what happens next is a margin note, and the letter is what is read). The phone stacks them in DOM order. */
 .kb-welcome-side {
   grid-column: 1;
   grid-row: 1;

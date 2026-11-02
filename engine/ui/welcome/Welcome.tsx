@@ -27,7 +27,6 @@ import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Link, useLocation, useNavigate } from '../router.tsx';
 import { usePlayer } from '../player.tsx';
 import { PersonaMark } from '../updates/Persona.tsx';
-import '../updates/updates.css';
 import './welcome.css';
 
 export const WELCOME_PATH = '/welcome';
@@ -90,9 +89,9 @@ export function Welcome() {
               <div aria-busy={refusal === null || undefined}>{refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}</div>
             ) : (
               <>
-                <ThemeRow legend="Theme" value={prefs.theme} onChange={(v) => change({ theme: v })} />
-                <MotionRow value={prefs.motion} onChange={(v) => change({ motion: v })} />
-                <TextSizeRow value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
+                <ThemeRow legend="Theme" level={4} value={prefs.theme} onChange={(v) => change({ theme: v })} />
+                <MotionRow level={4} value={prefs.motion} onChange={(v) => change({ motion: v })} />
+                <TextSizeRow level={4} value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
                 {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
                 <p role="status" className="kb-acct-note">{saved && !refusal ? 'Saved to your account.' : ''}</p>
               </>
@@ -128,7 +127,7 @@ export function WelcomeScreen() {
  * The session listener that sends a new account to the welcome: a signed-in account with no `welcomedAt` and no character at all (a
  * waiting or a retired one counts, so a player who has played is never sent), on a board page (`active`; the sign-in pages and the glass
  * pages are let through, and it waits for the first board page after them). It decides once for each account a session holds, at the first
- * board page after the player's rows are read, and never again: so the welcome shows once and no page after it pays for the question.
+ * board page after the player's rows are read, and never again (and an answer that comes after the player has moved to a glass page sends nobody): so the welcome shows once and no page after it pays for the question.
  *
  * It reads nothing for an account that has a character, which is every player after the first. For one that has none it reads the
  * preferences and the roster once, at that first board page: the roster again because a roster that failed to load reads as empty in the
@@ -140,20 +139,26 @@ export function SendToWelcome({ active }: { readonly active: boolean }) {
   const { path } = useLocation();
   const navigate = useNavigate();
   const account = session.account;
-  /* The account this session has decided for, and the one signed in now (an answer for another is dropped). */
-  const decided = useRef<string | null>(null);
+  /* The accounts this session has decided for, the one signed in now (an answer for another is dropped), and whether the player is still on a
+   * board page (an answer that arrives after they opened Settings must not pull them away from it). */
+  const decided = useRef<Set<string>>(new Set());
   const now = useRef<string | null>(null);
+  const onBoard = useRef(active);
+  /* A move from a board page to a glass page swaps the shell, so this listener is unmounted and a new one mounted: the old one's answer is dropped. */
+  const mounted = useRef(false);
   now.current = account;
+  onBoard.current = active;
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
     if (!account || !sessionKnown) return;
     /* On the welcome itself it is seen (or is being); a Back to the board from it is not decided again. */
-    if (path === WELCOME_PATH) { decided.current = account; return; }
-    if (!active || !loaded || decided.current === account) return;
-    decided.current = account;
+    if (path === WELCOME_PATH) { decided.current.add(account); return; }
+    if (!active || !loaded || decided.current.has(account)) return;
+    decided.current.add(account);
     if (characters.length > 0) return;
     void Promise.all([api.preferences(), api.myCharacters()]).then(([p, mine]) => {
-      if (now.current === account && p.welcomedAt === null && mine.length === 0) navigate(WELCOME_PATH, { replace: true });
+      if (now.current === account && mounted.current && onBoard.current && p.welcomedAt === null && mine.length === 0) navigate(WELCOME_PATH, { replace: true });
     }, () => { /* nobody is sent on a read that failed */ });
   }, [api, account, sessionKnown, active, loaded, characters.length, path, navigate]);
   return null;

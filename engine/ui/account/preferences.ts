@@ -17,6 +17,9 @@ import { LOST_ANSWER, type Answer, type Preferences, type PreferencesPatch } fro
 import { applyAppearance } from '../appearance.ts';
 import { announceToastChoice } from '../alerts/toast-choice.ts';
 
+/** A patch of exactly one setting: `change` saves one at a time, so it takes one. */
+export type SinglePatch = { readonly [K in keyof PreferencesPatch]-?: { readonly [P in K]: Required<PreferencesPatch>[K] } }[keyof PreferencesPatch];
+
 export type TipsChange = 'skip' | 'resume' | 'restore' | 'replay';
 
 export interface SavedPreferences {
@@ -26,8 +29,8 @@ export interface SavedPreferences {
   readonly refusal: string | null;
   /** Whether the last thing done was saved to the account. */
   readonly saved: boolean;
-  /** Choose: shown and applied at once, saved in its turn. */
-  readonly change: (patch: PreferencesPatch) => void;
+  /** Choose one setting: shown and applied at once, saved in its turn. */
+  readonly change: (patch: SinglePatch) => void;
   /**
    * Change the tips (Settings' Tips row), in its turn behind the choices before it: `skip` turns them off, `resume` on with nothing forgotten,
    * `restore` on with the tips seen and the cards met forgotten, `replay` on with the HUD tour's steps forgotten (and the welcome marked seen).
@@ -50,6 +53,8 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
   const current = useRef<Preferences | null>(null);
   const confirmed = useRef<Preferences | null>(null);
   const line = useRef<Promise<void>>(Promise.resolve());
+  /* The number of the last save queued: "Saved" is said only by the save that is last in line, never while a later one is still out. */
+  const queued = useRef(0);
   /* The account the screen is for now, and null once it is gone: a save answered after either changed is that account's no longer. */
   const showing = useRef<string | null>(null);
   useEffect(() => {
@@ -64,9 +69,10 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
     return () => { live = false; };
   }, [api, account]);
 
-  const change = useCallback((patch: PreferencesPatch) => {
+  const change = useCallback((patch: SinglePatch) => {
     const key = Object.keys(patch)[0] as keyof PreferencesPatch;
-    const asked = patch[key];
+    const asked = (patch as PreferencesPatch)[key];
+    const mine = ++queued.current;
     const madeFor = account;
     if (madeFor === null || current.current === null) return;
     const show = (next: Preferences) => { current.current = next; setRead({ account: madeFor, prefs: next }); applyAppearance(document, next, ui.themes, ui.glass); };
@@ -75,11 +81,11 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
     setSaved(null);
     line.current = line.current.then(async () => {
       let r: Answer<Preferences>;
-      try { r = await api.setPreferences(patch); } catch { r = { ok: false, error: LOST_ANSWER }; }
+      try { r = await api.setPreferences(patch as PreferencesPatch); } catch { r = { ok: false, error: LOST_ANSWER }; }
       if (showing.current !== madeFor) return;
       if (r.ok) {
         confirmed.current = { ...confirmed.current!, [key]: r.value[key] };
-        setSaved(madeFor);
+        if (queued.current === mine) setSaved(madeFor);
         /* The HUD read the choice when it mounted; it hears this one as the account has it. */
         if (key === 'toasts') announceToastChoice(r.value.toasts);
         return;
@@ -98,6 +104,7 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
   const changeTips = useCallback((how: TipsChange) => {
     const madeFor = account;
     if (madeFor === null || current.current === null) return;
+    const mine = ++queued.current;
     setRefusal(null);
     setSaved(null);
     line.current = line.current.then(async () => {
@@ -109,7 +116,7 @@ export function usePreferenceSaves(account: string | null): SavedPreferences {
         current.current = { ...current.current!, ...kept };
         confirmed.current = { ...confirmed.current!, ...kept };
         setRead({ account: madeFor, prefs: current.current });
-        setSaved(madeFor);
+        if (queued.current === mine) setSaved(madeFor);
         return;
       }
       setRefusal({ account: madeFor, text: r.error });
