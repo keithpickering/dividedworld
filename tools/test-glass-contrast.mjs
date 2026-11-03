@@ -390,6 +390,10 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   const here = path.dirname(fileURLToPath(import.meta.url));
   const repo = path.resolve(here, '..');
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' });
+  // Stage the scratch tree but never node_modules. Git on Linux stages the link as one entry; Git for Windows walks
+  // into a junction as a directory, stages every file of node_modules, and its CRLF warnings overrun execFileSync's
+  // output buffer.
+  const stage = (dir) => git(dir, 'add', '-A', '-f', '--', '.', ':(exclude)node_modules');
   /** A scratch repository with the guard, the engine's types, and the given glass (null for none), staged. */
   const scratch = ({ glass, types = true, ceilings = null, apply = null }) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glass-contrast-'));
@@ -411,7 +415,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
       fs.mkdirSync(path.join(dir, 'e2e'), { recursive: true });
       fs.writeFileSync(path.join(dir, 'e2e', 'glass-ceilings.json'), ceilings);
     }
-    git(dir, 'add', '-A', '-f');
+    stage(dir);
     return dir;
   };
   const run = (dir, ...args) => spawnSync('node', [path.join(dir, 'tools', 'check-glass-contrast.mjs'), ...args], { cwd: dir, encoding: 'utf8' });
@@ -447,7 +451,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   const moved = fresh();
   moved.smoke.recipes.hud.layers[0].opacity = 0.9;
   fs.writeFileSync(path.join(dir, 'instances', 'x', 'ui', 'glass.json'), JSON.stringify(moved));
-  git(dir, 'add', '-A', '-f');
+  stage(dir);
   const stale = run(dir);
   check('a glass changed after the ceilings were written exits 1 as stale', stale.status === 1 && /no longer matches the glass/.test(stale.stderr), stale.stderr + stale.stdout);
 
