@@ -389,7 +389,8 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
 {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const repo = path.resolve(here, '..');
-  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' });
+  // core.autocrlf off: a scratch repository has no .gitattributes, and Git for Windows would warn of CRLF on every add.
+  const git = (cwd, ...args) => execFileSync('git', ['-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8' });
   // Stage the scratch tree but never node_modules. Git on Linux stages the link as one entry; Git for Windows walks
   // into a junction as a directory, stages every file of node_modules, and its CRLF warnings overrun execFileSync's
   // output buffer.
