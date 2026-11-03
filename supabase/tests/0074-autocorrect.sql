@@ -50,8 +50,11 @@ begin
     perform 1 from acts where id = p for no key update nowait;
     post_held := false;
     raise exception 'let go';
-  exception when lock_not_available then post_held := true; when others then null;
+  exception
+    when lock_not_available then post_held := true;
+    when others then if sqlerrm is distinct from 'let go' then raise; end if;
   end;
+  if post_held is null then raise exception 'the post was never tried'; end if;
   perform extensions.dblink_exec('holder', 'rollback');
   perform extensions.dblink_disconnect('holder');
   select r.said into said from extensions.dblink_get_result('player') as r(said text);
