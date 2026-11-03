@@ -37,6 +37,8 @@ begin
 end $$;
 
 -- ---- The job sends nothing until both of its secrets exist, then calls the function with the minute it fired ----
+-- Its key is the secret key named kayfabb_jobs, from Vault's kayfabb_jobs_key, in apikey alone
+-- (docs/plans/2026-11-02-api-keys-design.md); the old kayfabb_service_key is read nowhere.
 do $$
 declare
   cmd text;
@@ -50,11 +52,15 @@ begin
   insert into vault.decrypted_secrets values ('kayfabb_functions_url', 'https://project.example');
   execute cmd;
   if exists (select 1 from net.http_request_queue) then raise exception 'the job sent a request with half its secrets'; end if;
-  insert into vault.decrypted_secrets values ('kayfabb_service_key', 'not-a-real-key');
+  insert into vault.decrypted_secrets values ('kayfabb_service_key', 'sb_secret_old_name');
+  execute cmd;
+  if exists (select 1 from net.http_request_queue) then raise exception 'the job sent a request with only the old kayfabb_service_key'; end if;
+  insert into vault.decrypted_secrets values ('kayfabb_jobs_key', 'sb_secret_not_a_real_key');
   execute cmd;
   select * into q from net.http_request_queue;
   if q.url <> 'https://project.example/functions/v1/settle' then raise exception 'the job called %', q.url; end if;
-  if q.headers ->> 'Authorization' <> 'Bearer not-a-real-key' then raise exception 'the job should carry the service key'; end if;
+  if q.headers ->> 'apikey' is distinct from 'sb_secret_not_a_real_key' then raise exception 'the job should carry the jobs key in apikey: %', q.headers; end if;
+  if q.headers ? 'Authorization' then raise exception 'the job should send no Authorization: %', q.headers; end if;
   if (q.body ->> 'until')::timestamptz <> date_trunc('minute', now()) - interval '1 minute' then
     raise exception 'the body should carry the minute before the one the job fired in: %', q.body;
   end if;
