@@ -295,7 +295,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   // migration guide, docs/plans/2026-11-02-api-keys-design.md), so a bearer that is the key itself is taken off. A session's
   // token is passed on as it is.
   const clientFetch: typeof fetch = (input, init) => {
-    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    const headers = new Headers(init?.headers);
     if (headers.get('authorization') !== `Bearer ${publishableKey}`) return doFetch(input, init);
     headers.delete('authorization');
     return doFetch(input, { ...init, headers });
