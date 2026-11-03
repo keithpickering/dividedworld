@@ -215,3 +215,78 @@ begin
   if plan !~ 'acts_thread_openers' then raise exception 'the threads one started are found by the openers index: %', plan; end if;
   if plan !~ '(Index (Only )?Scan( Backward)? using|Bitmap Index Scan on) acts_thread_seq_key' then raise exception 'new posts are read by the (thread, seq) index: %', plan; end if;
 end $$;
+
+-- ---- Ranking looks at posts by others only ----
+-- Two threads Fay started. "Own last" has a later post by Fay's own mask than "Other last" has by anyone, but its newest post by
+-- another is the older one, so it ranks second: a thread is ranked by the newest post by another, never by one's own.
+do $$
+declare
+  fay uuid := tests.account('follow-fay');
+  gus uuid := tests.account('follow-gus');
+  f1 uuid; f2 uuid; g1 uuid; own_last uuid; other_last uuid; got uuid[];
+begin
+  f1 := tests.character(fay, 'Follow Fay One');
+  f2 := tests.character(fay, 'Follow Fay Two');
+  g1 := tests.character(gus, 'Follow Gus');
+  own_last := tests.thread('Own last');
+  other_last := tests.thread('Other last');
+  perform tests.post(f1, own_last, 'opening', now() - interval '5 hours');
+  perform tests.post(f1, other_last, 'opening', now() - interval '5 hours');
+  perform tests.post(g1, own_last, 'gus early', now() - interval '3 hours');
+  perform tests.post(g1, other_last, 'gus later', now() - interval '2 hours');
+  perform tests.post(f2, own_last, 'fay''s other mask, newest of all', now() - interval '1 hour');
+  perform tests.become(fay);
+  select array_agg(thread order by newest_at desc) into got from my_followed_threads;
+  if got is distinct from array[other_last, own_last] then raise exception 'ranked by the newest post by another, not one''s own: %', got; end if;
+  if (select newest_at from my_followed_threads where thread = own_last) is distinct from (select created_at from acts where thread = own_last and character = g1) then
+    raise exception 'newest_at is the newest post by another';
+  end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- Scale: 300 followed threads with 120 unread posts each are ranked before they are counted ----
+-- The view reads the newest post by another in each thread (one backward probe), keeps the 50 newest, and counts, to 100, only
+-- those 50. Counting every thread first (0059) read 100 posts of each of the 300, which is what this measures against.
+-- Measured on the scratch database (shared buffers touched by one `select * from my_followed_threads` as the account, after one
+-- unmeasured run): 37,679 on 0059's view (the poison), 7,818 on the ranked view. The bound, 20,000, sits between them.
+create function pg_temp.buffers_of(call_sql text) returns bigint language plpgsql as $$
+declare plan jsonb;
+begin
+  execute call_sql;
+  execute 'explain (analyze, buffers, format json) ' || call_sql into plan;
+  return coalesce((plan -> 0 -> 'Plan' ->> 'Shared Hit Blocks')::bigint, 0) + coalesce((plan -> 0 -> 'Plan' ->> 'Shared Read Blocks')::bigint, 0);
+end $$;
+
+do $$
+declare
+  hal uuid := tests.account('follow-hal');
+  ivy uuid := tests.account('follow-ivy');
+  h1 uuid; i1 uuid; ts uuid[] := '{}'; i integer; j integer; touched bigint; n integer;
+begin
+  h1 := tests.character(hal, 'Follow Hal');
+  i1 := tests.character(ivy, 'Follow Ivy');
+  for i in 1..300 loop
+    ts := ts || tests.thread('Deep ' || i);
+    perform tests.post(h1, ts[i], 'opening');
+  end loop;
+  -- The posts arrive round-robin, as a busy instance's do, so one thread's posts are spread over the table's pages and a count
+  -- of 100 reads about 100 of them, not the few a run written together would fill. They are inserted with their seq set and
+  -- acts_take_seq off, then each thread's next_seq is set once: taking a seq 36,000 times would leave each thread's row 120
+  -- dead versions deep inside this one transaction (a vacuum clears them in a running instance), and every read of the thread by
+  -- key would pay for that, which says nothing about the view.
+  alter table acts disable trigger acts_take_seq;
+  insert into acts (character, kind, thread, seq, payload, created_at)
+    select i1, 'post', ts[g.n], g.round + 1, jsonb_build_object('body', 'unread ' || g.round), now() + make_interval(secs => g.round * 300 + g.n)
+    from generate_series(1, 120) as r(round), generate_series(1, 300) as c(n), lateral (select r.round, c.n) g
+    order by g.round, g.n;
+  alter table acts enable trigger acts_take_seq;
+  update threads set next_seq = 122 where id = any (ts);
+  analyze acts; analyze threads; analyze reading; analyze thread_follows; analyze characters;
+  perform tests.become(hal);
+  select count(*) into n from my_followed_threads;
+  if n is distinct from 50 then raise exception '50 of 300 followed threads are shown: got %', n; end if;
+  touched := pg_temp.buffers_of('select * from my_followed_threads');
+  perform tests.unbecome();
+  raise notice 'my_followed_threads touched % buffers at 300 threads of 120 unread posts', touched;
+  if touched > 20000 then raise exception 'my_followed_threads touches % buffers at 300 followed threads with 120 unread posts each; it ranks first and counts only 50', touched; end if;
+end $$;
