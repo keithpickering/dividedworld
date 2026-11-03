@@ -174,3 +174,17 @@ begin
   end if;
   return act_projection(sprung);
 end $$;
+
+-- ---- my_card_ledger: whether a card set face down can spring ----
+-- my_card_ledger (0037), with `springs` on each row: for a card the player set face down, whether that card carries a trap
+-- (card_kinds.trap is not null), so the player's own log can say that a Bluff never springs; null for any other row, a purchase or a
+-- card played another way. Which cards carry a trap is a public rule, the row is the caller's own, and card_kinds stays its one
+-- source. Everything else as 0037 wrote it.
+create or replace view my_card_ledger as
+  select l.card, l.kind, l.act, l.price, l.at,
+         case when l.kind = 'played' and k.play = 'set' then k.trap is not null end as springs
+  from card_ledger l
+  left join card_kinds k on k.key = l.card
+  where l.account = auth.uid();
+revoke all on my_card_ledger from anon, public;
+grant select on my_card_ledger to authenticated;

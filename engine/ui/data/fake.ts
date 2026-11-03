@@ -1081,7 +1081,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
     faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null });
     spend(account, decided.value.price, 'play', written.id);
-    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
+    /* As my_card_ledger (0073) says it: whether the card carries a trap, from the card kinds. */
+    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null });
     sendAct(written);
     return ok(publicAct(written));
   }

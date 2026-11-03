@@ -363,7 +363,8 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     if (play?.kind === 'set') {
       rows.push({
         key: `set:${e.act}`, kind: 'set', at: e.at, what: `You set ${cardName(e.card)} face down`,
-        details: [`${cardName(e.card)} set face down on `, link ?? 'your post', '. It springs once, or ends by itself.'],
+        /* A Bluff carries no trap (my_card_ledger's `springs`); a row with no `springs` keeps the trap's words. */
+        details: [`${cardName(e.card)} set face down on `, link ?? 'your post', e.springs === false ? '. It never springs, and ends by itself.' : '. It springs once, or ends by itself.'],
         aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: caster ? [caster] : [],
       });
       return;

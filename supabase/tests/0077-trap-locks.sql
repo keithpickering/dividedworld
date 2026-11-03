@@ -207,3 +207,30 @@ begin
     raise exception 'a full-stack strike read % rows and a Bluff %: the work before the decision differs with the card', full_reads, bluff_reads;
   end if;
 end $$;
+
+-- ---- my_card_ledger says whether a set card can spring ----
+-- True for a trap set face down, false for a Bluff set face down, and null for any other row: a purchase, or a card cast.
+do $$
+declare
+  ann uuid := tests.account('ledger-ann');
+  bob uuid := tests.account('ledger-bob');
+  a uuid := tests.character(ann, 'Ledger Setter');
+  b uuid := tests.character(bob, 'Ledger Other');
+  t uuid := tests.thread('Ledger');
+  p uuid := tests.post(a, t, 'Trapped.');
+  q uuid := tests.post(a, t, 'Bluffed.');
+  o uuid := tests.post(b, t, 'Cast on.');
+  trap_set uuid; bluff_set uuid; cast_play uuid;
+begin
+  perform pg_temp.hand(ann, 'tlhook', 'tlbluff', 'sweetie');
+  trap_set := (set_card(ann, 'tlhook', a, p, '{}', 0) ->> 'id')::uuid;
+  bluff_set := (set_card(ann, 'tlbluff', a, q, '{}', 0) ->> 'id')::uuid;
+  cast_play := (play_card(ann, 'sweetie', a, o, '{}', 0, '') ->> 'id')::uuid;
+  perform tests.become(ann);
+  if (select springs from my_card_ledger where act = trap_set) is distinct from true then raise exception 'a trap set face down: springs is not true'; end if;
+  if (select springs from my_card_ledger where act = bluff_set) is distinct from false then raise exception 'a Bluff set face down: springs is not false'; end if;
+  if (select springs from my_card_ledger where act = cast_play) is not null then raise exception 'a card cast has a springs'; end if;
+  if (select count(*) from my_card_ledger where kind = 'bought' and springs is not null) is distinct from 0::bigint then raise exception 'a purchase has a springs'; end if;
+  if (select count(*) from my_card_ledger where kind = 'bought') is distinct from 3::bigint then raise exception 'the ledger lost a purchase'; end if;
+  perform tests.unbecome();
+end $$;

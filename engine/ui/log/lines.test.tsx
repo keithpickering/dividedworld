@@ -128,6 +128,14 @@ describe('cards set face down, traps and catches', () => {
     expect(text(row!)).toBe('Snare set face down on your post #3. It springs once, or ends by itself.');
   });
 
+  test('a Bluff set face down says it never springs (#136 F3)', () => {
+    const set = act('set2', 'set', 'p', { targetActId: 'post3' });
+    const log = { ...empty, cards: [{ card: 'bluffy', kind: 'played' as const, act: 'set2', price: 0, at, springs: false }] };
+    const [row] = logRows(data({ log, mine, acts: new Map([...posts, set].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(row!.what).toBe('You set Bluffy face down');
+    expect(text(row!)).toBe('Bluffy set face down on your post #3. It never springs, and ends by itself.');
+  });
+
   test('a spring that paid out says what it caught and what reached the wallet', () => {
     const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', caught: 'set1' } });
     const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', outcome: { do: 'payout' }, set: 'set1', by: 'k1', caught: 'k1' } });
