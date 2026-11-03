@@ -39,11 +39,15 @@ import { dropStrip, type Corner } from './fall.ts';
 import { dragPeels, holdShare, savedAfterPeel, stripsOf, type PlayStrips, type Strip } from './peel.ts';
 import './autocorrect.css';
 
-/** The tape's paper and its typing, the same on either board: a piece of the game, so it keeps its own colors. */
-export const TAPE = Object.freeze({ paper: '#f4f0e4', ink: '#17150f' });
+/**
+ * The tape's paper, its typing, and the paper shaded as a held key peels it, the same on either board: a piece of the game, so
+ * it keeps its own colors. They reach the stylesheet as custom properties on each strip (the falling copy keeps them too).
+ */
+export const TAPE = Object.freeze({ paper: '#f4f0e4', ink: '#17150f', held: '#d2cec4' });
 /** A strip longer than this many characters breaks across lines as tape, rather than standing as one block. */
 const LONG = 28;
 const DEFAULT_PEEL_MS = 700;
+const SAVE_AFTER_MS = 400;
 const RETRY_AFTER_MS = 1500;
 const MAX_SAVE_RETRIES = 3;
 
@@ -109,6 +113,9 @@ function StripButton({ strip, covered, peelMs, onPeel, onMeet }: StripProps) {
   };
 
   const style = {
+    '--dw-ac-paper': TAPE.paper,
+    '--dw-ac-ink': TAPE.ink,
+    '--dw-ac-held': TAPE.held,
     '--dw-ac-tilt': `${tilt}deg`,
     '--dw-ac-hold': share.toFixed(2),
     ...(pull ? { '--dw-ac-pull-x': `${(pull.dx * 0.35).toFixed(1)}px`, '--dw-ac-pull-y': `${(pull.dy * 0.35).toFixed(1)}px`, '--dw-ac-lift': `${Math.min(1, Math.hypot(pull.dx, pull.dy) / 60).toFixed(2)}` } : null),
@@ -147,24 +154,50 @@ export function AutocorrectEffect({ post, plays, states, reader, save, show, met
   })), [configs, states, sending]);
   const { shown, peeled, total } = useMemo(() => stripsOf(text, playStrips, local), [text, playStrips, local]);
 
-  /* What the author's peel saves: everything saved and on its way for that play, with this place; a lost answer is sent again. */
+  /*
+   * The author's peels, saved as Whoops!'s strokes are: debounced, one save on its way per play at a time, what is peeled meanwhile
+   * sent after it, a save that got no answer sent again a little later each time and given up on after a few, and a refusal said,
+   * with its strips put back, since it would be the same again. Each save is the whole list of places, so sending it twice is the
+   * same as once.
+   */
   const now = useRef({ states, total, save, sending });
   now.current = { states, total, save, sending };
-  const send = useCallback(async (play: string, attempt = 0) => {
+  const inFlight = useRef(new Set<string>());
+  const dirty = useRef(new Set<string>());
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(() => () => { for (const t of timers.current.values()) clearTimeout(t); }, []);
+  const flush = useCallback(async (play: string, attempt = 0): Promise<void> => {
+    if (inFlight.current.has(play)) { dirty.current.add(play); return; }
+    dirty.current.delete(play);
     const places = [...savedPeels(now.current.states[play]?.state), ...(now.current.sending[play] ?? [])];
-    const last = places.at(-1) ?? 0;
-    const state = savedAfterPeel(places, last, now.current.total[play] ?? 0);
+    if (!places.length) return;
+    const state = savedAfterPeel(places, places[places.length - 1]!, now.current.total[play] ?? 0);
+    inFlight.current.add(play);
     let answer: Answer<unknown>;
     try {
       answer = await now.current.save(play, state);
     } catch {
       answer = { ok: false, error: LOST_ANSWER, uncertain: true };
     }
-    if (answer.ok) { setReport(''); return; }
-    if (answer.uncertain && attempt < MAX_SAVE_RETRIES) { setTimeout(() => { void send(play, attempt + 1); }, RETRY_AFTER_MS * 2 ** attempt); return; }
+    inFlight.current.delete(play);
+    if (answer.ok) {
+      setReport('');
+      if (dirty.current.has(play)) await flush(play);
+      return;
+    }
+    if (answer.uncertain && attempt < MAX_SAVE_RETRIES) {
+      timers.current.set(play, setTimeout(() => { void flush(play, attempt + 1); }, RETRY_AFTER_MS * 2 ** attempt));
+      return;
+    }
+    dirty.current.delete(play);
     setReport(answer.error);
-    setSending((was) => { const { [play]: _, ...rest } = was; return rest; });
+    setSending((was) => { const { [play]: _, ...rest } = was; now.current.sending = rest; return rest; });
   }, []);
+  const queue = useCallback((play: string) => {
+    const was = timers.current.get(play);
+    if (was) clearTimeout(was);
+    timers.current.set(play, setTimeout(() => { void flush(play); }, SAVE_AFTER_MS));
+  }, [flush]);
 
   const meet = useRef(met);
   meet.current = met;
@@ -177,11 +210,11 @@ export function AutocorrectEffect({ post, plays, states, reader, save, show, met
         now.current.sending = next;
         return next;
       });
-      void send(strip.play);
+      queue(strip.play);
     } else {
       setLocal((was) => new Set([...was, strip.key]));
     }
-  }, [reader.author, reduced, send]);
+  }, [reader.author, reduced, queue]);
 
   const runs = useMemo<TextRun[]>(() => [
     ...peeled.map((s): TextRun => ({

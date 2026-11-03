@@ -4,6 +4,9 @@
  * strip was, and a strip that falls away (or fades, under reduced motion).
  */
 import { act, fireEvent, screen } from '@testing-library/react';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useState } from 'react';
 import type { Act, EffectState } from '../../../../engine/ui/data/api.ts';
@@ -14,6 +17,7 @@ import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { AutocorrectEffect, TAPE } from './Effect.tsx';
 import { dropStrip, fallFrames } from './fall.ts';
 
+const read = (p: string) => fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), p), 'utf8');
 const QUOTE = '[quote=0f8fad5b-d9cb-469f-a165-70867728950e]Mario in a quote[/quote]';
 const postOf = (body: string) => ({ id: 'post-1', character: 'author', kind: 'post', thread: 't', payload: { body }, currentPayload: { body }, targetActId: null, seq: 3, createdAt: '2026-11-03T10:00:00.000Z', editedAt: null, shownEditedAt: null }) as unknown as Act;
 const playOf = (n: number, phrase: string, replacement: string): CardPlay => ({ id: `k${n}`, card: 'autocorrect', layer: n, caster: `c${n}`, message: '', config: { phrase, replacement }, playedAt: `2026-11-03T10:0${n}:00.000Z`, post: 'post-1' });
@@ -105,6 +109,7 @@ describe('Autocorrect', () => {
     expect(strips()).toHaveLength(1);
     expect(bands()).toHaveLength(2);
     await hold(strips()[0]!, 700);
+    await act(async () => { vi.advanceTimersByTime(500); });
     expect(m.save).toHaveBeenCalledWith('k1', { peeled: [0, 1, 2], clean: true });
   });
 
@@ -133,8 +138,73 @@ describe('Autocorrect', () => {
     expect(last.notes.k1).toBe('“mario” → “Luigi”, 3 places');
   });
 
-  test('the tape\'s typing reads at 7:1 on its paper, on either board', () => {
+  test('the tape\'s typing reads at 7:1 on its paper, and at 4.5:1 under a hold\'s shade; the strip is drawn in exactly those colors', () => {
     expect(ratio(TAPE.ink, TAPE.paper)).toBeGreaterThanOrEqual(7);
+    expect(ratio(TAPE.ink, TAPE.held)).toBeGreaterThanOrEqual(4.5);
+    mount();
+    const s = strips()[0]!;
+    expect(s.style.getPropertyValue('--dw-ac-paper')).toBe(TAPE.paper);
+    expect(s.style.getPropertyValue('--dw-ac-ink')).toBe(TAPE.ink);
+    expect(s.style.getPropertyValue('--dw-ac-held')).toBe(TAPE.held);
+    const css = read('autocorrect.css');
+    const rule = (sel: string) => new RegExp(`${sel.replace(/[.[\]]/g, '\\$&')} \\{([^}]*)\\}`, 'u').exec(css)?.[1] ?? '';
+    expect(rule('.dw-ac-strip')).toMatch(/color: var\(--dw-ac-ink\);/u);
+    expect(rule('.dw-ac-strip')).toMatch(/var\(--dw-ac-paper\);/u);
+    expect(rule('.dw-ac-strip[data-kb-holding]')).toMatch(/var\(--dw-ac-held\)/u);
+    expect(css).not.toMatch(/#f4f0e4|#17150f/iu);
+  });
+
+  test('Space held peels as Enter does', async () => {
+    vi.useFakeTimers();
+    mount();
+    fireEvent.keyDown(strips()[0]!, { key: ' ' });
+    await act(async () => { vi.advanceTimersByTime(700); });
+    expect(strips()).toHaveLength(2);
+  });
+
+  test('the author\'s quick peels go in one save, one at a time, each later one after the last is answered', async () => {
+    vi.useFakeTimers();
+    let answer: (v: Awaited<ReturnType<EffectProps['save']>>) => void = () => {};
+    const save = vi.fn(() => new Promise<Awaited<ReturnType<EffectProps['save']>>>((r) => { answer = r; }));
+    mount({ author: true, save: save as unknown as EffectProps['save'] });
+    const pull = (el: HTMLElement) => {
+      fireEvent.pointerDown(el, { clientX: 0, clientY: 0, pointerId: 1 });
+      fireEvent.pointerUp(el, { clientX: 80, clientY: 0, pointerId: 1 });
+    };
+    pull(strips()[0]!);
+    pull(strips()[0]!);
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenLastCalledWith('k1', { peeled: [0, 1] });
+    pull(strips()[0]!);
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(save).toHaveBeenCalledTimes(1);
+    await act(async () => { answer({ ok: true, value: { play: 'k1', savedAt: '' } }); });
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenLastCalledWith('k1', { peeled: [0, 1, 2], clean: true });
+  });
+
+  test('a save that got no answer is sent again, later; one the card refuses is said, and the strip comes back', async () => {
+    vi.useFakeTimers();
+    const answers = [{ ok: false, error: 'lost', uncertain: true }, { ok: true, value: { play: 'k1', savedAt: '' } }];
+    const save = vi.fn(async () => answers.shift()!);
+    mount({ author: true, save: save as unknown as EffectProps['save'] });
+    await hold(strips()[0]!, 700);
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(save).toHaveBeenCalledTimes(1);
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(save).toHaveBeenCalledTimes(2);
+
+    const refused = vi.fn(async () => ({ ok: false as const, error: 'peeled is a list of places' }));
+    document.body.innerHTML = '';
+    mount({ author: true, save: refused as unknown as EffectProps['save'] });
+    await hold(strips()[0]!, 700);
+    expect(strips()).toHaveLength(2);
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(refused).toHaveBeenCalledTimes(1);
+    expect(strips()).toHaveLength(3);
+    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('peeled is a list of places');
   });
 });
 
@@ -150,11 +220,12 @@ describe('the fall', () => {
     expect(String(fallFrames('k1:0', 600, 'right')[1]!.transformOrigin)).toMatch(/right/);
   });
 
-  test('under reduced motion it only fades where it was, with no drift or sway', () => {
+  test('under reduced motion it only fades where it was, with no drift or sway, and leaves nothing behind', async () => {
     const calls: [Keyframe[], KeyframeAnimationOptions][] = [];
     const proto = HTMLElement.prototype as unknown as { animate?: unknown };
     const was = proto.animate;
     proto.animate = function (this: HTMLElement, k: Keyframe[], opts: KeyframeAnimationOptions) { calls.push([k, opts]); return { finished: Promise.resolve(), onfinish: null } as unknown as Animation; };
+    document.querySelectorAll('[data-kb-falling]').forEach((c) => c.remove());
     try {
       const strip = document.createElement('button');
       document.body.append(strip);
@@ -166,6 +237,8 @@ describe('the fall', () => {
       expect(calls[1]![0].some((f) => /translateY/.test(String(f.transform)))).toBe(true);
       expect(document.querySelectorAll('[data-kb-falling]').length).toBeGreaterThan(0);
       for (const c of document.querySelectorAll('[data-kb-falling]')) expect(c).toHaveAttribute('aria-hidden', 'true');
+      await Promise.resolve();
+      expect(document.querySelectorAll('[data-kb-falling]')).toHaveLength(0);
     } finally {
       proto.animate = was;
     }
