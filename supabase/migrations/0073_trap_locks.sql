@@ -29,9 +29,9 @@
 --   - start_thread and spin (0013): a new thread's row, which no other writer can yet hold, then 5. They lock no `face_down`.
 --   - edit_post (0005): an edit, neither counted nor numbered.
 --   - The System's writers (write_staff_act and post_update, 0062; end_move, 0051; post_tally, 0024; write_unmask, 0027;
---     reveal_season, 0072; and system_tick and masks_change, which write through them): 4 and then 5 for a staff character, per Act. They lock no `face_down`, and a staff character can hold no
---     back (set_card's played_by refuses a character with no owner) and is never a poster through post() (acts_well_formed), so no
---     count row they hold is one post() waits on.
+--     reveal_season, 0072; and system_tick and masks_change, which write through them): 4 and then 5 for a staff character, per
+--     Act. They lock no `face_down`, and a staff character can hold no back (set_card's played_by refuses a character with no
+--     owner) and is never a poster through post() (acts_well_formed), so no count row they hold is one post() waits on.
 --   - acts_take_seq (0054) is 4 and acts_count_character (0030) is 5, as triggers inside each insert above.
 --
 -- ---- What post() locks, and what it costs ----
