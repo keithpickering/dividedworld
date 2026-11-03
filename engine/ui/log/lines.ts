@@ -322,8 +322,8 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   /* What the card says a play of it did (`CardUi.logPlay`), as one more sentence of the line; nothing where it says nothing. */
   const said = (key: unknown, play: Act | undefined): string[] => {
     const config = play?.payload.config;
-    const words = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {});
-    return words ? [` ${words}`] : [];
+    const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {});
+    return sentence ? [` ${sentence}`] : [];
   };
   /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
   const cardName = (key: unknown) => instance.cards.find((c) => c.key === key)?.name ?? 'a card';

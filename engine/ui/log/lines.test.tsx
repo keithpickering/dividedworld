@@ -336,6 +336,13 @@ describe('a card\'s own words for a play', () => {
     expect(text(row!)).toContain('It covers “mario” with “Luigi”.');
   });
 
+  test('a caught play says only that it was caught, never what it would have covered', () => {
+    const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 25, at }], caught: [{ play: 'k1', card: key, post: 'post3', trap: key, spring: 'sp1', price: 25, boughtPrice: 100 }] };
+    const rows = logRows(data({ log, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, play].map((a) => [a.id, a])) }), w, 600, null);
+    expect(rows.map((r) => r.kind)).toEqual(['caught']);
+    expect(text(rows[0]!)).not.toContain('covers');
+  });
+
   test('a card that says nothing adds nothing', () => {
     const quiet: Words = { ...words, ui: { ...words.ui, cards: [{ key, art: { color: '#000', ink: '#fff' }, describe: () => '' }] } };
     const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 25, at }] };
