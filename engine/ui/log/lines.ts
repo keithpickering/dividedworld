@@ -193,6 +193,8 @@ export interface TurnTaken {
   readonly classWas: string | null;
   /** The announcement, where The System made one. */
   readonly announced: TurnAnnounced | null;
+  /** The settlement end it was due at, where a reveal made it wait for this one; null where it took effect when due. */
+  readonly dueAt: string | null;
 }
 
 const sameTime = (a: string, b: string) => micros(a) === micros(b);
@@ -227,7 +229,7 @@ export function turnsTaken(data: Pick<LogData, 'log' | 'mine' | 'turns'>, instan
     const announced = data.turns.find((t) => t.character === c.id && sameTime(t.at, c.classSince)) ?? null;
     /* The window this settlement scored was played under the old class, so its reasons name it. */
     const from = announced?.was ?? scoredAs(s.lines.filter((l) => l.character === c.id), instance);
-    out.set(s.id, [...(out.get(s.id) ?? []), { character: c.id, classNow: c.class, classWas: from === c.class ? null : from, announced }]);
+    out.set(s.id, [...(out.get(s.id) ?? []), { character: c.id, classNow: c.class, classWas: from === c.class ? null : from, announced, dueAt: c.classDueAt }]);
   }
   return out;
 }
@@ -293,6 +295,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
       } else {
         details.push(' A silent Turn: no one else was told.');
       }
+      if (t.dueAt) details.push(` It was due at the settlement of ${utcDay(t.dueAt)} and waited for this one: ${nameOf(t.character)} revealed after that window had ended.`);
       rows.push({ key: `turn:${s.id}:${t.character}`, kind: 'turn', at: s.endsAt, what: 'Turn took effect', details, aura: 0, wallet, characters: [t.character] });
     }
     for (const r of ranks.get(s.id) ?? []) {

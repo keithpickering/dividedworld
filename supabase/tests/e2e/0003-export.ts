@@ -122,8 +122,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into admins (account) values (ann);
       -- A kept estimate, a waiting Turn, a standing, and a class's total in e2e/0001's settlement.
       insert into estimates (account, made_at, window_from, answer) values (ann, now(), now(), '{"entries": [], "lines": [], "asOf": null, "freshAfter": null}');
-      -- A waiting Turn naming the class it Turns to and from (0028), and a character's reveal of its class (0027).
-      insert into pending_turns (character, class_key, loudness, show_from, show_to) values (b, 'heel', 'announced', true, true);
+      -- A waiting Turn naming the class it Turns to and from (0028), passed over once by a reveal (its due_at, 0073), a later Turn
+      -- that waited before it took effect (class_history.due_at, 0073), and a character's reveal of its class (0027).
+      insert into pending_turns (character, class_key, loudness, show_from, show_to, due_at) values (b, 'heel', 'announced', true, true, now() - interval '1 hour');
+      insert into class_history (character, class_key, started_at, due_at) values (a, 'heel', now() + interval '1 day', now());
       perform write_unmask(a, t, 'act', now(), 'Exported, and unmasked.');
       insert into standings (character, season, amount) values (a, (select max(id) from seasons), 10) on conflict (season, character) do update set amount = excluded.amount;
       insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;
@@ -131,7 +133,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 10 from ledger;
       -- A ledger line with the numbers its words state (0072), and a settle run's claim on a window long settled.
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'lurker.postedTooMuch', -10, '{"lurker.postsAllowed": 3}' from settlements;
-      insert into settlement_claims (window_end, claimed_at) values ('2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
+      insert into settlement_claims (window_start, window_end, claimed_at) values ('2000-01-01T00:00:00Z', '2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
       -- The first settlement made with its shares kept (0037): every one here.
       insert into ledger_shares_kept (from_settlement) values (1);
       -- A model call in the ledger (0042): the instance's own bookkeeping, carried across with the rest.

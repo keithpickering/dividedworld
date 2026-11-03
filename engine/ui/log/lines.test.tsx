@@ -12,7 +12,7 @@ import { mergeLogs } from './useLog.ts';
 const empty: Log = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], caught: [], before: null };
 const settled = (id: number, endsAt: string, lines: LogSettlement['lines']): LogSettlement => ({ id, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines });
 const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z'): MyCharacter =>
-  ({ id, name, class: cls, classSince, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
+  ({ id, name, class: cls, classSince, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
 const words: Words = {
   instance: testInstance,
   ui: { reasonWords: (r) => ({ 'heel.drewHeat': 'Drew heat: x', 'face.cheered': 'Cheered: y' } as Record<string, string>)[r] ?? r, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, cards: [], copy: { siteName: '', siteTagline: '', shopName: 'Shop', reducedMotionCard: '' } },
@@ -55,7 +55,7 @@ describe('a Turn that took effect', () => {
     const p = char('p', 'Pipewrench', 'face', at);
     const log = { ...empty, settlements: [settled(1, at, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }])] };
     const turns: TurnAnnounced[] = [{ act: 't', character: 'p', at, was: 'lurker' }];
-    expect(turnsTaken(data({ log, mine: [p], turns }), testInstance).get(1)).toEqual([{ character: 'p', classNow: 'face', classWas: 'lurker', announced: turns[0] }]);
+    expect(turnsTaken(data({ log, mine: [p], turns }), testInstance).get(1)).toEqual([{ character: 'p', classNow: 'face', classWas: 'lurker', announced: turns[0], dueAt: null }]);
     expect(turnsTaken(data({ log, mine: [p] }), testInstance).get(1)![0]!.classWas).toBe('heel');
   });
   test('names no old class where the window scored the class it Turned to', () => {
@@ -94,6 +94,18 @@ describe('the log\'s plain sentences', () => {
     const log = { ...empty, settlements: [settled(1, at, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }])] };
     const turn = logRows(data({ log, mine: [p] }), words, 600, null).find((r) => r.kind === 'turn')!;
     expect(text(turn)).toBe('Pipewrench is a Face now. A silent Turn: no one else was told.');
+  });
+
+  /* The settle claim design, section 4: a Turn the backstop passed over says why it came a settlement late. */
+  test('a Turn that waited past a reveal says when it was due, and why it waited', () => {
+    const before = '2026-10-29T08:17:00.000Z';
+    const p = { ...char('p', 'Pipewrench', 'face', at), classDueAt: before };
+    const log = { ...empty, settlements: [settled(2, at, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }]), settled(1, before, [])] };
+    const turn = logRows(data({ log, mine: [p] }), words, 600, null).find((r) => r.kind === 'turn')!;
+    expect(text(turn)).toBe('Pipewrench is a Face now. A silent Turn: no one else was told.'
+      + ' It was due at the settlement of Oct 29 and waited for this one: Pipewrench revealed after that window had ended.');
+    const onTime = logRows(data({ log, mine: [char('p', 'Pipewrench', 'face', at)] }), words, 600, null).find((r) => r.kind === 'turn')!;
+    expect(text(onTime)).not.toContain('It was due');
   });
 });
 

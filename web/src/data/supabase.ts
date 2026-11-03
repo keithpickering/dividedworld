@@ -265,6 +265,7 @@ function toMyCharacter(r: Row): MyCharacter {
     name: r['name'],
     class: r['class'],
     classSince: r['class_since'],
+    classDueAt: r['class_due_at'] ?? null,
     turnOpensAt: r['turn_opens_at'] ?? null,
     debutedAt: r['debuted_at'] ?? null,
     debutLoudness: r['debut_loudness'] ?? null,
