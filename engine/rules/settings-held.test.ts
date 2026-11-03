@@ -18,12 +18,23 @@ const read = (rel: string) => fs.readFileSync(path.join(here, rel), 'utf8');
 
 type Row = { key: string; value: string };
 
-/** The rows of one `values` list in the test file, as the file writes them: `('key', 'json'),` on a line of its own. */
+/**
+ * The rows of one `values` list in the test file, as the file writes them: `('key', 'json'),` on a line of its own, the last
+ * ending `);`. Every line of the list must be a row, so a row this cannot read (a trailing comment, two on a line) fails here
+ * rather than going unchecked; a doubled quote inside a value is read as one.
+ */
 export function listRows(sql: string, table: 'poisons' | 'goods'): Row[] {
-  const start = sql.indexOf(`insert into ${table} (key, value) values`);
+  const header = `insert into ${table} (key, value) values\n`;
+  const start = sql.indexOf(header);
   assert.notEqual(start, -1, `the file opens a ${table} list`);
-  const end = sql.indexOf(';', start);
-  return [...sql.slice(start, end).matchAll(/^\s*\('([A-Za-z]+)', '(.*)'\),?\s*$/gm)].map((m) => ({ key: m[1]!, value: m[2]! }));
+  const rows: Row[] = [];
+  for (const line of sql.slice(start + header.length).split('\n')) {
+    const m = /^ {2}\('([A-Za-z]+)', '((?:[^']|'')*)'\)([,;])$/.exec(line);
+    assert.ok(m, `every line of the ${table} list is one row on its own: ${JSON.stringify(line)}`);
+    rows.push({ key: m[1]!, value: m[2]!.replaceAll("''", "'") });
+    if (m[3] === ';') return rows;
+  }
+  assert.fail(`the ${table} list ends with ');'`);
 }
 
 /** The keys SETTINGS names, as settingsProblems reports them missing from an empty settings. */
@@ -77,4 +88,7 @@ test('the checks go red: a key with no rows in the SQL list, and a poison the Ty
   assert.throws(() => checkLists(withoutKey), /keys of (poisons|goods)/);
   const harmless = sql.replace("insert into poisons (key, value) values\n", "insert into poisons (key, value) values\n  ('walletCap', '600'),\n");
   assert.throws(() => checkLists(harmless), /walletCap = 600 is refused/);
+  const commented = sql.replace("  ('presenceNames', '0'),\n", "  ('presenceNames', '0'), -- the issue's own\n");
+  assert.notEqual(commented, sql);
+  assert.throws(() => checkLists(commented), /every line of the poisons list is one row/);
 });

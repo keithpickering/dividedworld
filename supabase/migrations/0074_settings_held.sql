@@ -9,9 +9,13 @@
 -- Held before this migration, by their own triggers, and left as they are: editGrace (0022, 0041), presenceWindow (0041),
 -- settlementLength, seasonLength, turnCooldown (0007, 0020, 0054), inviteLifetime (0020, 0054), setLasts (0054),
 -- invitesPerPlayer (0020), reachRarity and reachLasts (0055) and economy (0006).
--- Not held, although the plan lists them: the three crons (settlementCron, viewCountCron, meetingCron) and systemEnabled have
--- triggers that reschedule a job after the write and check nothing, so they are held here. And the seven span keys above refuse
--- a span with no count (their test is null, not false, so the trigger lets it through); a branch here holds that edge too.
+-- Held here, although the plan counted them as held: the three crons (settlementCron, viewCountCron, meetingCron) and
+-- systemEnabled, whose triggers only reschedule a job after the write and check nothing. Held here too, for one edge: the seven
+-- span keys (settlementLength, seasonLength, turnCooldown, inviteLifetime, setLasts, editGrace, presenceWindow), whose earlier
+-- holds let a span with no count through (their test is null, not false); a branch here refuses it.
+--
+-- A JSON number is read as JavaScript reads it: one past a double's range is Infinity there (refused as not finite), and one
+-- too small for a double is 0 there (refused where above 0 is wanted), so those bounds are written here as numbers.
 --
 -- A whole number is a JSON number with no fraction inside JavaScript's safe integers, as Number.isSafeInteger reads it
 -- (engine/rules/instance.ts, isWhole). A key outside SETTINGS (the copy, say) is no business of this trigger.
@@ -60,10 +64,20 @@ begin
   return true;
 end $$;
 
+-- Where JavaScript's parse of a JSON number stops being finite (2^1024 - 2^970: from there it rounds to Infinity), and the
+-- least positive number it does not read as 0 (just past 2^-1075, half the least subnormal; written a hair above it).
+create function setting_infinity() returns numeric
+language sql immutable set search_path = public, pg_temp as $$ select power(2::numeric, 1024) - power(2::numeric, 970) $$;
+create function setting_positive(v jsonb) returns boolean
+language sql immutable set search_path = public, pg_temp as $$
+  select coalesce(jsonb_typeof(v) = 'number' and (v #>> '{}')::numeric > 2.4703282292062328e-324, false)
+$$;
+
 -- An object of named numbers: cardSettings' shape (the economy's is held by 0006).
 create function setting_named_numbers(v jsonb) returns boolean
 language sql immutable set search_path = public, pg_temp as $$
-  select jsonb_typeof(v) = 'object' and not exists (select 1 from jsonb_each(v) e where jsonb_typeof(e.value) <> 'number')
+  select jsonb_typeof(v) = 'object' and not exists (select 1 from jsonb_each(v) e where jsonb_typeof(e.value) <> 'number'
+    or abs((e.value #>> '{}')::numeric) >= setting_infinity())
 $$;
 
 create function settings_held() returns trigger
@@ -79,7 +93,7 @@ begin
   why := case new.key
     when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
     when 'vote' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
-    when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and (v #>> '{}')::numeric > 0 and (v #>> '{}')::numeric <= 1, false)
+    when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and setting_positive(v) and (v #>> '{}')::numeric <= 1, false)
       then 'a fraction above 0 and at most 1' end
     when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
     when 'charactersPerPlayer' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
@@ -106,7 +120,7 @@ begin
     when 'hints' then case when not coalesce(jsonb_typeof(v) = 'object'
         and setting_whole(v -> 'least', 1)
         and jsonb_typeof(v -> 'share') = 'number' and (v ->> 'share')::numeric > 0.5 and (v ->> 'share')::numeric <= 1
-        and jsonb_typeof(v -> 'split') = 'number' and (v ->> 'split')::numeric > 0 and (v ->> 'split')::numeric <= 0.5
+        and jsonb_typeof(v -> 'split') = 'number' and setting_positive(v -> 'split') and (v ->> 'split')::numeric <= 0.5
         and setting_span(v -> 'window', array['minute', 'day', 'week', 'month']), false)
       then 'an object giving least (a whole number of reactions, at least 1), share (above 0.5, at most 1), split (above 0, at most 0.5) and window (a span: a unit of minute, day, week or month and a whole count from 1 to 1000)' end
     when 'toastDefaults' then case when not coalesce(jsonb_typeof(v) = 'array'
@@ -157,7 +171,7 @@ end $$;
 create trigger settings_held before insert or update on settings for each row execute function settings_held();
 
 revoke execute on function setting_whole(jsonb, numeric, numeric), setting_span(jsonb, text[]), setting_cron(jsonb),
-  setting_named_numbers(jsonb), settings_held() from public, anon, authenticated;
+  setting_infinity(), setting_positive(jsonb), setting_named_numbers(jsonb), settings_held() from public, anon, authenticated;
 
 -- Every row already there goes through the hold, so one that breaks a rule fails this migration and names its key.
 update settings set value = value;

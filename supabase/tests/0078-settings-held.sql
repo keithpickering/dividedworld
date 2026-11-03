@@ -24,6 +24,7 @@ insert into poisons (key, value) values
   ('halving', '"0.5"'),
   ('halving', 'null'),
   ('halving', 'true'),
+  ('halving', '1e-999'),
   ('reactionCap', '0'),
   ('reactionCap', '1.5'),
   ('reactionCap', '"5"'),
@@ -227,12 +228,14 @@ insert into poisons (key, value) values
   ('cardSettings', 'null'),
   ('cardSettings', '{"whoops.clean": "95"}'),
   ('cardSettings', '{"whoops.clean": null}'),
+  ('cardSettings', '{"whoops.clean": 1e999}'),
   ('systemEnabled', '"true"'),
   ('systemEnabled', '1'),
   ('systemEnabled', '0'),
   ('systemEnabled', 'null'),
   ('systemEnabled', '{}'),
   ('hints', '{"least": 0, "share": 0.6, "split": 0.3, "window": {"unit": "minute", "count": 360}}'),
+  ('hints', '{"least": 10, "share": 0.6, "split": 1e-999, "window": {"unit": "minute", "count": 360}}'),
   ('hints', '{"least": 1.5, "share": 0.6, "split": 0.3, "window": {"unit": "minute", "count": 360}}'),
   ('hints', '{"least": 10, "share": 0.5, "split": 0.3, "window": {"unit": "minute", "count": 360}}'),
   ('hints', '{"least": 10, "share": 1.1, "split": 0.3, "window": {"unit": "minute", "count": 360}}'),
@@ -528,5 +531,29 @@ begin
     raise exception 'presenceNames = 0 was not refused';
   exception when check_violation then
     if sqlerrm not like 'presenceNames is %' then raise exception 'a refusal names its key: %', sqlerrm; end if;
+  end;
+
+  -- The insert path is held as the update path is.
+  delete from settings where key = 'presenceNames';
+  begin
+    insert into settings (key, value) values ('presenceNames', '0');
+    raise exception 'an insert of presenceNames = 0 was not refused';
+  exception when check_violation then null;
+  end;
+
+  -- A key outside SETTINGS is no business of the hold, whatever it holds.
+  insert into settings (key, value) values ('notASetting', 'null');
+  update settings set value = '"anything"' where key = 'notASetting';
+
+  -- The migration's last statement: a row that already broke a rule (written before the hold existed, here past it with the
+  -- trigger off) fails the pass of every row through the hold, naming its key.
+  alter table settings disable trigger settings_held;
+  update settings set value = '5' where key = 'presencePollSeconds';
+  alter table settings enable trigger settings_held;
+  begin
+    update settings set value = value;
+    raise exception 'a row already breaking its rule passed the hold';
+  exception when check_violation then
+    if sqlerrm not like 'presencePollSeconds is %' then raise exception 'the pass names the key that broke: %', sqlerrm; end if;
   end;
 end $$;
