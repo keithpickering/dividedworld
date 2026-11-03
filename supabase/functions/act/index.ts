@@ -4,6 +4,10 @@
  * is core.ts; this is the edge: the session, which the database reads through auth.uid(), so
  * the call is made as the player; the secret key, for a card's writes and the live updates
  * that follow each write; a bound on the body; and the headers a browser's preflight asks for.
+ *
+ * The gate: with verify_jwt off (supabase/config.toml), any caller reaches this handler. So nothing is
+ * done as the service before whoami(), read with the caller's session, names an account; a session the
+ * database does not take is answered 401, the same words whoever the target is. core.test.ts holds it.
  */
 import { actDbs, afterTheAnswer, coalesced, handleAction } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';

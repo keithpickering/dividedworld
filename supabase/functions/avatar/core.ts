@@ -26,7 +26,7 @@
  * bounds below are what bounds anything a hand-made file could hide inside one; what is stored is
  * exactly what the player's browser made, never stripped by this.
  */
-import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, TransportError, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Storage } from '../_shared/storage.ts';
 
 export type Verdict<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly why: string };
@@ -153,7 +153,7 @@ export async function runAvatar(dbs: { player: Db; service: Db }, storage: Stora
   }
   const stored: string[] = [];
   try {
-    const who = await dbs.player.rpc<string | null>('whoami', {});
+    const who = await dbs.player.rpc<string | null>('whoami', {}).catch((e) => { if (sessionRefused(e)) return null; throw e; });
     if (!who) return { status: 401, body: { error: 'sign in to set an avatar' } };
     const names = { square: newName(), portrait: request.portrait ? newName() : null };
     for (const field of ['square', 'portrait'] as const) {

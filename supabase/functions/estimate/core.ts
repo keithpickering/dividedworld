@@ -14,7 +14,7 @@
  */
 import { estimateForOwner } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
-import { TransportError, postgrest, type Db } from '../_shared/rpc.ts';
+import { TransportError, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
 /**
@@ -40,7 +40,7 @@ export function estimateDbs(o: { url: string; key: string; publishable: string; 
 
 export async function runEstimate(dbs: { player: Db; service: Db }, instance: Instance): Promise<EstimateAnswer> {
   try {
-    const who = await dbs.player.rpc<string | null>('whoami', {});
+    const who = await dbs.player.rpc<string | null>('whoami', {}).catch((e) => { if (sessionRefused(e)) return null; throw e; });
     if (!who) return { status: 401, body: { error: 'sign in to see your estimate' } };
     const kept = await dbs.service.rpc<unknown>('estimate_kept', { account: who, within_seconds: ESTIMATE_HOLD_SECONDS });
     if (kept) return { status: 200, body: kept };

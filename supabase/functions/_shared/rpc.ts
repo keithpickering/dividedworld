@@ -36,6 +36,13 @@ export class DatabaseError extends Error {
   }
 }
 
+/**
+ * Whether an error is PostgREST's refusal of the session itself (a bearer it cannot verify, or one
+ * whose role may not call the function): a 401 with no hint. A refusal a SQL function raises for a
+ * player carries its hint, and is not this.
+ */
+export const sessionRefused = (e: unknown): boolean => e instanceof DatabaseError && e.status === 401 && e.hint === '';
+
 export interface Db {
   rpc<T>(fn: string, args: Record<string, unknown>): Promise<T>;
 }

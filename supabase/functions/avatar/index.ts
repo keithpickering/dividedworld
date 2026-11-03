@@ -5,6 +5,10 @@
  * files square and portrait, portrait left out for a recrop). The original stays with the player:
  * a form carrying a source is passed on as carrying one, for core.ts to refuse in its words, and
  * one whose source makes it longer than the two crops can be is refused by its length first.
+ *
+ * The gate: with verify_jwt off (supabase/config.toml), any caller reaches this handler. So nothing is
+ * done as the service before whoami(), read with the caller's session, names an account; a session the
+ * database does not take is answered 401, the same words whoever the target is. core.test.ts holds it.
  */
 import { LIMITS, runAvatar } from './core.ts';
 import { postgrest } from '../_shared/rpc.ts';

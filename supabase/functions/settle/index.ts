@@ -1,7 +1,8 @@
 /**
  * The settlement job's Edge Function: pg_cron calls it at the instance's settlement time with
  * the minute it fired (supabase/migrations/0004_schedule.sql). The work is core.ts; this is the
- * edge: the jobs key it accepts (the secret key named kayfabb_jobs, in apikey), the environment, and an answer that says what happened.
+ * edge: the jobs key it accepts (the secret key named kayfabb_jobs, in apikey), the environment,
+ * and an answer that says what happened.
  */
 import { runSettlement } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';

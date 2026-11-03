@@ -7,6 +7,10 @@
  * no reaction is left out of it: a reaction that lands while an ask is out, or while the screen
  * holds an answer whose freshAfter has not come, is answered by one ask at freshAfter (counted
  * from when the answer came, freshAfter less asOf later), however many landed.
+ *
+ * The gate: with verify_jwt off (supabase/config.toml), any caller reaches this handler. So nothing is
+ * done as the service before whoami(), read with the caller's session, names an account; a session the
+ * database does not take is answered 401, the same words whoever the target is. core.test.ts holds it.
  */
 import { estimateDbs, runEstimate } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';

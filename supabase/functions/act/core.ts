@@ -16,7 +16,7 @@ import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
 import { basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type CardEffect, type CardTarget, type EffectsAbove, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
-import { DatabaseError, TransportError, postgrest, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, TransportError, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
@@ -25,7 +25,11 @@ export interface ActionAnswer {
   readonly body: unknown;
   /** What the write sends live, once it has committed: public projections only. */
   readonly broadcasts?: readonly Broadcast[];
+  /** Refused because the session names no account: nothing is done as the service, and nothing is scheduled after. */
+  readonly signedOut?: true;
 }
+
+const SIGN_IN: ActionAnswer = { status: 401, body: { error: 'sign in to act' }, signedOut: true };
 
 type Row = Record<string, unknown>;
 const act = (a: unknown): Broadcast[] => (a && typeof a === 'object' && (a as Row).thread ? [{ topic: `thread:${(a as Row).thread}`, event: 'act', payload: a }] : []);
@@ -125,12 +129,14 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
   if (!decision.ok) return refused(decision.field, decision.why);
   try {
     if (!decision.asService) {
-      const body = await dbs.player.rpc<unknown>(decision.rpc, decision.args);
+      // The player's own call: the database verifies the session on the call itself.
+      const body = await dbs.player.rpc<unknown>(decision.rpc, decision.args).catch((e) => { if (sessionRefused(e)) return SIGN_IN; throw e; });
+      if (body === SIGN_IN) return SIGN_IN;
       return { status: 200, body, broadcasts: live(decision.rpc, body) };
     }
 
-    const who = await dbs.player.rpc<string | null>('whoami', {});
-    if (!who) return { status: 401, body: { error: 'sign in to act' } };
+    const who = await dbs.player.rpc<string | null>('whoami', {}).catch((e) => { if (sessionRefused(e)) return SIGN_IN; throw e; });
+    if (who === SIGN_IN || !who) return SIGN_IN;
     let args: Record<string, unknown> = { ...decision.args, who };
     // A card's prices are settings: read as the rows hold them now, not as the code was deployed.
     const tuned = decision.rpc === 'buy_card' || decision.needsTarget ? await withDatabaseSettings(instance, dbs.service) : instance;
@@ -175,7 +181,6 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     return { status: 200, body, broadcasts: live(decision.rpc, body) };
   } catch (e) {
     if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) return { status: e.status >= 400 && e.status < 500 ? e.status : 400, body: { error: e.reason, code: e.code } };
-    if (e instanceof DatabaseError && e.status === 401 && e.message.startsWith('whoami:')) return { status: 401, body: { error: 'sign in to act' } };
     // The answer was lost, and the write may have committed: said so, never "it failed".
     if (e instanceof TransportError) {
       return { status: 503, body: { error: 'no answer came back, so this may have gone through: look before you try again' } };
@@ -262,7 +267,7 @@ async function hintSettings(instance: Instance, service: Db, now: Date): Promise
 
 /**
  * An action, answered; then, after the answer and whatever it queued, the write's live updates and the drain of the outbox, handed
- * to `after` (afterTheAnswer in the edge). The drain runs after every action, a refused one included, whether or not the write
+ * to `after` (afterTheAnswer in the edge). The drain runs after every action a signed-in caller makes, a refused one included, whether or not the write
  * queued anything, so that no answer differs by it. A written reaction is also checked for a hint (fireHints) in that same later work,
  * after the first drain, with one more drain when a hint was written.
  */
@@ -275,6 +280,8 @@ export async function handleAction(o: {
   readonly after: (work: () => Promise<void>) => void;
 }): Promise<ActionAnswer> {
   const out = await runAction(o.dbs, o.instance, o.body);
+  // A caller whose session names no account schedules nothing: with verify_jwt off, anyone reaches this, and a drain is the service's.
+  if (out.signedOut) return out;
   // A reaction that was written may have earned its Act's player a hint; read from the answer's own Act, after the answer.
   const decision = decide(o.body, o.instance);
   const reacted = out.status === 200 && decision.ok && decision.rpc === 'react' && typeof (out.body as Row | null)?.act === 'string' ? (out.body as Row).act as string : null;

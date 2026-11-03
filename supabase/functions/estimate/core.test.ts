@@ -91,3 +91,12 @@ test('the estimate\'s player connection sends the publishable key and the sessio
   await dbs.service.rpc('estimate_window', {});
   assert.deepEqual(sent.map((h) => [h.get('apikey'), h.get('Authorization')]), [['sb_publishable_p', 'Bearer tok'], ['sb_secret_s', null]]);
 });
+
+test('a session the database does not take is refused at whoami(), with nothing read as the service', async () => {
+  for (const [name, whoami] of [['a bad bearer', new DatabaseError('whoami: JWSError (CompactDecodeError Invalid number of parts: Expected 3 parts; got 1)', 'PGRST301', 401)], ['no account', null]] as const) {
+    const { dbs: d, calls } = dbs({ whoami });
+    const out = await runEstimate(d, instance);
+    assert.deepEqual(out, { status: 401, body: { error: 'sign in to see your estimate' } }, name);
+    assert.deepEqual(calls.map((c) => c.split(':').slice(0, 2).join(':')), ['player:whoami'], `${name}: the service received no call`);
+  }
+});
