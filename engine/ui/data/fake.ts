@@ -678,12 +678,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let order = 0;
   /** The time a seeded player's Act is dated, while the seed runs it through the action (the clock otherwise). */
   let stamp: number | null = null;
-  function write(a: { character: Id | null; kind: ActKind; thread: Id; target?: Id | null; payload: Record<string, unknown>; at?: number }): ActRec {
+  function write(a: { id?: Id; character: Id | null; kind: ActKind; thread: Id; target?: Id | null; payload: Record<string, unknown>; at?: number }): ActRec {
     const t = threads.get(a.thread)!;
     /* An edit is a version of its post and a card is a tag on its post: neither takes a place in the thread (0035_card_takes_no_seq.sql). */
     const placedAct = a.kind !== 'edit' && a.kind !== 'card' && a.kind !== 'set' && a.kind !== 'spring';
     const rec: ActRec = {
-      id: uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target: a.target ?? null, seq: placedAct ? t.nextSeq++ : null,
+      id: a.id ?? uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target: a.target ?? null, seq: placedAct ? t.nextSeq++ : null,
       at: a.at ?? stamp ?? now(), payload: a.payload,
     };
     acts.set(rec.id, rec);
@@ -944,12 +944,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const trap = liveBack(target);
     const trapRules = trap ? instance.cards.find((c) => c.key === trap.card) : undefined;
     const catches = trap && trapRules?.trap?.trigger.on === 'cast' && atOrBelow(rules.rarity, trapRules.rarity) && ownerOf(acts.get(trap.set)!.character!) !== undefined;
-    const written = write({ character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(catches ? { caught: trap!.set } : { layer }) } });
+    /* The play's id is chosen first, so the spring can name it and be written before it, as play_card writes them (each takes its moment then). */
+    const playId = uuid();
     let spring: ActRec | null = null;
     if (catches) {
-      spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: { card: trap.card, trigger: 'cast', outcome: trapRules!.trap!.outcome, set: trap.set, by: written.id, caught: written.id } });
+      spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: { card: trap.card, trigger: 'cast', outcome: trapRules!.trap!.outcome, set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(catches ? { caught: trap!.set } : { layer }) } });
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });

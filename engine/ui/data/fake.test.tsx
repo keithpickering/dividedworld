@@ -1631,6 +1631,16 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBeUndefined();
   });
 
+  test('a caught play\'s moment holds the back and the spring, written before it as the server writes them; the spring\'s holds the back', async () => {
+    const { fake, bo, anaFace, boFace, opener } = setup();
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    fake.signInAs(bo);
+    const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
+    const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+    expect((await fake.playMoment(caught.id))!.layers.map((l) => l.act.id).sort()).toEqual([caught.id, set.id, spring.id].sort());
+    expect((await fake.playMoment(spring.id))!.layers.map((l) => l.act.id).sort()).toEqual([spring.id, set.id].sort());
+  });
+
   test('a ward on the user\'s own post turns a cast away in its words', async () => {
     const { fake, bo, anaFace, boFace, opener, bos } = setup();
     expect((await fake.useCard('shield', anaFace, bos, {}, '')).ok).toBe(false);

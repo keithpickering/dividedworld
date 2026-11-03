@@ -26,7 +26,9 @@ const tagger = rule('tagger', 'Tagger');
 const shieldy = rule('shieldy', 'Shieldy', { play: 'use', ward: true, lasts: { unit: 'day', count: 7 } });
 const trappy = rule('trappy', 'Trappy', { play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'nullify' } } });
 const sparkly = rule('sparkly', 'Sparkly', { rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'day', count: 7 } });
-const instance: Instance = { ...testInstance, cards: [smear, ripple, holdy, tagger, shieldy, trappy, sparkly] };
+/* Lifty is a takeover that stacks: drawn in a moment, and outermost there as it is live. */
+const lifty = rule('lifty', 'Lifty', { stack: 2 });
+const instance: Instance = { ...testInstance, cards: [smear, ripple, holdy, tagger, shieldy, trappy, sparkly, lifty], settings: { ...testInstance.settings, setLasts: { unit: 'day', count: 7 } } };
 
 /* Each drawn card wraps the words in a box naming it, saying whether it was drawn still and what it was given. */
 const seen: { card: string; still: boolean; states: Readonly<Record<string, EffectState>> }[] = [];
@@ -36,7 +38,7 @@ const Wrap = (key: string) => function Effect({ children, still, states, show, p
   return <div data-kb-wrap={key}>{children}</div>;
 };
 const ui = (key: string, extra: Partial<CardUi> = {}): CardUi => ({ key, art: { color: '#ffd23f', ink: '#1a1300' }, describe: () => `${key}.`, Effect: Wrap(key), ...extra });
-const cards: CardUi[] = [ui('smear'), ui('ripple'), ui('holdy', { takeover: true }), ui('tagger'), ui('shieldy'), ui('sparkly')];
+const cards: CardUi[] = [ui('smear'), ui('ripple'), ui('holdy', { takeover: true }), ui('tagger'), ui('shieldy'), ui('sparkly'), ui('lifty', { takeover: true })];
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 3, 12, minutes)).toISOString();
 const act = (id: string, kind: Act['kind'], payload: Record<string, unknown>, minutes: number, extra: Partial<Act> = {}): Act => ({
@@ -58,7 +60,7 @@ const chain = () => {
   for (let el: HTMLElement | null = document.querySelector('[data-kb-words]'); el; el = el.parentElement) if (el.dataset.kbWrap) out.push(el.dataset.kbWrap);
   return out;
 };
-const named = (m: PlayMoment) => momentParts(m, instance.cards, cards, (c) => (c === 'c-spritey' ? 'Spritey' : 'someone')).named;
+const named = (m: PlayMoment) => momentParts(m, instance.cards, cards, (c) => (c === 'c-spritey' ? 'Spritey' : 'someone'), instance.settings.setLasts).named;
 
 afterEach(() => { seen.length = 0; vi.restoreAllMocks(); });
 
@@ -67,7 +69,9 @@ describe('a moment draws still', () => {
     const calls: unknown[] = [];
     const strokes = vi.fn();
     /* A card that saves, releases, meets and takes strokes whenever it is drawn, and binds its strokes only when it is live. */
-    const Busy = ({ children, still, save, release, met }: EffectProps) => {
+    let marked: unknown = 'unset';
+    const Busy = ({ children, still, save, release, met, marks }: EffectProps) => {
+      marked = marks;
       useEffect(() => { met(); void save('k1', { washed: 1 }).then((a) => calls.push(a)); void release('k1').then((a) => calls.push(a)); }, [met, save, release]);
       return <div data-kb-wrap="busy" data-kb-still={String(still)} onPointerDown={still ? undefined : strokes}>{children}</div>;
     };
@@ -79,6 +83,7 @@ describe('a moment draws still', () => {
       fireEvent.pointerDown(document.querySelector('[data-kb-wrap="busy"]')!);
       expect(strokes).not.toHaveBeenCalled();
       expect(spies.meets).not.toHaveBeenCalled();
+      expect(marked).toBeNull();
       expect(calls.every((a) => (a as { ok: boolean }).ok === false)).toBe(true);
       expect(spies.save).not.toHaveBeenCalled();
       expect(spies.release).not.toHaveBeenCalled();
@@ -106,6 +111,11 @@ describe('a moment draws still', () => {
   });
 });
 
+test('a takeover drawn in a moment wraps outermost, though it was played first', () => {
+  draw(moment([{ act: card('k2', 'smear', 5), state: null }, { act: card('k1', 'lifty', 1), state: null }, { act: card('k3', 'ripple', 7), state: null }]));
+  expect(chain()).toEqual(['smear', 'ripple', 'lifty']);
+});
+
 describe('a moment names what it does not draw', () => {
   test('a card that cannot change after it lands is named and never mounted, a takeover included', () => {
     const m = moment([{ act: card('k2', 'smear', 5), state: null }, { act: card('k1', 'holdy', 1), state: null }, { act: card('k0', 'tagger', 0), state: null }]);
@@ -122,6 +132,12 @@ describe('a moment names what it does not draw', () => {
     const { spies } = draw(m);
     expect(named(m)).toEqual(['a card set face down']);
     expect(spies.faces).not.toHaveBeenCalled();
+  });
+
+  test('a back whose time had passed by the play\'s time, unsprung, was gone then and is not named', () => {
+    const old = act('s0', 'set', {}, 0, { createdAt: new Date(Date.UTC(2026, 9, 1)).toISOString() });
+    const m = moment([{ act: card('k2', 'smear', 5), state: null }, { act: old, state: null }]);
+    expect(named(m)).toEqual([]);
   });
 
   test('a caught play is named with its trap\'s card, read from the spring, and draws nothing', () => {
