@@ -9,6 +9,7 @@
  * The gate: with verify_jwt off (supabase/config.toml), any caller reaches this handler. So nothing is
  * done as the service before whoami(), read with the caller's session, names an account; a session the
  * database does not take is answered 401, the same words whoever the target is. core.test.ts holds it.
+ * What comes before it is the caller's own request, read within its bound, and nothing else.
  */
 import { LIMITS, runAvatar } from './core.ts';
 import { postgrest } from '../_shared/rpc.ts';

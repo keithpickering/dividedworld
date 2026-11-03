@@ -221,6 +221,7 @@ test('a session the database does not take is refused at whoami(), with nothing 
     const out = await runAvatar(w.dbs, w.storage, request(), w.name);
     assert.deepEqual(out, { status: 401, body: { error: 'sign in to set an avatar' } }, name);
     assert.deepEqual(w.calls.map((c) => c.split(':').slice(0, 2).join(':')), ['player:whoami'], `${name}: the service received no call`);
+    // A removal naming no file sends nothing (storage.ts), so only a put, or a removal that names one, touches the bucket.
     assert.deepEqual(w.order.filter((o) => o.startsWith('put') || (o.startsWith('remove') && o !== 'remove ')), [], `${name}: the bucket is not touched`);
   }
 });

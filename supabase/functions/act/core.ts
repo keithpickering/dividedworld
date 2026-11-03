@@ -29,6 +29,7 @@ export interface ActionAnswer {
   readonly signedOut?: true;
 }
 
+/** The one signed-out answer; compared by identity, which no database answer can share. */
 const SIGN_IN: ActionAnswer = { status: 401, body: { error: 'sign in to act' }, signedOut: true };
 
 type Row = Record<string, unknown>;

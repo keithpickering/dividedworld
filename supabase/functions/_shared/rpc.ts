@@ -41,7 +41,14 @@ export class DatabaseError extends Error {
  * whose role may not call the function): a 401 with no hint. A refusal a SQL function raises for a
  * player carries its hint, and is not this.
  */
-export const sessionRefused = (e: unknown): boolean => e instanceof DatabaseError && e.status === 401 && e.hint === '';
+export function sessionRefused(e: unknown): boolean {
+  if (!(e instanceof DatabaseError) || e.status !== 401 || e.hint !== '') return false;
+  // Logged, since a wrong publishable key answers the same way and would otherwise only say "sign in" to every player. Its code
+  // alone (PGRST301 for a bearer PostgREST cannot verify, 42501 for a role that may not call, none from the gateway): never
+  // the answer's text, which a gateway may fill with what it was sent.
+  console.warn('the session was refused:', e.code || 'no code, so the gateway refused the request');
+  return true;
+}
 
 export interface Db {
   rpc<T>(fn: string, args: Record<string, unknown>): Promise<T>;

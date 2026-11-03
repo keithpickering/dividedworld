@@ -636,19 +636,20 @@ test('a thunder told to the card and then refused to the post is still a hint wr
 // The gate (docs/plans/2026-11-02-api-keys-design.md, section 2): with verify_jwt off, any caller reaches the handler, so nothing
 // is done as the service, and no drain or hint check is scheduled, until whoami(), read with the caller's session, names an account.
 const badBearer = (fn: string) => new DatabaseError(`${fn}: JWSError (CompactDecodeError Invalid number of parts: Expected 3 parts; got 1)`, 'PGRST301', 401);
-function gated(whoami: unknown) {
+/** A player's and the service's Db, recording each call; `refuse` names the player's call PostgREST refuses the bearer on, else whoami answers `whoami`. */
+function gated(o: { refuse?: string; whoami?: unknown }) {
   const calls: string[] = [];
   const make = (who: string): Db => ({ rpc: async <T>(fn: string) => {
     calls.push(`${who}:${fn}`);
-    if (who === 'player' && whoami instanceof Error) throw whoami.message.startsWith('whoami:') ? whoami : badBearer(fn);
-    return (fn === 'whoami' ? whoami : null) as T;
+    if (who === 'player' && fn === o.refuse) throw badBearer(fn);
+    return (fn === 'whoami' ? o.whoami : null) as T;
   } });
   return { dbs: { player: make('player'), service: make('service') }, calls };
 }
 
 test('a session the database does not take is refused at whoami(), with nothing done as the service and nothing scheduled after', async () => {
-  for (const [name, whoami] of [['a bad bearer', badBearer('whoami')], ['no account', null]] as const) {
-    const { dbs, calls } = gated(whoami);
+  for (const [name, world] of [['a bad bearer', { refuse: 'whoami' }], ['no account', { whoami: null }]] as const) {
+    const { dbs, calls } = gated(world);
     let later = 0;
     const out = await handleAction({ dbs, instance, body: { action: 'buyCard', card: 'whoops' }, send: async () => {}, drain: async () => {}, after: () => { later++; } });
     assert.deepEqual({ status: out.status, body: out.body }, { status: 401, body: { error: 'sign in to act' } }, name);
@@ -658,7 +659,7 @@ test('a session the database does not take is refused at whoami(), with nothing 
 });
 
 test('a player\'s own call with a session the database does not take is refused as signed out, and the service is never called', async () => {
-  const { dbs, calls } = gated(new Error('post'));
+  const { dbs, calls } = gated({ refuse: 'post' });
   let later = 0;
   const out = await handleAction({ dbs, instance, body: { action: 'post', thread: id, character: id, body: 'Hello.' }, send: async () => {}, drain: async () => {}, after: () => { later++; } });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 401, body: { error: 'sign in to act' } });
