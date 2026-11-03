@@ -85,9 +85,23 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
   const until = at(24);
   const full = JSON.parse(sql(`select settlement_input('${start}', '${until}')`)) as SettlementInput;
   const scoped = JSON.parse(sql(`select estimate_input('${ids['est-ann']}', '${until}')`)) as SettlementInput & { player: string };
-  const fromFull = estimateForOwner(full, instance, ids['est-ann']);
+  // The estimate leaves out only Ann's own reactions to her own masks, and counts every other as anyone's (the core loop design,
+  // section 1): so the whole window's input is read in the estimate's shape, each reaction of another player's keyed by its mask,
+  // which ties it to no author. Read as the settlement reads it, Bob's own Shadow on Bob's post is never counted.
+  const asAnyone = (i: SettlementInput, caller: string): SettlementInput => {
+    const others = i.reactions.filter((r) => r.player !== caller);
+    return {
+      ...i,
+      characters: [...i.characters, ...[...new Set(others.map((r) => r.character))].map((m) => ({ id: `mask:${m}`, player: `mask:${m}`, classes: [] }))],
+      reactions: i.reactions.map((r) => (r.player === caller ? r : { ...r, player: `mask:${r.character}`, character: `mask:${r.character}` })),
+    };
+  };
+  const fromFull = estimateForOwner(asAnyone(full, ids['est-ann']), instance, ids['est-ann']);
   const fromScoped = estimateForOwner(scoped, instance, scoped.player);
   assert.ok(fromFull.lines.length > 3, JSON.stringify(fromFull));
+  const settled = estimateForOwner(full, instance, ids['est-ann']);
+  const lifted = (e: typeof fromFull) => e.lines.filter((l) => l.reason === 'face.liftedAPost' && l.act === card).reduce((n, l) => n + l.amount, 0);
+  assert.equal(lifted(fromFull) - lifted(settled), 10, 'Bob\'s Shadow on Bob\'s post lifts Ann\'s card in the estimate, and is not counted as the settlement reads it');
   // Every read of estimate_input's has a reason behind it here, so dropping one changes the estimate.
   const reasons = fromFull.lines.map((l) => l.reason);
   for (const reason of ['lurker.calledIt', 'jabroni.soldTheL', 'face.liftedAPost']) assert.ok(reasons.includes(reason), `${reason} is estimated: ${JSON.stringify(reasons)}`);

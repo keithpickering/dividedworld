@@ -77,13 +77,23 @@ begin
                where c.staff is not null and a.id in (select k.target_act_id from all_acts k where k.kind = 'card' and k.created_at >= window_start and coalesce(k.payload ->> 'reach', 'post') = 'post')),
   system_acts as (select a.id from acts a join touched t on t.id = a.id
                   where (a.character is null or is_staff_side(a.character, a.kind, a.target_act_id)) and a.id not in (select id from unscored)),
-  -- Every reaction on an Act voted on, up to now, but a player's to their own character's, and none
-  -- on The System's own Acts: the settlement pays nobody for those (Task 3), and the tally every
-  -- player reacts to would hand each caller who reacted to it every other player's reaction.
+  -- Every reaction on an Act voted on, up to now, but the caller's own to the caller's own characters,
+  -- and none on The System's own Acts: the tally every player reacts to would hand each caller who
+  -- reacted to it every other player's reaction.
+  --
+  -- The settlement never pays a player's reactions to their own characters, and until 0072 this read
+  -- left them out too, which made a live line computed from who reacted: a fire landing on Bob's post
+  -- under Ann's card with no lift line told Ann it came from one of Bob's masks. The live estimate is not
+  -- The System's scoring (CLAUDE.md, "A response never proves a private fact": "The live estimate is not
+  -- that exception: it leaves out only the caller's own reactions, counts every other as anyone's, and
+  -- the settlement is exact"). So ownership is read here only to tell the caller's own from the rest:
+  -- the caller knows their own, and every other reaction, the author's own player's included, is
+  -- counted under `keyed`'s per-mask keys, which the engine cannot tie to an author. The estimate can then
+  -- say more than the settlement pays, as it says "up to"; the settled log is exact.
   all_reactions as (
     select r.* from reactions r join voted v on v.id = r.act
     join acts a on a.id = r.act join characters c on c.id = a.character
-    where r.created_at < window_end and r.reactor_account is distinct from c.owner
+    where r.created_at < window_end and not (r.reactor_account = account and c.owner = account)
       and (not is_staff_side(a.character, a.kind, a.target_act_id) or a.id in (select id from unscored))
   ),
   -- Each reaction's voter and mask as the engine reads them: the caller's own, as the caller's;

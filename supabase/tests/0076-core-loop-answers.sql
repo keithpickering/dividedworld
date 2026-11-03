@@ -58,3 +58,36 @@ begin
     raise exception 'the staff post a card C reacted to landed on is an unscored target: %', got;
   end if;
 end $$;
+
+-- ---- Task 2 (#19): the estimate leaves out only the caller's own reactions to the caller's own characters ----
+do $$
+declare
+  ws timestamptz := pg_temp.ws();
+  ann uuid := tests.account('core-ann'); bob uuid := tests.account('core-bob');
+  a1 uuid := tests.character(ann, 'Core Ann', 'alpha', ws - interval '1 day');
+  a2 uuid := tests.character(ann, 'Core Ann Two', 'alpha', ws - interval '1 day');
+  b1 uuid := tests.character(bob, 'Core Bob', 'alpha', ws - interval '1 day');
+  b2 uuid := tests.character(bob, 'Core Bob Two', 'alpha', ws - interval '1 day');
+  t uuid := tests.thread('Core own');
+  p uuid; card uuid; mine uuid; got jsonb; r jsonb; author_key text;
+begin
+  p := tests.post(b1, t, 'A post of Bob''s.', ws + interval '1 hour');
+  card := tests.act(a1, 'card', t, '{"card": "sweetie", "config": {}}', p, ws + interval '2 hours');
+  perform pg_temp.react(p, b2, 'up', ws + interval '3 hours');
+  mine := tests.post(a1, t, 'A post of Ann''s.', ws + interval '4 hours');
+  perform pg_temp.react(mine, a2, 'up', ws + interval '5 hours');
+  got := estimate_input(ann, ws + interval '1 day');
+  -- Bob's second mask's reaction to Bob's post, under a key of its own: the engine can tie it to no author.
+  select e into r from jsonb_array_elements(got -> 'reactions') e where e ->> 'act' = p::text;
+  if r is null then raise exception 'a reaction by the author''s own player, on a post the caller''s card sits on, is counted: %', got -> 'reactions'; end if;
+  select o ->> 'player' into author_key from jsonb_array_elements(got -> 'characters') o where o ->> 'id' = b1::text;
+  if author_key is null then raise exception 'the post''s author is named under a key: %', got -> 'characters'; end if;
+  if r ->> 'player' = got ->> 'player' or r ->> 'player' = author_key then
+    raise exception 'the author''s own player''s reaction is keyed as neither the caller nor the author: %, author %', r, author_key;
+  end if;
+  if r ->> 'character' = b2::text then raise exception 'the reacting mask is named by a key made up for the request, not its id'; end if;
+  -- Ann's own reaction to Ann's own post is the one left out.
+  if exists (select 1 from jsonb_array_elements(got -> 'reactions') e where e ->> 'act' = mine::text) then
+    raise exception 'the caller''s own reaction to the caller''s own post is left out: %', got -> 'reactions';
+  end if;
+end $$;
