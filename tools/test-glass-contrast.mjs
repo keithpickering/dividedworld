@@ -396,7 +396,9 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
     git(dir, 'init', '-q');
     fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
     fs.copyFileSync(path.join(here, 'check-glass-contrast.mjs'), path.join(dir, 'tools', 'check-glass-contrast.mjs'));
-    fs.symlinkSync(path.join(repo, 'node_modules'), path.join(dir, 'node_modules'));
+    // A junction, not a directory symlink: Windows refuses a directory symlink (EPERM) without admin rights or
+    // Developer Mode, and creates a junction for anyone. Node ignores the type everywhere else.
+    fs.symlinkSync(path.join(repo, 'node_modules'), path.join(dir, 'node_modules'), 'junction');
     fs.mkdirSync(path.join(dir, 'engine', 'ui'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'engine', 'ui', 'types.ts'), types ? fs.readFileSync(path.join(repo, 'engine', 'ui', 'types.ts'), 'utf8') : 'export type Nothing = never;\n');
     fs.mkdirSync(path.join(dir, 'engine', 'ui', 'glass'), { recursive: true });
