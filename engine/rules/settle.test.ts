@@ -371,6 +371,76 @@ test('a Pepperoni play reads as the room leans on it in the window: Salty, Sweet
     ['pepperoni', 'sweet', 'sweet'], 'shares, not reactions');
 });
 
+/* The two players a Pepperoni card is between (the core loop design, section 2, #170): the room that decides its lean is everyone
+   but the caster's player and the target post's author's player. */
+test('a Pepperoni play\'s lean leaves out the target author\'s player: their second mask never tips it; a third player does', () => {
+  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const { rules, inputs } = recorder();
+  const world = { ...withClasses(rules), cards: [...instance.cards, kind('pep', 'pepperoni')] };
+  const b = base();
+  // Cat casts on Ann's post p1; Ann's second mask (ann-quiet) groans at the card.
+  const play: InputAct = { id: 'k1', character: 'cat-1', kind: 'card', at: FROM + 7 * H, thread: 't1', target: 'p1', card: 'pep' };
+  const reads = (votes: InputReaction[]) => {
+    inputs.length = 0;
+    settle({ ...b, acts: [...b.acts, play], reactions: [...b.reactions, ...votes] }, world);
+    return inputs.flatMap((i) => i.cardsPlayed).find((c) => c.act === 'k1')!.readsAs;
+  };
+  const at = FROM + 8 * H;
+  assert.equal(reads([react('k1', 'ann', 'ann-quiet', 'zzz', at)]), 'pepperoni', 'the author\'s own player never moves the lean');
+  assert.equal(reads([react('k1', 'ann', 'ann-quiet', 'zzz', at), react('k1', 'dee', 'dee-1', 'zzz', at)]), 'salty', 'a third player does');
+});
+
+test('a Pepperoni play on a staff post has no author player to leave out: a third player\'s groan makes it Salty', () => {
+  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const { rules, inputs } = recorder();
+  const world = { ...withClasses(rules), cards: [...instance.cards, kind('pep', 'pepperoni')] };
+  const b = base();
+  settle({
+    ...b,
+    acts: [...b.acts, { id: 'k1', character: 'cat-1', kind: 'card', at: FROM + 7 * H, thread: 't1', target: 'boss-post', card: 'pep' }],
+    unscoredTargets: [{ id: 'boss-post', kind: 'post', at: FROM + 1 * H, thread: 't1', staff: true }],
+    reactions: [...b.reactions, react('k1', 'dee', 'dee-1', 'zzz', FROM + 8 * H)],
+  }, world);
+  assert.equal(inputs.flatMap((i) => i.cardsPlayed).find((c) => c.act === 'k1')!.readsAs, 'salty');
+});
+
+test('a Pepperoni play from an earlier window whose post is not in the input settles: its lean has no author to leave out', () => {
+  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const world = { ...withClasses(recorder().rules), cards: [...instance.cards, kind('pep', 'pepperoni')] };
+  const b = base();
+  // Cat's card from before the window, on a post the input does not hold; Dee reacts to the card in the window.
+  const r = settle({
+    ...b,
+    acts: [...b.acts, { id: 'k0', character: 'cat-1', kind: 'card', at: FROM - 2 * H, thread: 't1', target: 'gone', card: 'pep' }],
+    reactions: [...b.reactions, react('k0', 'dee', 'dee-1', 'zzz', FROM + 8 * H)],
+  }, world);
+  assert.ok(r.entries.length > 0);
+});
+
+test('the estimate\'s Pepperoni lean can recognize only the caller: the author\'s own reaction is left out for the author, counted for the caster', () => {
+  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const { rules, inputs } = recorder();
+  const world = { ...withClasses(rules), cards: [...instance.cards, kind('pep', 'pepperoni')] };
+  const b = base();
+  const play: InputAct = { id: 'k1', character: 'cat-1', kind: 'card', at: FROM + 7 * H, thread: 't1', target: 'p1', card: 'pep' };
+  const at = FROM + 8 * H;
+  const readsAs = () => inputs.flatMap((i) => [...i.cardsPlayed, ...i.cardsLanded]).find((c) => c.act === 'k1')!.readsAs;
+  // Asked by Ann, the author: her own groan is hers, under her own key, and left out, as before.
+  inputs.length = 0;
+  estimateForOwner({ ...b, acts: [...b.acts, play], reactions: [...b.reactions, react('k1', 'ann', 'ann-quiet', 'zzz', at)] }, world, 'ann');
+  assert.equal(readsAs(), 'pepperoni');
+  // Asked by Cat, the caster: estimate_input keys Ann's second mask's groan as a mask of its own, which the engine cannot tie to
+  // the author, so it is counted, and the estimate's lean can differ from the settled one (the design's section 2).
+  inputs.length = 0;
+  estimateForOwner({
+    ...b,
+    characters: [...b.characters, { id: 'mask-a', player: 'key-a', classes: [] }],
+    acts: [...b.acts, play],
+    reactions: [...b.reactions, react('k1', 'key-a', 'mask-a', 'zzz', at)],
+  }, world, 'cat');
+  assert.equal(readsAs(), 'salty');
+});
+
 test('a Pepperoni play that reads as Sweet shares the Sweet hold: one player\'s two cards on a post pay what one would', () => {
   const kind = (key: string, alignment: 'sweet' | 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
   const { rules, inputs } = recorder();

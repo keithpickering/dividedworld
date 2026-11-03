@@ -302,17 +302,26 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   /* The alignment each play reads as this window (the Autocorrect design, section 8): a Pepperoni card's by the lean of the
      votes on it here, each a share of one vote, positive quadrants against negative, tidied as every sum is; a tie stays
      Pepperoni. They are the votes `votesOn` counts as the card's draw: other players' and staff's. A player's votes on their own
-     Acts are never paid (payVotes), and the owner check below says so again, as `targetAfter`'s does. A play from an earlier
+     Acts are never paid (payVotes), and the owner check below says so again, as `targetAfter`'s does. The room that decides is
+     everyone but the two players the card is between (the core loop design, section 2, #170): the caster's player and the target
+     post's author's player, so neither tips it with a second mask. A staff post (`unscored`) has no author player, and only the
+     caster's is left out. In the live estimate the only owner this can recognize is the caller (estimate_input keys every other
+     reaction per mask), so the estimate's lean can differ from the settled one; the settlement is exact. A play from an earlier
      window reads by this window's votes, so one the room has stopped reacting to stays Pepperoni here. */
   const readsAsOf = new Map<string, Alignment>();
-  const readsAs = (a: { id: string; character: string; card?: string }): Alignment => {
+  const readsAs = (a: { id: string; character: string; card?: string; target?: string }): Alignment => {
     const own = alignmentOf.get(a.card!)!;
     if (own !== 'pepperoni') return own;
     let known = readsAsOf.get(a.id);
     if (known) return known;
     const player = playerOf(a.character);
+    /* The target's author, where the input holds the target. An earlier window's play is read here for the holder below, and its
+       target can be absent (a staff post an earlier card landed on, or a post only the card's own reactions brought it in by):
+       then no window play shares that target, so the hold it keys is never read, and nothing here may throw on it. */
+    const target = a.target === undefined || unscored.has(a.target) ? undefined : acts.get(a.target);
+    const author = target ? playerOf(target.character) : undefined;
     let lean = 0;
-    for (const v of windowVotesOn.get(a.id) ?? []) if (v.owner !== player) lean += (v.quadrant === 'excitedPositive' || v.quadrant === 'calmPositive' ? 1 : -1) * v.share;
+    for (const v of windowVotesOn.get(a.id) ?? []) if (v.owner !== player && v.owner !== author) lean += (v.quadrant === 'excitedPositive' || v.quadrant === 'calmPositive' ? 1 : -1) * v.share;
     known = tidy(lean) > 0 ? 'sweet' : tidy(lean) < 0 ? 'salty' : 'pepperoni';
     readsAsOf.set(a.id, known);
     return known;

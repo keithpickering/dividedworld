@@ -559,6 +559,18 @@ test('settled whole: a Pepperoni card drawing groans on a Jabroni\'s post sells 
   assert.equal(sold(settle(onJa('zzz'), pepWorld)), 1);
   assert.equal(sold(settle(onJa('fire'), pepWorld)), 0);
 });
+test('settled whole: a Jabroni\'s own second mask groaning at a Pepperoni card on the Jabroni\'s post sells no L (#170)', () => {
+  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const pepWorld = { ...world, cards: [...world.cards, pep] };
+  const b = board();
+  const r = settle({
+    ...b,
+    characters: [...b.characters, { id: 'ja2', player: 'pj', classes: [{ class: 'face', from: -1 }] }],
+    acts: [...b.acts, { id: 'jp', character: 'ja', kind: 'post', at: 5 * H, thread: 't' }, { id: 'kp', character: 'he', kind: 'card', at: 6 * H, thread: 't', target: 'jp', card: 'pep' }],
+    reactions: [...b.reactions, { act: 'kp', player: 'pj', character: 'ja2', kind: 'zzz', at: 7 * H }],
+  }, pepWorld);
+  assert.equal(r.entries.filter((e) => e.character === 'ja' && e.reason === 'jabroni.soldTheL').length, 0);
+});
 test('a Pepperoni card that stayed Pepperoni (a tie) lifts nothing for a Face', () => {
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'pepperoni', readsAs: 'pepperoni', targetAfter: { ...none, excitedPositive: 2 } })] }), 'face.liftedAPost'), 0);
 });
