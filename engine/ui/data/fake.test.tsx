@@ -1818,6 +1818,21 @@ describe('the Alerts read and the count (my_alerts, my_alerts_unread, 0060)', ()
     expect((await fake.alerts()).length).toBe(2);
   });
 
+  test('settlementMoved answers the caller\'s count and when it was applied, and null for a stranger\'s settlement or an unknown id', async () => {
+    const { fake, ana, bo, cy } = alertsWorld();
+    fake.signInAs(ana);
+    const mine = (await fake.alerts()).find((r) => r.kind === 'settlement')!;
+    expect(await fake.settlementMoved(mine.sub!)).toEqual({ count: 2, at: mine.at });
+    expect(await fake.settlementMoved('999')).toBeNull();
+    expect(await fake.settlementMoved('not-an-id')).toBeNull();
+    fake.signInAs(bo);
+    expect(await fake.settlementMoved(mine.sub!)).toMatchObject({ count: 1 });
+    fake.signInAs(cy);
+    expect(await fake.settlementMoved(mine.sub!)).toBeNull();
+    fake.signOut();
+    await expect(fake.settlementMoved(mine.sub!)).rejects.toThrow();
+  });
+
   test('another account sees none of the caller\'s, and a visitor reads nothing', async () => {
     const { fake, cy, bo, anaHeel } = alertsWorld();
     fake.signInAs(cy);

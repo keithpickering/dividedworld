@@ -1122,6 +1122,12 @@ export interface KayfaApi {
   /** How many alerts arrived after the account's mark (`my_alerts_unread`), at most `ALERTS_UNREAD_BOUND`; a result at the bound is shown "9+". Rejects when it cannot be read. */
   alertsUnread(): Promise<number>;
   /**
+   * Whether the settlement `id` moved the caller's characters (`my_settlement_moved`): how many of them, and when it was applied (an ISO time), or
+   * null when it moved none, is another player's alone, or does not exist; the answer has the same shape for any id. Read at a random moment after a
+   * settlement is announced, so no client asks in the same instant. Rejects when it cannot be read.
+   */
+  settlementMoved(id: string): Promise<{ readonly count: number; readonly at: string } | null>;
+  /**
    * When the caller's account was opened (an ISO time; accounts.created_at, read by its own account alone), or null where it is older
    * than anything this backend holds: an account that has never opened Alerts counts as new only what arrived after it joined (issue
    * #148), so the page's divider starts here when there is no mark. Rejects when it cannot be read.

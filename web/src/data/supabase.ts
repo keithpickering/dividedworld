@@ -1033,6 +1033,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const r = await read(() => client.rpc('my_alerts_unread'));
       return Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(r.data))));
     },
+    async settlementMoved(id) {
+      /* The caller's own ledger lines in one settlement, through a function (0073); no row is "moved none", for any id alike. */
+      const r = await read(() => client.rpc('my_settlement_moved', { settlement: id }));
+      const row = Array.isArray(r.data) ? (r.data[0] as Record<string, unknown> | undefined) : undefined;
+      const at = row === undefined ? null : str(row['applied_at']);
+      return row === undefined || at === null ? null : { count: Math.max(0, Math.floor(num(row['count']))), at };
+    },
     async seeSettlement(endsAt) {
       const a = await rpcWrite(() => client.rpc('see_settlement', { ends_at: endsAt }));
       return a.ok ? { ok: true, value: str(a.value['seen']) ?? endsAt } : a;

@@ -1779,6 +1779,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const seen = account.prefs.alertsSeenAt === null ? account.createdAt : Date.parse(account.prefs.alertsSeenAt);
       return Math.min(ALERTS_UNREAD_BOUND, alertsOf(account).filter((a) => Date.parse(a.at) > seen).length);
     },
+    settlementMoved(id) {
+      // my_settlement_moved (0073): the caller's own ledger lines in the settlement, counted by character; none is null, as is an id nothing holds.
+      const account = me();
+      if (!account) throw new Error('sign in with an account first');
+      const x = settlements.find((y) => String(y.id) === id);
+      const mine = x?.lines.filter((l) => l.account === account.id) ?? [];
+      return x && mine.length > 0 ? { count: new Set(mine.map((l) => l.character)).size, at: iso(x.endsAt + APPLIED_AFTER) } : null;
+    },
     seeSettlement(endsAt) {
       const account = me();
       if (!account) return refuse('sign in with an account first');

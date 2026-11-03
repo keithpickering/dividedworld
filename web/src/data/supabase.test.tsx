@@ -548,6 +548,23 @@ describe('reads and their rows', () => {
     expect(await h.api.alertsUnread()).toBe(10);
   });
 
+  it('reads whether a settlement moved the caller through my_settlement_moved: its count and time, and null for no row', async () => {
+    const h = harness((r) => {
+      if (!r.url.pathname.endsWith('/rpc/my_settlement_moved')) return undefined;
+      const id = (r.body as { settlement: string }).settlement;
+      return json(id === '7' ? [{ count: 2, applied_at: '2026-11-02T08:00:01+00:00' }] : []);
+    });
+    expect(await h.api.settlementMoved('7')).toEqual({ count: 2, at: '2026-11-02T08:00:01+00:00' });
+    expect(await h.api.settlementMoved('8')).toBeNull();
+    expect(await h.api.settlementMoved('x')).toBeNull();
+    expect(h.to('rpc/my_settlement_moved').map((r) => r.body)).toEqual([{ settlement: '7' }, { settlement: '8' }, { settlement: 'x' }]);
+  });
+
+  it('rejects settlementMoved when the read fails', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/my_settlement_moved') ? json({ message: 'down' }, 500) : undefined));
+    await expect(h.api.settlementMoved('7')).rejects.toThrow();
+  });
+
   it('maps the marks an answer carries (set_preferences, meet_card) into the preferences', async () => {
     const marks = { alerts_seen_at: '2026-10-29T08:17:00+00:00', settlement_seen: '2026-10-30T08:17:00+00:00' };
     const h = harness((r) => json({ theme: 'dark', postbit: 'side', motion: 'system', smoke: 'low', contrast: 'high', text_size: 150, cards_met: ['whoops'], ...marks }));
