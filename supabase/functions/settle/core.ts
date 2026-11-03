@@ -84,6 +84,10 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
       await sendOutbox();
       return outcome(windows, true);
     }
+    // The run's claim on the window, before it reads the window (the core loop design, section 4, #22): a reveal waits while a
+    // claim on a window covering a waiting Turn is fresh and the window is unsettled (unmask, 0072), since the window's end is not
+    // always known in advance. A claim that cannot be written fails the run, as any read does.
+    await db.rpc('claim_settlement_window', { window_end: window.end });
     tuned ??= await withDatabaseSettings(instance, db);
     const input = await db.rpc<SettlementInput>('settlement_input', { window_start: window.start, window_end: window.end });
     const result = settle(input, tuned);

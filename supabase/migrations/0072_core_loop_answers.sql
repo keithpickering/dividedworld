@@ -143,3 +143,57 @@ begin
     'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'))
   );
 end $$;
+
+-- ------------------------------------------------------------------------ the settle run's claim ----
+
+-- Task 4 (#22, the design's section 4). unmask() refuses while a character's waiting Turn's window has passed its end, so a reveal
+-- never names the class the Turn replaces dated after the Turn took effect. Where the window's end is not known in advance (a
+-- season's first window, and the window after a season's end: next_settlement_at is null) nothing told it a run was applying that
+-- window. The settle function's steps (next_settlement_window, settlement_input, apply_settlement, supabase/functions/settle/core.ts)
+-- are separate requests, so no transaction lock spans a run: the run records the window it has chosen, here, before it reads its
+-- input, and unmask() waits while that window covers a waiting Turn and is not yet settled.
+--
+-- Not an Act: a run's clock, the service's alone, read by no player and by no screen. A claim ends when its window's settlement is
+-- applied; a run that dies leaves its claim, so it also ends five minutes after it was made, five times a run's budget (MOST_RUN_MS,
+-- 60 seconds), so a live run is never outlived by its claim's end and a dead one blocks no reveal for long. A second run on the same
+-- window makes the claim afresh. One row a window, so the table grows by one row a settlement.
+create table settlement_claims (
+  window_end timestamptz primary key,
+  claimed_at timestamptz not null default now()
+);
+alter table settlement_claims enable row level security;
+revoke all on settlement_claims from public, anon, authenticated;
+
+create function claim_settlement_window(window_end timestamptz) returns void
+language sql security definer set search_path = public, pg_temp as $$
+  insert into settlement_claims (window_end, claimed_at) values (claim_settlement_window.window_end, now())
+  on conflict on constraint settlement_claims_pkey do update set claimed_at = now()
+$$;
+revoke execute on function claim_settlement_window(timestamptz) from public, anon, authenticated;
+grant execute on function claim_settlement_window(timestamptz) to service_role;
+
+-- unmask() (0027), refusing too while a fresh claim covers a waiting Turn and its window is unsettled; both refusals say the same.
+-- The refusal turns on the caller's own character's own Turn and on the run's clock, never on another player; that a run is under
+-- way is public, since when The System settles is the same for everyone. Its way out: the run applies the window, or the claim is
+-- five minutes old, by itself, and the player may withdraw the Turn. Everything else as 0027 wrote it.
+create or replace function unmask(through uuid, in_thread uuid, message text default '') returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  said text := coalesce(message, '');
+  on_board uuid;
+begin
+  perform acting(through);
+  if char_length(said) > 200 then raise exception 'the message is at most 200 characters' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
+  select board into on_board from threads where id = in_thread;
+  if on_board is null then raise exception 'there is no such thread' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform not_the_systems(on_board);
+  perform 1 from characters where id = through for no key update;
+  if exists (select 1 from pending_turns p where p.character = through and (
+       next_settlement_at(p.asked_at) <= now()
+       or exists (select 1 from settlement_claims k
+                  where k.window_end > p.asked_at and k.claimed_at > now() - interval '5 minutes'
+                    and not exists (select 1 from settlements s where s.ends_at = k.window_end)))) then
+    raise exception 'this character''s Turn takes effect at the settlement now running; reveal in a few minutes' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  return write_unmask(through, in_thread, 'act', now(), said);
+end $$;
