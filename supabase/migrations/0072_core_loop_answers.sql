@@ -428,8 +428,10 @@ begin
   -- An entry's params, where it has them: the numbers its reason's words state, each a number by its key (0072). The engine writes
   -- them from the settings it settled under, so anything else is a fault in the call, never repaired here.
   if exists (select 1 from jsonb_array_elements(entries) e
+             -- CASE, so the type is read before jsonb_each, which refuses anything but an object in words of its own.
              where e ? 'params' and jsonb_typeof(e -> 'params') <> 'null'
-               and (jsonb_typeof(e -> 'params') <> 'object' or exists (select 1 from jsonb_each(e -> 'params') p where jsonb_typeof(p.value) <> 'number'))) then
+               and case when jsonb_typeof(e -> 'params') <> 'object' then true
+                        else exists (select 1 from jsonb_each(e -> 'params') p where jsonb_typeof(p.value) <> 'number') end) then
     raise exception 'an entry''s params are numbers by key' using errcode = '22023';
   end if;
   if jsonb_typeof(coalesce(class_totals, '{}')) <> 'object' or exists (

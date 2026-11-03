@@ -172,6 +172,16 @@ begin
   end;
   perform tests.unbecome();
   if why is distinct from 'an entry''s params are numbers by key' then raise exception 'params that are not numbers are refused: %', why; end if;
+  -- Params that are not an object at all are refused in the same words.
+  why := null;
+  perform set_config('role', 'service_role', true);
+  begin
+    perform apply_settlement(s, s + interval '1 hour', jsonb_build_array(
+      jsonb_build_object('player', lu, 'character', c, 'reason', 'alpha.postedTooMuch', 'amount', -10, 'params', jsonb_build_array(4))));
+  exception when others then why := sqlerrm;
+  end;
+  perform tests.unbecome();
+  if why is distinct from 'an entry''s params are numbers by key' then raise exception 'params that are not an object are refused: %', why; end if;
   if exists (select 1 from ledger where character = c) then raise exception 'nothing of a refused window is applied'; end if;
 end $$;
 
