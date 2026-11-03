@@ -13,7 +13,7 @@ import { Link } from '../router.tsx';
 import { Frame } from './Frame.tsx';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
-  id, name, class: cls, classSince: '2026-10-01T00:00:00Z', turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
+  id, name, class: cls, classSince: '2026-10-01T00:00:00Z', classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
   debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false,
 });
 const pub = (id: string, name: string): Character => ({

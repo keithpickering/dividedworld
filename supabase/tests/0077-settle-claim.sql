@@ -257,7 +257,7 @@ begin
     end if;
     -- The tally carries nothing that marks the Turn as late.
     if exists (select 1 from acts x cross join lateral jsonb_array_elements(x.payload -> 'turns') e
-               where x.kind = 'tally' and e ->> 'character' = a::text and (e ? 'due_at' or e ? 'dueAt' or e::text like '%' || w1::text || '%')) then
+               where x.kind = 'tally' and e ->> 'character' = a::text and e - 'character' - 'name' - 'loudness' - 'class' <> '{}'::jsonb) then
       raise exception 'the tally says nothing of when the Turn was due';
     end if;
     raise exception 'undone' using errcode = 'KB001';
@@ -351,7 +351,7 @@ begin
       raise exception 'the debut names the class the Turn took';
     end if;
     if exists (select 1 from pending_turns p where p.character in (a, b)) then raise exception 'both Turns landed'; end if;
-    -- The next window passes over neither: both landed already.
+    -- Neither landed late: no record says either was due earlier.
     if exists (select 1 from class_history h where h.character in (a, b) and h.due_at is not null) then raise exception 'neither Turn waited'; end if;
     raise exception 'undone' using errcode = 'KB001';
   exception when sqlstate 'KB001' then null;
