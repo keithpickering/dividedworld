@@ -239,6 +239,7 @@ test('Autocorrect\'s phrase is 4 to 100 characters with at least 4 letters or di
   assert.equal(config('x'.repeat(100)).ok, true);
   assert.match((config('x'.repeat(101)) as { why: string }).why, /at most 100 characters/);
   assert.match((config(7) as { why: string }).why, /phrase/);
+  assert.match((config('big\ncats') as { why: string }).why, /phrase is one line/, 'a phrase across a line would match across a quote\'s separator');
 });
 
 test('Autocorrect\'s replacement is one line of 1 to 100 characters of plain text, and never the phrase itself', () => {
