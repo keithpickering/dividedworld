@@ -1783,6 +1783,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       // my_settlement_moved (0073): the caller's own ledger lines in the settlement, counted by character; none is null, as is an id nothing holds.
       const account = me();
       if (!account) throw new Error('sign in with an account first');
+      if (!/^\d+$/.test(id)) throw new Error('a settlement is a whole number'); // the function takes bigint, so the database refuses the cast
       const x = settlements.find((y) => String(y.id) === id);
       const mine = x?.lines.filter((l) => l.account === account.id) ?? [];
       return x && mine.length > 0 ? { count: new Set(mine.map((l) => l.character)).size, at: iso(x.endsAt + APPLIED_AFTER) } : null;

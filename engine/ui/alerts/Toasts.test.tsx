@@ -586,6 +586,24 @@ describe('from the quality review of Task 10', () => {
     expect(b.api.settlementMoved).not.toHaveBeenCalled();
     vi.restoreAllMocks();
   });
+
+  test('an answer still in flight when the account changes is kept for no one, and the next account hears the same settlement for itself', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    let release: (v: { count: number; at: string } | null) => void = () => {};
+    const b = backend();
+    (b.api.settlementMoved as ReturnType<typeof vi.fn>).mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    const { result, rerender } = renderHook(({ account }) => useAlertFeed(b.api, account, '/'), { initialProps: { account: 'a' as string | null } });
+    await act(async () => { b.heard.reach?.onSettled?.({ id: '1', at: NOW }); });
+    await waitFor(() => expect(b.api.settlementMoved).toHaveBeenCalledTimes(1));
+    rerender({ account: 'b' });
+    await act(async () => { release({ count: 3, at: NOW }); await Promise.resolve(); });
+    expect(result.current.arrivals).toEqual([]);
+    (b.api.settlementMoved as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 1, at: NOW });
+    await act(async () => { b.heard.reach?.onSettled?.({ id: '1', at: NOW }); });
+    await waitFor(() => expect(result.current.arrivals).toHaveLength(1));
+    expect(result.current.arrivals[0]).toMatchObject({ id: 'settlement|1', count: 1 });
+    vi.restoreAllMocks();
+  });
 });
 
 describe('useAlertFeed on its own', () => {

@@ -1824,7 +1824,7 @@ describe('the Alerts read and the count (my_alerts, my_alerts_unread, 0060)', ()
     const mine = (await fake.alerts()).find((r) => r.kind === 'settlement')!;
     expect(await fake.settlementMoved(mine.sub!)).toEqual({ count: 2, at: mine.at });
     expect(await fake.settlementMoved('999')).toBeNull();
-    expect(await fake.settlementMoved('not-an-id')).toBeNull();
+    await expect(fake.settlementMoved('not-an-id')).rejects.toThrow();
     fake.signInAs(bo);
     expect(await fake.settlementMoved(mine.sub!)).toMatchObject({ count: 1 });
     fake.signInAs(cy);
