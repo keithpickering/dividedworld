@@ -30,7 +30,7 @@ test('each text node is given its offset in the visible text, in drawing order',
   const tree = parse(`ca[b]ts[/b] [quote=${ACT}]no[/quote][list][*]a[*][i]b[/i][/list]`);
   const { text, offsets } = visibleWalk(tree);
   const found: [string, number][] = [];
-  const visit = (nodes: typeof tree) => {
+  const visit = (nodes: readonly BbNode[]) => {
     for (const n of nodes) {
       if (n.type === 'text' && offsets.has(n)) found.push([n.text, offsets.get(n)!]);
       if ('children' in n && n.type !== 'quote' && n.type !== 'url') visit(n.children);

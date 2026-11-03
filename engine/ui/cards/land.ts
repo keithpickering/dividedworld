@@ -5,7 +5,7 @@
  * the screen and the server agree because they ask the same function. The server decides again at
  * the play (`decidePlay`), whatever this said.
  */
-import { decidePlay, decideSet, decideUse, effectsOnTarget, playOf as playOfRules, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
+import { decidePlay, decideSet, postTarget, decideUse, effectsOnTarget, playOf as playOfRules, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
@@ -18,7 +18,7 @@ export function lengthOf(post: Act): number {
 
 /** The post as a card's rules see it. */
 export function targetOf(post: Act): PostTarget {
-  return { reach: 'post', act: post.id, kind: post.kind as PostTarget['kind'], length: lengthOf(post) };
+  return postTarget(post.id, post.kind as PostTarget['kind'], post.currentPayload.body);
 }
 
 /** What the post carries as its rules see it (card_target, 0054): a play not caught, with a ward's rarity and a Use's end; a card back naming no card, ended where it sprang or its time passed. */
