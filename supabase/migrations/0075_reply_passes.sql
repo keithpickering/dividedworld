@@ -12,7 +12,8 @@
 -- springs the newest reply trap among them, at most one as before. Every other back it passed has spent its moment, one that lost to
 -- a quote this post sprang included. The row is the one state of a back that changes (once, null to set), so it lives in a row of its
 -- own and not in an Act or in face_down, which stays append-only. A back's end is unchanged: it springs once, or it ends by itself at
--- setLasts, and a passed reply trap still springs on a quote, a cast or a reaction if it names one. Nothing on a board shows the table;
+-- setLasts. A card has one trigger (card_kinds.trap), so passing is the end of a reply trap's moment and nothing else: a quote, cast or
+-- reaction trap springs on its own trigger whether or not a reply has passed it, and a reply trap springs on no other. Nothing on a board shows the table;
 -- no API role reads it, and `passed_at` reaches only the setter, through my_face_down (the setter's log, #136 F3).
 --
 -- Backs set before this migration: one row each, passed by the first post in the thread after the set by a character other than the
@@ -22,6 +23,10 @@
 -- Locks, in one order everywhere a write may spring (this REPLACES the paragraph in 0054's header): the caster's account, the target
 -- post, then every face_down and face_down_reply row the write may spring or pass (in `play` order), then the character_post_counts
 -- rows of the writer and of every setter of those backs (in character-id order), and only then any Act insert, and last the wallets.
+-- The backs a write springs are the backs it locked: a back set on the quoted or target post after the write took its locks (set_card
+-- needs none of them) is not sprung by that write, since it was set after the write began; has_unlocked_back asks, after the locks,
+-- and the write springs nothing on a post that now carries one. This is simpler than locking again (a second lock pass after count
+-- rows are held would itself break the order) and the next write to meet that back springs it.
 -- 0054 and 0058 inserted the Act of a post and of a play first and locked face_down after it, so a post that held its author's count
 -- row (the Act's counter) and wanted a back's row met a play or a spring that held the back's row and wanted that count row, and
 -- Postgres killed one (40P01): a quoting post and a cast by one player on a trapped post; a post by a trap's setter and another
@@ -68,16 +73,22 @@ revoke all on face_down_reply from public, anon, authenticated;
 
 -- One row for every back set already: passed by the first post in its thread after the set by a character other than the back's
 -- post's author, at that post's time; else waiting.
-insert into face_down_reply (play, thread, passed_by, passed_at)
-select f.play, f.thread, n.id, n.created_at
-from face_down f
-join acts s on s.id = f.play
-join acts b on b.id = f.post
-left join lateral (
-  select p.id, p.created_at from acts p
-  where p.thread = f.thread and p.kind = 'post' and p.created_at > s.created_at and p.character is distinct from b.character
-  order by p.seq limit 1
-) n on true;
+create function face_down_reply_backfill() returns void
+language sql security definer set search_path = public, pg_temp as $$
+  insert into face_down_reply (play, thread, passed_by, passed_at)
+  select f.play, f.thread, n.id, n.created_at
+  from face_down f
+  join acts s on s.id = f.play
+  join acts b on b.id = f.post
+  left join lateral (
+    select p.id, p.created_at from acts p
+    where p.thread = f.thread and p.kind = 'post' and p.created_at > s.created_at and p.character is distinct from b.character
+    order by p.seq limit 1
+  ) n on true
+  on conflict (play) do nothing
+$$;
+revoke execute on function face_down_reply_backfill() from public, anon, authenticated;
+select face_down_reply_backfill();
 
 -- ------------------------------------------------------------------------- the locks ----
 
@@ -111,6 +122,14 @@ begin
   return passes;
 end $$;
 revoke execute on function lock_backs(uuid[], uuid, uuid) from public, anon, authenticated;
+
+-- Whether `post` carries a live back that is not among `held`, the backs this write locked (a back set after its locks were taken).
+-- The same index probe for every card, a Bluff's too.
+create function has_unlocked_back(post uuid, held uuid[]) returns boolean
+language sql stable set search_path = public, pg_temp as $$
+  select exists (select 1 from face_down f where f.post = has_unlocked_back.post and f.ends_at > now() and f.play <> all (held))
+$$;
+revoke execute on function has_unlocked_back(uuid, uuid[]) from public, anon, authenticated;
 
 -- ------------------------------------------------------------------------------ set_card ----
 
@@ -191,7 +210,8 @@ begin
   passes := lock_backs(maybe, through, in_thread);
   insert into acts (character, kind, thread, target_act_id, payload)
   values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id into written;
-  if quoting is not null then sprung := spring_traps('quote', quoting, written); end if;
+  -- Only a back this post locked springs (the header's note on has_unlocked_back).
+  if quoting is not null and not has_unlocked_back(quoting, maybe) then sprung := spring_traps('quote', quoting, written); end if;
   update face_down_reply set passed_by = written, passed_at = now() where play = any (passes);
   if sprung is null then
     for candidate in
@@ -199,7 +219,7 @@ begin
       where f.play = any (passes)
       group by f.post, p.seq order by p.seq desc
     loop
-      sprung := spring_traps('reply', candidate, written);
+      if not has_unlocked_back(candidate, maybe) then sprung := spring_traps('reply', candidate, written); end if;
       exit when sprung is not null;
     end loop;
   end if;
@@ -231,6 +251,7 @@ declare
   live_board timestamptz;
   where_words text;
   target_name text;
+  locked uuid[];
 begin
   perform played_by(through, who);
   if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
@@ -283,8 +304,9 @@ begin
     end if;
     if kind_of.play = 'cast' then
       -- The post's live back, then the count rows of the caster and of the back's setter, before any Act is written (the order above).
-      perform lock_backs(array(select f.play from face_down f where f.post = target and f.ends_at > now()), through);
-      sprung := spring_traps('cast', target, written, null, kind_of.rarity, who, price);
+      locked := array(select f.play from face_down f where f.post = target and f.ends_at > now());
+      perform lock_backs(locked, through);
+      if not has_unlocked_back(target, locked) then sprung := spring_traps('cast', target, written, null, kind_of.rarity, who, price); end if;
     end if;
   else
     -- The target's row is locked, so plays on one target are laid one at a time and each counts the last; two board cards on one

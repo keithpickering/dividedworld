@@ -16,13 +16,14 @@ create function pg_temp.hand(who uuid, variadic keys text[]) returns void langua
   insert into card_ledger (account, card, kind, price) select who, k, 'bought', 0 from unnest(keys) k
 $$;
 
--- What this transaction has read and written so far in the tables a post locks and stamps, one number after another.
-create function pg_temp.touched() returns bigint[] language sql as $$
+-- What this transaction has read and written so far in the given tables, one number after another: scans begun, tuples returned,
+-- fetched, inserted, updated and deleted. (A row lock is a scan that returns the row, so the counters see what a lock reads.)
+create function pg_temp.touched(tables text[]) returns bigint[] language sql as $$
   select array_agg(n order by r, i) from (
-    select r, i, case i when 1 then pg_stat_get_xact_tuples_returned(r::regclass) when 2 then pg_stat_get_xact_tuples_fetched(r::regclass)
-                        when 3 then pg_stat_get_xact_tuples_inserted(r::regclass) when 4 then pg_stat_get_xact_tuples_updated(r::regclass)
-                        else pg_stat_get_xact_tuples_deleted(r::regclass) end as n
-    from unnest(array['face_down', 'face_down_reply']) r, generate_series(1, 5) i) s
+    select r, i, case i when 1 then pg_stat_get_xact_numscans(r::regclass) when 2 then pg_stat_get_xact_tuples_returned(r::regclass)
+                        when 3 then pg_stat_get_xact_tuples_fetched(r::regclass) when 4 then pg_stat_get_xact_tuples_inserted(r::regclass)
+                        when 5 then pg_stat_get_xact_tuples_updated(r::regclass) else pg_stat_get_xact_tuples_deleted(r::regclass) end as n
+    from unnest(tables) r, generate_series(1, 6) i) s
 $$;
 
 create function pg_temp.minus(after bigint[], before bigint[]) returns bigint[] language sql as $$
@@ -74,10 +75,15 @@ declare
   cards text[] := array['bluffy', 'quoter', 'hook'];
   k text;
   t uuid; p uuid; set_act uuid; answer jsonb;
-  before bigint[]; seen bigint[]; first_seen bigint[];
+  before bigint[]; narrow_before bigint[]; seen bigint[]; narrow_seen bigint[]; first_seen bigint[]; first_narrow bigint[];
+  -- Every table a post touches, for the two backs that do not spring; the backs' own two for the reply trap, which does.
+  wide text[] := array['face_down', 'face_down_reply', 'character_post_counts', 'acts', 'card_kinds'];
+  narrow text[] := array['face_down', 'face_down_reply'];
 begin
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'bluffy', 'quoter', 'hook');
+  -- The passer's count row exists before the first measurement, or the first post alone would insert it.
+  perform tests.post(b, tests.thread('Alike warm-up'), 'Warm-up.');
   foreach k in array cards loop
     t := tests.thread('Alike ' || k);
     p := tests.post(a, t, 'Backed by ' || k);
@@ -85,9 +91,11 @@ begin
     set_act := (set_card(ann, k, a, p, '{}', 0) ->> 'id')::uuid;
     perform tests.unbecome();
     perform tests.become(bob);
-    before := pg_temp.touched();
+    before := pg_temp.touched(wide);
+    narrow_before := pg_temp.touched(narrow);
     answer := post(t, b, 'The first post by another.', null);
-    seen := pg_temp.minus(pg_temp.touched(), before);
+    seen := pg_temp.minus(pg_temp.touched(wide), before);
+    narrow_seen := pg_temp.minus(pg_temp.touched(narrow), narrow_before);
     perform tests.unbecome();
     if (select passed_by from face_down_reply where play = set_act) is distinct from (answer ->> 'id')::uuid then raise exception '% was not passed by the first post by another character', k; end if;
     if (select passed_at from face_down_reply where play = set_act) is null then raise exception '% was passed without a time', k; end if;
@@ -95,9 +103,15 @@ begin
       if not answer ? 'sprung' then raise exception 'the reply trap did not spring on the pass'; end if;
     elsif answer ? 'sprung' then raise exception '% sprang on a pass', k;
     end if;
-    -- The same rows read and written for every card, the spring itself aside.
-    if first_seen is null then first_seen := seen; end if;
-    if seen is distinct from first_seen then raise exception 'a post read or wrote other rows for %: % against %', k, seen, first_seen; end if;
+    -- The same rows read, written and locked for every card, the spring itself aside. A Bluff and a quote trap spring nothing on this
+    -- post, so everything it touched (the backs, the count rows, the Acts and the card kinds) must match. The reply trap springs, and
+    -- the spring is public, so only the backs' own tables are compared for it.
+    if k <> 'hook' then
+      if first_seen is null then first_seen := seen; end if;
+      if seen is distinct from first_seen then raise exception 'a post read or wrote other rows for %: % against %', k, seen, first_seen; end if;
+    end if;
+    if first_narrow is null then first_narrow := narrow_seen; end if;
+    if narrow_seen is distinct from first_narrow then raise exception 'a post read or wrote other backs for %: % against %', k, narrow_seen, first_narrow; end if;
   end loop;
 end $$;
 
@@ -161,11 +175,53 @@ begin
     insert into face_down_reply (play, thread, passed_by, passed_at) values (set_act, t, passing, now() - interval '1 day');
   end loop;
   perform tests.become(bob);
-  before := pg_temp.touched();
+  before := pg_temp.touched(array['face_down', 'face_down_reply']);
   perform post(t, b, 'A new post.', null);
-  seen := pg_temp.minus(pg_temp.touched(), before);
+  seen := pg_temp.minus(pg_temp.touched(array['face_down', 'face_down_reply']), before);
   perform tests.unbecome();
-  -- face_down returned and fetched, then face_down_reply's.
-  reads := seen[1] + seen[2] + seen[6] + seen[7];
+  -- face_down returned and fetched (numbers 2 and 3 of its six), then face_down_reply's (8 and 9).
+  reads := seen[2] + seen[3] + seen[8] + seen[9];
   if reads > 20 then raise exception 'a post in a thread of 200 passed backs read % rows of the backs; it reads only what waits: %', reads, seen; end if;
+end $$;
+
+-- ---- The backfill: a back set before the migration is passed by the first later post by another character, else waits ----
+do $$
+declare
+  ann uuid := tests.account('fill-ann');
+  bob uuid := tests.account('fill-bob');
+  a uuid := tests.character(ann, 'Fill Setter');
+  b uuid := tests.character(bob, 'Fill Passer');
+  t_other uuid := tests.thread('Fill passed by another');
+  t_own uuid := tests.thread('Fill own post only');
+  t_none uuid := tests.thread('Fill nothing after');
+  p_other uuid; p_own uuid; p_none uuid;
+  set_other uuid; set_own uuid; set_none uuid;
+  by_other uuid; at_other timestamptz;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'bluffy', 'bluffy', 'bluffy');
+  p_other := tests.post(a, t_other, 'Backed, then answered.');
+  p_own := tests.post(a, t_own, 'Backed, then the author again.');
+  p_none := tests.post(a, t_none, 'Backed, then silence.');
+  perform tests.become_service();
+  set_other := (set_card(ann, 'bluffy', a, p_other, '{}', 0) ->> 'id')::uuid;
+  set_own := (set_card(ann, 'bluffy', a, p_own, '{}', 0) ->> 'id')::uuid;
+  set_none := (set_card(ann, 'bluffy', a, p_none, '{}', 0) ->> 'id')::uuid;
+  perform tests.unbecome();
+  -- A later post by the back's own author does not count; one by another character does. (Later by the clock, since a transaction's
+  -- now() is one instant.)
+  perform tests.post(a, t_own, 'The author again.', now() + interval '1 hour');
+  by_other := tests.post(b, t_other, 'Another character.', now() + interval '2 hours');
+  select created_at into at_other from acts where id = by_other;
+  -- Back to before the migration: no reply rows. (The once-only trigger is off for this transaction's own cleanup, which rolls back.)
+  alter table face_down_reply disable trigger face_down_reply_once;
+  delete from face_down_reply where play in (set_other, set_own, set_none);
+  alter table face_down_reply enable trigger face_down_reply_once;
+  perform face_down_reply_backfill();
+  if (select count(*) from face_down_reply where play in (set_other, set_own, set_none)) is distinct from 3::bigint then raise exception 'the backfill wrote no row for a back'; end if;
+  if (select passed_by from face_down_reply where play = set_other) is distinct from by_other or (select passed_at from face_down_reply where play = set_other) is distinct from at_other then
+    raise exception 'a back with a later post by another character was not passed by it';
+  end if;
+  if (select passed_by from face_down_reply where play = set_own) is not null then raise exception 'a later post by the back''s own author passed it'; end if;
+  if (select passed_by from face_down_reply where play = set_none) is not null then raise exception 'a back with no later post was passed'; end if;
 end $$;

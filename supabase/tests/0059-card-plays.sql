@@ -140,6 +140,49 @@ begin
   $sql$, ann, bob, cat));
 end $$;
 
+-- ---- A back set while a post waits to insert its Act is not sprung by that post: the set it locked is the set it springs ----
+-- Reply passes (0075): post() reads the quoted post's live back and locks it with the setters' count rows before its Act. A trigger that
+-- sleeps after the poster's Act insert holds the post there while a set_card lands a quote trap on the quoted post; the post never locked
+-- that back, so it must not spring it (it was set after the post, and the next quote springs it). Committed rows, as above.
+do $$
+declare
+  ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid();
+  a uuid := gen_random_uuid(); b uuid := gen_random_uuid();
+  t uuid := gen_random_uuid(); p uuid := gen_random_uuid();
+  said text[];
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'race-late-a@test.invalid'), (%2$L, 'race-late-b@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%3$L, %1$L, 'Late Setter', now(), now()), (%4$L, %2$L, 'Late Quoter', now(), now());
+    insert into class_history (character, class_key, started_at) values (%3$L, 'alpha', now()), (%4$L, 'alpha', now());
+    update settings set value = value || '{"latequote.price": 100}' where key = 'economy';
+    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
+      ('latequote', 'Late Quote', 'salty', 'latequote.price', 'uncommon', 'set', '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "blot"}}');
+    insert into card_ledger (account, card, kind, price) values (%1$L, 'latequote', 'bought', 0);
+    insert into threads (id, board, title) select %5$L, b.id, 'Late set' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%6$L, %3$L, 'post', %5$L, '{"body": "Quoted while the trap goes on."}');
+  $sql$, ann, bob, a, b, t, p));
+  perform tests.commit(format($sql$
+    create function public.race_sleep() returns trigger language plpgsql as $f$ begin perform pg_sleep(1.2); return null; end $f$;
+    revoke execute on function public.race_sleep() from public;
+    create trigger race_sleep after insert or update on character_post_counts for each row when (new.character = %1$L) execute function public.race_sleep();
+  $sql$, b));
+  said := tests.race_as(bob, format('select post(%L, %L, %L, %L)', t, b, 'Quoting it.', p), null,
+    format('do $d$ begin perform pg_sleep(0.4); perform set_card(%L, %L, %L, %L, %L, 0); end $d$', ann, 'latequote', a, p, '{}'));
+  perform tests.commit('drop trigger race_sleep on character_post_counts; drop function public.race_sleep();');
+  if said[1] is not null or said[2] is not null then raise exception 'a quoting post and a set that lands while it waits: %', said; end if;
+  if (select count(*) from face_down where post = p) is distinct from 1::bigint then raise exception 'the set did not land'; end if;
+  if (select count(*) from acts where kind = 'post' and target_act_id = p) is distinct from 1::bigint then raise exception 'the quoting post did not land'; end if;
+  if (select count(*) from acts where kind = 'spring' and target_act_id = p) is distinct from 0::bigint then
+    raise exception 'a post sprang a back it had not locked (set after the post read its locks)';
+  end if;
+  perform tests.commit(format($sql$
+    delete from alerts where account in (%1$L, %2$L);
+    delete from broadcasts_due where topic in ('account:' || %1$L, 'account:' || %2$L);
+  $sql$, ann, bob));
+end $$;
+
 -- ---- Set: by the post's author, from a hand that holds the card, one card back to a post ----
 do $$
 declare
