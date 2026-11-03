@@ -37,16 +37,19 @@
  */
 import type { BoardManifest, Landmark } from '../board-match.ts';
 
-/** Each quadrant's emoji, as the board names its buttons, with the build's quadrant label. */
-const KINDS: readonly (readonly [string, string])[] = [
-  ['Tomato', 'Heat'], ['Angry', 'Heat'], ['Cursing', 'Heat'], ['Thumbs down', 'Heat'],
+/**
+ * Each quadrant's emoji, as the board names its buttons, with the build's quadrant label, and the build's own name where its emoji differs:
+ * the board's 😡 Angry is the instance's 🤢 Nauseated since #161 (the Excited Negative set has four distinct feelings), in the same place.
+ */
+const KINDS: readonly (readonly [string, string, string?])[] = [
+  ['Tomato', 'Heat'], ['Angry', 'Heat', 'Nauseated'], ['Cursing', 'Heat'], ['Thumbs down', 'Heat'],
   ['Fire', 'Hype'], ['Heart', 'Hype'], ['Raised hands', 'Hype'], ['Star-struck', 'Hype'],
   ['Zzz', 'Groan'], ['Eye roll', 'Groan'], ['Trash', 'Groan'], ['Yawn', 'Groan'],
   ['Relieved', 'Calm'], ['Handshake', 'Calm'], ['Meditating', 'Calm'],
 ];
 
-const buttons: Landmark[] = KINDS.map(([name, quadrant]) => ({
-  id: `kind-${name.toLowerCase().replace(/\W+/g, '-')}`, role: 'button', name, buildName: `${name.replace('-', ' ')}, ${quadrant}`, within: 'picker', origin: 'picker', type: false,
+const buttons: Landmark[] = KINDS.map(([name, quadrant, built]) => ({
+  id: `kind-${name.toLowerCase().replace(/\W+/g, '-')}`, role: 'button', name, buildName: `${(built ?? name).replace('-', ' ')}, ${quadrant}`, within: 'picker', origin: 'picker', type: false,
 }));
 
 const manifest: BoardManifest = {
