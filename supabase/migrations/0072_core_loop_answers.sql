@@ -6,9 +6,10 @@
 
 -- estimate_input (0055), with two changes.
 --
--- Task 1 (#137, the design's section 7): a card or spring the caller reacted to brings in the post it landed on, as
--- settlement_input's `touched` brings in each window card's target, so estimateForOwner never meets a play whose target is not
--- in its input ("settle: Act <target> is not in the input"), and a staff post such a card landed on is named in `unscored`.
+-- Task 1 (#137, the design's section 7): a card or spring the caller reacted to brings in the post it landed on, and a spin the
+-- caller reacted to its origin, as settlement_input's `touched` brings in each window play's target, so estimateForOwner never meets
+-- a play whose target is not in its input ("settle: Act <target> is not in the input"), and a staff post such a card landed on is
+-- named in `unscored`. The spin is beyond the plan's predicate: the build's quality review found it, with the same root cause.
 --
 -- Task 2 (#19, the design's section 1): `all_reactions` leaves out only the caller's own reactions to the caller's own
 -- characters. See its comment.
@@ -64,10 +65,11 @@ begin
     select id from voted union select id from my_cards_there union select id from landed union select id from spins
     union select target_act_id from acts a join spins s on s.id = a.id where a.target_act_id is not null
     union select id from first_posts
-    -- The post each card or spring among the voted Acts landed on (Task 1, #137): a card the caller only reacted to is
-    -- judged against its post, as settlement_input reads every card's.
+    -- The post each card, spin or spring among the voted Acts points at (Task 1, #137): a card the caller only reacted to is
+    -- judged against its post, and a spin the caller only reacted to is read with its origin (settle.ts reads every spin's), as
+    -- settlement_input reads every window play's target.
     union select a.target_act_id from acts a join voted v on v.id = a.id
-          where a.kind in ('card', 'spring') and a.target_act_id is not null and coalesce(a.payload ->> 'reach', 'post') = 'post'
+          where a.kind in ('card', 'spin', 'spring') and a.target_act_id is not null and coalesce(a.payload ->> 'reach', 'post') = 'post'
   ),
   -- As settlement_input (0004, as 0043 changed it): a staff character's Acts, and a card on one, are named and pay nobody.
   all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null

@@ -57,6 +57,39 @@ begin
   if not exists (select 1 from jsonb_array_elements(got -> 'unscoredTargets') e where e ->> 'id' = bp::text) then
     raise exception 'the staff post a card C reacted to landed on is an unscored target: %', got;
   end if;
+  if pg_temp.has_act(got, bp) then raise exception 'a staff post is named as an unscored target, never as an Act: %', got -> 'acts'; end if;
+end $$;
+
+-- ---- Task 1 (#137): a spring and a spin the caller reacted to bring in their posts; a play beyond a post brings in none ----
+do $$
+declare
+  ws timestamptz := pg_temp.ws();
+  qa uuid := tests.account('core-pq'); za uuid := tests.account('core-pz'); ca uuid := tests.account('core-pc');
+  q uuid := tests.character(qa, 'Core PQ', 'alpha', ws - interval '1 day');
+  z uuid := tests.character(za, 'Core PZ', 'alpha', ws - interval '1 day');
+  c uuid := tests.character(ca, 'Core PC', 'alpha', ws - interval '1 day');
+  t uuid := tests.thread('Core plays');
+  sp_post uuid; spring uuid; spin_post uuid; spun uuid; spin uuid; far_post uuid; far uuid; got jsonb;
+begin
+  sp_post := tests.post(z, t, 'A trapped post.', ws + interval '1 hour');
+  -- Z's card set face down on Z's post springs; C reacts to the spring.
+  spring := tests.act(z, 'set', t, '{}', sp_post, ws + interval '90 minutes');
+  spring := tests.act(z, 'spring', t, jsonb_build_object('card', 'sweetie', 'trigger', 'reply', 'outcome', '{"do": "nullify"}'::jsonb, 'set', spring), sp_post, ws + interval '2 hours');
+  perform pg_temp.react(spring, c, 'up', ws + interval '3 hours');
+  -- A thread Q spun from Z's post; C reacts to the spin.
+  spin_post := tests.post(z, t, 'A post spun from.', ws + interval '1 hour');
+  insert into threads (board, title, origin_act_id) select b.id, 'Core spun', spin_post from boards b where b.slug = 'general' returning id into spun;
+  spin := tests.act(q, 'spin', spun, '{"title": "Core spun", "body": ""}', spin_post, ws + interval '2 hours');
+  perform pg_temp.react(spin, c, 'up', ws + interval '3 hours');
+  -- A play beyond a post sits on Z's post and has no target post.
+  far_post := tests.post(z, t, 'A post a play sits on.', ws + interval '1 hour');
+  far := tests.act(q, 'card', t, jsonb_build_object('card', 'sweetie', 'reach', 'character', 'character', z), far_post, ws + interval '2 hours');
+  perform pg_temp.react(far, c, 'up', ws + interval '3 hours');
+  got := estimate_input(ca, ws + interval '1 day');
+  if not pg_temp.has_act(got, sp_post) then raise exception 'the post a spring C reacted to sprang on is read: %', got -> 'acts'; end if;
+  if not pg_temp.has_act(got, spin_post) then raise exception 'the post a spin C reacted to was spun from is read: %', got -> 'acts'; end if;
+  if not pg_temp.has_act(got, far) then raise exception 'the play beyond a post C reacted to is read: %', got -> 'acts'; end if;
+  if pg_temp.has_act(got, far_post) then raise exception 'the post a play beyond a post sits on is not its target, and is not read: %', got -> 'acts'; end if;
 end $$;
 
 -- ---- Task 2 (#19): the estimate leaves out only the caller's own reactions to the caller's own characters ----
