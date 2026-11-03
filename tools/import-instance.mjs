@@ -9,7 +9,7 @@
  * The files the export carries (every avatar) are put back in Storage under their names, each
  * checked against its hash first, before any row goes in: a file nobody names is harmless, and a
  * row naming a file that is not there is a broken avatar. They need --storage and the new
- * project's service key in KAYFABB_STORAGE_KEY.
+ * project's secret key in KAYFABB_STORAGE_KEY.
  *
  * It says which database it writes before it writes, never prints the URL's credentials, and
  * refuses, naming the table, a database that is not fresh (a table holding any row) or whose

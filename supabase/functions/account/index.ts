@@ -1,7 +1,7 @@
 /**
  * Signing in, passwordless, one entry point: asking for a code and signing in with it. The work
  * is core.ts, which holds every answer to the same words and the same time whatever the
- * address; this is the edge: the public key Supabase Auth is called with, the service key that
+ * address; this is the edge: the public key Supabase Auth is called with, the secret key that
  * asks whether an invite opens anything, a player's session for opening their account, the
  * clock, and the work handed on to run after the answer.
  *
@@ -25,14 +25,12 @@ Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (request.method !== 'POST') return answer(405, { error: 'these are posted' });
   const env = environment((name) => Deno.env.get(name));
-  const anon = Deno.env.get('SUPABASE_ANON_KEY');
-  if (!anon) throw new Error('SUPABASE_ANON_KEY must be set');
   const { tooLong, body } = await boundedJson(request, 4 * 1024);
   if (tooLong) return answer(413, { error: 'that request is too long' });
   const out = await runAccount({
-    auth: gotrue({ url: env.url, key: anon }),
-    service: postgrest({ url: env.url, key: env.key }),
-    player: (token) => postgrest({ url: env.url, key: anon, bearer: token }),
+    auth: gotrue({ url: env.url, key: env.publishable }),
+    service: postgrest({ url: env.url, key: env.secret }),
+    player: (token) => postgrest({ url: env.url, key: env.publishable, bearer: token }),
     clock,
   }, body);
   if (out.later) {

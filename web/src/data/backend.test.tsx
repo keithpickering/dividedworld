@@ -22,7 +22,7 @@ describe('createBackend', () => {
     vi.stubEnv('PROD', true);
     vi.stubEnv('MODE', 'staging');
     vi.stubEnv('VITE_SUPABASE_URL', '');
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', '');
     await expect(createBackend()).rejects.toThrow(/names no Supabase project/);
   });
 
@@ -30,15 +30,29 @@ describe('createBackend', () => {
     vi.stubEnv('PROD', true);
     vi.stubEnv('MODE', 'production');
     vi.stubEnv('VITE_SUPABASE_URL', URL_);
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
-    await expect(createBackend()).rejects.toThrow(/names no Supabase project/);
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', '');
+    await expect(createBackend()).rejects.toThrow(/names no Supabase project: set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY/);
+  });
+
+  it('refuses a legacy JWT key at start, by name and never by value', async () => {
+    const legacy = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.sig';
+    vi.stubEnv('PROD', true);
+    vi.stubEnv('MODE', 'production');
+    vi.stubEnv('VITE_SUPABASE_URL', URL_);
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', legacy);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const refused = await createBackend().then(() => null, (e: Error) => e.message);
+    expect(refused).toMatch(/VITE_SUPABASE_PUBLISHABLE_KEY is a legacy JWT key; KayfaBB takes the publishable and secret keys \(sb_publishable_…, sb_secret_…\)/);
+    expect(refused).not.toContain(legacy);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 
   it('gives the fake in the e2e build, whatever project is set', async () => {
     vi.stubEnv('PROD', true);
     vi.stubEnv('MODE', 'e2e');
     vi.stubEnv('VITE_SUPABASE_URL', URL_);
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_test');
     const api = await createBackend();
     expect(await api.boards()).not.toHaveLength(0);
   });
@@ -47,7 +61,7 @@ describe('createBackend', () => {
     vi.stubEnv('PROD', true);
     vi.stubEnv('MODE', 'production');
     vi.stubEnv('VITE_SUPABASE_URL', URL_);
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_test');
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } }));
     const api = await createBackend();
     await api.boards().catch(() => undefined);
@@ -60,7 +74,7 @@ describe('createBackend', () => {
     vi.stubEnv('PROD', false);
     vi.stubEnv('MODE', 'development');
     vi.stubEnv('VITE_SUPABASE_URL', '');
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', '');
     const api = await createBackend();
     expect(await api.boards()).not.toHaveLength(0);
   });
@@ -75,7 +89,7 @@ describe('createBackend and the demo', () => {
     vi.stubEnv('PROD', true);
     vi.stubEnv('MODE', 'production');
     vi.stubEnv('VITE_SUPABASE_URL', URL_);
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_test');
     const { createBackend: fresh } = await import('./backend.ts');
     await fresh();
     expect(loaded).toEqual([]);
@@ -93,7 +107,7 @@ describe('createBackend and the demo', () => {
     vi.stubEnv('PROD', false);
     vi.stubEnv('MODE', 'development');
     vi.stubEnv('VITE_SUPABASE_URL', '');
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', '');
     await createBackend();
     expect(reachable()).toBe(false);
     vi.stubEnv('PROD', true);
@@ -111,7 +125,7 @@ describe('createBackend and the boards fixture', () => {
     vi.stubEnv('PROD', true);
     vi.stubEnv('MODE', 'e2e');
     vi.stubEnv('VITE_SUPABASE_URL', '');
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', '');
   };
 
   it('seeds the named moment in place of the demo, signs in its account and moves the address to its route', async () => {
@@ -175,7 +189,7 @@ describe('createBackend and the boards fixture', () => {
     vi.stubEnv('PROD', false);
     vi.stubEnv('MODE', 'development');
     vi.stubEnv('VITE_SUPABASE_URL', '');
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', '');
     at('?fixture=boards&moment=99-nope');
     const api = await createBackend();
     expect(window.location.search).toBe('?fixture=boards&moment=99-nope');
@@ -186,7 +200,7 @@ describe('createBackend and the boards fixture', () => {
     vi.stubEnv('PROD', true);
     vi.stubEnv('MODE', 'production');
     vi.stubEnv('VITE_SUPABASE_URL', URL_);
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_test');
     at('?fixture=boards&moment=99-nope');
     const api = await createBackend();
     expect(window.location.search).toBe('?fixture=boards&moment=99-nope');

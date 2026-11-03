@@ -1,19 +1,20 @@
 /**
  * The meeting's Edge Function: pg_cron calls it at the instance's meetingCron with the minute it fired
- * (supabase/migrations/0047_meeting.sql). The work is core.ts; this is the edge: the service key, the environment, the model
+ * (supabase/migrations/0047_meeting.sql). The work is core.ts; this is the edge: the jobs key it accepts
+ * (kayfabb_jobs, in apikey), the environment, the model
  * adapters (supabase/functions/_shared/models/) and an answer that says what happened. No secret is ever logged or returned:
  * the model key is read by the adapter from `Deno.env` and appears in no message.
  */
 import { runMeeting } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';
-import { environment, fromTheService, json, serviceDb } from '../_shared/serve.ts';
+import { environment, fromTheService, json, notTheService, serviceDb } from '../_shared/serve.ts';
 import { models } from '../_shared/models/index.ts';
 import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
 Deno.serve(async (request) => {
   const env = environment((name) => Deno.env.get(name));
-  if (!fromTheService(request, env.key)) return json(401, { error: 'the meeting is run by the service' });
+  if (!fromTheService(request, env.jobs)) return notTheService(env.jobs, 'the meeting is run by the service');
   const body = (await request.json().catch(() => ({}))) as { slot?: unknown };
   // The schedule sends the minute it fired; a call without one is refused rather than guessed.
   if (typeof body.slot !== 'string' || Number.isNaN(Date.parse(body.slot))) return json(400, { error: 'slot: the scheduled minute, as a time' });

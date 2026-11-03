@@ -1,6 +1,6 @@
 /**
  * The one way an Edge Function reaches a bucket: Supabase Storage's REST endpoints, with plain
- * fetch and the service key. No vendor client is imported ("Portable by construction"): a
+ * fetch and the secret key, in apikey. No vendor client is imported ("Portable by construction"): a
  * self-hosted Supabase answers the same requests. Tests hand the functions a fake that keeps the
  * files in memory; no build session touches a deployed bucket.
  *
@@ -27,7 +27,7 @@ export function supabaseStorage(o: {
   const attempts = o.attempts ?? 4;
   const timeoutMs = o.timeoutMs ?? 30_000;
   const pause = o.pause ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const headers = { apikey: o.key, Authorization: `Bearer ${o.key}` };
+  const headers = { apikey: o.key };
   const at = (name: string) => `${o.url}/storage/v1/object/${o.bucket}/${encodeURIComponent(name)}`;
   const request = async (where: string, init: RequestInit, what: string) => {
     const seen: string[] = [];

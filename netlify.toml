@@ -1,9 +1,9 @@
 # The static site: web/ built by Vite, served as a single-page app.
 #
-# The only build environment is VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Both are public by
+# The only build environment is VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY. Both are public by
 # design (the browser sends them with every request; row-level security is what protects the
 # data), and both are set in Netlify's UI under Site configuration > Environment variables, never
-# in this file. No secret is a build environment: a service-role key, a model provider's key or
+# in this file. No secret is a build environment: a secret key, a model provider's key or
 # anything else that must stay private has no place in a static build. Without the two, the build
 # succeeds and the app refuses to start, saying so (web/src/data/backend.ts).
 

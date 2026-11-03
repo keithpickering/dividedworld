@@ -34,8 +34,11 @@ Auth's custom SMTP. It assumes a Pro plan on Supabase and on Netlify, and a Rese
 to run: no session touches a deployed project ("A standing permission is written down, or it is only remembered" in
 `CLAUDE.md`).
 
-Before the first step, read the two known problems at the end of this section. The first decides which API keys you
-use.
+Before the first step, read the known problems at the end of this section.
+
+KayfaBB takes Supabase's publishable and secret keys (`sb_publishable_…`, `sb_secret_…`) and no legacy JWT key
+anywhere: a function, the web app and the export tools each refuse a key in the legacy shape, naming the key to use
+instead (`docs/plans/2026-11-02-api-keys-design.md`).
 
 ### What you need on your own machine
 
@@ -57,9 +60,10 @@ use.
 1. Create a project in your Pro organization. Choose the region nearest the players, and a strong database password,
    which goes in your password manager.
 2. Note the project's ref (the `<ref>` in `https://<ref>.supabase.co`).
-3. Under **Project Settings > API Keys**, open the **Legacy API keys** tab and note the `anon` key and the
-   `service_role` key. The code needs these two today, not the publishable and secret keys (issue #157, below). The
-   `service_role` key is a secret: it goes only where these steps say.
+3. Under **Project Settings > API Keys**, note the `default` publishable key and the `default` secret key. Then
+   create a second secret key named `kayfabb_jobs`: the scheduled jobs and the seed call the functions with it, and
+   `settle`, `meet` and `seed` accept no other key, so it can be rotated or revoked without touching the key the
+   functions reach the database with. Both secret keys go only where these steps say. No legacy key is used anywhere.
 4. Stay on the `<ref>.supabase.co` address. A custom Supabase domain would be refused by the site's
    Content-Security-Policy, which allows `https://*.supabase.co` and `wss://*.supabase.co` alone (`netlify.toml`, kept
    equal to `web/headers.ts`); adding one means changing both in a pull request first.
@@ -120,8 +124,11 @@ Send yourself a code from the site once it is up (step 8) and check that it arri
 ### 5. Supabase: the Edge Functions
 
 The functions are `account`, `act`, `avatar`, `estimate`, `meet`, `seed` and `settle`. Supabase gives each of them
-`SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` itself. Set the rest as secrets, under **Edge
-Functions > Secrets** or with the CLI:
+`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEYS` and `SUPABASE_SECRET_KEYS` itself, every key of each kind by its name; the
+functions take the ones named `default`, and the secret key named `kayfabb_jobs` as the only key the scheduled calls
+may carry (`supabase/functions/_shared/serve.ts`). A function with no `default` key of either kind stops and says
+which key to make; `settle`, `meet` and `seed` with no `kayfabb_jobs` key answer every call 401, naming it. Set the
+rest as secrets, under **Edge Functions > Secrets** or with the CLI:
 
 - `ANTHROPIC_API_KEY`: the model provider's key for The System. It is read only while the instance's `systemEnabled`
   setting is on, which Divided World ships off (issue #73 turns it on); setting the key now does no harm.
@@ -134,6 +141,10 @@ Then deploy all seven:
 supabase functions deploy --use-api
 ```
 
+The deploy reads `verify_jwt = false` for each function from `supabase/config.toml`: the platform's JWT check takes
+the legacy keys only, so every function checks its caller in its own code. In the dashboard, each function's
+**Details** should show **Enforce JWT verification** off.
+
 The functions import the engine and the instance from outside `supabase/functions/` (`engine/`, `instances/`).
 Whether the CLI bundles those is one of the checks for the first deploy (issue #5, gathered in #130); if a deploy says
 a module is not found, stop there and file what it printed.
@@ -141,24 +152,26 @@ a module is not found, stop there and file what it printed.
 ### 6. Supabase: the instance and its schedules
 
 1. **Seed the instance.** This writes Divided World's settings, classes, reactions, cards and boards, opens the first
-   season, and, through the settings' triggers, schedules the jobs. Run it with the `service_role` key in your shell's
-   environment, never typed into a file. `read -s` takes it without echoing it or keeping it in the shell's history:
+   season, and, through the settings' triggers, schedules the jobs. Run it with the `kayfabb_jobs` secret key in your
+   shell's environment, never typed into a file. `read -s` takes it without echoing it or keeping it in the shell's
+   history:
 
    ```bash
-   read -rs SUPABASE_SERVICE_ROLE_KEY
+   read -rs KAYFABB_JOBS_KEY
    ```
 
    ```bash
-   curl -sS -X POST "https://<ref>.supabase.co/functions/v1/seed" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"
+   curl -sS -X POST "https://<ref>.supabase.co/functions/v1/seed" -H "apikey: $KAYFABB_JOBS_KEY"
    ```
 
    It answers with how many settings, classes, reactions, cards and boards the instance holds. Seeding is safe to run
    again, and every deploy that changes the instance's settings or vocabulary runs it again; it puts back the code's
    numbers over any an admin tuned by hand.
 2. **Give the jobs their address and key.** The settlement and the meeting are called by `pg_cron` through `pg_net`
-   with two secrets from Vault (`0004_schedule.sql`); until both exist those jobs send nothing. In **Integrations >
+   with two secrets from Vault (`0070_jobs_key.sql`); until both exist those jobs send nothing. In **Integrations >
    Vault**, add `kayfabb_functions_url` with the value `https://<ref>.supabase.co` (no trailing slash), and
-   `kayfabb_service_key` with the `service_role` key. The Vault screen keeps the key out of the SQL editor's history.
+   `kayfabb_jobs_key` with the `kayfabb_jobs` secret key, which the jobs send in `apikey`. The Vault screen keeps the
+   key out of the SQL editor's history. The next scheduled minute after both exist runs.
 3. **Check the schedules.** In the SQL editor:
 
    ```sql
@@ -176,8 +189,9 @@ a module is not found, stop there and file what it printed.
    (`npm run build:web`), the published directory (`web/dist`), Node 22, the single-page redirect and the security
    headers; leave those fields as the file sets them.
 2. Under **Site configuration > Environment variables**, set `VITE_SUPABASE_URL` to `https://<ref>.supabase.co` and
-   `VITE_SUPABASE_ANON_KEY` to the legacy `anon` key. Both are public by design; no other variable belongs here, and
-   the `service_role` key never does. A build without the two succeeds and the app refuses to start, saying so.
+   `VITE_SUPABASE_PUBLISHABLE_KEY` to the `default` publishable key. Both are public by design; no other variable
+   belongs here, and no secret key ever does. A build without the two succeeds and the app refuses to start, saying
+   so.
 3. Deploy, then under **Domain management** add `dw.gripe`, point its DNS at Netlify as Netlify says (or move the
    domain's DNS to Netlify), and let Netlify issue the certificate. Turn on **Force HTTPS**.
 
@@ -211,16 +225,16 @@ the first account is opened with registration briefly open.
   seed when the instance's settings or vocabulary changed, and Netlify deploys `main` by itself.
 - Keep an export. `tools/export-instance.mjs` writes every table and every avatar to a directory only you can read,
   and `tools/import-instance.mjs` brings it back into a fresh project. Use the database's session-pooler connection
-  string from the dashboard's **Connect** dialog as `--from`, and the `service_role` key in `KAYFABB_STORAGE_KEY`.
+  string from the dashboard's **Connect** dialog as `--from`, and the `default` secret key in `KAYFABB_STORAGE_KEY`.
   The export holds who plays every character, so keep it as private as the database.
 - The ledger of model calls (`model_calls`) is to be reconciled against Anthropic's bill monthly ("Cost is a column,
   not a report").
 
 ### Known problems before the first deploy
 
-- **The legacy keys end with 2026 (issue #157).** Supabase says the legacy `anon` and `service_role` keys keep
-  working until the end of 2026, and the engine reads only those, sending the anon key as a JWT bearer. These steps
-  use them because nothing else works yet; the move to the publishable and secret keys needs a design session and has
-  to land before the year is out, or sign-in, every Act and every schedule stop.
+- **Two things about the new keys are confirmed only on a real project (issue #130).** Whether Storage on the
+  platform answers a secret key in `apikey` alone, with no `Authorization`, as the gateway's documentation says (the
+  avatar function and the export tools rely on it); and, for an instance that self-hosts, whether self-hosted
+  Supabase gives its functions container `SUPABASE_SECRET_KEY` and `SUPABASE_PUBLISHABLE_KEY` under those names.
 - **Auth's own endpoints are reachable with the public key (issue #3).** Whether Supabase Auth answers an address it
   knows measurably differently from one it does not is to be measured on the deployed project before players arrive.

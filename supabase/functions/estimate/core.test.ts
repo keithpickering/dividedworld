@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ESTIMATE_HOLD_SECONDS, runEstimate } from './core.ts';
+import { ESTIMATE_HOLD_SECONDS, estimateDbs, runEstimate } from './core.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 
@@ -81,4 +81,22 @@ test('a failure says nothing from inside, and a lost answer says so', async () =
   assert.deepEqual(broken, { status: 500, body: { error: 'the estimate could not be read; try again' } });
   const lost = await runEstimate(dbs({ whoami: me, estimate_kept: null, estimate_input: new TransportError('no answer') }).dbs, instance);
   assert.equal(lost.status, 503);
+});
+
+test('the estimate\'s player connection sends the publishable key and the session; its service connection, the secret key alone', async () => {
+  const sent: Headers[] = [];
+  const fetch = (async (_url: string, init: RequestInit) => { sent.push(new Headers(init.headers)); return new Response('1', { status: 200 }); }) as unknown as typeof globalThis.fetch;
+  const dbs = estimateDbs({ url: 'https://p.example', key: 'sb_secret_s', publishable: 'sb_publishable_p', session: 'tok', fetch });
+  await dbs.player.rpc('whoami', {});
+  await dbs.service.rpc('estimate_window', {});
+  assert.deepEqual(sent.map((h) => [h.get('apikey'), h.get('Authorization')]), [['sb_publishable_p', 'Bearer tok'], ['sb_secret_s', null]]);
+});
+
+test('a session the database does not take is refused at whoami(), with nothing read as the service', async () => {
+  for (const [name, whoami] of [['a bad bearer', new DatabaseError('whoami: JWSError (CompactDecodeError Invalid number of parts: Expected 3 parts; got 1)', 'PGRST301', 401)], ['no account', null]] as const) {
+    const { dbs: d, calls } = dbs({ whoami });
+    const out = await runEstimate(d, instance);
+    assert.deepEqual(out, { status: 401, body: { error: 'sign in to see your estimate' } }, name);
+    assert.deepEqual(calls.map((c) => c.split(':').slice(0, 2).join(':')), ['player:whoami'], `${name}: the service received no call`);
+  }
 });

@@ -202,10 +202,19 @@ test('a write whose answer was lost says plainly it may have gone through', asyn
   assert.match((out.body as { error: string }).error, /may have gone through.*look before you try again/);
 });
 
+test('the act function\'s player connection sends the publishable key and the session; its service connection, the secret key alone', async () => {
+  const sent: Headers[] = [];
+  const fetch = (async (_url: string, init: RequestInit) => { sent.push(new Headers(init.headers)); return new Response('1', { status: 200 }); }) as unknown as typeof globalThis.fetch;
+  const dbs = actDbs({ url: 'https://p.example', key: 'sb_secret_s', publishable: 'sb_publishable_p', session: 'tok', fetch, sleep: async () => {} });
+  await dbs.player.rpc('whoami', {});
+  await dbs.service.rpc('card_target', {});
+  assert.deepEqual(sent.map((h) => [h.get('apikey'), h.get('Authorization')]), [['sb_publishable_p', 'Bearer tok'], ['sb_secret_s', null]]);
+});
+
 test('the act function\'s connections send a post once after a 504, and a read again', async () => {
   const seen: string[] = [];
   const fetch = (async (url: string) => { seen.push(url.split('/').pop()!); return new Response('', { status: 504 }); }) as unknown as typeof globalThis.fetch;
-  const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+  const dbs = actDbs({ url: 'https://p.example', key: 'service', publishable: 'sb_publishable_p', session: 'tok', fetch, sleep: async () => {} });
   await assert.rejects(dbs.player.rpc('post', {}));
   assert.deepEqual(seen, ['post']);
   seen.length = 0;
@@ -544,7 +553,7 @@ test('an error in the hint work is logged and does not stop the drain; a databas
     if (fn === 'act_window_counts') return new Response(JSON.stringify(heat), { status: 200 });
     return new Response(JSON.stringify({ code: '23503', message: 'insert or update on table "hints_fired" violates foreign key constraint' }), { status: 409 });
   }) as unknown as typeof globalThis.fetch;
-  const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+  const dbs = actDbs({ url: 'https://p.example', key: 'service', publishable: 'sb_publishable_p', session: 'tok', fetch, sleep: async () => {} });
   const logged: unknown[][] = [];
   const was = console.error;
   console.error = (...a: unknown[]) => { logged.push(a); };
@@ -567,7 +576,7 @@ test('a transport failure on the hint\'s calls is retried on the request itself,
     seen.push(url.split('/').pop()!);
     return ++tries < 3 ? new Response('', { status: 504 }) : new Response('true', { status: 200 });
   }) as unknown as typeof globalThis.fetch;
-  const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+  const dbs = actDbs({ url: 'https://p.example', key: 'service', publishable: 'sb_publishable_p', session: 'tok', fetch, sleep: async () => {} });
   assert.equal(await dbs.service.rpc('fire_hint', { about: target, pattern: 'divisive' }), true);
   assert.deepEqual(seen, ['fire_hint', 'fire_hint', 'fire_hint']);
 });
@@ -611,7 +620,7 @@ test('the hint settings are held across requests: two connections built per requ
     return new Response('null', { status: 200 });
   }) as unknown as typeof globalThis.fetch;
   for (let request = 0; request < 2; request++) {
-    const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+    const dbs = actDbs({ url: 'https://p.example', key: 'service', publishable: 'sb_publishable_p', session: 'tok', fetch, sleep: async () => {} });
     let later!: () => Promise<void>;
     await handleAction({ dbs, instance, body: reacting, send: async () => {}, drain: async () => {}, after: (w) => { later = w; } });
     await later();
@@ -633,4 +642,59 @@ test('a thunder told to the card and then refused to the post is still a hint wr
   try { await (await reactedWith(db, reacting, h.seq)).later(); } finally { console.error = was; }
   assert.deepEqual(h.seq.slice(-3), [`fire_hint:${target}:thunder`, 'fire_hint:post threw', 'drain']);
   assert.equal(h.seq.filter((s) => s === 'drain').length, 2);
+});
+
+// The gate (docs/plans/2026-11-02-api-keys-design.md, section 2): with verify_jwt off, any caller reaches the handler, so nothing
+// is done as the service, and no drain or hint check is scheduled, until whoami(), read with the caller's session, names an account.
+const badBearer = (fn: string) => new DatabaseError(`${fn}: JWSError (CompactDecodeError Invalid number of parts: Expected 3 parts; got 1)`, 'PGRST301', 401);
+/** A player's and the service's Db, recording each call; `refuse` names the player's call PostgREST refuses the bearer on, else whoami answers `whoami`. */
+function gated(o: { refuse?: string; whoami?: unknown }) {
+  const calls: string[] = [];
+  const make = (who: string): Db => ({ rpc: async <T>(fn: string) => {
+    calls.push(`${who}:${fn}`);
+    if (who === 'player' && fn === o.refuse) throw badBearer(fn);
+    return (fn === 'whoami' ? o.whoami : null) as T;
+  } });
+  return { dbs: { player: make('player'), service: make('service') }, calls };
+}
+
+test('a session the database does not take is refused at whoami(), with nothing done as the service and nothing scheduled after', async () => {
+  for (const [name, world] of [['a bad bearer', { refuse: 'whoami' }], ['no account', { whoami: null }]] as const) {
+    const { dbs, calls } = gated(world);
+    let later = 0;
+    const out = await handleAction({ dbs, instance, body: { action: 'buyCard', card: 'whoops' }, send: async () => {}, drain: async () => {}, after: () => { later++; } });
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 401, body: { error: 'sign in to act' } }, name);
+    assert.deepEqual(calls, ['player:whoami'], `${name}: the service received no call`);
+    assert.equal(later, 0, `${name}: no drain and no hint check`);
+  }
+});
+
+test('a player\'s own call with a session the database does not take is refused as signed out, and the service is never called', async () => {
+  const { dbs, calls } = gated({ refuse: 'post' });
+  let later = 0;
+  const out = await handleAction({ dbs, instance, body: { action: 'post', thread: id, character: id, body: 'Hello.' }, send: async () => {}, drain: async () => {}, after: () => { later++; } });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 401, body: { error: 'sign in to act' } });
+  assert.deepEqual(calls, ['player:post'], 'the player\'s call is the one made');
+  assert.equal(later, 0, 'no drain');
+});
+
+test('a request that names no account schedules nothing after: a body refused before whoami(), or a call the database refuses for having no account', async () => {
+  // A body decide() refuses, under a bearer PostgREST would not take: nothing is read, and nothing is done as the service after.
+  {
+    const { dbs, calls } = gated({ refuse: 'whoami' });
+    let later = 0;
+    const out = await handleAction({ dbs, instance, body: {}, send: async () => {}, drain: async () => {}, after: () => { later++; } });
+    assert.equal(out.status, 400);
+    assert.deepEqual(calls, [], 'nothing is read');
+    assert.equal(later, 0, 'a refused body schedules no drain');
+  }
+  // A player's own call that PostgREST takes and SQL refuses for having no account (28000, as 0005 raises it).
+  {
+    const noAccount: Db = { rpc: async () => { throw new DatabaseError('post: sign in to act', '28000', 401, 'sign in to act', REFUSAL_HINT); } };
+    let later = 0;
+    const out = await handleAction({ dbs: { player: noAccount, service: noAccount }, instance, body: { action: 'post', thread: id, character: id, body: 'Hello.' },
+      send: async () => {}, drain: async () => {}, after: () => { later++; } });
+    assert.deepEqual({ status: out.status, body: out.body }, { status: 401, body: { error: 'sign in to act', code: '28000' } });
+    assert.equal(later, 0, 'a caller with no account schedules no drain');
+  }
 });

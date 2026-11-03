@@ -14,7 +14,7 @@
  */
 import { estimateForOwner } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
-import { TransportError, postgrest, type Db } from '../_shared/rpc.ts';
+import { TransportError, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
 /**
@@ -34,13 +34,13 @@ export interface EstimateAnswer {
 }
 
 /** The function's two connections, as the player and as the service; every call here is a read, safe to repeat. */
-export function estimateDbs(o: { url: string; key: string; anon: string; session: string; fetch?: typeof globalThis.fetch }): { player: Db; service: Db } {
-  return { player: postgrest({ url: o.url, key: o.anon, bearer: o.session, fetch: o.fetch }), service: postgrest({ url: o.url, key: o.key, fetch: o.fetch }) };
+export function estimateDbs(o: { url: string; key: string; publishable: string; session: string; fetch?: typeof globalThis.fetch }): { player: Db; service: Db } {
+  return { player: postgrest({ url: o.url, key: o.publishable, bearer: o.session, fetch: o.fetch }), service: postgrest({ url: o.url, key: o.key, fetch: o.fetch }) };
 }
 
 export async function runEstimate(dbs: { player: Db; service: Db }, instance: Instance): Promise<EstimateAnswer> {
   try {
-    const who = await dbs.player.rpc<string | null>('whoami', {});
+    const who = await dbs.player.rpc<string | null>('whoami', {}).catch((e) => { if (sessionRefused(e)) return null; throw e; });
     if (!who) return { status: 401, body: { error: 'sign in to see your estimate' } };
     const kept = await dbs.service.rpc<unknown>('estimate_kept', { account: who, within_seconds: ESTIMATE_HOLD_SECONDS });
     if (kept) return { status: 200, body: kept };

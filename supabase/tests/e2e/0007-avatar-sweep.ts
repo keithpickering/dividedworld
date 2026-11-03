@@ -14,14 +14,15 @@ import path from 'node:path';
 import { scratchUrl, sql } from './psql-db.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
-const STORAGE_KEY = 'sWeEp-kEy-for-storage';
+const STORAGE_KEY = 'sb_secret_sWeEp-kEy-for-storage';
+const LEGACY_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.sig';
 const HOUR = 60 * 60 * 1000;
 
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
-const run = (args: string[]) => new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
-  const child = spawn(process.execPath, [path.join(root, 'tools/sweep-avatars.mjs'), ...args], { env: { ...process.env, KAYFABB_STORAGE_KEY: STORAGE_KEY, KAYFABB_STORAGE_TIMEOUT_MS: '500' } });
+const run = (args: string[], key = STORAGE_KEY) => new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+  const child = spawn(process.execPath, [path.join(root, 'tools/sweep-avatars.mjs'), ...args], { env: { ...process.env, KAYFABB_STORAGE_KEY: key, KAYFABB_STORAGE_TIMEOUT_MS: '500' } });
   let stdout = '';
   let stderr = '';
   child.stdout.on('data', (d) => { stdout += d; });
@@ -32,14 +33,17 @@ const run = (args: string[]) => new Promise<{ status: number | null; stdout: str
 /** Supabase Storage's list and remove endpoints for one bucket, in memory, each file with when it was written. */
 async function fakeStorage() {
   const objects = new Map<string, string>();
+  /** Every request, and whether it carried the key in apikey alone, as the gateway takes a secret key. */
+  const seen: string[] = [];
   /** What the next requests meet first: a 503. */
   const trouble: 'unavailable'[] = [];
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
+      seen.push(`${req.method} ${req.url} ${req.headers.apikey === STORAGE_KEY && req.headers.authorization === undefined ? 'keyed' : 'unkeyed'}`);
       if (trouble.shift() === 'unavailable') { res.writeHead(503).end(); return; }
-      if (req.headers.authorization !== `Bearer ${STORAGE_KEY}`) { res.writeHead(403).end(); return; }
+      if (req.headers.apikey !== STORAGE_KEY) { res.writeHead(403).end(); return; }
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null;
       if (req.method === 'POST' && req.url === '/storage/v1/object/list/avatars') {
         // As Storage lists a bucket: a folder among the files, with no id and no times.
@@ -58,7 +62,7 @@ async function fakeStorage() {
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
   const { port } = server.address() as { port: number };
-  return { url: `http://127.0.0.1:${port}`, objects, trouble, close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }) };
+  return { url: `http://127.0.0.1:${port}`, objects, seen, trouble, close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }) };
 }
 
 test('the sweep removes each file no profile names that was written over an hour ago, the originals 0025 listed first, and keeps the rest', async () => {
@@ -177,4 +181,21 @@ test('0025 on a database holding profiles with an original lists each original f
   } finally {
     psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
   }
+});
+
+test('the sweep sends its secret key in apikey alone, and refuses a legacy key before anything is fetched', async () => {
+  const store = await fakeStorage();
+  try {
+    const byBearer = await fetch(`${store.url}/storage/v1/object/list/avatars`, { method: 'POST', headers: { Authorization: `Bearer ${STORAGE_KEY}` }, body: '{}' });
+    assert.equal(byBearer.status, 403, 'the stand-in keys a request by apikey, as Storage does');
+    store.seen.length = 0;
+    const legacy = await run(['--from', scratchUrl(), '--storage', store.url], LEGACY_KEY);
+    assert.notEqual(legacy.status, 0, 'a sweep with a legacy key');
+    assert.match(legacy.stdout + legacy.stderr, /KAYFABB_STORAGE_KEY is a legacy JWT key; KayfaBB takes the publishable and secret keys/);
+    assert.ok(!(legacy.stdout + legacy.stderr).includes('eyJ'), 'the output holds no key');
+    assert.equal(store.seen.length, 0, `nothing was fetched: ${store.seen.join(', ')}`);
+    const swept = await run(['--from', scratchUrl(), '--storage', store.url]);
+    assert.equal(swept.status, 0, swept.stderr + swept.stdout);
+    assert.ok(store.seen.length > 0 && store.seen.every((r) => r.endsWith(' keyed')), store.seen.join('\n'));
+  } finally { await store.close(); }
 });

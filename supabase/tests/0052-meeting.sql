@@ -253,3 +253,30 @@ begin
   -- The schedule is the settings trigger's: a meetingCron write reschedules.
   if (select count(*) from pg_trigger where tgname = 'settings_reschedule_meeting' and not tgisinternal) is distinct from 1::bigint then raise exception 'meetingCron does not reschedule the meeting'; end if;
 end $$;
+
+-- ---- The meeting's job sends nothing until both of its secrets exist, then calls meet with the jobs key in apikey alone ----
+do $$
+declare
+  cmd text;
+  q record;
+begin
+  delete from vault.decrypted_secrets where name in ('kayfabb_functions_url', 'kayfabb_service_key', 'kayfabb_jobs_key');
+  perform schedule_meeting();
+  select command into cmd from cron.job where jobname = 'kayfabb-meet';
+  delete from net.http_request_queue;
+  execute cmd;
+  if exists (select 1 from net.http_request_queue) then raise exception 'the meeting''s job sent a request with no secrets'; end if;
+  insert into vault.decrypted_secrets values ('kayfabb_functions_url', 'https://project.example');
+  execute cmd;
+  if exists (select 1 from net.http_request_queue) then raise exception 'the meeting''s job sent a request with half its secrets'; end if;
+  insert into vault.decrypted_secrets values ('kayfabb_service_key', 'sb_secret_old_name');
+  execute cmd;
+  if exists (select 1 from net.http_request_queue) then raise exception 'the meeting''s job sent a request with only the old kayfabb_service_key'; end if;
+  insert into vault.decrypted_secrets values ('kayfabb_jobs_key', 'sb_secret_not_a_real_key');
+  execute cmd;
+  select * into q from net.http_request_queue;
+  if q.url <> 'https://project.example/functions/v1/meet' then raise exception 'the meeting''s job called %', q.url; end if;
+  if q.headers ->> 'apikey' is distinct from 'sb_secret_not_a_real_key' then raise exception 'the meeting''s job should carry the jobs key in apikey: %', q.headers; end if;
+  if q.headers ? 'Authorization' then raise exception 'the meeting''s job should send no Authorization: %', q.headers; end if;
+  if (q.body ->> 'slot')::timestamptz <> date_trunc('minute', now()) then raise exception 'the body should carry the minute the job fired in: %', q.body; end if;
+end $$;

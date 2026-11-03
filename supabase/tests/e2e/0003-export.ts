@@ -29,11 +29,13 @@ const contents = (url: string): Map<string, string> => {
   return new Map(tables.map((t) => [t, psqlOn(url, `select coalesce(jsonb_agg(x order by x::text), '[]')::text from (select to_jsonb(t) x from ${t} t) s`)]));
 };
 
-/** The service key a tool calls Storage with: in its environment, never on its command line, and never printed. */
-const STORAGE_KEY = 'sErViCe-kEy-for-storage';
+/** The secret key a tool calls Storage with: in its environment, never on its command line, and never printed. */
+const STORAGE_KEY = 'sb_secret_sErViCe-kEy-for-storage';
+/** A legacy JWT-shaped key, which the tools refuse before any request. */
+const LEGACY_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.sig';
 /** A tool, run as an admin runs it; spawned, not run synchronously, so the fake Storage below answers it. */
-const run = (tool: string, args: string[]) => new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
-  const child = spawn(process.execPath, [path.join(root, 'tools', tool), ...args], { env: { ...process.env, KAYFABB_STORAGE_KEY: STORAGE_KEY, KAYFABB_STORAGE_TIMEOUT_MS: '500' } });
+const run = (tool: string, args: string[], key = STORAGE_KEY) => new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+  const child = spawn(process.execPath, [path.join(root, 'tools', tool), ...args], { env: { ...process.env, KAYFABB_STORAGE_KEY: key, KAYFABB_STORAGE_TIMEOUT_MS: '500' } });
   let stdout = '';
   let stderr = '';
   child.stdout.on('data', (d) => { stdout += d; });
@@ -51,12 +53,13 @@ async function fakeStorage() {
     const chunks: Buffer[] = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
-      seen.push(`${req.method} ${req.url} ${req.headers.authorization === `Bearer ${STORAGE_KEY}` ? 'keyed' : 'unkeyed'}`);
+      // As the gateway takes a secret key: in apikey, which is the whole of the request's credentials.
+      seen.push(`${req.method} ${req.url} ${req.headers.apikey === STORAGE_KEY && req.headers.authorization === undefined ? 'keyed' : 'unkeyed'}`);
       const next = trouble.shift();
       if (next === 'unavailable') { res.writeHead(503).end(); return; }
       if (next === 'silent') return;
       const m = /^\/storage\/v1\/object\/([^/]+)\/(.+)$/.exec(req.url ?? '');
-      if (!m || req.headers.authorization !== `Bearer ${STORAGE_KEY}`) { res.writeHead(403).end(); return; }
+      if (!m || req.headers.apikey !== STORAGE_KEY) { res.writeHead(403).end(); return; }
       const key = `${m[1]}/${decodeURIComponent(m[2]!)}`;
       if (req.method === 'GET') { const o = objects.get(key); if (!o) { res.writeHead(400).end('{"error":"not_found"}'); return; } res.writeHead(200).end(o); return; }
       if (req.method === 'POST') {
@@ -228,13 +231,26 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.match((await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'gone'), '--storage', oldStore.url])).stderr, /exp-pt\.webp, which a row names, is not there: it was replaced or removed/);
     oldStore.objects.set('avatars/exp-pt.webp', kept);
     fs.rmSync(path.join(dir, 'gone'), { recursive: true, force: true });
+    // The stand-in keys a request by apikey: the key in Authorization alone is refused, as Storage refuses it.
+    const byBearer = await fetch(`${oldStore.url}/storage/v1/object/avatars/x.webp`, { headers: { Authorization: `Bearer ${STORAGE_KEY}` } });
+    assert.equal(byBearer.status, 403);
+    oldStore.seen.length = 0;
+    // A legacy key is refused before anything is fetched, by its variable's name, never its value.
+    const legacy = await run('export-instance.mjs', ['--from', from, '--to', path.join(dir, 'legacy'), '--storage', oldStore.url], LEGACY_KEY);
+    assert.notEqual(legacy.status, 0, 'an export with a legacy key');
+    assert.match(legacy.stdout + legacy.stderr, /KAYFABB_STORAGE_KEY is a legacy JWT key; KayfaBB takes the publishable and secret keys/);
+    assert.ok(!(legacy.stdout + legacy.stderr).includes(LEGACY_KEY) && !(legacy.stdout + legacy.stderr).includes('eyJ'), 'the output holds no key');
+    assert.equal(oldStore.seen.length, 0, `nothing was fetched: ${oldStore.seen.join(', ')}`);
+    fs.rmSync(path.join(dir, 'legacy'), { recursive: true, force: true });
     // Storage that is down a moment, and then silent a moment, is asked again.
     oldStore.trouble.push('unavailable', 'silent');
     const exported = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
     assert.match(exported.stdout, /exporting from localhost:\d+\/kayfabb_scratch/);
     assert.match(exported.stdout, /the server says it is kayfabb_scratch\w+ on port \d+/);
-    assert.match(exported.stdout, /kayfabb_functions_url.*kayfabb_service_key/s, 'both Vault secrets are named as not exported');
+    assert.match(exported.stdout, /kayfabb_functions_url.*kayfabb_jobs_key/s, 'both Vault secrets are named as not exported');
+    assert.match(exported.stdout, /vault\.create_secret\(<the kayfabb_jobs secret key>, 'kayfabb_jobs_key'\)/, 'with how the jobs key is made again');
+    assert.doesNotMatch(exported.stdout, /kayfabb_service_key/, 'the old Vault name is read nowhere');
     const again = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.notEqual(again.status, 0, 'an export into a directory that is not empty');
     assert.doesNotMatch(exported.stdout + exported.stderr, /pg@|password/i, 'the export printed a secret');

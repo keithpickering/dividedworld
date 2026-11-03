@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseError, TransportError, postgrest } from './rpc.ts';
+import { DatabaseError, TransportError, postgrest, sessionRefused } from './rpc.ts';
 
 type Call = { url: string; init: RequestInit };
 /** A fetch that answers from a script, one answer per call, and records the calls. */
@@ -18,13 +18,13 @@ function scripted(...answers: (Response | Error)[]) {
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const noWait = async () => {};
 
-test('a call posts the arguments to the function\'s RPC endpoint with the key, and returns its answer', async () => {
+test('a call posts the arguments to the function\'s RPC endpoint with the key in apikey alone, and returns its answer', async () => {
   const { fetch, calls } = scripted(json(200, { applied: true }));
   const db = postgrest({ url: 'https://p.example', key: 'k', fetch, sleep: noWait });
   assert.deepEqual(await db.rpc('apply_settlement', { a: 1 }), { applied: true });
   assert.equal(calls[0]?.url, 'https://p.example/rest/v1/rpc/apply_settlement');
   const headers = new Headers(calls[0]?.init.headers);
-  assert.equal(headers.get('Authorization'), 'Bearer k');
+  assert.equal(headers.get('Authorization'), null, 'a service connection sends no Authorization');
   assert.equal(headers.get('apikey'), 'k');
   assert.equal(calls[0]?.init.body, '{"a":1}');
 });
@@ -87,14 +87,37 @@ test('an error that is not PostgREST\'s JSON is still a database error, with its
 
 test('a player\'s call carries their own session as its bearer, beside the project\'s key', async () => {
   const { fetch, calls } = scripted(json(200, 1));
-  await postgrest({ url: 'https://p.example', key: 'anon', bearer: 'player-jwt', fetch, sleep: noWait }).rpc('post', {});
+  await postgrest({ url: 'https://p.example', key: 'sb_publishable_p', bearer: 'player-jwt', fetch, sleep: noWait }).rpc('post', {});
   const headers = new Headers(calls[0]?.init.headers);
-  assert.equal(headers.get('apikey'), 'anon');
+  assert.equal(headers.get('apikey'), 'sb_publishable_p');
   assert.equal(headers.get('Authorization'), 'Bearer player-jwt');
+});
+
+test('an empty session is no session: no Authorization is sent', async () => {
+  const { fetch, calls } = scripted(json(200, 1));
+  await postgrest({ url: 'https://p.example', key: 'sb_publishable_p', bearer: '', fetch, sleep: noWait }).rpc('instance_settings', {});
+  assert.equal(new Headers(calls[0]?.init.headers).get('Authorization'), null);
 });
 
 test('a database error keeps the function\'s own words apart from PostgREST\'s detail', async () => {
   const { fetch } = scripted(json(409, { code: '23505', message: 'duplicate key', details: 'Key (owner)=(secret) already exists.' }));
   const db = postgrest({ url: 'https://p.example', key: 'k', fetch, sleep: noWait });
   await assert.rejects(db.rpc('f', {}), (e: unknown) => e instanceof DatabaseError && e.reason === 'duplicate key' && !e.reason.includes('secret'));
+});
+
+test('a refused session is a 401 with no hint, and only that; it is logged by its code alone', () => {
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...line: unknown[]) => { warned.push(line.join(' ')); };
+  try {
+    assert.equal(sessionRefused(new DatabaseError('whoami: JWT expired', 'PGRST301', 401)), true, 'a bearer PostgREST cannot verify');
+    assert.equal(sessionRefused(new DatabaseError('whoami: permission denied for function whoami', '42501', 401)), true, 'the anon role, which may not call');
+    assert.equal(sessionRefused(new DatabaseError('f: HTTP 401 {"message":"Invalid API key sb_publishable_x"}', '', 401)), true, 'the gateway');
+    assert.equal(sessionRefused(new DatabaseError('post: sign in first', 'P0001', 401, 'sign in first', 'kayfabb.refusal')), false, 'a refusal a SQL function raised');
+    assert.equal(sessionRefused(new DatabaseError('post: permission denied', '42501', 403)), false, 'a signed-in player refused');
+    assert.equal(sessionRefused(new TransportError('fetch failed')), false);
+    assert.equal(sessionRefused(new Error('401')), false);
+    assert.deepEqual(warned, ['the session was refused: PGRST301', 'the session was refused: 42501', 'the session was refused: no code, so the gateway refused the request']);
+    assert.ok(!warned.join().includes('sb_publishable_x'), 'nothing the gateway sent back is logged');
+  } finally { console.warn = warn; }
 });
