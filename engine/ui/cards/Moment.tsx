@@ -12,7 +12,7 @@
  * A moment is the reader's own screen state: nothing is broadcast, and the log is unchanged. It is read once for the page
  * (`useMomentRead`, kept by the Lens store), and it never changes.
  */
-import { useCallback, useEffect, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, PlayMoment } from '../data/api.ts';
 import { when } from '../thread/lines.tsx';
@@ -37,7 +37,7 @@ export function useMomentRead(play: Id): MomentRead {
   useEffect(() => {
     if (kept !== undefined) return;
     let gone = false;
-    api.playMoment(play).then((m) => { if (!gone) store.keep(play, m); }, () => { if (!gone) setFailed((n) => n + 1); });
+    store.readMoment(play, () => api.playMoment(play)).catch(() => { if (!gone) setFailed((n) => n + 1); });
     return () => { gone = true; };
   }, [api, store, play, kept, asked]);
   const retry = useCallback(() => setAsked((n) => n + 1), []);
@@ -49,11 +49,13 @@ export function useMomentRead(play: Id): MomentRead {
  * The frame a moment is drawn in. `back` is Back to now's press (none in an ORIGIN box, whose moment is its content); `named` and
  * `words` are what the frame says under the post; `unrecorded` says what else was on the post then wasn't recorded.
  */
-export function MomentFrame({ play, at, read, back, named, words, unrecorded, children }: {
+export function MomentFrame({ play, at, read, back, named, words, unrecorded, frame, children }: {
   /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
   readonly play: CardPlay; readonly at: string; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
   readonly named: readonly string[]; readonly words: readonly string[]; readonly unrecorded: boolean;
+  /** The frame's element, for a control inside it to give focus to (Try again's answer). */
+  readonly frame?: RefObject<HTMLDivElement | null>;
   readonly children: ReactNode;
 }) {
   const { instance, ui } = useKayfa();
@@ -61,13 +63,13 @@ export function MomentFrame({ play, at, read, back, named, words, unrecorded, ch
   const rules = play.faceDown ? undefined : instance.cards.find((c) => c.key === play.card);
   const ink = play.faceDown ? undefined : inkOf(ui, play, [play]);
   return (
-    <div className="kb-moment" role="group" aria-label={`As it landed, ${when(at)}`} data-kb-alignment={rules?.alignment} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
+    <div ref={frame} tabIndex={-1} className="kb-moment" role="group" aria-label={`As it landed, ${when(at)}`} data-kb-alignment={rules?.alignment} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
       <div className="kb-moment-frame"><div className="kb-moment-body">{children}</div></div>
       <p className="kb-moment-tag">
         <span>As it landed</span>
         <span aria-hidden="true"> · </span>
         <span>{read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : read === 'none' ? 'This play has no moment to show.' : <time dateTime={at}>{when(at)}</time>}</span>
-        {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={back}>Back to now</button></>}
+        {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
       </p>
       {(named.length > 0 || words.length > 0 || unrecorded) && (
         <div className="kb-moment-list">
@@ -78,6 +80,20 @@ export function MomentFrame({ play, at, read, back, named, words, unrecorded, ch
       )}
     </div>
   );
+}
+
+/**
+ * Back to now, with focus kept where the reader is: the button goes with the frame, so focus moves to the play's As it landed in its
+ * open Lens, else to the play's mark on the post.
+ */
+function backToNow(button: HTMLElement, play: CardPlay, back: () => void) {
+  const post = button.closest('article, .kb-origin');
+  back();
+  queueMicrotask(() => {
+    const pressed = document.querySelector<HTMLElement>(`.kb-lens-row[data-kb-play="${CSS.escape(play.id)}"] .kb-lens-action[aria-pressed]`);
+    const mark = post?.querySelector<HTMLElement>(`.kb-mark[data-kb-card="${CSS.escape(play.card)}"]`);
+    (pressed ?? mark)?.focus();
+  });
 }
 
 /**
@@ -94,6 +110,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now }: {
 }) {
   const { instance, ui } = useKayfa();
   const read = useMomentRead(play.id);
+  const frame = useRef<HTMLDivElement>(null);
   const [said, setSaid] = useState<Readonly<Record<string, string>>>({});
   const onWords = useCallback((card: string, words: string | null) => {
     setSaid((s) => {
@@ -105,9 +122,9 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now }: {
   }, []);
   if (read.status !== 'read' || read.moment === null) {
     return (
-      <MomentFrame play={play} at={play.playedAt} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
+      <MomentFrame frame={frame} play={play} at={play.playedAt} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
         {now}
-        {read.status === 'failed' && <button type="button" className="kb-moment-retry" onClick={read.retry}>Try again</button>}
+        {read.status === 'failed' && <button type="button" className="kb-moment-retry" onClick={() => { frame.current?.focus(); read.retry(); }}>Try again</button>}
       </MomentFrame>
     );
   }
@@ -116,7 +133,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now }: {
   const name = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
   const words = Object.keys(said).sort().map((k) => `${name(k)}: ${said[k]}`);
   return (
-    <MomentFrame play={play} at={play.playedAt} read="read" back={back} named={parts.named} words={words} unrecorded={!moment.recorded}>
+    <MomentFrame frame={frame} play={play} at={play.playedAt} read="read" back={back} named={parts.named} words={words} unrecorded={!moment.recorded}>
       <MomentEffects moment={moment} place={place} nameOf={nameOf} onWords={onWords}>{bodyOf(moment.version)}</MomentEffects>
     </MomentFrame>
   );

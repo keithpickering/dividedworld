@@ -7,7 +7,6 @@
  */
 .kb-moment {
   --kb-moment-ink: var(--kb-glass-sweet);
-  --kb-moment-ink-text: var(--kb-glass-ink-neon);
   position: relative;
   margin: 18px 0 6px;
   filter: drop-shadow(0 0 8px color-mix(in srgb, var(--kb-moment-ink) 55%, transparent));
@@ -15,7 +14,6 @@
 
 .kb-moment[data-kb-alignment="salty"] {
   --kb-moment-ink: var(--kb-glass-salty);
-  --kb-moment-ink-text: var(--kb-glass-ink-salty);
 }
 
 .kb-moment-frame {
@@ -48,16 +46,17 @@
   margin: 0;
   padding: 1px 8px;
   transform: translateY(-50%);
-  background: var(--kb-moment-ink);
-  color: var(--kb-moment-ink-text);
+  /* The glass's panel and text, whose contrast the glass's check holds, edged in the ink: a card's own ink is never a ground for words. */
+  border: 2px solid var(--kb-moment-ink);
+  background: var(--kb-glass-panel-strong);
+  color: var(--kb-glass-text);
   font-family: var(--kb-glass-font-display);
   font-size: var(--kb-glass-size-phone-small);
   line-height: 1.2;
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* It wraps on a narrow post rather than cut Back to now (or its focus ring) off. */
+  overflow-wrap: anywhere;
 }
 
 .kb-moment-tag time {

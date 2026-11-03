@@ -509,6 +509,31 @@ describe('the ORIGIN box of a play-spun thread', () => {
     expect(read).toHaveBeenCalledTimes(1);
   });
 
+  test('a moment that does not load says so in the box, with Try again, and no way out is needed: the mark still leads to the post', async () => {
+    const { w, spun } = await spunFromHold();
+    const read = vi.spyOn(w.fake, 'playMoment').mockRejectedValueOnce(new Error('offline'));
+    openWith(w, spun);
+    const box = await origin();
+    const frame = await within(box).findByRole('group', { name: /^As it landed/u });
+    expect(await within(frame).findByText('The moment did not load.')).toBeInTheDocument();
+    await userEvent.click(within(frame).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  test('a thread spun from a play beyond a post keeps today\'s box, with no moment read or drawn', async () => {
+    const w = threadWorld(3);
+    const glint = w.fake.seed.reach(w.spritey, 'character', w.pipe, 'whoops', { post: w.ids[1]!, ends: Date.now() + 86_400_000 });
+    const read = vi.spyOn(w.fake, 'playMoment');
+    const spun = await spinFrom(w, glint, 'About that glint');
+    openWith(w, spun);
+    const box = await origin();
+    /* Today's box: the play's Act read, and no moment drawn or read for it. */
+    await waitFor(() => expect(box.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(within(box).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+  });
+
   test('a thread spun from a post keeps its live box, with no moment', async () => {
     const { w } = await spunFromHold();
     const spun = await spinFrom(w, w.ids[1]!, 'About the post');

@@ -73,13 +73,18 @@ export interface LensStore {
   showMoment(play: Id | null): void;
   /** A moment read for the page, by play (undefined while it is not read): read once, since a moment never changes. */
   kept(play: Id): PlayMoment | null | undefined;
-  keep(play: Id, moment: PlayMoment | null): void;
+  /**
+   * Read a play's moment for the page with `load`, once: a read already on its way is not sent again, and its answer is kept even if
+   * the moment was hidden meanwhile. A failed read keeps nothing, and the promise rejects, so it can be asked again.
+   */
+  readMoment(play: Id, load: () => Promise<PlayMoment | null>): Promise<void>;
 }
 
 function createLensStore(): LensStore {
   let open: LensOpen | null = null;
   let shown: Id | null = null;
   const moments = new Map<Id, PlayMoment | null>();
+  const reading = new Map<Id, Promise<void>>();
   const listeners = new Set<() => void>();
   const wake = () => { for (const l of [...listeners]) l(); };
   const set = (next: LensOpen | null) => {
@@ -98,7 +103,14 @@ function createLensStore(): LensStore {
     moment: () => shown,
     showMoment(play) { if (play !== shown) { shown = play; wake(); } },
     kept: (play) => moments.get(play),
-    keep(play, moment) { moments.set(play, moment); wake(); },
+    readMoment(play, load) {
+      if (moments.has(play)) return Promise.resolve();
+      const was = reading.get(play);
+      if (was) return was;
+      const read = load().then((m) => { moments.set(play, m); wake(); }).finally(() => reading.delete(play));
+      reading.set(play, read);
+      return read;
+    },
   };
 }
 

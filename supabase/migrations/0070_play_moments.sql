@@ -128,13 +128,17 @@ begin
     if v.id is null then v := on_post; end if;
   end if;
   select t.board into on_board from threads t where t.id = on_post.thread;
-  select span_interval(setting('reachLasts') -> 'character') as character, span_interval(setting('reachLasts') -> 'thread') as thread,
-         span_interval(setting('reachLasts') -> 'board') as board into bound;
+  -- An instance seeded without reachLasts (settings_reach_hold makes it whole once written) bounds nothing, rather than reading none.
+  select coalesce(span_interval(setting('reachLasts') -> 'character'), interval '1000 months') as character,
+         coalesce(span_interval(setting('reachLasts') -> 'thread'), interval '1000 months') as thread,
+         coalesce(span_interval(setting('reachLasts') -> 'board'), interval '1000 months') as board into bound;
   return jsonb_build_object(
     'version', act_projection(on_post.id) || jsonb_build_object(
       'current_payload', v.payload,
       'edited_at', case when v.kind = 'edit' then v.created_at end,
       'shown_edited_at', case when v.kind = 'edit' and v.created_at > on_post.created_at + grace then v.created_at end),
+    -- The rows' order is for a stable answer only: a caught play and its spring share a transaction's time, so readers order the layers
+    -- themselves (inPlayOrder) and find a caught play's spring by its set, never by this order.
     'layers', jsonb_build_array(jsonb_build_object('act', act_projection(k.id), 'state', null, 'savedAt', null))
       || coalesce((select jsonb_agg(jsonb_build_object('act', to_jsonb(a), 'state', l.state, 'savedAt', l.saved_at) order by a.created_at, a.id)
                    from play_moment_layers l join acts_public a on a.id = l.layer where l.play = k.id), '[]'::jsonb),

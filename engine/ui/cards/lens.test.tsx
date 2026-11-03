@@ -741,6 +741,31 @@ describe('As it landed', () => {
     expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
   });
 
+  test('Back to now gives focus back to the play\'s As it landed, and works while the moment has not loaded', async () => {
+    const { w, k1b } = await landed();
+    vi.spyOn(w.fake, 'playMoment').mockRejectedValue(new Error('offline'));
+    await userEvent.click(landedButton(k1b));
+    const box = await frame();
+    expect(await within(box).findByText('The moment did not load.')).toBeInTheDocument();
+    await userEvent.click(within(box).getByRole('button', { name: 'Back to now' }));
+    expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+    await waitFor(() => expect(landedButton(k1b)).toHaveFocus());
+    expect(landedButton(k1b)).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('a read on its way is not sent again, and its answer is kept though the moment was hidden meanwhile', async () => {
+    const { w, k1b } = await landed();
+    let answer: (m: Awaited<ReturnType<typeof w.fake.playMoment>>) => void = () => {};
+    const real = w.fake.playMoment.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'playMoment').mockImplementationOnce((id) => new Promise((resolve) => { answer = resolve; void real(id); }));
+    await userEvent.click(landedButton(k1b));
+    await userEvent.click(landedButton(k1b));
+    await userEvent.click(landedButton(k1b));
+    await act(async () => { answer(await real(k1b)); });
+    expect(await within(await frame()).findByText('post 2')).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
   test('a moment is read once for the page, however often it is shown', async () => {
     const { w, k1b } = await landed();
     const read = vi.spyOn(w.fake, 'playMoment');
