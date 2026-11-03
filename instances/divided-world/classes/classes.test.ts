@@ -26,6 +26,7 @@ const input = (over: Partial<ClassInput>): ClassInput => ({
 const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1', actAt = 0): ReceivedReaction => ({ act, actKind, quadrant, at: 10, actAt, votes });
 const card = (over: Partial<PlayedCard>): PlayedCard => ({
   act: 'k1', card: 'whoops', alignment: 'salty', at: 5, target: 'p9', onOthers: true, votes: 0, targetVotes: 0, targetAfter: none, ...over,
+  readsAs: over.readsAs ?? over.alignment ?? 'salty',
 });
 const total = (rules: ClassRules, i: ClassInput, reason?: string) =>
   rules.earn(i, settings).filter((e) => !reason || e.reason === reason).reduce((s, e) => s + e.amount, 0);
@@ -43,7 +44,7 @@ test('Face earns from a Sweet card it plays on another\'s post when that post th
   const k = card({ alignment: 'sweet', targetAfter: { ...none, excitedPositive: 2 } });
   assert.equal(total(face, input({ cardsPlayed: [k] })), 20);
   assert.equal(total(face, input({ cardsPlayed: [{ ...k, onOthers: false }] })), 0, 'not on its own player\'s post');
-  assert.equal(total(face, input({ cardsPlayed: [{ ...k, alignment: 'salty' }] })), 0, 'not a Salty card');
+  assert.equal(total(face, input({ cardsPlayed: [{ ...k, alignment: 'salty', readsAs: 'salty' }] })), 0, 'not a Salty card');
 });
 test('Face\'s weakness: bored-negative reactions on its Acts', () => {
   assert.equal(total(face, input({ received: [got('boredNegative'), got('boredNegative', 0.25, 'card', 'k1')] })), -12.5);
@@ -95,7 +96,7 @@ test('an override of the Lurker\'s call changes what a call pays, and the class 
   assert.equal(lurker.earn(input({ held: [held({ rank: 1 })] }), tuned).reduce((s, e) => s + e.amount, 0), 30);
   assert.equal(heel.earn(input({ cardsPlayed: [card({ votes: 2, targetVotes: 1 })] }), tuned).find((e) => e.reason === 'heel.stoleThunder')?.amount, 50);
   assert.equal(face.earn(input({ cardsPlayed: [card({ votes: 2, targetVotes: 1 })] }), tuned).find((e) => e.reason === 'face.stoleThunder')?.amount, -70);
-  assert.equal(jabroni.earn(input({ cardsLanded: [{ act: 'k', card: 'whoops', alignment: 'salty', at: 1, on: 'p' }] }), tuned)[0]?.amount, 40);
+  assert.equal(jabroni.earn(input({ cardsLanded: [{ act: 'k', card: 'whoops', alignment: 'salty', readsAs: 'salty', at: 1, on: 'p' }] }), tuned)[0]?.amount, 40);
   for (const c of classes) for (const read of c.reads ?? []) { const key = typeof read === 'string' ? read : read.key; assert.ok(key in settings.economy, `${c.key} reads ${key}`); }
   // And each of the Lurker's other numbers, so none can turn back into a literal unseen.
   const lurkerTuned = withOverrides(settings, { economy: { 'lurker.crowd': 1, 'lurker.earlyPlayers': 1, 'lurker.spunThreadRepliers': 1, 'lurker.spunThread': 70, 'lurker.postsAllowed': 0, 'lurker.overPosting': -30 } });
@@ -129,7 +130,7 @@ test('Lurker\'s weakness: each post beyond three in a window', () => {
 });
 
 /* ---- Jabroni ---- */
-const landed = (alignment: 'sweet' | 'salty' | 'pepperoni'): LandedCard => ({ act: 'k1', card: 'x', alignment, at: 5, on: 'p1' });
+const landed = (alignment: 'sweet' | 'salty' | 'pepperoni', readsAs = alignment): LandedCard => ({ act: 'k1', card: 'x', alignment, readsAs, at: 5, on: 'p1' });
 test('Jabroni earns from bored-negative reactions (the groan) on its own posts and cards', () => {
   assert.equal(total(jabroni, input({ received: [got('boredNegative'), got('boredNegative', 0.5, 'card', 'k1')] })), 15);
 });
@@ -520,4 +521,32 @@ test('a Heel\'s Salty character card earns no outdraw bonus', () => {
   const bonus = (s: ReturnType<typeof settle>) => s.entries.filter((e) => e.character === 'he' && e.reason === 'heel.stoleThunder').length;
   assert.equal(bonus(settle(heelCard({ target: 'p1' }), world)), 1, 'on a post it outdraws, it earns the bonus');
   assert.equal(bonus(settle(heelCard({ reach: 'character' }), world)), 0, 'on a character, nothing to outdraw');
+});
+
+/* ---- The room decides: a Pepperoni card read as the alignment its reactions lean (the Autocorrect design, section 8) ---- */
+test('a Pepperoni card that read as Salty on a Jabroni\'s post sells the L; one that read as Sweet, or stayed Pepperoni, does not', () => {
+  assert.equal(total(jabroni, input({ cardsLanded: [landed('pepperoni', 'salty')] }), 'jabroni.soldTheL'), 20);
+  assert.equal(total(jabroni, input({ cardsLanded: [landed('pepperoni', 'sweet'), landed('pepperoni')] }), 'jabroni.soldTheL'), 0);
+});
+test('a Pepperoni card that read as Salty and outdrew the post pays a Heel; one that stayed Pepperoni does not', () => {
+  assert.equal(total(heel, input({ cardsPlayed: [card({ alignment: 'pepperoni', readsAs: 'salty', votes: 2, targetVotes: 1 })] }), 'heel.stoleThunder'), 20);
+  assert.equal(total(heel, input({ cardsPlayed: [card({ alignment: 'pepperoni', readsAs: 'pepperoni', votes: 2, targetVotes: 1 })] }), 'heel.stoleThunder'), 0);
+});
+test('a Pepperoni card that read as Sweet lifts another\'s post for a Face; one that read as Salty does not', () => {
+  const lift = { alignment: 'pepperoni' as const, targetAfter: { ...none, excitedPositive: 2 } };
+  assert.equal(total(face, input({ cardsPlayed: [card({ ...lift, readsAs: 'sweet' })] }), 'face.liftedAPost'), 20);
+  assert.equal(total(face, input({ cardsPlayed: [card({ ...lift, readsAs: 'salty' })] }), 'face.liftedAPost'), 0);
+});
+test('settled whole: a Pepperoni card drawing groans on a Jabroni\'s post sells the L; drawing cheers, it does not', () => {
+  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const pepWorld = { ...world, cards: [...world.cards, pep] };
+  const b = board();
+  const onJa = (kind: string): SettlementInput => ({
+    ...b,
+    acts: [...b.acts, { id: 'jp', character: 'ja', kind: 'post', at: 5 * H, thread: 't' }, { id: 'kp', character: 'he', kind: 'card', at: 6 * H, thread: 't', target: 'jp', card: 'pep' }],
+    reactions: [...b.reactions, { act: 'kp', player: 'pf', character: 'fa', kind, at: 7 * H }, { act: 'kp', player: 'pl', character: 'lu', kind, at: 7 * H }],
+  });
+  const sold = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.character === 'ja' && e.reason === 'jabroni.soldTheL').length;
+  assert.equal(sold(settle(onJa('zzz'), pepWorld)), 1);
+  assert.equal(sold(settle(onJa('fire'), pepWorld)), 0);
 });

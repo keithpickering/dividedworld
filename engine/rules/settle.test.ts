@@ -307,7 +307,7 @@ test('cards and spun threads reach a class as the plan reads them', () => {
   seen.length = 0;
   settle({ ...input, characters: input.characters.map((c) => (c.id === 'ann-fan' ? { ...c, classes: [{ class: 'quiet', from: 0 }] } : c)) }, instance);
   const landedOnAnn = seen.filter((s) => s.character === 'ann-fan').flatMap((s) => s.cardsLanded);
-  assert.deepEqual(landedOnAnn, [{ act: 'k1', card: 'splat', alignment: 'salty', at: FROM + 4 * H + 10, on: 'p1' }]);
+  assert.deepEqual(landedOnAnn, [{ act: 'k1', card: 'splat', alignment: 'salty', readsAs: 'salty', at: FROM + 4 * H + 10, on: 'p1' }]);
   seen.length = 0;
   settle(input, instance);
   const spunByCat = seen.filter((s) => s.character === 'cat-1').flatMap((s) => s.threadsSpun);
@@ -343,6 +343,42 @@ test('a reaction to one of The System\'s own Acts settles and moves nobody\'s Au
   assert.deepEqual(r.entries, settle(b, withClasses(recorder().rules)).entries, 'the same entries as with no reaction to it');
   assert.equal(r.paid.some((p) => p.act === 'tally-1'), false, 'no vote on it is paid, nor held to be moved later');
   assert.equal(inputs.some((i) => [...i.given, ...i.received, ...i.held].some((x) => x.act === 'tally-1')), false, 'no class is given it');
+});
+
+test('a Pepperoni play reads as the room leans on it in the window: Salty, Sweet, or Pepperoni on a tie', () => {
+  const kind = (key: string, alignment: 'sweet' | 'salty' | 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const { rules, inputs } = recorder();
+  const world = { ...withClasses(rules), cards: [...instance.cards, kind('pep', 'pepperoni'), kind('sugar', 'sweet')] };
+  const b = base();
+  const play = (card: string): InputAct => ({ id: 'k1', character: 'cat-1', kind: 'card', at: FROM + 7 * H, thread: 't1', target: 'q1', card });
+  const reads = (votes: InputReaction[], card = 'pep') => {
+    inputs.length = 0;
+    settle({ ...b, acts: [...b.acts, play(card)], reactions: [...b.reactions, ...votes] }, world);
+    const played = inputs.flatMap((i) => i.cardsPlayed).find((c) => c.act === 'k1')!;
+    const landed = inputs.flatMap((i) => i.cardsLanded).find((c) => c.act === 'k1')!;
+    return [played.alignment, played.readsAs, landed.readsAs];
+  };
+  const at = FROM + 8 * H;
+  assert.deepEqual(reads([react('k1', 'ann', 'ann-fan', 'zzz', at), react('k1', 'dee', 'dee-1', 'tomato', at)]), ['pepperoni', 'salty', 'salty'], 'groans and heat: Salty');
+  assert.deepEqual(reads([react('k1', 'ann', 'ann-fan', 'fire', at), react('k1', 'dee', 'dee-1', 'tea', at)]), ['pepperoni', 'sweet', 'sweet'], 'cheers and nods: Sweet');
+  assert.deepEqual(reads([react('k1', 'ann', 'ann-fan', 'fire', at), react('k1', 'dee', 'dee-1', 'zzz', at)]), ['pepperoni', 'pepperoni', 'pepperoni'], 'a tie stays Pepperoni');
+  assert.deepEqual(reads([]), ['pepperoni', 'pepperoni', 'pepperoni'], 'no reactions: Pepperoni');
+  assert.deepEqual(reads([react('k1', 'cat', 'cat-1', 'zzz', at)]), ['pepperoni', 'pepperoni', 'pepperoni'], 'the caster\'s own player never moves the lean');
+  assert.deepEqual(reads([react('k1', 'ann', 'ann-fan', 'zzz', at)], 'sugar'), ['sweet', 'sweet', 'sweet'], 'a Sweet card reads as Sweet whatever the room does');
+});
+
+test('a Pepperoni play that reads as Sweet shares the Sweet hold: one player\'s two cards on a post pay what one would', () => {
+  const kind = (key: string, alignment: 'sweet' | 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const { rules, inputs } = recorder();
+  const world = { ...withClasses(rules), cards: [...instance.cards, kind('pep', 'pepperoni'), kind('sugar', 'sweet')] };
+  const b = base();
+  const acts: InputAct[] = [
+    { id: 'k1', character: 'cat-1', kind: 'card', at: FROM + 7 * H, thread: 't1', target: 'p1', card: 'sugar' },
+    { id: 'k2', character: 'cat-1', kind: 'card', at: FROM + 8 * H, thread: 't1', target: 'p1', card: 'pep' },
+  ];
+  settle({ ...b, acts: [...b.acts, ...acts], reactions: [...b.reactions, react('k2', 'bob', 'bob-1', 'fire', FROM + 9 * H), react('p1', 'dee', 'dee-1', 'fire', FROM + 10 * H)] }, world);
+  const lifted = inputs.flatMap((i) => i.cardsPlayed).filter((c) => c.target === 'p1').map((c) => [c.act, c.readsAs, c.targetAfter.excitedPositive]);
+  assert.deepEqual(lifted, [['k1', 'sweet', 1], ['k2', 'sweet', 0]], 'Dee\'s fire counts once, for the earlier of the two that read as Sweet');
 });
 
 test('two Sweet cards from one player on one post pay what one would: each vote counts once, for the earlier card', () => {
