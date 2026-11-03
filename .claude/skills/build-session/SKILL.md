@@ -53,13 +53,26 @@ with the task it touched, so that gaps can be counted.
    record names the head SHA it read and is in the PR with no open blocking finding, as one line
    `Final review read: <40-hex SHA>`. Before it, the PR lists every open design question, numbered, under
    `Design questions`; the reviewer answers none of them, and each goes to the owner.
-4. The final review is the last thing to read the branch. Any commit after it means a fresh Opus final review of the
-   new head and a full build on it. That review reads a fix's diff against every row of the charter it touches, not
-   only the finding it fixed: a fix is new code.
+4. The final review is the last full read of the branch. Any commit after it, a fix or a merge of main, gets a
+   **delta review** and a full build on the new head (`docs/plans/2026-11-03-delta-review-design.md`). The delta
+   review is a fresh subagent on Opus, never the builder and never the earlier reviewer resumed: a subagent's cache
+   lives five minutes, so a resumed reviewer would write its whole context again. Its brief is the PR number, the
+   reviewed head's SHA, the new head's and a link to the review it extends; it carries no account of the fix. It reads
+   what changed, not the branch again: each commit since the reviewed head that is not a merge of main
+   (`git log -p --no-merges <old>..<new>`), each merge's remerge diff (`git show --remerge-diff <merge>`), the change in
+   the PR's own diff between the two heads
+   (`diff <(git diff $(git merge-base origin/main <old>) <old>) <(git diff $(git merge-base origin/main <new>) <new>)`),
+   and the code each change touches. It checks that each blocking finding of the review it extends is fixed, and reads
+   the change against every row of the charter it touches, not only the finding it fixed: a fix is new code. Fix code
+   with no red run of its own gets charter item 1. Where the change reaches past what the full review covered (a new
+   task, table, migration or job, or a rule changed rather than a defect fixed), the delta reviewer says so with its
+   reason and asks for a full final review, which runs as step 3 says. Its record names both SHAs, links the review it
+   extends and keeps the coverage table for the rows it read; once no blocking finding is open the
+   `Final review read:` line moves to the new head.
 5. A final review with no blocking finding ends the build: write its `Final review read:` line and the PR is done.
    Its non-blocking findings, and any earlier review's still unbuilt, are filed as follow-ups (below), never fixed in
-   this PR, because each fix buys another final review and the PR never lands. Only a blocking finding is fixed here,
-   tests first, followed by one more final review of the new head.
+   this PR, because each fix buys another review and the PR never lands. Only a blocking finding is fixed here,
+   tests first, followed by a delta review of the new head (step 4).
 
 **The final review's charter.** By the final review, the per-task reviewers have held each task to the plan and the
 plan's tests have their red runs. The final review is for what neither of those proves. It covers these five, in
