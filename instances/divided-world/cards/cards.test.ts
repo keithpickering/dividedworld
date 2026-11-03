@@ -256,7 +256,7 @@ test('Autocorrect lands only where its phrase is, whole and in any case, never i
   const play = (body: string, phrase: string) => decidePlay(autocorrect as CardRules, settings, on(body), [], { phrase, replacement: 'dogs' }, '');
   assert.equal(play('I love Cats.', 'cats').ok, true);
   assert.equal(play('I love CATS', 'cats').ok, true);
-  assert.deepEqual(play('concatenate', 'cats'), { ok: false, why: '“cats” is not in this post' });
+  assert.deepEqual(play('concatenate', 'cats'), { ok: false, why: '“cats” is not in this post\'s own words' });
   assert.equal(play('[quote=0f8fad5b-d9cb-469f-a165-70867728950e]cats[/quote] dogs', 'cats').ok, false);
   assert.equal(play('ca[b]ts[/b]', 'cats').ok, true, 'across formatting');
   assert.equal(decidePlay(autocorrect as CardRules, settings, on('cats'), [1, 2, 3].map((i) => ({ card: 'autocorrect', act: `k${i}` })), { phrase: 'cats', replacement: 'dogs' }, '').ok, false, 'three deep already');
@@ -287,4 +287,17 @@ test('Autocorrect\'s saved state is the author\'s peels by occurrence, and the l
   assert.equal(most.ok, true);
   const asPostgres = JSON.stringify(most.ok && most.value).replace(/([,:])/g, '$1 ');
   assert.ok(Buffer.byteLength(asPostgres) <= 262_144, `${Buffer.byteLength(asPostgres)} bytes`);
+});
+
+test('Autocorrect: a landing refusal is said before a configuration\'s, the face shows the most a play adds, and a phrase is priced in characters', () => {
+  const stacked = [1, 2, 3].map((i) => ({ card: 'autocorrect', act: `k${i}` }));
+  assert.match((decidePlay(autocorrect as CardRules, settings, on('cats'), stacked, { phrase: 'x', replacement: '' }, '') as { why: string }).why, /already carries 3/);
+  assert.equal(autocorrect.playPrice(settings, on(''), {} as never), 200, 'with no phrase yet: 3.00 in all less the 1.00 at the machine');
+  // Four letters outside the Basic Multilingual Plane: 4 characters, 8 of the string's units. 13 of them cover 52 characters, one step.
+  assert.equal(autocorrect.playPrice(settings, on(Array(13).fill('𝒜𝒷𝒸𝒹').join(' ')), { phrase: '𝒜𝒷𝒸𝒹', replacement: 'x' }), 25);
+});
+
+test('Autocorrect: the replacement is refused as the phrase itself exactly when the matcher would read them as one', () => {
+  assert.equal(config('Mario', 'mArIo').ok, false);
+  assert.equal(config('straße', 'STRASSE').ok, true, 'the matcher does not fold ß to SS, so neither does this');
 });

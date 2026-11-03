@@ -33,3 +33,8 @@ test('read through the visible text: a quote\'s words are never matched, and bol
 test('a phrase with no word in it matches nothing', () => {
   assert.deepEqual(occurrences('a ... b', '...'), []);
 });
+
+test('case folding is the matcher\'s simple one: ß is not SS, and an occurrence after a character outside the BMP has its offset in the string\'s units', () => {
+  assert.deepEqual(words('STRASSE and straße', 'straße'), ['straße']);
+  assert.deepEqual(occurrences('𝒜 cats', 'cats'), [{ from: 3, to: 7 }]);
+});

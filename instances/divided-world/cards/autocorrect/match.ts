@@ -19,6 +19,9 @@ export interface Occurrence {
 const WORDISH = /[\p{L}\p{N}]/u;
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** Whether two strings are the same words as the matcher reads them: the same, case-folded as its `i` folds them. */
+export const sameWords = (a: string, b: string): boolean => new RegExp(`^${escape(a)}$`, 'iu').test(b);
+
 export function occurrences(text: string, phrase: string): Occurrence[] {
   if (!WORDISH.test(phrase)) return [];
   const find = new RegExp(`(?<![\\p{L}\\p{N}])${escape(phrase)}(?![\\p{L}\\p{N}])`, 'giu');

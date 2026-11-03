@@ -10,7 +10,8 @@
  * - **The phrase** is 4 to 100 characters with at least 4 letters or digits, so tiny words cannot be carpet-bombed cheaply.
  * - **The replacement** is one line of plain text, 1 to 100 characters, and never the phrase itself (ignoring case). BBCode in
  *   it is kept as the text it is: the strip draws it as a string and never parses it.
- * - **It lands** only where its phrase is (a cast whose phrase is not in the post is refused in plain words), up to three deep.
+ * - **It lands** only where its phrase is in the post's own words (a quote, code or a link is not; a cast whose phrase is not there
+ *   is refused in plain words), up to three deep. The replacement is never the phrase as the matcher reads it (case-folded alike).
  * - **Its price** is the base price at the machine, plus `perVolume` for each `volumeStep` characters it covers (occurrences
  *   times the phrase's length), never more than `mostInAll` in all, as Whoops!'s long-post price is. Priced against the version
  *   the play was decided on; play_card refuses it if the post has another (0070), and strips then follow later edits for free.
@@ -18,7 +19,7 @@
  *   which every reader loads, and `clean` once none is left. A reader's own peels are never saved.
  */
 import { basePrice, economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
-import { occurrences } from './autocorrect/match.ts';
+import { occurrences, sameWords } from './autocorrect/match.ts';
 
 export const PHRASE = { least: 4, most: 100 } as const;
 export const REPLACEMENT = { most: 100 } as const;
@@ -55,7 +56,7 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
   canApply: (target, effects, config) => {
     const lands = landsOn(autocorrect, target, effects);
     if (!lands.ok || !config || target.reach !== 'post') return lands;
-    return occurrences(target.text, config.phrase).length ? lands : refuse(`“${config.phrase}” is not in this post`);
+    return occurrences(target.text, config.phrase).length ? lands : refuse(`“${config.phrase}” is not in this post's own words`);
   },
   validateConfig: (config) => {
     const { phrase: p, replacement: r } = typeof config === 'object' && config !== null ? (config as { phrase?: unknown; replacement?: unknown }) : {};
@@ -68,7 +69,7 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     if (!replacement) return refuse('the replacement is some words, not nothing');
     if (characters(replacement) > REPLACEMENT.most) return refuse(`the replacement is at most ${REPLACEMENT.most} characters`);
     if (LINE_BREAK.test(replacement)) return refuse('the replacement is one line');
-    if (replacement.toLocaleLowerCase() === phrase.toLocaleLowerCase()) return refuse('the replacement is other words, not the phrase itself');
+    if (sameWords(phrase, replacement)) return refuse('the replacement is other words, not the phrase itself');
     return ok({ phrase, replacement });
   },
   validateState: (state) => {
