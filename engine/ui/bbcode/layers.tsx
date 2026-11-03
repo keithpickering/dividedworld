@@ -35,7 +35,10 @@ const Layers = createContext<readonly TextRun[]>([]);
 /** The runs every layer above this point lays over the post's words. */
 export const useTextLayers = (): readonly TextRun[] => useContext(Layers);
 
-/** Lays `runs` over the words of the post drawn inside it, on top of any layers above it. */
+/**
+ * Lays `runs` over the words of the post drawn inside it, on top of any layers above it. Pass the same `runs` array while the
+ * runs are the same (an effect's `useMemo`): a new array is a new layer, and every post inside draws its words again.
+ */
 export function TextLayer({ runs, children }: { readonly runs: readonly TextRun[]; readonly children: ReactNode }) {
   const above = useContext(Layers);
   const all = useMemo(() => (runs.length ? [...above, ...runs] : above), [above, runs]);

@@ -112,8 +112,10 @@ function node(n: BbNode, key: number, quoteLink: BbCodeProps['quoteLink'], layer
 export const BbCode = memo(function BbCode({ text, quoteLink }: BbCodeProps) {
   const tree = useMemo(() => parse(text), [text]);
   const runs = useTextLayers();
-  // Only a post with layers over it is walked; one with none draws exactly as it always has.
-  const walk = useMemo(() => (runs.length ? visibleWalk(tree) : null), [tree, runs.length > 0]);
+  // Only a post with layers over it is walked; one with none draws exactly as it always has. The walk reads the tree alone, so
+  // it is kept while layers come and go, and only made again when the words change or the first layer arrives.
+  const layeredOn = runs.length > 0;
+  const walk = useMemo(() => (layeredOn ? visibleWalk(tree) : null), [tree, layeredOn]);
   const stretches = useMemo(() => (walk ? stretchesOf(walk.text.length, runs) : []), [walk, runs]);
   const layered = walk ? { text: walk.text, offsets: walk.offsets, stretches, drawn: new Set<Stretch>() } : undefined;
   return <div className="kb-bb">{nodes(tree, quoteLink, layered)}</div>;

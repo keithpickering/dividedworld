@@ -81,6 +81,29 @@ describe('text layers', () => {
     expect([...out().querySelectorAll('[data-strip]')].map((s) => s.getAttribute('data-covers'))).toEqual(words);
   });
 
+  test('a replace run split by a higher one is drawn as a piece on each side of it, each once, with no duplicate keys', () => {
+    const errors: unknown[] = [];
+    const was = console.error;
+    console.error = (...a: unknown[]) => { errors.push(a); };
+    try {
+      const text = 'a big fat cats day';
+      const low = at(text, 'big fat cats');
+      const fat = at(text, 'fat');
+      show(text, [strip(low, low + 12, 'LOW', 0), strip(fat, fat + 3, 'TOP', 1)]);
+      expect([...out().querySelectorAll('[data-strip]')].map((s) => [s.getAttribute('data-strip'), s.getAttribute('data-covers')]))
+        .toEqual([['LOW', 'big '], ['TOP', 'fat'], ['LOW', ' cats']]);
+    } finally {
+      console.error = was;
+    }
+    expect(errors).toEqual([]);
+  });
+
+  test('of two runs of a kind at one height, the later one is drawn', () => {
+    const text = 'one two';
+    show(text, [strip(0, 3, 'FIRST', 0), strip(0, 3, 'SECOND', 0)]);
+    expect([...out().querySelectorAll('[data-strip]')].map((s) => s.getAttribute('data-strip'))).toEqual(['SECOND']);
+  });
+
   test('with no layers, the post draws exactly as before', () => {
     const text = 'plain [b]bold[/b] words';
     const plain = render(<RouterProvider><BbCode text={text} /></RouterProvider>).container.innerHTML;
