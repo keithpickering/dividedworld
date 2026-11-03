@@ -33,9 +33,14 @@ function refusal(vars: Record<string, string>): string {
   let message = '';
   assert.throws(() => environment(reader(vars)), (e: Error) => { message = e.message; return true; });
   const values = Object.values(vars).flatMap((v) => {
-    try { const o = JSON.parse(v); return typeof o === 'object' && o ? [v, ...Object.values(o).map(String)] : [v]; } catch { return [v]; }
+    try {
+      const o: unknown = JSON.parse(v);
+      if (typeof o === 'string') return [v, o];
+      return typeof o === 'object' && o ? [v, ...Object.values(o).map(String)] : [v];
+    } catch { return [v]; }
   }).filter((v) => v.length > 3);
   for (const v of values) assert.ok(!message.includes(v), `the message holds a value it was given: ${message}`);
+  assert.doesNotMatch(message, /sb_(secret|publishable)_[A-Za-z0-9]|eyJ/, 'the message holds part of a key');
   return message;
 }
 
@@ -48,6 +53,8 @@ test('on the platform, jobs is the key named kayfabb_jobs and never default', ()
   assert.equal(environment(reader(platform({ default: SECRET }))).jobs, null);
   assert.equal(environment(reader({ ...platform({ default: SECRET }), SUPABASE_SECRET_KEY: SECRET })).jobs, null,
     'a single secret key set beside the named ones is not the jobs key');
+  assert.equal(environment(reader(platform({ default: SECRET, kayfabb_jobs: '' }))).jobs, null,
+    'an empty kayfabb_jobs is no key, so a request with no apikey cannot match it');
 });
 
 test('with one key of each, as locally and self-hosted, the secret key is also the jobs key', () => {
@@ -65,6 +72,16 @@ test('a missing key says what to set', () => {
   assert.match(refusal(noPublishable), /make a publishable key named default, or set SUPABASE_PUBLISHABLE_KEY/);
   assert.match(refusal(platform({ kayfabb_jobs: JOBS })), /make a secret key named default/);
   assert.match(refusal(platform({ default: SECRET }, { other: PUBLISHABLE })), /make a publishable key named default/);
+  assert.match(refusal(platform({ default: '' })), /make a secret key named default/, 'an empty key is no key');
+});
+
+test('each list is read on its own: the platform\'s secret keys beside a single publishable key', () => {
+  const { SUPABASE_PUBLISHABLE_KEYS: _p, ...secretsOnly } = platform({ default: SECRET, kayfabb_jobs: JOBS });
+  assert.deepEqual(environment(reader({ ...secretsOnly, SUPABASE_PUBLISHABLE_KEY: PUBLISHABLE })),
+    { url: 'https://p.supabase.co', secret: SECRET, publishable: PUBLISHABLE, jobs: JOBS });
+  // A blank SUPABASE_SECRET_KEYS is set, so it is read as the platform's list and refused, never passed over.
+  assert.match(refusal({ ...secretsOnly, SUPABASE_SECRET_KEYS: '', SUPABASE_SECRET_KEY: SECRET, SUPABASE_PUBLISHABLE_KEY: PUBLISHABLE }),
+    /SUPABASE_SECRET_KEYS is not a JSON object of strings/);
 });
 
 test('a key list that is not a JSON object of strings is refused by its name, not its value', () => {

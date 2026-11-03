@@ -31,12 +31,12 @@ function namedKeys(name: string, raw: string): Record<string, string> {
   return parsed as Record<string, string>;
 }
 
-/** A key, refused by its name when it has the legacy JWT shape. */
-function notLegacy<T extends string | null>(which: string, key: T): T {
+/** A key, or undefined where it is unset or empty; refused by its name when it has the legacy JWT shape. */
+function notLegacy(which: string, key: string | undefined): string | undefined {
   if (key?.startsWith('eyJ')) {
     throw new Error(`${which} is a legacy JWT key; KayfaBB takes the publishable and secret keys (sb_publishable_…, sb_secret_…)`);
   }
-  return key;
+  return key || undefined;
 }
 
 export function environment(get: (name: string) => string | undefined): Environment {
@@ -46,23 +46,23 @@ export function environment(get: (name: string) => string | undefined): Environm
   const secrets = get('SUPABASE_SECRET_KEYS');
   const publishables = get('SUPABASE_PUBLISHABLE_KEYS');
   let secret: string | undefined;
-  let jobs: string | null;
+  let jobs: string | undefined;
   if (secrets !== undefined) {
     const named = namedKeys('SUPABASE_SECRET_KEYS', secrets);
-    secret = notLegacy('the secret key named default', named.default ?? null) ?? undefined;
+    secret = notLegacy('the secret key named default', named.default);
     // Never `default`: a key leaked from anywhere else must not run a settlement (the design's section 1).
-    jobs = notLegacy('the secret key named kayfabb_jobs', named.kayfabb_jobs ?? null);
+    jobs = notLegacy('the secret key named kayfabb_jobs', named.kayfabb_jobs);
   } else {
-    secret = notLegacy('SUPABASE_SECRET_KEY', get('SUPABASE_SECRET_KEY') ?? null) ?? undefined;
-    jobs = secret ?? null;
+    secret = notLegacy('SUPABASE_SECRET_KEY', get('SUPABASE_SECRET_KEY'));
+    jobs = secret;
   }
   const publishable = publishables !== undefined
-    ? notLegacy('the publishable key named default', namedKeys('SUPABASE_PUBLISHABLE_KEYS', publishables).default ?? null) ?? undefined
-    : notLegacy('SUPABASE_PUBLISHABLE_KEY', get('SUPABASE_PUBLISHABLE_KEY') ?? null) ?? undefined;
+    ? notLegacy('the publishable key named default', namedKeys('SUPABASE_PUBLISHABLE_KEYS', publishables).default)
+    : notLegacy('SUPABASE_PUBLISHABLE_KEY', get('SUPABASE_PUBLISHABLE_KEY'));
 
   if (!secret) throw new Error('no secret key: make a secret key named default, or set SUPABASE_SECRET_KEY');
   if (!publishable) throw new Error('no publishable key: make a publishable key named default, or set SUPABASE_PUBLISHABLE_KEY');
-  return { url, secret, publishable, jobs };
+  return { url, secret, publishable, jobs: jobs ?? null };
 }
 
 export function sameSecret(a: string, b: string): boolean {
