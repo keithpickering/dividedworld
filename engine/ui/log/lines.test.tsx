@@ -330,7 +330,7 @@ describe('a card\'s own words for a play', () => {
   });
 
   test('the author\'s "a card on your post" row says it', () => {
-    const log = { ...empty, playsOnMine: [{ play: 'k1', post: 'post3', at, reach: 'post' as const }] };
+    const log = { ...empty, playsOnMine: [{ play: 'k1', post: 'post3', at, reach: 'post' as const, targetName: null, targetCharacter: 'a' }] };
     const [row] = logRows(data({ log, mine: [char('a', 'Pipewrench', 'jabroni')], acts: new Map([post, play].map((a) => [a.id, a])), names: new Map([['c', 'Spritey']]) }), w, 600, null);
     expect(row!.kind).toBe('onMine');
     expect(text(row!)).toContain('It covers “mario” with “Luigi”.');
