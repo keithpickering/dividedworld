@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_DEPTH, parse } from './parse.ts';
+import { MAX_DEPTH, parse, type BbNode } from './parse.ts';
 import { visibleText, visibleWalk } from './visible.ts';
 
 const ACT = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -20,6 +20,10 @@ test('a quote, code, a link and an image leave one separator and none of their w
 
 test('a list\'s items are kept apart, and from the words around it', () => {
   assert.equal(seen('intro[list][*]one[*]two[/list]outro'), 'intro\none\ntwo\noutro');
+  assert.equal(seen('x[list=1][*]one[*]two[/list]y'), 'x\none\ntwo\ny');
+  assert.equal(seen('x[list][/list]y'), 'x\ny');
+  assert.equal(seen('[list][*]a[list][*]x[/list][*]b[/list]'), '\na\nx\n\nb\n');
+  assert.equal(seen(`[list][*]a[quote=${ACT}]q[/quote]b[/list]`), '\na\nb\n');
 });
 
 test('each text node is given its offset in the visible text, in drawing order', () => {
@@ -36,9 +40,15 @@ test('each text node is given its offset in the visible text, in drawing order',
   visit(tree);
   for (const [t, at] of found) assert.equal(text.slice(at, at + t.length), t, `${t} at ${at}`);
   assert.deepEqual(found.map(([t]) => t), ['ca', 'ts', ' ', 'a', 'b']);
+  // Nothing the walk leaves out (the quote's "no") is given an offset.
+  assert.equal(offsets.size, 5);
 });
 
-test('the deepest nesting the parser keeps is walked without recursion running out', () => {
-  const deep = '[b]'.repeat(MAX_DEPTH + 5) + 'deep' + '[/b]'.repeat(MAX_DEPTH + 5);
-  assert.match(seen(deep), /deep/);
+test('a tree far deeper than the parser makes is walked without recursion running out', () => {
+  let tree: BbNode = { type: 'text', text: 'deep' };
+  for (let i = 0; i < 200_000; i++) tree = { type: 'bold', children: [tree] };
+  assert.equal(visibleText([tree]), 'deep');
+  // The parser's own cap: past MAX_DEPTH a tag is text, and the words are kept.
+  const capped = '[b]'.repeat(MAX_DEPTH + 1) + 'deep' + '[/b]'.repeat(MAX_DEPTH + 1);
+  assert.equal(seen(capped), '[b]deep[/b]');
 });
