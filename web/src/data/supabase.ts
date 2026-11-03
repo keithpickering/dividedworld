@@ -291,11 +291,20 @@ type Res = { data: unknown; error: { message: string; hint?: string | null } | n
 export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const { url, publishableKey, settingsFallback } = options;
   const doFetch: typeof fetch = options.fetch ?? ((...a) => globalThis.fetch(...a));
+  // supabase-js sends its key as the bearer where there is no session; a publishable key goes in apikey alone (Supabase's
+  // migration guide, docs/plans/2026-11-02-api-keys-design.md), so a bearer that is the key itself is taken off. A session's
+  // token is passed on as it is.
+  const clientFetch: typeof fetch = (input, init) => {
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    if (headers.get('authorization') !== `Bearer ${publishableKey}`) return doFetch(input, init);
+    headers.delete('authorization');
+    return doFetch(input, { ...init, headers });
+  };
   const client: SupabaseClient =
     options.client ??
     createClient(url, publishableKey, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
-      global: { fetch: doFetch },
+      global: { fetch: clientFetch },
     });
   const avatarUrl = (key: string | null): string | null => (key ? `${url}/storage/v1/object/public/avatars/${key}` : null);
 

@@ -615,6 +615,25 @@ describe('reads and their rows', () => {
   });
 });
 
+describe('a visitor\'s calls', () => {
+  it('carry the publishable key in apikey and no Authorization: the settings read, a board read and the account function', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/screen_settings')) return rows([{ settings: {} }]);
+      if (r.url.pathname === '/functions/v1/account') return json({ ok: true });
+      return rows([]);
+    });
+    await h.api.settings();
+    await h.api.boards();
+    await h.api.requestCode('a@b.c', null).catch(() => undefined);
+    expect(h.log.length).toBeGreaterThanOrEqual(3);
+    expect(h.log.some((r) => r.url.pathname === '/functions/v1/account')).toBe(true);
+    for (const r of h.log) {
+      expect(r.headers.get('apikey'), r.url.pathname).toBe(PUBLISHABLE);
+      expect(r.headers.get('authorization'), r.url.pathname).toBeNull();
+    }
+  });
+});
+
 describe('failures', () => {
   it('passes an act refusal through with its field', async () => {
     const h = harness(() => json({ field: 'body', error: 'body is empty' }, 400));
