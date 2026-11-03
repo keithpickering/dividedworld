@@ -10,8 +10,8 @@ description: Use when a session is started to carry out a written plan, builds i
 A build session starts fresh from one plan file, so it never re-reads the design conversation. It builds, tests,
 reviews, opens the PR and owns it while it lives: review rounds and CI are its own work. The owner merges.
 
-**Background:** CLAUDE.md, whole. The plan is carried out task by task, in its order, by you or by implementer
-subagents (see "Working"). Each step goes test first: the failing test and its red run, then the code that makes it
+**Background:** CLAUDE.md, whole. The plan is carried out task by task, in its order, by implementer subagents the
+main loop briefs, or inline where a task's `Model:` line says (see "Working"). Each step goes test first: the failing test and its red run, then the code that makes it
 pass. A claim of done, for a task, a check or the PR, is shown with the output of the command that proves it, never
 asserted. A bug or a red run gets its root cause found before a fix. These are the practices CLAUDE.md's "How a task
 starts here" lists; a build reads no process skill for them.
@@ -22,18 +22,34 @@ is the owner's. Carried from currents' build-session skill with its cockpit, mer
 
 ## Reading
 
-Read the plan, its design, and CLAUDE.md before starting, then the slice of each file you need. Touch only the plan's
+Read the plan and its design before starting (CLAUDE.md is already in your context, so it is not read
+again), then the slice of each file you need. Touch only the plan's
 files. Where the plan is wrong, stop and ask the owner rather than investigate around it. A gap found while building
 (a file or function the plan missed, a task that cannot be done as written) is also listed in the PR under `Plan gaps`,
 with the task it touched, so that gaps can be counted.
 
 ## Working
 
+- **The main loop orchestrates; subagents implement** (`docs/plans/2026-11-03-thin-orchestrator-design.md`). Every
+  model call re-reads the main loop's whole context, so a file read, an edit or a test run there is paid for again on
+  every later call, at the main loop's price. The main loop reads the plan, briefs each task's implementer, reads its
+  report, runs the reviews, makes the judgment calls and owns the PR. The code is written in implementer subagents,
+  whose contexts are discarded when they report.
+- Each plan task names its implementer on a `Model:` line, chosen by the design session: `haiku`, `sonnet`, or
+  `inline` (the main loop does it itself). A task with no `Model:` line, as in plans written before this rule, goes to
+  a Sonnet implementer, unless it is a few lines in one or two files, which the main loop does inline. A task an
+  implementer could not finish (its red run stays red, or it cannot follow the task as written) goes once more to the
+  next model up (Haiku to Sonnet) with the first report; only after that does the main loop take it over. A plan gap
+  is still a stop, whoever meets it.
 - An implementer subagent's prompt holds the task's text from the plan, the files and functions it names, what the
   task depends on, the tests to write first, and what to report back (what changed, the red and green runs, any plan
-  gap).
-- Models: the main loop is Sonnet; implementer subagents Sonnet, or Haiku where the plan holds the code; task
-  reviewers and a fix round's re-review Sonnet; the final branch review Opus, on the head the PR ends on.
+  gap), in a few lines: the report lands in the main loop's context, the diff does not need to.
+- Reading that would bring a large file, log or search result into the main loop's context goes to a subagent that
+  returns what the main loop needs (Haiku, where the question is only where something is or what a file says).
+  Command output in the main loop is cut to its tail or grepped.
+- Models: the main loop runs on the model the owner started it with (Opus); implementer subagents as each task's
+  `Model:` line says; task reviewers and a fix round's re-review Sonnet; the final branch review and each delta review
+  Opus.
 - During tasks, run only the tests for the code changed. Run the full build (`npm run build`) once after all tasks and
   before the PR, again on any head after the final review, and otherwise only when CI disagrees.
 - Push to the designated branch after every task's commit, so a container restart loses only the task in progress.

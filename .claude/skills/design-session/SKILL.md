@@ -43,7 +43,16 @@ sessions ahead, and a session that takes up one of those areas starts from them.
 
 A design (what was decided, each alternative weighed, and what is open) and a plan (tasks in order, each with its files
 and functions, the tests to write first, and the poisons for any check it adds), committed under `docs/plans/` with
-a name `YYYY-MM-DD-<slug>.md` and opening `Record, written YYYY-MM-DD.` The plan's last section is `## Review focus`:
+a name `YYYY-MM-DD-<slug>.md` and opening `Record, written YYYY-MM-DD.` Each task opens with a `Model:` line naming
+who builds it (`docs/plans/2026-11-03-thin-orchestrator-design.md`):
+- `haiku` where the plan holds the code or the exact strings, or the work is mechanical and voluminous (fixtures, test
+  tables, renames, a copy pass), and the task reads only the files it names. Haiku costs a twentieth of Sonnet's price
+  while a prompt stays under 100k tokens and a fifth above it, and a subagent starts at tens of thousands of tokens,
+  so a Haiku task is kept narrow. It is never given a judgment the plan has not made.
+- `sonnet` where the task needs judgment inside what the plan decided: most tasks.
+- `inline` where briefing a subagent would cost more than the work: a few lines in one or two files.
+
+The plan's last section is `## Review focus`:
 one line for each risk the design can name but its tests cannot settle before the code exists (what the change does
 to Acts an instance already holds, a cost that grows with a busy instance, a path a second run, a retry or another
 player could take, a way a mask could slip), for the final reviewer's charter in the build-session skill.
