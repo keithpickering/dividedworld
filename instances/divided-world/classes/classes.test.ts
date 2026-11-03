@@ -300,6 +300,14 @@ test('a Lurker\'s fourth post costs', () => {
   assert.equal(settle(posts, world).entries.find((e) => e.reason === 'lurker.postedTooMuch')?.amount, -10);
 });
 
+test('a Lurker\'s entries whose words state a number carry the number they were settled under (#57)', () => {
+  const b = board();
+  const posts: SettlementInput = { ...b, acts: [...b.acts, ...[1, 2, 3, 4].map((n) => ({ id: `lp${n}`, character: 'lu', kind: 'post' as const, at: (5 + n) * H, thread: 't' }))] };
+  assert.deepEqual(settle(posts, world).entries.find((e) => e.reason === 'lurker.postedTooMuch')?.params, { 'lurker.postsAllowed': 3 });
+  const tuned = { ...world, settings: { ...world.settings, economy: { ...world.settings.economy, 'lurker.postsAllowed': 2 } } };
+  assert.deepEqual(settle(posts, tuned).entries.find((e) => e.reason === 'lurker.postedTooMuch')?.params, { 'lurker.postsAllowed': 2 });
+});
+
 test('reactions to a card count for the card\'s player under whichever class they hold', () => {
   const asHeel = settle(board('heel'), world);
   // The card's player is now a Heel: the fire and the zzz on its card are not heat and pay nothing,

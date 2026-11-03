@@ -25,6 +25,7 @@ import '../characters/characters.css';
 import { Blocks } from './render.tsx';
 import { parse } from './markdown.ts';
 import type { Fill } from './render.tsx';
+import { economyNow } from '../economy.ts';
 
 const possessive = (name: string) => (name.endsWith('s') ? `${name}'` : `${name}'s`);
 
@@ -63,7 +64,9 @@ export function ReactionGrid() {
 }
 
 export function Classes() {
-  const { instance, ui } = useKayfa();
+  const { instance, ui, settings } = useKayfa();
+  /* A class's words state the numbers in force (economyNow). */
+  const economy = economyNow(instance.settings, settings.economy);
   const group = useId();
   const dev = instance.developer;
   const hintLabel = dev ? `${possessive(dev.name)} hint` : 'Hint';
@@ -86,7 +89,7 @@ export function Classes() {
             {look?.marks ? <Marks marks={look.marks} id={`${group}-${c.key}-marks`} /> : <span />}
             <div className="kb-guide-class-words">
               <h3 id={name} className="kb-guide-class-name"><span className="kb-class-chip kb-glass-skew"><span className="kb-glass-upright">{c.name}</span></span></h3>
-              {look?.description && <p>{look.description}</p>}
+              {look?.description && <p>{look.description(economy)}</p>}
               {hint && <p className="kb-guide-hint"><span className="kb-guide-hint-label">{hintLabel}</span>{' '}<span>{hint}</span></p>}
             </div>
           </div>

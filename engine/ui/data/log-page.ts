@@ -41,6 +41,8 @@ export interface LedgerRow {
   readonly character: string;
   readonly reason: string;
   readonly amount: number;
+  /** The numbers its reason's words state (`my_ledger.params`, 0072); absent where the row has none. */
+  readonly params?: Readonly<Record<string, number>>;
 }
 
 /** A share as `my_ledger_shares` reads it, named by its line's settlement, character and reason. */
@@ -107,7 +109,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     .map(({ row, lines, order }) => ({
       id: row.settlement, startsAt: row.startsAt, endsAt: row.endsAt, sharesKept: row.sharesKept,
       /* By character, then reason, as the adapter's read orders them, so both backends hand the screens one order. */
-      lines: [...order].sort((a, b) => (a.character < b.character ? -1 : a.character > b.character ? 1 : a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0)).map((l): LogLine => ({ character: l.character, reason: l.reason, amount: l.amount, shares: [...lines.get(`${l.character}\u0000${l.reason}`)!].sort(byShare) })),
+      lines: [...order].sort((a, b) => (a.character < b.character ? -1 : a.character > b.character ? 1 : a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0)).map((l): LogLine => ({ character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}), shares: [...lines.get(`${l.character}\u0000${l.reason}`)!].sort(byShare) })),
     }));
   return {
     settlements: out,

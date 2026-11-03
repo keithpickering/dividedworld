@@ -125,6 +125,56 @@ begin
   end if;
 end $$;
 
+-- ---- Task 7 (#57): a ledger row keeps the numbers its reason's words state, as it was settled under them ----
+do $$
+declare
+  lu uuid := tests.account('core-ledger');
+  c uuid := tests.character(lu, 'Core Ledger', 'alpha', '2000-01-01');
+  s timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
+  got jsonb;
+begin
+  begin
+    perform set_config('role', 'service_role', true);
+    got := apply_settlement(s, s + interval '1 hour', jsonb_build_array(
+      jsonb_build_object('player', lu, 'character', c, 'reason', 'alpha.postedTooMuch', 'amount', -10, 'params', jsonb_build_object('lurker.postsAllowed', 4)),
+      jsonb_build_object('player', lu, 'character', c, 'reason', 'alpha.cheered', 'amount', 20)));
+    perform tests.unbecome();
+    if got ->> 'applied' is distinct from 'true' then raise exception 'the setup: the window is applied: %', got; end if;
+    if (select params from ledger where character = c and reason = 'alpha.postedTooMuch') is distinct from '{"lurker.postsAllowed": 4}'::jsonb then
+      raise exception 'a ledger row keeps the numbers it was settled under: %', (select params from ledger where character = c and reason = 'alpha.postedTooMuch');
+    end if;
+    if (select params from ledger where character = c and reason = 'alpha.cheered') is not null then raise exception 'a row whose reason states no number holds none'; end if;
+    -- The player's own log reads them.
+    perform tests.become(lu);
+    if (select jsonb_object_agg(reason, params) from my_ledger where character = c) is distinct from '{"alpha.postedTooMuch": {"lurker.postsAllowed": 4}, "alpha.cheered": null}'::jsonb then
+      raise exception 'my_ledger reads each row''s numbers: %', (select jsonb_object_agg(reason, params) from my_ledger where character = c);
+    end if;
+    perform tests.unbecome();
+    -- Undone, so the blocks after this one meet the seasons and settlements as the file found them.
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
+end $$;
+
+-- ---- Task 7 (#57): numbers that are not numbers are refused, and nothing is applied ----
+do $$
+declare
+  lu uuid := tests.account('core-ledger-bad');
+  c uuid := tests.character(lu, 'Core Ledger Bad', 'alpha', '2000-01-01');
+  s timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
+  why text;
+begin
+  perform set_config('role', 'service_role', true);
+  begin
+    perform apply_settlement(s, s + interval '1 hour', jsonb_build_array(
+      jsonb_build_object('player', lu, 'character', c, 'reason', 'alpha.postedTooMuch', 'amount', -10, 'params', jsonb_build_object('lurker.postsAllowed', 'four'))));
+  exception when others then why := sqlerrm;
+  end;
+  perform tests.unbecome();
+  if why is distinct from 'an entry''s params are numbers by key' then raise exception 'params that are not numbers are refused: %', why; end if;
+  if exists (select 1 from ledger where character = c) then raise exception 'nothing of a refused window is applied'; end if;
+end $$;
+
 -- ---- Task 4 (#22): a settle run claims its window, and a reveal waits it out ----
 
 -- A season's first window, whose end nobody knows in advance (0014): the last settled end, where there is one, is where a new
@@ -169,37 +219,42 @@ declare
   w_end timestamptz := now() - interval '1 hour';
   said text;
 begin
-  perform pg_temp.first_window();
-  -- A claim made now, on a window that ends after the Turn was asked and is not settled: the reveal waits.
-  waiting := pg_temp.turning('core-claim-waiting');
-  perform set_config('role', 'service_role', true);
-  perform claim_settlement_window(w_end);
-  perform tests.unbecome();
-  said := pg_temp.reveal(waiting);
-  if said is distinct from 'this character''s Turn takes effect at the settlement now running; reveal in a few minutes' then
-    raise exception 'a reveal during the run that applies its Turn is refused, and says to try again in a few minutes: %', said;
-  end if;
-  -- Claimed twice (a second run on the same window): one claim, made afresh.
-  perform set_config('role', 'service_role', true);
-  perform claim_settlement_window(w_end);
-  perform tests.unbecome();
-  if (select count(*) from settlement_claims where settlement_claims.window_end = w_end) is distinct from 1::bigint then raise exception 'a window is claimed once'; end if;
-  -- A claim on a window ending before the Turn was asked does not cover it.
-  earlier := pg_temp.turning('core-claim-earlier');
-  update pending_turns set asked_at = w_end + interval '10 minutes' where character = earlier;
-  said := pg_temp.reveal(earlier);
-  if said is not null then raise exception 'a claim on a window that ends before the Turn was asked leaves the reveal be: %', said; end if;
-  -- A claim made six minutes ago by a run that died: its way out, by itself.
-  update settlement_claims set claimed_at = now() - interval '6 minutes' where settlement_claims.window_end = w_end;
-  dead := pg_temp.turning('core-claim-dead');
-  said := pg_temp.reveal(dead);
-  if said is not null then raise exception 'a claim five minutes old blocks no reveal: %', said; end if;
-  -- Claimed afresh, then the window settled: the reveal goes through.
-  update settlement_claims set claimed_at = now() where settlement_claims.window_end = w_end;
-  if pg_temp.reveal(waiting) is null then raise exception 'the setup: a fresh claim refuses again'; end if;
-  insert into settlements (starts_at, ends_at, season) values (w_end - interval '1 day', w_end, (select max(id) from seasons));
-  said := pg_temp.reveal(waiting);
-  if said is not null then raise exception 'once the claimed window is settled, the reveal goes through: %', said; end if;
+  begin
+    perform pg_temp.first_window();
+    -- A claim made now, on a window that ends after the Turn was asked and is not settled: the reveal waits.
+    waiting := pg_temp.turning('core-claim-waiting');
+    perform set_config('role', 'service_role', true);
+    perform claim_settlement_window(w_end);
+    perform tests.unbecome();
+    said := pg_temp.reveal(waiting);
+    if said is distinct from 'this character''s Turn takes effect at the settlement now running; reveal in a few minutes' then
+      raise exception 'a reveal during the run that applies its Turn is refused, and says to try again in a few minutes: %', said;
+    end if;
+    -- Claimed twice (a second run on the same window): one claim, made afresh.
+    perform set_config('role', 'service_role', true);
+    perform claim_settlement_window(w_end);
+    perform tests.unbecome();
+    if (select count(*) from settlement_claims where settlement_claims.window_end = w_end) is distinct from 1::bigint then raise exception 'a window is claimed once'; end if;
+    -- A claim on a window ending before the Turn was asked does not cover it.
+    earlier := pg_temp.turning('core-claim-earlier');
+    update pending_turns set asked_at = w_end + interval '10 minutes' where character = earlier;
+    said := pg_temp.reveal(earlier);
+    if said is not null then raise exception 'a claim on a window that ends before the Turn was asked leaves the reveal be: %', said; end if;
+    -- A claim made six minutes ago by a run that died: its way out, by itself.
+    update settlement_claims set claimed_at = now() - interval '6 minutes' where settlement_claims.window_end = w_end;
+    dead := pg_temp.turning('core-claim-dead');
+    said := pg_temp.reveal(dead);
+    if said is not null then raise exception 'a claim five minutes old blocks no reveal: %', said; end if;
+    -- Claimed afresh, then the window settled: the reveal goes through.
+    update settlement_claims set claimed_at = now() where settlement_claims.window_end = w_end;
+    if pg_temp.reveal(waiting) is null then raise exception 'the setup: a fresh claim refuses again'; end if;
+    insert into settlements (starts_at, ends_at, season) values (w_end - interval '1 day', w_end, (select max(id) from seasons));
+    said := pg_temp.reveal(waiting);
+    if said is not null then raise exception 'once the claimed window is settled, the reveal goes through: %', said; end if;
+    -- Undone, so the blocks after this one meet the seasons and settlements as the file found them.
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
 end $$;
 
 -- ---- Task 4 (#22): the claims are the service's alone ----
@@ -221,26 +276,31 @@ declare
   a uuid;
   tally uuid; entry jsonb; ended timestamptz; shown jsonb;
 begin
-  update seasons set starts_at = now() - interval '10 days' where ends_at is null;
-  insert into class_kinds (key, name) values ('gamma', 'Gamma') on conflict (key) do nothing;
-  a := tests.character(ann, 'Core Turner', 'alpha', now() - interval '9 days');
-  -- A silent Turn to beta five days ago: it is in no tally, and nothing public dates it.
-  insert into class_history (character, class_key, started_at) values (a, 'beta', now() - interval '5 days');
-  -- Then a Turn to gamma that names the class it leaves.
-  insert into pending_turns (character, class_key, loudness, asked_at, show_from, show_to) values (a, 'gamma', 'announced', now() - interval '1 hour', true, false);
-  tally := masks_change(now() - interval '30 minutes');
-  select e into entry from acts x cross join lateral jsonb_array_elements(x.payload -> 'turns') e where x.id = tally and e ->> 'character' = a::text;
-  if entry - 'character' - 'name' - 'loudness' is distinct from '{"was": "beta"}'::jsonb then
-    raise exception 'an announced Turn says the class it leaves, and not since when: %', entry;
-  end if;
-  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'turns_announced' and column_name = 'since') then
-    raise exception 'turns_announced carries no since';
-  end if;
-  ended := (select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength'));
-  perform reveal_season(ended);
-  select x.payload -> 'shown' into shown from acts x where x.kind = 'reveal' and x.payload ->> 'character' = a::text;
-  if shown is null or not exists (select 1 from jsonb_array_elements(shown) e where e ->> 'kind' = 'turn' and e ->> 'was' = 'beta') then
-    raise exception 'the season''s reveal lists the announced Turn with the class it left: %', shown;
-  end if;
-  if exists (select 1 from jsonb_array_elements(shown) e where e ? 'since') then raise exception 'the season''s reveal dates no Turn''s start: %', shown; end if;
+  begin
+    update seasons set starts_at = now() - interval '10 days' where ends_at is null;
+    insert into class_kinds (key, name) values ('gamma', 'Gamma') on conflict (key) do nothing;
+    a := tests.character(ann, 'Core Turner', 'alpha', now() - interval '9 days');
+    -- A silent Turn to beta five days ago: it is in no tally, and nothing public dates it.
+    insert into class_history (character, class_key, started_at) values (a, 'beta', now() - interval '5 days');
+    -- Then a Turn to gamma that names the class it leaves.
+    insert into pending_turns (character, class_key, loudness, asked_at, show_from, show_to) values (a, 'gamma', 'announced', now() - interval '1 hour', true, false);
+    tally := masks_change(now() - interval '30 minutes');
+    select e into entry from acts x cross join lateral jsonb_array_elements(x.payload -> 'turns') e where x.id = tally and e ->> 'character' = a::text;
+    if entry - 'character' - 'name' - 'loudness' is distinct from '{"was": "beta"}'::jsonb then
+      raise exception 'an announced Turn says the class it leaves, and not since when: %', entry;
+    end if;
+    if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'turns_announced' and column_name = 'since') then
+      raise exception 'turns_announced carries no since';
+    end if;
+    ended := (select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength'));
+    perform reveal_season(ended);
+    select x.payload -> 'shown' into shown from acts x where x.kind = 'reveal' and x.payload ->> 'character' = a::text;
+    if shown is null or not exists (select 1 from jsonb_array_elements(shown) e where e ->> 'kind' = 'turn' and e ->> 'was' = 'beta') then
+      raise exception 'the season''s reveal lists the announced Turn with the class it left: %', shown;
+    end if;
+    if exists (select 1 from jsonb_array_elements(shown) e where e ? 'since') then raise exception 'the season''s reveal dates no Turn''s start: %', shown; end if;
+    -- Undone, so the blocks after this one meet the seasons and settlements as the file found them.
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
 end $$;

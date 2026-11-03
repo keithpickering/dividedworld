@@ -10,7 +10,7 @@ import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
-import { instanceUi } from './index.ts';
+import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
 
 describe('Divided World\'s developer persona', () => {
   test('is Gabe, with his tagline, and his picture is one the UI has', () => {
@@ -43,7 +43,33 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('every class has a look and a description', () => {
     for (const c of instance.classes) {
       expect(instanceUi.classLooks[c.key], c.key).toBeDefined();
-      expect(instanceUi.classLooks[c.key]?.description.length, c.key).toBeGreaterThan(0);
+      expect(instanceUi.classLooks[c.key]?.description(instance.settings.economy).length, c.key).toBeGreaterThan(0);
+    }
+  });
+
+  /* A class's words state the numbers in force (the core loop design, section 6, #57): each description and each reason names the
+     economy keys it states (`wordsRead`), and says the number an admin has tuned, never the default. */
+  const NUMBER_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
+    'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+  const spelled = (n: number) => (n >= 1 && n <= 20 ? NUMBER_WORDS[n - 1]! : String(n));
+  const holdsNumber = (text: string) => /\d/u.test(text) || new RegExp(`\\b(${NUMBER_WORDS.join('|')})\\b`, 'iu').test(text);
+  const said = (key: string, economy: Readonly<Record<string, number>>) =>
+    (instanceUi.classLooks[key] ? instanceUi.classLooks[key]!.description(economy) : instanceUi.reasonWords(key, economy));
+  const economy = instance.settings.economy;
+  test('each class\'s words say the numbers in force: shifted by 17, the shifted number is said and the default is not', () => {
+    expect(Object.keys(wordsRead).length).toBeGreaterThan(0);
+    for (const [key, reads] of Object.entries(wordsRead)) {
+      const shifted = { ...economy, ...Object.fromEntries(reads.map((r) => [r, economy[r]! + 17])) };
+      const text = said(key, shifted);
+      for (const r of reads) {
+        expect(text, `${key} says ${r} as tuned`).toMatch(new RegExp(`\\b${spelled(economy[r]! + 17)}\\b`, 'u'));
+        expect(text, `${key} never says ${r}'s default`).not.toMatch(new RegExp(`\\b${spelled(economy[r]!)}\\b`, 'u'));
+      }
+    }
+  });
+  test('every class description and reason that states a number names the economy keys it states', () => {
+    for (const key of [...instance.classes.map((c) => c.key), ...REASON_KEYS]) {
+      if (holdsNumber(said(key, economy))) expect(wordsRead[key]?.length ?? 0, `${key}: "${said(key, economy)}"`).toBeGreaterThan(0);
     }
   });
   test('every card has a face and rules in plain words, true to the settings it is told', () => {
@@ -101,7 +127,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.logSave!({ peeled: [] })).toBeUndefined();
   });
   test('"Stole the thunder" names what it counted and when: votes, this window (#111)', () => {
-    for (const reason of ['face.stoleThunder', 'heel.stoleThunder']) expect(instanceUi.reasonWords(reason)).toContain('more votes than the post this window');
+    for (const reason of ['face.stoleThunder', 'heel.stoleThunder']) expect(instanceUi.reasonWords(reason, instance.settings.economy)).toContain('more votes than the post this window');
   });
   test('every pip style has images', () => {
     for (const p of instance.pipStyles) expect(instanceUi.pips[p.key], p.key).toBeDefined();
@@ -181,7 +207,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const reasons = ['face.cheered', 'face.liftedAPost', 'face.boredTheRoom', 'face.stoleThunder', 'heel.drewHeat', 'heel.stoleThunder', 'heel.shrugged',
       'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch',
       'technician.respected', 'technician.evergreen', 'technician.draggedIn'];
-    for (const r of reasons) expect(instanceUi.reasonWords(r), r).not.toMatch(/^Settled under/);
+    for (const r of reasons) expect(instanceUi.reasonWords(r, instance.settings.economy), r).not.toMatch(/^Settled under/);
   });
   test('the Main board\'s layout becomes the Phone board\'s at 1152px: 1440 times the smallest phone size (16) over the smallest Main board size (20)', () => {
     expect(boardSwitch(instanceUi.glass)).toBe(1152);

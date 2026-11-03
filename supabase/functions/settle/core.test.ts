@@ -88,6 +88,15 @@ test('a claim that cannot be written fails the run before it reads or applies th
   assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'claim_settlement_window']);
 });
 
+test('each entry whose reason states a number is applied with the numbers it was settled under (#57)', async () => {
+  const lurking: SettlementInput = { ...day, acts: [...day.acts, ...[1, 2, 3, 4].map((n) => ({ id: `lp${n}`, character: 'de', kind: 'post' as const, at: FROM + (6 + n) * H, thread: 't' }))] };
+  const { db, calls } = fakeDb(lurking, { economy: { ...instance.settings.economy, 'lurker.postsAllowed': 2 } });
+  await runSettlement(db, instance, new Date(TO).toISOString());
+  const entries = calls.find((c) => c.fn === 'apply_settlement')!.args.entries as { reason: string; params?: unknown }[];
+  assert.deepEqual(entries.find((e) => e.reason === 'lurker.postedTooMuch')?.params, { 'lurker.postsAllowed': 2 });
+  assert.equal(entries.filter((e) => e.reason !== 'lurker.postedTooMuch').some((e) => 'params' in e), false, 'an entry whose reason states no number carries none');
+});
+
 test('a run settles the next window: reads its input, runs the instance\'s classes, applies their entries', async () => {
   const { db, calls } = fakeDb();
   const out = await runSettlement(db, instance, new Date(TO).toISOString());

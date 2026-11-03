@@ -28,6 +28,7 @@ import { useKayfa } from '../context.tsx';
 import type { ClassMarks } from '../types.ts';
 import { classVars } from './ClassChip.tsx';
 import { shownRange } from './carousel.ts';
+import { economyNow } from '../economy.ts';
 
 export interface ClassCardsProps {
   readonly legend: string;
@@ -92,7 +93,9 @@ function read(row: HTMLElement): RowState {
 const same = (a: RowState, b: RowState) => (Object.keys(a) as (keyof RowState)[]).every((k) => a[k] === b[k]);
 
 export function ClassCards({ legend, value, onChange, current, large = false }: ClassCardsProps) {
-  const { instance, ui } = useKayfa();
+  const { instance, ui, settings } = useKayfa();
+  /* A class's words state the numbers in force (economyNow). */
+  const economy = economyNow(instance.settings, settings.economy);
   const group = useId();
   const rowRef = useRef<HTMLDivElement>(null);
   const [row, setRow] = useState<RowState>(STILL);
@@ -170,7 +173,7 @@ export function ClassCards({ legend, value, onChange, current, large = false }: 
                 {c.key === current && <span className="kb-class-now">Now</span>}
               </span>
               {look?.marks && <Marks marks={look.marks} id={ids.marks} />}
-              {look?.description && <span id={ids.words} className="kb-class-description">{look.description}</span>}
+              {look?.description && <span id={ids.words} className="kb-class-description">{look.description(economy)}</span>}
             </>
           );
           if (c.key === current) {

@@ -73,6 +73,12 @@ export interface ScreenSettings {
    * the keys its rules read, from the economy row an admin tunes. A key it lacks is the compiled economy's (`withCardEconomy`).
    */
   readonly cardEconomy: Readonly<Record<string, number>>;
+  /**
+   * The instance's economy row as the server holds it now (0072): the numbers a class's words state (the core loop design, section 6,
+   * #57), so a description and a line with no numbers of its own say the number an admin has tuned. Settings, none of them a private
+   * fact. A key it lacks is the compiled economy's (`economyNow`).
+   */
+  readonly economy: Readonly<Record<string, number>>;
   /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
   readonly toastDefaults: readonly AlertKind[];
   /** How long a toast stays, in milliseconds, where a world sets it (the boards fixture holds its toasts); absent, the HUD's six seconds. */
@@ -575,6 +581,8 @@ export interface LogLine {
   readonly character: Id;
   readonly reason: string;
   readonly amount: number;
+  /** The numbers its reason's words state, as it was settled under them (`ledger.params`, 0072); absent on a row with none. */
+  readonly params?: Readonly<Record<string, number>>;
   /** Empty where the estimate valued no post for the reason, or the settlement was made before shares were kept. */
   readonly shares: readonly LogShare[];
 }

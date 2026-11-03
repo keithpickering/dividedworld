@@ -56,6 +56,8 @@ export interface LedgerEntry {
   readonly character: string;
   readonly reason: string;
   readonly amount: number;
+  /** The numbers its reason's words state, as the earnings it sums were settled under (Earning.params); absent where they name none. */
+  readonly params?: Readonly<Record<string, number>>;
 }
 
 /** What the owner's log shows of an entry: which Act, which quadrant, how much, in whole hundredths that add up to the entry. */
@@ -380,7 +382,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   }
 
   /* ---- each class's rules, stretch by stretch ---- */
-  type Contribution = Detail & { class: string };
+  type Contribution = Detail & { class: string; params?: Readonly<Record<string, number>> };
   const contributions: Contribution[] = [];
   for (const c of characters.values()) {
     for (const stretch of stretchesOf(c)) {
@@ -404,7 +406,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
-        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}) });
+        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}) });
       }
     }
   }
@@ -420,7 +422,8 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     return [...out.entries()].sort((a, b) => cmp(a[0], b[0]));
   };
   const entries: LedgerEntry[] = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}`)
-    .map(([, { first, amount }]) => ({ window: window.id, player: first.player, character: first.character, reason: first.reason, amount: round(amount) }))
+    /* An entry's numbers are its first earning's: one window settles under one set of settings, so its earnings of one reason agree. */
+    .map(([, { first, amount }]) => ({ window: window.id, player: first.player, character: first.character, reason: first.reason, amount: round(amount), ...(first.params ? { params: first.params } : {}) }))
     .filter((e) => e.amount !== 0);
   /* Each entry's detail, in whole hundredths that add up to the entry exactly: the log names
      which Act moved how much, and its lines never disagree with the ledger ("The fiction may

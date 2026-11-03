@@ -422,6 +422,12 @@ export interface ClassInput {
 export interface Earning {
   readonly reason: string;
   readonly amount: number;
+  /**
+   * The economy numbers the reason's words state, by key, as this earning used them (the core loop design, section 6, #57): the
+   * settlement writes them into the ledger row (`ledger.params`), so a line settled before a retune is said with the numbers it was
+   * settled under. Only on a reason whose words state a tunable number (`lurker.postedTooMuch` names `lurker.postsAllowed`).
+   */
+  readonly params?: Readonly<Record<string, number>>;
   readonly act?: string;
   readonly quadrant?: Quadrant;
   /**

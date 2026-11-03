@@ -17,6 +17,7 @@ const words: Words = {
   instance: testInstance,
   ui: { reasonWords: (r) => ({ 'heel.drewHeat': 'Drew heat: x', 'face.cheered': 'Cheered: y' } as Record<string, string>)[r] ?? r, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, cards: [], copy: { siteName: '', siteTagline: '', shopName: 'Shop', reducedMotionCard: '' } },
   postsPerPage: 20,
+  economy: {},
 };
 const data = (over: Partial<LogData>): LogData => ({
   log: empty, mine: [], estimate: null, standings: {}, season: null, turns: [], acts: new Map(), names: new Map(), titles: new Map(), states: new Map(), ...over,

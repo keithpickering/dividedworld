@@ -177,6 +177,8 @@ export interface SeedLine {
   readonly character: Id;
   readonly reason: string;
   readonly amount: number;
+  /** The numbers its reason's words state, as the settlement wrote them into its ledger row (`ledger.params`, 0072). */
+  readonly params?: Readonly<Record<string, number>>;
   readonly shares?: readonly { readonly act: Id; readonly quadrant?: LogShare['quadrant']; readonly amount: number }[];
 }
 
@@ -287,7 +289,9 @@ type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R
  */
 export const FAKE_BACKEND_MARKER = 'KAYFA_FAKE_BACKEND';
 export function createFake(options: { instance: Instance; settings?: Partial<ScreenSettings>; now?: () => number }): Fake {
-  const settings: Settings = { ...options.instance.settings, ...options.settings };
+  /* A screen's economy (ScreenSettings.economy) is laid over the instance's, as economyNow does, never in place of it: a world given the
+     web's fallback, which holds none, keeps the compiled numbers. */
+  const settings: Settings = { ...options.instance.settings, ...options.settings, economy: { ...options.instance.settings.economy, ...options.settings?.economy } };
   const instance: Instance = { ...options.instance, settings };
   const screen: ScreenSettings = {
     postsPerPage: settings.postsPerPage, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap,
@@ -298,6 +302,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
     cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
+    /* What screen_settings's economy holds (0072): the whole economy row. */
+    economy: settings.economy,
   };
 
   /* ----------------------------------------------------------------------- time ---- */
@@ -851,7 +857,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /* The player's log: the settlements' ledger with its shares, every wallet event and the card ledger, each by account (0003, 0006, 0034). */
   interface SettlementRec { readonly id: number; readonly startsAt: number; readonly endsAt: number; readonly sharesKept: boolean; readonly lines: readonly (LedgerLine & { readonly account: Id })[] }
-  interface LedgerLine { readonly character: Id; readonly reason: string; readonly amount: number; readonly shares: readonly LogShare[] }
+  interface LedgerLine { readonly character: Id; readonly reason: string; readonly amount: number; readonly params?: Readonly<Record<string, number>>; readonly shares: readonly LogShare[] }
   const settlements: SettlementRec[] = [];
   const walletEvents: { readonly account: Id; readonly order: number; readonly event: WalletEvent; readonly ms: number }[] = [];
   const cardLedger: { readonly account: Id; readonly order: number; readonly event: CardEvent; readonly ms: number }[] = [];
@@ -1449,7 +1455,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const cap = <T,>(rows: T[]) => ('at' in range ? rows : rows.slice(0, range.limit));
         const newest = <T extends { readonly ms: number; readonly order: number }>(rows: T[]) => cap(rows.sort((a, b) => b.ms - a.ms || b.order - a.order));
         const ledger: LedgerRow[] = cap([...settlements].sort((a, b) => b.endsAt - a.endsAt).filter((x) => fits(x.endsAt))
-          .flatMap((x) => x.lines.filter((l) => l.account === account).map((l) => ({ settlement: x.id, startsAt: iso(x.startsAt), endsAt: iso(x.endsAt), sharesKept: x.sharesKept, character: l.character, reason: l.reason, amount: l.amount }))));
+          .flatMap((x) => x.lines.filter((l) => l.account === account).map((l) => ({ settlement: x.id, startsAt: iso(x.startsAt), endsAt: iso(x.endsAt), sharesKept: x.sharesKept, character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}) }))));
         const read = new Set(ledger.map((l) => l.settlement));
         const shares: ShareRow[] = settlements.filter((x) => read.has(x.id))
           .flatMap((x) => x.lines.filter((l) => l.account === account).flatMap((l) => l.shares.map((sh) => ({ settlement: x.id, character: l.character, reason: l.reason, ...sh }))));
@@ -1920,7 +1926,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (shares.some((sh) => !acts.has(sh.act))) throw new Error('a share names an Act that does not exist');
       if (shares.some((sh) => !Number.isInteger(sh.amount) || sh.amount === 0)) throw new Error('a share\'s amount is whole hundredths, never 0');
       if (shares.length > 0 && shares.reduce((sum, sh) => sum + sh.amount, 0) !== l.amount) throw new Error('an entry\'s shares add up to it');
-      return { account: c.owner, character: l.character, reason: l.reason, amount: l.amount, shares };
+      return { account: c.owner, character: l.character, reason: l.reason, amount: l.amount, ...(l.params ? { params: l.params } : {}), shares };
     });
     const id = settlements.length + 1;
     settlements.push({ id, startsAt, endsAt: at, sharesKept, lines: written });

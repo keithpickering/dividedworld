@@ -33,13 +33,13 @@ export const lurker: ClassRules = {
       .map((h): Earning => ({ reason: 'lurker.calledIt', amount: earlyMatch * h.share, act: h.act, quadrant: h.quadrant, at: h.reactedAt })),
     ...input.threadsSpun
       .filter((t) => t.fromOthers && t.repliersBefore < spunThreadRepliers && t.repliersNow >= spunThreadRepliers)
-      .map((t): Earning => ({ reason: 'lurker.spunAThread', amount: spunThread, act: t.act })),
+      .map((t): Earning => ({ reason: 'lurker.spunAThread', amount: spunThread, act: t.act, params: { 'lurker.spunThreadRepliers': spunThreadRepliers } })),
     ...input.received
       .filter((r) => r.actKind === 'card')
       .map((r): Earning => ({ reason: 'lurker.cardDrew', amount: settings.vote * r.votes, act: r.act, quadrant: r.quadrant, at: r.at })),
     ...input.posts
       .slice(postsAllowed)
-      .map((p): Earning => ({ reason: 'lurker.postedTooMuch', amount: overPosting, act: p.act })),
+      .map((p): Earning => ({ reason: 'lurker.postedTooMuch', amount: overPosting, act: p.act, params: { 'lurker.postsAllowed': postsAllowed } })),
     ];
   },
 };

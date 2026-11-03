@@ -97,7 +97,8 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     const applied = await db.rpc<{ applied: boolean; masks?: string; reveal?: string }>('apply_settlement', {
       window_start: window.start,
       window_end: window.end,
-      entries: result.entries.map((e) => ({ player: e.player, character: e.character, reason: e.reason, amount: e.amount })),
+      // With the numbers each entry's words state, as it was settled under them (ledger.params, 0072).
+      entries: result.entries.map((e) => ({ player: e.player, character: e.character, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}) })),
       class_totals: result.byClass,
       paid: result.paid,
       shares: shares.map((s) => ({ character: s.character, reason: s.reason, act: s.act, ...(s.quadrant ? { quadrant: s.quadrant } : {}), amount: s.amount })),

@@ -495,6 +495,13 @@ const recorder = (): { rules: ClassRules; inputs: ClassInput[] } => {
 };
 const withClasses = (...extra: ClassRules[]): Instance => ({ ...instance, classes: [...instance.classes.filter((c) => !extra.some((e) => e.key === c.key)), ...extra] });
 
+test('an entry carries the numbers its earnings were settled under; an entry whose earnings name none carries none (#57)', () => {
+  const tuned: ClassRules = { key: 'quiet', name: 'Quiet', earn: (i) => i.posts.map((p) => ({ reason: 'quiet.post', amount: 7, act: p.act, params: { 'quiet.allowed': 4 } })) };
+  const r = settle(base(), withClasses(tuned));
+  assert.deepEqual(r.entries.find((e) => e.reason === 'quiet.post')?.params, { 'quiet.allowed': 4 });
+  assert.equal('params' in r.entries.find((e) => e.reason === 'fan.love')!, false);
+});
+
 test('a reaction at exactly the window\'s start is paid, and an Act at exactly its end is not read', () => {
   const b = base();
   const edge: SettlementInput = { ...b, acts: [...b.acts, post('end', 'bob-1', TO)], reactions: [...b.reactions, react('p1', 'dee', 'dee-1', 'fire', FROM)] };
