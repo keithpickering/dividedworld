@@ -1,16 +1,16 @@
 /**
  * The settlement job's Edge Function: pg_cron calls it at the instance's settlement time with
  * the minute it fired (supabase/migrations/0004_schedule.sql). The work is core.ts; this is the
- * edge: the service key, the environment, and an answer that says what happened.
+ * edge: the jobs key it accepts (the secret key named kayfabb_jobs, in apikey), the environment, and an answer that says what happened.
  */
 import { runSettlement } from './core.ts';
 import { chooseInstance } from '../_shared/instance.ts';
-import { environment, fromTheService, json, serviceDb } from '../_shared/serve.ts';
+import { environment, fromTheService, json, notTheService, serviceDb } from '../_shared/serve.ts';
 import { broadcaster } from '../_shared/broadcast.ts';
 
 Deno.serve(async (request) => {
   const env = environment((name) => Deno.env.get(name));
-  if (!fromTheService(request, env.secret)) return json(401, { error: 'the settlement is run by the service' });
+  if (!fromTheService(request, env.jobs)) return notTheService(env.jobs, 'the settlement is run by the service');
   const body = (await request.json().catch(() => ({}))) as { until?: unknown };
   // The schedule sends the window's end; a call without one is refused rather than guessed.
   if (typeof body.until !== 'string' || Number.isNaN(Date.parse(body.until))) return json(400, { error: 'until: the window\'s end, as a time' });

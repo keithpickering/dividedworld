@@ -1,13 +1,56 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { boundedJson, environment, fromTheService, sameSecret } from './serve.ts';
+import { boundedJson, environment, fromTheService, notTheService, sameSecret } from './serve.ts';
 
-test('only a request bearing the service key is from the service', () => {
-  const req = (auth?: string) => new Request('https://f.example/settle', { method: 'POST', headers: auth ? { Authorization: auth } : {} });
-  assert.equal(fromTheService(req('Bearer the-key'), 'the-key'), true);
-  for (const auth of [undefined, 'Bearer the-ke', 'Bearer the-keyy', 'the-key', 'Bearer ', 'Bearer THE-KEY']) {
-    assert.equal(fromTheService(req(auth), 'the-key'), false, String(auth));
+const scheduled = (headers: Record<string, string>) => new Request('https://f.example/settle', { method: 'POST', headers });
+const JOBS_KEY = 'sb_secret_jobs0123456789abc';
+
+test('only a request carrying the jobs key in apikey is from the service', () => {
+  assert.equal(fromTheService(scheduled({ apikey: JOBS_KEY }), JOBS_KEY), true);
+  assert.equal(fromTheService(scheduled({ apikey: JOBS_KEY, Authorization: 'Bearer anything' }), JOBS_KEY), true, 'Authorization is ignored');
+  for (const apikey of [JOBS_KEY.slice(0, -1), `${JOBS_KEY}c`, JOBS_KEY.toUpperCase(), '']) {
+    assert.equal(fromTheService(scheduled({ apikey }), JOBS_KEY), false, apikey);
   }
+  assert.equal(fromTheService(scheduled({}), JOBS_KEY), false, 'no apikey');
+});
+
+test('the jobs key in Authorization is not the jobs key in apikey', () => {
+  assert.equal(fromTheService(scheduled({ Authorization: `Bearer ${JOBS_KEY}` }), JOBS_KEY), false);
+  assert.equal(fromTheService(scheduled({ Authorization: JOBS_KEY }), JOBS_KEY), false);
+});
+
+test('another secret key of the project is not the jobs key', () => {
+  const env = environment((n) => ({
+    SUPABASE_URL: 'u',
+    SUPABASE_SECRET_KEYS: JSON.stringify({ default: 'sb_secret_default0123456789', kayfabb_jobs: JOBS_KEY }),
+    SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({ default: 'sb_publishable_default0123456' }),
+  } as Record<string, string>)[n]);
+  assert.equal(fromTheService(scheduled({ apikey: env.secret }), env.jobs), false);
+  assert.equal(fromTheService(scheduled({ apikey: JOBS_KEY }), env.jobs), true);
+});
+
+test('with no jobs key, no request is from the service, not even one with no apikey', () => {
+  for (const headers of [{}, { apikey: '' }, { apikey: JOBS_KEY }, { apikey: 'null' }, { Authorization: 'Bearer ' }]) {
+    assert.equal(fromTheService(scheduled(headers), null), false, JSON.stringify(headers));
+  }
+});
+
+test('the refusal names the missing jobs key, by name, and logs the same line', async () => {
+  const logged: unknown[] = [];
+  const error = console.error;
+  console.error = (...line: unknown[]) => { logged.push(line.join(' ')); };
+  try {
+    const missing = notTheService(null, 'the settlement is run by the service');
+    assert.equal(missing.status, 401);
+    assert.deepEqual(await missing.json(), { error: 'this project has no secret key named kayfabb_jobs' });
+    assert.deepEqual(logged, ['this project has no secret key named kayfabb_jobs']);
+    const wrong = notTheService(JOBS_KEY, 'the settlement is run by the service');
+    assert.equal(wrong.status, 401);
+    const body = await wrong.text();
+    assert.deepEqual(JSON.parse(body), { error: 'the settlement is run by the service' });
+    assert.ok(!body.includes(JOBS_KEY), 'no key in the body');
+    assert.equal(logged.length, 1, 'a wrong key is not logged');
+  } finally { console.error = error; }
 });
 
 test('sameSecret compares whole strings, of any lengths', () => {

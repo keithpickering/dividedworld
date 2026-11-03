@@ -73,10 +73,26 @@ export function sameSecret(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Whether a request carries the service key as its bearer. */
-export function fromTheService(request: Request, key: string): boolean {
-  const header = request.headers.get('Authorization') ?? '';
-  return sameSecret(header, `Bearer ${key}`);
+/**
+ * Whether a request carries the jobs key in its apikey header. Authorization is ignored: a
+ * scheduled caller holds no session. With no jobs key (`null`), no request is from the service.
+ */
+export function fromTheService(request: Request, jobs: string | null): boolean {
+  if (jobs === null) return false;
+  return sameSecret(request.headers.get('apikey') ?? '', jobs);
+}
+
+/**
+ * The 401 a service-called function answers, logged with the same plain line where the project
+ * has no jobs key, so the operator reads which key to make. It names a key, never a value.
+ */
+export function notTheService(jobs: string | null, what: string): Response {
+  if (jobs === null) {
+    const missing = 'this project has no secret key named kayfabb_jobs';
+    console.error(missing);
+    return json(401, { error: missing });
+  }
+  return json(401, { error: what });
 }
 
 export const json = (status: number, body: unknown) =>
