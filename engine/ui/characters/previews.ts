@@ -1,7 +1,8 @@
 /**
- * What everyone will see, said before a player chooses: the lines The System will post for a
- * debut or a Turn, in the words the thread draws them in (thread/lines.tsx; a test holds the two
- * together), so a preview is a promise kept and never a guess. A class is named only where the
+ * What everyone will see, said before a player chooses: the lines that will be posted, The
+ * System's for a debut or a Turn and the character's own for a reveal, in the words the thread
+ * draws them in (thread/lines.tsx; a test holds the two together), so a preview is a promise kept
+ * and never a guess. A class is named only where the
  * player chose an option that names it ("with its class", "name the new class", "name the old
  * class"); every other option's preview carries none, and a silent one says nobody is told.
  */
@@ -61,5 +62,19 @@ export function turnPreview(o: { readonly name: string; readonly was: string; re
     lines: o.showTo ? [say(tally), say(`${o.name} revealed: ${o.to}`)] : [say(tally)],
     nothing: null,
     where: 'In the tally at the next settlement, in the season’s Turns thread',
+  };
+}
+
+/**
+ * A reveal: the character's own Act, so its one line is the character's, read as UnmaskLine draws
+ * it. The message is trimmed as the request trims it before it is stored (casterMessage,
+ * engine/rules/cards.ts), so one of spaces alone adds no words.
+ */
+export function revealPreview(o: { readonly name: string; readonly className: string; readonly message: string; readonly threadTitle: string | null }): Preview {
+  const said = o.message.trim();
+  return {
+    lines: [{ by: o.name, text: `${o.name} revealed: ${o.className}${said ? ` — “${said}”` : ''}` }],
+    nothing: null,
+    where: `At once, in ${o.threadTitle ?? 'the thread you choose'}`,
   };
 }

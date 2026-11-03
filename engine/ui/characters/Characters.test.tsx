@@ -483,6 +483,30 @@ describe('Reveal: choosing a thread', () => {
     expect(within(dialog).queryByRole('button', { name: 'Show older threads' })).toBeNull();
   });
 
+  test('a page of older threads that comes after the board was changed is not added to the new board\'s list', async () => {
+    const w = world();
+    for (let i = 1; i <= 25; i++) w.fake.seed.thread('general', w.stranger, `Thread ${String(i).padStart(2, '0')}`, 'x', { at: T0 + i * 1000 });
+    const threads = w.fake.threads.bind(w.fake);
+    let release: () => void = () => {};
+    vi.spyOn(w.fake, 'threads').mockImplementation(async (board, page) => {
+      const answer = await threads(board, page);
+      if ((page?.offset ?? 0) > 0) await new Promise<void>((done) => { release = done; });
+      return answer;
+    });
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
+    const select = await within(dialog).findByLabelText('Thread');
+    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(21));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Show older threads' }));
+    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'Off Topic');
+    expect(await within(dialog).findByText('No threads on this board yet; choose another board.')).toBeInTheDocument();
+    await act(async () => { release(); });
+    expect(within(select).getAllByRole('option')).toHaveLength(1);
+    expect(within(dialog).getByText('No threads on this board yet; choose another board.')).toBeInTheDocument();
+  });
+
   test('says plainly when a board has no threads', async () => {
     const w = world();
     open(w);
@@ -743,6 +767,61 @@ describe('the Turn modal over My characters (the Turn board)', () => {
     expect(within(who).getByText('Face')).toBeInTheDocument();
     expect(within(who).getByText('Only you')).toBeInTheDocument();
     expect(within(who).getByRole('img', { name: /^Rank \d of \d: / })).toBeInTheDocument();
+  });
+});
+
+describe('the Reveal over My characters (the glass)', () => {
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const general = (w: World) => w.fake.seed.thread('general', w.stranger, 'The tea thread', 'Who keeps reacting?');
+
+  test('is a glass overlay on the turn smoke, with the menu bar left in view, dimmed and inert', async () => {
+    const w = world();
+    page(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    expect(dialog.querySelector('.kb-smoke')).toHaveAttribute('data-kb-surface', 'turn');
+    expect(within(dialog).getByText('My characters › Reveal')).toBeInTheDocument();
+    const menu = document.querySelector('nav[aria-label="Menu"]')!;
+    expect(menu.closest('[inert]')).not.toBeNull();
+    expect(menu).toHaveAttribute('data-kb-dimmed');
+  });
+
+  for (const how of ['Close', 'Esc'] as const) {
+    test(`${how} returns to My characters, focus on the Reveal button and the menu bar lit again`, async () => {
+      const w = world();
+      page(w);
+      await ready();
+      const reveal = within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' });
+      await userEvent.click(reveal);
+      const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+      if (how === 'Close') await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+      else await userEvent.keyboard('{Escape}');
+      await act(async () => {});
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(reveal).toHaveFocus();
+      const menu = screen.getByRole('navigation', { name: 'Menu' });
+      expect(menu.closest('[inert]')).toBeNull();
+      expect(menu).not.toHaveAttribute('data-kb-dimmed');
+    });
+  }
+
+  test('previews the character\'s own post: its words as typed, in the thread chosen', async () => {
+    const w = world();
+    general(w);
+    page(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    const preview = within(dialog).getByRole('group', { name: 'What everyone will see' });
+    expect(within(preview).getByText('Pipewrench revealed: Face')).toBeInTheDocument();
+    expect(within(preview).getByText('Pipewrench')).toBeInTheDocument();
+    expect(within(preview).getByText('At once, in the thread you choose.')).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText(/In the character.s words/u), 'It was me.');
+    expect(within(preview).getByText('Pipewrench revealed: Face — “It was me.”')).toBeInTheDocument();
+    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
+    await userEvent.selectOptions(await within(dialog).findByLabelText('Thread'), 'The tea thread');
+    expect(within(preview).getByText('At once, in The tea thread.')).toBeInTheDocument();
   });
 });
 

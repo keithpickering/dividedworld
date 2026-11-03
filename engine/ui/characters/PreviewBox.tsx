@@ -2,7 +2,8 @@
  * "What everyone will see": the preview of a debut, a Turn or a reveal, drawn the way the thread
  * will draw it, as the Turn board does: the heading on the glass, then a post of the board's own,
  * black on white in its type, who posts it and when on the left, its lines on the right. Every
- * line a preview holds is The System's (previews.ts), so it is named once, as a post names its author.
+ * line a preview holds has one author (previews.ts: The System for a debut or a Turn, the character
+ * for its own reveal), so it is named once, as a post names its author.
  */
 import type { Preview } from './previews.ts';
 

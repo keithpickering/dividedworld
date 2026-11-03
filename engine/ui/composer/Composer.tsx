@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type Ref } from 'react';
 import { parse } from '../../bbcode/parse.ts';
-import { RevealDialog } from '../characters/RevealDialog.tsx';
+import { RevealModal } from '../characters/RevealModal.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -197,7 +197,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
         <button type="button" className="kb-button kb-composer-reveal" onClick={() => setRevealing(true)}>Reveal…</button>
       </Editor>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-      {revealing && <RevealDialog character={hudCharacter} thread={thread} onClose={() => setRevealing(false)} />}
+      {revealing && <RevealModal character={hudCharacter} thread={thread} onClose={() => setRevealing(false)} />}
     </form>
   );
 }

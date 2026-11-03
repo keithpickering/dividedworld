@@ -27,7 +27,7 @@ import { ClassChip } from './ClassChip.tsx';
 import { DebutDialog } from './DebutDialog.tsx';
 import { Portrait } from './Portrait.tsx';
 import { dayAndTime, figure, inDays, spanWords } from './format.ts';
-import { RevealDialog } from './RevealDialog.tsx';
+import { RevealOverlay } from './RevealOverlay.tsx';
 import { TurnDialog } from './TurnDialog.tsx';
 import './characters.css';
 
@@ -387,7 +387,7 @@ export function Characters() {
       </div>
 
       {dialog && target && dialog.kind === 'turn' && <TurnDialog character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'reveal' && <RevealDialog character={target} onClose={() => setDialog(null)} onDone={setFlash} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay character={target} onClose={() => setDialog(null)} onDone={setFlash} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'drop' && <DebutDialog character={target} timing="now" onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'debut' && <DebutDialog character={target} timing="tally" onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
     </div>

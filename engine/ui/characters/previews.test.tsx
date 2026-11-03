@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import type { Act } from '../data/api.ts';
 import { renderInWorld } from '../test-world.tsx';
 import { Debuts, UnmaskLine } from '../thread/lines.tsx';
-import { debutPreview, turnPreview } from './previews.ts';
+import { debutPreview, revealPreview, turnPreview } from './previews.ts';
 
 afterEach(cleanup);
 
@@ -102,6 +102,36 @@ describe('the preview and the thread say the same words', () => {
     expect(text(turnPreview({ name: 'Pipewrench', was: 'Heel', to: 'Face', loudness: 'announced', showFrom: false, showTo: true }).lines)[1]).toBe(said);
     render(<span />);
     expect(screen.queryByText('x')).toBeNull();
+  });
+
+  test('the character\'s own reveal, with and without its words', () => {
+    for (const message of ['', 'It was me.']) {
+      renderInWorld(<UnmaskLine act={{ payload: { class: 'face', message } } as unknown as Act} name="Pipewrench" />);
+      const said = document.querySelector('p')!.textContent;
+      cleanup();
+      expect(text(revealPreview({ name: 'Pipewrench', className: 'Face', message, threadTitle: null }).lines)).toEqual([said]);
+    }
+  });
+});
+
+describe('the preview of a reveal', () => {
+  const base = { name: 'Pipewrench', className: 'Face', message: '', threadTitle: 'The tea thread' };
+
+  test('is one line, the character\'s own and never The System\'s', () => {
+    const p = revealPreview(base);
+    expect(text(p.lines)).toEqual(['Pipewrench revealed: Face']);
+    expect(p.lines[0]!.by).toBe('Pipewrench');
+    expect(p.nothing).toBeNull();
+  });
+
+  test('carries the character\'s words, as the server stores them, trimmed', () => {
+    expect(text(revealPreview({ ...base, message: '  It was me.  ' }).lines)).toEqual(['Pipewrench revealed: Face — “It was me.”']);
+    expect(text(revealPreview({ ...base, message: '   ' }).lines)).toEqual(['Pipewrench revealed: Face']);
+  });
+
+  test('says where it appears: the thread chosen, or the thread the player will choose', () => {
+    expect(revealPreview(base).where).toBe('At once, in The tea thread');
+    expect(revealPreview({ ...base, threadTitle: null }).where).toBe('At once, in the thread you choose');
   });
 });
 

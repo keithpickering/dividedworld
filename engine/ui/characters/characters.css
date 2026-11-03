@@ -11,8 +11,9 @@
  * its large color only on the Turn (`data-kb-large`), the one surface here that draws a class's
  * large text (engine/ui/glass/apply.ts); My characters and New character draw a class as a chip.
  *
- * The reveal's dialog stays the board's own modal (RevealDialog.tsx, also opened from the
- * composer), and keeps the last two rules of this file.
+ * The reveal is drawn twice: on My characters as a glass overlay beside Debut (RevealOverlay.tsx,
+ * `.kb-reveal-dialog`), and from the composer as the board's own modal (RevealModal.tsx), which
+ * keeps the last two rules of this file.
  */
 
 /* ---- the page's head ---- */
@@ -809,6 +810,12 @@
   margin: 0;
 }
 
+/* A character's own words and a thread's title are free text: a long unbroken run wraps in its box. */
+.kb-preview-side,
+.kb-preview-lines p {
+  overflow-wrap: anywhere;
+}
+
 /* ---- the Turn, on the Turn board's grid ---- */
 
 /* The Turn board's modal fills the window under the menu bar, 27px under it, 24px from each side. */
@@ -819,7 +826,8 @@
 }
 
 .kb-turn-dialog,
-.kb-debut-dialog {
+.kb-debut-dialog,
+.kb-reveal-dialog {
   zoom: var(--kb-board-scale, 1);
 }
 
@@ -836,19 +844,22 @@
   flex-direction: column;
 }
 
-.kb-debut-dialog {
+.kb-debut-dialog,
+.kb-reveal-dialog {
   width: min(100%, 960px);
   padding: 36px 40px;
 }
 
 /* The dialogs' sheet over their smoke, as the board's .94 panel lets its smoke through. */
 .kb-turn-dialog > .kb-smoke,
-.kb-debut-dialog > .kb-smoke {
+.kb-debut-dialog > .kb-smoke,
+.kb-reveal-dialog > .kb-smoke {
   opacity: 0.35;
 }
 
 .kb-turn-dialog .kb-glass-dialog-head,
-.kb-debut-dialog .kb-glass-dialog-head {
+.kb-debut-dialog .kb-glass-dialog-head,
+.kb-reveal-dialog .kb-glass-dialog-head {
   margin-top: 2px;
   font-size: 4.25rem;
   line-height: 1;
@@ -857,7 +868,8 @@
 }
 
 .kb-glass-dialog-titles .kb-glass-dialog-kicker,
-.kb-debut-dialog .kb-glass-dialog-kicker {
+.kb-debut-dialog .kb-glass-dialog-kicker,
+.kb-reveal-dialog .kb-glass-dialog-kicker {
   margin: 0;
   line-height: normal;
   font-size: var(--kb-glass-size-body);
@@ -872,7 +884,8 @@
  * button (the cross is the ::before, two strokes in the text's color).
  */
 .kb-turn-dialog .kb-glass-dialog-close,
-.kb-debut-dialog .kb-glass-dialog-close {
+.kb-debut-dialog .kb-glass-dialog-close,
+.kb-reveal-dialog .kb-glass-dialog-close {
   flex: none;
   width: 52px;
   height: 52px;
@@ -888,12 +901,14 @@
 }
 
 .kb-turn-dialog .kb-glass-dialog-close::after,
-.kb-debut-dialog .kb-glass-dialog-close::after {
+.kb-debut-dialog .kb-glass-dialog-close::after,
+.kb-reveal-dialog .kb-glass-dialog-close::after {
   display: none;
 }
 
 .kb-turn-dialog .kb-glass-dialog-close::before,
-.kb-debut-dialog .kb-glass-dialog-close::before {
+.kb-debut-dialog .kb-glass-dialog-close::before,
+.kb-reveal-dialog .kb-glass-dialog-close::before {
   content: '';
   position: absolute;
   inset: 16px;
@@ -1137,11 +1152,40 @@
   margin-right: 30px;
 }
 
-.kb-debut {
+.kb-debut,
+.kb-reveal {
   display: flex;
   flex-direction: column;
   gap: 22px;
   margin-top: 24px;
+}
+
+/* The reveal's words on the sheet, and its two pickers side by side where there is room. */
+.kb-reveal-line {
+  margin: 0;
+  max-width: 680px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-reveal-note {
+  color: var(--kb-glass-text-2);
+}
+
+.kb-reveal-where {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 30px;
+}
+
+.kb-reveal-where .kb-glass-select {
+  max-width: 100%;
+}
+
+.kb-reveal > p:has(> .kb-glass-action) {
+  margin: 0;
 }
 
 /* ---- the glass's buttons on these screens ---- */
@@ -1343,12 +1387,14 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-turn-dialog .kb-glass-dialog-head,
-:where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-dialog-head {
+:where(:root[data-kb-layout='phone']) .kb-debut-dialog .kb-glass-dialog-head,
+:where(:root[data-kb-layout='phone']) .kb-reveal-dialog .kb-glass-dialog-head {
   font-size: var(--kb-glass-size-display-m);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-turn-dialog,
-:where(:root[data-kb-layout='phone']) .kb-debut-dialog {
+:where(:root[data-kb-layout='phone']) .kb-debut-dialog,
+:where(:root[data-kb-layout='phone']) .kb-reveal-dialog {
   padding: 20px 16px;
 }
 
@@ -1379,7 +1425,7 @@
   width: 30%;
 }
 
-:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog) :is(.kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-choice-option, .kb-turn-toggle, .kb-characters-lead, .kb-glass-action, .kb-notice, .kb-glass-field, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
+:where(:root[data-kb-layout='phone']) :is(.kb-characters, .kb-new-character, .kb-turn-dialog, .kb-debut-dialog, .kb-reveal-dialog) :is(.kb-reveal-line, .kb-roster-line, .kb-roster-rank, .kb-roster-turn, .kb-roster-facts, .kb-turn-facts, .kb-turn-line, .kb-turn-map, .kb-class-description, .kb-choice-option, .kb-turn-toggle, .kb-characters-lead, .kb-glass-action, .kb-notice, .kb-glass-field, legend, .kb-preview-head, .kb-turn-rank, .kb-characters-empty, .kb-characters-new) {
   font-size: var(--kb-glass-size-phone-body);
 }
 
@@ -1398,7 +1444,7 @@
   padding: 0 14px;
 }
 
-/* ---- the reveal's board modal (RevealDialog.tsx) ---- */
+/* ---- the reveal's board modal (RevealModal.tsx) ---- */
 
 .kb-dialog-actions {
   display: flex;
