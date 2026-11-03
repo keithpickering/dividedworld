@@ -1,0 +1,101 @@
+/*
+ * Autocorrect (Effect.tsx): label-maker tape over the author's words. Off-white paper with torn ends and a faint shadow, a little
+ * crooked (each strip's tilt is seeded by its key), the caster's replacement typed on it in Courier. The words it covers stay in it,
+ * hidden, in the same cell as the replacement, so the tape is as wide as the wider of the two; a long strip is tape that breaks
+ * across lines instead, and takes the replacement's width. The tape keeps its own colors on either board, since it is a piece of
+ * the game laid on the 2003 page. A peeled strip leaves an adhesive band: a faint yellowed gloss behind the author's words, which
+ * keep the board's own ink, so it reads as something that used to be there.
+ */
+.dw-ac-strip {
+  display: inline-grid;
+  vertical-align: baseline;
+  margin: 0 0.08em;
+  padding: 0 0.32em;
+  border: 0;
+  font: inherit;
+  line-height: inherit;
+  color: #17150f;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0) 45%),
+    #f4f0e4;
+  box-shadow: 0 1px 1.5px rgb(0 0 0 / 0.28), 0 0 0 0.5px rgb(0 0 0 / 0.12);
+  /* Torn ends: a jagged edge cut at each side. */
+  clip-path: polygon(0 4%, 2.5% 0, 97.5% 3%, 100% 0, 98.5% 22%, 100% 46%, 98% 70%, 100% 100%, 2% 97%, 0 100%, 1.5% 76%, 0 52%, 2% 28%);
+  transform: translate(var(--dw-ac-pull-x, 0px), var(--dw-ac-pull-y, 0px)) rotate(calc(var(--dw-ac-tilt, 0deg) + var(--dw-ac-lift, 0) * -6deg));
+  transform-origin: left center;
+  transition: transform 160ms ease-out;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.dw-ac-strip > * {
+  grid-area: 1 / 1;
+}
+.dw-ac-covered {
+  visibility: hidden;
+}
+.dw-ac-said {
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: bold;
+  letter-spacing: 0.02em;
+  white-space: pre;
+  text-align: center;
+}
+.dw-ac-long {
+  display: inline;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  clip-path: none;
+}
+.dw-ac-long .dw-ac-said {
+  white-space: pre-wrap;
+}
+/* Pulled: the tape lifts toward the hand and sheds its shadow; held from the keyboard, a strip of the paper shows how far it has come. */
+.dw-ac-strip[data-kb-pulling] {
+  cursor: grabbing;
+  transition: none;
+  box-shadow: 0 3px 6px rgb(0 0 0 / 0.3);
+}
+.dw-ac-strip[data-kb-holding] {
+  background:
+    linear-gradient(90deg, rgb(0 0 0 / 0.14) calc(var(--dw-ac-hold, 0) * 100%), transparent 0),
+    #f4f0e4;
+}
+.dw-ac-strip:focus-visible {
+  outline: 2px solid var(--kb-focus, #1a5fd0);
+  outline-offset: 2px;
+}
+.dw-ac-adhesive {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0) 60%),
+    rgb(214 186 92 / 0.22);
+  border-radius: 1px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.dw-ac-falling {
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dw-ac-strip {
+    transition: none;
+  }
+}
+:root[data-kb-motion='reduce'] .dw-ac-strip {
+  transition: none;
+}
+/* The play form's two fields, stacked, in the glass's own type. */
+.dw-ac-form {
+  display: grid;
+  gap: 0.35rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.dw-ac-form-legend {
+  padding: 0;
+  margin-bottom: 0.25rem;
+}
+.dw-ac-form-places {
+  margin: 0.25rem 0 0;
+}
