@@ -305,7 +305,7 @@ begin
   end if;
 end $$;
 
--- ---- The read's cost: flat between a thread of 200 posts and one of 2,000, and bounded by a post's stack ----
+-- ---- The read's cost: flat between a thread of 2,000 posts and one of 20,000, and bounded by a post's stack ----
 -- Shared buffers (hit or read) one call touches, from EXPLAIN (ANALYZE, BUFFERS), as 0058-progress-scale.sql measures; run once first,
 -- unmeasured, so a plan's first catalog reads are not counted.
 create function pg_temp.buffers_of(call_sql text) returns bigint language plpgsql as $$
@@ -344,7 +344,7 @@ begin
   insert into card_kinds (key, name, alignment, price_setting, play) values ('bluffy', 'Bluffy', 'pepperoni', 'sweetie.price', 'set') on conflict (key) do nothing;
   perform pg_temp.hand(ann, 'blot', 'blot', 'blot', 'blot', 'sweetie');
   perform pg_temp.hand(bob, 'bluffy');
-  perform pg_temp.fill(t, b, 200);
+  perform pg_temp.fill(t, b, 2000);
   one_play := (play_card(ann, 'blot', a, lone, '{}', 0, '') ->> 'id')::uuid;
   perform play_card(ann, 'blot', a, stacked_post, '{}', 0, '');
   perform play_card(ann, 'blot', a, stacked_post, '{}', 0, '');
@@ -352,11 +352,14 @@ begin
   perform set_card(bob, 'bluffy', b, stacked_post, '{}', 0);
   top := (play_card(ann, 'blot', a, stacked_post, '{}', 0, '') ->> 'id')::uuid;
   small := pg_temp.buffers_of(format('select play_moment(%L)', one_play));
-  perform pg_temp.fill(t, b, 2000);
+  perform pg_temp.fill(t, b, 20000);
   big := pg_temp.buffers_of(format('select play_moment(%L)', one_play));
   stacked := pg_temp.buffers_of(format('select play_moment(%L)', top));
-  raise notice 'play_moment touched % buffers in a thread of 200 posts, % in one of 2,000, and % on a post with its stack full', small, big, stacked;
-  if big > small + 5 then raise exception 'play_moment touches % buffers in a thread of 200 posts and % in one of 2,000; it is a few probes', small, big; end if;
+  raise notice 'play_moment touched % buffers in a thread of 2,000 posts, % in one of 20,000, and % on a post with its stack full', small, big, stacked;
+  -- A few buffers either way are no growth: an index of acts gains a level as the thread fills (one more page a probe), and the plan
+  -- cache's choices move a count by a handful between runs (CI read 38 and 44 at 200 and 2,000 posts). Work that grows with the
+  -- thread grows tenfold between these two sizes, so the guard allows 25.
+  if big > small + 25 then raise exception 'play_moment touches % buffers in a thread of 2,000 posts and % in one of 20,000; it is a few probes', small, big; end if;
   -- A full stack reads its few more layers, a probe each, and nothing that grows: at most a stack's worth (five layers) over one layer.
   -- An old play: 2,000 plays on its post's author began after it, each still live then and since. The read is the plays live then.
   set local session_replication_role = replica;
@@ -370,6 +373,6 @@ begin
   analyze acts;
   aged := pg_temp.buffers_of(format('select play_moment(%L)', one_play));
   raise notice 'play_moment touched % buffers for a play with 2,000 later plays on its author', aged;
-  if aged > big + 5 then raise exception 'play_moment touches % buffers for a play and % once 2,000 plays began after it; it reads the plays live then', big, aged; end if;
+  if aged > big + 25 then raise exception 'play_moment touches % buffers for a play and % once 2,000 plays began after it; it reads the plays live then', big, aged; end if;
   if stacked > small + 40 then raise exception 'play_moment touches % buffers on a post with one layer and % with its stack full; it is a probe per layer', small, stacked; end if;
 end $$;
