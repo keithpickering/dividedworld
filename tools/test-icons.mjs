@@ -106,7 +106,7 @@ const square = (size, { seed = 0, hole } = {}) => png({
 });
 
 /** A transparent-rimmed sprite like the owner's: alpha 0 at the corners. */
-const sprite = (seed = 1) => png({ width: 16, height: 16, pixel: (x, y) => [x * 16, y * 16, seed, (x === 0 || y === 0) ? 0 : 255] });
+const sprite = (seed = 1, changed) => png({ width: 16, height: 16, pixel: (x, y) => [x * 16, y * 16, changed && changed.x === x && changed.y === y ? seed + 1 : seed, (x === 0 || y === 0) ? 0 : 255] });
 
 /* ---------------------------------------------------------------- a scratch repository ---- */
 
@@ -202,7 +202,7 @@ try {
 
   /* ---- (3) the 16px image is the sprite ---- */
   red('an ICO whose 16px image is not coin-16.png byte for byte', (f, { ui }) => {
-    f[`${ui}/public/favicon.ico`] = writeIco([sprite(2), square(32), square(48)]);
+    f[`${ui}/public/favicon.ico`] = writeIco([sprite(1, { x: 8, y: 8 }), square(32), square(48)]);
   }, /16px image.*coin-16\.png/);
 
   /* ---- (4) the home-screen icon ---- */
@@ -233,6 +233,16 @@ try {
   red('a dist whose favicon.ico differs from the instance\'s', (f, { coin16 }) => { f['web/dist/favicon.ico'] = writeIco([coin16, square(32, { seed: 8 }), square(48)]); }, /dist\/favicon\.ico.*not.*public/);
   red('a dist without apple-touch-icon.png', (f) => { f['web/dist/apple-touch-icon.png'] = null; }, /dist\/apple-touch-icon\.png.*missing/);
   red('an empty dist', (f) => { for (const k of Object.keys(f)) if (k.startsWith('web/dist/')) f[k] = null; }, /nothing built/);
+
+  /* ---- no instance has icons ---- */
+  {
+    const dir = repo('no-instance');
+    fs.rmSync(path.join(dir, 'instances/demo/ui/icon'), { recursive: true });
+    const faults = iconFaults({ instanceUi: [], indexHtml: path.join(dir, 'web/index.html'), dist: path.join(dir, 'web/dist') });
+    check('no instance with an icon/ folder is named', faults.some((f) => /no instance has an icon\/ folder/.test(f)), JSON.stringify(faults));
+    const c = run(dir);
+    check('  and the command exits 1 naming it', c.status === 1 && /no instance has an icon\/ folder/.test(c.stderr), `${c.status} ${c.stderr}`);
+  }
 
   /* ---- the reader's own refusals ---- */
   const throws = (fn, want) => { try { fn(); return false; } catch (e) { return want.test(String(e.message)); } };
