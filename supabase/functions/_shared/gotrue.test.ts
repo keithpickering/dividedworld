@@ -3,16 +3,16 @@ import assert from 'node:assert/strict';
 import { gotrue } from './gotrue.ts';
 
 const recorder = (respond: (url: string, body: unknown) => Response) => {
-  const calls: { url: string; body: unknown; apikey: string | null }[] = [];
+  const calls: { url: string; body: unknown; apikey: string | null; authorization: string | null }[] = [];
   const fetch = (async (url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
-    calls.push({ url, body, apikey: new Headers(init.headers).get('apikey') });
+    calls.push({ url, body, apikey: new Headers(init.headers).get('apikey'), authorization: new Headers(init.headers).get('Authorization') });
     return respond(url, body);
   }) as unknown as typeof globalThis.fetch;
   return { calls, fetch };
 };
 const session = { access_token: 'a', refresh_token: 'r', expires_in: 3600, user: { id: 'u' } };
-const opts = { url: 'https://p.example', key: 'anon', sleep: async () => {} };
+const opts = { url: 'https://p.example', key: 'sb_publishable_p', sleep: async () => {} };
 
 test('a code is asked for and checked at Supabase Auth\'s own endpoints, called with the public key, and no password goes anywhere', async () => {
   const { calls, fetch } = recorder((url) => new Response(JSON.stringify(url.includes('verify') ? session : {}), { status: 200 }));
@@ -25,7 +25,7 @@ test('a code is asked for and checked at Supabase Auth\'s own endpoints, called 
     ['https://p.example/auth/v1/otp', { email: 'a@b.c', create_user: false, data: { invite: null } }],
     ['https://p.example/auth/v1/verify', { type: 'email', email: 'a@b.c', token: '123456' }],
   ]);
-  assert.ok(calls.every((c) => c.apikey === 'anon'));
+  assert.ok(calls.every((c) => c.apikey === 'sb_publishable_p' && c.authorization === null), 'the key in apikey alone');
   assert.ok(!JSON.stringify(calls).includes('password'));
 });
 

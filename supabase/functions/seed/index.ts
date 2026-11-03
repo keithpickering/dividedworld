@@ -9,7 +9,7 @@ import { environment, fromTheService, json, serviceDb } from '../_shared/serve.t
 
 Deno.serve(async (request) => {
   const env = environment((name) => Deno.env.get(name));
-  if (!fromTheService(request, env.key)) return json(401, { error: 'the instance is seeded by the service' });
+  if (!fromTheService(request, env.secret)) return json(401, { error: 'the instance is seeded by the service' });
   try {
     const instance = chooseInstance(Deno.env.get('KAYFABB_PROFILE'));
     return json(200, await serviceDb(env).rpc('seed_instance', { payload: instanceSeed(instance) }));

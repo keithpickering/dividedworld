@@ -110,9 +110,9 @@ const REPEATABLE = new Set(['whoami', 'card_target', 'card_target_reach', 'card_
 export const SAFE_TO_REPEAT = (fn: string): boolean => REPEATABLE.has(fn);
 
 /** The act function's two connections: as the player, and as the service; each sends a write once. */
-export function actDbs(o: { url: string; key: string; anon: string; session: string; fetch?: typeof globalThis.fetch; sleep?: (ms: number) => Promise<void> }): { player: Db; service: Db } {
+export function actDbs(o: { url: string; key: string; publishable: string; session: string; fetch?: typeof globalThis.fetch; sleep?: (ms: number) => Promise<void> }): { player: Db; service: Db } {
   const common = { url: o.url, fetch: o.fetch, sleep: o.sleep, safeToRepeat: SAFE_TO_REPEAT };
-  return { player: postgrest({ ...common, key: o.anon, bearer: o.session }), service: postgrest({ ...common, key: o.key }) };
+  return { player: postgrest({ ...common, key: o.publishable, bearer: o.session }), service: postgrest({ ...common, key: o.key }) };
 }
 
 /** The hint every refusal the action functions raise carries, so their words alone reach a player. */

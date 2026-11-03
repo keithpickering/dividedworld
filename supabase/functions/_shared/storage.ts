@@ -27,7 +27,7 @@ export function supabaseStorage(o: {
   const attempts = o.attempts ?? 4;
   const timeoutMs = o.timeoutMs ?? 30_000;
   const pause = o.pause ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const headers = { apikey: o.key, Authorization: `Bearer ${o.key}` };
+  const headers = { apikey: o.key };
   const at = (name: string) => `${o.url}/storage/v1/object/${o.bucket}/${encodeURIComponent(name)}`;
   const request = async (where: string, init: RequestInit, what: string) => {
     const seen: string[] = [];

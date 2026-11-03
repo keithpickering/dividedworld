@@ -24,14 +24,12 @@ Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (request.method !== 'POST') return answer(405, { error: 'actions are posted' });
   const env = environment((name) => Deno.env.get(name));
-  const anon = Deno.env.get('SUPABASE_ANON_KEY');
-  if (!anon) throw new Error('SUPABASE_ANON_KEY must be set');
   const session = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
   if (!session) return answer(401, { error: 'sign in to act' });
   const { tooLong, body } = await boundedJson(request, MOST_BYTES);
   if (tooLong) return answer(413, { error: 'that request is too long' });
-  const dbs = actDbs({ url: env.url, key: env.key, anon, session });
-  const live = broadcaster({ url: env.url, key: env.key });
+  const dbs = actDbs({ url: env.url, key: env.secret, publishable: env.publishable, session });
+  const live = broadcaster({ url: env.url, key: env.secret });
   // After the write committed, and after the answer where the runtime lets work outlive it: the write's live updates, then the
   // outbox (an alert is queued by the write itself), drained after every write whether or not it queued anything. A reader who
   // misses a send sees the change on their next load, a failed send is retried by the next drain, and neither a slow Realtime nor

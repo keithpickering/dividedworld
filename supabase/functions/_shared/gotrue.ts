@@ -17,7 +17,7 @@ export function gotrue(options: { url: string; key: string; fetch?: typeof globa
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const call = (path: string, body: unknown) => send(`${options.url}/auth/v1/${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: options.key, Authorization: `Bearer ${options.key}` },
+    headers: { 'Content-Type': 'application/json', apikey: options.key },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(10_000),
   });

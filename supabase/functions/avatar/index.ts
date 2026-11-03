@@ -26,8 +26,6 @@ Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (request.method !== 'POST') return answer(405, { error: 'an avatar is sent with a POST' });
   const env = environment((name) => Deno.env.get(name));
-  const anon = Deno.env.get('SUPABASE_ANON_KEY');
-  if (!anon) throw new Error('SUPABASE_ANON_KEY must be set');
   const session = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
   if (!session) return answer(401, { error: 'sign in to set an avatar' });
   const declared = Number(request.headers.get('Content-Length') ?? 'NaN');
@@ -38,8 +36,8 @@ Deno.serve(async (request) => {
   try { frames = JSON.parse(String(form.get('frames') ?? 'null')); } catch { /* refused below as missing */ }
   const out = await runAvatar(
     // The write is sent once: one repeated after it committed would answer that it replaced nothing.
-    { player: postgrest({ url: env.url, key: anon, bearer: session }), service: postgrest({ url: env.url, key: env.key, safeToRepeat: (fn) => fn !== 'set_avatar' }) },
-    supabaseStorage({ url: env.url, key: env.key, bucket: 'avatars' }),
+    { player: postgrest({ url: env.url, key: env.publishable, bearer: session }), service: postgrest({ url: env.url, key: env.secret, safeToRepeat: (fn) => fn !== 'set_avatar' }) },
+    supabaseStorage({ url: env.url, key: env.secret, bucket: 'avatars' }),
     { character: String(form.get('character') ?? ''), frames: frames as never, source: form.has('source') ? true : null, square: (await file(form, 'square')) as Uint8Array, portrait: await file(form, 'portrait') },
   );
   return answer(out.status, out.body);

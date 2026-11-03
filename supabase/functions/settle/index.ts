@@ -10,13 +10,13 @@ import { broadcaster } from '../_shared/broadcast.ts';
 
 Deno.serve(async (request) => {
   const env = environment((name) => Deno.env.get(name));
-  if (!fromTheService(request, env.key)) return json(401, { error: 'the settlement is run by the service' });
+  if (!fromTheService(request, env.secret)) return json(401, { error: 'the settlement is run by the service' });
   const body = (await request.json().catch(() => ({}))) as { until?: unknown };
   // The schedule sends the window's end; a call without one is refused rather than guessed.
   if (typeof body.until !== 'string' || Number.isNaN(Date.parse(body.until))) return json(400, { error: 'until: the window\'s end, as a time' });
   const until = body.until;
   try {
-    const outcome = await runSettlement(serviceDb(env), chooseInstance(Deno.env.get('KAYFABB_PROFILE')), until, { deliver: broadcaster({ url: env.url, key: env.key }).deliver });
+    const outcome = await runSettlement(serviceDb(env), chooseInstance(Deno.env.get('KAYFABB_PROFILE')), until, { deliver: broadcaster({ url: env.url, key: env.secret }).deliver });
     // Windows still waiting are settled by the next firing; said in the log, so a schedule that
     // never catches up is seen.
     if (outcome.status !== 'nothing to settle' && outcome.behind) console.warn('settle behind: windows wait for the next run', until, outcome.window.end);

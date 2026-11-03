@@ -18,7 +18,7 @@ test('a file is stored by Storage\'s REST endpoint, under its name, never over a
   await storage.put('a b/c.webp', bytes, 'image/webp');
   assert.equal(sent[0]!.url, 'https://project.test/storage/v1/object/avatars/a%20b%2Fc.webp');
   assert.equal(sent[0]!.method, 'POST');
-  assert.deepEqual(sent[0]!.headers, { apikey: 'service-key', Authorization: 'Bearer service-key', 'Content-Type': 'image/webp', 'x-upsert': 'false' });
+  assert.deepEqual(sent[0]!.headers, { apikey: 'service-key', 'Content-Type': 'image/webp', 'x-upsert': 'false' });
   assert.equal(sent[0]!.body, bytes);
 });
 

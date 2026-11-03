@@ -8,7 +8,8 @@ test('broadcasts go to Realtime\'s broadcast endpoint, private, with the service
   await broadcaster({ url: 'https://p.example', key: 'k', fetch }).send([{ topic: 'thread:t', event: 'act', payload: { id: 'a' } }]);
   assert.equal(calls[0]?.url, 'https://p.example/realtime/v1/api/broadcast');
   assert.deepEqual(JSON.parse(String(calls[0]?.init.body)), { messages: [{ topic: 'thread:t', event: 'act', payload: { id: 'a' }, private: true }] });
-  assert.equal(new Headers(calls[0]?.init.headers).get('Authorization'), 'Bearer k');
+  assert.equal(new Headers(calls[0]?.init.headers).get('apikey'), 'k');
+  assert.equal(new Headers(calls[0]?.init.headers).get('Authorization'), null, 'the key in apikey alone');
 });
 
 test('nothing to broadcast sends nothing; a failed broadcast is retried once and then given up, never thrown', async () => {

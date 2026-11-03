@@ -194,7 +194,7 @@ test('a write whose answer was lost says plainly it may have gone through', asyn
 test('the act function\'s connections send a post once after a 504, and a read again', async () => {
   const seen: string[] = [];
   const fetch = (async (url: string) => { seen.push(url.split('/').pop()!); return new Response('', { status: 504 }); }) as unknown as typeof globalThis.fetch;
-  const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+  const dbs = actDbs({ url: 'https://p.example', key: 'service', publishable: 'sb_publishable_p', session: 'tok', fetch, sleep: async () => {} });
   await assert.rejects(dbs.player.rpc('post', {}));
   assert.deepEqual(seen, ['post']);
   seen.length = 0;
@@ -533,7 +533,7 @@ test('an error in the hint work is logged and does not stop the drain; a databas
     if (fn === 'act_window_counts') return new Response(JSON.stringify(heat), { status: 200 });
     return new Response(JSON.stringify({ code: '23503', message: 'insert or update on table "hints_fired" violates foreign key constraint' }), { status: 409 });
   }) as unknown as typeof globalThis.fetch;
-  const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+  const dbs = actDbs({ url: 'https://p.example', key: 'service', publishable: 'sb_publishable_p', session: 'tok', fetch, sleep: async () => {} });
   const logged: unknown[][] = [];
   const was = console.error;
   console.error = (...a: unknown[]) => { logged.push(a); };
@@ -556,7 +556,7 @@ test('a transport failure on the hint\'s calls is retried on the request itself,
     seen.push(url.split('/').pop()!);
     return ++tries < 3 ? new Response('', { status: 504 }) : new Response('true', { status: 200 });
   }) as unknown as typeof globalThis.fetch;
-  const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+  const dbs = actDbs({ url: 'https://p.example', key: 'service', publishable: 'sb_publishable_p', session: 'tok', fetch, sleep: async () => {} });
   assert.equal(await dbs.service.rpc('fire_hint', { about: target, pattern: 'divisive' }), true);
   assert.deepEqual(seen, ['fire_hint', 'fire_hint', 'fire_hint']);
 });
@@ -600,7 +600,7 @@ test('the hint settings are held across requests: two connections built per requ
     return new Response('null', { status: 200 });
   }) as unknown as typeof globalThis.fetch;
   for (let request = 0; request < 2; request++) {
-    const dbs = actDbs({ url: 'https://p.example', key: 'service', anon: 'anon', session: 'tok', fetch, sleep: async () => {} });
+    const dbs = actDbs({ url: 'https://p.example', key: 'service', publishable: 'sb_publishable_p', session: 'tok', fetch, sleep: async () => {} });
     let later!: () => Promise<void>;
     await handleAction({ dbs, instance, body: reacting, send: async () => {}, drain: async () => {}, after: (w) => { later = w; } });
     await later();

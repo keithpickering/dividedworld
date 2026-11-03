@@ -36,7 +36,7 @@ export function broadcaster(options: { url: string; key: string; fetch?: typeof 
         try {
           const response = await send(`${options.url}/realtime/v1/api/broadcast`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: options.key, Authorization: `Bearer ${options.key}` },
+            headers: { 'Content-Type': 'application/json', apikey: options.key },
             body,
             signal: AbortSignal.timeout(5_000),
           });

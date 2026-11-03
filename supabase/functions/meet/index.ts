@@ -13,7 +13,7 @@ import { withDatabaseSettings } from '../_shared/settings.ts';
 
 Deno.serve(async (request) => {
   const env = environment((name) => Deno.env.get(name));
-  if (!fromTheService(request, env.key)) return json(401, { error: 'the meeting is run by the service' });
+  if (!fromTheService(request, env.secret)) return json(401, { error: 'the meeting is run by the service' });
   const body = (await request.json().catch(() => ({}))) as { slot?: unknown };
   // The schedule sends the minute it fired; a call without one is refused rather than guessed.
   if (typeof body.slot !== 'string' || Number.isNaN(Date.parse(body.slot))) return json(400, { error: 'slot: the scheduled minute, as a time' });

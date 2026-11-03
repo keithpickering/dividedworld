@@ -42,9 +42,9 @@ export interface Db {
 
 export interface PostgrestOptions {
   readonly url: string;
-  /** The project's API key: the service key for a job, the anon key for a player's request. */
+  /** The project's API key, sent in apikey: the secret key for the service, the publishable key for a player's request. */
   readonly key: string;
-  /** Who the call is made as: the player's own session token; the key itself when unset. */
+  /** Who the call is made as: the player's own session token. Unset, no Authorization is sent, and the gateway acts as the key's role. */
   readonly bearer?: string;
   readonly fetch?: typeof globalThis.fetch;
   readonly sleep?: (ms: number) => Promise<void>;
@@ -76,7 +76,7 @@ export function postgrest(options: PostgrestOptions): Db {
         try {
           response = await send(`${options.url}/rest/v1/rpc/${fn}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: options.key, Authorization: `Bearer ${options.bearer ?? options.key}` },
+            headers: { 'Content-Type': 'application/json', apikey: options.key, ...(options.bearer ? { Authorization: `Bearer ${options.bearer}` } : {}) },
             body: JSON.stringify(args),
             signal: AbortSignal.timeout(timeoutMs),
           });

@@ -18,13 +18,13 @@ function scripted(...answers: (Response | Error)[]) {
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const noWait = async () => {};
 
-test('a call posts the arguments to the function\'s RPC endpoint with the key, and returns its answer', async () => {
+test('a call posts the arguments to the function\'s RPC endpoint with the key in apikey alone, and returns its answer', async () => {
   const { fetch, calls } = scripted(json(200, { applied: true }));
   const db = postgrest({ url: 'https://p.example', key: 'k', fetch, sleep: noWait });
   assert.deepEqual(await db.rpc('apply_settlement', { a: 1 }), { applied: true });
   assert.equal(calls[0]?.url, 'https://p.example/rest/v1/rpc/apply_settlement');
   const headers = new Headers(calls[0]?.init.headers);
-  assert.equal(headers.get('Authorization'), 'Bearer k');
+  assert.equal(headers.get('Authorization'), null, 'a service connection sends no Authorization');
   assert.equal(headers.get('apikey'), 'k');
   assert.equal(calls[0]?.init.body, '{"a":1}');
 });
@@ -87,9 +87,9 @@ test('an error that is not PostgREST\'s JSON is still a database error, with its
 
 test('a player\'s call carries their own session as its bearer, beside the project\'s key', async () => {
   const { fetch, calls } = scripted(json(200, 1));
-  await postgrest({ url: 'https://p.example', key: 'anon', bearer: 'player-jwt', fetch, sleep: noWait }).rpc('post', {});
+  await postgrest({ url: 'https://p.example', key: 'sb_publishable_p', bearer: 'player-jwt', fetch, sleep: noWait }).rpc('post', {});
   const headers = new Headers(calls[0]?.init.headers);
-  assert.equal(headers.get('apikey'), 'anon');
+  assert.equal(headers.get('apikey'), 'sb_publishable_p');
   assert.equal(headers.get('Authorization'), 'Bearer player-jwt');
 });
 

@@ -34,8 +34,8 @@ export interface EstimateAnswer {
 }
 
 /** The function's two connections, as the player and as the service; every call here is a read, safe to repeat. */
-export function estimateDbs(o: { url: string; key: string; anon: string; session: string; fetch?: typeof globalThis.fetch }): { player: Db; service: Db } {
-  return { player: postgrest({ url: o.url, key: o.anon, bearer: o.session, fetch: o.fetch }), service: postgrest({ url: o.url, key: o.key, fetch: o.fetch }) };
+export function estimateDbs(o: { url: string; key: string; publishable: string; session: string; fetch?: typeof globalThis.fetch }): { player: Db; service: Db } {
+  return { player: postgrest({ url: o.url, key: o.publishable, bearer: o.session, fetch: o.fetch }), service: postgrest({ url: o.url, key: o.key, fetch: o.fetch }) };
 }
 
 export async function runEstimate(dbs: { player: Db; service: Db }, instance: Instance): Promise<EstimateAnswer> {
