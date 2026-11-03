@@ -203,6 +203,7 @@ for (const path of ['/characters', '/characters/new', '/characters/edit', '/sett
   });
 }
 
+/* The bar's tabs come once the session is read, which a page drawn signed out (Season) can beat, so a test that reads a tab finds it. */
 test('/season is drawn on the glass with no board panel, and its menu bar tab is the current page', async () => {
   window.history.pushState(null, '', '/season');
   const fake = createFake({ instance, settings: fallbackSettings });
@@ -212,7 +213,7 @@ test('/season is drawn on the glass with no board panel, and its menu bar tab is
   await screen.findByRole('heading', { level: 1, name: /^Season/u });
   expect(screen.getByRole('main').querySelector('.kb-glass-content-panel')).toBeNull();
   expect(screen.getByRole('main').closest('[data-kb-surface]')).toHaveAttribute('data-kb-surface', 'rankings');
-  expect(within(bar).getByRole('link', { name: 'Season' })).toHaveAttribute('aria-current', 'page');
+  expect(await within(bar).findByRole('link', { name: 'Season' })).toHaveAttribute('aria-current', 'page');
 });
 
 /* The old addresses open the season page's Rankings tab in their place (the alerts design, section 7); a page asked for goes with them. */
@@ -226,7 +227,7 @@ for (const [from, to] of [['/rankings', '/season?tab=rankings'], ['/standings', 
     await screen.findByRole('heading', { level: 1, name: /^Season/u });
     await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe(to));
     expect(screen.getByRole('tab', { name: 'Rankings' })).toHaveAttribute('aria-selected', 'true');
-    expect(within(bar).getByRole('link', { name: 'Season' })).toHaveAttribute('aria-current', 'page');
+    expect(await within(bar).findByRole('link', { name: 'Season' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('banner')).toBeNull();
   });
 }
@@ -239,7 +240,7 @@ test('/log stands on the log\'s smoke, and its menu bar tab is the current page'
   const bar = await screen.findByRole('navigation', { name: 'Menu' });
   await screen.findByRole('heading', { level: 1, name: 'My log' });
   expect(screen.getByRole('main').closest('[data-kb-surface]')).toHaveAttribute('data-kb-surface', 'log');
-  expect(within(bar).getByRole('link', { name: 'My log' })).toHaveAttribute('aria-current', 'page');
+  expect(await within(bar).findByRole('link', { name: 'My log' })).toHaveAttribute('aria-current', 'page');
 });
 
 /** A demo world with a settlement of the player's own just made, as a board load after it meets it. */

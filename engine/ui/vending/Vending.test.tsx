@@ -409,7 +409,7 @@ describe('what the machine says to a screen reader', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     await waitFor(() => expect(region).toHaveTextContent('The Vending Machine is closed.'));
     expect(screen.getByRole('alert')).toBe(region);
-  }, 10_000);
+  });
 
   test('no element or rule names the removed list', async () => {
     open(seeded(562));

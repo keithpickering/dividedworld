@@ -1000,7 +1000,7 @@ describe('a card\'s effect on a post', () => {
     const theirs = await w.fake.saveEffect(played, w.pipe, {});
     expect(theirs).toEqual(await w.fake.saveEffect(played, w.fake.seed.character(w.me, 'Not Retired', 'face'), {}));
     expect(theirs).toEqual({ ok: false, error: 'you do not play that character' });
-  }, 15_000);
+  });
 
   test('a reader who is not the post\'s author cannot save: the effect is told so in the server\'s words', async () => {
     const w = world(3);

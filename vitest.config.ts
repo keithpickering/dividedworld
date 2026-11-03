@@ -15,5 +15,11 @@ export default defineConfig({
     css: true,
     /* Dates show in the reader's zone; a zone that is not UTC makes a local date and a UTC date differ, so a test cannot pass by luck of the machine. */
     env: { TZ: 'America/Los_Angeles' },
+    /* One bound for every test, sized for the build and not an idle machine: tools/build.mjs runs this suite beside the other steps on
+       every worker it has, while Vitest starts its own workers, so a test of a second alone (an a11y story, a form clicked sixty times)
+       can take several on a busy machine, and jsdom on Windows is slower again. Vitest's default of 5s failed them there, and a test that
+       overruns keeps acting on the next test's screen and fails it too. A real hang still fails, after 30s. One bound here, never one
+       a test at a time. */
+    testTimeout: 30_000,
   },
 });

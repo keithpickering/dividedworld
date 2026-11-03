@@ -87,9 +87,14 @@ export function refusal(url) {
 /** The URL with its database swapped for another on the same server. */
 const withDatabase = (url, db) => { const u = new URL(url); u.pathname = `/${db}`; return u.toString(); };
 
+/* The program run as psql. tools/test-sql-refusal.mjs stands a recording psql in for the real one through
+   KAYFABB_PSQL_SHIM, a Node script this Node runs: a shell script put first on PATH, the way it used to stand in,
+   is never run on Windows, where the real psql.exe further down PATH answers instead. */
+const PSQL = process.env.KAYFABB_PSQL_SHIM ? { file: process.execPath, args: [process.env.KAYFABB_PSQL_SHIM] } : { file: 'psql', args: [] };
+
 function psql(url, sql) {
   try {
-    execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-q', '-X', url, '-f', '-'], { input: sql, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });
+    execFileSync(PSQL.file, [...PSQL.args, '-v', 'ON_ERROR_STOP=1', '-q', '-X', url, '-f', '-'], { input: sql, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });
     return null;
   } catch (err) {
     if (err.code === 'ENOENT') { console.error('\n  psql not found; run scripts/setup-container.sh'); process.exit(2); }

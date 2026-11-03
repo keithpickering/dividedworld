@@ -389,14 +389,21 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
 {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const repo = path.resolve(here, '..');
-  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' });
+  // core.autocrlf off: a scratch repository has no .gitattributes, and Git for Windows would warn of CRLF on every add.
+  const git = (cwd, ...args) => execFileSync('git', ['-c', 'core.autocrlf=false', ...args], { cwd, encoding: 'utf8' });
+  // Stage the scratch tree but never node_modules. Git on Linux stages the link as one entry; Git for Windows walks
+  // into a junction as a directory, stages every file of node_modules, and its CRLF warnings overrun execFileSync's
+  // output buffer.
+  const stage = (dir) => git(dir, 'add', '-A', '-f', '--', '.', ':(exclude)node_modules');
   /** A scratch repository with the guard, the engine's types, and the given glass (null for none), staged. */
   const scratch = ({ glass, types = true, ceilings = null, apply = null }) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glass-contrast-'));
     git(dir, 'init', '-q');
     fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
     fs.copyFileSync(path.join(here, 'check-glass-contrast.mjs'), path.join(dir, 'tools', 'check-glass-contrast.mjs'));
-    fs.symlinkSync(path.join(repo, 'node_modules'), path.join(dir, 'node_modules'));
+    // A junction, not a directory symlink: Windows refuses a directory symlink (EPERM) without admin rights or
+    // Developer Mode, and creates a junction for anyone. Node ignores the type everywhere else.
+    fs.symlinkSync(path.join(repo, 'node_modules'), path.join(dir, 'node_modules'), 'junction');
     fs.mkdirSync(path.join(dir, 'engine', 'ui'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'engine', 'ui', 'types.ts'), types ? fs.readFileSync(path.join(repo, 'engine', 'ui', 'types.ts'), 'utf8') : 'export type Nothing = never;\n');
     fs.mkdirSync(path.join(dir, 'engine', 'ui', 'glass'), { recursive: true });
@@ -409,7 +416,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
       fs.mkdirSync(path.join(dir, 'e2e'), { recursive: true });
       fs.writeFileSync(path.join(dir, 'e2e', 'glass-ceilings.json'), ceilings);
     }
-    git(dir, 'add', '-A', '-f');
+    stage(dir);
     return dir;
   };
   const run = (dir, ...args) => spawnSync('node', [path.join(dir, 'tools', 'check-glass-contrast.mjs'), ...args], { cwd: dir, encoding: 'utf8' });
@@ -422,7 +429,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   check('reading no engine surfaces refuses too', blind.status === 1 && /refusing to report a pass on nothing/.test(blind.stderr), blind.stderr);
 
   const realApply = fs.readFileSync(path.join(repo, 'engine', 'ui', 'glass', 'apply.ts'), 'utf8');
-  const gap = realApply.replace(/^\s*turn: '(full|calmed|none)',.*\n/m, '');
+  const gap = realApply.replace(/^\s*turn: '(full|calmed|none)',.*\r?\n/m, ''); // \r?: `.` stops at the \r of a CRLF checkout
   check('the scratch list without turn differs from the real one', gap !== realApply);
   const short = run(make({ glass: real, apply: gap }));
   check('the script refuses an engine list that leaves out a surface', short.status === 1 && /class large text list/.test(short.stderr) && /turn/.test(short.stderr), short.stderr.slice(0, 400));
@@ -445,7 +452,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   const moved = fresh();
   moved.smoke.recipes.hud.layers[0].opacity = 0.9;
   fs.writeFileSync(path.join(dir, 'instances', 'x', 'ui', 'glass.json'), JSON.stringify(moved));
-  git(dir, 'add', '-A', '-f');
+  stage(dir);
   const stale = run(dir);
   check('a glass changed after the ceilings were written exits 1 as stale', stale.status === 1 && /no longer matches the glass/.test(stale.stderr), stale.stderr + stale.stdout);
 
