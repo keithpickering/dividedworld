@@ -30,7 +30,7 @@ import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffProfile,
-  Act, AccountListener, ActKind, Alert, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState,
+  Act, AccountListener, ActKind, Alert, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -146,9 +146,10 @@ export interface Seed {
   /**
    * A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action).
    * With `paid`, its player's card ledger records the play at that price and the wallet pays it, as `play_card` does (a wallet event
-   * where it is more than 0); without, the play is an Act alone, held and paid for nowhere.
+   * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
+   * moments were snapshotted (0070): its moment is not taken.
    */
-  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean }): Id;
   /**
    * A card played beyond a post (what `play_card` writes for a reach, 0055): on a character (from `post`, one of its posts), a thread or
    * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
@@ -686,6 +687,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       at: a.at ?? stamp ?? now(), payload: a.payload,
     };
     acts.set(rec.id, rec);
+    if ((rec.kind === 'card' || rec.kind === 'set' || rec.kind === 'spring') && rec.target !== null && onPost(rec)) takeMoment(rec);
     return rec;
   }
   function openThread(board: Id, title: string, origin: Id | null, at?: number): ThreadRec {
@@ -803,6 +805,46 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /** The state a play's effect has saved, as effect_state keeps it: one row per play, the newest save. */
   const effects = new Map<Id, { state: unknown; at: number }>();
+  /**
+   * Each play on a post's moment, as play_moments and play_moment_layers keep it (0070): the post's version when it landed, and every
+   * other layer then with what it had saved. Taken in `write`, as the trigger takes it on the Act's insert, so every path that lands a
+   * play takes one: a cast, a Set, a spring, a seed.
+   */
+  const moments = new Map<Id, { version: Id; layers: readonly { layer: Id; saved: { state: unknown; at: number } | null }[] }>();
+  function takeMoment(play: ActRec) {
+    const post = acts.get(play.target!)!;
+    const layers = [...acts.values()].filter((a) => a.id !== play.id && a.target === post.id && (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && onPost(a))
+      .map((a) => ({ layer: a.id, saved: effects.has(a.id) ? { ...effects.get(a.id)! } : null }));
+    moments.set(play.id, { version: edits(post).at(-1)?.id ?? post.id, layers });
+  }
+  /** play_moment (0070): the moment's version as the post shows it then, the play and its layers, and the plays above live then. */
+  function playMoment(id: Id): PlayMoment | null {
+    const play = acts.get(id);
+    if (!play || !(play.kind === 'card' || play.kind === 'set' || play.kind === 'spring') || play.target === null || !onPost(play)) return null;
+    const post = acts.get(play.target);
+    if (!post || post.kind !== 'post') return null;
+    const m = moments.get(id);
+    const version = m ? acts.get(m.version)! : edits(post).filter((e) => e.at <= play.at).at(-1) ?? post;
+    const edited = version.kind === 'edit' ? version : null;
+    const byLanding = (a: ActRec, b: ActRec) => a.at - b.at || a.order - b.order;
+    const board = threads.get(post.thread)!.board;
+    return {
+      version: {
+        ...publicAct(post), currentPayload: version.payload, editedAt: edited ? iso(edited.at) : null,
+        shownEditedAt: edited && edited.at > post.at + span(settings.editGrace) ? iso(edited.at) : null,
+      },
+      layers: [
+        { act: publicAct(play), state: null },
+        ...(m?.layers ?? []).map((l) => ({ rec: acts.get(l.layer)!, saved: l.saved })).sort((a, b) => byLanding(a.rec, b.rec))
+          .map(({ rec, saved }) => ({ act: publicAct(rec), state: saved ? { state: saved.state, savedAt: iso(saved.at) } : null })),
+      ],
+      above: [...reachPlays].filter(([p, r]) => r.endsAt > play.at && acts.get(p)!.at < play.at
+          && (r.reach === 'character' ? r.target === post.character : r.reach === 'thread' ? r.target === post.thread : r.target === board))
+        .sort(([a], [b]) => byLanding(acts.get(a)!, acts.get(b)!))
+        .map(([p, r]) => ({ play: p, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(p)!) })),
+      recorded: m !== undefined,
+    };
+  }
   /** The plays an account has released itself from, as "account play". */
   const releases = new Map<string, number>();
   const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
@@ -1439,6 +1481,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         };
       }, before ?? null);
     },
+    playMoment,
     myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
     releaseEffect,
     saveEffect,
@@ -2125,6 +2168,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (short) accepted(short);
       }
       const written = asAt(ownerOf(character), o?.at, () => write({ character, kind: 'card', thread: on.thread, target, payload }));
+      if (o?.unrecorded) moments.delete(written.id);
       if (o?.paid !== undefined) {
         const account = seeded(ownerOf(character));
         stamp = written.at;

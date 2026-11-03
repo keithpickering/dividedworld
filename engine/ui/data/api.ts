@@ -901,6 +901,20 @@ export interface PlayAbove {
   readonly act: Act;
 }
 
+/**
+ * A play's moment (play_moment, 0070_play_moments.sql): the post as it read when a play landed on it, with every play on it then, as
+ * each stood. `version` is the post with that version's words as its current payload; `layers` is the play itself first, as it landed
+ * (no state), then each layer that was on the post, with what it had saved then or null where it had saved none; `above` is each play
+ * beyond a post live then on the post's author, its thread or its board. `recorded` is false for a play from before the snapshot,
+ * which holds itself alone. The same answer for every reader: a card back is a back in it, for its setter as for anyone.
+ */
+export interface PlayMoment {
+  readonly version: Act;
+  readonly layers: readonly { readonly act: Act; readonly state: EffectState | null }[];
+  readonly above: readonly PlayAbove[];
+  readonly recorded: boolean;
+}
+
 export interface KayfaApi {
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
@@ -985,6 +999,8 @@ export interface KayfaApi {
   pinnedThreads(board: Id): Promise<readonly PinnedThread[]>;
   /** The state each play's effect has saved (the post's author saves it), by play; a play that has saved none is absent. Any signed-in reader may read it. */
   effectStates(plays: readonly Id[]): Promise<Readonly<Record<Id, EffectState>>>;
+  /** A play's moment (`PlayMoment`), read once when asked for; null for an id that is no play on a post. Any signed-in reader may read it. */
+  playMoment(play: Id): Promise<PlayMoment | null>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */
   characters(ids: readonly Id[]): Promise<readonly Character[]>;
   characterCounts(id: Id): Promise<CharacterCounts>;
