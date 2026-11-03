@@ -225,14 +225,38 @@ try {
     f['web/dist/favicon.ico'] = ico;
   }, /favicon\.ico.*icons\.json.*make-icons\.mjs/);
 
+  red('an icons.json holding null', (f, { ui }) => { f[`${ui}/icon/icons.json`] = 'null\n'; }, /icons\.json.*not a record/);
+  red('an icons.json holding an empty object', (f, { ui }) => { f[`${ui}/icon/icons.json`] = '{}\n'; }, /coin-16\.png.*records none under sources/);
+
+  /* ---- (2), again: the sizes in another order ---- */
+  red('an ICO with its sizes out of order (32, 16, 48)', (f, { ui, coin16 }) => { f[`${ui}/public/favicon.ico`] = writeIco([square(32), coin16, square(48)]); }, /favicon\.ico.*in that order/);
+
   /* ---- (6) the page names them ---- */
   red('an index.html without the icon link', (f) => { f['web/index.html'] = INDEX.replace(/<link rel="icon"[^>]*>/, ''); }, /index\.html.*rel="icon"/);
   red('an index.html without the apple-touch link', (f) => { f['web/index.html'] = INDEX.replace(/<link rel="apple-touch-icon"[^>]*>/, ''); }, /index\.html.*rel="apple-touch-icon"/);
+
+  red('an icon link inside a comment does not count', (f) => { f['web/index.html'] = INDEX.replace(/(<link rel="icon"[^>]*>)/, '<!-- $1 -->'); }, /index\.html.*rel="icon"/);
+  red('a data-href does not count as the href', (f) => { f['web/index.html'] = INDEX.replace('rel="icon" href=', 'rel="icon" data-href=').replace('<title>', '<link href="/x.ico" rel="other"><title>'); }, /index\.html.*rel="icon"/);
+  {
+    const dir = repo('links-reordered', (f) => {
+      f['web/index.html'] = "<html><head><link sizes='16x16' href='/favicon.ico' rel='icon'><link href=\"/apple-touch-icon.png\" rel=\"apple-touch-icon\"></head></html>";
+    });
+    const faults = faultsOf(dir);
+    check('links with single quotes or attributes in another order are read', faults.length === 0, JSON.stringify(faults));
+  }
 
   /* ---- (7) the build served them ---- */
   red('a dist whose favicon.ico differs from the instance\'s', (f, { coin16 }) => { f['web/dist/favicon.ico'] = writeIco([coin16, square(32, { seed: 8 }), square(48)]); }, /dist\/favicon\.ico.*not.*public/);
   red('a dist without apple-touch-icon.png', (f) => { f['web/dist/apple-touch-icon.png'] = null; }, /dist\/apple-touch-icon\.png.*missing/);
   red('an empty dist', (f) => { for (const k of Object.keys(f)) if (k.startsWith('web/dist/')) f[k] = null; }, /nothing built/);
+
+  /* ---- two instances: the build serves one of them ---- */
+  {
+    const dir = repo('two-instances');
+    fs.cpSync(path.join(dir, 'instances/demo'), path.join(dir, 'instances/other'), { recursive: true });
+    const c = run(dir);
+    check('a site serving one of two instances\' icons is clean', c.status === 0, `${c.status} ${c.stderr}`);
+  }
 
   /* ---- no instance has icons ---- */
   {

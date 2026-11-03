@@ -115,7 +115,9 @@ function instanceFaults(ui) {
     } catch (e) {
       out.push(`${name}: is not JSON (${e.message}); ${remake(ui)} writes it again`);
     }
-    if (record) {
+    if (record !== undefined && (record === null || typeof record !== 'object' || Array.isArray(record))) {
+      out.push(`${name}: is not a record (it holds ${JSON.stringify(record)}); ${remake(ui)} writes it again`);
+    } else if (record) {
       for (const [group, list, dir] of [['sources', SOURCES, 'icon'], ['outputs', OUTPUTS, 'public']]) {
         for (const f of list) {
           const want = record[group]?.[f];
@@ -131,10 +133,10 @@ function instanceFaults(ui) {
   return out;
 }
 
-/** Whether an HTML file has a `<link>` with exactly this rel and this href. */
+/** Whether an HTML file has a `<link>`, outside a comment, with exactly this rel and this href. */
 function hasLink(html, rel, href) {
-  for (const tag of html.match(/<link\b[^>]*>/giu) ?? []) {
-    const attr = (n) => tag.match(new RegExp(`\\b${n}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'iu'));
+  for (const tag of html.replace(/<!--[\s\S]*?-->/gu, '').match(/<link\b[^>]*>/giu) ?? []) {
+    const attr = (n) => tag.match(new RegExp(`\\s${n}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'iu'));
     const r = attr('rel');
     const h = attr('href');
     if (r && h && (r[1] ?? r[2]).trim().toLowerCase() === rel && (h[1] ?? h[2]) === href) return true;
