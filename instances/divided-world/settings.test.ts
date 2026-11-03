@@ -154,6 +154,11 @@ test('hints: a post is never called a card, nor a card a post, and the thunder s
   assert.match(hintWords('thunder', { card: true })!.line, /card/i);
 });
 
+test('hints: the thunder says "lately", since it compares the window\'s reactions and never the post\'s whole count (#149 F2)', () => {
+  assert.equal(hintWords('thunder', { card: false })!.detail, 'A card played on your post has drawn more reactions lately than the post itself. The card is the main event now.');
+  assert.equal(hintWords('thunder', { card: true })!.detail, 'The card you played has drawn more reactions lately than the post it landed on. You are the main event now.');
+});
+
 test('hints: the words claim no more than the threshold proves (a lead is "most", a split is "a real share", never "nobody" or "half")', () => {
   for (const pattern of hintPatterns) {
     for (const card of [false, true]) {

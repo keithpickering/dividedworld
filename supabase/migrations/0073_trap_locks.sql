@@ -16,17 +16,20 @@
 -- Act, a `post`, `spin` or `card`, or locks `face_down`, `character_post_counts` or `threads`):
 --   - post (here): 3, 4, 5, then its insert (4 and 5 again, held), then spring_traps (3 again, held; a strike's card is written
 --     through the setter, whose count row 5 already holds; a payout never follows a reply or a quote).
---   - play_card, nine arguments (0058), and its ten-argument wrapper (0070): 1; then on a post 2, 3 (spring_traps), 6 (a payout) and
---     5 (its card's insert); on a thread 4 then 5; on a character or a board neither 3 nor 4, then 5. A card takes no `seq`. It
---     already keeps the order and is not replaced; 0058's header comment on it stays a record.
---   - set_card (0054): 1, 2, then reads `face_down` without a lock and inserts a set, which is neither counted nor numbered.
+--   - play_card, nine arguments (0058), and its ten-argument wrapper (0070): 1; then on a post 2, 3 (spring_traps), 6 where a trap
+--     pays out, then 5 (its card's insert) and 6 again (wallet_spend); on a thread 4 then 5 then 6; on a character or a board
+--     neither 3 nor 4, then 5 then 6. A card takes no `seq`. A payout takes 6 before 5, as 0058 has it; that cannot cycle, since
+--     no path holds a count row while it waits on a wallet (post() takes no wallet, and a payout follows only a cast). It is not
+--     replaced; 0058's header comment on it stays a record.
+--   - set_card (0054): 1, 2, then reads `face_down` without a lock, inserts a set (neither counted nor numbered) and its `face_down`
+--     row, then 6 (wallet_spend).
 --   - spring_traps (here): 3, then a spring (neither counted nor numbered), then 6 or a strike's card (5); never 4.
 --   - react (0054): its own `reactions` and `reaction_tallies` rows, which no other step's holder waits on, then 3 (spring_traps);
 --     a reaction's spring is neither counted nor numbered, and with no by_act it strikes nothing.
 --   - start_thread and spin (0013): a new thread's row, which no other writer can yet hold, then 5. They lock no `face_down`.
 --   - edit_post (0005): an edit, neither counted nor numbered.
 --   - The System's writers (write_staff_act and post_update, 0062; end_move, 0051; post_tally, 0024; write_unmask, 0027;
---     reveal_season, 0072): 4 and then 5 for a staff character, per Act. They lock no `face_down`, and a staff character can hold no
+--     reveal_season, 0072; and system_tick and masks_change, which write through them): 4 and then 5 for a staff character, per Act. They lock no `face_down`, and a staff character can hold no
 --     back (set_card's played_by refuses a character with no owner) and is never a poster through post() (acts_well_formed), so no
 --     count row they hold is one post() waits on.
 --   - acts_take_seq (0054) is 4 and acts_count_character (0030) is 5, as triggers inside each insert above.
@@ -40,7 +43,8 @@
 -- writes a card through the setter's character, a counted Act. A setter with no count row yet gets one with zeros, inserted in
 -- character order before the lock, so two writers creating it wait in the same order; a row of zeros reads as a missing row does.
 -- Its cost: one probe per live, unsprung back in the thread and on the quoted post (face_down_thread, then acts_one_spring and
--- the set's primary key), plus one count row per distinct setter; the reply loop then visits only the backs it locked.
+-- the set's primary key), plus one count row per distinct setter; the reply loop then visits only the backs it locked. A back
+-- that set_card commits after the lock statement is not one of them: this post is ordered before that set, and does not spring it.
 
 -- post (0058), with its locks taken in the order above before it writes: the backs, then the thread, then the count rows. A sprung
 -- back is neither locked nor probed. Everything else as 0058 wrote it.

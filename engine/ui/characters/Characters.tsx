@@ -321,7 +321,7 @@ export function Characters() {
                 <option value="hidden">Hidden</option>
               </select>
             </label>
-            <p id={`presence-help-${c.id}`} className="kb-roster-line">A hidden character isn't listed in Who is online or Users browsing. Only you see it there.</p>
+            <p id={`presence-help-${c.id}`} className="kb-roster-line">A hidden character isn't listed in Who is online or Users browsing. While you post as it, only you see it there.</p>
           </>
         )}
         {problem?.id === c.id && problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}

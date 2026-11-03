@@ -138,7 +138,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     logPlay: (config) => (typeof config.phrase === 'string' && typeof config.replacement === 'string' ? `It covers “${config.phrase}” with “${config.replacement}”.` : undefined),
     logSave: (state: unknown) => {
       const { peeled, clean } = (typeof state === 'object' && state !== null ? state : {}) as { peeled?: unknown; clean?: unknown };
-      if (clean === true) return { what: 'Peeled clean', said: 'You peeled every strip; it covers nothing now.' };
+      if (clean === true) return { what: 'Peeled clean', said: 'You peeled every strip it had then. An edit that brings the phrase back brings a strip with it.' };
       const n = Array.isArray(peeled) ? peeled.length : 0;
       return n ? { what: 'Strips peeled', said: `You peeled ${n} of its strips.` } : undefined;
     },
