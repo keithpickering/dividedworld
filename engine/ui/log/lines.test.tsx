@@ -337,7 +337,7 @@ describe('a card\'s own words for a play', () => {
   });
 
   test('a caught play says only that it was caught, never what it would have covered', () => {
-    const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 25, at }], caught: [{ play: 'k1', card: key, post: 'post3', trap: key, spring: 'sp1', price: 25, boughtPrice: 100 }] };
+    const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 25, at }], caught: [{ play: 'k1', card: key, post: 'post3', trap: key, spring: 'sp1', price: 25, boughtPrice: 100, at }] };
     const rows = logRows(data({ log, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, play].map((a) => [a.id, a])) }), w, 600, null);
     expect(rows.map((r) => r.kind)).toEqual(['caught']);
     expect(text(rows[0]!)).not.toContain('covers');
