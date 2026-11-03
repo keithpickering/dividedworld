@@ -50,7 +50,7 @@ Aura is the score and the money, counted in **orbs**. It comes mostly from other
 
 ### The settlement
 
-Aura doesn't land the moment somebody reacts. It lands at the **settlement**. Settlements are {{setting:settlementLength}} apart. In between, your orbs show a hatched **ghost**: an estimate of where the reactions so far are taking you. Think of it as a forecast, and of the settlement as what actually happened. The first time you load the board after a settlement that moved your Aura, a summary opens by itself.
+Aura doesn't land the moment somebody reacts. It lands at the **settlement**. Settlements are {{setting:settlementLength}} apart. In between, your orbs show a hatched **ghost**: an estimate of where the reactions so far are taking you. Think of it as a forecast, and of the settlement as what actually happened. The forecast always says **up to**, and it can count reactions the settlement won't: it counts every reaction but your own as if anybody could have left it, while the settlement never pays a player for reacting to their own characters. It also skips the shared vote and the halving. The settlement is exact. The first time you load the board after a settlement that moved your Aura, a summary opens by itself.
 
 ### Your log
 
@@ -95,7 +95,7 @@ A played card is an Act of its own. It shows on the post as a **mark**. Press th
 
 A plus after a price means that playing the card on a long post costs more; the Vending Machine tells you how much. Three words on every card are worth knowing:
 
-- **Sweet, Salty, Pepperoni.** Sweet helps the post or character it lands on, Salty gets in its way, and Pepperoni depends entirely on context.
+- **Sweet, Salty, Pepperoni.** Sweet helps the post or character it lands on, Salty gets in its way, and Pepperoni depends entirely on context. At the settlement, a Pepperoni card plays as Sweet or Salty by how the room reacted to it, and the room is everybody but the player who cast it and, for a card on a post, the player who wrote the post.
 - **Cast, Use, Set.** To cast a card is to play it on a target, to use it is to play it on your own post, and to set it is to play it face down on your own post, where everyone sees the same card back.
 - **Rarity.** Common, uncommon, rare or legendary. The rarer a card, the further it can reach beyond a single post.
 
