@@ -35,11 +35,21 @@ do $$ begin
 end $$;
 
 -- On a hosted Supabase the migrating role `postgres` is not a superuser: it may hand a function to a role only
--- while it is a member of that role (and the role holds create on the schema). Locally, as a superuser, this is
+-- while it may SET ROLE to that role (and the role holds create on the schema). Locally, as a superuser, this is
 -- harmless. The membership gives `postgres` the ability to act as the role, which a superuser has anyway;
 -- no client role is a member.
+--
+-- From Postgres 16 a role that is not a superuser and creates a role is made a member of it at once, with ADMIN but
+-- without SET or INHERIT (createrole_self_grant is empty by default), so a test for membership alone passes, the grant
+-- is skipped, and `alter function ... owner to kayfabb_digest` below is refused with "must be able to SET ROLE". The
+-- first push to a hosted project on Postgres 17 failed exactly so. Before 16, membership was the whole of it, and
+-- neither `with set` nor pg_has_role's 'set' exists.
 do $$ begin
-  if not pg_has_role(current_user, 'kayfabb_digest', 'member') then
+  if current_setting('server_version_num')::int >= 160000 then
+    if not pg_has_role(current_user, 'kayfabb_digest', 'set') then
+      execute format('grant kayfabb_digest to %I with set true', current_user);
+    end if;
+  elsif not pg_has_role(current_user, 'kayfabb_digest', 'member') then
     execute format('grant kayfabb_digest to %I', current_user);
   end if;
 end $$;
