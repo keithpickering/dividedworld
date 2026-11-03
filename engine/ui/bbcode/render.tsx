@@ -46,7 +46,7 @@ interface Layered {
 /** The first stretch that ends after `at`; the stretches are in order and cover the text end to end. */
 function firstAfter(stretches: readonly Stretch[], at: number): number {
   let [lo, hi] = [0, stretches.length];
-  while (lo < hi) { const mid = (lo + hi) >> 1; if (stretches[mid]!.to <= at) lo = mid + 1; else hi = mid; }
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (stretches[mid]!.end <= at) lo = mid + 1; else hi = mid; }
   return lo;
 }
 
@@ -56,14 +56,14 @@ function layeredText(n: Extract<BbNode, { type: 'text' }>, key: number, layered:
   if (at === undefined || !n.text) return n.text;
   const end = at + n.text.length;
   const out: ReactNode[] = [];
-  for (let i = firstAfter(layered.stretches, at); i < layered.stretches.length && layered.stretches[i]!.from < end; i++) {
+  for (let i = firstAfter(layered.stretches, at); i < layered.stretches.length && layered.stretches[i]!.start < end; i++) {
     const st = layered.stretches[i]!;
-    const [from, to] = [Math.max(st.from, at), Math.min(st.to, end)];
+    const [from, to] = [Math.max(st.start, at), Math.min(st.end, end)];
     if (!st.run) out.push(n.text.slice(from - at, to - at));
     else if (st.run.mode === 'wrap') out.push(st.run.render({ text: n.text.slice(from - at, to - at), key: `${st.run.key}@${from}` }));
     else if (!layered.drawn.has(st)) {
       layered.drawn.add(st);
-      out.push(st.run.render({ text: layered.text.slice(st.from, st.to), key: `${st.run.key}@${st.from}` }));
+      out.push(st.run.render({ text: layered.text.slice(st.start, st.end), key: `${st.run.key}@${st.start}` }));
     }
   }
   return <Fragment key={key}>{out}</Fragment>;

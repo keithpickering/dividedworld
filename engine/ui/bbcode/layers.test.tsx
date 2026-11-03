@@ -9,13 +9,13 @@ import { visibleText } from '../../bbcode/visible.ts';
 const ACT = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
 /** A replace run that draws a strip with the word it stands for. */
-const strip = (from: number, to: number, said: string, z = 0): TextRun => ({
-  from, to, key: `s${from}-${to}-${z}`, z, mode: 'replace',
+const strip = (start: number, end: number, said: string, z = 0): TextRun => ({
+  start, end, key: `s${start}-${end}-${z}`, z, mode: 'replace',
   render: ({ text, key }) => <mark key={key} data-strip={said} data-covers={text}>{said}</mark>,
 });
 /** A wrap run that draws each piece inside a band. */
-const band = (from: number, to: number, z = 0): TextRun => ({
-  from, to, key: `b${from}-${to}-${z}`, z, mode: 'wrap',
+const band = (start: number, end: number, z = 0): TextRun => ({
+  start, end, key: `b${start}-${end}-${z}`, z, mode: 'wrap',
   render: ({ text, key }) => <i key={key} data-band="">{text}</i>,
 });
 
@@ -114,7 +114,7 @@ describe('text layers', () => {
   test('stretches: each stretch names its top run, and a run split by a higher one gives two stretches', () => {
     const low = strip(0, 10, 'L', 0);
     const top = strip(3, 5, 'T', 1);
-    expect(stretchesOf(12, [low, top]).map((s) => [s.from, s.to, s.run?.key ?? null]))
+    expect(stretchesOf(12, [low, top]).map((s) => [s.start, s.end, s.run?.key ?? null]))
       .toEqual([[0, 3, low.key], [3, 5, top.key], [5, 10, low.key], [10, 12, null]]);
   });
 });

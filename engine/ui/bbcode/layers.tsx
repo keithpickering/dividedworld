@@ -19,8 +19,8 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 export interface TextRun {
   /** Offsets into the post's visible text: from the run's first character to just past its last. */
-  readonly from: number;
-  readonly to: number;
+  readonly start: number;
+  readonly end: number;
   /** Unique among the post's runs; React's key for what `render` draws. */
   readonly key: string;
   /** Its place in the stack: higher is on top. */
@@ -47,8 +47,8 @@ export function TextLayer({ runs, children }: { readonly runs: readonly TextRun[
 
 /** A stretch of the visible text and the run drawn there (null where no run is). */
 export interface Stretch {
-  readonly from: number;
-  readonly to: number;
+  readonly start: number;
+  readonly end: number;
   readonly run: TextRun | null;
 }
 
@@ -63,22 +63,22 @@ const over = (a: { run: TextRun; i: number }, b: { run: TextRun; i: number }): b
  * however many words a post holds.
  */
 export function stretchesOf(length: number, runs: readonly TextRun[]): Stretch[] {
-  const kept = runs.map((run, i) => ({ run, i, from: Math.max(0, run.from), to: Math.min(length, run.to) })).filter((r) => r.to > r.from);
-  const starts = [...kept].sort((a, b) => a.from - b.from);
-  const cuts = [...new Set([0, length, ...kept.flatMap((r) => [r.from, r.to])])].sort((a, b) => a - b);
+  const kept = runs.map((run, i) => ({ run, i, start: Math.max(0, run.start), end: Math.min(length, run.end) })).filter((r) => r.end > r.start);
+  const starts = [...kept].sort((a, b) => a.start - b.start);
+  const cuts = [...new Set([0, length, ...kept.flatMap((r) => [r.start, r.end])])].sort((a, b) => a - b);
   const out: Stretch[] = [];
   let open: typeof kept = [];
   let next = 0;
   for (let c = 0; c + 1 < cuts.length; c++) {
-    const [from, to] = [cuts[c]!, cuts[c + 1]!];
-    open = open.filter((r) => r.to > from);
-    while (next < starts.length && starts[next]!.from <= from) open.push(starts[next++]!);
+    const [start, end] = [cuts[c]!, cuts[c + 1]!];
+    open = open.filter((r) => r.end > start);
+    while (next < starts.length && starts[next]!.start <= start) open.push(starts[next++]!);
     let top: (typeof kept)[number] | null = null;
     for (const r of open) if (!top || over(r, top)) top = r;
     const run = top?.run ?? null;
     const last = out[out.length - 1];
-    if (last && last.run === run && last.to === from) out[out.length - 1] = { ...last, to };
-    else out.push({ from, to, run });
+    if (last && last.run === run && last.end === start) out[out.length - 1] = { ...last, end };
+    else out.push({ start, end, run });
   }
   return out;
 }

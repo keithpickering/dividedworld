@@ -265,11 +265,11 @@ export function AutocorrectEffect({ post, plays, states, reader, save, show, met
 
   const runs = useMemo<TextRun[]>(() => [
     ...peeled.map((s): TextRun => ({
-      from: s.from, to: s.to, key: `a:${s.key}`, z: s.z, mode: 'wrap',
+      start: s.from, end: s.to, key: `a:${s.key}`, z: s.z, mode: 'wrap',
       render: ({ text: words, key }) => <span key={key} className="dw-ac-adhesive" data-kb-peeled={s.key}>{words}</span>,
     })),
     ...shown.map((s): TextRun => ({
-      from: s.from, to: s.to, key: s.key, z: s.z, mode: 'replace',
+      start: s.from, end: s.to, key: s.key, z: s.z, mode: 'replace',
       render: ({ text: covered, key }) => <StripButton key={key} strip={s} covered={covered} peelMs={peelMs} onPeel={onPeel} onMeet={onMeet} />,
     })),
   ], [shown, peeled, peelMs, onPeel, onMeet]);
