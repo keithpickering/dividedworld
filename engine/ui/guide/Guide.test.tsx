@@ -12,7 +12,7 @@ import type { CardUi } from '../cards/types.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { ScreenSettings } from '../data/api.ts';
 import { buildWorld, renderIn, renderInWorld, testInstance } from '../test-world.tsx';
-import type { GuideUi } from '../types.ts';
+import type { ClassLook, GuideUi } from '../types.ts';
 import { Guide, GuideScreen } from './Guide.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -211,6 +211,12 @@ describe('the classes marker', () => {
     const heel = within(classes).getByRole('group', { name: 'Heel' });
     expect(within(heel).getByText('Earns heat: boos and tomatoes.')).toBeInTheDocument();
     expect(within(heel).getByText(HINTS.heel)).toBeInTheDocument();
+  });
+
+  test('a class\'s description is told the settlement span in force, as the class cards are (#179)', () => {
+    const looks: Readonly<Record<string, ClassLook>> = { face: { color: 'currentColor', description: (_e, span) => `Counts per window of ${span.count} ${span.unit}.`, marks: { label: 'Face marks', earns: [], hurts: [] } } };
+    renderInWorld(<Guide />, { path: '/guide', instance, guide: guide('## Classes\n\n<!-- kayfabb:classes -->'), settings: { settlementLength: { unit: 'week', count: 1 } }, classLooks: looks });
+    expect(within(screen.getByRole('group', { name: 'Face' })).getByText('Counts per window of 1 week.')).toBeInTheDocument();
   });
 
   test('the hint is labeled as Gabe\'s, in words and not by color', () => {

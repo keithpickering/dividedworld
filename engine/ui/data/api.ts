@@ -625,6 +625,8 @@ export interface CardEvent {
   readonly act: Id | null;
   readonly price: number;
   readonly at: string;
+  /** For a card the player set face down, whether it carries a trap: false for a Bluff, which never springs. Absent on any other row. */
+  readonly springs?: boolean;
 }
 
 /**

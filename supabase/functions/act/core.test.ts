@@ -534,6 +534,16 @@ test('a card reacted to is compared with the post it landed on: more than the po
   ]);
 });
 
+test('the thunder compares the window alone: a post with more reactions in all than its card, but fewer lately, is outdrawn (#149 F2)', async () => {
+  // In the window the card has 10 and the post 4. However many the post drew before the window, nothing reads that: only the
+  // window's counts are read, so the thunder fires, and the words say "lately" (instances/divided-world/ui/hint-words.ts).
+  const card = { counts: { ...zero, excitedPositive: 10 }, cardOn: post };
+  const { db, calls } = hinting({ [target]: card, [post]: { counts: { ...zero, calmPositive: 4 }, cardOn: null } });
+  await (await reactedWith(db)).later();
+  assert.deepEqual([...new Set(hintCalls(calls).map((c) => c.fn))], ['act_window_counts', 'fire_hint'], 'no whole-life count is read');
+  assert.deepEqual(hintCalls(calls).filter((c) => c.fn === 'fire_hint').map((c) => `${c.args.about}:${c.args.pattern}`), [`${target}:thunder`, `${post}:thunder`]);
+});
+
 test('a card that has not outdrawn its post is judged by its own reactions, and its post is not read twice', async () => {
   const card = { counts: { ...zero, excitedNegative: 10 }, cardOn: post };
   const { db, calls } = hinting({ [target]: card, [post]: { counts: { ...zero, calmPositive: 30 }, cardOn: null } });

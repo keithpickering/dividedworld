@@ -29,8 +29,8 @@ const LEADING: Readonly<Record<string, { post: Words; card: Words }>> = {
     card: { line: 'Your card is dividing the room', detail: `A real share of the reactions it has drawn lately are positive and a real share are negative. Part of the room is cheering and part of it is not. ${COUNTED}` },
   },
   thunder: {
-    post: { line: 'A card is stealing your post\'s thunder', detail: 'A card played on your post has drawn more reactions than the post itself has. The card is the main event now.' },
-    card: { line: 'Your card is stealing the thunder', detail: 'The card you played has drawn more reactions than the post it landed on. You are the main event now.' },
+    post: { line: 'A card is stealing your post\'s thunder', detail: 'A card played on your post has drawn more reactions lately than the post itself. The card is the main event now.' },
+    card: { line: 'Your card is stealing the thunder', detail: 'The card you played has drawn more reactions lately than the post it landed on. You are the main event now.' },
   },
 };
 

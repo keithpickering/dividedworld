@@ -100,6 +100,14 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
       -- A second play over the first (0071): its moment, and the first's save copied into it as a layer, written by the trigger.
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
+      -- A trap of the export's own (#136 F1): Ann sets a cast-trigger nullify on her post through set_card, and Bob's Blot cast on it
+      -- through play_card is caught, so a face_down row, a spring and a caught card are the cast's own, by their ids, below.
+      update settings set value = value || '{"expcatch.price": 100}' where key = 'economy';
+      insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap)
+      values ('expcatch', 'Exported Catcher', 'salty', 'expcatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
+      insert into card_ledger (account, card, kind, price) values (ann, 'expcatch', 'bought', 0), (bob, 'blot', 'bought', 0);
+      perform set_card(ann, 'expcatch', a, p, '{}', 0);
+      perform play_card(bob, 'blot', b, p, '{}', 0, '');
       -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an
       -- avatar, and an admin.
       insert into effect_releases (account, play) values (bob, play);
@@ -181,6 +189,12 @@ test('an instance exported and imported into a fresh database is the same instan
     create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
+  // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows
+  // whatever else this database holds (#136 F1).
+  const trapIds = sql(`select f.play || '|' || s.id || '|' || k.id from face_down f join auth.users u on u.id = f.account and u.email = 'exp-ann@test.invalid'
+    join acts s on s.kind = 'spring' and s.payload ->> 'set' = f.play::text join acts k on k.kind = 'card' and k.payload ->> 'caught' = f.play::text`);
+  const [setPlay, springAct, caughtAct] = trapIds.split('|');
+  assert.ok(setPlay && springAct && caughtAct, `the cast holds a set, its spring and the card it caught: "${trapIds}"`);
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.
@@ -357,6 +371,11 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
+    // The set, its spring and the caught card, each carried as it was.
+    const trapRows = (url: string) => psqlOn(url, `select (select to_jsonb(f)::text from face_down f where f.play = '${setPlay}') || '|' ||
+      (select to_jsonb(a)::text from acts a where a.id = '${springAct}' and a.kind = 'spring') || '|' || (select to_jsonb(a)::text from acts a where a.id = '${caughtAct}' and a.kind = 'card')`);
+    assert.notEqual(trapRows(fresh.toString()), '', 'the set, its spring and the caught card are in the imported instance');
+    assert.equal(trapRows(fresh.toString()), trapRows(from));
     // The moments were carried as written, and the import, a replica's write, took none of its own (0071's trigger stayed silent).
     const moments = (url: string) => psqlOn(url, 'select (select count(*) from play_moments) || \'/\' || (select count(*) from play_moment_layers)');
     assert.equal(moments(fresh.toString()), moments(from));

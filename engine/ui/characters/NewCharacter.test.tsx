@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Instance } from '../../rules/types.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { NewCharacter } from './NewCharacter.tsx';
+import type { ClassLook } from '../types.ts';
 
 beforeEach(() => { localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -122,6 +123,20 @@ describe('New character', () => {
     expect(await screen.findByText(/an admin can retire a character on request/iu)).toBeInTheDocument();
     expect(screen.queryByRole('form', { name: 'New character' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Back to your characters' })).toHaveAttribute('href', '/characters');
+  });
+});
+
+/* A class card's words are told the settlement span in force, as they are told the economy (#179). */
+describe('New character\'s class cards', () => {
+  test('pass the settlement span in force to each class\'s description', async () => {
+    const looks: Readonly<Record<string, ClassLook>> = {
+      face: { color: 'currentColor', description: (_e, span) => `Counts per window of ${span.count} ${span.unit}.`, marks: { label: 'Face marks', earns: [], hurts: [] } },
+    };
+    const fake = buildWorld({ charactersPerPlayer: 3, settlementLength: { unit: 'week', count: 1 } });
+    fake.signInAs(fake.seed.account('me'));
+    renderIn(fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: 3, settlementLength: { unit: 'week', count: 1 } }, classLooks: looks });
+    const f = await form();
+    expect(within(f).getByText('Counts per window of 1 week.')).toBeInTheDocument();
   });
 });
 
