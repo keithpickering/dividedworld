@@ -7,7 +7,7 @@
  * Everything here a player reads out of character is plain and true ("The fiction may lie; the
  * log never does"). The System's in-character words are the rules' `Copy`.
  */
-import type { Quadrant } from '../rules/types.ts';
+import type { Quadrant, Span } from '../rules/types.ts';
 import type { CardUi } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
 import type { TipKey } from './tips/keys.ts';
@@ -31,9 +31,10 @@ export interface ClassLook {
   /**
    * How the class earns and what hurts it, in plain words, for the class cards, with the numbers in force written in (the core loop
    * design, section 6, #57): `economy` is the instance's economy as the server holds it now (`economyNow`), so a number an admin has
-   * retuned is the one said.
+   * retuned is the one said. `settlementLength` is the settlement span in force (the screen settings'), for a class whose rule counts
+   * per settlement window (#179).
    */
-  readonly description: (economy: Readonly<Record<string, number>>) => string;
+  readonly description: (economy: Readonly<Record<string, number>>, settlementLength: Span) => string;
   /**
    * The class's marks on the reaction map, as the Turn board draws them on its class cards: the
    * quadrants it earns from (a plus), is hurt by (a minus), or earns by calling where a post ends up

@@ -6,6 +6,7 @@
  * the owner has not yet named (the web plan's brief, item 7); each is marked where it stands.
  */
 import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
+import { spanWords } from '../../../engine/ui/characters/format.ts';
 import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
 import theme from './theme.css?url';
@@ -42,7 +43,7 @@ const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', '
 const count = (n: number) => (Number.isInteger(n) && n >= 0 && n <= 20 ? COUNTS[n]! : String(n));
 /* A number the words state, from the numbers they are told, or the compiled default where they are told none. */
 const num = (n: Readonly<Record<string, number>>, key: string) => n[key] ?? defaults.economy[key]!;
-const timesADay = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${count(n)} times`);
+const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${count(n)} times`);
 
 /** Each ledger reason, as the log says it: what the character did or drew, plainly, with the numbers it was settled under. */
 const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, number>>) => string)>> = {
@@ -64,7 +65,7 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
   'lurker.cardDrew': 'Its card drew: reactions to a card it played',
   'lurker.postedTooMuch': (n) => {
     const k = num(n, 'lurker.postsAllowed');
-    return k === 0 ? 'Posted too much: any post at all, since none are free' : `Posted too much: a post past ${count(k)} in one day`;
+    return k === 0 ? 'Posted too much: any post at all, since none are free' : `Posted too much: a post past ${count(k)} in one settlement window`;
   },
   'technician.respected': 'Respected: calm, positive reactions to its posts and cards',
   'technician.evergreen': 'Evergreen: calm, positive reactions that came or went on an older post of its own',
@@ -76,7 +77,8 @@ export const REASON_KEYS: readonly string[] = Object.freeze(Object.keys(REASONS)
 
 /**
  * The economy keys each class description (by class key) and each reason states, so a test can retune them and see the number
- * in force said (the core loop design, section 6, #57). A word that states a number declares at least one key here.
+ * in force said (the core loop design, section 6, #57). A word that states a number declares at least one key here. The Lurker's
+ * description also states the settlement span, which is not an economy key: ClassLook.description is told `settlementLength` (#179).
  */
 export const wordsRead: Readonly<Record<string, readonly string[]>> = Object.freeze({
   lurker: ['lurker.postsAllowed'],
@@ -107,7 +109,7 @@ export const instanceUi: InstanceUi = Object.freeze({
     heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on. Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
     jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts. Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
     technician: { color: '#1e8449', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'The respected regular. Earns from calm, positive reactions to its posts and cards, and more when an old post of its own still draws them. Hurt by heat: excited, negative reactions.', marks: { label: 'Earns from the calm, hurt by heat', earns: ['calmPositive'], hurts: ['excitedNegative'] } },
-    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: (e) => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards. Hurt by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${timesADay(num(e, 'lurker.postsAllowed'))} a day`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
+    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: (e, span) => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards. Hurt by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${times(num(e, 'lurker.postsAllowed'))} in one settlement window (${spanWords(span)})`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
   }),
   reasonWords: (reason: string, params: Readonly<Record<string, number>>) => {
     const w = REASONS[reason];
