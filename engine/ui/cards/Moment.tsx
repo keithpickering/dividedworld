@@ -50,7 +50,8 @@ export function useMomentRead(play: Id): MomentRead {
  * `words` are what the frame says under the post; `unrecorded` says what else was on the post then wasn't recorded.
  */
 export function MomentFrame({ play, at, read, back, named, words, unrecorded, children }: {
-  readonly play: CardPlay; readonly at: string; readonly read: MomentRead['status'];
+  /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
+  readonly play: CardPlay; readonly at: string; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
   readonly named: readonly string[]; readonly words: readonly string[]; readonly unrecorded: boolean;
   readonly children: ReactNode;
@@ -58,14 +59,14 @@ export function MomentFrame({ play, at, read, back, named, words, unrecorded, ch
   const { instance, ui } = useKayfa();
   /* A card back is drawn in no card's ink: which card it is stays the setter's. */
   const rules = play.faceDown ? undefined : instance.cards.find((c) => c.key === play.card);
-  const ink = play.faceDown ? undefined : inkOf(ui, play, [play]) ?? ui.cards.find((c) => c.key === play.card)?.art.color;
+  const ink = play.faceDown ? undefined : inkOf(ui, play, [play]);
   return (
     <div className="kb-moment" role="group" aria-label={`As it landed, ${when(at)}`} data-kb-alignment={rules?.alignment} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
       <div className="kb-moment-frame"><div className="kb-moment-body">{children}</div></div>
       <p className="kb-moment-tag">
         <span>As it landed</span>
         <span aria-hidden="true"> · </span>
-        <span>{read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : <time dateTime={at}>{when(at)}</time>}</span>
+        <span>{read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : read === 'none' ? 'This play has no moment to show.' : <time dateTime={at}>{when(at)}</time>}</span>
         {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={back}>Back to now</button></>}
       </p>
       {(named.length > 0 || words.length > 0 || unrecorded) && (
@@ -104,7 +105,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now }: {
   }, []);
   if (read.status !== 'read' || read.moment === null) {
     return (
-      <MomentFrame play={play} at={play.playedAt} read={read.status === 'read' ? 'failed' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
+      <MomentFrame play={play} at={play.playedAt} read={read.status === 'read' ? 'none' : read.status} back={back} named={[]} words={[]} unrecorded={false}>
         {now}
         {read.status === 'failed' && <button type="button" className="kb-moment-retry" onClick={read.retry}>Try again</button>}
       </MomentFrame>

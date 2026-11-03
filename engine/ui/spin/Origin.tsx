@@ -4,7 +4,8 @@
  * a link back to where it is. An edit made after the spin arrives on the origin thread's channel
  * and shows here; the subscription is dropped when the thread is left. It is "loading" until the
  * Act is read, and says so plainly when the Act is not there or could not be read (with a Try again
- * for the second): it never stays on "Loading" for good. When the player has just spun the thread,
+ * for the second): it never stays on "Loading" for good. A thread spun from a card play on a post shows that play's moment instead (the
+ * post as it read when the play landed), which never changes, under the play's mark. When the player has just spun the thread,
  * focus is on this box.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -12,6 +13,7 @@ import { BbCode } from '../bbcode/render.tsx';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { PostEffects } from '../cards/Effects.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
+import { MomentView } from '../cards/Moment.tsx';
 import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, type Plays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Character, Id, ThreadSummary } from '../data/api.ts';
@@ -133,7 +135,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   /* The same node is the box's head's strip and, for a card that lifts the post (Stick Around), the strip it draws on the lifted post. */
   const marks = act && (act.kind === 'card' ? cardPlay !== null : holdsEffects(act.kind)) ? (
     <PostMarks
-      post={cardPlay ? cardPlay.post : originId} compare={cardPlay === null} plays={plays}
+      post={cardPlay ? cardPlay.post : originId} compare={cardPlay === null} moments={cardPlay === null} plays={plays}
       to={cardPlay ? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null) : backHref}
       nameOf={nameOf} tallies={tallies} mine={mine}
       onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
@@ -166,7 +168,17 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
           </>
         );
       }
-      case 'card': return cardPlay ? null : <p className="kb-small kb-muted">A card was played here.</p>;
+      case 'card':
+        if (!cardPlay) return <p className="kb-small kb-muted">A card was played here.</p>;
+        /*
+         * A play on a post: its moment, under the mark, read once (docs/plans/2026-11-03-effect-history-design.md, section 4). It never
+         * changes, so this case of the box is not live; the mark's Go to post leads to the post as it is now. A play beyond a post
+         * shows its mark alone, as before.
+         */
+        return cardPlay.reach ? null : (
+          <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null}
+            bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteLink={quoteLink} />} />
+        );
       case 'unmask': return <UnmaskLine act={act} name={name} />;
       case 'tally':
       case 'reveal': return <SystemPost act={act} />;
