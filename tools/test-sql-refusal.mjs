@@ -88,24 +88,31 @@ check('a select whose comparison is not right after it is not refused', nullBlin
 const bounded = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-psql-bounds-'));
 const calls = path.join(bounded, 'calls');
 const hung = path.join(bounded, 'hung');
+/* When each psql began, one time to a line, so the kill is timed by the gap from the hung psql to the one after it. */
+const starts = path.join(bounded, 'starts');
 const hanger = path.join(bounded, 'psql.mjs');
 fs.writeFileSync(hanger, `import fs from 'node:fs';
+fs.appendFileSync(${JSON.stringify(starts)}, Date.now() + '\\n');
 const sql = fs.readFileSync(0, 'utf8');
 fs.appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + '\\n' + sql + '\\n\\x1e\\n');
 if (sql.startsWith('begin;') && process.env.HANG && !fs.existsSync(${JSON.stringify(hung)})) {
-  fs.writeFileSync(${JSON.stringify(hung)}, '');
+  fs.writeFileSync(${JSON.stringify(hung)}, String(Date.now()));
   setTimeout(() => {}, 60_000);
 }
 `);
 function boundedSuite(hang, timeoutMs = '1500') {
   fs.rmSync(calls, { force: true });
   fs.rmSync(hung, { force: true });
+  fs.rmSync(starts, { force: true });
   const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '' };
-  const began = Date.now();
-  /* The suite's own end-to-end files would try the scratch database this psql never made; a bound keeps a slip here from hanging the build. */
-  const r = spawnSync(process.execPath, ['tools/test-sql.mjs'], { env, encoding: 'utf8', timeout: 120_000 });
+  /* The suite's own end-to-end files would try the scratch database this psql never made; a bound keeps a slip here from hanging the
+     build. It is wide, since the whole run under a busy build (a Node start for each psql, the end-to-end files) took 85s on Windows. */
+  const r = spawnSync(process.execPath, ['tools/test-sql.mjs'], { env, encoding: 'utf8', timeout: 600_000 });
   const records = fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\x1e\n').filter((x) => x.trim()) : [];
-  return { status: r.status, out: (r.stdout ?? '') + (r.stderr ?? ''), records, ms: Date.now() - began };
+  /* How long the hung psql lived: from its start to the start of the next psql, which the suite runs once the hung one is killed. */
+  const hungAt = fs.existsSync(hung) ? Number(fs.readFileSync(hung, 'utf8')) : NaN;
+  const after = fs.existsSync(starts) ? fs.readFileSync(starts, 'utf8').split('\n').filter(Boolean).map(Number).find((t) => t > hungAt) : undefined;
+  return { status: r.status, out: (r.stdout ?? '') + (r.stderr ?? ''), records, hungMs: after === undefined ? NaN : after - hungAt };
 }
 {
   const r = boundedSuite(false);
@@ -121,7 +128,9 @@ function boundedSuite(hang, timeoutMs = '1500') {
   const first = fs.readdirSync('supabase/tests').filter((f) => ASSERTION_FILE.test(f)).sort()[0];
   const r = boundedSuite(true);
   check('a file whose psql never answers fails the suite', r.status === 1, `status ${r.status}`);
-  check('and is killed at the bound, not waited out', r.ms < 60_000, `${r.ms} ms`);
+  /* Timed from the hung psql to the next, never over the whole run: the run's length is every other file's too, and on a busy machine
+     it passed the 60s hang while the kill came at 1.5s. Half the hang leaves room for a slow Node start. */
+  check('and is killed at the bound, not waited out', r.hungMs < 30_000, `the hung psql lived ${r.hungMs} ms`);
   check('and the failure names the file and says it was killed at the bound',
     new RegExp(`FAIL  ${first?.replace('.', '\\.')}\\s+did not finish within 1\\.5s and was killed`).test(r.out), r.out.split('\n').filter((l) => /FAIL/.test(l)).join(' | '));
   check('and the files after it still run', /PASS  0001-/.test(r.out), r.out.slice(0, 400));
