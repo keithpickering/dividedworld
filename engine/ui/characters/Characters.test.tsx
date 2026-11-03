@@ -442,7 +442,7 @@ describe('Reveal', () => {
   test('cannot be confirmed before a thread is chosen, and a refusal is shown in the server\'s words', async () => {
     const w = world();
     general(w);
-    vi.spyOn(w.fake, 'unmask').mockResolvedValue({ ok: false, error: 'this character\'s Turn takes effect at the settlement now due; reveal once it has run' });
+    vi.spyOn(w.fake, 'unmask').mockResolvedValue({ ok: false, error: 'this character\'s Turn takes effect at the settlement now running; reveal in a few minutes' });
     open(w);
     await ready();
     const dialog = await openReveal();
@@ -450,7 +450,7 @@ describe('Reveal', () => {
     await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
     await userEvent.selectOptions(await within(dialog).findByLabelText('Thread'), 'The tea thread');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('reveal once it has run');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('reveal in a few minutes');
   });
 
   test('offers none to a character waiting to debut', async () => {

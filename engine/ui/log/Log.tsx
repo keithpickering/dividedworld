@@ -26,6 +26,7 @@ import { usePlayer } from '../player.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { actLink, inOrder, logRows, NO_SHARES, plain, reasonName, SHARES_ARE, signed, utcWhen, type LogData, type LogRow, type Segment, type Words } from './lines.ts';
 import { useLog } from './useLog.ts';
+import { economyNow, paramsOf } from '../economy.ts';
 import './log.css';
 
 /** What a navigation into the log may carry (router.tsx's state): the tab to open, and a settlement to open on its row. */
@@ -65,11 +66,11 @@ function Breakdown({ settlement, data, words, tab, id, open, onClose }: { readon
       <td colSpan={5}>
         <div className="kb-log-breakdown-body">
           {lines.map((l) => (
-            <section key={`${l.character}:${l.reason}`} className="kb-log-reason" aria-label={`${tab === null ? `${nameOf(l.character)}, ` : ''}${reasonName(words.ui.reasonWords(l.reason))}`}>
+            <section key={`${l.character}:${l.reason}`} className="kb-log-reason" aria-label={`${tab === null ? `${nameOf(l.character)}, ` : ''}${reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy)))}`}>
               <h2 className="kb-log-reason-head">
                 <span>
                   {tab === null && <span className="kb-log-reason-who">{nameOf(l.character)} · </span>}
-                  <span data-kb-reason="">{words.ui.reasonWords(l.reason)}</span>
+                  <span data-kb-reason="">{words.ui.reasonWords(l.reason, paramsOf(l, words.economy))}</span>
                 </span>
                 <span className="kb-log-num" data-kb-amount="" data-kb-sign={Math.sign(l.amount)}>{signed(l.amount)}</span>
               </h2>
@@ -152,7 +153,7 @@ export interface LogProps {
 
 export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' }: LogProps) {
   const { instance, ui, settings } = useKayfa();
-  const words: Words = { instance, ui, postsPerPage: settings.postsPerPage };
+  const words: Words = { instance, ui, postsPerPage: settings.postsPerPage, economy: economyNow(instance.settings, settings.economy) };
   const tabs = tabsOf(data);
   const current = tabs.find((c) => c.id === tab) ?? null;
   const rows = logRows(data, words, settings.walletCap, current?.id ?? null);

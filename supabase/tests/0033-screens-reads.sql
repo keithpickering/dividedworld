@@ -148,7 +148,7 @@ begin
   -- The columns are exactly these.
   if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_wallet') is distinct from array['balance', 'cap']
      or (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_ledger')
-        is distinct from array['settlement', 'starts_at', 'ends_at', 'character', 'reason', 'amount', 'shares_kept']
+        is distinct from array['settlement', 'starts_at', 'ends_at', 'character', 'reason', 'amount', 'shares_kept', 'params']
      or (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_wallet_events')
         is distinct from array['settlement', 'kind', 'change', 'overflow', 'floored', 'balance_after', 'ref', 'at'] then
     raise exception 'a wallet view shows more or less than it should';
@@ -163,8 +163,10 @@ declare
                          'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
                          -- How often a page polls who is browsing it, and the window it counts (0041).
                          'presencePollSeconds', 'presenceWindow',
-                         -- The cards' prices and what they read, never the whole economy (0039; 0044-card-economy.sql holds what it holds).
-                         'cardEconomy'];
+                         -- The cards' prices and what they read (0039; 0044-card-economy.sql holds what it holds).
+                         'cardEconomy',
+                         -- The economy row, whose numbers a class's words state (0072, #57): settings, and public.
+                         'economy'];
   k text;
 begin
   perform tests.become_anon();
@@ -174,7 +176,7 @@ begin
   if seen is null or (select array_agg(key order by key) from jsonb_object_keys(seen) key) is distinct from (select array_agg(x order by x) from unnest(listed) x) then
     raise exception 'screen_settings holds exactly the listed keys: %', seen;
   end if;
-  if seen ? 'economy' or seen ? 'settlementCron' or seen ? 'copy' or seen ? 'viewCountCron' or seen ? 'vote' then raise exception 'a setting that is not for the screens: %', seen; end if;
+  if seen ? 'settlementCron' or seen ? 'copy' or seen ? 'viewCountCron' or seen ? 'vote' then raise exception 'a setting that is not for the screens: %', seen; end if;
   if seen -> 'postsPerPage' is distinct from '20'::jsonb or seen -> 'registrationMode' is distinct from '"invite"'::jsonb or seen -> 'turnCooldown' is distinct from '{"unit": "day", "count": 30}'::jsonb then
     raise exception 'values are the settings'' own: %', seen;
   end if;

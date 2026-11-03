@@ -159,7 +159,7 @@ begin
   -- At one instant, the Turn's tally before the unmask it wrote, as they stand in the thread.
   if entry -> 'shown' is distinct from jsonb_build_array(
        jsonb_build_object('kind', 'reveal', 'act', unmasked ->> 'id', 'at', season_start + interval '1 day', 'class', 'alpha', 'via', 'act'),
-       jsonb_build_object('kind', 'turn', 'act', tally, 'at', told_at, 'was', 'alpha', 'since', season_start),
+       jsonb_build_object('kind', 'turn', 'act', tally, 'at', told_at, 'was', 'alpha'),
        jsonb_build_object('kind', 'reveal', 'act', (select id from acts where kind = 'unmask' and character = says and payload ->> 'via' = 'turn'), 'at', told_at, 'class', 'beta', 'via', 'turn')) then
     raise exception 'the reveal shows what its player made public in the season, dated, in order: %', entry -> 'shown';
   end if;

@@ -95,6 +95,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+/** A jsonb object of numbers by key (a ledger row's `params`, 0072), or null where it is none or holds anything else. */
+const numbers = (v: unknown): Readonly<Record<string, number>> | null =>
+  typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every((x) => typeof x === 'number' && Number.isFinite(x)) ? v as Record<string, number> : null;
 
 /** A row of account_preferences, or set_preferences' answer, in the screens' words; a column it lacks is its default. */
 function toPreferences(r: Row): Preferences {
@@ -910,8 +913,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async turnsAnnounced(chars) {
       if (chars.length === 0) return [];
-      const rows = await byChunks(chars, (part) => list(() => client.from('turns_announced').select('act,character,at,was,since').in('character', part).order('at', { ascending: true })));
-      return merged(rows, 'at', 'act').map((r): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null, since: r['since'] ?? null }));
+      const rows = await byChunks(chars, (part) => list(() => client.from('turns_announced').select('act,character,at,was').in('character', part).order('at', { ascending: true })));
+      return merged(rows, 'at', 'act').map((r): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null }));
     },
     async nextSettlementAt() {
       return str((await read(() => client.rpc('next_settlement_at'))).data);
@@ -1055,7 +1058,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
         };
         const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, caughtRows] = await Promise.all([
-          rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept'), 'ends_at',
+          rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
           rows(() => client.from('my_card_ledger').select('card,kind,act,price,at'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
@@ -1067,7 +1070,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         ]);
         const ledger = ledgerRows.map((r): LedgerRow => ({
           settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
-          character: r['character'], reason: r['reason'], amount: num(r['amount']),
+          character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
         }));
         const ids = [...new Set(ledger.map((l) => l.settlement))];
         /* Paged within each chunk of settlements, then merged in the read's own order. A settlement's rows all come from

@@ -29,7 +29,7 @@ const day: SettlementInput = {
 };
 
 /** A database that holds what has been settled, as apply_settlement() does. */
-function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = { economy: instance.settings.economy }, failInput: { at?: string } = {}, settledElsewhere: readonly string[] = [], outbox: { id: number; topic: string; event: string; payload: unknown }[] = []) {
+function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, unknown> = { economy: instance.settings.economy }, failInput: { at?: string; claim?: boolean } = {}, settledElsewhere: readonly string[] = [], outbox: { id: number; topic: string; event: string; payload: unknown }[] = []) {
   const settled = new Set<string>();
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
   let lastEnd: string | null = null;
@@ -45,6 +45,11 @@ function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, u
       if (fn === 'settlement_input') {
         if (failInput.at === String(args.window_start)) throw new DatabaseError('settlement_input: the connection dropped', '08006', 500);
         return { ...input, window: { ...input.window, from: Date.parse(String(args.window_start)), to: Date.parse(String(args.window_end)) } } as T;
+      }
+      // The run's claim on its window (0072): what a reveal reads while the run is under way.
+      if (fn === 'claim_settlement_window') {
+        if (failInput.claim) throw new DatabaseError('claim_settlement_window: the connection dropped', '08006', 500);
+        return null as T;
       }
       if (fn === 'instance_settings') return databaseSettings as T;
       if (fn === 'due_broadcasts') return outbox.slice(0, Number(args.most)) as T;
@@ -67,13 +72,38 @@ function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, u
   return { db, calls };
 }
 
+test('a run claims each window it settles, with the window\'s end, before it reads the window\'s input (#22)', async () => {
+  const { db, calls } = fakeDb();
+  await runSettlement(db, instance, new Date(TO + 24 * H).toISOString());
+  const seen = calls.filter((c) => c.fn === 'claim_settlement_window' || c.fn === 'settlement_input');
+  assert.deepEqual(seen.map((c) => [c.fn, c.fn === 'claim_settlement_window' ? c.args.window_end : c.args.window_end]), [
+    ['claim_settlement_window', new Date(TO).toISOString()], ['settlement_input', new Date(TO).toISOString()],
+    ['claim_settlement_window', new Date(TO + 24 * H).toISOString()], ['settlement_input', new Date(TO + 24 * H).toISOString()],
+  ]);
+});
+
+test('a claim that cannot be written fails the run before it reads or applies the window', async () => {
+  const { db, calls } = fakeDb(day, { economy: instance.settings.economy }, { claim: true });
+  await assert.rejects(runSettlement(db, instance, new Date(TO).toISOString()), /claim_settlement_window/);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'claim_settlement_window']);
+});
+
+test('each entry whose reason states a number is applied with the numbers it was settled under (#57)', async () => {
+  const lurking: SettlementInput = { ...day, acts: [...day.acts, ...[1, 2, 3, 4].map((n) => ({ id: `lp${n}`, character: 'de', kind: 'post' as const, at: FROM + (6 + n) * H, thread: 't' }))] };
+  const { db, calls } = fakeDb(lurking, { economy: { ...instance.settings.economy, 'lurker.postsAllowed': 2 } });
+  await runSettlement(db, instance, new Date(TO).toISOString());
+  const entries = calls.find((c) => c.fn === 'apply_settlement')!.args.entries as { reason: string; params?: unknown }[];
+  assert.deepEqual(entries.find((e) => e.reason === 'lurker.postedTooMuch')?.params, { 'lurker.postsAllowed': 2 });
+  assert.equal(entries.filter((e) => e.reason !== 'lurker.postedTooMuch').some((e) => 'params' in e), false, 'an entry whose reason states no number carries none');
+});
+
 test('a run settles the next window: reads its input, runs the instance\'s classes, applies their entries', async () => {
   const { db, calls } = fakeDb();
   const out = await runSettlement(db, instance, new Date(TO).toISOString());
   assert.equal(out.status, 'applied');
-  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement', 'next_settlement_window']);
+  assert.deepEqual(calls.map((c) => c.fn), ['next_settlement_window', 'claim_settlement_window', 'instance_settings', 'settlement_input', 'apply_settlement', 'next_settlement_window']);
   // With no sender, the outbox is not even claimed: a claim nobody sends would hold the rows for its lease (a run that sends comes after).
-  const apply = calls[3]!.args;
+  const apply = calls[4]!.args;
   assert.deepEqual(apply.entries, [
     // Heat: Cat's, Eve's and Fay's whole votes and half of Dee's; a shrug: the other half of Dee's.
     { player: 'bob', character: 'he', reason: 'heel.drewHeat', amount: 35 },

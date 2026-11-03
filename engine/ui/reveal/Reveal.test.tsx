@@ -34,14 +34,13 @@ describe('a character\'s post in the season\'s reveal', () => {
   test('the bar and its accessible description list each class its player made public, and their dates', async () => {
     show(reveal({
       shown: [
-        { kind: 'turn', act: 'x', at: OCT20, was: 'face', since: '2026-10-01T12:00:00Z' },
+        { kind: 'turn', act: 'x', at: OCT20, was: 'face' },
         { kind: 'reveal', act: 'y', at: OCT3, class: 'heel', via: 'act' },
       ],
     }));
     const bar = await screen.findByRole('img', { name: /Classes its player made public/u });
     const described = bar.getAttribute('aria-label')!;
     expect(described).toContain('Face');
-    expect(described).toContain('Oct 1');
     expect(described).toContain('Oct 20');
     expect(described).toContain('Heel');
     expect(described).toContain('Oct 3');
@@ -58,13 +57,21 @@ describe('a character\'s post in the season\'s reveal', () => {
     expect(post).not.toHaveTextContent(/Face|Heel/u);
   });
 
-  test('a Turn that named its old class is listed once, in the words of the bar', async () => {
-    show(reveal({ shown: [{ kind: 'turn', act: 'x', at: OCT20, was: 'face', since: '2026-10-01T12:00:00Z' }] }));
+  test('a Turn that named its old class is listed once, in the words of the bar: the class it left, as of the Turn', async () => {
+    show(reveal({ shown: [{ kind: 'turn', act: 'x', at: OCT20, was: 'face' }] }));
     const post = await screen.findByRole('region', { name: /in the season's reveal/u });
     expect(post).not.toHaveTextContent('Announced a Turn');
     const items = within(post).getAllByRole('listitem');
     expect(items).toHaveLength(1);
-    expect(items[0]).toHaveTextContent('Face, from Oct 1 until its Turn on Oct 20');
+    expect(items[0]).toHaveTextContent('Face, until its Turn on Oct 20');
+  });
+
+  test('a reveal written before #23 that still says since when a Turn\'s old class began never dates it', async () => {
+    show(reveal({ shown: [{ kind: 'turn', act: 'x', at: OCT20, was: 'face', since: '2026-10-01T12:00:00Z' }] }));
+    const post = await screen.findByRole('region', { name: /in the season's reveal/u });
+    expect(within(post).getAllByRole('listitem')[0]).toHaveTextContent('Face, until its Turn on Oct 20');
+    expect(post).not.toHaveTextContent('Oct 1 ');
+    expect(post).not.toHaveTextContent(/from Oct 1\b/u);
   });
 
   test('a silent-named Turn is one row: "A Turn on Oct 20"', async () => {
@@ -76,11 +83,11 @@ describe('a character\'s post in the season\'s reveal', () => {
     expect(post).not.toHaveTextContent('Announced a Turn');
   });
 
-  test('a reveal and a Turn that says the same class since the same day are one segment, not two', async () => {
+  test('a reveal and the Turn after it that says it left the same class are one segment, not two', async () => {
     show(reveal({
       shown: [
         { kind: 'reveal', act: 'y', at: '2026-10-01T12:00:00Z', class: 'face', via: 'act' },
-        { kind: 'turn', act: 'x', at: OCT20, was: 'face', since: '2026-10-01T12:00:00Z' },
+        { kind: 'turn', act: 'x', at: OCT20, was: 'face' },
       ],
     }));
     const bar = await screen.findByRole('img', { name: /Classes its player made public/u });
@@ -89,6 +96,20 @@ describe('a character\'s post in the season\'s reveal', () => {
     expect(described).toContain('Face');
     expect(described).toContain('Oct 20');
     expect(described.match(/Face/gu)).toHaveLength(1);
+  });
+
+  test('a reveal is one segment with the next Turn naming its class, never with one past an announced Turn between them', async () => {
+    show(reveal({
+      shown: [
+        { kind: 'reveal', act: 'y', at: '2026-10-01T12:00:00Z', class: 'face', via: 'act' },
+        { kind: 'turn', act: 'w', at: '2026-10-10T12:00:00Z', was: 'heel' },
+        { kind: 'turn', act: 'x', at: OCT20, was: 'face' },
+      ],
+    }));
+    const post = await screen.findByRole('region', { name: /in the season's reveal/u });
+    expect(within(post).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Face, revealed Oct 1', 'Heel, until its Turn on Oct 10', 'Face, until its Turn on Oct 20',
+    ]);
   });
 
   test('a character that made nothing public shows no class at all', async () => {

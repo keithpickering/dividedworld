@@ -28,8 +28,12 @@ export interface ClassLook {
   readonly color: string;
   /** A CSS background-image drawn over the color (a hatch, dots), or none. */
   readonly pattern?: string;
-  /** How the class earns and what hurts it, in plain words, for the class cards. */
-  readonly description: string;
+  /**
+   * How the class earns and what hurts it, in plain words, for the class cards, with the numbers in force written in (the core loop
+   * design, section 6, #57): `economy` is the instance's economy as the server holds it now (`economyNow`), so a number an admin has
+   * retuned is the one said.
+   */
+  readonly description: (economy: Readonly<Record<string, number>>) => string;
   /**
    * The class's marks on the reaction map, as the Turn board draws them on its class cards: the
    * quadrants it earns from (a plus), is hurt by (a minus), or earns by calling where a post ends up
@@ -229,10 +233,14 @@ export interface InstanceUi {
   /**
    * A ledger reason (a class's `face.cheered`) as one plain sentence for the player's own log,
    * saying what the character did or drew. The log prints the amount, and where a line has them
-   * the Act and the quadrant, beside it; a settled ledger row holds nothing more than its reason
-   * (supabase/migrations/0003_aura.sql), so the sentence never depends on more. Never who reacted.
+   * the Act and the quadrant, beside it. Never who reacted.
+   *
+   * `params` are the numbers the sentence states (the core loop design, section 6, #57): a settled
+   * line's own, which the settlement wrote into its ledger row (`ledger.params`, 0072), so a line
+   * settled before a retune says the numbers it was settled under; and, for a row with none and for
+   * the live estimate, the economy as the server holds it now (`economyNow`).
    */
-  readonly reasonWords: (reason: string) => string;
+  readonly reasonWords: (reason: string, params: Readonly<Record<string, number>>) => string;
   readonly copy: UiCopy;
   /** Each pip style's images, by key; `default` is always there. */
   readonly pips: Readonly<Record<string, PipImages>>;

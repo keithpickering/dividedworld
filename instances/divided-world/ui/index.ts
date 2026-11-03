@@ -16,6 +16,7 @@ import { hintWords } from './hint-words.ts';
 import { onboarding } from './onboarding.ts';
 import strategyGuide from '../guide/strategy-guide.md?raw';
 import { hints } from '../guide/hints.ts';
+import { defaults } from '../settings.ts';
 
 /** The font files, as URLs the bundler gives them, by their path under this folder. */
 const FONT_URLS = import.meta.glob<string>('./fonts/*.woff2', { query: '?url', import: 'default', eager: true });
@@ -35,26 +36,53 @@ const glass: GlassTheme = Object.freeze({
   ),
 });
 
-/** Each ledger reason, as the log says it: what the character did or drew, plainly. */
-const REASONS: Readonly<Record<string, string>> = {
+/** A count in words, as the classes' words say one: one to twenty spelled out, and any other number in figures. */
+const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
+  'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+const count = (n: number) => (Number.isInteger(n) && n >= 0 && n <= 20 ? COUNTS[n]! : String(n));
+/* A number the words state, from the numbers they are told, or the compiled default where they are told none. */
+const num = (n: Readonly<Record<string, number>>, key: string) => n[key] ?? defaults.economy[key]!;
+const timesADay = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${count(n)} times`);
+
+/** Each ledger reason, as the log says it: what the character did or drew, plainly, with the numbers it was settled under. */
+const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, number>>) => string)>> = {
   'face.cheered': 'Cheered: excited, positive reactions to its posts and cards',
   'face.liftedAPost': 'Lifted a post: the cheers a post drew after its Sweet card landed there',
   'face.boredTheRoom': 'Bored the room: bored, negative reactions to its posts and cards',
-  'face.stoleThunder': 'Stole the thunder: its card on another\'s post drew more than the post',
+  'face.stoleThunder': 'Stole the thunder: its card on another\'s post drew more votes than the post this window',
   'heel.drewHeat': 'Drew heat: excited, negative reactions to its posts and cards',
-  'heel.stoleThunder': 'Stole the thunder: its Salty card on another\'s post drew more than the post',
+  'heel.stoleThunder': 'Stole the thunder: its Salty card on another\'s post drew more votes than the post this window',
   'heel.shrugged': 'Shrugged off: calm, positive reactions to its posts and cards',
   'jabroni.drewTheGroan': 'Drew the groan: bored, negative reactions to its posts and cards',
   'jabroni.soldTheL': 'Sold the L: a Salty card another player landed on its post',
   'jabroni.takenSincerely': 'Taken sincerely: excited, positive reactions to its posts and cards',
   'lurker.calledIt': 'Called it: among the first to react to a post that then drew a crowd its way',
-  'lurker.spunAThread': 'Spun a thread: a thread it spun from another\'s Act drew three other repliers',
+  'lurker.spunAThread': (n) => {
+    const k = num(n, 'lurker.spunThreadRepliers');
+    return `Spun a thread: a thread it spun from another's Act drew ${count(k)} other replier${k === 1 ? '' : 's'}`;
+  },
   'lurker.cardDrew': 'Its card drew: reactions to a card it played',
-  'lurker.postedTooMuch': 'Posted too much: a post past three in one day',
+  'lurker.postedTooMuch': (n) => {
+    const k = num(n, 'lurker.postsAllowed');
+    return k === 0 ? 'Posted too much: any post at all, since none are free' : `Posted too much: a post past ${count(k)} in one day`;
+  },
   'technician.respected': 'Respected: calm, positive reactions to its posts and cards',
   'technician.evergreen': 'Evergreen: calm, positive reactions that came or went on an older post of its own',
   'technician.draggedIn': 'Dragged in: excited, negative reactions to its posts and cards',
 };
+
+/** Every reason this instance's classes write, for the test that holds their words to the numbers in force. */
+export const REASON_KEYS: readonly string[] = Object.freeze(Object.keys(REASONS));
+
+/**
+ * The economy keys each class description (by class key) and each reason states, so a test can retune them and see the number
+ * in force said (the core loop design, section 6, #57). A word that states a number declares at least one key here.
+ */
+export const wordsRead: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  lurker: ['lurker.postsAllowed'],
+  'lurker.spunAThread': ['lurker.spunThreadRepliers'],
+  'lurker.postedTooMuch': ['lurker.postsAllowed'],
+});
 
 export const instanceUi: InstanceUi = Object.freeze({
   themes: Object.freeze([{ key: 'house', name: 'House (black and white)', href: theme, modes: 'both' as const }]),
@@ -75,13 +103,16 @@ export const instanceUi: InstanceUi = Object.freeze({
   // Placeholder looks; each class's look on the reveal's bar is the owner's to give. The marks are the Turn board's.
   // Written in the classes' order (classes/index.ts).
   classLooks: Object.freeze<Record<string, ClassLook>>({
-    face: { color: '#2e86de', description: 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } },
-    heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on. Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
-    jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts. Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
-    technician: { color: '#1e8449', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: 'The respected regular. Earns from calm, positive reactions to its posts and cards, and more when an old post of its own still draws them. Hurt by heat: excited, negative reactions.', marks: { label: 'Earns from the calm, hurt by heat', earns: ['calmPositive'], hurts: ['excitedNegative'] } },
-    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: 'Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards. Hurt by posting more than three times a day.', marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
+    face: { color: '#2e86de', description: () => 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there. Hurt by bored reactions, and by a card that outdraws the post it was played on.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } },
+    heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on. Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
+    jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts. Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
+    technician: { color: '#1e8449', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'The respected regular. Earns from calm, positive reactions to its posts and cards, and more when an old post of its own still draws them. Hurt by heat: excited, negative reactions.', marks: { label: 'Earns from the calm, hurt by heat', earns: ['calmPositive'], hurts: ['excitedNegative'] } },
+    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: (e) => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards. Hurt by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${timesADay(num(e, 'lurker.postsAllowed'))} a day`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
   }),
-  reasonWords: (reason: string) => REASONS[reason] ?? `Settled under "${reason}"`,
+  reasonWords: (reason: string, params: Readonly<Record<string, number>>) => {
+    const w = REASONS[reason];
+    return w === undefined ? `Settled under "${reason}"` : typeof w === 'string' ? w : w(params);
+  },
   copy: Object.freeze({
     siteName: 'Divided World',
     siteTagline: 'dw.gripe',

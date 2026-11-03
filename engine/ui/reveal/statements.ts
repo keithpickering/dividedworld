@@ -3,7 +3,9 @@
  * list ("A response never proves a private fact": a player may make one of their own private facts
  * public, as of its date, and nothing else about it is). A statement is a reveal ("Heel, as of
  * Oct 3") or a Turn announced with its old class ("Face, until its Turn on Oct 20"); a Turn that
- * named no class is still listed, and names none here.
+ * named no class is still listed, and names none here. A Turn says the class it left as of the
+ * Turn, never since when (#23): since when could date a silent Turn before it, so a `since` a
+ * reveal written before 0072 still carries is not read.
  */
 import { shortDate } from '../postbit/dates.ts';
 
@@ -13,8 +15,6 @@ export interface Statement {
   readonly class: string | null;
   /** When the statement was made; a Turn's `until` is this. */
   readonly at: string;
-  /** For a Turn that named its old class: since when the character had been it, when that was said. */
-  readonly since: string | null;
   /** For a reveal that a later Turn announced it had left: the Turn's date (the two are one statement of one stretch). */
   readonly until?: string;
 }
@@ -32,28 +32,28 @@ export function statements(shown: unknown): readonly Statement[] {
     if (at === null || Number.isNaN(Date.parse(at))) continue;
     if (row.kind === 'reveal') {
       const cls = text(row.class);
-      if (cls !== null) out.push({ kind: 'reveal', class: cls, at, since: null });
+      if (cls !== null) out.push({ kind: 'reveal', class: cls, at });
     } else if (row.kind === 'turn') {
-      out.push({ kind: 'turn', class: text(row.was), at, since: text(row.since) });
+      out.push({ kind: 'turn', class: text(row.was), at });
     }
   }
-  /* A reveal made during the stretch a Turn then says it ended is the same statement of the same class: one entry, not two. */
+  /* A reveal made during the stretch a Turn then says it ended is the same statement of the same class: one entry, not two. The
+     stretch is what is public of it: from the character's announced Turn before this one, or from the start, to this Turn. */
   const merged: Statement[] = [];
   const used = new Set<Statement>();
   for (const t of out) {
     if (t.kind !== 'turn' || t.class === null) continue;
-    const from = t.since === null ? -Infinity : Date.parse(t.since);
+    const from = Math.max(-Infinity, ...out.filter((x) => x.kind === 'turn' && Date.parse(x.at) < Date.parse(t.at)).map((x) => Date.parse(x.at)));
     const r = out.find((x) => x.kind === 'reveal' && !used.has(x) && x.class === t.class && Date.parse(x.at) >= from && Date.parse(x.at) <= Date.parse(t.at));
     if (r) { used.add(r); used.add(t); merged.push({ ...r, until: t.at }); }
   }
   const rest = [...out.filter((x) => !used.has(x)), ...merged];
-  const speaks = (s: Statement) => Date.parse(s.kind === 'turn' && s.since !== null ? s.since : s.at);
-  return rest.sort((a, b) => speaks(a) - speaks(b) || Date.parse(a.at) - Date.parse(b.at));
+  return rest.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
-/** One statement in words: "Heel, revealed Oct 3", "Face, from Oct 1 until its Turn on Oct 20", "a Turn on Oct 20". */
+/** One statement in words: "Heel, revealed Oct 3", "Face, until its Turn on Oct 20", "a Turn on Oct 20". */
 export function wording(s: Statement, className: (key: string) => string): string {
   if (s.kind === 'reveal') return `${className(s.class!)}, revealed ${shortDate(s.at)}${s.until ? `, until its Turn on ${shortDate(s.until)}` : ''}`;
   if (s.class === null) return `a Turn on ${shortDate(s.at)}`;
-  return `${className(s.class)}, ${s.since ? `from ${shortDate(s.since)} ` : ''}until its Turn on ${shortDate(s.at)}`;
+  return `${className(s.class)}, until its Turn on ${shortDate(s.at)}`;
 }

@@ -17,6 +17,7 @@ const words: Words = {
   instance: testInstance,
   ui: { reasonWords: (r) => ({ 'heel.drewHeat': 'Drew heat: x', 'face.cheered': 'Cheered: y' } as Record<string, string>)[r] ?? r, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, cards: [], copy: { siteName: '', siteTagline: '', shopName: 'Shop', reducedMotionCard: '' } },
   postsPerPage: 20,
+  economy: {},
 };
 const data = (over: Partial<LogData>): LogData => ({
   log: empty, mine: [], estimate: null, standings: {}, season: null, turns: [], acts: new Map(), names: new Map(), titles: new Map(), states: new Map(), ...over,
@@ -53,7 +54,7 @@ describe('a Turn that took effect', () => {
   test('names the old class the announcement said, over the class the window\'s reasons name', () => {
     const p = char('p', 'Pipewrench', 'face', at);
     const log = { ...empty, settlements: [settled(1, at, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }])] };
-    const turns: TurnAnnounced[] = [{ act: 't', character: 'p', at, was: 'lurker', since: null }];
+    const turns: TurnAnnounced[] = [{ act: 't', character: 'p', at, was: 'lurker' }];
     expect(turnsTaken(data({ log, mine: [p], turns }), testInstance).get(1)).toEqual([{ character: 'p', classNow: 'face', classWas: 'lurker', announced: turns[0] }]);
     expect(turnsTaken(data({ log, mine: [p] }), testInstance).get(1)![0]!.classWas).toBe('heel');
   });

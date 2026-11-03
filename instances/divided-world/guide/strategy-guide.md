@@ -52,6 +52,8 @@ Aura is the score and the money, counted in **orbs**. It comes mostly from other
 
 Aura doesn't land the moment somebody reacts. It lands at the **settlement**. Settlements are {{setting:settlementLength}} apart. In between, your orbs show a hatched **ghost**: an estimate of where the reactions so far are taking you. Think of it as a forecast, and of the settlement as what actually happened. The first time you load the board after a settlement that moved your Aura, a summary opens by itself.
 
+The forecast always says **up to**, because it can count reactions the settlement won't. It leaves out only your own reactions to your own characters, and it counts every other reaction as if anybody could have left it, while the settlement never pays a player for reacting to their own characters. It also skips the shared vote and the halving. The settlement is exact.
+
 ### Your log
 
 **My log** is the honest record. It's grouped by settlement and lists every line that moved your Aura: which Act did it, which corner of the grid, and how much, in plain words. It never says who reacted. If you ever wonder whether something was done to you or just said to you, the log is the answer.
@@ -95,7 +97,7 @@ A played card is an Act of its own. It shows on the post as a **mark**. Press th
 
 A plus after a price means that playing the card on a long post costs more; the Vending Machine tells you how much. Three words on every card are worth knowing:
 
-- **Sweet, Salty, Pepperoni.** Sweet helps the post or character it lands on, Salty gets in its way, and Pepperoni depends entirely on context.
+- **Sweet, Salty, Pepperoni.** Sweet helps the post or character it lands on, Salty gets in its way, and Pepperoni depends entirely on context. At the settlement, a Pepperoni card turns out Sweet or Salty depending on how the room reacted to it. The room is everybody except whoever cast it and, for a card on a post, whoever wrote that post.
 - **Cast, Use, Set.** To cast a card is to play it on a target, to use it is to play it on your own post, and to set it is to play it face down on your own post, where everyone sees the same card back.
 - **Rarity.** Common, uncommon, rare or legendary. The rarer a card, the further it can reach beyond a single post.
 

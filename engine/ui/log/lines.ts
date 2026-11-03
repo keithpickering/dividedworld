@@ -23,6 +23,7 @@ import type { Instance } from '../../rules/types.ts';
 import type { Act, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
+import { paramsOf } from '../economy.ts';
 import type { InstanceUi } from '../types.ts';
 
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
@@ -74,6 +75,8 @@ export interface Words {
   readonly instance: Instance;
   readonly ui: Pick<InstanceUi, 'reasonWords' | 'quadrantLabels' | 'cards' | 'copy'>;
   readonly postsPerPage: number;
+  /** The economy as the server holds it now (`economyNow`): the numbers a line with none of its own is said with. */
+  readonly economy: Readonly<Record<string, number>>;
 }
 
 const MINUS = '\u2212';
@@ -236,7 +239,7 @@ export function inOrder(lines: readonly LogLine[]): LogLine[] {
 
 /** The words of one character's lines in a settlement, as the board's row says them: "drew heat +0.20, stole thunder +0.20". */
 function scoredWords(lines: readonly LogLine[], words: Words): string {
-  return inOrder(lines).map((l) => `${lowerFirst(reasonName(words.ui.reasonWords(l.reason)))} ${signed(l.amount)}`).join(', ');
+  return inOrder(lines).map((l) => `${lowerFirst(reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy))))} ${signed(l.amount)}`).join(', ');
 }
 
 /**
@@ -510,7 +513,8 @@ function estimateWords(l: EstimateLine, data: LogData, words: Words, tab: Id | n
     const label = words.ui.quadrantLabels[l.quadrant];
     return [`${who}${withArticle(label).replace(/^a/u, 'A')} reaction on `, link, `.${after}`];
   }
-  return [`${who}${words.ui.reasonWords(l.reason)}.${after}`];
+  // The live estimate has no ledger row: it is said with the numbers in force, which it ran on.
+  return [`${who}${words.ui.reasonWords(l.reason, words.economy)}.${after}`];
 }
 
 /** The Acts the log's lines name: every share's, every estimate line's, every announcement's and every card line's; then the posts the card plays among them landed on. */

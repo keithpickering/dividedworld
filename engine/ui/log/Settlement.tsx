@@ -36,6 +36,7 @@ import { pageOf, threadHref } from '../thread/pages.ts';
 import { heldBack, inOrder, plain, rankChanges, scoredAs, signed, turnsTaken, utcDay, utcWhen, type LogData, type Words } from './lines.ts';
 import { tabsOf, type LogOpening } from './Log.tsx';
 import { useLog } from './useLog.ts';
+import { economyNow, paramsOf } from '../economy.ts';
 import './settlement.css';
 
 /** The character whose tab the summary shows: the one picked, else the first with a line in the newest settlement, else the first. */
@@ -48,7 +49,7 @@ function shownTab(data: LogData, tab: Id | null) {
 /** The summary of the newest settlement in `data`, for one character's tab: the ready state's content, inside the page's ways out. */
 export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly tab: Id | null; readonly onTab: (tab: Id) => void }) {
   const { instance, ui, settings } = useKayfa();
-  const words: Words = { instance, ui, postsPerPage: settings.postsPerPage };
+  const words: Words = { instance, ui, postsPerPage: settings.postsPerPage, economy: economyNow(instance.settings, settings.economy) };
   const s = data.log.settlements[0]!;
   const tabs = tabsOf(data);
   const current = shownTab(data, tab);
@@ -103,7 +104,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
                 <ul className="kb-settled-lines" aria-labelledby="kb-settled-why">
                   {lines.map((l) => (
                     <li key={l.reason} className="kb-settled-line">
-                      <span data-kb-reason="">{ui.reasonWords(l.reason)}</span>
+                      <span data-kb-reason="">{ui.reasonWords(l.reason, paramsOf(l, words.economy))}</span>
                       <span className="kb-settled-amount" data-kb-amount="" data-kb-sign={Math.sign(l.amount)}>{signed(l.amount)}</span>
                     </li>
                   ))}

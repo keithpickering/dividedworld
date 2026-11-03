@@ -56,6 +56,8 @@ export interface LedgerEntry {
   readonly character: string;
   readonly reason: string;
   readonly amount: number;
+  /** The numbers its reason's words state, as the earnings it sums were settled under (Earning.params); absent where they name none. */
+  readonly params?: Readonly<Record<string, number>>;
 }
 
 /** What the owner's log shows of an entry: which Act, which quadrant, how much, in whole hundredths that add up to the entry. */
@@ -302,17 +304,27 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   /* The alignment each play reads as this window (the Autocorrect design, section 8): a Pepperoni card's by the lean of the
      votes on it here, each a share of one vote, positive quadrants against negative, tidied as every sum is; a tie stays
      Pepperoni. They are the votes `votesOn` counts as the card's draw: other players' and staff's. A player's votes on their own
-     Acts are never paid (payVotes), and the owner check below says so again, as `targetAfter`'s does. A play from an earlier
+     Acts are never paid (payVotes), and the owner check below says so again, as `targetAfter`'s does. The room that decides is
+     everyone but the two players the card is between (the core loop design, section 2, #170): the caster's player and the target
+     post's author's player, so neither tips it with a second mask. A staff post (`unscored`) has no author player, and only the
+     caster's is left out. In the live estimate the only owner this can recognize is the caller (estimate_input keys every other
+     reaction per mask), so the estimate's lean can differ from the settled one; the settlement is exact. A play from an earlier
      window reads by this window's votes, so one the room has stopped reacting to stays Pepperoni here. */
   const readsAsOf = new Map<string, Alignment>();
-  const readsAs = (a: { id: string; character: string; card?: string }): Alignment => {
+  const readsAs = (a: { id: string; character: string; card?: string; target?: string }): Alignment => {
     const own = alignmentOf.get(a.card!)!;
     if (own !== 'pepperoni') return own;
     let known = readsAsOf.get(a.id);
     if (known) return known;
     const player = playerOf(a.character);
+    /* The target's author, where the input holds the target. An earlier window's play is read here for the holder below, and its
+       target can be absent (a staff post an earlier card landed on, or the post of an earlier card that is in the input only because
+       it was reacted to): then no window play shares that target, so no window play ever looks its key up, and nothing here may
+       throw on it. */
+    const target = a.target === undefined || unscored.has(a.target) ? undefined : acts.get(a.target);
+    const author = target ? playerOf(target.character) : undefined;
     let lean = 0;
-    for (const v of windowVotesOn.get(a.id) ?? []) if (v.owner !== player) lean += (v.quadrant === 'excitedPositive' || v.quadrant === 'calmPositive' ? 1 : -1) * v.share;
+    for (const v of windowVotesOn.get(a.id) ?? []) if (v.owner !== player && v.owner !== author) lean += (v.quadrant === 'excitedPositive' || v.quadrant === 'calmPositive' ? 1 : -1) * v.share;
     known = tidy(lean) > 0 ? 'sweet' : tidy(lean) < 0 ? 'salty' : 'pepperoni';
     readsAsOf.set(a.id, known);
     return known;
@@ -370,7 +382,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   }
 
   /* ---- each class's rules, stretch by stretch ---- */
-  type Contribution = Detail & { class: string };
+  type Contribution = Detail & { class: string; params?: Readonly<Record<string, number>> };
   const contributions: Contribution[] = [];
   for (const c of characters.values()) {
     for (const stretch of stretchesOf(c)) {
@@ -394,7 +406,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
-        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}) });
+        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}) });
       }
     }
   }
@@ -410,7 +422,8 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     return [...out.entries()].sort((a, b) => cmp(a[0], b[0]));
   };
   const entries: LedgerEntry[] = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}`)
-    .map(([, { first, amount }]) => ({ window: window.id, player: first.player, character: first.character, reason: first.reason, amount: round(amount) }))
+    /* An entry's numbers are its first earning's: one window settles under one set of settings, so its earnings of one reason agree. */
+    .map(([, { first, amount }]) => ({ window: window.id, player: first.player, character: first.character, reason: first.reason, amount: round(amount), ...(first.params ? { params: first.params } : {}) }))
     .filter((e) => e.amount !== 0);
   /* Each entry's detail, in whole hundredths that add up to the entry exactly: the log names
      which Act moved how much, and its lines never disagree with the ledger ("The fiction may

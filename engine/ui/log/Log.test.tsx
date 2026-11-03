@@ -121,6 +121,24 @@ describe('My log', () => {
     expect(bodyRows().map(cells)[0]![2]).toMatch(/^Scored as a Heel for Oct 28: drew heat \+0\.20, stole the thunder \+0\.20, shrugged off −0\.05\./u);
   });
 
+  test('says a settled line with the numbers it was settled under, and a line with none with the numbers in force (#57)', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
+    fake.seed.settle({ at: at(28, 8, 17), ledger: [{ character: pipe, reason: 'heel.postedTooMuch', amount: -10, params: { 'heel.postsAllowed': 4 } }] });
+    fake.seed.settle({ at: at(29, 8, 17), ledger: [{ character: pipe, reason: 'heel.postedTooMuch', amount: -10 }] });
+    fake.signInAs(me);
+    localStorage.clear();
+    localStorage.setItem(hudKey(me), pipe);
+    renderIn(fake, <LogScreen />, { path: '/log', settings: { economy: { 'heel.postsAllowed': 3 } } });
+    await screen.findByRole('table');
+    const [newer, older] = await screen.findAllByRole('button', { name: 'Show posts' });
+    await userEvent.click(older!);
+    await userEvent.click(newer!);
+    const said = [...document.querySelectorAll('.kb-log-reason [data-kb-reason]')].map((e) => e.textContent);
+    expect(said).toEqual(['Posted too much: a post past three in one day', 'Posted too much: a post past four in one day']);
+  });
+
   test('puts the open window\'s estimate first, labeled as one, with "up to" and no reactor', async () => {
     const { fake, me, hoo } = world();
     open(fake, me, hoo);

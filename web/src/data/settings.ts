@@ -26,4 +26,6 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   toastDefaults: defaults.toastDefaults,
   /* None held: every price is the compiled economy's until the view says otherwise. */
   cardEconomy: {},
+  /* None held: every class's numbers are the compiled economy's until the view says otherwise. */
+  economy: {},
 });

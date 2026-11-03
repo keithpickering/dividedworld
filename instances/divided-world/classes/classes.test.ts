@@ -300,6 +300,14 @@ test('a Lurker\'s fourth post costs', () => {
   assert.equal(settle(posts, world).entries.find((e) => e.reason === 'lurker.postedTooMuch')?.amount, -10);
 });
 
+test('a Lurker\'s entries whose words state a number carry the number they were settled under (#57)', () => {
+  const b = board();
+  const posts: SettlementInput = { ...b, acts: [...b.acts, ...[1, 2, 3, 4].map((n) => ({ id: `lp${n}`, character: 'lu', kind: 'post' as const, at: (5 + n) * H, thread: 't' }))] };
+  assert.deepEqual(settle(posts, world).entries.find((e) => e.reason === 'lurker.postedTooMuch')?.params, { 'lurker.postsAllowed': 3 });
+  const tuned = { ...world, settings: { ...world.settings, economy: { ...world.settings.economy, 'lurker.postsAllowed': 2 } } };
+  assert.deepEqual(settle(posts, tuned).entries.find((e) => e.reason === 'lurker.postedTooMuch')?.params, { 'lurker.postsAllowed': 2 });
+});
+
 test('reactions to a card count for the card\'s player under whichever class they hold', () => {
   const asHeel = settle(board('heel'), world);
   // The card's player is now a Heel: the fire and the zzz on its card are not heat and pay nothing,
@@ -398,7 +406,7 @@ test('a Lurker is never paid for a reaction with no rank', () => {
 test('the estimate hangs a lifted post on the votes the lift counts, after the card, never on the card\'s own', () => {
   const H = 3_600_000;
   const FROM = 100 * H;
-  const lines = estimateForOwner({
+  const input = {
     window: { id: 'w', from: FROM, to: FROM + 24 * H },
     characters: [
       { id: 'ann-face', player: 'ann', classes: [{ class: 'face', from: 0 }] },
@@ -407,22 +415,31 @@ test('the estimate hangs a lifted post on the votes the lift counts, after the c
       { id: 'dee-1', player: 'dee', classes: [{ class: 'heel', from: 0 }] },
     ],
     acts: [
-      { id: 'p', character: 'bob-1', kind: 'post', at: FROM + 1 * H, thread: 't' },
-      { id: 'card', character: 'ann-face', kind: 'card', at: FROM + 2 * H, thread: 't', target: 'p', card: 'stick-around' },
+      { id: 'p', character: 'bob-1', kind: 'post' as const, at: FROM + 1 * H, thread: 't' },
+      { id: 'card', character: 'ann-face', kind: 'card' as const, at: FROM + 2 * H, thread: 't', target: 'p', card: 'stick-around' },
     ],
     reactions: [
       // Before Ann's card, Dee's cheer on the post lifts nothing; after it, Cat's does.
       { act: 'p', player: 'cat', character: 'cat-1', kind: 'fire', at: FROM + 3 * H },
       { act: 'p', player: 'dee', character: 'dee-1', kind: 'fire', at: FROM + 1.5 * H },
-      // Neither Bob's own cheer on his post nor one at the card's very instant lifts it: settle
+      // Neither Bob's own cheer on his post nor one at the card's very instant lifts it, read as the settlement reads them: settle
       // counts neither, so no line hangs on them.
       { act: 'p', player: 'bob', character: 'bob-1', kind: 'fire', at: FROM + 4 * H },
       { act: 'p', player: 'dee', character: 'dee-1', kind: 'fire', at: FROM + 2 * H },
       // Dee also cheers Ann's card itself, which is the card's draw, not the post's lift.
       { act: 'card', player: 'dee', character: 'dee-1', kind: 'fire', at: FROM + 9 * H },
     ],
-  }, instance, 'ann').lines;
-  assert.deepEqual(lines.filter((l) => l.reason === 'face.liftedAPost').map((l) => [l.act, l.at, l.amount]), [['card', FROM + 3 * H, 10]]);
+  };
+  const lifts = (i: typeof input) => estimateForOwner(i, instance, 'ann').lines.filter((l) => l.reason === 'face.liftedAPost').map((l) => [l.act, l.at, l.amount]);
+  assert.deepEqual(lifts(input), [['card', FROM + 3 * H, 10]]);
+  // The estimate's own input (estimate_input) keys every reaction but the caller's by its mask, so Bob's cheer on his own post is
+  // anyone's there, and lifts the card: the live estimate counts what the settlement will not (the core loop design, section 1).
+  const asEstimated = {
+    ...input,
+    characters: [...input.characters, { id: 'mask-b', player: 'key-b', classes: [] }],
+    reactions: input.reactions.map((r) => (r.player === 'bob' ? { ...r, player: 'key-b', character: 'mask-b' } : r)),
+  };
+  assert.deepEqual(lifts(asEstimated), [['card', FROM + 3 * H, 10], ['card', FROM + 4 * H, 10]]);
 });
 
 test('the estimate shows a Lurker\'s call on the Lurker\'s own reaction, whole, never apportioned over the crowd', () => {
@@ -549,6 +566,18 @@ test('settled whole: a Pepperoni card drawing groans on a Jabroni\'s post sells 
   const sold = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.character === 'ja' && e.reason === 'jabroni.soldTheL').length;
   assert.equal(sold(settle(onJa('zzz'), pepWorld)), 1);
   assert.equal(sold(settle(onJa('fire'), pepWorld)), 0);
+});
+test('settled whole: a Jabroni\'s own second mask groaning at a Pepperoni card on the Jabroni\'s post sells no L (#170)', () => {
+  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const pepWorld = { ...world, cards: [...world.cards, pep] };
+  const b = board();
+  const r = settle({
+    ...b,
+    characters: [...b.characters, { id: 'ja2', player: 'pj', classes: [{ class: 'face', from: -1 }] }],
+    acts: [...b.acts, { id: 'jp', character: 'ja', kind: 'post', at: 5 * H, thread: 't' }, { id: 'kp', character: 'he', kind: 'card', at: 6 * H, thread: 't', target: 'jp', card: 'pep' }],
+    reactions: [...b.reactions, { act: 'kp', player: 'pj', character: 'ja2', kind: 'zzz', at: 7 * H }],
+  }, pepWorld);
+  assert.equal(r.entries.filter((e) => e.character === 'ja' && e.reason === 'jabroni.soldTheL').length, 0);
 });
 test('a Pepperoni card that stayed Pepperoni (a tie) lifts nothing for a Face', () => {
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'pepperoni', readsAs: 'pepperoni', targetAfter: { ...none, excitedPositive: 2 } })] }), 'face.liftedAPost'), 0);

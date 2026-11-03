@@ -4,7 +4,6 @@
  * a Turn names its old class only if it was announced with it ("A response never proves a private fact").
  */
 import type { Act, ClassReveal, Id, KayfaApi, TurnAnnounced } from '../data/api.ts';
-import { shortDate } from '../postbit/dates.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 
 export type RecordKind = 'all' | 'post' | 'spin' | 'card' | 'class' | 'seasons';
@@ -90,7 +89,7 @@ export function seasonRow(a: Act, w: Words): RecordRow {
 }
 
 export function turnRow(t: TurnAnnounced, w: Words, links: ReadonlyMap<Id, string> = new Map()): RecordRow {
-  const was = t.was ? ` from ${w.className(t.was)}${t.since ? ` (since ${shortDate(t.since)})` : ''}` : '';
+  const was = t.was ? ` from ${w.className(t.was)}` : '';
   return { key: `${t.act}-turn`, at: t.at, text: `Announced a Turn${was}`, href: links.get(t.act) ?? null };
 }
 

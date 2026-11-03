@@ -10,6 +10,8 @@ import { psqlDb, sql } from './psql-db.ts';
 import { instanceSeed } from '../../functions/_shared/seed.ts';
 import { instance } from '../../functions/_shared/instance.ts';
 import { estimateForOwner } from '../../../engine/rules/settle.ts';
+import { runEstimate } from '../../functions/estimate/core.ts';
+import type { Db } from '../../functions/_shared/rpc.ts';
 import type { SettlementInput } from '../../../engine/rules/types.ts';
 
 test('the scoped estimate is the whole window\'s, filtered to the player, and names nobody else', async () => {
@@ -83,9 +85,23 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
   const until = at(24);
   const full = JSON.parse(sql(`select settlement_input('${start}', '${until}')`)) as SettlementInput;
   const scoped = JSON.parse(sql(`select estimate_input('${ids['est-ann']}', '${until}')`)) as SettlementInput & { player: string };
-  const fromFull = estimateForOwner(full, instance, ids['est-ann']);
+  // The estimate leaves out only Ann's own reactions to her own masks, and counts every other as anyone's (the core loop design,
+  // section 1): so the whole window's input is read in the estimate's shape, each reaction of another player's keyed by its mask,
+  // which ties it to no author. Read as the settlement reads it, Bob's own Shadow on Bob's post is never counted.
+  const asAnyone = (i: SettlementInput, caller: string): SettlementInput => {
+    const others = i.reactions.filter((r) => r.player !== caller);
+    return {
+      ...i,
+      characters: [...i.characters, ...[...new Set(others.map((r) => r.character))].map((m) => ({ id: `mask:${m}`, player: `mask:${m}`, classes: [] }))],
+      reactions: i.reactions.map((r) => (r.player === caller ? r : { ...r, player: `mask:${r.character}`, character: `mask:${r.character}` })),
+    };
+  };
+  const fromFull = estimateForOwner(asAnyone(full, ids['est-ann']), instance, ids['est-ann']);
   const fromScoped = estimateForOwner(scoped, instance, scoped.player);
   assert.ok(fromFull.lines.length > 3, JSON.stringify(fromFull));
+  const settled = estimateForOwner(full, instance, ids['est-ann']);
+  const lifted = (e: typeof fromFull) => e.lines.filter((l) => l.reason === 'face.liftedAPost' && l.act === card).reduce((n, l) => n + l.amount, 0);
+  assert.equal(lifted(fromFull) - lifted(settled), 10, 'Bob\'s Shadow on Bob\'s post lifts Ann\'s card in the estimate, and is not counted as the settlement reads it');
   // Every read of estimate_input's has a reason behind it here, so dropping one changes the estimate.
   const reasons = fromFull.lines.map((l) => l.reason);
   for (const reason of ['lurker.calledIt', 'jabroni.soldTheL', 'face.liftedAPost']) assert.ok(reasons.includes(reason), `${reason} is estimated: ${JSON.stringify(reasons)}`);
@@ -104,4 +120,40 @@ test('the scoped estimate is the whole window\'s, filtered to the player, and na
   const keys = (i: SettlementInput) => new Set(i.reactions.map((r) => r.player));
   assert.equal([...keys(again)].filter((k) => keys(scoped).has(k)).length, 0, 'no key is shared across two answers');
   assert.deepEqual(estimateForOwner(again, instance, again.player), fromScoped);
+});
+
+test('a reaction to another\'s card on a third player\'s post is estimated, through the estimate function (#137)', async () => {
+  const db = psqlDb();
+  await db.rpc('seed_instance', { payload: instanceSeed(instance) });
+  // The window opens where the history ends, which an earlier file's settlement can put anywhere: the function's read of the
+  // window is asked up to a day past it, as the first test asks it, and everything else is the function's own.
+  const start = Date.parse(sql(`select to_jsonb(coalesce(max(ends_at), (select min(starts_at) from seasons)))#>>'{}' from settlements`));
+  const at = (minutes: number) => new Date(start + minutes * 60_000).toISOString();
+  const service: Db = { rpc: (fn, args) => db.rpc(fn, fn === 'estimate_input' ? { ...args, until: at(24 * 60) } : args) };
+  const ids = JSON.parse(sql(`
+    with u as (insert into auth.users (email) values ('est137-q@test.invalid'), ('est137-z@test.invalid'), ('est137-c@test.invalid'), ('est137-d@test.invalid'), ('est137-e@test.invalid') returning id, email),
+    a as (insert into accounts (id) select id from u returning id)
+    select json_object_agg(split_part(email, '@', 1), id) from u`));
+  const c = JSON.parse(sql(`
+    with c as (insert into characters (owner, name, created_at, debuted_at) values
+      ('${ids['est137-q']}', 'Est137 Q', '${at(-48 * 60)}', '${at(-48 * 60)}'),
+      ('${ids['est137-z']}', 'Est137 Z', '${at(-48 * 60)}', '${at(-48 * 60)}'),
+      ('${ids['est137-c']}', 'Est137 C', '${at(-48 * 60)}', '${at(-48 * 60)}'),
+      ('${ids['est137-d']}', 'Est137 D', '${at(-48 * 60)}', '${at(-48 * 60)}'),
+      ('${ids['est137-e']}', 'Est137 E', '${at(-48 * 60)}', '${at(-48 * 60)}') returning id, name),
+    h as (insert into class_history (character, class_key, started_at)
+      select id, case when name = 'Est137 C' then 'lurker' else 'face' end, '${at(-48 * 60)}' from c returning 1)
+    select json_object_agg(name, id) from c`));
+  const thread = sql(`insert into threads (board, title) select id, 'Estimated 137' from boards where slug = 'general' returning id`);
+  const zp = sql(`insert into acts (character, kind, thread, payload, created_at) values ('${c['Est137 Z']}', 'post', '${thread}', '{"body": "x"}', '${at(1)}') returning id`);
+  const card = sql(`insert into acts (character, kind, thread, target_act_id, payload, created_at) values ('${c['Est137 Q']}', 'card', '${thread}', '${zp}', '{"card": "stick-around", "config": {}}', '${at(2)}') returning id`);
+  // C, a Lurker, calls the card first; a crowd of three other players follows, so C's call is a line.
+  const react = (who: string, minutes: number) => sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at)
+    values ('${card}', '${c[`Est137 ${who}`]}', '${ids[`est137-${who.toLowerCase()}`]}', 'fire', 1, '${at(minutes)}')`);
+  react('C', 3); react('Z', 4); react('D', 5); react('E', 6);
+
+  const answer = await runEstimate({ player: psqlDb(ids['est137-c']), service }, instance);
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  const { lines } = answer.body as { lines: { act: string; reason: string }[] };
+  assert.deepEqual(lines.map((l) => [l.reason, l.act]), [['lurker.calledIt', card]], 'C\'s call on the card is C\'s line');
 });

@@ -32,6 +32,7 @@ const FALLBACK: ScreenSettings = {
   presencePollSeconds: 30,
   presenceWindow: { unit: 'minute', count: 5 },
   cardEconomy: {},
+  economy: {},
   toastDefaults: ['quote', 'update'],
 };
 
