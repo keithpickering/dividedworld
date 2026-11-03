@@ -5,7 +5,7 @@
  * Oct 3") or a Turn announced with its old class ("Face, until its Turn on Oct 20"); a Turn that
  * named no class is still listed, and names none here. A Turn says the class it left as of the
  * Turn, never since when (#23): since when could date a silent Turn before it, so a `since` a
- * reveal written before 0072 still carries is not read.
+ * reveal written before 0073 still carries is not read.
  */
 import { shortDate } from '../postbit/dates.ts';
 

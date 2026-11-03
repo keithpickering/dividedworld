@@ -41,7 +41,7 @@ export interface LedgerRow {
   readonly character: string;
   readonly reason: string;
   readonly amount: number;
-  /** The numbers its reason's words state (`my_ledger.params`, 0072); absent where the row has none. */
+  /** The numbers its reason's words state (`my_ledger.params`, 0073); absent where the row has none. */
   readonly params?: Readonly<Record<string, number>>;
 }
 

@@ -444,7 +444,7 @@ begin
 end $$;
 
 -- ---- A play's moment over a card back is the same bytes for its setter and for a stranger, and never names the card ----
--- (supabase/migrations/0071_play_moments.sql, play_moment; docs/plans/2026-11-03-effect-history-plan.md, Task 2.)
+-- (supabase/migrations/0072_play_moments.sql, play_moment; docs/plans/2026-11-03-effect-history-plan.md, Task 2.)
 do $$
 declare
   setter uuid := tests.account('mm-setter'); caster uuid := tests.account('mm-caster'); stranger uuid := tests.account('mm-stranger');

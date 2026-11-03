@@ -1,5 +1,5 @@
 /**
- * The database holds every setting where it is written (supabase/migrations/0075_settings_held.sql), and
+ * The database holds every setting where it is written (supabase/migrations/0077_settings_held.sql), and
  * supabase/tests/0079-settings-held.sql lists, one row per line, a poison at each edge of each rule and the good default
  * for each key. This reads those two lists and sets them against settingsProblems, so the SQL's holds and the TypeScript
  * rules cannot drift apart without one of the two failing: every key has both kinds of row, every poison is refused here,
@@ -76,7 +76,7 @@ test('the issue\'s own cases are named: presencePollSeconds = 5 and presenceName
 });
 
 test('the kinds the migration lets toastDefaults name are the alert kinds (the lists are one list)', () => {
-  const sql = read('../../supabase/migrations/0075_settings_held.sql');
+  const sql = read('../../supabase/migrations/0077_settings_held.sql');
   const m = /kinds text\[\] := array\[((?:'[A-Za-z]+',?\s*)+)\]/.exec(sql);
   assert.ok(m, 'the migration lists the kinds');
   assert.deepEqual([...m![1]!.matchAll(/'([A-Za-z]+)'/g)].map((k) => k[1]!).sort(), [...ALERT_KINDS].sort());

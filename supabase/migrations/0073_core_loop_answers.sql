@@ -83,7 +83,7 @@ begin
   -- and none on The System's own Acts: the tally every player reacts to would hand each caller who
   -- reacted to it every other player's reaction.
   --
-  -- The settlement never pays a player's reactions to their own characters, and until 0072 this read
+  -- The settlement never pays a player's reactions to their own characters, and until 0073 this read
   -- left them out too, which made a live line computed from who reacted: a fire landing on Bob's post
   -- under Ann's card with no lift line told Ann it came from one of Bob's masks. The live estimate is not
   -- The System's scoring (CLAUDE.md, "A response never proves a private fact": "The live estimate is not
@@ -425,7 +425,7 @@ begin
      or case when jsonb_typeof(e -> 'amount') <> 'number' then true
              else (e ->> 'amount')::numeric <> trunc((e ->> 'amount')::numeric) or abs((e ->> 'amount')::numeric) > 2147483647 end;
   if bad > 0 then raise exception '% entries name a character their player does not play, or an amount that is not whole', bad using errcode = '22023'; end if;
-  -- An entry's params, where it has them: the numbers its reason's words state, each a number by its key (0072). The engine writes
+  -- An entry's params, where it has them: the numbers its reason's words state, each a number by its key (0073). The engine writes
   -- them from the settings it settled under, so anything else is a fault in the call, never repaired here.
   if exists (select 1 from jsonb_array_elements(entries) e
              -- CASE, so the type is read before jsonb_each, which refuses anything but an object in words of its own.

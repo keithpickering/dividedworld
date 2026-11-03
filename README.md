@@ -168,7 +168,7 @@ a module is not found, stop there and file what it printed.
    again, and every deploy that changes the instance's settings or vocabulary runs it again; it puts back the code's
    numbers over any an admin tuned by hand.
 2. **Give the jobs their address and key.** The settlement and the meeting are called by `pg_cron` through `pg_net`
-   with two secrets from Vault (`0070_jobs_key.sql`); until both exist those jobs send nothing. In **Integrations >
+   with two secrets from Vault (`0071_jobs_key.sql`); until both exist those jobs send nothing. In **Integrations >
    Vault**, add `kayfabb_functions_url` with the value `https://<ref>.supabase.co` (no trailing slash), and
    `kayfabb_jobs_key` with the `kayfabb_jobs` secret key, which the jobs send in `apikey`. The Vault screen keeps the
    key out of the SQL editor's history. The next scheduled minute after both exist runs.

@@ -303,6 +303,6 @@ export function fail(e) {
 
 export const NOT_EXPORTED = [
   'the name folds (public.name_maps, public.name_classes, public.unicode_data): the migrations load them, and the manifest names their release and source files (nameFolds), which an import requires the new database to hold; every character\'s name keys are computed again there and must be the ones carried',
-  'the two Vault secrets the scheduled jobs call the Edge Functions with, kayfabb_functions_url and kayfabb_jobs_key: secrets, which are set by hand on the new project, with select vault.create_secret(<the functions URL>, \'kayfabb_functions_url\') and select vault.create_secret(<the kayfabb_jobs secret key>, \'kayfabb_jobs_key\') (supabase/migrations/0070_jobs_key.sql reads them); until then the settlement and the meeting run and call nothing',
+  'the two Vault secrets the scheduled jobs call the Edge Functions with, kayfabb_functions_url and kayfabb_jobs_key: secrets, which are set by hand on the new project, with select vault.create_secret(<the functions URL>, \'kayfabb_functions_url\') and select vault.create_secret(<the kayfabb_jobs secret key>, \'kayfabb_jobs_key\') (supabase/migrations/0071_jobs_key.sql reads them); until then the settlement and the meeting run and call nothing',
   'Supabase Auth\'s sessions and refresh tokens: they end, and each player signs in once more',
 ];

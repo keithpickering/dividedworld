@@ -46,7 +46,7 @@ function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, u
         if (failInput.at === String(args.window_start)) throw new DatabaseError('settlement_input: the connection dropped', '08006', 500);
         return { ...input, window: { ...input.window, from: Date.parse(String(args.window_start)), to: Date.parse(String(args.window_end)) } } as T;
       }
-      // The run's claim on its window (0073): what a reveal reads until the window is applied.
+      // The run's claim on its window (0074): what a reveal reads until the window is applied.
       if (fn === 'claim_settlement_window') {
         if (failInput.claim) throw new DatabaseError('claim_settlement_window: the connection dropped', '08006', 500);
         return null as T;

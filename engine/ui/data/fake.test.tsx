@@ -342,7 +342,7 @@ describe('Turns', () => {
     expect(await fake.turn(anaFace, 'lurker', 'silent', false, false)).toMatchObject({ ok: true });
     expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.turnOpensAt).toBeNull();
   });
-  test('a Turn never takes effect behind a reveal dated after the settlement\'s end: it lands at the next, saying when it was due (0073)', async () => {
+  test('a Turn never takes effect behind a reveal dated after the settlement\'s end: it lands at the next, saying when it was due (0074)', async () => {
     const { fake, anaFace, thread } = world();
     must(await fake.turn(anaFace, 'heel', 'silent', false, false));
     const due = fake.clock.now();

@@ -85,7 +85,7 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
       return outcome(windows, true);
     }
     // The run's claim on the window, before it reads the window (the core loop design, section 4, #22): a reveal waits while a
-    // claim on an ended window covering a waiting Turn stands (unmask, 0073), since the window's end is not always known in advance.
+    // claim on an ended window covering a waiting Turn stands (unmask, 0074), since the window's end is not always known in advance.
     // The claim holds until a settlement past its start is written, this run's or an overlapping one's, and never by a clock: one
     // window's work can outlast any fixed length on a busy instance, and no clock tells a live run from a dead one (#179). A claim
     // that cannot be written fails the run, as any read does.
@@ -99,7 +99,7 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     const applied = await db.rpc<{ applied: boolean; masks?: string; reveal?: string }>('apply_settlement', {
       window_start: window.start,
       window_end: window.end,
-      // With the numbers each entry's words state, as it was settled under them (ledger.params, 0072).
+      // With the numbers each entry's words state, as it was settled under them (ledger.params, 0073).
       entries: result.entries.map((e) => ({ player: e.player, character: e.character, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}) })),
       class_totals: result.byClass,
       paid: result.paid,

@@ -1,4 +1,4 @@
--- The core loop's open questions, answered (supabase/migrations/0072_core_loop_answers.sql):
+-- The core loop's open questions, answered (supabase/migrations/0073_core_loop_answers.sql):
 -- docs/plans/2026-11-03-core-loop-answers-plan.md, built from docs/plans/2026-11-03-core-loop-answers-design.md.
 
 -- The window the next estimate reads opens here; each case writes its Acts and reactions a few hours past it, and asks for the

@@ -4,7 +4,7 @@
 
 -- ------------------------------------------------------------------------ the settle run's claim ----
 
--- Task 1 (#179's second and fourth follow-ups, the design's section 1). A claim (0072) refused a reveal only while it was under five
+-- Task 1 (#179's second and fourth follow-ups, the design's section 1). A claim (0073) refused a reveal only while it was under five
 -- minutes old, and one window's settlement_input, settle() and apply_settlement can together outlast five minutes on a busy instance:
 -- a reveal after that named the class a Turn replaces, dated after the Turn took effect (#22). No clock can tell a live run from a
 -- dead one, so a claim now holds until a settlement past its start is written: its own window's, or, for a stale claim made by an
@@ -37,12 +37,12 @@ end $$;
 revoke execute on function settlement_voids_claims() from public, anon, authenticated;
 create trigger settlement_voids_claims after insert on settlements for each row execute function settlement_voids_claims();
 
--- unmask() (0072), its claim held until a settlement past the claim's start is written, with no clock, and refusing only once the
+-- unmask() (0073), its claim held until a settlement past the claim's start is written, with no clock, and refusing only once the
 -- claimed window has ended; both refusals say one sentence that names the player's way out (#177, the design's section 2). The
 -- refusal turns on the caller's own character's own Turn and on the run's state, never on another player; that a settlement is due
 -- or running is public, since when The System settles is the same for everyone. Its ways out: the run applies the window, by itself
 -- (a dead run's claim gives way when the next firing applies it), and the player may withdraw the Turn at any time, on My characters.
--- Everything else as 0072 wrote it.
+-- Everything else as 0073 wrote it.
 create or replace function unmask(through uuid, in_thread uuid, message text default '') returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -73,8 +73,8 @@ end $$;
 alter table pending_turns add column due_at timestamptz;
 alter table class_history add column due_at timestamptz;
 
--- masks_change (0072), passing over a Turn whose character revealed at or after the window's end, and recording when it was due.
--- Everything else as 0072 wrote it.
+-- masks_change (0073), passing over a Turn whose character revealed at or after the window's end, and recording when it was due.
+-- Everything else as 0073 wrote it.
 create or replace function masks_change(window_end timestamptz) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare

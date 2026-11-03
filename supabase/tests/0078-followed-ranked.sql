@@ -1,4 +1,4 @@
--- Cost at scale (supabase/migrations/0074_followed_ranked.sql): docs/plans/2026-11-03-cost-at-scale-plan.md.
+-- Cost at scale (supabase/migrations/0076_followed_ranked.sql): docs/plans/2026-11-03-cost-at-scale-plan.md.
 -- Task 1: my_settlement_moved answers the caller's own count and time for one settlement.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$

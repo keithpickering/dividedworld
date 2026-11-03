@@ -1,4 +1,4 @@
--- Trap locks, even trap work, and the set line's springs (supabase/migrations/0073_trap_locks.sql): every path that can spring a
+-- Trap locks, even trap work, and the set line's springs (supabase/migrations/0075_trap_locks.sql): every path that can spring a
 -- trap takes its locks in one written order, so a write that springs a trap is never refused by a deadlock; a sprung back is not
 -- locked; spring_traps reads the same rows for every back before it decides; my_card_ledger says whether a set card can spring.
 -- docs/plans/2026-11-03-trap-locks-plan.md, Tasks 1 to 3. The cards are the engine's test set, never an instance's.
@@ -18,7 +18,7 @@ begin
 end $$;
 
 -- A quote and a cast through one character on one trapped post both land. The quote's post() takes the poster's count row with its
--- insert; the cast's spring_traps takes the back and then, through the caught card's insert, the caster's count row. Before 0073,
+-- insert; the cast's spring_traps takes the back and then, through the caught card's insert, the caster's count row. Before 0075,
 -- post() took the count row first and the back second, the other way round, and one of the two writes was refused (40P01).
 do $$
 declare
@@ -159,7 +159,7 @@ create function pg_temp.reads() returns bigint language sql as $$
 $$;
 
 -- A Bluff, a matching reply-strike trap whose setter is retired, and a matching reply-strike trap whose struck post already carries
--- its stack: each answers null and writes nothing, and each reads the same rows before it does. Before 0073 the retired setter's
+-- its stack: each answers null and writes nothing, and each reads the same rows before it does. Before 0075 the retired setter's
 -- check read characters for the trap alone, and the stack count ran for the full-stack trap alone, so how long a reply took was
 -- computed from which card was face down.
 do $$

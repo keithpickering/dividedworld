@@ -182,7 +182,7 @@ begin
 
   -- A structural hold that is not set is an error, not a hold of zero: unset raises, and so does a JSON null (which would drop the hold in silence).
   m9 := (begin_meeting(slot1 + interval '21 days') ->> 'meeting')::bigint;
-  -- A JSON null is no longer writable (settings_held, 0074 refuses it), so the hold cannot be dropped in silence from the table.
+  -- A JSON null is no longer writable (settings_held, 0077 refuses it), so the hold cannot be dropped in silence from the table.
   denied := false;
   begin update settings set value = 'null' where key = 'structuralHoldHours'; exception when check_violation then denied := true; end;
   if not denied then raise exception 'a null structuralHoldHours was written'; end if;

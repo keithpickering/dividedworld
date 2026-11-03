@@ -469,7 +469,7 @@ describe('reads and their rows', () => {
     expect(h.rest().map((r) => r.url.pathname)).toEqual(['/rest/v1/my_characters']);
     expect(mine[0]).toEqual({ id: B, name: 'Bea', class: 'face', classSince: '2026-09-01T00:00:00+00:00', classDueAt: null, turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false });
     expect(mine[1]?.presenceHidden).toBe(true);
-    // When a Turn that waited past a reveal was due (0073): a wiring no other test holds (#179).
+    // When a Turn that waited past a reveal was due (0074): a wiring no other test holds (#179).
     expect(mine[1]?.classDueAt).toBe('2026-10-31T00:00:00+00:00');
     expect(mine[1]?.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: '2026-11-01T00:00:00+00:00' });
   });
@@ -1226,7 +1226,7 @@ describe('the log', () => {
         ],
       }],
       wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
-      /* A Bluff's row keeps its `springs` (0073); a row that is not a card set face down carries none. */
+      /* A Bluff's row keeps its `springs` (0075); a row that is not a card set face down carries none. */
       cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false }],
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],

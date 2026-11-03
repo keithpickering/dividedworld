@@ -1,4 +1,4 @@
--- Cost at scale (supabase/migrations/0075_settings_held.sql): docs/plans/2026-11-03-cost-at-scale-plan.md, Task 3.
+-- Cost at scale (supabase/migrations/0077_settings_held.sql): docs/plans/2026-11-03-cost-at-scale-plan.md, Task 3.
 -- Every key in SETTINGS (engine/rules/instance.ts) is held where it is written: each poison below is refused with 23514 and
 -- each good is accepted. engine/rules/settings-held.test.ts reads the two lists (one row per line) and checks them against
 -- the TypeScript rules, so the two sides cannot drift. presencePollSeconds = 5 and presenceNames = 0 are the issue's own cases.
