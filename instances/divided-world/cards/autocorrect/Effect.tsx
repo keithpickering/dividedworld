@@ -233,10 +233,11 @@ export function AutocorrectEffect({ post, plays, states, reader, save, show, met
     /* A strip peeled while focused takes the reader's place with it: focus goes to the next strip on the post, or to the post. */
     if (el === document.activeElement) {
       const strips = [...(box.current?.querySelectorAll<HTMLElement>('.dw-ac-strip') ?? [])];
-      const next = strips[strips.indexOf(el) + 1] ?? strips.find((x) => x !== el) ?? box.current;
+      const next = strips[strips.indexOf(el) + 1] ?? box.current;
       next?.focus();
     }
-    setUncovered(`Peeled. Under it: “${covered}”.`);
+    /* Said again when the same words are uncovered twice: a no-break space every other time makes it new text, as Whoops! does. */
+    setUncovered((was) => { const said = `Peeled. Under it: “${covered}”.`; return was === said ? `${said}\u00a0` : said; });
     dropStrip(el, { corner, reduced, seed: strip.key });
     if (reader.author) {
       setSending((was) => {
