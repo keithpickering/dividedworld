@@ -121,7 +121,7 @@ begin
   if exists (select 1 from class_reveals where character = quiet) or exists (select 1 from turns_announced where character = quiet) then
     raise exception 'a character whose player made nothing public is in a view of what was made public';
   end if;
-  if (select (act, at, was, since) from turns_announced where character = loud) is distinct from (tally, now() + interval '1 minute', null::text, null::timestamptz) then
+  if (select (act, at, was) from turns_announced where character = loud) is distinct from (tally, now() + interval '1 minute', null::text) then
     raise exception 'an announced Turn is dated at its tally and names no old class: %', (select to_jsonb(x) from turns_announced x where character = loud);
   end if;
   if (select (at, was) from turns_announced where character = told) is distinct from (now() + interval '1 minute', 'alpha'::text) then
@@ -132,7 +132,7 @@ begin
   if (select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'class_reveals') is distinct from 'act,character,class,at,via,thread' then
     raise exception 'class_reveals has the columns %', (select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'class_reveals');
   end if;
-  if (select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'turns_announced') is distinct from 'act,character,at,was,since' then
+  if (select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'turns_announced') is distinct from 'act,character,at,was' then
     raise exception 'turns_announced has the columns %', (select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'turns_announced');
   end if;
   -- A visitor reads neither, as a visitor reads no Act.

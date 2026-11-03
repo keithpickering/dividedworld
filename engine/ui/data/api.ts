@@ -229,13 +229,12 @@ export interface ClassReveal {
   readonly thread: Id;
 }
 
-/** An announced Turn (turns_announced); `was` only when the Turn named its old class. */
+/** An announced Turn (turns_announced); `was` only when the Turn named its old class, as of the Turn and never since when (#23). */
 export interface TurnAnnounced {
   readonly act: Id;
   readonly character: Id;
   readonly at: string;
   readonly was: string | null;
-  readonly since: string | null;
 }
 
 /** What a character has done in public, counted. */

@@ -17,7 +17,7 @@ export const RevealWithClasses: StoryObj = {
   render: () => (
     <RevealPost act={act('reveal', {
       season: 1, character: 'c2', name: 'Pipewrench', place: 3, standing: 4170,
-      shown: [{ kind: 'turn', act: 'x', at: '2026-10-20T12:00:00Z', was: 'face', since: '2026-10-01T12:00:00Z' }, { kind: 'reveal', act: 'y', at: '2026-10-21T12:00:00Z', class: 'heel', via: 'act' }],
+      shown: [{ kind: 'turn', act: 'x', at: '2026-10-20T12:00:00Z', was: 'face' }, { kind: 'reveal', act: 'y', at: '2026-10-21T12:00:00Z', class: 'heel', via: 'act' }],
     })} />
   ),
   parameters: { world: () => {}, path: '/' },

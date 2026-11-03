@@ -910,8 +910,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async turnsAnnounced(chars) {
       if (chars.length === 0) return [];
-      const rows = await byChunks(chars, (part) => list(() => client.from('turns_announced').select('act,character,at,was,since').in('character', part).order('at', { ascending: true })));
-      return merged(rows, 'at', 'act').map((r): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null, since: r['since'] ?? null }));
+      const rows = await byChunks(chars, (part) => list(() => client.from('turns_announced').select('act,character,at,was').in('character', part).order('at', { ascending: true })));
+      return merged(rows, 'at', 'act').map((r): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null }));
     },
     async nextSettlementAt() {
       return str((await read(() => client.rpc('next_settlement_at'))).data);

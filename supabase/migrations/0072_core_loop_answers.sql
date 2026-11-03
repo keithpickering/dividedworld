@@ -151,7 +151,9 @@ end $$;
 -- season's first window, and the window after a season's end: next_settlement_at is null) nothing told it a run was applying that
 -- window. The settle function's steps (next_settlement_window, settlement_input, apply_settlement, supabase/functions/settle/core.ts)
 -- are separate requests, so no transaction lock spans a run: the run records the window it has chosen, here, before it reads its
--- input, and unmask() waits while that window covers a waiting Turn and is not yet settled.
+-- input, and unmask() waits while that window covers a waiting Turn and is not yet settled. The run learns the window's end from
+-- next_settlement_window and claims it in the next request, so a reveal committed in that one round trip is not refused; the gap
+-- was the whole run's before.
 --
 -- Not an Act: a run's clock, the service's alone, read by no player and by no screen. A claim ends when its window's settlement is
 -- applied; a run that dies leaves its claim, so it also ends five minutes after it was made, five times a run's budget (MOST_RUN_MS,
@@ -196,4 +198,164 @@ begin
     raise exception 'this character''s Turn takes effect at the settlement now running; reveal in a few minutes' using hint = 'kayfabb.refusal', errcode = '55000';
   end if;
   return write_unmask(through, in_thread, 'act', now(), said);
+end $$;
+
+-- --------------------------------------------------------------------------- an announced Turn ----
+
+-- Task 5 (#23, the design's section 5). A Turn that names its old class (show_from) wrote `was` and `since` into its tally. `since`
+-- is the date the old class began, so where an earlier silent Turn began it, the announcement dated the silent Turn in public. A
+-- Turn announced with its old class makes that fact public as of its date, and nothing else about it is (CLAUDE.md, "A response
+-- never proves a private fact"): an announced Turn says what the character was, as of the Turn, and the read projections carry no
+-- `since`. Tallies already written keep their payload (Append-only); the export carries Acts as written.
+
+-- masks_change (0028), writing `{was}` alone where the Turn names the class it leaves. Everything else as 0028 wrote it.
+create or replace function masks_change(window_end timestamptz) returns uuid
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  most constant integer := 100;
+  in_season bigint;
+  first_tally uuid;
+  posted jsonb;
+  unmasked jsonb;
+  parts integer;
+  r record;
+begin
+  if to_regclass('pg_temp.masks_named') is null then
+    create temp table masks_named (n bigint, kind text, entry jsonb, unmasks boolean) on commit drop;
+    create temp table masks_turns (character uuid, class_key text, loudness text, show_from boolean, show_to boolean, name text, was text) on commit drop;
+  end if;
+  truncate masks_named, masks_turns;
+  -- The characters made before the window's end, and still waiting, debut at it; the announced
+  -- ones are named. One made in a transaction this one could not see yet waits for the next
+  -- settlement. A drop locks its character's row first, so one dropped while this runs is either
+  -- debuted here (and its drop refused, "it has debuted") or by its drop (and not here).
+  -- A retired character makes no Act: one owed its announcement across a gap and retired since is
+  -- named, as it was due to be, and never unmasked, or no settlement could write its tally.
+  with d as (
+    update characters set debuted_at = window_end where debuted_at is null and created_at < window_end returning id, name, debut_loudness, retired_at
+  ), owed as (
+    update characters set debut_announcement_due = false where debut_announcement_due and debuted_at < window_end returning id, name, debut_loudness, retired_at
+  ) insert into masks_named (n, kind, entry, unmasks)
+    select row_number() over (order by name, id), 'debut', jsonb_build_object('character', id, 'name', name), debut_loudness = 'with_class' and retired_at is null
+    from (select id, name, debut_loudness, retired_at from d where debut_loudness <> 'silent' union all select id, name, debut_loudness, retired_at from owed) named;
+  -- The Turns asked before the window's end take effect at it; their characters' rows are locked
+  -- first, in one order, so a turn() racing this one waits and then reads what took effect. What
+  -- a loud Turn says is read before the Turn is written.
+  perform 1 from characters c where c.id in (select character from pending_turns where asked_at < window_end) order by c.id for no key update;
+  insert into masks_turns
+    select p.character, p.class_key, p.loudness, p.show_from, p.show_to, c.name, n.class_key
+    from pending_turns p join characters c on c.id = p.character cross join lateral class_now(p.character, window_end) n
+    where p.asked_at < window_end;
+  insert into class_history (character, class_key, started_at) select character, class_key, window_end from masks_turns;
+  delete from pending_turns p using masks_turns t where p.character = t.character;
+  insert into masks_named (n, kind, entry, unmasks)
+    select (select count(*) from masks_named) + row_number() over (order by name, character), 'turn',
+      jsonb_build_object('character', character, 'name', name, 'loudness', loudness)
+      || case when show_from then jsonb_build_object('was', was) else '{}'::jsonb end
+      || case when show_to then jsonb_build_object('class', class_key) else '{}'::jsonb end,
+      show_to
+    from masks_turns where loudness <> 'silent';
+  update masks_named m set entry = m.entry || jsonb_build_object('class', (select class_key from class_now((m.entry ->> 'character')::uuid, window_end)))
+  where m.kind = 'debut' and m.unmasks;
+  if not exists (select 1 from masks_named) then return null; end if;
+
+  select id into in_season from seasons where starts_at < window_end and (ends_at is null or ends_at >= window_end) order by starts_at desc limit 1;
+  parts := ((select count(*) from masks_named) + most - 1) / most;
+  for part in 1..parts loop
+    posted := post_tally(in_season,
+      (select coalesce(jsonb_agg(entry order by n) filter (where kind = 'debut'), '[]') from masks_named where (n - 1) / most = part - 1),
+      (select coalesce(jsonb_agg(entry order by n) filter (where kind = 'turn'), '[]') from masks_named where (n - 1) / most = part - 1),
+      window_end, part, parts);
+    if posted -> 'thread' <> 'null'::jsonb then
+      perform broadcast_later('board:' || (posted -> 'thread' ->> 'board'), 'thread', posted -> 'thread');
+    end if;
+    first_tally := coalesce(first_tally, (posted -> 'act' ->> 'id')::uuid);
+    perform broadcast_later('thread:' || (posted -> 'act' ->> 'thread'), 'act', posted -> 'act');
+    -- The part's reveals, in its order, right after it: the character's own Acts, by The System's hand.
+    for r in select kind, entry from masks_named where (n - 1) / most = part - 1 and unmasks order by n loop
+      unmasked := write_unmask((r.entry ->> 'character')::uuid, (posted -> 'act' ->> 'thread')::uuid, r.kind, window_end);
+      perform broadcast_later('thread:' || (unmasked ->> 'thread'), 'act', unmasked);
+    end loop;
+  end loop;
+  return first_tally;
+end $$;
+
+-- turns_announced (0027), without `since`. A view cannot lose a column in place, so it is made again, with its grants.
+drop view turns_announced;
+create view turns_announced as
+  select a.id as act, c.id as character, a.created_at as at, e.entry ->> 'was' as was
+  from characters c
+  cross join lateral (
+    select x.id, x.created_at, x.payload from acts x
+    where x.kind = 'tally' and x.payload -> 'turns' @> jsonb_build_array(jsonb_build_object('character', c.id))
+  ) a
+  cross join lateral jsonb_array_elements(a.payload -> 'turns') e(entry)
+  where e.entry ->> 'character' = c.id::text;
+revoke all on turns_announced from anon, authenticated;
+grant select on turns_announced to authenticated;
+
+-- reveal_season (0051), its `shown` naming the class an announced Turn left and not since when. Everything else as 0051 wrote it.
+create or replace function reveal_season(ended timestamptz) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  s seasons%rowtype;
+  new_season bigint;
+  in_thread uuid;
+  written uuid;
+begin
+  select * into s from seasons where ends_at is null for no key update;
+  if s.id is null or s.starts_at + span_interval(setting('seasonLength')) > ended then return null; end if;
+
+  update seasons set ends_at = ended where id = s.id;
+  insert into seasons (number, starts_at) values (s.number + 1, ended) returning id into new_season;
+  begin
+    perform hand_over(new_season, s.boss, ended);
+  exception when others then
+    raise warning 'reveal_season: the handover of season % failed: % (%)', s.number + 1, sqlerrm, sqlstate;
+    -- The season keeps its outgoing Boss rather than none, where that much can still be done.
+    begin
+      update seasons set boss = s.boss where id = new_season and boss is null;
+      insert into season_handovers (season, outgoing, boss, how, note, at)
+      values (new_season, s.boss, s.boss, case when s.boss is null then 'none' else 'unchanged' end, left('the handover failed: ' || sqlerrm, 1000), ended)
+      on conflict (season) do nothing;
+    exception when others then null;
+    end;
+  end;
+  insert into threads (board, title) values (system_board(), copy_of('revealTitle', s.number)) returning id into in_thread;
+  perform broadcast_later('board:' || (select board from threads where id = in_thread), 'thread', thread_projection(in_thread));
+  -- The reveal's own Act says what the season was; each character follows it as an Act of its
+  -- own, so the reveal is many small rows at any size of cast, never one payload holding all of
+  -- them. Characters by name; who plays them, never. A character that debuts at this very
+  -- settlement played no part in the season, and is the next one's.
+  insert into acts (character, kind, thread, payload, created_at)
+  values (null, 'reveal', in_thread, jsonb_build_object('season', s.number, 'from', s.starts_at, 'to', ended,
+    'body', copy_of('revealBody', s.number), 'characters', (select count(*) from characters where debuted_at < ended and staff is null)), ended) returning id into written;
+  perform broadcast_later('thread:' || in_thread, 'act', act_projection(written));
+  -- Each character in order of final standing, with its place and its standing, and only what its
+  -- player made public in the season (`shown`): its reveals, and its announced Turns with the class
+  -- each left where the Turn named it, in order. Read from class_reveals and turns_announced (0027),
+  -- which read Acts alone, so no unrevealed class and no silent Turn is in it: they roll over into
+  -- the next season, a clue rather than a stated fact (the class reveal design, section 5). A Turn
+  -- that took effect at this very end is the next season's, as before. At one instant a Turn comes
+  -- before the reveal it wrote (0028), as its tally stands before it in the thread.
+  insert into acts (character, kind, thread, payload, created_at)
+    select null, 'reveal', in_thread, jsonb_build_object('season', s.number, 'character', c.id, 'name', c.name,
+        'place', rank() over (order by coalesce(st.amount, 0) desc), 'standing', coalesce(st.amount, 0),
+        'shown', coalesce((
+          select jsonb_agg(x.entry order by x.at, x.after, x.act) from (
+            select r.at, 1 as after, r.act, jsonb_build_object('kind', 'reveal', 'act', r.act, 'at', r.at, 'class', r.class, 'via', r.via) as entry
+            from class_reveals r where r.character = c.id and r.at >= s.starts_at and r.at < ended
+            union all
+            select t.at, 0, t.act, jsonb_build_object('kind', 'turn', 'act', t.act, 'at', t.at)
+              || case when t.was is null then '{}'::jsonb else jsonb_build_object('was', t.was) end
+            from turns_announced t where t.character = c.id and t.at >= s.starts_at and t.at < ended
+          ) x), '[]'::jsonb)), ended
+    from characters c left join standings st on st.character = c.id and st.season = s.id
+    where c.debuted_at < ended and c.staff is null
+    order by coalesce(st.amount, 0) desc, c.name, c.id;
+  -- Each in the thread's order, in a statement of its own, which sees the rows the one above wrote.
+  insert into broadcasts_due (topic, event, payload)
+  select 'thread:' || in_thread, 'act', act_projection(a.id) from acts a where a.thread = in_thread and a.id <> written order by a.seq;
+  update seasons set reveal_act = written where id = s.id;
+  return jsonb_build_object('season', s.number, 'thread', thread_projection(in_thread), 'act', act_projection(written));
 end $$;

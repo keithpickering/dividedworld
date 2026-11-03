@@ -423,7 +423,7 @@ describe('what the public reads never prove', () => {
     const said = fake.seed.thread('the-system', null, 'Turns', '').thread;
     const tally = fake.seed.announceTurn(anaFace, said, { was: 'face', since: '2026-09-01T00:00:00.000Z' });
     expect(await fake.turnsAnnounced([anaFace])).toEqual([
-      { act: tally, character: anaFace, at: (await fake.act(tally))!.createdAt, was: 'face', since: '2026-09-01T00:00:00.000Z' },
+      { act: tally, character: anaFace, at: (await fake.act(tally))!.createdAt, was: 'face' },
     ]);
   });
   test('an unmask is refused on The System\'s board, and past 200 characters', async () => {

@@ -53,7 +53,7 @@ describe('a Turn that took effect', () => {
   test('names the old class the announcement said, over the class the window\'s reasons name', () => {
     const p = char('p', 'Pipewrench', 'face', at);
     const log = { ...empty, settlements: [settled(1, at, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }])] };
-    const turns: TurnAnnounced[] = [{ act: 't', character: 'p', at, was: 'lurker', since: null }];
+    const turns: TurnAnnounced[] = [{ act: 't', character: 'p', at, was: 'lurker' }];
     expect(turnsTaken(data({ log, mine: [p], turns }), testInstance).get(1)).toEqual([{ character: 'p', classNow: 'face', classWas: 'lurker', announced: turns[0] }]);
     expect(turnsTaken(data({ log, mine: [p] }), testInstance).get(1)![0]!.classWas).toBe('heel');
   });

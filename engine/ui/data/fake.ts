@@ -117,7 +117,7 @@ export interface Seed {
   estimate(account: Id, estimate: { entries?: Estimate['entries']; lines?: readonly EstimateLine[] }): void;
   /** A character's unmask Act in a thread, as its player's reveal (`via` 'act') or a debut's or a Turn's. */
   reveal(character: Id, thread: Id, options?: { via?: ClassReveal['via']; class?: string; at?: number; message?: string }): Id;
-  /** A tally Act in a thread of The System's board that announces a Turn of a character. */
+  /** A tally Act in a thread of The System's board that announces a Turn of a character; `since` writes a tally as one written before #23 was. */
   announceTurn(character: Id, thread: Id, options?: { was?: string; since?: string; at?: number }): Id;
   avatar(character: Id, urls: { square?: string; portrait?: string }): void;
   /** A tally on an Act as if that many others had reacted, kind by kind: no one's reaction (no account or character stands behind it), only the counts every reader sees. */
@@ -1561,7 +1561,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const turns = Array.isArray(a.payload.turns) ? (a.payload.turns as readonly Record<string, unknown>[]) : [];
         for (const t of turns) {
           if (typeof t.character === 'string' && ids.includes(t.character)) {
-            out.push({ act: a.id, character: t.character, at: iso(a.at), was: typeof t.was === 'string' ? t.was : null, since: typeof t.since === 'string' ? t.since : null });
+            out.push({ act: a.id, character: t.character, at: iso(a.at), was: typeof t.was === 'string' ? t.was : null });
           }
         }
       }

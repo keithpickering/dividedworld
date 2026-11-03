@@ -121,12 +121,14 @@ describe('what the profile says of a class: only what its player made public', (
     const w = world(fake);
     const sys = fake.seed.thread('the-system', null, 'Turns', '');
     fake.seed.reveal(w.pipe, w.thread, { class: 'face', at: OCT3 });
+    // A tally written before #23 still says since when; the record never dates the old class.
     fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20, was: 'face', since: '2026-10-01T12:00:00Z' });
     fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20 + DAY });
     open(w.pipe, fake);
     const record = await screen.findByRole('region', { name: 'Public record' });
     await waitFor(() => expect(record).toHaveTextContent('Revealed: Face'));
-    expect(record).toHaveTextContent('Announced a Turn from Face (since Oct 1)');
+    expect(record).toHaveTextContent('Announced a Turn from Face');
+    expect(record).not.toHaveTextContent('since');
     expect(record).toHaveTextContent(/Announced a Turn(?! from)/u);
     expect(record).not.toHaveTextContent('Heel');
   });
