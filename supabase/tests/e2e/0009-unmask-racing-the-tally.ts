@@ -53,7 +53,7 @@ test('a reveal after the window a pending Turn takes effect at has ended, and be
 
     let refused = '';
     try { psqlOn(db.toString(), as(`select unmask('${c}', '${t}', '');`)); } catch (e) { refused = String((e as { stderr?: string }).stderr ?? e); }
-    assert.match(refused, /this character's Turn takes effect at the settlement now running; reveal in a few minutes/);
+    assert.match(refused, /this character's Turn takes effect at the settlement now due; reveal once it has run, or withdraw the Turn/);
     assert.equal(psqlOn(db.toString(), `select count(*) from acts where kind = 'unmask'`), '0', 'nothing was written');
 
     // The settlement runs; the reveal comes through, naming the class the Turn took, true on its date.
