@@ -30,6 +30,115 @@ create function pg_temp.minus(after bigint[], before bigint[]) returns bigint[] 
   select array_agg(a - b order by i) from unnest(after, before) with ordinality u(a, b, i)
 $$;
 
+-- ---- Races, first, so the rows they commit wait on nothing this file has written and not committed ----
+
+-- Two posts by different characters race over one waiting reply trap, twenty rounds: both land, exactly one spring a round (the trap
+-- springs once), and the back is passed, none left waiting. Both lock the back in step 3, in the same order, so the second waits and
+-- then finds it passed (it is read as locked) and the spring sprung.
+do $$
+declare
+  p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); st uuid := gen_random_uuid();
+  c1 uuid := gen_random_uuid(); c2 uuid := gen_random_uuid(); cs uuid := gen_random_uuid();
+  t uuid; x uuid; said text[]; round integer;
+begin
+  perform tests.commit($sql$
+    update settings set value = value || '{"rvhook.price": 100, "rvcatch.price": 100}' where key = 'economy';
+    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
+      ('rvhook', 'RV Hook', 'salty', 'rvhook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}'),
+      ('rvcatch', 'RV Catch', 'salty', 'rvcatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
+  $sql$);
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'rv1@test.invalid'), (%2$L, 'rv2@test.invalid'), (%3$L, 'rv3@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L), (%3$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'RV One', now(), now()), (%5$L, %2$L, 'RV Two', now(), now()), (%6$L, %3$L, 'RV Setter', now(), now());
+    insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
+    insert into card_ledger (account, card, kind, price) select %3$L, 'rvhook', 'bought', 0 from generate_series(1, 20);
+  $sql$, p1, p2, st, c1, c2, cs));
+  for round in 1 .. 20 loop
+    t := gen_random_uuid(); x := gen_random_uuid();
+    perform tests.commit(format($sql$
+      insert into threads (id, board, title) select %1$L, b.id, 'RV race' from boards b where b.slug = 'general';
+      insert into acts (id, character, kind, thread, payload) values (%2$L, %3$L, 'post', %1$L, '{"body": "Hooked."}');
+      do $d$ begin perform set_card(%4$L, 'rvhook', %3$L, %2$L, '{}', 0); end $d$;
+    $sql$, t, x, cs, st));
+    said := tests.race_as(p1, format('select post(%L, %L, %L)', t, c1, 'one'), p2, format('select post(%L, %L, %L)', t, c2, 'two'));
+    if said[1] is not null or said[2] is not null then raise exception 'two posts over one waiting trap, round %: %', round, said; end if;
+    if (select count(*) from acts where kind = 'spring' and thread = t) is distinct from 1::bigint then
+      raise exception 'round %: % springs on one trap', round, (select count(*) from acts where kind = 'spring' and thread = t);
+    end if;
+    if (select count(*) from face_down_reply where thread = t and passed_by is null) is distinct from 0::bigint then
+      raise exception 'round %: a back was left waiting', round;
+    end if;
+  end loop;
+end $$;
+
+-- A sprung back that still waits is stamped without waiting. Another session holds its reply row, as a post that locked it in step 3
+-- would, and will want the thread row; a reply here takes the thread row first and must not queue behind the reply row (the two would
+-- cross: 40P01). The reply lands, the held row is skipped and stays waiting, and once released the next post passes it.
+do $$
+declare
+  setter uuid := gen_random_uuid(); caster uuid := gen_random_uuid(); replier uuid := gen_random_uuid();
+  s uuid := gen_random_uuid(); c uuid := gen_random_uuid(); r uuid := gen_random_uuid();
+  t uuid := gen_random_uuid(); sprung_post uuid := gen_random_uuid();
+  why text; setplay uuid; landed uuid;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'rp-setter@test.invalid'), (%2$L, 'rp-caster@test.invalid'), (%3$L, 'rp-replier@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L), (%3$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'RP Setter', now(), now()), (%5$L, %2$L, 'RP Caster', now(), now()), (%6$L, %3$L, 'RP Replier', now(), now());
+    insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
+    insert into threads (id, board, title) select %7$L, b.id, 'Parked' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%8$L, %4$L, 'post', %7$L, '{"body": "Sprung."}');
+    insert into card_ledger (account, card, kind, price) values (%1$L, 'rvcatch', 'bought', 0), (%2$L, 'sweetie', 'bought', 0);
+    do $d$ begin
+      perform set_card(%1$L, 'rvcatch', %4$L, %8$L, '{}', 0);
+      perform play_card(%2$L, 'sweetie', %5$L, %8$L, '{}', 0, '');
+    end $d$;
+  $sql$, setter, caster, replier, s, c, r, t, sprung_post));
+  if not exists (select 1 from acts where kind = 'spring' and target_act_id = sprung_post) then raise exception 'the parked setup did not spring'; end if;
+  select play into setplay from face_down where post = sprung_post;
+  if (select passed_by from face_down_reply where play = setplay) is not null then raise exception 'the sprung back was passed by its own cast'; end if;
+  perform extensions.dblink_connect('rp_holder', current_setting('kayfabb.scratch_url'));
+  begin
+    perform extensions.dblink_exec('rp_holder', 'begin');
+    perform extensions.dblink_exec('rp_holder', format('do $h$ begin perform 1 from face_down_reply where play = %L for update; end $h$', setplay));
+    -- After the reply below has taken the thread row, the holder wants it.
+    perform extensions.dblink_send_query('rp_holder', format('do $h$ begin perform pg_sleep(0.6); perform 1 from threads where id = %L for no key update; end $h$', t));
+    perform set_config('lock_timeout', '5s', true);
+    perform set_config('deadlock_timeout', '100ms', true);
+    perform tests.become(replier);
+    begin
+      landed := (post(t, r, 'Replying past a held parked back.') ->> 'id')::uuid;
+      why := null;
+    exception when others then
+      why := sqlstate || ' ' || sqlerrm;
+    end;
+    perform tests.unbecome();
+    perform set_config('lock_timeout', '0', true);
+    -- The holder is still waiting for the thread row this reply holds. Had the reply queued behind the reply row, Postgres would have
+    -- refused one of the two (40P01); the reply survives that and lands late, so the holder having ended is the sign of the cycle.
+    if extensions.dblink_is_busy('rp_holder') = 0 then
+      why := coalesce(why, 'the reply and the holder crossed: the holder was refused');
+    end if;
+    -- Cancelling the holder's wait for the thread row aborts its transaction, which releases the reply row.
+    perform extensions.dblink_cancel_query('rp_holder');
+    perform pg_sleep(0.3);
+  exception when others then
+    perform extensions.dblink_disconnect('rp_holder');
+    raise;
+  end;
+  perform extensions.dblink_disconnect('rp_holder');
+  if why is not null then raise exception 'a reply waited on a sprung back''s reply row: %', why; end if;
+  if (select passed_by from face_down_reply where play = setplay) is not null then raise exception 'a row another session held was stamped'; end if;
+  -- Released, the next post by another character passes it.
+  perform tests.become(replier);
+  landed := (post(t, r, 'And again.') ->> 'id')::uuid;
+  perform tests.unbecome();
+  if (select passed_by from face_down_reply where play = setplay) is distinct from landed then
+    raise exception 'the next post did not pass the sprung back that was left waiting';
+  end if;
+end $$;
+
 -- ---- Two reply traps: the newest springs, both are passed, and the next post springs nothing ----
 do $$
 declare
@@ -80,6 +189,9 @@ declare
   wide text[] := array['face_down', 'face_down_reply', 'character_post_counts', 'acts', 'card_kinds'];
   narrow text[] := array['face_down', 'face_down_reply'];
 begin
+  -- At a busy instance's size the planner reads by index; the committed races above leave a table so small and so recently written
+  -- that it may choose a scan of every Act instead, which would read a different number of rows each time.
+  perform set_config('enable_seqscan', 'off', true);
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'bluffy', 'quoter', 'hook');
   -- The passer's count row exists before the first measurement, or the first post alone would insert it.
@@ -167,6 +279,7 @@ declare
   posted uuid; set_act uuid;
   before bigint[]; seen bigint[]; reads bigint;
 begin
+  perform set_config('enable_seqscan', 'off', true);
   perform pg_temp.cards();
   for i in 1..200 loop
     posted := tests.post(a, t, 'Post ' || i);
@@ -182,6 +295,33 @@ begin
   -- face_down returned and fetched (numbers 2 and 3 of its six), then face_down_reply's (8 and 9).
   reads := seen[2] + seen[3] + seen[8] + seen[9];
   if reads > 20 then raise exception 'a post in a thread of 200 passed backs read % rows of the backs; it reads only what waits: %', reads, seen; end if;
+end $$;
+
+-- ---- A back sprung by a cast still waits for its reply, and the next post by another character passes it ----
+do $$
+declare
+  ann uuid := tests.account('parked-ann');
+  bob uuid := tests.account('parked-bob');
+  a uuid := tests.character(ann, 'Parked Setter');
+  b uuid := tests.character(bob, 'Parked Passer');
+  t uuid := tests.thread('Parked and passed');
+  p uuid := tests.post(a, t, 'Caught a cast.');
+  set_act uuid; answer jsonb;
+begin
+  perform pg_temp.hand(ann, 'rvcatch');
+  perform pg_temp.hand(bob, 'sweetie');
+  perform tests.become_service();
+  set_act := (set_card(ann, 'rvcatch', a, p, '{}', 0) ->> 'id')::uuid;
+  perform play_card(bob, 'sweetie', b, p, '{}', 0, '');
+  perform tests.unbecome();
+  if not exists (select 1 from acts where kind = 'spring' and target_act_id = p) then raise exception 'the cast did not spring the trap'; end if;
+  if (select passed_by from face_down_reply where play = set_act) is not null then raise exception 'a cast passed the back'; end if;
+  perform tests.become(bob);
+  answer := post(t, b, 'The first post by another character.', null);
+  perform tests.unbecome();
+  if (select passed_by from face_down_reply where play = set_act) is distinct from (answer ->> 'id')::uuid then
+    raise exception 'a sprung back left waiting was not passed by the next post by another character';
+  end if;
 end $$;
 
 -- ---- The backfill: a back set before the migration is passed by the first later post by another character, else waits ----

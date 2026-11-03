@@ -23,14 +23,15 @@
 --
 -- Locks. The order is 0073_trap_locks.sql's, steps 1 to 6 (accounts; the target post's acts row; face_down rows by `play`, all in
 -- one statement; the threads row a post's `seq` comes from; character_post_counts rows by character; wallets), with one addition
--- at step 3: a post locks the face_down_reply row of each back together with the back's face_down row, in the same statement and in
--- `play` order. Only post() writes a reply row after set_card creates it, and it does so after step 5, holding the face_down row (an
--- unsprung back), so the reply row adds no step of its own.
+-- at step 3: a post locks the face_down_reply row of each unsprung back it may pass together with the back's face_down row, in the
+-- same statement and in `play` order. Only post() writes a reply row after set_card creates it. It stamps the rows it locked in step 3
+-- while holding them. A waiting back that has already sprung is not locked in step 3, and its row is stamped after step 5 with
+-- `for update skip locked`, so that stamp never waits: a row another post holds is left waiting for the next post, and the stamp
+-- cannot be one side of a lock cycle.
 -- What changes is which backs post() locks (0073: every live unsprung back in its thread; here: the quoted post's live unsprung back,
 -- and the thread's WAITING backs on posts of other characters, from the partial index). A waiting back that has already sprung (by a
--- quote or a cast, which do not pass it) is still stamped, or it would be read by every later post; but it is not locked, as in 0073
--- (a spring is public and its row is nobody's to wait on), and its reply row is stamped after the count rows under `passed_by is
--- null`, so a post that stamped it first wins. The backs a write springs are the backs it locked: a
+-- quote or a cast, which do not pass it) is still stamped, or every later post would read it; it is not locked, as in 0073 (a spring
+-- is public and its row is nobody's to wait on). The backs a write springs are the backs it locked: a
 -- back that set_card commits after the post took its locks is not sprung by that post (it was set after the post began), and the
 -- post says so to spring_traps through `held`, whose probe reads only those plays in the same statement that locks the row it
 -- springs. play_card needs no replacement: a cast locks and springs the one back on its target post, and holds no reply row.
@@ -279,7 +280,15 @@ begin
   values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id into written;
   -- Only a back this post locked springs (the header's note on `held`).
   if quoting is not null then sprung := spring_traps('quote', quoting, written, held => locked); end if;
-  update face_down_reply set passed_by = written, passed_at = now() where play = any (passes || parked) and passed_by is null;
+  -- Locked and read as waiting in step 3, so no other post can have stamped them.
+  update face_down_reply set passed_by = written, passed_at = now() where play = any (passes);
+  -- The sprung ones are stamped without waiting: a post that locked one in step 3 (it read the back unsprung) may hold the row and
+  -- wait on this post's thread or count row, so a wait here could cross. A row held by another is skipped and stays waiting; the next
+  -- post by another character stamps it.
+  if cardinality(parked) > 0 then
+    update face_down_reply set passed_by = written, passed_at = now()
+    where play in (select r.play from face_down_reply r where r.play = any (parked) and r.passed_by is null order by r.play for update skip locked);
+  end if;
   if sprung is null then
     for candidate in
       select f.post from face_down f join acts p on p.id = f.post
