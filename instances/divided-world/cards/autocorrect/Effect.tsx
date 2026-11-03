@@ -69,7 +69,7 @@ interface StripProps {
 
 /** One strip of tape: a button that comes away when pulled far enough, or when a key is held long enough. */
 function StripButton({ strip, covered, peelMs, onPeel, onMeet }: StripProps) {
-  const ref = useRef<HTMLButtonElement>(null);
+  const ref = useRef<HTMLElement>(null);
   const drag = useRef<{ x: number; y: number; id: number } | null>(null);
   const held = useRef<{ timer: ReturnType<typeof setTimeout>; tick: ReturnType<typeof setInterval>; at: number } | null>(null);
   const [pull, setPull] = useState<{ dx: number; dy: number } | null>(null);
@@ -83,7 +83,7 @@ function StripButton({ strip, covered, peelMs, onPeel, onMeet }: StripProps) {
   }, []);
   useEffect(() => letGo, [letGo]);
 
-  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+  const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
     if (e.repeat || held.current) return;
@@ -95,18 +95,18 @@ function StripButton({ strip, covered, peelMs, onPeel, onMeet }: StripProps) {
       timer: setTimeout(() => { letGo(); if (ref.current) onPeel(strip, ref.current, 'right', covered); }, peelMs),
     };
   };
-  const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
+  const onPointerDown = (e: ReactPointerEvent<HTMLElement>) => {
     /* Only the main button pulls tape; a right or middle click is the browser's. */
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     onMeet();
     drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId };
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
-  const onPointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
+  const onPointerMove = (e: ReactPointerEvent<HTMLElement>) => {
     if (!drag.current || drag.current.id !== e.pointerId) return;
     setPull({ dx: e.clientX - drag.current.x, dy: e.clientY - drag.current.y });
   };
-  const onPointerEnd = (e: ReactPointerEvent<HTMLButtonElement>) => {
+  const onPointerEnd = (e: ReactPointerEvent<HTMLElement>) => {
     const start = drag.current;
     if (!start || start.id !== e.pointerId) return;
     drag.current = null;
@@ -124,15 +124,27 @@ function StripButton({ strip, covered, peelMs, onPeel, onMeet }: StripProps) {
     '--dw-ac-hold': share.toFixed(2),
     ...(pull ? { '--dw-ac-pull-x': `${(pull.dx * 0.35).toFixed(1)}px`, '--dw-ac-pull-y': `${(pull.dy * 0.35).toFixed(1)}px`, '--dw-ac-lift': `${Math.min(1, Math.hypot(pull.dx, pull.dy) / 60).toFixed(2)}` } : null),
   } as CSSProperties;
+  /*
+   * A long strip is tape that breaks across lines: a button cannot lay out inline, so it is a span that acts as one, focusable and
+   * named the same, held and pulled the same.
+   */
+  const shared = {
+    className: `dw-ac-strip${long ? ' dw-ac-long' : ''}`, style,
+    'data-kb-strip': strip.key, 'data-kb-pulling': pull ? 'true' : undefined, 'data-kb-holding': share > 0 ? 'true' : undefined,
+    'aria-label': `Autocorrected text: “${strip.replacement}”. Hold Enter or Space to peel`,
+    onKeyDown, onKeyUp: (e: KeyboardEvent<HTMLElement>) => { if (e.key === 'Enter' || e.key === ' ') letGo(); }, onBlur: letGo,
+    onPointerDown, onPointerMove, onPointerUp: onPointerEnd, onPointerCancel: onPointerEnd,
+  };
+  if (long) {
+    return (
+      <span ref={ref as React.RefObject<HTMLSpanElement>} role="button" tabIndex={0} {...shared}>
+        <span className="dw-ac-said" aria-hidden="true">{strip.replacement}</span>
+      </span>
+    );
+  }
   return (
-    <button
-      ref={ref} type="button" className={`dw-ac-strip${long ? ' dw-ac-long' : ''}`} style={style}
-      data-kb-strip={strip.key} data-kb-pulling={pull ? 'true' : undefined} data-kb-holding={share > 0 ? 'true' : undefined}
-      aria-label={`Autocorrected text: “${strip.replacement}”. Hold Enter or Space to peel`}
-      onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === 'Enter' || e.key === ' ') letGo(); }} onBlur={letGo}
-      onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}
-    >
-      {!long && <span className="dw-ac-covered" aria-hidden="true">{covered}</span>}
+    <button ref={ref as React.RefObject<HTMLButtonElement>} type="button" {...shared}>
+      <span className="dw-ac-covered" aria-hidden="true">{covered}</span>
       <span className="dw-ac-said" aria-hidden="true">{strip.replacement}</span>
     </button>
   );

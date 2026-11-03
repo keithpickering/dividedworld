@@ -154,6 +154,18 @@ describe('Autocorrect', () => {
     expect(css).not.toMatch(/#f4f0e4|#17150f/iu);
   });
 
+  test('a long strip is tape that breaks across lines: a focusable span named and peeled as a button is', async () => {
+    vi.useFakeTimers();
+    mount({ body: 'I think the Super Mario Bros. Super Show was great.', plays: [playOf(1, 'Super Mario Bros. Super Show', 'Legend of Zelda animated series')] });
+    const s = strips()[0]!;
+    expect(s.tagName).toBe('SPAN');
+    expect(s).toHaveAttribute('role', 'button');
+    expect(s).toHaveAttribute('tabindex', '0');
+    expect(s).toHaveAccessibleName('Autocorrected text: “Legend of Zelda animated series”. Hold Enter or Space to peel');
+    await hold(s, 700);
+    expect(strips()).toHaveLength(0);
+  });
+
   test('Space held peels as Enter does', async () => {
     vi.useFakeTimers();
     mount();

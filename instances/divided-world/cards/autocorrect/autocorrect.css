@@ -49,6 +49,7 @@
 }
 .dw-ac-long .dw-ac-said {
   white-space: pre-wrap;
+  text-align: start;
 }
 /* Pulled: the tape lifts toward the hand and sheds its shadow; held from the keyboard, a strip of the paper shows how far it has come. */
 .dw-ac-strip[data-kb-pulling] {
