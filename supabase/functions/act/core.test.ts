@@ -535,7 +535,7 @@ test('a card reacted to is compared with the post it landed on: more than the po
 });
 
 test('the thunder compares the window alone: a post with more reactions in all than its card, but fewer lately, is outdrawn (#149 F2)', async () => {
-  // The post has drawn 50 reactions since it was written, its card 10; in the window the card has 10 and the post 4. Only the
+  // In the window the card has 10 and the post 4. However many the post drew before the window, nothing reads that: only the
   // window's counts are read, so the thunder fires, and the words say "lately" (instances/divided-world/ui/hint-words.ts).
   const card = { counts: { ...zero, excitedPositive: 10 }, cardOn: post };
   const { db, calls } = hinting({ [target]: card, [post]: { counts: { ...zero, calmPositive: 4 }, cardOn: null } });

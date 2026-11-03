@@ -42,8 +42,9 @@
 -- a lock is felt as a wait). Holding the setters' rows ahead is what keeps two strikes on each other's posts from crossing: a strike
 -- writes a card through the setter's character, a counted Act. A setter with no count row yet gets one with zeros, inserted in
 -- character order before the lock, so two writers creating it wait in the same order; a row of zeros reads as a missing row does.
--- Its cost: one probe per live, unsprung back in the thread and on the quoted post (face_down_thread, then acts_one_spring and
--- the set's primary key), plus one count row per distinct setter; the reply loop then visits only the backs it locked. A back
+-- Its cost: one probe per live back in the thread and on the quoted post (face_down_thread, then the set's primary key and
+-- acts_one_spring; `explain` on a thread of 10 backs among 40,000 Acts shows those three index scans, nested), a lock per unsprung
+-- one, plus one count row per distinct setter; the reply loop then visits only the backs it locked. A back
 -- that set_card commits after the lock statement is not one of them: this post is ordered before that set, and does not spring it.
 
 -- post (0058), with its locks taken in the order above before it writes: the backs, then the thread, then the count rows. A sprung
@@ -101,9 +102,10 @@ end $$;
 -- one row either way. A null key would not be the same work: the planner folds `= null` to false and reads nothing. The stack count
 -- reads by_act's layers by target and compares the card after the fetch (`is not distinct from`, which no index serves), so which
 -- card is counted never changes which rows are read; by_act is the write that met the trap, a fresh post or a card not yet written,
--- so the rows are few, and none at all for a reaction, whose by_act is null. Only then are "springs", the retired check and "can land" decided, from the locals. After the decision, only a spring
--- does more work, and a spring is a public Act. So the time a write takes is never computed from what is face down ("A response
--- never proves a private fact"); supabase/tests/0077-trap-locks.sql holds it there with read counts.
+-- so the rows are few, and none at all for a reaction, whose by_act is null. Only then are "springs", the retired check and "can
+-- land" decided, from the locals. After the decision, only a spring does more work, and a spring is a public Act. So the time a
+-- write takes is never computed from what is face down ("A response never proves a private fact");
+-- supabase/tests/0077-trap-locks.sql holds it there with read counts.
 
 -- spring_traps (0058), with every read moved before the decision. Everything else as 0058 wrote it.
 create or replace function spring_traps(trigger text, post uuid, by_act uuid, quadrant text default null, incoming_rarity text default null,
