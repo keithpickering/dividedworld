@@ -7,7 +7,7 @@
  *   node tools/export-instance.mjs --from postgres://… --to <new directory> [--storage https://<project>]
  *
  * The files the rows name (every avatar) are fetched from Storage into <directory>/files/<bucket>/,
- * each with its hash in the manifest; an instance that holds any needs --storage and its service
+ * each with its hash in the manifest; an instance that holds any needs --storage and a secret
  * key in KAYFABB_STORAGE_KEY, and is refused without them rather than exported without its files.
  *
  * It says which database it reads before it reads it, and never prints the URL's credentials.

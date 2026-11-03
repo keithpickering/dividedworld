@@ -3,7 +3,7 @@
  * an hour ago (supabase/migrations/0025_avatars.sql; the clues design, section 5). An operator's
  * tool, as the export is, run by hand or on a schedule the operator keeps.
  *
- *   KAYFABB_STORAGE_KEY=<service key> node tools/sweep-avatars.mjs --from postgres://… --storage https://<project>
+ *   KAYFABB_STORAGE_KEY=<a secret key> node tools/sweep-avatars.mjs --from postgres://… --storage https://<project>
  *
  * Files no row names come from a replaced avatar whose removal failed, a write whose answer was
  * lost, and the originals profiles held before 0025, which that migration listed in
@@ -16,7 +16,7 @@
  * upload stores its files a moment before its profile is written, and the hour keeps the sweep
  * from ever taking one in between. It says which database and which
  * Storage it reads before it reads them, and never prints the URL's credentials or
- * the service key (instance-files.mjs's scrub). supabase/tests/e2e/0007-avatar-sweep.ts runs it
+ * the secret key (instance-files.mjs's scrub). supabase/tests/e2e/0007-avatar-sweep.ts runs it
  * against a scratch database and a stand-in for Storage.
  */
 import { BUCKETS, answered, connection, fail, psql, storage, unnamed } from './instance-files.mjs';
@@ -24,7 +24,7 @@ import { BUCKETS, answered, connection, fail, psql, storage, unnamed } from './i
 /** How many originals are removed, and their rows deleted, at once. */
 const CHUNK = 1000;
 
-const usage = 'usage: KAYFABB_STORAGE_KEY=<service key> node tools/sweep-avatars.mjs --from postgres://… --storage https://<project>';
+const usage = 'usage: KAYFABB_STORAGE_KEY=<a secret key> node tools/sweep-avatars.mjs --from postgres://… --storage https://<project>';
 
 function args(argv) {
   const out = {};

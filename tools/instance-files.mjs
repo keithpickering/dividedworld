@@ -42,7 +42,7 @@ export function args(argv, usage) {
  */
 export const BUCKETS = [{ bucket: 'avatars', table: 'public.character_profiles', columns: ['avatar_square', 'avatar_portrait'], contentType: 'image/webp' }];
 
-/** The environment variable that holds the service key Storage is called with; never printed, never on a command line. */
+/** The environment variable that holds the secret key Storage is called with; never printed, never on a command line. */
 export const STORAGE_KEY = 'KAYFABB_STORAGE_KEY';
 
 /** A name a row gives a file: one path segment, nothing that could climb out of the export. */
@@ -89,7 +89,8 @@ export function unnamed(objects, named, now) {
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
 /**
- * Supabase Storage at a project's URL, called with the service key from STORAGE_KEY. The URL
+ * Supabase Storage at a project's URL, called with a secret key from STORAGE_KEY, in apikey alone; a
+ * key in the legacy JWT shape is refused before any request, by its variable's name. The URL
  * carries no credentials, and is https unless it is this machine. Each request is retried on what
  * says it never reached a Storage that ran it, or never answered (a timeout, a thrown fetch, a 5xx,
  * a 429), a few times, waiting longer each time; any other answer is a fact about the request
@@ -99,13 +100,14 @@ const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 export function storage(url, { timeoutMs = Number(process.env.KAYFABB_STORAGE_TIMEOUT_MS) || 30_000, attempts = 4 } = {}) {
   const key = process.env[STORAGE_KEY];
   if (!url) throw new Error('the instance holds files: give --storage with its Supabase URL');
-  if (!key) throw new Error(`the instance holds files: set ${STORAGE_KEY} to its service key`);
+  if (!key) throw new Error(`the instance holds files: set ${STORAGE_KEY} to its secret key`);
   secrets.add(key);
+  if (key.startsWith('eyJ')) throw new Error(`${STORAGE_KEY} is a legacy JWT key; KayfaBB takes the publishable and secret keys (sb_publishable_…, sb_secret_…)`);
   let base;
   try { base = new URL(url); } catch { throw new Error('--storage is the project\'s URL, https://…'); }
   if (base.username || base.password) throw new Error('--storage carries credentials; the key goes in ' + STORAGE_KEY + ', never the URL');
-  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && LOOPBACK.has(base.hostname))) throw new Error('--storage is https, unless it is this machine: the service key never travels in clear');
-  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && LOOPBACK.has(base.hostname))) throw new Error('--storage is https, unless it is this machine: the secret key never travels in clear');
+  const headers = { apikey: key };
   const at = (bucket, name) => new URL(`storage/v1/object/${bucket}/${encodeURIComponent(name)}`, base.href.endsWith('/') ? base.href : `${base.href}/`);
   const request = async (where, init, what) => {
     const seen = [];
@@ -301,6 +303,6 @@ export function fail(e) {
 
 export const NOT_EXPORTED = [
   'the name folds (public.name_maps, public.name_classes, public.unicode_data): the migrations load them, and the manifest names their release and source files (nameFolds), which an import requires the new database to hold; every character\'s name keys are computed again there and must be the ones carried',
-  'the two Vault secrets the scheduled jobs call the Edge Functions with, kayfabb_functions_url and kayfabb_service_key: secrets, which are set by hand on the new project, with select vault.create_secret(<the functions URL>, \'kayfabb_functions_url\') and select vault.create_secret(<the service key>, \'kayfabb_service_key\') (supabase/migrations/0004_schedule.sql reads them); until then the settlement job runs and calls nothing',
+  'the two Vault secrets the scheduled jobs call the Edge Functions with, kayfabb_functions_url and kayfabb_jobs_key: secrets, which are set by hand on the new project, with select vault.create_secret(<the functions URL>, \'kayfabb_functions_url\') and select vault.create_secret(<the kayfabb_jobs secret key>, \'kayfabb_jobs_key\') (supabase/migrations/0070_jobs_key.sql reads them); until then the settlement and the meeting run and call nothing',
   'Supabase Auth\'s sessions and refresh tokens: they end, and each player signs in once more',
 ];
