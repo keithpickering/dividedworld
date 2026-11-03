@@ -7,7 +7,7 @@
 -- edit's id, or the post's own id before any edit, as acts_public picks the latest edit, 0022), and the act function hands that
 -- version back to play_card, which refuses the play once the post has moved on.
 --
--- The check runs under the lock play_card already takes on the post (0058), and before it. An edit does not take that lock
+-- The check runs under the locks play_card already takes, the account's and then the post's (0058), in that order, and before it. An edit does not take that lock
 -- (edit_post, 0005) and needs not: an edit committed after the check is an edit after the play, and the card's strips follow
 -- the phrase into it (the design, section 2). Only the gap between the Edge Function's read and this write is closed here.
 --
@@ -49,7 +49,10 @@ create function play_card(who uuid, card text, through uuid, target uuid, config
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if version is not null and reach = 'post' then
-    -- The same lock the nine-argument play_card takes on the post, taken first, so the check and the play see one post.
+    -- The locks the nine-argument play_card takes, in its order (0058): the player's account, then the post. Taken here first,
+    -- so the check and the play see one post; the same locks again inside it are no wait. The other order would deadlock with
+    -- any play of this player's that takes the account first and the post after (a character play from this post).
+    perform 1 from accounts where id = who for no key update;
     perform 1 from acts a where a.id = target and a.kind = 'post' for no key update;
     if found and post_version(target) is distinct from version then
       raise exception 'the post was edited; look again' using hint = 'kayfabb.refusal', errcode = '55000';

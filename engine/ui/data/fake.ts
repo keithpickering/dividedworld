@@ -888,6 +888,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
+    // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
     const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
     if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
     const c = acting(character);
