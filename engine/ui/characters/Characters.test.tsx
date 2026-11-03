@@ -746,6 +746,61 @@ describe('the Turn modal over My characters (the Turn board)', () => {
   });
 });
 
+describe('the Reveal over My characters (the glass)', () => {
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const general = (w: World) => w.fake.seed.thread('general', w.stranger, 'The tea thread', 'Who keeps reacting?');
+
+  test('is a glass overlay on the turn smoke, with the menu bar left in view, dimmed and inert', async () => {
+    const w = world();
+    page(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    expect(dialog.querySelector('.kb-smoke')).toHaveAttribute('data-kb-surface', 'turn');
+    expect(within(dialog).getByText('My characters › Reveal')).toBeInTheDocument();
+    const menu = document.querySelector('nav[aria-label="Menu"]')!;
+    expect(menu.closest('[inert]')).not.toBeNull();
+    expect(menu).toHaveAttribute('data-kb-dimmed');
+  });
+
+  for (const how of ['Close', 'Esc'] as const) {
+    test(`${how} returns to My characters, focus on the Reveal button and the menu bar lit again`, async () => {
+      const w = world();
+      page(w);
+      await ready();
+      const reveal = within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' });
+      await userEvent.click(reveal);
+      const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+      if (how === 'Close') await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+      else await userEvent.keyboard('{Escape}');
+      await act(async () => {});
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(reveal).toHaveFocus();
+      const menu = screen.getByRole('navigation', { name: 'Menu' });
+      expect(menu.closest('[inert]')).toBeNull();
+      expect(menu).not.toHaveAttribute('data-kb-dimmed');
+    });
+  }
+
+  test('previews the character\'s own post: its words as typed, in the thread chosen', async () => {
+    const w = world();
+    general(w);
+    page(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    const preview = within(dialog).getByRole('group', { name: 'What everyone will see' });
+    expect(within(preview).getByText('Pipewrench revealed: Face')).toBeInTheDocument();
+    expect(within(preview).getByText('Pipewrench')).toBeInTheDocument();
+    expect(within(preview).getByText('At once, in the thread you choose.')).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText(/In the character.s words/u), 'It was me.');
+    expect(within(preview).getByText('Pipewrench revealed: Face — “It was me.”')).toBeInTheDocument();
+    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
+    await userEvent.selectOptions(await within(dialog).findByLabelText('Thread'), 'The tea thread');
+    expect(within(preview).getByText('At once, in The tea thread.')).toBeInTheDocument();
+  });
+});
+
 describe('the panel\'s pip style (the Roster board)', () => {
   /* Two styles, so a choice can change one. */
   const twoStyles: Instance = { ...testInstance, pipStyles: [...testInstance.pipStyles, { key: 'stars', name: 'Stars', full: 's.svg', empty: 'se.svg' }] };
