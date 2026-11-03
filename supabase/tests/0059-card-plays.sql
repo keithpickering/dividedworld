@@ -68,6 +68,122 @@ begin
   if (select count(*) from acts where kind = 'spring' and target_act_id = p) is distinct from 1::bigint then raise exception 'two casts at once sprang twice'; end if;
 end $$;
 
+-- ---- A post and a cast by one player, and a post and a strike whose setter is the poster: no deadlock ----
+-- Every write that may spring locks in the one order 0073_trap_locks.sql wrote (a back's face_down row, the thread, then the count rows
+-- of the writer and of the setters, then the Act it inserts), and 0076_reply_passes.sql keeps it while post() locks fewer backs.
+-- Statement order the other way round leaves each pair below holding one lock the other wants. 0077-trap-locks.sql drives the same
+-- pairs in a loop; here a trigger that sleeps after the poster's insert makes the interleaving certain rather than likely: the poster
+-- holds its count row for the time the other side needs to take the lock it will wait on. Committed rows, since two sessions read them; first, so the
+-- rows this block commits wait on nothing this file has written and not committed.
+do $$
+declare
+  ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid(); cat uuid := gen_random_uuid();
+  a uuid := gen_random_uuid(); b uuid := gen_random_uuid(); c uuid := gen_random_uuid();
+  t uuid := gen_random_uuid(); t2 uuid := gen_random_uuid(); t3 uuid := gen_random_uuid();
+  p uuid := gen_random_uuid(); pa uuid := gen_random_uuid(); pc uuid := gen_random_uuid();
+  said text[];
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'race-pair-a@test.invalid'), (%2$L, 'race-pair-b@test.invalid'), (%3$L, 'race-pair-c@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L), (%3$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Pair Setter', now(), now()), (%5$L, %2$L, 'Pair Poster', now(), now()), (%6$L, %3$L, 'Pair Bluffer', now(), now());
+    insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
+    update settings set value = value || '{"pairhook.price": 100, "pairbluff.price": 100, "paircatch.price": 100}' where key = 'economy';
+    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
+      ('paircatch', 'Pair Catcher', 'salty', 'paircatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}'),
+      ('pairhook', 'Pair Hook', 'salty', 'pairhook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}'),
+      ('pairbluff', 'Pair Bluff', 'pepperoni', 'pairbluff.price', 'common', 'set', null);
+    insert into card_ledger (account, card, kind, price) values (%1$L, 'paircatch', 'bought', 0), (%1$L, 'pairhook', 'bought', 0), (%2$L, 'sweetie', 'bought', 0), (%3$L, 'pairbluff', 'bought', 0);
+    insert into threads (id, board, title) select %7$L, b.id, 'Pair one' from boards b where b.slug = 'general';
+    insert into threads (id, board, title) select %8$L, b.id, 'Pair two' from boards b where b.slug = 'general';
+    insert into threads (id, board, title) select %12$L, b.id, 'Pair three' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values
+      (%9$L, %4$L, 'post', %7$L, '{"body": "Trapped by a catcher."}'), (%10$L, %4$L, 'post', %8$L, '{"body": "Trapped by a hook."}'),
+      (%11$L, %6$L, 'post', %8$L, '{"body": "Bluffed."}');
+  $sql$, ann, bob, cat, a, b, c, t, t2, p, pa, pc, t3));
+  perform tests.commit(format($sql$
+    do $d$ begin
+      perform set_card(%1$L, 'paircatch', %2$L, %3$L, '{}', 0);
+      perform set_card(%1$L, 'pairhook', %2$L, %4$L, '{"color": "red"}', 0);
+      perform set_card(%5$L, 'pairbluff', %6$L, %7$L, '{}', 0);
+    end $d$;
+  $sql$, ann, a, p, pa, cat, c, pc));
+  -- A writer holds a character's count row for a while after it counts an Act of that character's. (A trigger on the count table,
+  -- since the table is dropped at the end; this file's own transaction holds a lock on acts that a drop of a trigger there would wait on.)
+  perform tests.commit(format($sql$
+    create function public.race_sleep() returns trigger language plpgsql as $f$ begin perform pg_sleep(0.6); return null; end $f$;
+    revoke execute on function public.race_sleep() from public;
+    create trigger race_sleep after insert or update on character_post_counts for each row when (new.character = %1$L) execute function public.race_sleep();
+  $sql$, b));
+  -- One player's quoting post and cast, both through Pair Poster, on a post a cast trap sits on.
+  said := tests.race_as(bob, format('select post(%L, %L, %L, %L)', t, b, 'Quoting it.', p), null, format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'sweetie', b, p, '{}', ''));
+  if said[1] is not null or said[2] is not null then raise exception 'a quoting post and a cast by one player on a trapped post: %', said; end if;
+  if (select count(*) from acts where kind = 'post' and target_act_id = p) is distinct from 1::bigint then raise exception 'the quoting post did not land'; end if;
+  if (select count(*) from acts where kind = 'card' and target_act_id = p and payload ? 'caught') is distinct from 1::bigint then raise exception 'the cast was not caught'; end if;
+  -- A post by the setter of a reply trap, and another character's reply that springs that trap: the strike lays a card by the setter,
+  -- whose count row the setter's own post holds. The setter's post is in another thread (posts of one thread already wait on each
+  -- other for their place in it) and quotes the post that carries a back in the reply's thread. The sleeping trigger now follows the setter.
+  perform tests.commit(format($sql$
+    drop trigger race_sleep on character_post_counts;
+    create trigger race_sleep after insert or update on character_post_counts for each row when (new.character = %1$L) execute function public.race_sleep();
+  $sql$, a));
+  said := tests.race_as(ann, format('select post(%L, %L, %L, %L)', t3, a, 'A post by the setter, quoting from the other thread.', pc), bob, format('select post(%L, %L, %L, null)', t2, b, 'A reply that springs the setter''s trap.'));
+  if said[1] is not null or said[2] is not null then raise exception 'a post and a strike whose setter is the poster: %', said; end if;
+  if (select count(*) from acts where kind = 'spring' and target_act_id = pa) is distinct from 1::bigint then raise exception 'the hook did not spring'; end if;
+  perform tests.commit($sql$
+    drop trigger race_sleep on character_post_counts;
+    drop function public.race_sleep();
+  $sql$);
+  -- What the racers' writes queued for these players is not left for the files after this one (an alert is a row beside the Act).
+  perform tests.commit(format($sql$
+    delete from alerts where account in (%1$L, %2$L, %3$L);
+    delete from broadcasts_due where topic in ('account:' || %1$L, 'account:' || %2$L, 'account:' || %3$L);
+  $sql$, ann, bob, cat));
+end $$;
+
+-- ---- A back set while a post waits to insert its Act is not sprung by that post: the set it locked is the set it springs ----
+-- Reply passes (0076): post() reads the quoted post's live back and locks it with the setters' count rows before its Act. A trigger that
+-- sleeps after the poster's Act insert holds the post there while a set_card lands a quote trap on the quoted post; the post never locked
+-- that back, so it must not spring it (it was set after the post, and the next quote springs it). Committed rows, as above.
+do $$
+declare
+  ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid();
+  a uuid := gen_random_uuid(); b uuid := gen_random_uuid();
+  t uuid := gen_random_uuid(); p uuid := gen_random_uuid();
+  said text[];
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'race-late-a@test.invalid'), (%2$L, 'race-late-b@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%3$L, %1$L, 'Late Setter', now(), now()), (%4$L, %2$L, 'Late Quoter', now(), now());
+    insert into class_history (character, class_key, started_at) values (%3$L, 'alpha', now()), (%4$L, 'alpha', now());
+    update settings set value = value || '{"latequote.price": 100}' where key = 'economy';
+    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
+      ('latequote', 'Late Quote', 'salty', 'latequote.price', 'uncommon', 'set', '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "blot"}}');
+    insert into card_ledger (account, card, kind, price) values (%1$L, 'latequote', 'bought', 0);
+    insert into threads (id, board, title) select %5$L, b.id, 'Late set' from boards b where b.slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%6$L, %3$L, 'post', %5$L, '{"body": "Quoted while the trap goes on."}');
+  $sql$, ann, bob, a, b, t, p));
+  perform tests.commit(format($sql$
+    create function public.race_sleep() returns trigger language plpgsql as $f$ begin perform pg_sleep(1.2); return null; end $f$;
+    revoke execute on function public.race_sleep() from public;
+    create trigger race_sleep after insert or update on character_post_counts for each row when (new.character = %1$L) execute function public.race_sleep();
+  $sql$, b));
+  said := tests.race_as(bob, format('select post(%L, %L, %L, %L)', t, b, 'Quoting it.', p), null,
+    format('do $d$ begin perform pg_sleep(0.4); perform set_card(%L, %L, %L, %L, %L, 0); end $d$', ann, 'latequote', a, p, '{}'));
+  perform tests.commit('drop trigger race_sleep on character_post_counts; drop function public.race_sleep();');
+  if said[1] is not null or said[2] is not null then raise exception 'a quoting post and a set that lands while it waits: %', said; end if;
+  if (select count(*) from face_down where post = p) is distinct from 1::bigint then raise exception 'the set did not land'; end if;
+  if (select count(*) from acts where kind = 'post' and target_act_id = p) is distinct from 1::bigint then raise exception 'the quoting post did not land'; end if;
+  if (select count(*) from acts where kind = 'spring' and target_act_id = p) is distinct from 0::bigint then
+    raise exception 'a post sprang a back it had not locked (set after the post read its locks)';
+  end if;
+  perform tests.commit(format($sql$
+    delete from alerts where account in (%1$L, %2$L);
+    delete from broadcasts_due where topic in ('account:' || %1$L, 'account:' || %2$L);
+  $sql$, ann, bob));
+end $$;
+
 -- ---- Set: by the post's author, from a hand that holds the card, one card back to a post ----
 do $$
 declare

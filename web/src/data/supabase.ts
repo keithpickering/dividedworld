@@ -37,7 +37,7 @@ import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPD
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type {
   AdminQueue, BoardName, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEvent, CaughtPlay, Character, CharacterCounts, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
 } from '../../../engine/ui/data/api.ts';
@@ -1034,6 +1034,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const r = await read(() => client.rpc('my_alerts_unread'));
       return Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(r.data))));
     },
+    async settlementMoved(id) {
+      /* The caller's own ledger lines in one settlement, through a function (0074); no row is "moved none", for any id alike. */
+      const r = await read(() => client.rpc('my_settlement_moved', { settlement: id }));
+      const row = Array.isArray(r.data) ? (r.data[0] as Record<string, unknown> | undefined) : undefined;
+      const at = row === undefined ? null : str(row['applied_at']);
+      return row === undefined || at === null ? null : { count: Math.max(0, Math.floor(num(row['count']))), at };
+    },
     async seeSettlement(endsAt) {
       const a = await rpcWrite(() => client.rpc('see_settlement', { ends_at: endsAt }));
       return a.ok ? { ok: true, value: str(a.value['seen']) ?? endsAt } : a;
@@ -1058,7 +1065,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
           return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
         };
-        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, caughtRows] = await Promise.all([
+        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows] = await Promise.all([
           rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -1067,6 +1074,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
           /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
           rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
+          /* The player's own cards a reply passed by without springing, by when it did (0076); the log names the reply traps among them. */
+          rows(() => client.from('my_face_down').select('play,card,post,ends_at,passed_at').not('passed_at', 'is', null).is('spring', null), 'passed_at', (q) => q, ['play']),
           rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
         ]);
         const ledger = ledgerRows.map((r): LedgerRow => ({
@@ -1098,6 +1107,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
           saves: saveRows.map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
           setEnds: endRows.map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'] })),
+          setPasses: passRows.map((r): FaceDownPass => ({ play: r['play'], card: r['card'], post: r['post'], passedAt: r['passed_at'], endsAt: r['ends_at'] })),
           caught: caughtRows.map((r): CaughtPlay => ({
             play: r['play'], card: r['card'], post: r['post'], trap: r['trap'], spring: r['spring'], price: num(r['price']),
             boughtPrice: r['bought_price'] === null || r['bought_price'] === undefined ? null : num(r['bought_price']), at: r['at'],

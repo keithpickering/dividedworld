@@ -8,13 +8,13 @@ import { testGlass } from '../test-world.tsx';
 import { Toasts } from './Toasts.tsx';
 import { TOAST_DEFAULTS, toastsOn } from './toast-kinds.ts';
 import { announceToastChoice } from './toast-choice.ts';
-import { useAlertFeed } from './useAlertFeed.ts';
+import { REACH_SPREAD_MS, useAlertFeed } from './useAlertFeed.ts';
 
 const ACCOUNT = 'acc';
 const NOW = '2026-11-02T10:00:00Z';
 
 /** A backend that holds the listeners, so a test can send an alert or news as the server would. */
-function backend(options: { unread?: () => number; updates?: readonly Update[]; rows?: () => readonly Alert[]; toasts?: Preferences['toasts'] } = {}) {
+function backend(options: { unread?: () => number; updates?: readonly Update[]; rows?: () => readonly Alert[]; moved?: (id: string) => { count: number; at: string } | null; toasts?: Preferences['toasts'] } = {}) {
   const heard: { account: AccountListener | null; reach: ReachListener | null; accountOff: number; reachOff: number } = { account: null, reach: null, accountOff: 0, reachOff: 0 };
   const api = {
     alertsUnread: vi.fn(async () => options.unread?.() ?? 0),
@@ -25,6 +25,7 @@ function backend(options: { unread?: () => number; updates?: readonly Update[]; 
     thread: vi.fn(async () => null),
     updates: vi.fn(async () => options.updates ?? []),
     alerts: vi.fn(async () => options.rows?.() ?? []),
+    settlementMoved: vi.fn(async (id: string) => options.moved?.(id) ?? null),
     preferences: vi.fn(async () => ({ ...DEFAULT_PREFERENCES, toasts: options.toasts ?? null })),
   } as unknown as KayfaApi;
   return { api, heard };
@@ -263,47 +264,49 @@ describe('the column', () => {
 });
 
 describe('a settlement', () => {
-  const row = (sub: string, count = 2): Alert => ({ kind: 'settlement', sub, act: null, character: null, at: '2026-11-02T08:00:01Z', thread: null, name: null, title: null, count });
+  const moved = (count = 2) => ({ count, at: '2026-11-02T08:00:01Z' });
   const settled = (b: ReturnType<typeof backend>, id: string) => act(async () => { b.heard.reach?.onSettled?.({ id, at: '2026-11-02T08:00:01Z' }); });
   beforeEach(() => { vi.spyOn(Math, 'random').mockReturnValue(0); });
   afterEach(() => { vi.restoreAllMocks(); });
 
-  test('that moved the player\'s characters toasts when it is announced, in the Alerts row\'s words, and the count is read again', async () => {
+  test('that moved the player\'s characters toasts when it is announced, in the Alerts row\'s words, from settlementMoved alone, and the count is read again', async () => {
     let unread = 0;
-    let rows: readonly Alert[] = [];
-    const b = backend({ unread: () => unread, rows: () => rows });
+    const b = backend({ unread: () => unread, moved: (id) => (id === '7' ? moved() : null) });
     mount(b);
-    unread = 1; rows = [row('7')];
+    unread = 1;
     await settled(b, '7');
     await waitFor(() => expect(toasts()).toHaveLength(1));
     expect(toasts()[0]).toHaveTextContent('A settlement is in');
     expect(toasts()[0]).toHaveTextContent('It moved 2 of your characters.');
     expect(within(toasts()[0]!).getByRole('link', { name: 'Open it in My log' })).toBeInTheDocument();
+    expect(b.api.settlementMoved).toHaveBeenCalledWith('7');
+    expect(b.api.alerts).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByTestId('unread')).toHaveTextContent('1'));
   });
 
   test('that moved none of them toasts nothing, and one announced twice toasts once', async () => {
-    let rows: readonly Alert[] = [];
-    const b = backend({ rows: () => rows });
+    let answer: ReturnType<typeof moved> | null = null;
+    const b = backend({ moved: () => answer });
     mount(b);
     await settled(b, '8');
-    await waitFor(() => expect(b.api.alerts).toHaveBeenCalled());
+    await waitFor(() => expect(b.api.settlementMoved).toHaveBeenCalledWith('8'));
     expect(toasts()).toHaveLength(0);
-    rows = [row('9')];
+    answer = moved();
     await settled(b, '9');
     await settled(b, '9');
     await waitFor(() => expect(toasts()).toHaveLength(1));
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(toasts()).toHaveLength(1);
-    expect(b.api.alerts).toHaveBeenCalledTimes(2);
+    expect(b.api.settlementMoved).toHaveBeenCalledTimes(2);
+    expect(b.api.alerts).not.toHaveBeenCalled();
   });
 
-  test('an alerts list that cannot be read toasts nothing and loses nothing', async () => {
+  test('a settlement that cannot be read toasts nothing and loses nothing', async () => {
     const b = backend();
-    (b.api.alerts as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('down'));
+    (b.api.settlementMoved as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('down'));
     mount(b);
     await settled(b, '3');
-    await waitFor(() => expect(b.api.alerts).toHaveBeenCalled());
+    await waitFor(() => expect(b.api.settlementMoved).toHaveBeenCalled());
     expect(toasts()).toHaveLength(0);
   });
 });
@@ -521,28 +524,84 @@ describe('from the quality review of Task 10', () => {
     expect(b.api.alertsUnread).toHaveBeenCalledTimes(2);
   });
 
-  test('a settlement that moved none of the player\'s characters reads no count', async () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0);
+  test('a burst of news and a settlement makes one count read, at a moment of the spread and not at 250ms', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const b = backend();
     mount(b);
-    await waitFor(() => expect(b.api.alertsUnread).toHaveBeenCalledTimes(1));
-    await act(async () => { b.heard.reach?.onSettled?.({ id: '5', at: NOW }); });
-    await waitFor(() => expect(b.api.alerts).toHaveBeenCalled());
-    await act(async () => { await new Promise((r) => setTimeout(r, 400)); });
-    expect(b.api.alertsUnread).toHaveBeenCalledTimes(1);
+    await ms(0);
+    const base = (b.api.alertsUnread as ReturnType<typeof vi.fn>).mock.calls.length;
+    const n = (i: number) => ({ kind: 'update' as const, sub: null, act: `u${i}`, at: `2026-11-02T10:00:0${i}Z` });
+    await act(async () => { for (let i = 0; i < 4; i++) b.heard.reach?.onNews?.(n(i)); b.heard.reach?.onSettled?.({ id: '4', at: NOW }); });
+    await ms(1);
+    await ms(300);
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(base);
+    await ms(REACH_SPREAD_MS * 0.5 - 400);
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(base);
+    await ms(200);
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(base + 1);
+    await ms(REACH_SPREAD_MS);
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(base + 1);
     vi.restoreAllMocks();
   });
 
-  test('the settled read is spread over about ten seconds', async () => {
+  test('an arrival on the account\'s own channel still reads the count at 250ms', async () => {
     vi.useFakeTimers();
-    vi.spyOn(Math, 'random').mockReturnValue(0.99);
     const b = backend();
     mount(b);
-    await act(async () => { b.heard.reach?.onSettled?.({ id: '6', at: NOW }); });
-    await ms(9_000);
-    expect(b.api.alerts).not.toHaveBeenCalled();
-    await ms(1_500);
-    expect(b.api.alerts).toHaveBeenCalled();
+    await ms(0);
+    const base = (b.api.alertsUnread as ReturnType<typeof vi.fn>).mock.calls.length;
+    await act(async () => { b.heard.account?.onAlert?.(quote('1')); });
+    await ms(200);
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(base);
+    await ms(100);
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(base + 1);
+  });
+
+  test('the news toast shows before the spread read fires', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    const b = backend({ updates: [{ act: 'u1', name: 'Dev', title: 'Traps bite', at: NOW } as Update] });
+    mount(b);
+    await ms(0);
+    const base = (b.api.alertsUnread as ReturnType<typeof vi.fn>).mock.calls.length;
+    await act(async () => { b.heard.reach?.onNews?.({ kind: 'update', sub: null, act: 'u1', at: NOW }); });
+    await ms(500);
+    expect(toasts()).toHaveLength(1);
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(base);
+    vi.restoreAllMocks();
+  });
+
+  test('a teardown before the spread fires makes no call', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    const b = backend({ moved: () => ({ count: 1, at: NOW }) });
+    const { rerender } = renderHook(({ account }) => useAlertFeed(b.api, account, '/'), { initialProps: { account: 'a' as string | null } });
+    await ms(0);
+    await act(async () => { b.heard.reach?.onNews?.({ kind: 'update', sub: null, act: 'u1', at: NOW }); b.heard.reach?.onSettled?.({ id: '1', at: NOW }); });
+    rerender({ account: null });
+    const before = (b.api.alertsUnread as ReturnType<typeof vi.fn>).mock.calls.length;
+    await ms(REACH_SPREAD_MS * 2);
+    expect(b.api.alertsUnread).toHaveBeenCalledTimes(before);
+    expect(b.api.settlementMoved).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  test('an answer still in flight when the account changes is kept for no one, and the next account hears the same settlement for itself', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    let release: (v: { count: number; at: string } | null) => void = () => {};
+    const b = backend();
+    (b.api.settlementMoved as ReturnType<typeof vi.fn>).mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    const { result, rerender } = renderHook(({ account }) => useAlertFeed(b.api, account, '/'), { initialProps: { account: 'a' as string | null } });
+    await act(async () => { b.heard.reach?.onSettled?.({ id: '1', at: NOW }); });
+    await waitFor(() => expect(b.api.settlementMoved).toHaveBeenCalledTimes(1));
+    rerender({ account: 'b' });
+    await act(async () => { release({ count: 3, at: NOW }); await Promise.resolve(); });
+    expect(result.current.arrivals).toEqual([]);
+    (b.api.settlementMoved as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 1, at: NOW });
+    await act(async () => { b.heard.reach?.onSettled?.({ id: '1', at: NOW }); });
+    await waitFor(() => expect(result.current.arrivals).toHaveLength(1));
+    expect(result.current.arrivals[0]).toMatchObject({ id: 'settlement|1', count: 1 });
     vi.restoreAllMocks();
   });
 });

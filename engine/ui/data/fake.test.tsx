@@ -1244,7 +1244,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
-  const empty = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], caught: [], before: null };
+  const empty = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -1833,6 +1833,21 @@ describe('the Alerts read and the count (my_alerts, my_alerts_unread, 0060)', ()
     fake.signInAs(dee);
     expect(await fake.alertsUnread()).toBe(1);
     expect((await fake.alerts()).length).toBe(2);
+  });
+
+  test('settlementMoved answers the caller\'s count and when it was applied, and null for a stranger\'s settlement or an unknown id', async () => {
+    const { fake, ana, bo, cy } = alertsWorld();
+    fake.signInAs(ana);
+    const mine = (await fake.alerts()).find((r) => r.kind === 'settlement')!;
+    expect(await fake.settlementMoved(mine.sub!)).toEqual({ count: 2, at: mine.at });
+    expect(await fake.settlementMoved('999')).toBeNull();
+    await expect(fake.settlementMoved('not-an-id')).rejects.toThrow();
+    fake.signInAs(bo);
+    expect(await fake.settlementMoved(mine.sub!)).toMatchObject({ count: 1 });
+    fake.signInAs(cy);
+    expect(await fake.settlementMoved(mine.sub!)).toBeNull();
+    fake.signOut();
+    await expect(fake.settlementMoved(mine.sub!)).rejects.toThrow();
   });
 
   test('another account sees none of the caller\'s, and a visitor reads nothing', async () => {

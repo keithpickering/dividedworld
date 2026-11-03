@@ -31,7 +31,7 @@ export type Segment = string | { readonly text: string; readonly href: string };
 
 export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'played' | 'onMine' | 'saved'
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
-  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'wardEnded';
+  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'passed' | 'caught' | 'struck' | 'wardEnded';
 
 /** One row of the log. */
 export interface LogRow {
@@ -312,7 +312,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
 
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, wardEnded: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -461,6 +461,18 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
   const cardName = (key: unknown) => words.instance.cards.find((c) => c.key === key)?.name ?? 'a card';
   const nameOf = (id: Id | null | undefined) => (id ? data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? 'someone' : 'someone');
   const rows: LogRow[] = [];
+  /* A reply trap a reply passed by without springing it: its moment is spent, and it ends by itself at its time. */
+  for (const e of data.log.setPasses) {
+    if (words.instance.cards.find((c) => c.key === e.card)?.trap?.trigger.on !== 'reply') continue;
+    if (Date.parse(e.passedAt) >= Date.parse(e.endsAt)) continue;
+    const post = data.acts.get(e.post);
+    const own = post?.character ?? undefined;
+    rows.push({
+      key: `passed:${e.play}`, kind: 'passed', at: e.passedAt, what: `A reply passed ${cardName(e.card)} by`,
+      details: [`A reply passed ${cardName(e.card)} by on `, (post && actLink(post, data, words, own)) ?? 'your post', ` without springing it; it ends by itself ${utcDay(e.endsAt)}.`],
+      aura: 0, wallet: null, characters: own ? [own] : [],
+    });
+  }
   for (const e of data.log.setEnds) {
     const post = data.acts.get(e.post);
     const own = post?.character ?? undefined;
@@ -531,6 +543,7 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const p of log.playsOnMine) { ids.add(p.play); ids.add(p.post); }
   for (const s of log.saves) { ids.add(s.play); ids.add(s.post); }
   for (const e of log.setEnds) { ids.add(e.post); if (e.spring) ids.add(e.spring); }
+  for (const e of log.setPasses) ids.add(e.post);
   for (const c of log.caught) { ids.add(c.play); ids.add(c.post); }
   return [...ids];
 }

@@ -9,7 +9,7 @@ import { testInstance } from '../test-world.tsx';
 import { logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
 import { mergeLogs } from './useLog.ts';
 
-const empty: Log = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], caught: [], before: null };
+const empty: Log = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], before: null };
 const settled = (id: number, endsAt: string, lines: LogSettlement['lines']): LogSettlement => ({ id, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines });
 const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z'): MyCharacter =>
   ({ id, name, class: cls, classSince, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
@@ -146,6 +146,20 @@ describe('cards set face down, traps and catches', () => {
     const [row] = logRows(data({ log, mine, acts: new Map([...posts, set].map((a) => [a.id, a])), names }), w, 600, null);
     expect(row!.what).toBe('You set Bluffy face down');
     expect(text(row!)).toBe('Bluffy set face down on your post #3. It never springs, and ends by itself.');
+  });
+
+  test('a reply trap a reply passed by says so, and that it ends by itself; a Bluff or a quote trap passed says nothing', () => {
+    const ends = '2026-11-06T10:00:00.000Z';
+    const log = { ...empty, setPasses: [
+      { play: 'set1', card: 'hook', post: 'post3', passedAt: later, endsAt: ends },
+      { play: 'set2', card: 'bluffy', post: 'post3', passedAt: later, endsAt: ends },
+    ] };
+    const rows = logRows(data({ log, mine, acts: new Map(posts.map((a) => [a.id, a])), names }), w, 600, null);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe('passed');
+    expect(rows[0]!.at).toBe(later);
+    expect(text(rows[0]!)).toBe('A reply passed Hook by on your post #3 without springing it; it ends by itself Nov 6.');
+    expect(rows[0]!.characters).toEqual(['p']);
   });
 
   test('a spring that paid out says what it caught and what reached the wallet', () => {

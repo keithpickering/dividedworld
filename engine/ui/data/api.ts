@@ -779,6 +779,19 @@ export interface FaceDownEnd {
   readonly endedAt: string;
 }
 
+/**
+ * A card the player set face down that a reply passed by (`my_face_down.passed_at`): the first post in its thread by another character,
+ * which spends the back's reply moment. Read for the reply traps among them that it did not spring, which end by themselves at `endsAt`.
+ */
+export interface FaceDownPass {
+  /** The set Act. */
+  readonly play: Id;
+  readonly card: string;
+  readonly post: Id;
+  readonly passedAt: string;
+  readonly endsAt: string;
+}
+
 /** A play of the player's a trap caught (`my_caught`): its card, its post, the trap's card and spring, what the play cost and what the card cost at the machine. */
 export interface CaughtPlay {
   readonly play: Id;
@@ -805,6 +818,8 @@ export interface Log {
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
   readonly setEnds: readonly FaceDownEnd[];
+  /** The player's cards set face down that a reply passed by without springing, by when it did. */
+  readonly setPasses: readonly FaceDownPass[];
   /** The player's plays a trap caught, by when each was played. */
   readonly caught: readonly CaughtPlay[];
   /** The next page's cursor: pass it to `log` for what is older. Null when nothing older is left. */
@@ -1128,6 +1143,12 @@ export interface KayfaApi {
   alerts(before?: string | null): Promise<readonly Alert[]>;
   /** How many alerts arrived after the account's mark (`my_alerts_unread`), at most `ALERTS_UNREAD_BOUND`; a result at the bound is shown "9+". Rejects when it cannot be read. */
   alertsUnread(): Promise<number>;
+  /**
+   * Whether the settlement `id` moved the caller's characters (`my_settlement_moved`): how many of them, and when it was applied (an ISO time), or
+   * null when it moved none, is another player's alone, or does not exist; the answer has the same shape for any id. Read at a random moment after a
+   * settlement is announced, so no client asks in the same instant. Rejects when it cannot be read.
+   */
+  settlementMoved(id: string): Promise<{ readonly count: number; readonly at: string } | null>;
   /**
    * When the caller's account was opened (an ISO time; accounts.created_at, read by its own account alone), or null where it is older
    * than anything this backend holds: an account that has never opened Alerts counts as new only what arrived after it joined (issue
