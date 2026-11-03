@@ -1,6 +1,6 @@
 /**
  * A character's avatar, one entry point: the work is core.ts; this is the edge: the session, which
- * whoami() reads as the player; the service key, for the bucket and the write; a bound on the body
+ * whoami() reads as the player; the secret key, for the bucket and the write; a bound on the body
  * before it is read; and the multipart form the browser sends (character, frames as JSON, and the
  * files square and portrait, portrait left out for a recrop). The original stays with the player:
  * a form carrying a source is passed on as carrying one, for core.ts to refuse in its words, and

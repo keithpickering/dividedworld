@@ -2,7 +2,7 @@
  * A player's actions, one entry point: post, start a thread, edit, spin a thread from an Act,
  * react, buy a card, play one, save an effect's state (and, with its task, the Turn). The work
  * is core.ts; this is the edge: the session, which the database reads through auth.uid(), so
- * the call is made as the player; the service key, for a card's writes and the live updates
+ * the call is made as the player; the secret key, for a card's writes and the live updates
  * that follow each write; a bound on the body; and the headers a browser's preflight asks for.
  */
 import { actDbs, afterTheAnswer, coalesced, handleAction } from './core.ts';

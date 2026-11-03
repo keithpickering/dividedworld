@@ -30,7 +30,7 @@ test('another secret key of the project is not the jobs key', () => {
 });
 
 test('with no jobs key, no request is from the service, not even one with no apikey', () => {
-  for (const headers of [{}, { apikey: '' }, { apikey: JOBS_KEY }, { apikey: 'null' }, { Authorization: 'Bearer ' }]) {
+  for (const headers of [{}, { apikey: '' }, { apikey: JOBS_KEY }, { apikey: 'null' }, { Authorization: 'Bearer ' }] as Record<string, string>[]) {
     assert.equal(fromTheService(scheduled(headers), null), false, JSON.stringify(headers));
   }
 });

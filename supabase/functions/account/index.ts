@@ -1,7 +1,7 @@
 /**
  * Signing in, passwordless, one entry point: asking for a code and signing in with it. The work
  * is core.ts, which holds every answer to the same words and the same time whatever the
- * address; this is the edge: the public key Supabase Auth is called with, the service key that
+ * address; this is the edge: the public key Supabase Auth is called with, the secret key that
  * asks whether an invite opens anything, a player's session for opening their account, the
  * clock, and the work handed on to run after the answer.
  *

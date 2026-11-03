@@ -1,6 +1,6 @@
 /**
  * The one way an Edge Function reaches a bucket: Supabase Storage's REST endpoints, with plain
- * fetch and the service key. No vendor client is imported ("Portable by construction"): a
+ * fetch and the secret key, in apikey. No vendor client is imported ("Portable by construction"): a
  * self-hosted Supabase answers the same requests. Tests hand the functions a fake that keeps the
  * files in memory; no build session touches a deployed bucket.
  *

@@ -1,6 +1,6 @@
 /**
  * A player's live estimate, one entry point: the work is core.ts; this is the edge: the session,
- * which whoami() reads as the player, the service key that reads the window for them, and the
+ * which whoami() reads as the player, the secret key that reads the window for them, and the
  * headers a browser's preflight asks for. The screens ask when the HUD opens and when a reaction
  * lands on one of the player's posts, never on a timer; asks within ESTIMATE_HOLD_SECONDS (core.ts)
  * are answered from the estimate kept, so a crowd of reactions is one read of the window. So that

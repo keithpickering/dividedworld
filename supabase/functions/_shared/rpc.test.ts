@@ -93,6 +93,12 @@ test('a player\'s call carries their own session as its bearer, beside the proje
   assert.equal(headers.get('Authorization'), 'Bearer player-jwt');
 });
 
+test('an empty session is no session: no Authorization is sent', async () => {
+  const { fetch, calls } = scripted(json(200, 1));
+  await postgrest({ url: 'https://p.example', key: 'sb_publishable_p', bearer: '', fetch, sleep: noWait }).rpc('instance_settings', {});
+  assert.equal(new Headers(calls[0]?.init.headers).get('Authorization'), null);
+});
+
 test('a database error keeps the function\'s own words apart from PostgREST\'s detail', async () => {
   const { fetch } = scripted(json(409, { code: '23505', message: 'duplicate key', details: 'Key (owner)=(secret) already exists.' }));
   const db = postgrest({ url: 'https://p.example', key: 'k', fetch, sleep: noWait });

@@ -191,6 +191,15 @@ test('a write whose answer was lost says plainly it may have gone through', asyn
   assert.match((out.body as { error: string }).error, /may have gone through.*look before you try again/);
 });
 
+test('the act function\'s player connection sends the publishable key and the session; its service connection, the secret key alone', async () => {
+  const sent: Headers[] = [];
+  const fetch = (async (_url: string, init: RequestInit) => { sent.push(new Headers(init.headers)); return new Response('1', { status: 200 }); }) as unknown as typeof globalThis.fetch;
+  const dbs = actDbs({ url: 'https://p.example', key: 'sb_secret_s', publishable: 'sb_publishable_p', session: 'tok', fetch, sleep: async () => {} });
+  await dbs.player.rpc('whoami', {});
+  await dbs.service.rpc('card_target', {});
+  assert.deepEqual(sent.map((h) => [h.get('apikey'), h.get('Authorization')]), [['sb_publishable_p', 'Bearer tok'], ['sb_secret_s', null]]);
+});
+
 test('the act function\'s connections send a post once after a 504, and a read again', async () => {
   const seen: string[] = [];
   const fetch = (async (url: string) => { seen.push(url.split('/').pop()!); return new Response('', { status: 504 }); }) as unknown as typeof globalThis.fetch;
