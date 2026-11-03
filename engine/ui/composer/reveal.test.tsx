@@ -51,7 +51,7 @@ describe('Reveal… in the composer', () => {
 
   test('sends the character\'s words, shows a refusal in the server\'s words, and clears it on the next try', async () => {
     const w = threadWorld();
-    const unmask = vi.spyOn(w.fake, 'unmask').mockResolvedValueOnce({ ok: false, error: 'reveal in a few minutes' });
+    const unmask = vi.spyOn(w.fake, 'unmask').mockResolvedValueOnce({ ok: false, error: 'this character\'s Turn takes effect at the settlement now due; reveal once it has run, or withdraw the Turn' });
     openThread(w);
     await replyBox();
     await userEvent.click(screen.getByRole('button', { name: 'Reveal…' }));
@@ -59,7 +59,7 @@ describe('Reveal… in the composer', () => {
     await userEvent.type(within(dialog).getByLabelText(/In the character.s words/u), 'It was me.');
     expect(within(dialog).getByText('10 of 200 characters. Plain text.')).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Heel' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('reveal in a few minutes');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('reveal once it has run, or withdraw the Turn');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Heel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(unmask).toHaveBeenLastCalledWith(w.pipe, w.thread, 'It was me.');

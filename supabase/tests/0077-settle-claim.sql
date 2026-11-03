@@ -57,7 +57,7 @@ begin
     perform pg_temp.first_window();
     a := pg_temp.turning('claim-slow');
     perform pg_temp.claim(w_end - interval '1 day', w_end);
-    -- A busy window: the run claimed it six minutes ago and is still applying it.
+    -- A busy window: the run claimed it six minutes ago, past 0072's five-minute clock, and is still applying it.
     update settlement_claims set claimed_at = now() - interval '6 minutes' where settlement_claims.window_end = w_end;
     said := pg_temp.reveal(a);
     if said is distinct from pg_temp.refusal() then
@@ -131,6 +131,36 @@ begin
   end;
 end $$;
 
+-- ---- Task 1: a claim made after a settlement past its start (a late run on a window already applied) refuses nothing ----
+do $$
+declare
+  s timestamptz := now() - interval '1 day 1 hour';
+  e1 timestamptz := now() - interval '3 hours';
+  a uuid; said text;
+begin
+  begin
+    perform pg_temp.first_window();
+    a := pg_temp.turning('claim-late');
+    insert into settlements (starts_at, ends_at, season) values (s, e1, (select max(id) from seasons));
+    perform pg_temp.claim(s, now() - interval '1 hour');
+    said := pg_temp.reveal(a);
+    if said is not null then raise exception 'a claim made after a settlement past its start blocks no reveal: %', said; end if;
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
+end $$;
+
+-- ---- Task 1: a claim's window ends after it starts ----
+do $$
+declare w_end timestamptz := now() - interval '1 hour'; code text;
+begin
+  begin
+    perform pg_temp.claim(w_end, w_end);
+  exception when others then code := sqlstate; perform tests.unbecome();
+  end;
+  if code is distinct from '23514' then raise exception 'a claim on a window that does not end after it starts is refused by its check: %', code; end if;
+end $$;
+
 -- ---- Task 1: a claim on a window ending before the Turn was asked does not cover it (carried from 0076) ----
 do $$
 declare
@@ -180,4 +210,150 @@ begin
   end if;
   if not has_function_privilege('service_role', 'claim_settlement_window(timestamptz, timestamptz)', 'execute') then raise exception 'the service claims a window'; end if;
   if to_regprocedure('claim_settlement_window(timestamptz)') is not null then raise exception 'the one-argument claim is gone'; end if;
+end $$;
+
+-- ---- Task 2: a Turn never takes effect behind a reveal (the backstop) ----
+
+-- Whether a tally names the character.
+create function pg_temp.tallied(a uuid) returns boolean language sql as $$
+  select exists (select 1 from acts x where x.kind = 'tally' and x.payload -> 'turns' @> jsonb_build_array(jsonb_build_object('character', a)))
+$$;
+
+create function pg_temp.class_due_at(a uuid) returns timestamptz language plpgsql as $$
+declare due timestamptz;
+begin
+  perform tests.become((select owner from characters where id = a));
+  select m.class_due_at into due from my_characters m where m.id = a;
+  perform tests.unbecome();
+  return due;
+end $$;
+
+-- A reveal dated after the window's end and before its settlement (the round trip before the claim): the Turn waits for the next.
+do $$
+declare
+  w1 timestamptz := now() - interval '1 hour';
+  w2 timestamptz := now() - interval '30 minutes';
+  t uuid := tests.thread('Settle claim backstop');
+  a uuid;
+begin
+  begin
+    a := pg_temp.turning('backstop-late', 'announced');
+    perform write_unmask(a, t, 'act', w1 + interval '1 minute');
+    perform masks_change(w1);
+    if (select class_key from class_now(a, 'infinity')) is distinct from 'alpha' then raise exception 'a Turn passed over by the backstop has not taken effect'; end if;
+    if (select p.due_at from pending_turns p where p.character = a) is distinct from w1 then
+      raise exception 'the Turn still waits, due at the window it was passed over at: %', (select to_jsonb(p) from pending_turns p where p.character = a);
+    end if;
+    if pg_temp.tallied(a) then raise exception 'no tally names a Turn that did not take effect'; end if;
+    -- At the next window it lands, with the date it was due at, and its tally at the window it took effect at.
+    perform masks_change(w2);
+    if (select class_key from class_now(a, 'infinity')) is distinct from 'beta' then raise exception 'the passed-over Turn lands at the next window'; end if;
+    if exists (select 1 from pending_turns p where p.character = a) then raise exception 'a Turn that landed no longer waits'; end if;
+    if (select h.due_at from class_history h where h.character = a and h.class_key = 'beta') is distinct from w1 then raise exception 'class_history says when the Turn was due'; end if;
+    if (select h.started_at from class_history h where h.character = a and h.class_key = 'beta') is distinct from w2 then raise exception 'the Turn took effect at the second window'; end if;
+    if pg_temp.class_due_at(a) is distinct from w1 then raise exception 'my_characters says when the Turn was due: %', pg_temp.class_due_at(a); end if;
+    if (select x.created_at from acts x where x.kind = 'tally' and x.payload -> 'turns' @> jsonb_build_array(jsonb_build_object('character', a))) is distinct from w2 then
+      raise exception 'an announced Turn''s tally is at the window it took effect at';
+    end if;
+    -- The tally carries nothing that marks the Turn as late.
+    if exists (select 1 from acts x cross join lateral jsonb_array_elements(x.payload -> 'turns') e
+               where x.kind = 'tally' and e ->> 'character' = a::text and (e ? 'due_at' or e ? 'dueAt' or e::text like '%' || w1::text || '%')) then
+      raise exception 'the tally says nothing of when the Turn was due';
+    end if;
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
+end $$;
+
+-- Passed over twice, it keeps the first window's end.
+do $$
+declare
+  w1 timestamptz := now() - interval '1 hour';
+  w2 timestamptz := now() - interval '30 minutes';
+  t uuid := tests.thread('Settle claim backstop twice');
+  a uuid;
+begin
+  begin
+    a := pg_temp.turning('backstop-twice');
+    perform write_unmask(a, t, 'act', w1 + interval '1 minute');
+    perform masks_change(w1);
+    perform write_unmask(a, t, 'act', w2 + interval '1 minute');
+    perform masks_change(w2);
+    if (select class_key from class_now(a, 'infinity')) is distinct from 'alpha' then raise exception 'passed over twice, the Turn still waits'; end if;
+    if (select p.due_at from pending_turns p where p.character = a) is distinct from w1 then raise exception 'passed over twice, it keeps the first end'; end if;
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
+end $$;
+
+-- A reveal dated before the window's end leaves the Turn to land at it, never due earlier.
+do $$
+declare
+  w1 timestamptz := now() - interval '1 hour';
+  t uuid := tests.thread('Settle claim backstop early');
+  a uuid;
+begin
+  begin
+    a := pg_temp.turning('backstop-early');
+    perform write_unmask(a, t, 'act', w1 - interval '30 minutes');
+    perform masks_change(w1);
+    if (select class_key from class_now(a, 'infinity')) is distinct from 'beta' then raise exception 'a reveal before the window''s end does not hold back the Turn'; end if;
+    if (select h.due_at from class_history h where h.character = a and h.class_key = 'beta') is not null then raise exception 'a Turn that landed when due has no due_at'; end if;
+    if pg_temp.class_due_at(a) is not null then raise exception 'my_characters has no class_due_at for a Turn that landed when due'; end if;
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
+end $$;
+
+-- Changing a passed-over Turn is a new ask, and clears due_at. Withdrawing it removes the row.
+do $$
+declare
+  w1 timestamptz := now() - interval '1 hour';
+  t uuid := tests.thread('Settle claim backstop changed');
+  a uuid;
+begin
+  begin
+    a := pg_temp.turning('backstop-changed');
+    perform write_unmask(a, t, 'act', w1 + interval '1 minute');
+    perform masks_change(w1);
+    if (select p.due_at from pending_turns p where p.character = a) is null then raise exception 'the setup: the Turn was passed over'; end if;
+    perform tests.become((select owner from characters where id = a));
+    perform turn(a, 'beta', 'announced', true, false);
+    perform tests.unbecome();
+    if (select p.due_at from pending_turns p where p.character = a) is not null then raise exception 'a changed Turn is a new ask, with no due_at'; end if;
+    perform tests.become((select owner from characters where id = a));
+    perform withdraw_turn(a);
+    perform tests.unbecome();
+    if exists (select 1 from pending_turns p where p.character = a) then raise exception 'a withdrawn Turn no longer waits'; end if;
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
+end $$;
+
+-- The reveals masks_change writes itself, at this window's end, hold back no Turn in the same settlement: a character that debuts
+-- with its class and has a Turn waiting takes the Turn, and its debut names the class it took.
+do $$
+declare
+  w1 timestamptz := now() - interval '1 hour';
+  ann uuid := tests.account('backstop-debut');
+  a uuid; b uuid;
+begin
+  begin
+    insert into characters (owner, name, created_at, debut_loudness) values (ann, 'Backstop Debut', now() - interval '1 day', 'with_class') returning id into a;
+    insert into class_history (character, class_key, started_at) values (a, 'alpha', now() - interval '1 day');
+    insert into pending_turns (character, class_key, loudness, show_from, show_to, asked_at) values (a, 'beta', 'silent', false, false, now() - interval '2 hours');
+    -- And another character whose Turn names its new class, so masks_change writes its reveal at this window's end too.
+    b := pg_temp.turning('backstop-loud', 'announced');
+    perform masks_change(w1);
+    if (select class_key from class_now(a, 'infinity')) is distinct from 'beta' then raise exception 'a debut''s own reveal does not hold back its Turn'; end if;
+    if (select class_key from class_now(b, 'infinity')) is distinct from 'beta' then raise exception 'a Turn''s own reveal does not hold back its Turn'; end if;
+    if not exists (select 1 from acts x where x.character = a and x.kind = 'unmask' and x.created_at = w1 and x.payload ->> 'class' = 'beta') then
+      raise exception 'the debut names the class the Turn took';
+    end if;
+    if exists (select 1 from pending_turns p where p.character in (a, b)) then raise exception 'both Turns landed'; end if;
+    -- The next window passes over neither: both landed already.
+    if exists (select 1 from class_history h where h.character in (a, b) and h.due_at is not null) then raise exception 'neither Turn waited'; end if;
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
 end $$;
