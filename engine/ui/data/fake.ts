@@ -73,7 +73,7 @@ export interface Seed {
   react(account: Id, character: Id, act: Id, kind: string): void;
   /**
    * A settlement: debuts the waiting characters, applies the waiting Turns (class history starts
-   * then, so the cooldown does) but for one whose character revealed at or after `at`, which waits for the next (0073), writes its ledger lines with their shares, credits each account's
+   * then, so the cooldown does) but for one whose character revealed at or after `at`, which waits for the next (0074), writes its ledger lines with their shares, credits each account's
    * wallet with its lines' sum as apply_settlement does (held to the cap and the floor, with a wallet
    * event saying what either cut off) and adds each character's to its standing, sets the wallets (by
    * account) and standings (by character) given outright, and dates `lastSettledAt`. Each part can be
@@ -147,7 +147,7 @@ export interface Seed {
    * A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action).
    * With `paid`, its player's card ledger records the play at that price and the wallet pays it, as `play_card` does (a wallet event
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
-   * moments were snapshotted (0071): its moment is not taken.
+   * moments were snapshotted (0072): its moment is not taken.
    */
   card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean }): Id;
   /**
@@ -177,7 +177,7 @@ export interface SeedLine {
   readonly character: Id;
   readonly reason: string;
   readonly amount: number;
-  /** The numbers its reason's words state, as the settlement wrote them into its ledger row (`ledger.params`, 0072). */
+  /** The numbers its reason's words state, as the settlement wrote them into its ledger row (`ledger.params`, 0073). */
   readonly params?: Readonly<Record<string, number>>;
   readonly shares?: readonly { readonly act: Id; readonly quadrant?: LogShare['quadrant']; readonly amount: number }[];
 }
@@ -231,9 +231,9 @@ interface CharRec {
   debutedAt: number | null;
   retiredAt: number | null;
   loudness: DebutLoudness;
-  /** Each class it has held and when it began; `dueAt`, where a reveal made that class's Turn wait past the settlement it was due at (0073). */
+  /** Each class it has held and when it began; `dueAt`, where a reveal made that class's Turn wait past the settlement it was due at (0074). */
   readonly history: { cls: string; at: number; dueAt?: number }[];
-  /** `dueAt`: the first settlement that passed the Turn over (0073); a Turn asked again is a new one, with none. */
+  /** `dueAt`: the first settlement that passed the Turn over (0074); a Turn asked again is a new one, with none. */
   pending: (PendingTurn & { asked: number; dueAt?: number }) | null;
   /** Hidden from every presence box (presence_hidden, 0041). */
   presenceHidden: boolean;
@@ -304,7 +304,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
     cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
-    /* What screen_settings's economy holds (0072): the whole economy row. */
+    /* What screen_settings's economy holds (0073): the whole economy row. */
     economy: settings.economy,
   };
 
@@ -814,7 +814,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The state a play's effect has saved, as effect_state keeps it: one row per play, the newest save. */
   const effects = new Map<Id, { state: unknown; at: number }>();
   /**
-   * Each play on a post's moment, as play_moments and play_moment_layers keep it (0071): the post's version when it landed, and every
+   * Each play on a post's moment, as play_moments and play_moment_layers keep it (0072): the post's version when it landed, and every
    * other layer then with what it had saved. Taken in `write`, as the trigger takes it on the Act's insert, so every path that lands a
    * play takes one: a cast, a Set, a spring, a seed.
    */
@@ -825,7 +825,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .map((a) => ({ layer: a.id, saved: effects.has(a.id) ? { ...effects.get(a.id)! } : null }));
     moments.set(play.id, { version: edits(post).at(-1)?.id ?? post.id, layers });
   }
-  /** play_moment (0071): the moment's version as the post shows it then, the play and its layers, and the plays above live then. */
+  /** play_moment (0072): the moment's version as the post shows it then, the play and its layers, and the plays above live then. */
   function playMoment(id: Id): PlayMoment | null {
     const play = acts.get(id);
     if (!play || !(play.kind === 'card' || play.kind === 'set' || play.kind === 'spring') || play.target === null || !onPost(play)) return null;
@@ -1083,7 +1083,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
     faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null });
     spend(account, decided.value.price, 'play', written.id);
-    /* As my_card_ledger (0073) says it: whether the card carries a trap, from the card kinds. */
+    /* As my_card_ledger (0075) says it: whether the card carries a trap, from the card kinds. */
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null });
     sendAct(written);
     return ok(publicAct(written));
@@ -1785,7 +1785,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return Math.min(ALERTS_UNREAD_BOUND, alertsOf(account).filter((a) => Date.parse(a.at) > seen).length);
     },
     settlementMoved(id) {
-      // my_settlement_moved (0074): the caller's own ledger lines in the settlement, counted by character; none is null, as is an id nothing holds.
+      // my_settlement_moved (0076): the caller's own ledger lines in the settlement, counted by character; none is null, as is an id nothing holds.
       const account = me();
       if (!account) throw new Error('sign in with an account first');
       if (!/^\d+$/.test(id)) throw new Error('a settlement is a whole number'); // the function takes bigint, so the database refuses the cast
@@ -2037,7 +2037,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o.turns !== false) {
         for (const c of characters.values()) {
           if (!c.pending) continue;
-          /* The backstop (masks_change, 0073): a Turn never takes effect behind a reveal dated at or after the settlement's end. It
+          /* The backstop (masks_change, 0074): a Turn never takes effect behind a reveal dated at or after the settlement's end. It
              waits for the next, due at the first it was passed over at. */
           if ([...acts.values()].some((a) => a.kind === 'unmask' && a.character === c.id && a.at >= at)) {
             c.pending.dueAt ??= at;

@@ -237,7 +237,7 @@ export interface InstanceUi {
    * the Act and the quadrant, beside it. Never who reacted.
    *
    * `params` are the numbers the sentence states (the core loop design, section 6, #57): a settled
-   * line's own, which the settlement wrote into its ledger row (`ledger.params`, 0072), so a line
+   * line's own, which the settlement wrote into its ledger row (`ledger.params`, 0073), so a line
    * settled before a retune says the numbers it was settled under; and, for a row with none and for
    * the live estimate, the economy as the server holds it now (`economyNow`).
    */

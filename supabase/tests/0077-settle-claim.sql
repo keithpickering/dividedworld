@@ -1,4 +1,4 @@
--- The settle run's claim, held until its window is applied (supabase/migrations/0073_settle_claim.sql):
+-- The settle run's claim, held until its window is applied (supabase/migrations/0074_settle_claim.sql):
 -- docs/plans/2026-11-03-settle-claim-plan.md, built from docs/plans/2026-11-03-settle-claim-design.md.
 
 -- A season's first window, whose end nobody knows in advance (0014). Earlier files commit settlements past now, so each case moves
@@ -57,7 +57,7 @@ begin
     perform pg_temp.first_window();
     a := pg_temp.turning('claim-slow');
     perform pg_temp.claim(w_end - interval '1 day', w_end);
-    -- A busy window: the run claimed it six minutes ago, past 0072's five-minute clock, and is still applying it.
+    -- A busy window: the run claimed it six minutes ago, past 0073's five-minute clock, and is still applying it.
     update settlement_claims set claimed_at = now() - interval '6 minutes' where settlement_claims.window_end = w_end;
     said := pg_temp.reveal(a);
     if said is distinct from pg_temp.refusal() then

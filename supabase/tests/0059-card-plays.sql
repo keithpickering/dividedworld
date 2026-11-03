@@ -69,8 +69,8 @@ begin
 end $$;
 
 -- ---- A post and a cast by one player, and a post and a strike whose setter is the poster: no deadlock ----
--- Every write that may spring locks in the one order 0073_trap_locks.sql wrote (a back's face_down row, the thread, then the count rows
--- of the writer and of the setters, then the Act it inserts), and 0076_reply_passes.sql keeps it while post() locks fewer backs.
+-- Every write that may spring locks in the one order 0075_trap_locks.sql wrote (a back's face_down row, the thread, then the count rows
+-- of the writer and of the setters, then the Act it inserts), and 0078_reply_passes.sql keeps it while post() locks fewer backs.
 -- Statement order the other way round leaves each pair below holding one lock the other wants. 0077-trap-locks.sql drives the same
 -- pairs in a loop; here a trigger that sleeps after the poster's insert makes the interleaving certain rather than likely: the poster
 -- holds its count row for the time the other side needs to take the lock it will wait on. Committed rows, since two sessions read them; first, so the
@@ -142,7 +142,7 @@ begin
 end $$;
 
 -- ---- A back set while a post waits to insert its Act is not sprung by that post: the set it locked is the set it springs ----
--- Reply passes (0076): post() reads the quoted post's live back and locks it with the setters' count rows before its Act. A trigger that
+-- Reply passes (0078): post() reads the quoted post's live back and locks it with the setters' count rows before its Act. A trigger that
 -- sleeps after the poster's Act insert holds the post there while a set_card lands a quote trap on the quoted post; the post never locked
 -- that back, so it must not spring it (it was set after the post, and the next quote springs it). Committed rows, as above.
 do $$

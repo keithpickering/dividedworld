@@ -6,7 +6,7 @@
  * false on its own date once the settlement runs. So it is refused, and comes through once the
  * settlement has run, naming the class the Turn took. Where the window's end is not known in advance
  * and a reveal comes before the run has claimed its window (the round trip, the settle claim design's
- * section 3), the settlement passes the Turn over instead (supabase/migrations/0073_settle_claim.sql),
+ * section 3), the settlement passes the Turn over instead (supabase/migrations/0074_settle_claim.sql),
  * so the reveal stays true on its date. Each on a database of its own, beside the scratch one
  * tools/test-sql.mjs made, since the scratch one's earlier files commit settlements past now.
  */

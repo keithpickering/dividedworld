@@ -165,7 +165,7 @@ declare
                          'presencePollSeconds', 'presenceWindow',
                          -- The cards' prices and what they read (0039; 0044-card-economy.sql holds what it holds).
                          'cardEconomy',
-                         -- The economy row, whose numbers a class's words state (0072, #57): settings, and public.
+                         -- The economy row, whose numbers a class's words state (0073, #57): settings, and public.
                          'economy'];
   k text;
 begin

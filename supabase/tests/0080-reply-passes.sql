@@ -1,4 +1,4 @@
--- A reply passes each card back once (supabase/migrations/0076_reply_passes.sql): the first post in a thread by another character
+-- A reply passes each card back once (supabase/migrations/0078_reply_passes.sql): the first post in a thread by another character
 -- spends every waiting back's reply moment, whatever the card, and springs at most the newest reply trap among them. The cost-at-scale
 -- plan, Task 4; the cost-at-scale design, sections 4 and 5. The cards are the engine's test set, never an instance's.
 

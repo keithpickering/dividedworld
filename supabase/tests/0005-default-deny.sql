@@ -29,7 +29,7 @@ declare
                            'post_update(text,text,jsonb)', 'updates(timestampwithtimezone,integer)',
                            -- Season news (0063): the season page's News tab.
                            'season_news(timestampwithtimezone,integer)',
-                           -- A play's moment (0071): what was on a post when a play landed.
+                           -- A play's moment (0072): what was on a post when a play landed.
                            'play_moment(uuid)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)'];

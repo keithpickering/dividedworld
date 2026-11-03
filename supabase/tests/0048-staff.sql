@@ -119,7 +119,7 @@ do $$
 declare ann uuid := tests.account('staff-cap');
 begin
   perform tests.character(ann, 'Capped One');
-  update settings set value = '1' where key = 'charactersPerPlayer'; -- 0 is no cap the settings hold (0074), and Capped One fills the one
+  update settings set value = '1' where key = 'charactersPerPlayer'; -- 0 is no cap the settings hold (0077), and Capped One fills the one
   -- With no slot to give, a staff character is still made (it takes none), and a player's is still refused.
   insert into characters (name, staff, staff_kind, debuted_at) values ('Cap Bot', 'cap-bot', 'bot', now());
   begin insert into characters (owner, name) values (ann, 'Capped Two'); raise exception 'the cap did not hold';

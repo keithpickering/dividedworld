@@ -74,7 +74,7 @@ export interface ScreenSettings {
    */
   readonly cardEconomy: Readonly<Record<string, number>>;
   /**
-   * The instance's economy row as the server holds it now (0072): the numbers a class's words state (the core loop design, section 6,
+   * The instance's economy row as the server holds it now (0073): the numbers a class's words state (the core loop design, section 6,
    * #57), so a description and a line with no numbers of its own say the number an admin has tuned. Settings, none of them a private
    * fact. A key it lacks is the compiled economy's (`economyNow`).
    */
@@ -434,7 +434,7 @@ export interface MyCharacter {
   readonly classSince: string;
   /**
    * The settlement end its latest Turn was due at, where a reveal made after that window had ended made the Turn wait for the
-   * next settlement (0073_settle_claim.sql); null where it took effect when due, or its class is its first.
+   * next settlement (0074_settle_claim.sql); null where it took effect when due, or its class is its first.
    */
   readonly classDueAt: string | null;
   /** When it may next Turn; null when it may now. */
@@ -586,7 +586,7 @@ export interface LogLine {
   readonly character: Id;
   readonly reason: string;
   readonly amount: number;
-  /** The numbers its reason's words state, as it was settled under them (`ledger.params`, 0072); absent on a row with none. */
+  /** The numbers its reason's words state, as it was settled under them (`ledger.params`, 0073); absent on a row with none. */
   readonly params?: Readonly<Record<string, number>>;
   /** Empty where the estimate valued no post for the reason, or the settlement was made before shares were kept. */
   readonly shares: readonly LogShare[];
@@ -931,7 +931,7 @@ export interface PlayAbove {
 }
 
 /**
- * A play's moment (play_moment, 0071_play_moments.sql): the post as it read when a play landed on it, with every play on it then, as
+ * A play's moment (play_moment, 0072_play_moments.sql): the post as it read when a play landed on it, with every play on it then, as
  * each stood. `version` is the post with that version's words as its current payload; `layers` is the play itself first, as it landed
  * (no state), then each layer that was on the post, with what it had saved then or null where it had saved none; `above` is each play
  * beyond a post live then on the post's author, its thread or its board. `recorded` is false for a play from before the snapshot,

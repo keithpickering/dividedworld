@@ -95,7 +95,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-/** A jsonb object of numbers by key (a ledger row's `params`, 0072), or null where it is none or holds anything else. */
+/** A jsonb object of numbers by key (a ledger row's `params`, 0073), or null where it is none or holds anything else. */
 const numbers = (v: unknown): Readonly<Record<string, number>> | null =>
   typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every((x) => typeof x === 'number' && Number.isFinite(x)) ? v as Record<string, number> : null;
 
@@ -795,7 +795,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return out;
     },
     async playMoment(play) {
-      /* One read of the moment (play_moment, 0071); an id that is no play on a post is refused in words, which is null here. */
+      /* One read of the moment (play_moment, 0072); an id that is no play on a post is refused in words, which is null here. */
       if (!idOk(play)) return null;
       const r = await read(async () => {
         const x = (await client.rpc('play_moment', { play })) as Res;
@@ -1035,7 +1035,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(r.data))));
     },
     async settlementMoved(id) {
-      /* The caller's own ledger lines in one settlement, through a function (0074); no row is "moved none", for any id alike. */
+      /* The caller's own ledger lines in one settlement, through a function (0076); no row is "moved none", for any id alike. */
       const r = await read(() => client.rpc('my_settlement_moved', { settlement: id }));
       const row = Array.isArray(r.data) ? (r.data[0] as Record<string, unknown> | undefined) : undefined;
       const at = row === undefined ? null : str(row['applied_at']);
@@ -1074,7 +1074,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
           /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
           rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
-          /* The player's own cards a reply passed by without springing, by when it did (0076); the log names the reply traps among them. */
+          /* The player's own cards a reply passed by without springing, by when it did (0078); the log names the reply traps among them. */
           rows(() => client.from('my_face_down').select('play,card,post,ends_at,passed_at').not('passed_at', 'is', null).is('spring', null), 'passed_at', (q) => q, ['play']),
           rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
         ]);

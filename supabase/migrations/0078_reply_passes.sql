@@ -1,9 +1,9 @@
 -- A reply passes each card back once, and a post reads only the backs still waiting. The cost-at-scale design, sections 4 to 6
--- (docs/plans/2026-11-03-cost-at-scale-design.md); the plan's Task 4; #136 F2, F3 and F5. It builds on 0073_trap_locks.sql
+-- (docs/plans/2026-11-03-cost-at-scale-design.md); the plan's Task 4; #136 F2, F3 and F5. It builds on 0075_trap_locks.sql
 -- (docs/plans/2026-11-03-trap-locks-design.md), whose header states the lock order and which function takes which; read that first.
 --
 -- The defect. Every post locked and probed every live back in its thread, including backs that had already sprung or been passed
--- (0073 narrowed that to the unsprung ones), so a post's cost grew with the thread's card backs (the card design's section 12 says
+-- (0075 narrowed that to the unsprung ones), so a post's cost grew with the thread's card backs (the card design's section 12 says
 -- "one probe"). The loop also departed from the card design's section 4, where a reply trap springs on "the first post in the thread
 -- after it by another character": a post that met two reply traps sprang the newest, and the older sprang on some later post.
 --
@@ -21,21 +21,21 @@
 -- back's post's author, else waiting. A reply trap that an older post's spring left waiting under the old loop, with a later post by
 -- another character already in the thread, is now passed and no longer springs on a reply; it still ends at its time.
 --
--- Locks. The order is 0073_trap_locks.sql's, steps 1 to 6 (accounts; the target post's acts row; face_down rows by `play`, all in
+-- Locks. The order is 0075_trap_locks.sql's, steps 1 to 6 (accounts; the target post's acts row; face_down rows by `play`, all in
 -- one statement; the threads row a post's `seq` comes from; character_post_counts rows by character; wallets), with one addition
 -- at step 3: a post locks the face_down_reply row of each unsprung back it may pass together with the back's face_down row, in the
 -- same statement and in `play` order. Only post() writes a reply row after set_card creates it. It stamps the rows it locked in step 3
 -- while holding them. A waiting back that has already sprung is not locked in step 3, and its row is stamped after step 5 with
 -- `for update skip locked`, so that stamp never waits: a row another post holds is left waiting for the next post, and the stamp
 -- cannot be one side of a lock cycle.
--- What changes is which backs post() locks (0073: every live unsprung back in its thread; here: the quoted post's live unsprung back,
+-- What changes is which backs post() locks (0075: every live unsprung back in its thread; here: the quoted post's live unsprung back,
 -- and the thread's WAITING backs on posts of other characters, from the partial index). A waiting back that has already sprung (by a
--- quote or a cast, which do not pass it) is still stamped, or every later post would read it; it is not locked, as in 0073 (a spring
+-- quote or a cast, which do not pass it) is still stamped, or every later post would read it; it is not locked, as in 0075 (a spring
 -- is public and its row is nobody's to wait on). The backs a write springs are the backs it locked: a
 -- back that set_card commits after the post took its locks is not sprung by that post (it was set after the post began), and the
 -- post says so to spring_traps through `held`, whose probe reads only those plays in the same statement that locks the row it
 -- springs. play_card needs no replacement: a cast locks and springs the one back on its target post, and holds no reply row.
--- react adds no counted Act before its spring and keeps its order. 0073 left both as they stood.
+-- react adds no counted Act before its spring and keeps its order. 0075 left both as they stood.
 --
 -- The masks (design, section 5). face_down_reply is written for every back alike, by every post that passes it. The rows a post
 -- reads, writes and locks, and the count rows it locks, are the same whatever cards are face down, a Bluff's included; only the
@@ -96,11 +96,11 @@ select face_down_reply_backfill();
 
 -- ------------------------------------------------------------------------ spring_traps ----
 
--- spring_traps (0073_trap_locks.sql), whole, with one addition: a write that locked its backs passes them as `held`, and only a back
+-- spring_traps (0075_trap_locks.sql), whole, with one addition: a write that locked its backs passes them as `held`, and only a back
 -- among them springs. The probe is the same index read for every card, a Bluff's too, and restricts by `held` in the statement that
--- locks the row it springs. Everything else, 0073's reads before the decision included, as 0073 wrote it. Its argument list grows,
+-- locks the row it springs. Everything else, 0075's reads before the decision included, as 0075 wrote it. Its argument list grows,
 -- so it is dropped and made again (callers name it, never its signature), with 0054's revoke. No other function calls it with
--- `held`; react (0054) and play_card (0058) call it with the arguments they had, and `held` null probes as 0073 does.
+-- `held`; react (0054) and play_card (0058) call it with the arguments they had, and `held` null probes as 0075 does.
 drop function spring_traps(text, uuid, uuid, text, text, uuid, integer);
 create function spring_traps(trigger text, post uuid, by_act uuid, quadrant text default null, incoming_rarity text default null,
                              caster uuid default null, price integer default 0, held uuid[] default null) returns jsonb
@@ -224,14 +224,14 @@ end $$;
 
 -- ---------------------------------------------------------------------------------- post ----
 
--- post (0073_trap_locks.sql), with the backs it locks changed and the reply moment spent. In 0073's order, before the Act:
+-- post (0075_trap_locks.sql), with the backs it locks changed and the reply moment spent. In 0075's order, before the Act:
 --   3. the quoted post's live unsprung back and the thread's waiting, unsprung backs on posts of other characters, each with its
 --      reply row, in one statement by `play`;
 --   4. the thread row;
 --   5. the count rows of the poster and of every setter of a back locked, by character, each made first where it is missing.
 -- Then the post is written; the quote's trap springs; every waiting back this post passes is stamped (those it locked that were
 -- still waiting when it got them, and the sprung ones it did not lock); and if nothing sprang, the newest reply trap among the
--- passed backs springs, at most one. Everything else as 0073 wrote it (the alert for the author of a quoted Act included).
+-- passed backs springs, at most one. Everything else as 0075 wrote it (the alert for the author of a quoted Act included).
 create or replace function post(in_thread uuid, through uuid, body text, quoting uuid default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
