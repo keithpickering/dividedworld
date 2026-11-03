@@ -9,7 +9,7 @@ import { testInstance } from '../test-world.tsx';
 import { logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
 import { mergeLogs } from './useLog.ts';
 
-const empty: Log = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], caught: [], before: null };
+const empty: Log = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], before: null };
 const settled = (id: number, endsAt: string, lines: LogSettlement['lines']): LogSettlement => ({ id, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines });
 const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z'): MyCharacter =>
   ({ id, name, class: cls, classSince, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
@@ -126,6 +126,28 @@ describe('cards set face down, traps and catches', () => {
     expect(row!.kind).toBe('set');
     expect(row!.what).toBe('You set Snare face down');
     expect(text(row!)).toBe('Snare set face down on your post #3. It springs once, or ends by itself.');
+  });
+
+  test('a Bluff\'s Set line says it only ends by itself; a trap\'s says it springs once or ends', () => {
+    const set = act('set1', 'set', 'p', { targetActId: 'post3' });
+    const bluff = logRows(data({ log: { ...empty, cards: [{ card: 'bluffy', kind: 'played' as const, act: 'set1', price: 0, at }] }, mine, acts: new Map([...posts, set].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(text(bluff[0]!)).toBe('Bluffy set face down on your post #3. It ends by itself.');
+    const trap = logRows(data({ log: { ...empty, cards: [{ card: 'hook', kind: 'played' as const, act: 'set1', price: 0, at }] }, mine, acts: new Map([...posts, set].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(text(trap[0]!)).toBe('Hook set face down on your post #3. It springs once, or ends by itself.');
+  });
+
+  test('a reply trap a reply passed by says so, and that it ends by itself; a Bluff or a quote trap passed says nothing', () => {
+    const ends = '2026-11-06T10:00:00.000Z';
+    const log = { ...empty, setPasses: [
+      { play: 'set1', card: 'hook', post: 'post3', passedAt: later, endsAt: ends },
+      { play: 'set2', card: 'bluffy', post: 'post3', passedAt: later, endsAt: ends },
+    ] };
+    const rows = logRows(data({ log, mine, acts: new Map(posts.map((a) => [a.id, a])), names }), w, 600, null);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe('passed');
+    expect(rows[0]!.at).toBe(later);
+    expect(text(rows[0]!)).toBe('A reply passed Hook by on your post #3 without springing it; it ends by itself Nov 6.');
+    expect(rows[0]!.characters).toEqual(['p']);
   });
 
   test('a spring that paid out says what it caught and what reached the wallet', () => {

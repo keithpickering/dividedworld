@@ -1197,7 +1197,11 @@ describe('the log', () => {
           ? rows([{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }])
           : rows([{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', target_name: null, target_character: B }]);
       }
-      if (name === 'my_face_down') return rows([{ play: SET, card: 'bluffy', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
+      if (name === 'my_face_down') {
+        return r.url.searchParams.get('select')?.includes('passed_at')
+          ? rows([{ play: SET, card: 'hook', post: A, ends_at: '2026-11-05T20:00:00+00:00', passed_at: '2026-10-29T18:00:00+00:00' }])
+          : rows([{ play: SET, card: 'bluffy', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
+      }
       if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, bought_price: 100, at: '2026-10-29T19:00:00+00:00' }]);
       return undefined;
     });
@@ -1219,6 +1223,7 @@ describe('the log', () => {
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
       setEnds: [{ play: SET, card: 'bluffy', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
+      setPasses: [{ play: SET, card: 'hook', post: A, passedAt: '2026-10-29T18:00:00+00:00', endsAt: '2026-11-05T20:00:00+00:00' }],
       caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, boughtPrice: 100, at: '2026-10-29T19:00:00+00:00' }],
       before: null,
     });
@@ -1237,8 +1242,9 @@ describe('the log', () => {
     expect(plays?.url.searchParams.get('order')).toBe('at.desc');
     expect(saves?.url.searchParams.get('order')).toBe('saved_at.desc');
     expect(saves?.url.searchParams.get('saved_at')).toBe('not.is.null');
-    const [ends] = h.to('my_face_down');
+    const [ends, passes] = h.to('my_face_down');
     expect([ends?.url.searchParams.get('order'), ends?.url.searchParams.get('ended_at'), ends?.url.searchParams.get('limit')]).toEqual(['ended_at.desc', 'not.is.null', '200']);
+    expect([passes?.url.searchParams.get('order'), passes?.url.searchParams.get('passed_at'), passes?.url.searchParams.get('spring'), passes?.url.searchParams.get('limit')]).toEqual(['passed_at.desc', 'not.is.null', 'is.null', '200']);
     const [caught] = h.to('my_caught');
     expect([caught?.url.searchParams.get('order'), caught?.url.searchParams.get('limit')]).toEqual(['at.desc', '200']);
     expect(h.rest().every((r) => r.method === 'GET' && (r.headers.get('prefer') ?? '').indexOf('count') === -1)).toBe(true);
@@ -1255,6 +1261,7 @@ describe('the log', () => {
     expect(plays?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_face_down')[0]?.url.searchParams.getAll('ended_at')).toEqual(['not.is.null', `lte.${before}`]);
+    expect(h.to('my_face_down')[1]?.url.searchParams.getAll('passed_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_caught')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
   });
 

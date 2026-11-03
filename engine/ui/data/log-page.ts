@@ -27,7 +27,7 @@
  * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
-import type { CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogLine, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
+import type { CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, FaceDownPass, Log, LogLine, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -61,6 +61,7 @@ export interface LogRead {
   readonly playsOnMine: readonly PlayOnMine[];
   readonly saves: readonly EffectSaved[];
   readonly setEnds: readonly FaceDownEnd[];
+  readonly setPasses: readonly FaceDownPass[];
   readonly caught: readonly CaughtPlay[];
 }
 
@@ -84,6 +85,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.playsOnMine, () => read.playsOnMine[read.playsOnMine.length - 1]!.at),
     ...reached(read.saves, () => read.saves[read.saves.length - 1]!.savedAt),
     ...reached(read.setEnds, () => read.setEnds[read.setEnds.length - 1]!.endedAt),
+    ...reached(read.setPasses, () => read.setPasses[read.setPasses.length - 1]!.passedAt),
     ...reached(read.caught, () => read.caught[read.caught.length - 1]!.at),
   ];
   /* The newest of the times a full source reached, as that source wrote it, so the next read starts exactly there. */
@@ -118,6 +120,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     playsOnMine: read.playsOnMine.filter((e) => keep(e.at)),
     saves: read.saves.filter((e) => keep(e.savedAt)),
     setEnds: read.setEnds.filter((e) => keep(e.endedAt)),
+    setPasses: read.setPasses.filter((e) => keep(e.passedAt)),
     caught: read.caught.filter((e) => keep(e.at)),
     before: after,
   };

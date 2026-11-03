@@ -27,6 +27,7 @@ export function mergeLogs(newer: Log, older: Log): Log {
     playsOnMine: [...newer.playsOnMine, ...older.playsOnMine],
     saves: [...newer.saves, ...older.saves],
     setEnds: [...newer.setEnds, ...older.setEnds],
+    setPasses: [...newer.setPasses, ...older.setPasses],
     caught: [...newer.caught, ...older.caught],
     before: older.before,
   };

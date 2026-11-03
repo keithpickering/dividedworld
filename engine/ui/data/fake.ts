@@ -1486,6 +1486,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
           /* The in-memory backend sets no card face down and springs no trap: the setter's and the caster's lines are the adapter's (my_face_down, my_caught). */
           setEnds: [],
+          setPasses: [],
           caught: [],
         };
       }, before ?? null);

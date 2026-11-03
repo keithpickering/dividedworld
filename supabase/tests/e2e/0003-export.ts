@@ -87,7 +87,7 @@ test('an instance exported and imported into a fresh database is the same instan
       a uuid := tests.character(ann, 'Exported A'); b uuid := tests.character(bob, 'Exported B');
       t uuid := tests.thread('Exported thread');
       p uuid := tests.post(a, t, 'Carried across, with a backslash \\ and a tab' || chr(9) || 'and a line' || chr(10) || 'break.');
-      play uuid;
+      play uuid; trapped uuid;
       moved uuid; ended uuid; kept uuid; gen uuid := (select id from boards order by created_at, slug limit 1);
     begin
       perform tests.post(b, t, 'A reply, counted on the thread and on its author');
@@ -100,6 +100,14 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
       -- A second play over the first (0071): its moment, and the first's save copied into it as a layer, written by the trigger.
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
+      -- A card set face down and a play it caught (0054, 0075): face_down and face_down_reply each hold a row to carry across (the
+      -- reply moment still waiting: a cast passes nothing), with the caught play and the spring as Acts beside them (#136 F1).
+      update settings set value = value || '{"exp-catch.price": 100}' where key = 'economy';
+      insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values ('exp-catch', 'Exported Catcher', 'salty', 'exp-catch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
+      insert into card_ledger (account, card, kind, price) values (ann, 'exp-catch', 'bought', 0), (bob, 'sweetie', 'bought', 0);
+      trapped := tests.post(a, t, 'Trapped, and carried across.');
+      perform set_card(ann, 'exp-catch', a, trapped, '{}', 0);
+      perform play_card(bob, 'sweetie', b, trapped, '{}', 0, '');
       -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an
       -- avatar, and an admin.
       insert into effect_releases (account, play) values (bob, play);
