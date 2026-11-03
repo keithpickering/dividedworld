@@ -184,7 +184,7 @@ describe('every state of the summary\'s page has Back to the board', () => {
     await backIn();
     expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
-  }, 10_000);
+  });
 
   test('failed', async () => {
     const { fake, me, pipe } = world();
@@ -192,7 +192,7 @@ describe('every state of the summary\'s page has Back to the board', () => {
     openSummary(fake, me, pipe);
     expect(await screen.findByText('The settlement could not be loaded. Reload the page to try again.')).toBeInTheDocument();
     await backIn();
-  }, 10_000);
+  });
 
   test('empty', async () => {
     const fake = buildWorld();
@@ -202,7 +202,7 @@ describe('every state of the summary\'s page has Back to the board', () => {
     openSummary(fake, me, pipe);
     expect(await screen.findByText('Nothing has settled for you yet.')).toBeInTheDocument();
     await backIn();
-  }, 10_000);
+  });
 
   test('signed out', async () => {
     const { fake, me, pipe } = world();
@@ -210,7 +210,7 @@ describe('every state of the summary\'s page has Back to the board', () => {
     openSummary(fake, me, pipe);
     expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
     await backIn();
-  }, 10_000);
+  });
 
   test('Esc goes back from a state that is not ready', async () => {
     const fake = buildWorld();
@@ -221,7 +221,7 @@ describe('every state of the summary\'s page has Back to the board', () => {
     await screen.findByText('Nothing has settled for you yet.');
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(where.path).toBe('/'));
-  }, 10_000);
+  });
 });
 
 describe('the summary on the first load after a settlement', () => {
@@ -319,7 +319,7 @@ describe('the summary on the first load after a settlement', () => {
       if (leave === 'unmounts') load(fake);
       else act(() => setActive(true));
       await waitFor(() => expect(where.path).toBe('/log/settlement'));
-    }, 10_000);
+    });
   }
 
   test('a settlement that held nothing of the player\'s is marked seen without opening', async () => {
