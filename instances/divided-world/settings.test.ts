@@ -52,6 +52,7 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
     'stickAround.price': 100,
     'trapCard.price': 150, 'forceField.price': 150, 'bluff.price': 25, 'glitterBomb.price': 150, 'mainEvent.price': 300, 'feelinFab.price': 20,
     'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostInAll': 300,
+    'autocorrect.price': 100, 'autocorrect.perVolume': 25, 'autocorrect.volumeStep': 50, 'autocorrect.mostInAll': 300,
   });
   assert.ok(Object.isFrozen(defaults.economy));
 });

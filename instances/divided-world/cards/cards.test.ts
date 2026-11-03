@@ -7,16 +7,17 @@ import { stickAround } from './stick-around.ts';
 import { STROKES, whoops } from './whoops.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { basePrice, decidePlay, decideSet } from '../../../engine/rules/cards.ts';
+import { basePrice, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { PEELS, autocorrect } from './autocorrect.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
 
-const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length });
+const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -73,7 +74,7 @@ test('a card lands on a post up to its stack: Stick Around once, Whoops! three t
   assert.deepEqual(whoops.canApply(post(10), w(3)), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
   assert.equal(whoops.canApply(post(10), [...w(2), { card: 'stick-around', act: 's' }]).ok, true, 'another card is not counted');
   assert.deepEqual(stickAround.canApply(post(10), [{ card: 'stick-around', act: 's' }]), { ok: false, why: 'this post already carries that card' });
-  assert.equal(stickAround.canApply({ reach: 'post', act: 'p1', kind: 'edit', length: 10 }, []).ok, false);
+  assert.equal(stickAround.canApply({ reach: 'post', act: 'p1', kind: 'edit', length: 10, text: '' }, []).ok, false);
   assert.equal(whoops.stack, 3);
   assert.equal(whoops.seeded, true, 'each splat is drawn from a seed the server chooses');
   assert.equal(stickAround.stack ?? 1, 1);
@@ -171,7 +172,7 @@ test('Bluff\'s and Trap Card\'s Set requests are the same but for the card key, 
   assert.ok(trap.ok && bluff.ok);
   assert.deepEqual({ ...trap, args: { ...trap.args, card: null } }, { ...bluff, args: { ...bluff.args, card: null } });
   assert.equal(trap.ok && trap.asService, true, 'written by the service, so the key reaches SQL and no client');
-  const target = { reach: 'post' as const, act: 'p', kind: 'post' as const, length: 10 };
+  const target = { reach: 'post' as const, act: 'p', kind: 'post' as const, length: 10, text: '' };
   assert.deepEqual(decideSet(by('trap-card'), settings, target, [], {}, cards), decideSet(by('bluff'), settings, target, [], {}, cards));
 });
 const by = (key: string) => cards.find((c) => c.key === key)!;
@@ -220,4 +221,69 @@ test("Feelin' Fab lands on a post alone, up to three, and a fourth is refused in
   assert.deepEqual(feelinFab.canApply(post(10), up(3)), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
   assert.deepEqual(feelinFab.canApply({ reach: 'character', character: 'c1' }, []), { ok: false, why: 'this card lands on a post' });
   assert.deepEqual(feelinFab.canApply({ reach: 'thread', thread: 't1' }, []), { ok: false, why: 'this card lands on a post' });
+});
+
+/* ---- Autocorrect (docs/plans/2026-11-03-autocorrect-plan.md, Task 5) ---- */
+const on = (body: string): CardTarget => postTarget('p1', 'post', body);
+const config = (phrase: unknown, replacement: unknown = 'Luigi') => autocorrect.validateConfig({ phrase, replacement });
+
+test('Autocorrect is a common Pepperoni Cast that stacks three deep', () => {
+  assert.deepEqual([autocorrect.alignment, autocorrect.rarity, autocorrect.play ?? 'cast', autocorrect.stack], ['pepperoni', 'common', 'cast', 3]);
+});
+
+test('Autocorrect\'s phrase is 4 to 100 characters with at least 4 letters or digits, trimmed', () => {
+  assert.deepEqual(config('  Mario  ', ' Luigi '), { ok: true, value: { phrase: 'Mario', replacement: 'Luigi' } });
+  assert.equal(config('cats').ok, true, 'four letters');
+  assert.match((config('cat') as { why: string }).why, /at least 4 letters or digits/);
+  assert.match((config('a b c') as { why: string }).why, /at least 4 letters or digits/, 'three letters, however long');
+  assert.equal(config('x'.repeat(100)).ok, true);
+  assert.match((config('x'.repeat(101)) as { why: string }).why, /at most 100 characters/);
+  assert.match((config(7) as { why: string }).why, /phrase/);
+});
+
+test('Autocorrect\'s replacement is one line of 1 to 100 characters of plain text, and never the phrase itself', () => {
+  assert.equal(config('Mario', 'L').ok, true);
+  assert.match((config('Mario', '   ') as { why: string }).why, /replacement/);
+  assert.equal(config('Mario', 'y'.repeat(100)).ok, true);
+  assert.match((config('Mario', 'y'.repeat(101)) as { why: string }).why, /at most 100 characters/);
+  assert.match((config('Mario', 'MARIO') as { why: string }).why, /not the phrase itself/);
+  assert.match((config('Mario', 'two\nlines') as { why: string }).why, /one line/);
+  assert.deepEqual(config('Mario', '[b]Luigi[/b]'), { ok: true, value: { phrase: 'Mario', replacement: '[b]Luigi[/b]' } }, 'BBCode is kept as the text it is');
+});
+
+test('Autocorrect lands only where its phrase is, whole and in any case, never inside a quote', () => {
+  const play = (body: string, phrase: string) => decidePlay(autocorrect as CardRules, settings, on(body), [], { phrase, replacement: 'dogs' }, '');
+  assert.equal(play('I love Cats.', 'cats').ok, true);
+  assert.equal(play('I love CATS', 'cats').ok, true);
+  assert.deepEqual(play('concatenate', 'cats'), { ok: false, why: '“cats” is not in this post' });
+  assert.equal(play('[quote=0f8fad5b-d9cb-469f-a165-70867728950e]cats[/quote] dogs', 'cats').ok, false);
+  assert.equal(play('ca[b]ts[/b]', 'cats').ok, true, 'across formatting');
+  assert.equal(decidePlay(autocorrect as CardRules, settings, on('cats'), [1, 2, 3].map((i) => ({ card: 'autocorrect', act: `k${i}` })), { phrase: 'cats', replacement: 'dogs' }, '').ok, false, 'three deep already');
+});
+
+test('Autocorrect costs its base price, plus 0.25 per 50 characters it covers, at most 3.00 in all', () => {
+  const price = (body: string, phrase: string) => autocorrect.playPrice(settings, on(body), { phrase, replacement: 'x' });
+  assert.equal(price('cats', 'cats'), 0, '4 characters covered');
+  assert.equal(price(Array(12).fill('cats').join(' '), 'cats'), 0, '48 characters covered');
+  assert.equal(price(Array(13).fill('cats').join(' '), 'cats'), 25, '52 characters: one step');
+  assert.equal(price(Array(50).fill('cats').join(' '), 'cats'), 100, '200 characters: four steps');
+  assert.equal(price(Array(1000).fill('cats').join(' '), 'cats'), 200, 'capped: 3.00 in all, less the 1.00 paid at the machine');
+  assert.equal(price('Mario Mario', 'mario'), 0);
+  assert.equal(autocorrect.playPrice(settings, { reach: 'character', character: 'c' }, { phrase: 'cats', replacement: 'x' }), 0);
+  const tuned = withOverrides(settings, { economy: { 'autocorrect.perVolume': 10, 'autocorrect.volumeStep': 4 } });
+  assert.equal(autocorrect.playPrice(tuned, on('cats cats cats'), { phrase: 'cats', replacement: 'x' }), 30, 'its numbers are the settings\'');
+});
+
+test('Autocorrect\'s saved state is the author\'s peels by occurrence, and the largest fits the database\'s bound', () => {
+  assert.deepEqual(autocorrect.validateState!({ peeled: [3, 0, 3, 1] }), { ok: true, value: { peeled: [0, 1, 3] } });
+  assert.deepEqual(autocorrect.validateState!({ peeled: [], clean: true }), { ok: true, value: { peeled: [], clean: true } });
+  assert.equal(autocorrect.validateState!({ peeled: [-1] }).ok, false);
+  assert.equal(autocorrect.validateState!({ peeled: [1.5] }).ok, false);
+  assert.equal(autocorrect.validateState!({ peeled: [PEELS.most] }).ok, false);
+  assert.equal(autocorrect.validateState!({ peeled: 'all' }).ok, false);
+  assert.equal(autocorrect.validateState!({ peeled: [], clean: 'yes' }).ok, false);
+  const most = autocorrect.validateState!({ peeled: Array.from({ length: PEELS.most }, (_, i) => i), clean: false });
+  assert.equal(most.ok, true);
+  const asPostgres = JSON.stringify(most.ok && most.value).replace(/([,:])/g, '$1 ');
+  assert.ok(Buffer.byteLength(asPostgres) <= 262_144, `${Buffer.byteLength(asPostgres)} bytes`);
 });
