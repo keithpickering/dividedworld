@@ -510,6 +510,8 @@ begin
       update settings set value = r.value::jsonb where key = r.key;
     exception when check_violation then
       refused := true;
+      -- The database names the predicate that failed: every refusal opens with its key.
+      if sqlerrm not like r.key || '%' then raise exception '% = % was refused without naming its key: %', r.key, r.value, sqlerrm; end if;
     end;
     if not refused then raise exception '% = % was not refused with 23514', r.key, r.value; end if;
   end loop;
