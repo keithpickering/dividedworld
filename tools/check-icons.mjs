@@ -118,7 +118,9 @@ function instanceFaults(ui) {
     if (record !== undefined && (record === null || typeof record !== 'object' || Array.isArray(record))) {
       out.push(`${name}: is not a record (it holds ${JSON.stringify(record)}); ${remake(ui)} writes it again`);
     } else if (record) {
-      for (const [group, list, dir] of [['sources', SOURCES, 'icon'], ['outputs', OUTPUTS, 'public']]) {
+      /** @type {[string, string[], string][]} */
+      const groups = [['sources', SOURCES, 'icon'], ['outputs', OUTPUTS, 'public']];
+      for (const [group, list, dir] of groups) {
         for (const f of list) {
           const want = record[group]?.[f];
           if (!files[f]) continue;

@@ -63,8 +63,13 @@ function paeth(a, b, c) {
 }
 
 /**
+ * @typedef {{ width: number, height: number, colorType?: number, bitDepth?: number, interlace?: number,
+ *   filter?: number | 'each', pixel: (x: number, y: number) => number[], extra?: Buffer[] }} PngSpec
+ */
+/**
  * A PNG of `width` by `height` whose samples are `pixel(x, y)` (an array of `channels` values),
  * each row written with `filter` (0 to 4), or with filter `y % 5` when filter is 'each'.
+ * @param {PngSpec} spec
  */
 function png({ width, height, colorType = 6, bitDepth = 8, interlace = 0, filter = 0, pixel, extra = [] }) {
   const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[colorType];
@@ -97,7 +102,11 @@ function png({ width, height, colorType = 6, bitDepth = 8, interlace = 0, filter
   return Buffer.concat([sig, chunk('IHDR', ihdr), ...extra, chunk('IDAT', zlib.deflateSync(Buffer.concat(rows))), chunk('IEND', Buffer.alloc(0))]);
 }
 
-/** An RGBA square whose colors vary by pixel, opaque unless `hole` names a pixel and its alpha. */
+/**
+ * An RGBA square whose colors vary by pixel, opaque unless `hole` names a pixel and its alpha.
+ * @param {number} size
+ * @param {{ seed?: number, hole?: { x: number, y: number, alpha: number } }} [opts]
+ */
 const square = (size, { seed = 0, hole } = {}) => png({
   width: size,
   height: size,
@@ -118,6 +127,8 @@ const INDEX = '<!doctype html><html><head><title>X</title>\n<link rel="icon" hre
  * A repository-shaped folder with one instance whose icons are clean, then `poison(files)` applied:
  * `files` maps a path under the folder to its bytes (a string or Buffer), or to null for no file.
  * The record is written from the files before the poison, unless the poison rewrites it.
+ * @param {string} name
+ * @param {(files: Record<string, string | Buffer | null>, made: { ui: string, coin16: Buffer, apple: Buffer, record: object }) => void} [poison]
  */
 function repo(name, poison = () => {}) {
   const coin16 = sprite();
@@ -296,7 +307,7 @@ try {
    * wrong way never shows), so the samples are compared whole, on values from 0 to 3, where the
    * predictor's ties are common.
    */
-  for (const filter of [0, 1, 2, 3, 4, 'each']) {
+  for (const filter of /** @type {(number | 'each')[]} */ ([0, 1, 2, 3, 4, 'each'])) {
     let state = 7;
     const next = () => { state = (state * 1103515245 + 12345) & 0x7fffffff; return (state >> 16) & 3; };
     const want = [];

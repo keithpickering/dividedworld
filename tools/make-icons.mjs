@@ -44,11 +44,16 @@ img { display: block; position: absolute; left: ${margin}px; top: ${margin}px; w
 </style></head><body><img src="${src}" alt=""></body></html>`;
 }
 
+/**
+ * @param {import('@playwright/test').Browser} browser
+ * @param {Buffer} svg
+ * @param {{ size: number, coin?: number, ground?: string }} opts
+ */
 async function draw(browser, svg, { size, coin = size, ground }) {
   const page = await browser.newPage({ viewport: { width: size, height: size }, deviceScaleFactor: 1 });
   try {
     await page.setContent(pageHtml(svg, size, coin, ground));
-    await page.locator('img').evaluate((img) => img.decode());
+    await page.locator('img').evaluate((img) => /** @type {HTMLImageElement} */ (img).decode());
     return await page.screenshot({ type: 'png', omitBackground: !ground, clip: { x: 0, y: 0, width: size, height: size } });
   } finally {
     await page.close();
