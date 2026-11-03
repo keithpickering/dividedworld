@@ -316,8 +316,9 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     if (known) return known;
     const player = playerOf(a.character);
     /* The target's author, where the input holds the target. An earlier window's play is read here for the holder below, and its
-       target can be absent (a staff post an earlier card landed on, or a post only the card's own reactions brought it in by):
-       then no window play shares that target, so the hold it keys is never read, and nothing here may throw on it. */
+       target can be absent (a staff post an earlier card landed on, or the post of an earlier card that is in the input only because
+       it was reacted to): then no window play shares that target, so no window play ever looks its key up, and nothing here may
+       throw on it. */
     const target = a.target === undefined || unscored.has(a.target) ? undefined : acts.get(a.target);
     const author = target ? playerOf(target.character) : undefined;
     let lean = 0;
