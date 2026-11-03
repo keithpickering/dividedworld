@@ -24,9 +24,10 @@
 -- post, then every face_down and face_down_reply row the write may spring or pass (in `play` order), then the character_post_counts
 -- rows of the writer and of every setter of those backs (in character-id order), and only then any Act insert, and last the wallets.
 -- The backs a write springs are the backs it locked: a back set on the quoted or target post after the write took its locks (set_card
--- needs none of them) is not sprung by that write, since it was set after the write began; has_unlocked_back asks, after the locks,
--- and the write springs nothing on a post that now carries one. This is simpler than locking again (a second lock pass after count
--- rows are held would itself break the order) and the next write to meet that back springs it.
+-- needs none of them) is not sprung by that write, since it was set after the write began: the write hands spring_traps the plays
+-- it locked (`held`), and its probe reads only those, in the same statement that locks the row it springs. This is simpler than
+-- locking again (a second lock pass after count rows are held would itself break the order) and the next write to meet that back
+-- springs it.
 -- 0054 and 0058 inserted the Act of a post and of a play first and locked face_down after it, so a post that held its author's count
 -- row (the Act's counter) and wanted a back's row met a play or a spring that held the back's row and wanted that count row, and
 -- Postgres killed one (40P01): a quoting post and a cast by one player on a trapped post; a post by a trap's setter and another
@@ -123,13 +124,77 @@ begin
 end $$;
 revoke execute on function lock_backs(uuid[], uuid, uuid) from public, anon, authenticated;
 
--- Whether `post` carries a live back that is not among `held`, the backs this write locked (a back set after its locks were taken).
--- The same index probe for every card, a Bluff's too.
-create function has_unlocked_back(post uuid, held uuid[]) returns boolean
-language sql stable set search_path = public, pg_temp as $$
-  select exists (select 1 from face_down f where f.post = has_unlocked_back.post and f.ends_at > now() and f.play <> all (held))
-$$;
-revoke execute on function has_unlocked_back(uuid, uuid[]) from public, anon, authenticated;
+-- spring_traps (0058), copied whole but for its probe: a write that locked its backs passes them as `held`, and only a back among
+-- them springs. The probe is the same index read for every card, a Bluff's too, and nothing else of 0058's changes. Its argument
+-- list grows, so it is dropped and made again (callers name it, never its signature), with 0054's revoke.
+drop function spring_traps(text, uuid, uuid, text, text, uuid, integer);
+create function spring_traps(trigger text, post uuid, by_act uuid, quadrant text default null, incoming_rarity text default null,
+                             caster uuid default null, price integer default 0, held uuid[] default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  fd face_down%rowtype;
+  kind_of card_kinds%rowtype;
+  struck card_kinds%rowtype;
+  setter_character uuid;
+  springs boolean;
+  outcome text;
+  sprung uuid;
+  struck_play uuid;
+  layer integer;
+  up integer;
+begin
+  select f.* into fd from face_down f
+  where f.post = spring_traps.post and f.ends_at > now() and (held is null or f.play = any (held))
+  order by f.round desc limit 1 for update;
+  if fd.play is null then return null; end if;
+  select * into kind_of from card_kinds k where k.key = fd.card;
+  -- After the lock, so a spring that landed while this waited is seen.
+  if exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = fd.play::text) then return null; end if;
+  springs := kind_of.trap #>> '{trigger,on}' is not distinct from trigger
+    and (trigger <> 'reaction' or kind_of.trap #>> '{trigger,quadrant}' is not distinct from quadrant)
+    and (trigger <> 'cast' or coalesce(rarity_rank(incoming_rarity) <= rarity_rank(kind_of.rarity), false));
+  if not springs then return null; end if;
+  outcome := kind_of.trap #>> '{outcome,do}';
+  select a.character into setter_character from acts a where a.id = fd.play;
+  -- A setter's character that can no longer act (retired, until an admin restores it) springs nothing: its trap stays set until its
+  -- time, and the write that met it lands as if no trap were there (acts_well_formed would refuse the spring, and with it the write).
+  if exists (select 1 from characters c where c.id = setter_character and (c.retired_at is not null or c.debuted_at is null)) then return null; end if;
+  if outcome = 'strike' then
+    select * into struck from card_kinds k where k.key = kind_of.trap #>> '{outcome,card}';
+    -- A strike that cannot land leaves the trap set: its target already carries its stack of the card, counted as play_card counts
+    -- it (the plays still up), with the layer going on from the last one taken.
+    select count(*) filter (where k.payload ->> 'ends' is null or (k.payload ->> 'ends')::timestamptz > now()),
+           greatest(coalesce(max((k.payload ->> 'layer')::integer), 0), count(*)) + 1
+      into up, layer
+    from acts k where k.kind = 'card' and k.target_act_id = by_act and k.payload ->> 'card' = struck.key and not (k.payload ? 'caught')
+      and coalesce(k.payload ->> 'reach', 'post') = 'post';
+    if struck.key is null or by_act is null or up >= struck.stack
+       or (select a.kind from acts a where a.id = by_act) is distinct from 'post' then return null; end if;
+  end if;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (setter_character, 'spring', fd.thread, fd.post, jsonb_strip_nulls(jsonb_build_object(
+    'card', fd.card, 'trigger', trigger, 'outcome', kind_of.trap -> 'outcome', 'set', fd.play::text, 'by', by_act::text,
+    'caught', case when trigger = 'cast' and outcome in ('nullify', 'payout') then by_act::text end))) returning id into sprung;
+  perform write_alert(setter_character, 'trapSprang', null, sprung, coalesce(caster, auth.uid()));
+  if outcome = 'payout' and coalesce(price, 0) > 0 and caster is not null then
+    -- Both wallets, in account order, so two players' casts on each other's traps cannot wait on each other.
+    insert into wallets (account) values (caster), (fd.account) on conflict (account) do nothing;
+    perform 1 from wallets w where w.account in (caster, fd.account) order by w.account for update;
+    perform wallet_move(fd.account, price, 'trap', null, sprung);
+  elsif outcome = 'strike' then
+    insert into acts (character, kind, thread, target_act_id, payload)
+    select setter_character, 'card', a.thread, by_act, jsonb_build_object('card', struck.key, 'layer', layer, 'message', '', 'spring', sprung::text,
+      'config', case when struck.seeded then fd.config - 'seed' else fd.config end)
+      || case when struck.seeded then jsonb_build_object('seed', floor(random() * 2147483648)::bigint) else '{}'::jsonb end
+    from acts a where a.id = by_act returning id into struck_play;
+    perform write_alert((select a.character from acts a where a.id = by_act), 'trapStruck', null, struck_play,
+      (select c.owner from characters c where c.id = setter_character));
+    -- The struck card's play goes out with the spring, so it reaches readers live as the spring does.
+    return act_projection(sprung) || jsonb_build_object('struck', act_projection(struck_play));
+  end if;
+  return act_projection(sprung);
+end $$;
+revoke execute on function spring_traps(text, uuid, uuid, text, text, uuid, integer, uuid[]) from public, anon, authenticated;
 
 -- ------------------------------------------------------------------------------ set_card ----
 
@@ -210,8 +275,8 @@ begin
   passes := lock_backs(maybe, through, in_thread);
   insert into acts (character, kind, thread, target_act_id, payload)
   values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id into written;
-  -- Only a back this post locked springs (the header's note on has_unlocked_back).
-  if quoting is not null and not has_unlocked_back(quoting, maybe) then sprung := spring_traps('quote', quoting, written); end if;
+  -- Only a back this post locked springs (the header's note on `held`).
+  if quoting is not null then sprung := spring_traps('quote', quoting, written, held => maybe); end if;
   update face_down_reply set passed_by = written, passed_at = now() where play = any (passes);
   if sprung is null then
     for candidate in
@@ -219,7 +284,7 @@ begin
       where f.play = any (passes)
       group by f.post, p.seq order by p.seq desc
     loop
-      if not has_unlocked_back(candidate, maybe) then sprung := spring_traps('reply', candidate, written); end if;
+      sprung := spring_traps('reply', candidate, written, held => maybe);
       exit when sprung is not null;
     end loop;
   end if;
@@ -306,7 +371,7 @@ begin
       -- The post's live back, then the count rows of the caster and of the back's setter, before any Act is written (the order above).
       locked := array(select f.play from face_down f where f.post = target and f.ends_at > now());
       perform lock_backs(locked, through);
-      if not has_unlocked_back(target, locked) then sprung := spring_traps('cast', target, written, null, kind_of.rarity, who, price); end if;
+      sprung := spring_traps('cast', target, written, null, kind_of.rarity, who, price, locked);
     end if;
   else
     -- The target's row is locked, so plays on one target are laid one at a time and each counts the last; two board cards on one
