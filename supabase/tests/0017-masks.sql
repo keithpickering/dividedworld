@@ -442,3 +442,34 @@ begin
   -- No hourly job reveals a season any more.
   if exists (select 1 from cron.job where jobname = 'kayfabb-reveal') then raise exception 'the hourly reveal job is still scheduled'; end if;
 end $$;
+
+-- ---- A play's moment over a card back is the same bytes for its setter and for a stranger, and never names the card ----
+-- (supabase/migrations/0070_play_moments.sql, play_moment; docs/plans/2026-11-03-effect-history-plan.md, Task 2.)
+do $$
+declare
+  setter uuid := tests.account('mm-setter'); caster uuid := tests.account('mm-caster'); stranger uuid := tests.account('mm-stranger');
+  s uuid := tests.character(setter, 'Moment Setter'); c uuid := tests.character(caster, 'Moment Caster');
+  t uuid := tests.thread('Moment masks'); p uuid := tests.post(s, t, 'A back on me.');
+  backed uuid; over uuid; as_setter text; as_stranger text;
+begin
+  update settings set value = value || '{"mmbluff.price": 25}' where key = 'economy';
+  insert into card_kinds (key, name, alignment, price_setting, rarity, play) values ('mmbluff', 'Moment Bluff', 'pepperoni', 'mmbluff.price', 'common', 'set');
+  insert into card_ledger (account, card, kind, price) values (setter, 'mmbluff', 'bought', 0), (caster, 'sweetie', 'bought', 0);
+  backed := (set_card(setter, 'mmbluff', s, p, '{}', 0) ->> 'id')::uuid;
+  over := (play_card(caster, 'sweetie', c, p, '{}', 0, '') ->> 'id')::uuid;
+  perform tests.become(setter);
+  as_setter := play_moment(over)::text || play_moment(backed)::text;
+  perform tests.unbecome();
+  perform tests.become(stranger);
+  as_stranger := play_moment(over)::text || play_moment(backed)::text;
+  perform tests.unbecome();
+  if as_setter is distinct from as_stranger then raise exception 'a moment over a card back differs for its setter: % / %', as_setter, as_stranger; end if;
+  if as_setter like '%mmbluff%' or as_setter like '%Moment Bluff%' then raise exception 'a moment names the card behind a back: %', as_setter; end if;
+  perform tests.become_anon();
+  begin
+    perform play_moment(over);
+    raise exception 'a visitor read a moment';
+  exception when insufficient_privilege then null;
+  end;
+  perform tests.unbecome();
+end $$;
