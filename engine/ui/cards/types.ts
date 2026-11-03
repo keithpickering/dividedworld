@@ -102,6 +102,10 @@ export interface CardView {
  * and draws whatever it likes around them or over them; with several cards played on a post each
  * card's `Effect` wraps the one played before it, the latest outermost, so a card's `children`
  * already carry the earlier cards' effects.
+ *
+ * An effect that works on the post's own words (Autocorrect's strips) does not search the drawn page for them: it wraps
+ * `children` in a `TextLayer` (engine/ui/bbcode/layers.tsx) with runs at offsets into the post's visible text
+ * (engine/bbcode/visible.ts), the same offsets its rules read on the server, and the BBCode renderer inside draws them.
  */
 export interface EffectProps {
   /** The post, as every reader sees it now (its current words included). */
