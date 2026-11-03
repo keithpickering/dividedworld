@@ -67,6 +67,19 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       }
     }
   });
+  test('the numbers a reason\'s earnings carry are the ones its words declare, so a settled line is said with its own', () => {
+    const lurker = instance.classes.find((c) => c.key === 'lurker')!;
+    const earned = lurker.earn({
+      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [],
+      threadsSpun: [{ act: 's1', thread: 't', at: 1, fromOthers: true, repliersBefore: 0, repliersNow: economy['lurker.spunThreadRepliers']! }],
+    }, instance.settings);
+    const reasons = Object.keys(wordsRead).filter((k) => k.includes('.'));
+    for (const reason of reasons) {
+      const carried = earned.filter((e) => e.reason === reason);
+      expect(carried.length, `${reason} is earned here`).toBeGreaterThan(0);
+      for (const e of carried) expect(Object.keys(e.params ?? {}).sort(), reason).toEqual([...wordsRead[reason]!].sort());
+    }
+  });
   test('every class description and reason that states a number names the economy keys it states', () => {
     for (const key of [...instance.classes.map((c) => c.key), ...REASON_KEYS]) {
       if (holdsNumber(said(key, economy))) expect(wordsRead[key]?.length ?? 0, `${key}: "${said(key, economy)}"`).toBeGreaterThan(0);

@@ -118,8 +118,9 @@ export interface Settings {
   /**
    * The numbers a card gives the screens, each named by the instance ("whoops.clean"): a card's effect
    * decides something on the client (how much of a layer counts as washed clean), so the number is one the
-   * screens read (`screen_settings`), which the economy never is. The engine checks each is a number; the
-   * cards that name them in `screenReads` check their range.
+   * screens read (`screen_settings`). The screens read the economy there too, but only for words that state its
+   * numbers and for prices (0072, 0039); no screen decides anything by it. The engine checks each is a number;
+   * the cards that name them in `screenReads` check their range.
    */
   readonly cardSettings: Readonly<Record<string, number>>;
   /**
