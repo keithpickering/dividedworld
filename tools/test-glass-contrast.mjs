@@ -428,7 +428,7 @@ const only = (surface, draw) => Object.fromEntries(SURFACES.map((s) => [s, s ===
   check('reading no engine surfaces refuses too', blind.status === 1 && /refusing to report a pass on nothing/.test(blind.stderr), blind.stderr);
 
   const realApply = fs.readFileSync(path.join(repo, 'engine', 'ui', 'glass', 'apply.ts'), 'utf8');
-  const gap = realApply.replace(/^\s*turn: '(full|calmed|none)',.*\n/m, '');
+  const gap = realApply.replace(/^\s*turn: '(full|calmed|none)',.*\r?\n/m, ''); // \r?: `.` stops at the \r of a CRLF checkout
   check('the scratch list without turn differs from the real one', gap !== realApply);
   const short = run(make({ glass: real, apply: gap }));
   check('the script refuses an engine list that leaves out a surface', short.status === 1 && /class large text list/.test(short.stderr) && /turn/.test(short.stderr), short.stderr.slice(0, 400));

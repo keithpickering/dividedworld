@@ -1,0 +1,9 @@
+# Check every text file out with LF line endings on every platform, so a Windows working tree reads byte for byte
+# what CI reads. Git for Windows otherwise converts to CRLF on checkout (core.autocrlf), and the build's checks
+# parse source with patterns written for LF.
+* text=auto eol=lf
+
+# Committed with CRLF and kept as written: a Windows batch file, and research records whose bytes are the record.
+*.cmd -text
+docs/research/2026-10-30-the-system/*.svg -text
+docs/research/minus-world/*.csv -text
