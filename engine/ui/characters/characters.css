@@ -1398,7 +1398,7 @@
   padding: 0 14px;
 }
 
-/* ---- the reveal's board modal (RevealDialog.tsx) ---- */
+/* ---- the reveal's board modal (RevealModal.tsx) ---- */
 
 .kb-dialog-actions {
   display: flex;

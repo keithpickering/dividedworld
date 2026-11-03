@@ -38,6 +38,17 @@ describe('Reveal… in the composer', () => {
     expect(await replyBox()).toHaveValue('A half-written reply.');
   });
 
+  test('is the board\'s own dialog, never the glass\'s', async () => {
+    const w = threadWorld();
+    openThread(w);
+    await replyBox();
+    await userEvent.click(screen.getByRole('button', { name: 'Reveal…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    expect(dialog.closest('.kb-glass-overlay')).toBeNull();
+    expect(dialog.querySelector('.kb-smoke')).toBeNull();
+    expect(within(dialog).getByText('It will be posted in this thread.')).toBeInTheDocument();
+  });
+
   test('Esc closes it without revealing anything', async () => {
     const w = threadWorld();
     const unmask = vi.spyOn(w.fake, 'unmask');
