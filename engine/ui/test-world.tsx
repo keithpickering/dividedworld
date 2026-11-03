@@ -101,6 +101,8 @@ export interface WorldOptions {
   readonly glass?: Kayfa['ui']['glass'];
   /** The instance's cards' looks, one `CardUi` per card key (none by default: every play is shown as its tag alone). */
   readonly cards?: Kayfa['ui']['cards'];
+  /** Class looks of the test's own, in place of the test world's Face and Heel (a description that reads the settlement span). */
+  readonly classLooks?: Kayfa['ui']['classLooks'];
   /** The instance's pictures for its personas, by key (`InstanceUi.avatars`); none by default. */
   readonly avatars?: Readonly<Record<string, string>>;
   /** A different Strategy Guide (its Markdown and hints) than the test world's small one. */
@@ -115,7 +117,7 @@ export function buildWorld(settingsOverride?: Partial<ScreenSettings>, instance:
 /** Render a screen on a backend made by `buildWorld`. */
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.avatars || options.guide ? { ...ui, ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}) } : ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.classLooks || options.avatars || options.guide ? { ...ui, ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}) } : ui, settings: { ...settings, ...options.settings } as unknown as ScreenSettings };
   return {
     fake,
     ...render(

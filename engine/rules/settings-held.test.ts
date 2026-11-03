@@ -1,6 +1,6 @@
 /**
- * The database holds every setting where it is written (supabase/migrations/0074_settings_held.sql), and
- * supabase/tests/0078-settings-held.sql lists, one row per line, a poison at each edge of each rule and the good default
+ * The database holds every setting where it is written (supabase/migrations/0075_settings_held.sql), and
+ * supabase/tests/0079-settings-held.sql lists, one row per line, a poison at each edge of each rule and the good default
  * for each key. This reads those two lists and sets them against settingsProblems, so the SQL's holds and the TypeScript
  * rules cannot drift apart without one of the two failing: every key has both kinds of row, every poison is refused here,
  * every good is accepted here.
@@ -66,24 +66,24 @@ export function checkLists(sql: string): void {
 }
 
 test('the poisons and goods in the SQL test cover every setting, and settingsProblems agrees with each', () => {
-  checkLists(read('../../supabase/tests/0078-settings-held.sql'));
+  checkLists(read('../../supabase/tests/0079-settings-held.sql'));
 });
 
 test('the issue\'s own cases are named: presencePollSeconds = 5 and presenceNames = 0', () => {
-  const poisons = listRows(read('../../supabase/tests/0078-settings-held.sql'), 'poisons');
+  const poisons = listRows(read('../../supabase/tests/0079-settings-held.sql'), 'poisons');
   assert.ok(poisons.some((r) => r.key === 'presencePollSeconds' && r.value === '5'));
   assert.ok(poisons.some((r) => r.key === 'presenceNames' && r.value === '0'));
 });
 
 test('the kinds the migration lets toastDefaults name are the alert kinds (the lists are one list)', () => {
-  const sql = read('../../supabase/migrations/0074_settings_held.sql');
+  const sql = read('../../supabase/migrations/0075_settings_held.sql');
   const m = /kinds text\[\] := array\[((?:'[A-Za-z]+',?\s*)+)\]/.exec(sql);
   assert.ok(m, 'the migration lists the kinds');
   assert.deepEqual([...m![1]!.matchAll(/'([A-Za-z]+)'/g)].map((k) => k[1]!).sort(), [...ALERT_KINDS].sort());
 });
 
 test('the checks go red: a key with no rows in the SQL list, and a poison the TypeScript accepts', () => {
-  const sql = read('../../supabase/tests/0078-settings-held.sql');
+  const sql = read('../../supabase/tests/0079-settings-held.sql');
   const withoutKey = sql.split('\n').filter((l) => !l.startsWith("  ('halving',")).join('\n');
   assert.throws(() => checkLists(withoutKey), /keys of (poisons|goods)/);
   const harmless = sql.replace("insert into poisons (key, value) values\n", "insert into poisons (key, value) values\n  ('walletCap', '600'),\n");

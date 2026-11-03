@@ -265,6 +265,7 @@ function toMyCharacter(r: Row): MyCharacter {
     name: r['name'],
     class: r['class'],
     classSince: r['class_since'],
+    classDueAt: r['class_due_at'] ?? null,
     turnOpensAt: r['turn_opens_at'] ?? null,
     debutedAt: r['debuted_at'] ?? null,
     debutLoudness: r['debut_loudness'] ?? null,
@@ -1034,7 +1035,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return Math.min(ALERTS_UNREAD_BOUND, Math.max(0, Math.floor(num(r.data))));
     },
     async settlementMoved(id) {
-      /* The caller's own ledger lines in one settlement, through a function (0073); no row is "moved none", for any id alike. */
+      /* The caller's own ledger lines in one settlement, through a function (0074); no row is "moved none", for any id alike. */
       const r = await read(() => client.rpc('my_settlement_moved', { settlement: id }));
       const row = Array.isArray(r.data) ? (r.data[0] as Record<string, unknown> | undefined) : undefined;
       const at = row === undefined ? null : str(row['applied_at']);
@@ -1068,12 +1069,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
-          rows(() => client.from('my_card_ledger').select('card,kind,act,price,at'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
+          rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
           rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
           rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
           /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
           rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
-          /* The player's own cards a reply passed by without springing, by when it did (0075); the log names the reply traps among them. */
+          /* The player's own cards a reply passed by without springing, by when it did (0076); the log names the reply traps among them. */
           rows(() => client.from('my_face_down').select('play,card,post,ends_at,passed_at').not('passed_at', 'is', null).is('spring', null), 'passed_at', (q) => q, ['play']),
           rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
         ]);
@@ -1099,7 +1100,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
             settlement: typeof r['settlement'] === 'number' ? r['settlement'] : null, kind: r['kind'], change: num(r['change']), overflow: num(r['overflow']),
             floored: num(r['floored']), balanceAfter: num(r['balance_after']), ref: r['ref'] ?? null, at: r['at'],
           })),
-          cards: cardRows.map((r): CardEvent => ({ card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'] })),
+          cards: cardRows.map((r): CardEvent => ({
+            card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'],
+            ...(typeof r['springs'] === 'boolean' ? { springs: r['springs'] } : {}),
+          })),
           playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
           saves: saveRows.map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
           setEnds: endRows.map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'] })),

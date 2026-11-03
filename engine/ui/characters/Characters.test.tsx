@@ -442,7 +442,7 @@ describe('Reveal', () => {
   test('cannot be confirmed before a thread is chosen, and a refusal is shown in the server\'s words', async () => {
     const w = world();
     general(w);
-    vi.spyOn(w.fake, 'unmask').mockResolvedValue({ ok: false, error: 'this character\'s Turn takes effect at the settlement now running; reveal in a few minutes' });
+    vi.spyOn(w.fake, 'unmask').mockResolvedValue({ ok: false, error: 'this character\'s Turn takes effect at the settlement now due; reveal once it has run, or withdraw the Turn' });
     open(w);
     await ready();
     const dialog = await openReveal();
@@ -450,7 +450,7 @@ describe('Reveal', () => {
     await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
     await userEvent.selectOptions(await within(dialog).findByLabelText('Thread'), 'The tea thread');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('reveal in a few minutes');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('reveal once it has run, or withdraw the Turn');
   });
 
   test('offers none to a character waiting to debut', async () => {
@@ -1007,7 +1007,7 @@ describe('the panel\'s online status', () => {
     const select = await status();
     expect(select).toHaveValue('shown');
     expect(screen.getByTestId('hud')).toHaveTextContent('Hidden: none');
-    expect(within(row('Pipewrench')).getByText(/A hidden character isn't listed in Who is online or Users browsing\. Only you see it there\./u)).toBeInTheDocument();
+    expect(within(row('Pipewrench')).getByText(/A hidden character isn't listed in Who is online or Users browsing\. While you post as it, only you see it there\./u)).toBeInTheDocument();
     await userEvent.selectOptions(select, 'hidden');
     await waitFor(() => expect(hide).toHaveBeenCalledWith(w.pipe, true));
     await waitFor(() => expect(select).toHaveValue('hidden'));

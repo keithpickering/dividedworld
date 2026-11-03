@@ -69,7 +69,7 @@ begin
 end $$;
 
 -- ---- A post and a cast by one player, and a post and a strike whose setter is the poster: no deadlock ----
--- Reply passes (0075): every write that may spring locks in one order, a back's face_down row, then the count rows of the writer and of
+-- Reply passes (0076): every write that may spring locks in one order, a back's face_down row, then the count rows of the writer and of
 -- the setters, then the Act it inserts. Today's statement order inserts first and locks after, so each pair below holds one lock the other
 -- wants. A trigger that sleeps after the poster's insert makes the interleaving certain rather than likely: the poster holds its count row
 -- for the time the other side needs to take the lock it will wait on. Committed rows, since two sessions read them; first, so the
@@ -141,7 +141,7 @@ begin
 end $$;
 
 -- ---- A back set while a post waits to insert its Act is not sprung by that post: the set it locked is the set it springs ----
--- Reply passes (0075): post() reads the quoted post's live back and locks it with the setters' count rows before its Act. A trigger that
+-- Reply passes (0076): post() reads the quoted post's live back and locks it with the setters' count rows before its Act. A trigger that
 -- sleeps after the poster's Act insert holds the post there while a set_card lands a quote trap on the quoted post; the post never locked
 -- that back, so it must not spring it (it was set after the post, and the next quote springs it). Committed rows, as above.
 do $$

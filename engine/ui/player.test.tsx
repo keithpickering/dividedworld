@@ -5,7 +5,7 @@ import type { Estimate, KayfaApi, MyCharacter, Session } from './data/api.ts';
 import { PlayerProvider, usePlayer } from './player.tsx';
 
 const char = (id: string, over: Partial<MyCharacter> = {}): MyCharacter => ({
-  id, name: id.toUpperCase(), class: 'face', classSince: '2026-10-01T00:00:00Z', turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
+  id, name: id.toUpperCase(), class: 'face', classSince: '2026-10-01T00:00:00Z', classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
   debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false, ...over,
 });
 

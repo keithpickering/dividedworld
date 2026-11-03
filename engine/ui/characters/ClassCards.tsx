@@ -173,7 +173,7 @@ export function ClassCards({ legend, value, onChange, current, large = false }: 
                 {c.key === current && <span className="kb-class-now">Now</span>}
               </span>
               {look?.marks && <Marks marks={look.marks} id={ids.marks} />}
-              {look?.description && <span id={ids.words} className="kb-class-description">{look.description(economy)}</span>}
+              {look?.description && <span id={ids.words} className="kb-class-description">{look.description(economy, settings.settlementLength)}</span>}
             </>
           );
           if (c.key === current) {

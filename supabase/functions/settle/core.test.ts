@@ -46,7 +46,7 @@ function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, u
         if (failInput.at === String(args.window_start)) throw new DatabaseError('settlement_input: the connection dropped', '08006', 500);
         return { ...input, window: { ...input.window, from: Date.parse(String(args.window_start)), to: Date.parse(String(args.window_end)) } } as T;
       }
-      // The run's claim on its window (0072): what a reveal reads while the run is under way.
+      // The run's claim on its window (0073): what a reveal reads until the window is applied.
       if (fn === 'claim_settlement_window') {
         if (failInput.claim) throw new DatabaseError('claim_settlement_window: the connection dropped', '08006', 500);
         return null as T;
@@ -72,13 +72,14 @@ function fakeDb(input: SettlementInput = day, databaseSettings: Record<string, u
   return { db, calls };
 }
 
-test('a run claims each window it settles, with the window\'s end, before it reads the window\'s input (#22)', async () => {
+test('a run claims each window it settles, with both its ends, before it reads the window\'s input (#22, #179)', async () => {
   const { db, calls } = fakeDb();
   await runSettlement(db, instance, new Date(TO + 24 * H).toISOString());
   const seen = calls.filter((c) => c.fn === 'claim_settlement_window' || c.fn === 'settlement_input');
-  assert.deepEqual(seen.map((c) => [c.fn, c.fn === 'claim_settlement_window' ? c.args.window_end : c.args.window_end]), [
-    ['claim_settlement_window', new Date(TO).toISOString()], ['settlement_input', new Date(TO).toISOString()],
-    ['claim_settlement_window', new Date(TO + 24 * H).toISOString()], ['settlement_input', new Date(TO + 24 * H).toISOString()],
+  const iso = (ms: number) => new Date(ms).toISOString();
+  assert.deepEqual(seen.map((c) => [c.fn, c.args.window_start, c.args.window_end]), [
+    ['claim_settlement_window', iso(FROM), iso(TO)], ['settlement_input', iso(FROM), iso(TO)],
+    ['claim_settlement_window', iso(TO), iso(TO + 24 * H)], ['settlement_input', iso(TO), iso(TO + 24 * H)],
   ]);
 });
 

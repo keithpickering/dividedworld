@@ -73,7 +73,7 @@ export interface Seed {
   react(account: Id, character: Id, act: Id, kind: string): void;
   /**
    * A settlement: debuts the waiting characters, applies the waiting Turns (class history starts
-   * then, so the cooldown does), writes its ledger lines with their shares, credits each account's
+   * then, so the cooldown does) but for one whose character revealed at or after `at`, which waits for the next (0073), writes its ledger lines with their shares, credits each account's
    * wallet with its lines' sum as apply_settlement does (held to the cap and the floor, with a wallet
    * event saying what either cut off) and adds each character's to its standing, sets the wallets (by
    * account) and standings (by character) given outright, and dates `lastSettledAt`. Each part can be
@@ -231,8 +231,10 @@ interface CharRec {
   debutedAt: number | null;
   retiredAt: number | null;
   loudness: DebutLoudness;
-  readonly history: { cls: string; at: number }[];
-  pending: (PendingTurn & { asked: number }) | null;
+  /** Each class it has held and when it began; `dueAt`, where a reveal made that class's Turn wait past the settlement it was due at (0073). */
+  readonly history: { cls: string; at: number; dueAt?: number }[];
+  /** `dueAt`: the first settlement that passed the Turn over (0073); a Turn asked again is a new one, with none. */
+  pending: (PendingTurn & { asked: number; dueAt?: number }) | null;
   /** Hidden from every presence box (presence_hidden, 0041). */
   presenceHidden: boolean;
   title: string;
@@ -1081,7 +1083,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
     faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null });
     spend(account, decided.value.price, 'play', written.id);
-    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
+    /* As my_card_ledger (0073) says it: whether the card carries a trap, from the card kinds. */
+    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null });
     sendAct(written);
     return ok(publicAct(written));
   }
@@ -1582,7 +1585,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [...characters.values()].filter((c) => c.owner === account.id).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((c): MyCharacter => {
         const opens = turnOpens(c);
         return {
-          id: c.id, name: c.name, class: classNow(c).cls, classSince: iso(classNow(c).at), turnOpensAt: opens === null ? null : iso(opens),
+          id: c.id, name: c.name, class: classNow(c).cls, classSince: iso(classNow(c).at), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
+          turnOpensAt: opens === null ? null : iso(opens),
           debutedAt: c.debutedAt === null ? null : iso(c.debutedAt), debutLoudness: c.loudness, retiredAt: c.retiredAt === null ? null : iso(c.retiredAt),
           pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt() } : null,
           presenceHidden: c.presenceHidden,
@@ -1781,7 +1785,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return Math.min(ALERTS_UNREAD_BOUND, alertsOf(account).filter((a) => Date.parse(a.at) > seen).length);
     },
     settlementMoved(id) {
-      // my_settlement_moved (0073): the caller's own ledger lines in the settlement, counted by character; none is null, as is an id nothing holds.
+      // my_settlement_moved (0074): the caller's own ledger lines in the settlement, counted by character; none is null, as is an id nothing holds.
       const account = me();
       if (!account) throw new Error('sign in with an account first');
       if (!/^\d+$/.test(id)) throw new Error('a settlement is a whole number'); // the function takes bigint, so the database refuses the cast
@@ -2033,7 +2037,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o.turns !== false) {
         for (const c of characters.values()) {
           if (!c.pending) continue;
-          c.history.push({ cls: c.pending.class, at });
+          /* The backstop (masks_change, 0073): a Turn never takes effect behind a reveal dated at or after the settlement's end. It
+             waits for the next, due at the first it was passed over at. */
+          if ([...acts.values()].some((a) => a.kind === 'unmask' && a.character === c.id && a.at >= at)) {
+            c.pending.dueAt ??= at;
+            continue;
+          }
+          c.history.push(c.pending.dueAt === undefined ? { cls: c.pending.class, at } : { cls: c.pending.class, at, dueAt: c.pending.dueAt });
           c.pending = null;
         }
       }

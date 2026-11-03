@@ -10,6 +10,8 @@ import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
+import { logRows } from '../../../engine/ui/log/lines.ts';
+import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
 
 describe('Divided World\'s developer persona', () => {
@@ -43,7 +45,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('every class has a look and a description', () => {
     for (const c of instance.classes) {
       expect(instanceUi.classLooks[c.key], c.key).toBeDefined();
-      expect(instanceUi.classLooks[c.key]?.description(instance.settings.economy).length, c.key).toBeGreaterThan(0);
+      expect(instanceUi.classLooks[c.key]?.description(instance.settings.economy, instance.settings.settlementLength).length, c.key).toBeGreaterThan(0);
     }
   });
 
@@ -54,7 +56,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   const spelled = (n: number) => (n >= 1 && n <= 20 ? NUMBER_WORDS[n - 1]! : String(n));
   const holdsNumber = (text: string) => /\d/u.test(text) || new RegExp(`\\b(${NUMBER_WORDS.join('|')})\\b`, 'iu').test(text);
   const said = (key: string, economy: Readonly<Record<string, number>>) =>
-    (instanceUi.classLooks[key] ? instanceUi.classLooks[key]!.description(economy) : instanceUi.reasonWords(key, economy));
+    (instanceUi.classLooks[key] ? instanceUi.classLooks[key]!.description(economy, instance.settings.settlementLength) : instanceUi.reasonWords(key, economy));
   const economy = instance.settings.economy;
   test('each class\'s words say the numbers in force: shifted by 17, the shifted number is said and the default is not', () => {
     expect(Object.keys(wordsRead).length).toBeGreaterThan(0);
@@ -136,8 +138,35 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.logPlay!({ phrase: 'Mario', replacement: 'Luigi' })).toBe('It covers “Mario” with “Luigi”.');
     expect(ac.logPlay!({})).toBeUndefined();
     expect(ac.logSave!({ peeled: [0, 2] })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
-    expect(ac.logSave!({ peeled: [0], clean: true })).toEqual({ what: 'Peeled clean', said: 'You peeled every strip; it covers nothing now.' });
+    expect(ac.logSave!({ peeled: [0], clean: true })).toEqual({ what: 'Peeled clean', said: 'You peeled every strip it had then. An edit that brings the phrase back brings a strip with it.' });
     expect(ac.logSave!({ peeled: [] })).toBeUndefined();
+  });
+  test('Autocorrect peeled clean, then an edit: the saved line never says the post is uncovered (#171 F1)', () => {
+    /* Strips follow the phrase, so an edit that brings it back brings a strip: "covers nothing now" would go untrue here. */
+    const at = '2026-10-30T10:00:00.000Z';
+    const act = (id: string, kind: Act['kind'], character: string, over: Partial<Act> = {}): Act =>
+      ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
+    const post = act('post1', 'post', 'me', { seq: 1, payload: { body: 'Mario wins.' }, currentPayload: { body: 'Mario wins again.' }, editedAt: '2026-10-31T10:00:00.000Z' });
+    const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'autocorrect', config: { phrase: 'Mario', replacement: 'Luigi' } } });
+    const edit = act('e1', 'edit', 'me', { targetActId: 'post1', createdAt: '2026-10-31T10:00:00.000Z', payload: { body: 'Mario wins again.' } });
+    const log: Log = { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], before: null };
+    const mine = [{ id: 'me', name: 'Pipewrench', class: 'heel', classSince: at, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
+    const rows = logRows({
+      log, mine, estimate: null, standings: {}, season: null, turns: [], acts: new Map([post, play, edit].map((a) => [a.id, a])),
+      names: new Map([['them', 'Spritey']]), titles: new Map(), states: new Map([['k1', { peeled: [0], clean: true }]]),
+    }, { instance, ui: instanceUi, postsPerPage: 20, economy: {} }, 600, null);
+    const saved = rows.find((r) => r.kind === 'saved')!;
+    const said = saved.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+    expect(said).not.toMatch(/nothing now/u);
+    expect(said).toContain('An edit that brings the phrase back brings a strip with it.');
+  });
+  test('the Lurker counts its posts per settlement window and says the span in force (#179)', () => {
+    const lurker = instanceUi.classLooks.lurker!;
+    const two = { ...economy, 'lurker.postsAllowed': 2 };
+    expect(lurker.description(two, { unit: 'week', count: 1 })).toContain('posting more than twice in one settlement window (1 week).');
+    expect(lurker.description(two, { unit: 'day', count: 1 })).toContain('posting more than twice in one settlement window (1 day).');
+    expect(lurker.description(two, { unit: 'day', count: 1 })).not.toMatch(/a day/u);
+    expect(instanceUi.reasonWords('lurker.postedTooMuch', two)).toBe('Posted too much: a post past two in one settlement window');
   });
   test('"Stole the thunder" names what it counted and when: votes, this window (#111)', () => {
     for (const reason of ['face.stoleThunder', 'heel.stoleThunder']) expect(instanceUi.reasonWords(reason, instance.settings.economy)).toContain('more votes than the post this window');

@@ -98,7 +98,7 @@ begin
   -- The columns are exactly these: nothing the tables withhold.
   if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_characters')
      is distinct from array['id', 'name', 'class', 'class_since', 'turn_opens_at', 'debuted_at', 'debut_loudness', 'retired_at', 'pending_class', 'pending_loudness',
-                            'pending_show_from', 'pending_show_to', 'takes_effect_at', 'presence_hidden'] then
+                            'pending_show_from', 'pending_show_to', 'takes_effect_at', 'presence_hidden', 'class_due_at'] then
     raise exception 'my_characters shows more or less than it should';
   end if;
 end $$;

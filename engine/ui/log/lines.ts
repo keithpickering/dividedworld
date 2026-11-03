@@ -193,6 +193,8 @@ export interface TurnTaken {
   readonly classWas: string | null;
   /** The announcement, where The System made one. */
   readonly announced: TurnAnnounced | null;
+  /** The settlement end it was due at, where a reveal made it wait for this one; null where it took effect when due. */
+  readonly dueAt: string | null;
 }
 
 const sameTime = (a: string, b: string) => micros(a) === micros(b);
@@ -227,7 +229,7 @@ export function turnsTaken(data: Pick<LogData, 'log' | 'mine' | 'turns'>, instan
     const announced = data.turns.find((t) => t.character === c.id && sameTime(t.at, c.classSince)) ?? null;
     /* The window this settlement scored was played under the old class, so its reasons name it. */
     const from = announced?.was ?? scoredAs(s.lines.filter((l) => l.character === c.id), instance);
-    out.set(s.id, [...(out.get(s.id) ?? []), { character: c.id, classNow: c.class, classWas: from === c.class ? null : from, announced }]);
+    out.set(s.id, [...(out.get(s.id) ?? []), { character: c.id, classNow: c.class, classWas: from === c.class ? null : from, announced, dueAt: c.classDueAt }]);
   }
   return out;
 }
@@ -293,6 +295,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
       } else {
         details.push(' A silent Turn: no one else was told.');
       }
+      if (t.dueAt) details.push(` It was due at the settlement of ${utcDay(t.dueAt)} and waited for this one: ${nameOf(t.character)} revealed after that window had ended.`);
       rows.push({ key: `turn:${s.id}:${t.character}`, kind: 'turn', at: s.endsAt, what: 'Turn took effect', details, aura: 0, wallet, characters: [t.character] });
     }
     for (const r of ranks.get(s.id) ?? []) {
@@ -359,12 +362,12 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const link = place ?? (post ? actLink(post, data, words, caster ?? undefined) : null);
     const ownOther = place === null && mine(post?.character) && post?.character !== caster;
     const paid = take((w) => w.kind === 'play' && w.ref === e.act);
-    /* A card set face down: its card is the setter's own row, said only to them. A Bluff has no trap, so it only ends by itself. */
+    /* A card set face down: its card is the setter's own row, said only to them. */
     if (play?.kind === 'set') {
-      const trap = instance.cards.find((c) => c.key === e.card)?.trap;
       rows.push({
         key: `set:${e.act}`, kind: 'set', at: e.at, what: `You set ${cardName(e.card)} face down`,
-        details: [`${cardName(e.card)} set face down on `, link ?? 'your post', trap ? '. It springs once, or ends by itself.' : '. It ends by itself.'],
+        /* A Bluff carries no trap (my_card_ledger's `springs`); a row with no `springs` keeps the trap's words. */
+        details: [`${cardName(e.card)} set face down on `, link ?? 'your post', e.springs === false ? '. It never springs, and ends by itself.' : '. It springs once, or ends by itself.'],
         aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: caster ? [caster] : [],
       });
       return;

@@ -87,7 +87,7 @@ test('an instance exported and imported into a fresh database is the same instan
       a uuid := tests.character(ann, 'Exported A'); b uuid := tests.character(bob, 'Exported B');
       t uuid := tests.thread('Exported thread');
       p uuid := tests.post(a, t, 'Carried across, with a backslash \\ and a tab' || chr(9) || 'and a line' || chr(10) || 'break.');
-      play uuid; trapped uuid;
+      play uuid;
       moved uuid; ended uuid; kept uuid; gen uuid := (select id from boards order by created_at, slug limit 1);
     begin
       perform tests.post(b, t, 'A reply, counted on the thread and on its author');
@@ -100,14 +100,14 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
       -- A second play over the first (0071): its moment, and the first's save copied into it as a layer, written by the trigger.
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
-      -- A card set face down and a play it caught (0054, 0075): face_down and face_down_reply each hold a row to carry across (the
-      -- reply moment still waiting: a cast passes nothing), with the caught play and the spring as Acts beside them (#136 F1).
-      update settings set value = value || '{"exp-catch.price": 100}' where key = 'economy';
-      insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values ('exp-catch', 'Exported Catcher', 'salty', 'exp-catch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
-      insert into card_ledger (account, card, kind, price) values (ann, 'exp-catch', 'bought', 0), (bob, 'sweetie', 'bought', 0);
-      trapped := tests.post(a, t, 'Trapped, and carried across.');
-      perform set_card(ann, 'exp-catch', a, trapped, '{}', 0);
-      perform play_card(bob, 'sweetie', b, trapped, '{}', 0, '');
+      -- A trap of the export's own (#136 F1): Ann sets a cast-trigger nullify on her post through set_card, and Bob's Blot cast on it
+      -- through play_card is caught, so a face_down row, a spring and a caught card are the cast's own, by their ids, below.
+      update settings set value = value || '{"expcatch.price": 100}' where key = 'economy';
+      insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap)
+      values ('expcatch', 'Exported Catcher', 'salty', 'expcatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
+      insert into card_ledger (account, card, kind, price) values (ann, 'expcatch', 'bought', 0), (bob, 'blot', 'bought', 0);
+      perform set_card(ann, 'expcatch', a, p, '{}', 0);
+      perform play_card(bob, 'blot', b, p, '{}', 0, '');
       -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an
       -- avatar, and an admin.
       insert into effect_releases (account, play) values (bob, play);
@@ -130,8 +130,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into admins (account) values (ann);
       -- A kept estimate, a waiting Turn, a standing, and a class's total in e2e/0001's settlement.
       insert into estimates (account, made_at, window_from, answer) values (ann, now(), now(), '{"entries": [], "lines": [], "asOf": null, "freshAfter": null}');
-      -- A waiting Turn naming the class it Turns to and from (0028), and a character's reveal of its class (0027).
-      insert into pending_turns (character, class_key, loudness, show_from, show_to) values (b, 'heel', 'announced', true, true);
+      -- A waiting Turn naming the class it Turns to and from (0028), passed over once by a reveal (its due_at, 0073), a later Turn
+      -- that waited before it took effect (class_history.due_at, 0073), and a character's reveal of its class (0027).
+      insert into pending_turns (character, class_key, loudness, show_from, show_to, due_at) values (b, 'heel', 'announced', true, true, now() - interval '1 hour');
+      insert into class_history (character, class_key, started_at, due_at) values (a, 'heel', now() + interval '1 day', now());
       perform write_unmask(a, t, 'act', now(), 'Exported, and unmasked.');
       insert into standings (character, season, amount) values (a, (select max(id) from seasons), 10) on conflict (season, character) do update set amount = excluded.amount;
       insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;
@@ -139,7 +141,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 10 from ledger;
       -- A ledger line with the numbers its words state (0072), and a settle run's claim on a window long settled.
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'lurker.postedTooMuch', -10, '{"lurker.postsAllowed": 3}' from settlements;
-      insert into settlement_claims (window_end, claimed_at) values ('2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
+      insert into settlement_claims (window_start, window_end, claimed_at) values ('2000-01-01T00:00:00Z', '2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
       -- The first settlement made with its shares kept (0037): every one here.
       insert into ledger_shares_kept (from_settlement) values (1);
       -- A model call in the ledger (0042): the instance's own bookkeeping, carried across with the rest.
@@ -187,6 +189,12 @@ test('an instance exported and imported into a fresh database is the same instan
     create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
+  // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows
+  // whatever else this database holds (#136 F1).
+  const trapIds = sql(`select f.play || '|' || s.id || '|' || k.id from face_down f join auth.users u on u.id = f.account and u.email = 'exp-ann@test.invalid'
+    join acts s on s.kind = 'spring' and s.payload ->> 'set' = f.play::text join acts k on k.kind = 'card' and k.payload ->> 'caught' = f.play::text`);
+  const [setPlay, springAct, caughtAct] = trapIds.split('|');
+  assert.ok(setPlay && springAct && caughtAct, `the cast holds a set, its spring and the card it caught: "${trapIds}"`);
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.
@@ -363,6 +371,11 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
+    // The set, its spring and the caught card, each carried as it was.
+    const trapRows = (url: string) => psqlOn(url, `select (select to_jsonb(f)::text from face_down f where f.play = '${setPlay}') || '|' ||
+      (select to_jsonb(a)::text from acts a where a.id = '${springAct}' and a.kind = 'spring') || '|' || (select to_jsonb(a)::text from acts a where a.id = '${caughtAct}' and a.kind = 'card')`);
+    assert.notEqual(trapRows(fresh.toString()), '', 'the set, its spring and the caught card are in the imported instance');
+    assert.equal(trapRows(fresh.toString()), trapRows(from));
     // The moments were carried as written, and the import, a replica's write, took none of its own (0071's trigger stayed silent).
     const moments = (url: string) => psqlOn(url, 'select (select count(*) from play_moments) || \'/\' || (select count(*) from play_moment_layers)');
     assert.equal(moments(fresh.toString()), moments(from));

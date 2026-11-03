@@ -342,6 +342,23 @@ describe('Turns', () => {
     expect(await fake.turn(anaFace, 'lurker', 'silent', false, false)).toMatchObject({ ok: true });
     expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.turnOpensAt).toBeNull();
   });
+  test('a Turn never takes effect behind a reveal dated after the settlement\'s end: it lands at the next, saying when it was due (0073)', async () => {
+    const { fake, anaFace, thread } = world();
+    must(await fake.turn(anaFace, 'heel', 'silent', false, false));
+    const due = fake.clock.now();
+    fake.seed.reveal(anaFace, thread, { at: due + 60_000 });
+    fake.seed.settle({ at: due });
+    const waiting = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
+    expect(waiting.class).toBe('face');
+    expect(waiting.pendingTurn?.class).toBe('heel');
+    fake.clock.advance(DAY);
+    fake.seed.settle({});
+    const landed = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
+    expect(landed.class).toBe('heel');
+    expect(landed.classSince).toBe(new Date(fake.clock.now()).toISOString());
+    expect(landed.classDueAt).toBe(new Date(due).toISOString());
+    expect(landed.pendingTurn).toBeNull();
+  });
 });
 
 describe('making a character', () => {
