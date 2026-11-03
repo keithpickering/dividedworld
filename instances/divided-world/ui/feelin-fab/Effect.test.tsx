@@ -111,6 +111,14 @@ describe("Feelin' Fab", () => {
     for (const t of box().querySelectorAll<HTMLElement>('.dw-fab-twinkle')) expect(t.style.animationName).toBe('');
   });
 
+  test('in a play\'s moment (still) it holds still as reduced motion does, at every level, starting no animation', () => {
+    for (const level of [1, 2, 3]) {
+      const { unmount } = render(<FeelinFabEffect {...props(level)} still />);
+      expect(box()).toHaveAttribute('data-kb-moving', 'false');
+      unmount();
+    }
+  });
+
   test('reduced motion holds still: level 1 sits on one of the stops chosen at random on each load, levels 2 and 3 stay gradients, twinkles stay', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     const picks = new Set<string>();

@@ -3,7 +3,7 @@
  * the mockup they are set against is docs/research/2026-10-31-marks-and-the-lens/, whose three shots are `rest.png`, `lens.png`
  * and `held.png`): post #41 of the boards fixture, carrying four plays of two cards, three Whoops! layers (Mrs. Hooligan's magenta
  * under Pipewrench's orange under Gloomba's yellow, the top one's wash 18% done) and one Stick Around by a character with a very
- * long name. No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
+ * long name. `WashedCleanAsItLanded` is #41 washed clean by its author with the top play's moment shown from its Lens row (As it landed). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
  *
  * `reader` is a player who wrote none of the thread (a new account with one character, signed in before the thread is read);
  * `author` is the moment's own player, who wrote #41 and so is never held and may wash its ink. `Rest` is the page as it opens,
@@ -39,7 +39,7 @@ const PARTLY = Array.from({ length: 14 }, (_, i) => ({ tool: 'wash' as const, wi
  * Hand a post its plays and their reactions, and sign in who is to read it, then say it is ready. `post` is the number the plays
  * go on, `cards` which kinds (Stick Around, as a third, is the caster with the long name's).
  */
-function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAround: boolean): boolean {
+function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAround: boolean, clean = false): boolean {
   const { api, instance } = useKayfa();
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -86,10 +86,12 @@ function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAro
         fake.clock.advance(MINUTE);
         fake.seed.card(long, target.id, hold, { message: 'required reading' });
       }
-      /* The top layer is partly washed, by the post's author, as they would save it. */
+      /* The top layer is partly washed, by the post's author, as they would save it; or, for `clean`, every layer washed clean since. */
       if (target.character && viewer !== 'as-is') {
-        const saved = await api.saveEffect(top, target.character, { strokes: PARTLY });
-        if (!saved.ok) throw new Error(`the wash was refused: ${saved.error}`);
+        for (const [play, state] of clean ? [[bottom, { strokes: [], clean: true }], [second, { strokes: [], clean: true }], [top, { strokes: [], clean: true }]] as const : [[top, { strokes: PARTLY }]] as const) {
+          const saved = await api.saveEffect(play, target.character, state);
+          if (!saved.ok) throw new Error(`the wash was refused: ${saved.error}`);
+        }
       }
       if (viewer === 'reader') {
         const account = fake.seed.account('story-reader');
@@ -100,12 +102,12 @@ function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAro
       /* A seed refused leaves the story loading (aria-busy), and says why, rather than drawing a state its name does not. */
     })().catch((e: unknown) => { console.error('the Lens story could not be seeded', e); });
     return () => { live = false; };
-  }, [api, instance, thread, viewer, post, stickAround]);
+  }, [api, instance, thread, viewer, post, stickAround, clean]);
   return ready;
 }
 
 /** Scrolls the post into view once its mark is drawn, and opens the Lens from the card's mark and unfolds Who, as a player would. */
-function Look({ post, open, who }: { readonly post: number; readonly open: string | null; readonly who: boolean }) {
+function Look({ post, open, who, landed = false }: { readonly post: number; readonly open: string | null; readonly who: boolean; readonly landed?: boolean }) {
   useEffect(() => {
     const timer = setInterval(() => {
       const article = document.getElementById(`post-${post}`);
@@ -117,23 +119,25 @@ function Look({ post, open, who }: { readonly post: number; readonly open: strin
       if (open === null) return;
       mark.click();
       if (who) setTimeout(() => { const fold = document.querySelector<HTMLElement>('.kb-lens-fold'); if (fold?.getAttribute('aria-expanded') === 'false') fold.click(); }, 50);
+      /* The top layer's row is first: its As it landed draws the post as that play found it. */
+      if (landed) setTimeout(() => { [...document.querySelectorAll<HTMLElement>('.kb-lens-row button')].find((b) => b.textContent === 'As it landed')?.click(); }, 120);
     }, 100);
     return () => clearInterval(timer);
-  }, [post, open, who]);
+  }, [post, open, who, landed]);
   return null;
 }
 
-interface Props { readonly viewer: Viewer; readonly open: Open; readonly who: boolean }
+interface Props { readonly viewer: Viewer; readonly open: Open; readonly who: boolean; readonly landed?: boolean }
 
-function Post({ viewer, open, who }: Props) {
+function Post({ viewer, open, who, landed = false }: Props) {
   const { instance } = useKayfa();
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
-  const ready = useSeeded(thread, viewer, 41, true);
+  const ready = useSeeded(thread, viewer, 41, true, landed);
   const card = open === 'none' ? null : instance.cards.find((c) => c.name === (open === 'whoops' ? 'Whoops!' : 'Stick Around'))?.key ?? null;
   const stage: HoldStageValue = { mode: 'thread' };
   return (
     <Frame>
-      <Look post={41} open={card} who={who} />
+      <Look post={41} open={card} who={who} landed={landed} />
       <HoldStage.Provider value={stage}>
         {thread && ready ? <ThreadScreen thread={thread} /> : <div aria-busy="true" />}
       </HoldStage.Provider>
@@ -204,5 +208,8 @@ export const LensWhoopsPhone: Story = { args: { viewer: 'reader', open: 'whoops'
 export const LensWhoopsWhoPhone: Story = { args: { viewer: 'reader', open: 'whoops', who: true }, ...phone };
 export const LensStickAroundPhone: Story = { args: { viewer: 'reader', open: 'stick-around', who: false }, ...phone };
 export const LensStickAroundWhoPhone: Story = { args: { viewer: 'reader', open: 'stick-around', who: true }, ...phone };
+/** #41 washed clean by its author, and the top Whoops!'s moment shown (As it landed): the three layers as that play found them. */
+export const WashedCleanAsItLanded: Story = { args: { viewer: 'reader', open: 'whoops', who: true, landed: true } };
+export const WashedCleanAsItLandedPhone: Story = { args: { viewer: 'reader', open: 'whoops', who: true, landed: true }, ...phone };
 export const LensAuthorWhoopsWhoPhone: Story = { args: { viewer: 'author', open: 'whoops', who: true }, ...phone };
 export const HeldInsidePhone: StoryObj<typeof Held> = { render: () => <Held />, parameters: { moment: '08-hold' }, globals: { viewport: { value: 'glassPhone390', isRotated: false } } };
